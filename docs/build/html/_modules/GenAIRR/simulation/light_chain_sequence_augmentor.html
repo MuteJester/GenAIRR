@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenAIRR.simulation.light_chain_sequence_augmentor &mdash; GenAIRR  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=92fd9be5" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=d048f138"></script>
+        <script src="../../../_static/doctools.js?v=888ff710"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            GenAIRR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">src</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">GenAIRR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">GenAIRR.simulation.light_chain_sequence_augmentor</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for GenAIRR.simulation.light_chain_sequence_augmentor</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">pickle</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">scipy.stats</span> <span class="k">as</span> <span class="nn">st</span>
+<span class="kn">from</span> <span class="nn">..utilities</span> <span class="kn">import</span> <span class="n">AlleleNComparer</span>
+<span class="kn">from</span> <span class="nn">..sequence</span> <span class="kn">import</span> <span class="n">LightChainType</span>
+<span class="kn">from</span> <span class="nn">..sequence</span> <span class="kn">import</span> <span class="n">LightChainSequence</span>
+<span class="kn">from</span> <span class="nn">..simulation</span> <span class="kn">import</span> <span class="n">SequenceAugmentorArguments</span>
+<span class="kn">from</span> <span class="nn">..simulation.sequence_augmentor_base</span> <span class="kn">import</span> <span class="n">SequenceAugmentorBase</span>
+<span class="kn">from</span> <span class="nn">..utilities.data_config</span> <span class="kn">import</span> <span class="n">DataConfig</span>
+
+<div class="viewcode-block" id="LightChainSequenceAugmentor">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor">[docs]</a>
+<span class="k">class</span> <span class="nc">LightChainSequenceAugmentor</span><span class="p">(</span><span class="n">SequenceAugmentorBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A class for augmenting light chain immunoglobulin sequences, extending the capabilities of the SequenceAugmentorBase class.</span>
+
+<span class="sd">        This class specifically handles the augmentation of light chain sequences, taking into account the unique aspects of kappa and lambda light chains.</span>
+
+<span class="sd">        Attributes:</span>
+<span class="sd">            alleles_used (list): Specifies the alleles (&#39;v&#39;, &#39;j&#39;) used in light chain sequences.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            dataconfig (DataConfig): The data configuration object containing settings for sequence simulation.</span>
+<span class="sd">            args (SequenceAugmentorArguments): The arguments object containing simulation parameters.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">alleles_used</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;v&#39;</span><span class="p">,</span> <span class="s1">&#39;j&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dataconfig</span><span class="p">:</span> <span class="n">DataConfig</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">SequenceAugmentorArguments</span> <span class="o">=</span> <span class="n">SequenceAugmentorArguments</span><span class="p">()):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">dataconfig</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">nucleotide_add_distribution</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">beta</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nucleotide_remove_distribution</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">beta</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nucleotide_add_after_remove_distribution</span> <span class="o">=</span> <span class="n">st</span><span class="o">.</span><span class="n">beta</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">chain_type</span> <span class="o">=</span> <span class="n">LightChainType</span><span class="o">.</span><span class="n">KAPPA</span> <span class="k">if</span> <span class="s1">&#39;IGKV&#39;</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dataconfig</span><span class="o">.</span><span class="n">v_alleles</span><span class="p">)[</span>
+            <span class="mi">0</span><span class="p">]</span> <span class="k">else</span> <span class="n">LightChainType</span><span class="o">.</span><span class="n">LAMBDA</span>
+        <span class="c1"># Loading Routines</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_correction_maps</span><span class="p">()</span>
+
+    <span class="c1"># Loading Routines</span>
+<div class="viewcode-block" id="LightChainSequenceAugmentor.load_correction_maps">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.load_correction_maps">[docs]</a>
+    <span class="k">def</span> <span class="nf">load_correction_maps</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">               Loads allele correction maps for V gene segment start and end positions to account for similarities between different alleles after trimming events.</span>
+
+<span class="sd">               These maps help in adjusting allele choices based on the amount removed from the start or end of a given allele, identifying equally likely options.</span>
+<span class="sd">       &quot;&quot;&quot;</span>
+        <span class="kn">from</span> <span class="nn">importlib</span> <span class="kn">import</span> <span class="n">resources</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This will load the V start and V end maps that tell us given the amount removed from the start or end</span>
+<span class="sd">        of a given allele what option are equally likely</span>
+<span class="sd">        :return:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_start_allele_correction_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataconfig</span><span class="o">.</span><span class="n">correction_maps</span><span class="p">[</span><span class="s1">&#39;V_5_TRIM_SIMILARITY_MAP&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_v_start_correction_map_value</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_start_allele_correction_map</span><span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">v_start_allele_correction_map</span><span class="p">)[</span><span class="mi">0</span><span class="p">]])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_end_allele_correction_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataconfig</span><span class="o">.</span><span class="n">correction_maps</span><span class="p">[</span><span class="s1">&#39;V_3_TRIM_SIMILARITY_MAP&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_v_end_correction_map_value</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_end_allele_correction_map</span><span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">v_end_allele_correction_map</span><span class="p">)[</span><span class="mi">0</span><span class="p">]])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_n_ambiguity_comparer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataconfig</span><span class="o">.</span><span class="n">correction_maps</span><span class="p">[</span><span class="s1">&#39;V_N_AMBIGUITY_CORRECTION_GRAPH&#39;</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequenceAugmentor.attribute_position">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.attribute_position">[docs]</a>
+    <span class="k">def</span> <span class="nf">attribute_position</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">simulated</span><span class="p">,</span> <span class="n">position</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Determines the region (V, NP1, J) of a given position in a simulated light chain sequence.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            simulated (dict): A dictionary containing the simulated sequence and metadata.</span>
+<span class="sd">            position (int): The position in the sequence to be attributed.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: The region name (&#39;v&#39;, &#39;np1&#39;, &#39;j&#39;) corresponding to the given position.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If the position does not fall within defined sequence regions.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_start&#39;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">position</span> <span class="o">&lt;</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_end&#39;</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="s1">&#39;v&#39;</span>
+        <span class="k">elif</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_end&#39;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">position</span> <span class="o">&lt;</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;j_sequence_start&#39;</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="s1">&#39;np1&#39;</span>
+        <span class="k">elif</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;j_sequence_start&#39;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">position</span> <span class="o">&lt;</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;j_sequence_end&#39;</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="s1">&#39;j&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;Undefined Position!&#39;</span><span class="p">)</span></div>
+
+
+
+    <span class="c1"># Sequence Simulation</span>
+<div class="viewcode-block" id="LightChainSequenceAugmentor.simulate_sequence">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.simulate_sequence">[docs]</a>
+    <span class="k">def</span> <span class="nf">simulate_sequence</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Simulates a light chain sequence, applying mutations according to the configured mutation model.</span>
+
+<span class="sd">                This method generates a random light chain sequence, mutates it, and compiles relevant metadata into a dictionary.</span>
+
+<span class="sd">                Returns:</span>
+<span class="sd">                    dict: A dictionary containing the simulated sequence, mutation rate, trimming details, and allele information.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Sample Sequence</span>
+        <span class="n">gen</span> <span class="o">=</span> <span class="n">LightChainSequence</span><span class="o">.</span><span class="n">create_random</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dataconfig</span><span class="p">)</span>
+
+        <span class="n">gen</span><span class="o">.</span><span class="n">mutate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mutation_model</span><span class="p">)</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;sequence&quot;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">mutated_seq</span><span class="p">,</span>
+            <span class="s2">&quot;v_sequence_start&quot;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">v_seq_start</span><span class="p">,</span>
+            <span class="s2">&quot;v_sequence_end&quot;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">v_seq_end</span><span class="p">,</span>
+            <span class="s2">&quot;j_sequence_start&quot;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">j_seq_start</span><span class="p">,</span>
+            <span class="s2">&quot;j_sequence_end&quot;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">j_seq_end</span><span class="p">,</span>
+            <span class="s2">&quot;v_allele&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">gen</span><span class="o">.</span><span class="n">v_allele</span><span class="o">.</span><span class="n">name</span><span class="p">],</span>
+            <span class="s2">&quot;j_allele&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">gen</span><span class="o">.</span><span class="n">j_allele</span><span class="o">.</span><span class="n">name</span><span class="p">],</span>
+            <span class="s1">&#39;mutation_rate&#39;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">mutation_freq</span><span class="p">,</span>
+            <span class="s1">&#39;v_trim_5&#39;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">v_trim_5</span><span class="p">,</span>
+            <span class="s1">&#39;v_trim_3&#39;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">v_trim_3</span><span class="p">,</span>
+            <span class="s1">&#39;j_trim_5&#39;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">j_trim_5</span><span class="p">,</span>
+            <span class="s1">&#39;j_trim_3&#39;</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">j_trim_3</span><span class="p">,</span>
+            <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">chain_type</span><span class="p">,</span>
+            <span class="s1">&#39;corruption_event&#39;</span><span class="p">:</span> <span class="s1">&#39;no-corruption&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;corruption_add_amount&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s1">&#39;corruption_remove_amount&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s1">&#39;mutations&#39;</span><span class="p">:</span> <span class="p">{</span><span class="n">pos</span><span class="p">:</span> <span class="n">gen</span><span class="o">.</span><span class="n">mutations</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="k">for</span> <span class="n">pos</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">gen</span><span class="o">.</span><span class="n">mutations</span><span class="p">)},</span>  <span class="c1"># sort the mutations by position</span>
+            <span class="s2">&quot;Ns&quot;</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(),</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequenceAugmentor.fix_v_position_after_trimming_index_ambiguity">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.fix_v_position_after_trimming_index_ambiguity">[docs]</a>
+    <span class="k">def</span> <span class="nf">fix_v_position_after_trimming_index_ambiguity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">simulation</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                Adjusts the V gene segment end position in the simulated sequence to account for potential overlaps between the generated junction and the reference after a trimming event.</span>
+
+<span class="sd">                Args:</span>
+<span class="sd">                    simulation (dict): A dictionary containing the simulated sequence and metadata, including V allele positions and trimming details.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Extract Current V Metadata</span>
+        <span class="n">v_start</span><span class="p">,</span> <span class="n">v_end</span> <span class="o">=</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;v_sequence_start&#39;</span><span class="p">],</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;v_sequence_end&#39;</span><span class="p">]</span>
+        <span class="n">v_allele_remainder</span> <span class="o">=</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;sequence&#39;</span><span class="p">][</span><span class="n">v_start</span><span class="p">:</span><span class="n">v_end</span><span class="p">]</span>
+        <span class="n">v_allele_ref</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_dict</span><span class="p">[</span><span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;v_allele&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span>
+
+        <span class="c1"># Get the junction inserted after trimming to the sequence</span>
+        <span class="n">junction_3</span> <span class="o">=</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;sequence&#39;</span><span class="p">][</span><span class="n">v_end</span><span class="p">:</span><span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;j_sequence_start&#39;</span><span class="p">]]</span>
+
+        <span class="c1"># Get the trimming lengths</span>
+        <span class="n">v_trim_3</span> <span class="o">=</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;v_trim_3&#39;</span><span class="p">]</span>
+
+        <span class="c1"># Get the trimmed off sections from the reference</span>
+        <span class="n">trimmed_3</span> <span class="o">=</span> <span class="n">v_allele_ref</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">v_allele_ref</span><span class="p">)</span> <span class="o">-</span> <span class="n">v_trim_3</span><span class="p">:]</span>
+
+        <span class="c1"># check for overlap between generated junction and reference in the 3&#39; trim</span>
+        <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">trimmed_3</span><span class="p">,</span> <span class="n">junction_3</span><span class="p">):</span>
+            <span class="c1"># in case the current poistion in the junction matches the reference exapnd the d segment</span>
+            <span class="k">if</span> <span class="n">a</span> <span class="o">==</span> <span class="n">b</span><span class="p">:</span>
+                <span class="n">v_end</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>  <span class="c1"># if the continuous streak is broken or non-existent break!</span>
+                <span class="k">break</span>
+
+        <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;v_sequence_end&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">v_end</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequenceAugmentor.fix_j_position_after_trimming_index_ambiguity">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.fix_j_position_after_trimming_index_ambiguity">[docs]</a>
+    <span class="k">def</span> <span class="nf">fix_j_position_after_trimming_index_ambiguity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">simulation</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                Corrects the J gene segment start position in the simulated sequence to address possible overlaps between the generated junction and the reference following a trimming event.</span>
+
+<span class="sd">                Args:</span>
+<span class="sd">                    simulation (dict): A dictionary containing the simulated sequence and metadata, including J allele positions and trimming information.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Extract Current J Metadata</span>
+        <span class="n">j_start</span><span class="p">,</span> <span class="n">j_end</span> <span class="o">=</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;j_sequence_start&#39;</span><span class="p">],</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;j_sequence_end&#39;</span><span class="p">]</span>
+        <span class="n">j_allele_remainder</span> <span class="o">=</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;sequence&#39;</span><span class="p">][</span><span class="n">j_start</span><span class="p">:</span><span class="n">j_end</span><span class="p">]</span>
+        <span class="n">j_allele_ref</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">j_dict</span><span class="p">[</span><span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;j_allele&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span>
+
+        <span class="c1"># Get the junction inserted after trimming to the sequence</span>
+        <span class="n">junction_5</span> <span class="o">=</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;sequence&#39;</span><span class="p">][</span><span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;v_sequence_end&#39;</span><span class="p">]:</span><span class="n">j_start</span><span class="p">]</span>
+
+        <span class="c1"># Get the trimming lengths</span>
+        <span class="n">j_trim_5</span> <span class="o">=</span> <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;j_trim_5&#39;</span><span class="p">]</span>
+
+        <span class="c1"># Get the trimmed off sections from the reference</span>
+        <span class="n">trimmed_5</span> <span class="o">=</span> <span class="n">j_allele_ref</span><span class="p">[:</span><span class="n">j_trim_5</span><span class="p">]</span>
+
+        <span class="c1"># check for overlap between generated junction and reference in the 5&#39; trim</span>
+        <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">trimmed_5</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">junction_5</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+            <span class="c1"># in case the current poistion in the junction matches the reference exapnd the d segment</span>
+            <span class="k">if</span> <span class="n">a</span> <span class="o">==</span> <span class="n">b</span><span class="p">:</span>
+                <span class="n">j_start</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>  <span class="c1"># if the continuous streak is broken or non-existent break!</span>
+                <span class="k">break</span>
+
+        <span class="n">simulation</span><span class="p">[</span><span class="s1">&#39;j_sequence_start&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">j_start</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequenceAugmentor.remove_event">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.remove_event">[docs]</a>
+    <span class="k">def</span> <span class="nf">remove_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">simulated</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                Simulates the removal of a portion of the sequence from the beginning for a light chain sequence, updating metadata to reflect the changes.</span>
+
+<span class="sd">                Args:</span>
+<span class="sd">                    simulated (dict): A dictionary containing the simulated sequence and metadata.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Update Simulation Metadata</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;corruption_event&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;remove&#39;</span>
+        <span class="c1"># Sample how much to remove</span>
+        <span class="n">v_length</span> <span class="o">=</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_end&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_start&#39;</span><span class="p">]</span>
+        <span class="n">amount_to_remove</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_nucleotide_remove_distribution</span><span class="p">(</span><span class="n">v_length</span><span class="p">)</span>
+        <span class="c1"># remove from the start of the sequence the sampled amount</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;sequence&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;sequence&#39;</span><span class="p">][</span><span class="n">amount_to_remove</span><span class="p">:]</span>
+        <span class="c1"># Update Simulation Metadata</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;corruption_remove_amount&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">amount_to_remove</span>
+        <span class="c1"># Update mutation log, remove the mutations that were removed with the remove event</span>
+        <span class="c1"># and while updating the mutations log correct the position of the mutations accordingly</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;mutations&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span> <span class="o">-</span> <span class="n">amount_to_remove</span><span class="p">:</span> <span class="n">j</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;mutations&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span>
+                                  <span class="n">i</span> <span class="o">&gt;</span> <span class="n">amount_to_remove</span><span class="p">}</span>
+        <span class="c1"># Adjust mutation rate</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">correct_mutation_rate</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span>
+
+        <span class="c1"># Adjust Start/End Position Accordingly</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_start&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_end&#39;</span><span class="p">]</span> <span class="o">-=</span> <span class="n">amount_to_remove</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;j_sequence_start&#39;</span><span class="p">]</span> <span class="o">-=</span> <span class="n">amount_to_remove</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;j_sequence_end&#39;</span><span class="p">]</span> <span class="o">-=</span> <span class="n">amount_to_remove</span>
+
+        <span class="c1"># Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">correct_for_v_start_cut</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequenceAugmentor.add_event">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.add_event">[docs]</a>
+    <span class="k">def</span> <span class="nf">add_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">simulated</span><span class="p">,</span> <span class="n">amount</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                Simulates the addition of bases to the beginning of a light chain sequence, updating metadata to reflect the changes.</span>
+
+<span class="sd">                Args:</span>
+<span class="sd">                    simulated (dict): A dictionary containing the simulated sequence and metadata.</span>
+<span class="sd">                    amount (int, optional): The number of bases to add. If not specified, the amount is sampled from a configured distribution.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Update Simulation Metadata</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;corruption_event&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;add&#39;</span>
+        <span class="c1"># Sample the Amount to Add by default, if a spesific value is given via the amount variable,use it.</span>
+        <span class="n">amount_to_add</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_nucleotide_add_distribution</span><span class="p">()</span> <span class="k">if</span> <span class="n">amount</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">amount</span>
+        <span class="c1"># Sample the method by which addition will be made</span>
+        <span class="n">method</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_corruption_add_method</span><span class="p">()</span>
+        <span class="c1"># Modify the sequence</span>
+        <span class="n">modified_sequence</span> <span class="o">=</span> <span class="n">method</span><span class="p">(</span><span class="n">amount_to_add</span><span class="p">,</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;sequence&#39;</span><span class="p">])</span>
+        <span class="c1"># Validate the modified sequence, make sure we didn&#39;t over add pass our max sequence size</span>
+        <span class="n">modified_sequence</span><span class="p">,</span> <span class="n">amount_to_add</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">validate_sequence_length_after_addition</span><span class="p">(</span><span class="n">modified_sequence</span><span class="p">,</span>
+                                                                                        <span class="n">amount_to_add</span><span class="p">)</span>
+        <span class="c1"># Update Simulation Sequence</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;sequence&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">modified_sequence</span>
+
+        <span class="c1"># Update Simulation Metadata</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;corruption_add_amount&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">amount_to_add</span>
+        <span class="c1"># Update mutation log positions</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;mutations&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span> <span class="o">+</span> <span class="n">amount_to_add</span><span class="p">:</span> <span class="n">j</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;mutations&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+
+        <span class="c1"># Adjust Start/End Position Accordingly</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_start&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">amount_to_add</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;v_sequence_end&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">amount_to_add</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;j_sequence_start&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">amount_to_add</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;j_sequence_end&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">amount_to_add</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequenceAugmentor.remove_before_add_event">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.remove_before_add_event">[docs]</a>
+    <span class="k">def</span> <span class="nf">remove_before_add_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">simulated</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                Simulates a sequence modification event where a portion is first removed from the start of the sequence, and then bases are added, updating metadata accordingly.</span>
+
+<span class="sd">                Args:</span>
+<span class="sd">                    simulated (dict): A dictionary containing the simulated sequence and metadata.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># ----- REMOVE PART -----#</span>
+        <span class="c1"># Sample how much to remove</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">remove_event</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span>
+
+        <span class="c1"># Update Simulation Metadata</span>
+        <span class="n">simulated</span><span class="p">[</span><span class="s1">&#39;corruption_event&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;remove_before_add&#39;</span>
+
+        <span class="c1"># ----- ADD PART -----#</span>
+        <span class="c1"># Sample how much to add after removal occurred</span>
+        <span class="n">amount_to_add</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_nucleotide_add_after_remove_distribution</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_event</span><span class="p">(</span><span class="n">simulated</span><span class="p">,</span> <span class="n">amount</span><span class="o">=</span><span class="n">amount_to_add</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequenceAugmentor.simulate_augmented_sequence">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.simulate_augmented_sequence">[docs]</a>
+    <span class="k">def</span> <span class="nf">simulate_augmented_sequence</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Simulates and augments a light chain sequence, incorporating sequence corrections, potential corruption at the beginning, and insertion of &#39;N&#39; bases.</span>
+
+<span class="sd">                Returns:</span>
+<span class="sd">                    dict: A dictionary containing the augmented sequence and associated metadata.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># 1. Simulate a Sequence from AIRRship</span>
+        <span class="n">simulated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulate_sequence</span><span class="p">()</span>
+
+        <span class="c1"># 1.1 Correction - Correct Start/End Positions Based on Generated Junctions</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fix_v_position_after_trimming_index_ambiguity</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fix_j_position_after_trimming_index_ambiguity</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span>
+
+        <span class="c1"># 1.2 Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">correct_for_v_end_cut</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span>
+
+        <span class="c1"># 2. Corrupt Begging of Sequence ( V Start )</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perform_corruption</span><span class="p">():</span>
+            <span class="c1"># Inside this method, based on the corruption event we will also adjust the respective ground truth v</span>
+            <span class="c1"># alleles</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">corrupt_sequence_beginning</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span>
+
+        <span class="c1"># 3. Add N&#39;s</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">insert_Ns</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_before_return</span><span class="p">(</span><span class="n">simulated</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">simulated</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LightChainKappaLambdaSequenceAugmentor">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainKappaLambdaSequenceAugmentor">[docs]</a>
+<span class="k">class</span> <span class="nc">LightChainKappaLambdaSequenceAugmentor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A class for augmenting both kappa and lambda light chain immunoglobulin sequences.</span>
+
+<span class="sd">        This class manages two separate augmentors for kappa and lambda chains, allowing for the simulation of sequences based on a specified kappa to lambda ratio.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            lambda_dataconfig (DataConfig): The data configuration object for lambda chain sequence simulation.</span>
+<span class="sd">            kappa_dataconfig (DataConfig): The data configuration object for kappa chain sequence simulation.</span>
+<span class="sd">            lambda_args (SequenceAugmentorArguments): The arguments object containing simulation parameters for lambda chains.</span>
+<span class="sd">            kappa_args (SequenceAugmentorArguments): The arguments object containing simulation parameters for kappa chains.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lambda_dataconfig</span><span class="p">:</span> <span class="n">DataConfig</span><span class="p">,</span> <span class="n">kappa_dataconfig</span><span class="p">:</span> <span class="n">DataConfig</span><span class="p">,</span>
+                 <span class="n">lambda_args</span><span class="p">:</span> <span class="n">SequenceAugmentorArguments</span> <span class="o">=</span> <span class="n">SequenceAugmentorArguments</span><span class="p">(),</span>
+                 <span class="n">kappa_args</span><span class="p">:</span> <span class="n">SequenceAugmentorArguments</span> <span class="o">=</span> <span class="n">SequenceAugmentorArguments</span><span class="p">()):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lambda_augmentor</span> <span class="o">=</span> <span class="n">LightChainSequenceAugmentor</span><span class="p">(</span><span class="n">lambda_dataconfig</span><span class="p">,</span> <span class="n">lambda_args</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kappa_augmentor</span> <span class="o">=</span> <span class="n">LightChainSequenceAugmentor</span><span class="p">(</span><span class="n">kappa_dataconfig</span><span class="p">,</span> <span class="n">kappa_args</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kappa_lambda_ratio</span> <span class="o">=</span> <span class="n">lambda_args</span><span class="o">.</span><span class="n">kappa_lambda_ratio</span>
+
+<div class="viewcode-block" id="LightChainKappaLambdaSequenceAugmentor.simulate_augmented_sequence">
+<a class="viewcode-back" href="../../../GenAIRR.simulation.html#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainKappaLambdaSequenceAugmentor.simulate_augmented_sequence">[docs]</a>
+    <span class="k">def</span> <span class="nf">simulate_augmented_sequence</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                Simulates and augments either a kappa or lambda light chain sequence based on a predefined kappa to lambda ratio.</span>
+
+<span class="sd">                Randomly chooses between kappa and lambda chain types to simulate a sequence accordingly.</span>
+
+<span class="sd">                Returns:</span>
+<span class="sd">                    dict: A dictionary containing the augmented sequence and associated metadata for the chosen chain type.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">chain_type</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">([</span><span class="n">LightChainType</span><span class="o">.</span><span class="n">KAPPA</span><span class="p">,</span> <span class="n">LightChainType</span><span class="o">.</span><span class="n">LAMBDA</span><span class="p">],</span> <span class="n">size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">kappa_lambda_ratio</span><span class="p">,</span>
+                                                                                                <span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">kappa_lambda_ratio</span><span class="p">])</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">chain_type</span> <span class="o">==</span> <span class="n">LightChainType</span><span class="o">.</span><span class="n">KAPPA</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">kappa_augmentor</span><span class="o">.</span><span class="n">simulate_augmented_sequence</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">lambda_augmentor</span><span class="o">.</span><span class="n">simulate_augmented_sequence</span><span class="p">()</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">columns</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                Provides a list of column names expected in the output of the simulate_augmented_sequence method.</span>
+
+<span class="sd">                The column names are derived from the kappa chain augmentor, assuming both kappa and lambda augmentors produce the same set of columns.</span>
+
+<span class="sd">                Returns:</span>
+<span class="sd">                    list: A list of strings representing the column names in the augmented sequence output.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">kappa_augmentor</span><span class="o">.</span><span class="n">columns</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Thomas Konstantinovsky &amp; Ayelet Peres.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

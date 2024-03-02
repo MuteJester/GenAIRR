@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenAIRR.utilities.data_config &mdash; GenAIRR  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=92fd9be5" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=d048f138"></script>
+        <script src="../../../_static/doctools.js?v=888ff710"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            GenAIRR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">src</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">GenAIRR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">GenAIRR.utilities.data_config</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for GenAIRR.utilities.data_config</h1><div class="highlight"><pre>
+<span></span>
+<div class="viewcode-block" id="DataConfig">
+<a class="viewcode-back" href="../../../GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig">[docs]</a>
+<span class="k">class</span> <span class="nc">DataConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Configuration class for storing data related to sequence generation, allele usage, trimming, and mutation rates.</span>
+
+<span class="sd">        This class encapsulates various dictionaries and settings used in the simulation and analysis of immunoglobulin sequences, including information about gene usage, trimming preferences, non-polymorphic (NP) region transitions, k-mer dictionaries, and allele-specific corrections.</span>
+
+<span class="sd">        Attributes:</span>
+<span class="sd">            family_use_dict (dict): A dictionary specifying the usage frequencies of gene families.</span>
+<span class="sd">            gene_use_dict (dict): A dictionary specifying the usage frequencies of individual genes.</span>
+<span class="sd">            trim_dicts (dict): A dictionary containing information on how to trim each gene segment (V, D, J).</span>
+<span class="sd">            NP_transitions (dict): A dictionary detailing the transition probabilities for bases in NP regions.</span>
+<span class="sd">            NP_first_bases (dict): A dictionary specifying the probabilities of the first base in NP regions.</span>
+<span class="sd">            NP_lengths (dict): A dictionary defining the distribution of lengths for NP regions.</span>
+<span class="sd">            mut_rate_per_seq (dict): A dictionary specifying the mutation rate per sequence for simulating mutations.</span>
+<span class="sd">            kmer_dicts (dict): A dictionary of k-mer dictionaries used for various analyses or simulations.</span>
+<span class="sd">            v_alleles, d_alleles, j_alleles: family seperated dictionary of lists for storing allele information for V, D, and J gene segments, respectively.</span>
+<span class="sd">            correction_maps (dict): A dictionary for storing maps used for correction or adjustment of sequences or simulation parameters.</span>
+<span class="sd">            asc_tables (dict): A dictionary for storing allele sequence cluster (ASC) tables, which group alleles based on sequence similarity and other criteria.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,):</span>
+
+        <span class="c1"># Config Variables</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">family_use_dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gene_use_dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">trim_dicts</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">NP_transitions</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">NP_first_bases</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">NP_lengths</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mut_rate_per_seq</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kmer_dicts</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_alleles</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">d_alleles</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">j_alleles</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">correction_maps</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asc_tables</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Thomas Konstantinovsky &amp; Ayelet Peres.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenAIRR.sequence.light_chain &mdash; GenAIRR  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=92fd9be5" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=d048f138"></script>
+        <script src="../../../_static/doctools.js?v=888ff710"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            GenAIRR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">src</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">GenAIRR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">GenAIRR.sequence.light_chain</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for GenAIRR.sequence.light_chain</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span><span class="p">,</span> <span class="n">auto</span>
+<span class="kn">from</span> <span class="nn">..mutation</span> <span class="kn">import</span> <span class="n">MutationModel</span>
+<span class="kn">from</span> <span class="nn">..sequence</span> <span class="kn">import</span> <span class="n">NP_Region</span>
+<span class="kn">from</span> <span class="nn">..sequence.sequence</span> <span class="kn">import</span> <span class="n">BaseSequence</span>
+<span class="kn">from</span> <span class="nn">..utilities</span> <span class="kn">import</span> <span class="n">translate</span>
+<span class="kn">from</span> <span class="nn">..utilities.data_config</span> <span class="kn">import</span> <span class="n">DataConfig</span>
+
+
+<div class="viewcode-block" id="LightChainType">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.light_chain.LightChainType">[docs]</a>
+<span class="k">class</span> <span class="nc">LightChainType</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
+    <span class="n">KAPPA</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span>
+    <span class="n">LAMBDA</span> <span class="o">=</span> <span class="n">auto</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="LightChainSequence">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.light_chain.LightChainSequence">[docs]</a>
+<span class="k">class</span> <span class="nc">LightChainSequence</span><span class="p">(</span><span class="n">BaseSequence</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">       Represents a light chain sequence in an immunoglobulin, including V and J segments and an NP region.</span>
+
+<span class="sd">       This class extends `BaseSequence` to include functionality specific to light chain sequences, such as</span>
+<span class="sd">       sequence simulation, mutation, and functionality checks based on junction properties.</span>
+
+<span class="sd">       Args:</span>
+<span class="sd">           alleles (list): A list of `Allele` instances for the V and J gene segments.</span>
+<span class="sd">           dataconfig (DataConfig): A `DataConfig` instance containing configuration data for sequence simulation.</span>
+
+<span class="sd">       Attributes:</span>
+<span class="sd">           Inherits all attributes from `BaseSequence` and adds/modifies specific ones for light chain sequences.</span>
+<span class="sd">   &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">alleles</span><span class="p">,</span> <span class="n">dataconfig</span><span class="p">:</span> <span class="n">DataConfig</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes a `LightChainSequence` with the given alleles and simulates the sequence.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">alleles</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">simulate_sequence</span><span class="p">(</span><span class="n">dataconfig</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LightChainSequence.simulate_sequence">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.light_chain.LightChainSequence.simulate_sequence">[docs]</a>
+    <span class="k">def</span> <span class="nf">simulate_sequence</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dataconfig</span><span class="p">:</span> <span class="n">DataConfig</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Simulates the light chain sequence by trimming V and J alleles, adding an NP region,</span>
+<span class="sd">        and assembling the final sequence.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            dataconfig (DataConfig): Configuration data for sequence simulation, including trimming dictionaries,</span>
+<span class="sd">            NP lengths, and transition probabilities.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">v_allele</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_allele</span>
+        <span class="n">j_allele</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">j_allele</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">NP1_region</span> <span class="o">=</span> <span class="n">NP_Region</span><span class="o">.</span><span class="n">create_np_region</span><span class="p">(</span><span class="n">dataconfig</span><span class="o">.</span><span class="n">NP_lengths</span><span class="p">,</span> <span class="n">dataconfig</span><span class="o">.</span><span class="n">NP_transitions</span><span class="p">,</span> <span class="s2">&quot;NP1&quot;</span><span class="p">,</span>
+                                                     <span class="n">dataconfig</span><span class="o">.</span><span class="n">NP_first_bases</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">NP1_length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">NP1_region</span><span class="p">)</span>
+
+        <span class="n">v_trimmed_seq</span><span class="p">,</span> <span class="n">v_trim_5</span><span class="p">,</span> <span class="n">v_trim_3</span> <span class="o">=</span> <span class="n">v_allele</span><span class="o">.</span><span class="n">get_trimmed</span><span class="p">(</span><span class="n">dataconfig</span><span class="o">.</span><span class="n">trim_dicts</span><span class="p">)</span>
+
+        <span class="n">j_trimmed_seq</span><span class="p">,</span> <span class="n">j_trim_5</span><span class="p">,</span> <span class="n">j_trim_3</span> <span class="o">=</span> <span class="n">j_allele</span><span class="o">.</span><span class="n">get_trimmed</span><span class="p">(</span><span class="n">dataconfig</span><span class="o">.</span><span class="n">trim_dicts</span><span class="p">)</span>
+
+        <span class="n">nuc_seq</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">v_trimmed_seq</span> <span class="o">+</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">NP1_region</span> <span class="o">+</span>
+                <span class="n">j_trimmed_seq</span>
+        <span class="p">)</span>
+
+        <span class="c1"># log trims</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_trim_5</span> <span class="o">=</span> <span class="n">v_trim_5</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_trim_3</span> <span class="o">=</span> <span class="n">v_trim_3</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">j_trim_5</span> <span class="o">=</span> <span class="n">j_trim_5</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">j_trim_3</span> <span class="o">=</span> <span class="n">j_trim_3</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">ungapped_seq</span> <span class="o">=</span> <span class="n">nuc_seq</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">junction_length</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_junction_length</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">junction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ungapped_seq</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">v_allele</span><span class="o">.</span><span class="n">anchor</span><span class="p">:</span>
+                                          <span class="bp">self</span><span class="o">.</span><span class="n">v_allele</span><span class="o">.</span><span class="n">anchor</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">junction_length</span><span class="p">]</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_metadata</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_is_functional</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ungapped_seq</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequence.update_metadata">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.light_chain.LightChainSequence.update_metadata">[docs]</a>
+    <span class="k">def</span> <span class="nf">update_metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">               Updates the metadata for the light chain sequence, including the start and end positions</span>
+<span class="sd">               of the V and J segments.</span>
+<span class="sd">       &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_seq_start</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_seq_end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_allele</span><span class="o">.</span><span class="n">ungapped_len</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_trim_3</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">j_seq_start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_seq_end</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">NP1_length</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">j_seq_end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">j_seq_start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">j_allele</span><span class="o">.</span><span class="n">ungapped_len</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">j_trim_5</span> <span class="o">-</span> <span class="mi">1</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_is_functional</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sequence</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">       Evaluates whether the light chain sequence is functional based on the presence of in-frame junctions</span>
+<span class="sd">       without stop codons and specific amino acid motifs at the junction boundaries.</span>
+
+<span class="sd">       Args:</span>
+<span class="sd">           sequence (str): The nucleotide sequence to evaluate for functionality.</span>
+<span class="sd">       &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">functional</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">junction_length</span> <span class="o">%</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">check_stops</span><span class="p">(</span><span class="n">sequence</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">junction_aa</span> <span class="o">=</span> <span class="n">translate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">junction</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">junction_aa</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;C&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">junction_aa</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;F&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">junction_aa</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;W&quot;</span><span class="p">)):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">functional</span> <span class="o">=</span> <span class="kc">True</span>
+
+<div class="viewcode-block" id="LightChainSequence.mutate">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.light_chain.LightChainSequence.mutate">[docs]</a>
+    <span class="k">def</span> <span class="nf">mutate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mutation_model</span><span class="p">:</span> <span class="n">MutationModel</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Applies mutations to the light chain sequence using the given mutation model.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            mutation_model (MutationModel): The mutation model to use for applying mutations to the sequence.</span>
+
+<span class="sd">        Updates:</span>
+<span class="sd">            The method updates the mutated sequence, mutations, mutation frequency, mutation count,</span>
+<span class="sd">            junction sequence, and checks for functionality post-mutation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">mutated_sequence</span><span class="p">,</span> <span class="n">mutations</span><span class="p">,</span> <span class="n">mutation_rate</span> <span class="o">=</span> <span class="n">mutation_model</span><span class="o">.</span><span class="n">apply_mutation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mutated_seq</span> <span class="o">=</span> <span class="n">mutated_sequence</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mutations</span> <span class="o">=</span> <span class="n">mutations</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mutation_freq</span> <span class="o">=</span> <span class="n">mutation_rate</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mutation_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">mutations</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">junction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mutated_seq</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">v_allele</span><span class="o">.</span><span class="n">anchor</span><span class="p">:</span>
+                                         <span class="bp">self</span><span class="o">.</span><span class="n">v_allele</span><span class="o">.</span><span class="n">anchor</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">junction_length</span><span class="p">]</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="c1"># mutation metadata updates</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_is_functional</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mutated_seq</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequence.get_junction_length">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.light_chain.LightChainSequence.get_junction_length">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_junction_length</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Calculates the length of the junction region in the light chain sequence, taking into account</span>
+<span class="sd">        the trimmed V and J segments and the NP1 region.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            int: The total length of the junction region, including CDR3 and flanking conserved regions.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">junction_length</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_seq_end</span> <span class="o">-</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">v_allele</span><span class="o">.</span><span class="n">anchor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_trim_3</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">NP1_length</span> <span class="o">+</span> \
+                          <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">j_allele</span><span class="o">.</span><span class="n">anchor</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">j_trim_5</span>
+        <span class="k">return</span> <span class="n">junction_length</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequence.check_stops">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.light_chain.LightChainSequence.check_stops">[docs]</a>
+    <span class="k">def</span> <span class="nf">check_stops</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">seq</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Checks the given sequence for the presence of stop codons.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            seq (str): The nucleotide sequence to check for stop codons.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            bool: True if a stop codon is found, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">stops</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;TAG&quot;</span><span class="p">,</span> <span class="s2">&quot;TAA&quot;</span><span class="p">,</span> <span class="s2">&quot;TGA&quot;</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">seq</span><span class="p">),</span> <span class="mi">3</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">seq</span><span class="p">[</span><span class="n">x</span><span class="p">:</span><span class="n">x</span> <span class="o">+</span> <span class="mi">3</span><span class="p">]</span> <span class="ow">in</span> <span class="n">stops</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="LightChainSequence.create_random">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.light_chain.LightChainSequence.create_random">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">create_random</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">dataconfig</span><span class="p">:</span> <span class="n">DataConfig</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a random instance of `LightChainSequence` with randomly selected V and J alleles from the given</span>
+<span class="sd">        `DataConfig`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            dataconfig (DataConfig): A `DataConfig` instance providing allele choices and other configuration data.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            LightChainSequence: A new `LightChainSequence` instance with randomly chosen alleles and simulated sequence.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">random_v_allele</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">([</span><span class="n">i</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">dataconfig</span><span class="o">.</span><span class="n">v_alleles</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">dataconfig</span><span class="o">.</span><span class="n">v_alleles</span><span class="p">[</span><span class="n">j</span><span class="p">]])</span>
+        <span class="n">random_j_allele</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">([</span><span class="n">i</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">dataconfig</span><span class="o">.</span><span class="n">j_alleles</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">dataconfig</span><span class="o">.</span><span class="n">j_alleles</span><span class="p">[</span><span class="n">j</span><span class="p">]])</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">([</span><span class="n">random_v_allele</span><span class="p">,</span> <span class="n">random_j_allele</span><span class="p">],</span> <span class="n">dataconfig</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">       Provides a textual representation of the light chain sequence, showing the V and J segment positions</span>
+<span class="sd">       and allele names within the overall sequence context.</span>
+
+<span class="sd">       Returns:</span>
+<span class="sd">           str: A string representation of the light chain sequence, including V and J segments.</span>
+<span class="sd">       &quot;&quot;&quot;</span>
+        <span class="c1"># Calculate proportional lengths for the drawing</span>
+        <span class="n">total_length</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">j_seq_end</span>  <span class="c1"># Assuming j_seq_end is the end of the sequence</span>
+        <span class="n">proportional_length</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">:</span> <span class="nb">int</span><span class="p">((</span><span class="n">end</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">/</span> <span class="n">total_length</span> <span class="o">*</span> <span class="mi">100</span><span class="p">)</span>  <span class="c1"># Example scale factor</span>
+
+        <span class="n">v_length</span> <span class="o">=</span> <span class="n">proportional_length</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">v_seq_start</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_seq_end</span><span class="p">)</span>
+        <span class="n">j_length</span> <span class="o">=</span> <span class="n">proportional_length</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">j_seq_start</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">j_seq_end</span><span class="p">)</span>
+
+        <span class="c1"># Construct ASCII drawing</span>
+        <span class="n">v_part</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">v_seq_start</span><span class="si">}</span><span class="s2">|</span><span class="si">{</span><span class="s1">&#39;-&#39;</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">v_length</span><span class="si">}</span><span class="s2">V(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">v_allele</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">)|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">v_seq_end</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">j_part</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">j_seq_start</span><span class="si">}</span><span class="s2">|</span><span class="si">{</span><span class="s1">&#39;-&#39;</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">j_length</span><span class="si">}</span><span class="s2">J(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">j_allele</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">)|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">j_seq_end</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">v_part</span><span class="si">}</span><span class="s2">|</span><span class="si">{</span><span class="n">j_part</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Thomas Konstantinovsky &amp; Ayelet Peres.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

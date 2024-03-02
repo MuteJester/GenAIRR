@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenAIRR.sequence package &mdash; GenAIRR  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=92fd9be5" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="_static/documentation_options.js?v=d048f138"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="GenAIRR.simulation package" href="GenAIRR.simulation.html" />
+    <link rel="prev" title="GenAIRR.mutation package" href="GenAIRR.mutation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GenAIRR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">src</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="GenAIRR.html">GenAIRR package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="GenAIRR.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.alleles.html">GenAIRR.alleles package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.data.html">GenAIRR.data package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.mutation.html">GenAIRR.mutation package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">GenAIRR.sequence package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.simulation.html">GenAIRR.simulation package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.utilities.html">GenAIRR.utilities package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="GenAIRR.html#module-GenAIRR">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GenAIRR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">src</a></li>
+          <li class="breadcrumb-item"><a href="GenAIRR.html">GenAIRR package</a></li>
+      <li class="breadcrumb-item active">GenAIRR.sequence package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/GenAIRR.sequence.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="genairr-sequence-package">
+<h1>GenAIRR.sequence package<a class="headerlink" href="#genairr-sequence-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-GenAIRR.sequence.heavy_chain">
+<span id="genairr-sequence-heavy-chain-module"></span><h2>GenAIRR.sequence.heavy_chain module<a class="headerlink" href="#module-GenAIRR.sequence.heavy_chain" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.sequence.heavy_chain.HeavyChainSequence">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.sequence.heavy_chain.</span></span><span class="sig-name descname"><span class="pre">HeavyChainSequence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">alleles</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dataconfig</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><span class="pre">DataConfig</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/heavy_chain.html#HeavyChainSequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.heavy_chain.HeavyChainSequence" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#GenAIRR.sequence.sequence.BaseSequence" title="GenAIRR.sequence.sequence.BaseSequence"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseSequence</span></code></a></p>
+<p>Represents a heavy chain sequence in an immunoglobulin, including V, D, and J segments,
+along with NP1 and NP2 regions.</p>
+<p>This class extends <cite>BaseSequence</cite> to include functionality specific to heavy chain sequences, such as
+sequence simulation with D segment and two NP regions, mutation, and functionality checks based on junction properties.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alleles</strong> (<em>list</em>) -- A list of <cite>Allele</cite> instances for the V, D, and J gene segments.</p></li>
+<li><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- A <cite>DataConfig</cite> instance containing configuration data for sequence simulation.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.heavy_chain.HeavyChainSequence.check_stops">
+<span class="sig-name descname"><span class="pre">check_stops</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">seq</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/heavy_chain.html#HeavyChainSequence.check_stops"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.heavy_chain.HeavyChainSequence.check_stops" title="Link to this definition"></a></dt>
+<dd><p>Checks the given sequence for the presence of stop codons.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>seq</strong> (<em>str</em>) -- The nucleotide sequence to check for stop codons.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if a stop codon is found, False otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.heavy_chain.HeavyChainSequence.create_random">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">create_random</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataconfig</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><span class="pre">DataConfig</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/heavy_chain.html#HeavyChainSequence.create_random"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.heavy_chain.HeavyChainSequence.create_random" title="Link to this definition"></a></dt>
+<dd><p>Creates a random instance of <cite>HeavyChainSequence</cite> with randomly selected V, D, and J alleles from the given
+<cite>DataConfig</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- A <cite>DataConfig</cite> instance providing allele choices and other configuration data.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A new <cite>HeavyChainSequence</cite> instance with randomly chosen alleles and simulated sequence.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#GenAIRR.sequence.heavy_chain.HeavyChainSequence" title="GenAIRR.sequence.heavy_chain.HeavyChainSequence">HeavyChainSequence</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.heavy_chain.HeavyChainSequence.get_junction_length">
+<span class="sig-name descname"><span class="pre">get_junction_length</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/heavy_chain.html#HeavyChainSequence.get_junction_length"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.heavy_chain.HeavyChainSequence.get_junction_length" title="Link to this definition"></a></dt>
+<dd><p>Calculates the length of the junction region in the heavy chain sequence, taking into account
+the trimmed V, D, J segments and the NP1, NP2 regions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The total length of the junction region, including CDR3 and flanking conserved regions.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.heavy_chain.HeavyChainSequence.mutate">
+<span class="sig-name descname"><span class="pre">mutate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mutation_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.mutation.html#GenAIRR.mutation.mutation_model.MutationModel" title="GenAIRR.mutation.mutation_model.MutationModel"><span class="pre">MutationModel</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/heavy_chain.html#HeavyChainSequence.mutate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.heavy_chain.HeavyChainSequence.mutate" title="Link to this definition"></a></dt>
+<dd><p>Applies mutations to the heavy chain sequence using the given mutation model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>mutation_model</strong> (<a class="reference internal" href="GenAIRR.mutation.html#GenAIRR.mutation.mutation_model.MutationModel" title="GenAIRR.mutation.mutation_model.MutationModel"><em>MutationModel</em></a>) -- The mutation model to use for applying mutations to the sequence.</p>
+</dd>
+</dl>
+<dl class="simple">
+<dt>Updates:</dt><dd><p>The method updates the mutated sequence, mutations, mutation frequency, mutation count,
+junction sequence, and checks for functionality post-mutation.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.heavy_chain.HeavyChainSequence.simulate_sequence">
+<span class="sig-name descname"><span class="pre">simulate_sequence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataconfig</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><span class="pre">DataConfig</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/heavy_chain.html#HeavyChainSequence.simulate_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.heavy_chain.HeavyChainSequence.simulate_sequence" title="Link to this definition"></a></dt>
+<dd><p>Simulates the heavy chain sequence by trimming V, D, J alleles, adding NP1 and NP2 regions,
+and assembling the final sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- Configuration data for sequence simulation, including trimming dictionaries,</p></li>
+<li><p><strong>lengths</strong> (<em>NP</em>) -- </p></li>
+<li><p><strong>probabilities.</strong> (<em>and transition</em>) -- </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.heavy_chain.HeavyChainSequence.update_metadata">
+<span class="sig-name descname"><span class="pre">update_metadata</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/heavy_chain.html#HeavyChainSequence.update_metadata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.heavy_chain.HeavyChainSequence.update_metadata" title="Link to this definition"></a></dt>
+<dd><p>Updates the metadata for the heavy chain sequence, including the start and end positions
+of the V, D, and J segments.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.sequence.light_chain">
+<span id="genairr-sequence-light-chain-module"></span><h2>GenAIRR.sequence.light_chain module<a class="headerlink" href="#module-GenAIRR.sequence.light_chain" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainSequence">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.sequence.light_chain.</span></span><span class="sig-name descname"><span class="pre">LightChainSequence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">alleles</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dataconfig</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><span class="pre">DataConfig</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/light_chain.html#LightChainSequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainSequence" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#GenAIRR.sequence.sequence.BaseSequence" title="GenAIRR.sequence.sequence.BaseSequence"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseSequence</span></code></a></p>
+<p>Represents a light chain sequence in an immunoglobulin, including V and J segments and an NP region.</p>
+<p>This class extends <cite>BaseSequence</cite> to include functionality specific to light chain sequences, such as
+sequence simulation, mutation, and functionality checks based on junction properties.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>alleles</strong> (<em>list</em>) -- A list of <cite>Allele</cite> instances for the V and J gene segments.</p></li>
+<li><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- A <cite>DataConfig</cite> instance containing configuration data for sequence simulation.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">Inherits</span> <span class="pre">all</span> <span class="pre">attributes</span> <span class="pre">from</span> <span class="pre">`BaseSequence`</span> <span class="pre">and</span> <span class="pre">adds/modifies</span> <span class="pre">specific</span> <span class="pre">ones</span> <span class="pre">for</span> <span class="pre">light</span> <span class="pre">chain</span> <span class="pre">sequences.</span></span></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainSequence.check_stops">
+<span class="sig-name descname"><span class="pre">check_stops</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">seq</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/light_chain.html#LightChainSequence.check_stops"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainSequence.check_stops" title="Link to this definition"></a></dt>
+<dd><p>Checks the given sequence for the presence of stop codons.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>seq</strong> (<em>str</em>) -- The nucleotide sequence to check for stop codons.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if a stop codon is found, False otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainSequence.create_random">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">create_random</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataconfig</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><span class="pre">DataConfig</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/light_chain.html#LightChainSequence.create_random"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainSequence.create_random" title="Link to this definition"></a></dt>
+<dd><p>Creates a random instance of <cite>LightChainSequence</cite> with randomly selected V and J alleles from the given
+<cite>DataConfig</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- A <cite>DataConfig</cite> instance providing allele choices and other configuration data.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A new <cite>LightChainSequence</cite> instance with randomly chosen alleles and simulated sequence.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#GenAIRR.sequence.light_chain.LightChainSequence" title="GenAIRR.sequence.light_chain.LightChainSequence">LightChainSequence</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainSequence.get_junction_length">
+<span class="sig-name descname"><span class="pre">get_junction_length</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/light_chain.html#LightChainSequence.get_junction_length"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainSequence.get_junction_length" title="Link to this definition"></a></dt>
+<dd><p>Calculates the length of the junction region in the light chain sequence, taking into account
+the trimmed V and J segments and the NP1 region.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The total length of the junction region, including CDR3 and flanking conserved regions.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainSequence.mutate">
+<span class="sig-name descname"><span class="pre">mutate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mutation_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.mutation.html#GenAIRR.mutation.mutation_model.MutationModel" title="GenAIRR.mutation.mutation_model.MutationModel"><span class="pre">MutationModel</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/light_chain.html#LightChainSequence.mutate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainSequence.mutate" title="Link to this definition"></a></dt>
+<dd><p>Applies mutations to the light chain sequence using the given mutation model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>mutation_model</strong> (<a class="reference internal" href="GenAIRR.mutation.html#GenAIRR.mutation.mutation_model.MutationModel" title="GenAIRR.mutation.mutation_model.MutationModel"><em>MutationModel</em></a>) -- The mutation model to use for applying mutations to the sequence.</p>
+</dd>
+</dl>
+<dl class="simple">
+<dt>Updates:</dt><dd><p>The method updates the mutated sequence, mutations, mutation frequency, mutation count,
+junction sequence, and checks for functionality post-mutation.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainSequence.simulate_sequence">
+<span class="sig-name descname"><span class="pre">simulate_sequence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataconfig</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><span class="pre">DataConfig</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/light_chain.html#LightChainSequence.simulate_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainSequence.simulate_sequence" title="Link to this definition"></a></dt>
+<dd><p>Simulates the light chain sequence by trimming V and J alleles, adding an NP region,
+and assembling the final sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- Configuration data for sequence simulation, including trimming dictionaries,</p></li>
+<li><p><strong>lengths</strong> (<em>NP</em>) -- </p></li>
+<li><p><strong>probabilities.</strong> (<em>and transition</em>) -- </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainSequence.update_metadata">
+<span class="sig-name descname"><span class="pre">update_metadata</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/light_chain.html#LightChainSequence.update_metadata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainSequence.update_metadata" title="Link to this definition"></a></dt>
+<dd><p>Updates the metadata for the light chain sequence, including the start and end positions
+of the V and J segments.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainType">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.sequence.light_chain.</span></span><span class="sig-name descname"><span class="pre">LightChainType</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qualname</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">boundary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/light_chain.html#LightChainType"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainType" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Enum</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainType.KAPPA">
+<span class="sig-name descname"><span class="pre">KAPPA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></em><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainType.KAPPA" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.light_chain.LightChainType.LAMBDA">
+<span class="sig-name descname"><span class="pre">LAMBDA</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">2</span></em><a class="headerlink" href="#GenAIRR.sequence.light_chain.LightChainType.LAMBDA" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.sequence.np_region">
+<span id="genairr-sequence-np-region-module"></span><h2>GenAIRR.sequence.np_region module<a class="headerlink" href="#module-GenAIRR.sequence.np_region" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.sequence.np_region.NP_Region">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.sequence.np_region.</span></span><span class="sig-name descname"><span class="pre">NP_Region</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transition_probs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">first_base</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">length</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/np_region.html#NP_Region"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.np_region.NP_Region" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Represents an NP region in an immunoglobulin sequence, where the base
+transitions are determined by a first-order Markov chain with position-specific transition matrices.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.np_region.NP_Region.transition_probs">
+<span class="sig-name descname"><span class="pre">transition_probs</span></span><a class="headerlink" href="#GenAIRR.sequence.np_region.NP_Region.transition_probs" title="Link to this definition"></a></dt>
+<dd><p>A dictionary where keys are position indices and values are
+transition matrices (dict) indicating the probability of transitioning from one base to another.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.np_region.NP_Region.first_base">
+<span class="sig-name descname"><span class="pre">first_base</span></span><a class="headerlink" href="#GenAIRR.sequence.np_region.NP_Region.first_base" title="Link to this definition"></a></dt>
+<dd><p>The initial base of the NP region, used as the starting point for the Markov chain.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.np_region.NP_Region.length">
+<span class="sig-name descname"><span class="pre">length</span></span><a class="headerlink" href="#GenAIRR.sequence.np_region.NP_Region.length" title="Link to this definition"></a></dt>
+<dd><p>The total length of the NP region to be generated.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>transition_probs</strong> (<em>dict</em>) -- Position-specific transition probabilities for base changes.</p></li>
+<li><p><strong>first_base</strong> (<em>str</em>) -- The starting base of the NP region sequence.</p></li>
+<li><p><strong>length</strong> (<em>int</em>) -- The desired length of the NP region sequence.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.np_region.NP_Region.create_np_region">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">create_np_region</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">NP_lengths</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">NP_transitions</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">which_NP</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">first_base_dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/np_region.html#NP_Region.create_np_region"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.np_region.NP_Region.create_np_region" title="Link to this definition"></a></dt>
+<dd><p>Class method to generate an NP region sequence based on specified lengths, transitions,
+the type of NP region (NP1 or NP2), and initial base probabilities.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>NP_lengths</strong> (<em>dict</em>) -- A dictionary mapping NP region types (e.g., 'NP1', 'NP2') to
+their length distributions.</p></li>
+<li><p><strong>NP_transitions</strong> (<em>dict</em>) -- A dictionary mapping NP region types to their position-specific
+transition probabilities.</p></li>
+<li><p><strong>which_NP</strong> (<em>str</em>) -- Specifies the type of NP region ('NP1' or 'NP2') for which the sequence is generated.</p></li>
+<li><p><strong>first_base_dict</strong> (<em>dict</em>) -- A dictionary mapping NP region types to the distribution of possible
+initial bases.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The generated NP region sequence. Returns an empty string if the specified length is zero.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.np_region.NP_Region.generate_np_seq">
+<span class="sig-name descname"><span class="pre">generate_np_seq</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/np_region.html#NP_Region.generate_np_seq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.np_region.NP_Region.generate_np_seq" title="Link to this definition"></a></dt>
+<dd><p>Generates an NP region sequence using a first-order Markov chain based on the provided transition
+probabilities and initial base.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The generated NP region sequence. If the sequence generation is halted due to lack of data,
+the sequence is returned as is and its length is updated to reflect the actual generated length.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.np_region.NP_Region.next_base">
+<span class="sig-name descname"><span class="pre">next_base</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">current_base</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/np_region.html#NP_Region.next_base"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.np_region.NP_Region.next_base" title="Link to this definition"></a></dt>
+<dd><p>Determines the next base in the NP region sequence based on the current base and position
+using the provided transition probabilities.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>current_base</strong> (<em>str</em>) -- The current base in the sequence.</p></li>
+<li><p><strong>position</strong> (<em>int</em>) -- The current position in the NP region, used to select the appropriate transition matrix.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The next base in the sequence, chosen based on the transition probabilities.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.np_region.NP_Region.validate_next_base">
+<span class="sig-name descname"><span class="pre">validate_next_base</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">current_base</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/np_region.html#NP_Region.validate_next_base"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.np_region.NP_Region.validate_next_base" title="Link to this definition"></a></dt>
+<dd><p>Validates whether transition data is available for the current base at the given position,
+ensuring that the Markov chain can continue.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>current_base</strong> (<em>str</em>) -- The current base in the sequence.</p></li>
+<li><p><strong>position</strong> (<em>int</em>) -- The current position in the NP region.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if transition data is available and the sequence generation can continue, False otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.sequence.sequence">
+<span id="genairr-sequence-sequence-module"></span><h2>GenAIRR.sequence.sequence module<a class="headerlink" href="#module-GenAIRR.sequence.sequence" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.sequence.sequence.</span></span><span class="sig-name descname"><span class="pre">BaseSequence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">alleles</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/sequence.html#BaseSequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<p>Abstract base class representing a recombined Immunoglobulin (Ig) sequence,
+consisting of variable (V), diversity (D), and joining (J) gene segments.</p>
+<p>This class provides a template for creating and manipulating Ig sequences, including
+features like (NP) regions, junctions, and mutations.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.v_allele">
+<span class="sig-name descname"><span class="pre">v_allele</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.v_allele" title="Link to this definition"></a></dt>
+<dd><p>The V gene allele.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="GenAIRR.alleles.html#GenAIRR.alleles.allele.Allele" title="GenAIRR.alleles.allele.Allele">Allele</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.d_allele">
+<span class="sig-name descname"><span class="pre">d_allele</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.d_allele" title="Link to this definition"></a></dt>
+<dd><p>The D gene allele, if present.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="GenAIRR.alleles.html#GenAIRR.alleles.allele.Allele" title="GenAIRR.alleles.allele.Allele">Allele</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.j_allele">
+<span class="sig-name descname"><span class="pre">j_allele</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.j_allele" title="Link to this definition"></a></dt>
+<dd><p>The J gene allele.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="GenAIRR.alleles.html#GenAIRR.alleles.allele.Allele" title="GenAIRR.alleles.allele.Allele">Allele</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.NP1_region">
+<span class="sig-name descname"><span class="pre">NP1_region</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.NP1_region" title="Link to this definition"></a></dt>
+<dd><p>The nucleotide sequence of the NP1 region between V and D genes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.NP1_length">
+<span class="sig-name descname"><span class="pre">NP1_length</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.NP1_length" title="Link to this definition"></a></dt>
+<dd><p>The length of the NP1 region.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.NP2_region">
+<span class="sig-name descname"><span class="pre">NP2_region</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.NP2_region" title="Link to this definition"></a></dt>
+<dd><p>The nucleotide sequence of the NP2 region between D and J genes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.NP2_length">
+<span class="sig-name descname"><span class="pre">NP2_length</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.NP2_length" title="Link to this definition"></a></dt>
+<dd><p>The length of the NP2 region.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.ungapped_seq">
+<span class="sig-name descname"><span class="pre">ungapped_seq</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.ungapped_seq" title="Link to this definition"></a></dt>
+<dd><p>The complete ungapped nucleotide sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.gapped_seq">
+<span class="sig-name descname"><span class="pre">gapped_seq</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.gapped_seq" title="Link to this definition"></a></dt>
+<dd><p>The complete nucleotide sequence with gaps.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.mutated_seq">
+<span class="sig-name descname"><span class="pre">mutated_seq</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.mutated_seq" title="Link to this definition"></a></dt>
+<dd><p>The ungapped nucleotide sequence after applying mutations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.gapped_mutated_seq">
+<span class="sig-name descname"><span class="pre">gapped_mutated_seq</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.gapped_mutated_seq" title="Link to this definition"></a></dt>
+<dd><p>The gapped nucleotide sequence after applying mutations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.junction">
+<span class="sig-name descname"><span class="pre">junction</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.junction" title="Link to this definition"></a></dt>
+<dd><p>The nucleotide sequence of the junction region (CDR3 plus anchors).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.v_seq_start">
+<span class="sig-name descname"><span class="pre">v_seq_start</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.v_seq_start" title="Link to this definition"></a></dt>
+<dd><p>The start position of the V segment in the sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.d_seq_start">
+<span class="sig-name descname"><span class="pre">d_seq_start</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.d_seq_start" title="Link to this definition"></a></dt>
+<dd><p>The start position of the D segment in the sequence, if present.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.j_seq_start">
+<span class="sig-name descname"><span class="pre">j_seq_start</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.j_seq_start" title="Link to this definition"></a></dt>
+<dd><p>The start position of the J segment in the sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.v_seq_end">
+<span class="sig-name descname"><span class="pre">v_seq_end</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.v_seq_end" title="Link to this definition"></a></dt>
+<dd><p>The end position of the V segment in the sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.d_seq_end">
+<span class="sig-name descname"><span class="pre">d_seq_end</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.d_seq_end" title="Link to this definition"></a></dt>
+<dd><p>The end position of the D segment in the sequence, if present.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.j_seq_end">
+<span class="sig-name descname"><span class="pre">j_seq_end</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.j_seq_end" title="Link to this definition"></a></dt>
+<dd><p>The end position of the J segment in the sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.mutations">
+<span class="sig-name descname"><span class="pre">mutations</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.mutations" title="Link to this definition"></a></dt>
+<dd><p>A string representation of mutation events.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.mutation_count">
+<span class="sig-name descname"><span class="pre">mutation_count</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.mutation_count" title="Link to this definition"></a></dt>
+<dd><p>The total count of mutations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.mutation_freq">
+<span class="sig-name descname"><span class="pre">mutation_freq</span></span><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.mutation_freq" title="Link to this definition"></a></dt>
+<dd><p>The frequency of mutations in the sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>alleles</strong> (<em>List</em><em>[</em><a class="reference internal" href="GenAIRR.alleles.html#GenAIRR.alleles.allele.Allele" title="GenAIRR.alleles.allele.Allele"><em>Allele</em></a><em>]</em>) -- A list of  V, D (optional), and J gene alleles.</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.get_junction_length">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_junction_length</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/sequence.html#BaseSequence.get_junction_length"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.get_junction_length" title="Link to this definition"></a></dt>
+<dd><p>Abstract method to calculate the length of the junction region of the sequence.
+The junction region typically includes the CDR3 region along with conserved residues
+from V and J gene segments.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The length of the junction region in nucleotides.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.sequence.sequence.BaseSequence.simulate_sequence">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">simulate_sequence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataconfig</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><span class="pre">DataConfig</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/sequence/sequence.html#BaseSequence.simulate_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.sequence.sequence.BaseSequence.simulate_sequence" title="Link to this definition"></a></dt>
+<dd><p>Abstract method to simulate the recombined nucleotide sequence including V(D)J recombination,
+trimming, and NP region addition based on provided data configurations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- An instance of DataConfig containing all necessary parameters</p></li>
+<li><p><strong>simulation.</strong> (<em>and configurations for sequence</em>) -- </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The simulated nucleotide sequence, optionally including gaps.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.sequence">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-GenAIRR.sequence" title="Link to this heading"></a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="GenAIRR.mutation.html" class="btn btn-neutral float-left" title="GenAIRR.mutation package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="GenAIRR.simulation.html" class="btn btn-neutral float-right" title="GenAIRR.simulation package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Thomas Konstantinovsky &amp; Ayelet Peres.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

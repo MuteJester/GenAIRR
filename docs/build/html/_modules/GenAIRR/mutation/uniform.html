@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenAIRR.mutation.uniform &mdash; GenAIRR  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=92fd9be5" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=d048f138"></script>
+        <script src="../../../_static/doctools.js?v=888ff710"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            GenAIRR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">src</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">GenAIRR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">GenAIRR.mutation.uniform</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for GenAIRR.mutation.uniform</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">from</span> <span class="nn">..mutation.mutation_model</span> <span class="kn">import</span> <span class="n">MutationModel</span>
+
+
+<div class="viewcode-block" id="Uniform">
+<a class="viewcode-back" href="../../../GenAIRR.mutation.html#GenAIRR.mutation.uniform.Uniform">[docs]</a>
+<span class="k">class</span> <span class="nc">Uniform</span><span class="p">(</span><span class="n">MutationModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Implements a uniform mutation model as a subclass of MutationModel.</span>
+
+<span class="sd">    This mutation model applies mutations across the sequence at a uniform rate, ignoring non-polymorphic (NP) regions.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        min_mutation_rate (float): The minimum mutation rate to be considered when applying mutations.</span>
+<span class="sd">        max_mutation_rate (float): The maximum mutation rate to be considered when applying mutations.</span>
+<span class="sd">        bases (set): A set containing the nucleotide bases (&#39;A&#39;, &#39;T&#39;, &#39;C&#39;, &#39;G&#39;) used in mutations.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        min_mutation_rate (float): The minimum mutation rate, defaulting to 0.</span>
+<span class="sd">        max_mutation_rate (float): The maximum mutation rate, defaulting to 0.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">min_mutation_rate</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_mutation_rate</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the Uniform mutation model with specified minimum and maximum mutation rates.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_mutation_rate</span> <span class="o">=</span> <span class="n">max_mutation_rate</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">min_mutation_rate</span> <span class="o">=</span> <span class="n">min_mutation_rate</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bases</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;A&#39;</span><span class="p">,</span><span class="s1">&#39;T&#39;</span><span class="p">,</span><span class="s1">&#39;C&#39;</span><span class="p">,</span><span class="s1">&#39;G&#39;</span><span class="p">}</span>
+
+
+<div class="viewcode-block" id="Uniform.mutable_positions">
+<a class="viewcode-back" href="../../../GenAIRR.mutation.html#GenAIRR.mutation.uniform.Uniform.mutable_positions">[docs]</a>
+    <span class="k">def</span> <span class="nf">mutable_positions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">sequence</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Identifies mutable positions in the sequence, excluding (NP) regions.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            sequence (Sequence): The sequence object containing V, D, and J region start and end positions.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            list: A list of positions that are eligible for mutation, combining positions from V, D, and J regions.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">positions_to_mutate</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># add v region positions</span>
+        <span class="n">positions_to_mutate</span> <span class="o">+=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">sequence</span><span class="o">.</span><span class="n">v_seq_start</span><span class="p">,</span><span class="n">sequence</span><span class="o">.</span><span class="n">v_seq_end</span><span class="p">))</span>
+        <span class="n">positions_to_mutate</span> <span class="o">+=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">sequence</span><span class="o">.</span><span class="n">d_seq_start</span><span class="p">,</span><span class="n">sequence</span><span class="o">.</span><span class="n">d_seq_end</span><span class="p">))</span>
+        <span class="n">positions_to_mutate</span> <span class="o">+=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">sequence</span><span class="o">.</span><span class="n">j_seq_start</span><span class="p">,</span><span class="n">sequence</span><span class="o">.</span><span class="n">j_seq_end</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">positions_to_mutate</span></div>
+
+
+<div class="viewcode-block" id="Uniform.apply_mutation">
+<a class="viewcode-back" href="../../../GenAIRR.mutation.html#GenAIRR.mutation.uniform.Uniform.apply_mutation">[docs]</a>
+    <span class="k">def</span> <span class="nf">apply_mutation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sequence_object</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Applies mutations to the given sequence object based on the uniform mutation model.</span>
+
+<span class="sd">        The method randomly selects positions to mutate based on the calculated mutation rate and mutates them to a different base.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            sequence_object (Sequence): The sequence object to which mutations will be applied. It must have an &#39;ungapped_seq&#39; attribute.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            tuple: A tuple containing the mutated sequence, a dictionary of mutations with positions as keys and mutations as values, and the mutation rate.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sequence</span> <span class="o">=</span> <span class="n">sequence_object</span><span class="o">.</span><span class="n">ungapped_seq</span>
+        <span class="n">mutation_rate</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">min_mutation_rate</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_mutation_rate</span><span class="p">)</span>
+        <span class="n">number_of_mutations</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mutation_rate</span><span class="o">*</span><span class="nb">len</span><span class="p">(</span><span class="n">sequence</span><span class="p">))</span>
+        <span class="n">positions_to_mutate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mutable_positions</span><span class="p">(</span><span class="n">sequence_object</span><span class="p">)</span>
+        <span class="n">positions_to_mutate</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">positions_to_mutate</span><span class="p">,</span><span class="n">k</span><span class="o">=</span><span class="n">number_of_mutations</span><span class="p">)</span>
+
+        <span class="c1"># log mutations</span>
+        <span class="n">mutations</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+        <span class="n">mutated_sequence</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">sequence</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">position</span> <span class="ow">in</span> <span class="n">positions_to_mutate</span><span class="p">:</span>
+            <span class="n">new_base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mutate_base</span><span class="p">(</span><span class="n">mutated_sequence</span><span class="p">[</span><span class="n">position</span><span class="p">])</span>
+            <span class="n">mutations</span><span class="p">[</span><span class="n">position</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">mutated_sequence</span><span class="p">[</span><span class="n">position</span><span class="p">]</span><span class="si">}</span><span class="s1">&gt;</span><span class="si">{</span><span class="n">new_base</span><span class="si">}</span><span class="s1">&#39;</span>
+            <span class="n">mutated_sequence</span><span class="p">[</span><span class="n">position</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_base</span>
+
+        <span class="n">mutated_sequence</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">mutated_sequence</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">mutated_sequence</span><span class="p">,</span> <span class="n">mutations</span><span class="p">,</span> <span class="n">mutation_rate</span></div>
+
+
+    <span class="k">def</span> <span class="nf">_mutate_base</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Mutates a given nucleotide base to a different base.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            base (str): The original nucleotide base to be mutated.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: A new nucleotide base, different from the original.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bases</span> <span class="o">-</span> <span class="p">{</span><span class="n">base</span><span class="p">}))</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Thomas Konstantinovsky &amp; Ayelet Peres.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

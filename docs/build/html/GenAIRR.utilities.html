@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenAIRR.utilities package &mdash; GenAIRR  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=92fd9be5" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="_static/documentation_options.js?v=d048f138"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="GenAIRR.simulation package" href="GenAIRR.simulation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GenAIRR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">src</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="GenAIRR.html">GenAIRR package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="GenAIRR.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.alleles.html">GenAIRR.alleles package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.data.html">GenAIRR.data package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.mutation.html">GenAIRR.mutation package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.sequence.html">GenAIRR.sequence package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.simulation.html">GenAIRR.simulation package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">GenAIRR.utilities package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="GenAIRR.html#module-GenAIRR">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GenAIRR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">src</a></li>
+          <li class="breadcrumb-item"><a href="GenAIRR.html">GenAIRR package</a></li>
+      <li class="breadcrumb-item active">GenAIRR.utilities package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/GenAIRR.utilities.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="genairr-utilities-package">
+<h1>GenAIRR.utilities package<a class="headerlink" href="#genairr-utilities-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-GenAIRR.utilities.AlleleNComparer">
+<span id="genairr-utilities-allelencomparer-module"></span><h2>GenAIRR.utilities.AlleleNComparer module<a class="headerlink" href="#module-GenAIRR.utilities.AlleleNComparer" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.utilities.AlleleNComparer.AlleleNComparer">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.AlleleNComparer.</span></span><span class="sig-name descname"><span class="pre">AlleleNComparer</span></span><a class="reference internal" href="_modules/GenAIRR/utilities/AlleleNComparer.html#AlleleNComparer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.AlleleNComparer.AlleleNComparer" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>A class to compare alleles and find indistinguishable alleles based on specific positions.</p>
+<p>This class allows for the addition of alleles with their sequences, comparison of alleles to identify
+indistinguishable ones based on specified positions, and saving/loading of allele data.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.AlleleNComparer.AlleleNComparer.alleles">
+<span class="sig-name descname"><span class="pre">alleles</span></span><a class="headerlink" href="#GenAIRR.utilities.AlleleNComparer.AlleleNComparer.alleles" title="Link to this definition"></a></dt>
+<dd><p>A dictionary storing the sequences of each allele, with allele IDs as keys and sequences as values.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.utilities.AlleleNComparer.AlleleNComparer.add_allele">
+<span class="sig-name descname"><span class="pre">add_allele</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">allele_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/AlleleNComparer.html#AlleleNComparer.add_allele"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.AlleleNComparer.AlleleNComparer.add_allele" title="Link to this definition"></a></dt>
+<dd><p>Adds an allele and its sequence to the alleles dictionary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>allele_id</strong> (<em>str</em>) -- The unique identifier for the allele.</p></li>
+<li><p><strong>sequence</strong> (<em>str</em>) -- The nucleotide sequence of the allele.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.utilities.AlleleNComparer.AlleleNComparer.find_indistinguishable_alleles">
+<span class="sig-name descname"><span class="pre">find_indistinguishable_alleles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">allele_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_positions</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/AlleleNComparer.html#AlleleNComparer.find_indistinguishable_alleles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.AlleleNComparer.AlleleNComparer.find_indistinguishable_alleles" title="Link to this definition"></a></dt>
+<dd><p>Finds alleles that are indistinguishable from a specified allele, ignoring specified positions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>allele_id</strong> (<em>str</em>) -- The ID of the target allele to compare against.</p></li>
+<li><p><strong>n_positions</strong> (<em>list</em><em> or </em><em>set</em>) -- Positions to be ignored during the comparison.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A set of allele IDs that are indistinguishable from the specified allele, excluding the specified positions.
+str: An error message if the specified allele ID is not found in the alleles dictionary.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>set</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.utilities.AlleleNComparer.AlleleNComparer.load">
+<span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/AlleleNComparer.html#AlleleNComparer.load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.AlleleNComparer.AlleleNComparer.load" title="Link to this definition"></a></dt>
+<dd><p>Loads an alleles dictionary from a file using pickle for deserialization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>filename</strong> (<em>str</em>) -- The name of the file from which the alleles dictionary will be loaded.</p>
+</dd>
+</dl>
+<dl class="simple">
+<dt>Updates:</dt><dd><p>The method updates the alleles dictionary with the contents loaded from the file.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.utilities.AlleleNComparer.AlleleNComparer.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/AlleleNComparer.html#AlleleNComparer.save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.AlleleNComparer.AlleleNComparer.save" title="Link to this definition"></a></dt>
+<dd><p>Saves the alleles dictionary to a file using pickle for serialization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>filename</strong> (<em>str</em>) -- The name of the file where the alleles dictionary will be saved.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.utilities.asc_utilities">
+<span id="genairr-utilities-asc-utilities-module"></span><h2>GenAIRR.utilities.asc_utilities module<a class="headerlink" href="#module-GenAIRR.utilities.asc_utilities" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.asc_utilities.allele_diff">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.asc_utilities.</span></span><span class="sig-name descname"><span class="pre">allele_diff</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reference_allele</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sample_allele</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">snps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/asc_utilities.html#allele_diff"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.asc_utilities.allele_diff" title="Link to this definition"></a></dt>
+<dd><p>Identifies differences between two alleles, optionally considering only positions beyond a threshold and reporting single nucleotide polymorphisms (SNPs).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>reference_allele</strong> (<em>str</em>) -- The sequence of the reference allele.</p></li>
+<li><p><strong>sample_allele</strong> (<em>str</em>) -- The sequence of the sample allele to compare against the reference.</p></li>
+<li><p><strong>position_threshold</strong> (<em>int</em><em>, </em><em>optional</em>) -- The position from which to start comparing the sequences. Defaults to 0, which means comparison starts from the beginning.</p></li>
+<li><p><strong>snps</strong> (<em>bool</em><em>, </em><em>optional</em>) -- If True, differences are reported as SNPs in the format 'RefPositionSample'. If False, only the positions of differences are reported. Defaults to True.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A list of SNPs or position indices where the two alleles differ, considering the specified threshold and SNP reporting preference.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.asc_utilities.asc_clust">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.asc_utilities.</span></span><span class="sig-name descname"><span class="pre">asc_clust</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">germline_distance</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">germline_set</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">family_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">75</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allele_cluster_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">95</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">trim_3prime_side</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">318</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/asc_utilities.html#asc_clust"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.asc_utilities.asc_clust" title="Link to this definition"></a></dt>
+<dd><p>Performs hierarchical clustering on alleles based on their Hamming distances and classifies them into families and allele clusters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>germline_distance</strong> (<em>ndarray</em>) -- A square matrix of pairwise Hamming distances between alleles.</p></li>
+<li><p><strong>germline_set</strong> (<em>dict</em>) -- A dictionary of allele sequences with allele names as keys.</p></li>
+<li><p><strong>family_threshold</strong> (<em>int</em><em>, </em><em>optional</em>) -- The distance threshold for classifying alleles into families. Defaults to 75.</p></li>
+<li><p><strong>allele_cluster_threshold</strong> (<em>int</em><em>, </em><em>optional</em>) -- The distance threshold for classifying alleles within families into clusters. Defaults to 95.</p></li>
+<li><p><strong>trim_3prime_side</strong> (<em>int</em><em>, </em><em>optional</em>) -- The position up to which sequences should be considered for clustering. Defaults to 318.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A pandas DataFrame with columns for family and allele cluster assignments, allele names, and additional columns for duplicated alleles and differences past the trim position.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.asc_utilities.asc_dict">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.asc_utilities.</span></span><span class="sig-name descname"><span class="pre">asc_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">allele_cluster_table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">germline_set</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/asc_utilities.html#asc_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.asc_utilities.asc_dict" title="Link to this definition"></a></dt>
+<dd><p>Converts an allele cluster table into a dictionary of VAllele objects organized by allele cluster sequence (ASC).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>allele_cluster_table</strong> (<em>DataFrame</em>) -- A pandas DataFrame containing allele family and cluster assignments.</p></li>
+<li><p><strong>germline_set</strong> (<em>dict</em>) -- A dictionary of original allele sequences with allele names as keys.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A dictionary where keys are ASC identifiers and values are lists of VAllele objects belonging to each ASC.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>defaultdict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.asc_utilities.asc_distance">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.asc_utilities.</span></span><span class="sig-name descname"><span class="pre">asc_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">germline_set</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">trim_3prime_side</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">318</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/asc_utilities.html#asc_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.asc_utilities.asc_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculates the pairwise Hamming distances between alleles in a set, optionally trimming sequences to a specified length before comparison.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>germline_set</strong> (<em>dict</em>) -- A dictionary of allele sequences with allele names as keys.</p></li>
+<li><p><strong>trim_3prime_side</strong> (<em>int</em><em>, </em><em>optional</em>) -- The position up to which sequences should be considered. If None, the entire length is used. Defaults to 318.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A square matrix of Hamming distances between all pairs of alleles in the set.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.asc_utilities.create_asc_germline_set">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.asc_utilities.</span></span><span class="sig-name descname"><span class="pre">create_asc_germline_set</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user_reference</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">segment</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'V'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">trim_3prime_side</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">318</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">family_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">75</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allele_cluster_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">95</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/asc_utilities.html#create_asc_germline_set"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.asc_utilities.create_asc_germline_set" title="Link to this definition"></a></dt>
+<dd><p>Creates an ASC (Allele Sequence Cluster) germline set from a user-provided reference, applying trimming and clustering thresholds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>user_reference</strong> (<em>dict</em><em> or </em><em>path</em>) -- A dictionary of allele sequences or a path to a fasta file containing alleles.</p></li>
+<li><p><strong>segment</strong> (<em>str</em><em>, </em><em>optional</em>) -- The segment type to consider (e.g., &quot;V&quot;). Defaults to &quot;V&quot;.</p></li>
+<li><p><strong>trim_3prime_side</strong> (<em>int</em><em>, </em><em>optional</em>) -- The position up to which sequences should be considered for clustering. Defaults to 318.</p></li>
+<li><p><strong>family_threshold</strong> (<em>int</em><em>, </em><em>optional</em>) -- The distance threshold for classifying alleles into families. Defaults to 75.</p></li>
+<li><p><strong>allele_cluster_threshold</strong> (<em>int</em><em>, </em><em>optional</em>) -- The distance threshold for classifying alleles within families into clusters. Defaults to 95.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A tuple containing the ASC germline set dictionary and the allele cluster table DataFrame.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.asc_utilities.hamming_distance">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.asc_utilities.</span></span><span class="sig-name descname"><span class="pre">hamming_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">s2</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/asc_utilities.html#hamming_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.asc_utilities.hamming_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculates the Hamming distance between two sequences, ignoring positions with 'N' and gaps represented by '.'.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>s1</strong> (<em>str</em>) -- The first sequence for comparison.</p></li>
+<li><p><strong>s2</strong> (<em>str</em>) -- The second sequence for comparison.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The Hamming distance between the two sequences, normalized by the number of comparable positions (excluding gaps).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.asc_utilities.profile">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.asc_utilities.</span></span><span class="sig-name descname"><span class="pre">profile</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fasta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/asc_utilities.html#profile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.asc_utilities.profile" title="Link to this definition"></a></dt>
+<dd><p>Profiles the performance of the ASC germline set creation process using a fasta file or dictionary of alleles.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>fasta</strong> (<em>dict</em><em> or </em><em>path</em>) -- A dictionary of allele sequences or a path to a fasta file containing alleles.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.asc_utilities.test_asc">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.asc_utilities.</span></span><span class="sig-name descname"><span class="pre">test_asc</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fasta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/asc_utilities.html#test_asc"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.asc_utilities.test_asc" title="Link to this definition"></a></dt>
+<dd><p>Tests the ASC germline set creation process using a fasta file or dictionary of alleles.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>fasta</strong> (<em>dict</em><em> or </em><em>path</em>) -- A dictionary of allele sequences or a path to a fasta file containing alleles.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A dictionary representing the ASC germline set.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>defaultdict</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.utilities.data_config">
+<span id="genairr-utilities-data-config-module"></span><h2>GenAIRR.utilities.data_config module<a class="headerlink" href="#module-GenAIRR.utilities.data_config" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.data_config.</span></span><span class="sig-name descname"><span class="pre">DataConfig</span></span><a class="reference internal" href="_modules/GenAIRR/utilities/data_config.html#DataConfig"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Configuration class for storing data related to sequence generation, allele usage, trimming, and mutation rates.</p>
+<p>This class encapsulates various dictionaries and settings used in the simulation and analysis of immunoglobulin sequences, including information about gene usage, trimming preferences, non-polymorphic (NP) region transitions, k-mer dictionaries, and allele-specific corrections.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.family_use_dict">
+<span class="sig-name descname"><span class="pre">family_use_dict</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.family_use_dict" title="Link to this definition"></a></dt>
+<dd><p>A dictionary specifying the usage frequencies of gene families.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.gene_use_dict">
+<span class="sig-name descname"><span class="pre">gene_use_dict</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.gene_use_dict" title="Link to this definition"></a></dt>
+<dd><p>A dictionary specifying the usage frequencies of individual genes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.trim_dicts">
+<span class="sig-name descname"><span class="pre">trim_dicts</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.trim_dicts" title="Link to this definition"></a></dt>
+<dd><p>A dictionary containing information on how to trim each gene segment (V, D, J).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.NP_transitions">
+<span class="sig-name descname"><span class="pre">NP_transitions</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.NP_transitions" title="Link to this definition"></a></dt>
+<dd><p>A dictionary detailing the transition probabilities for bases in NP regions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.NP_first_bases">
+<span class="sig-name descname"><span class="pre">NP_first_bases</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.NP_first_bases" title="Link to this definition"></a></dt>
+<dd><p>A dictionary specifying the probabilities of the first base in NP regions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.NP_lengths">
+<span class="sig-name descname"><span class="pre">NP_lengths</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.NP_lengths" title="Link to this definition"></a></dt>
+<dd><p>A dictionary defining the distribution of lengths for NP regions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.mut_rate_per_seq">
+<span class="sig-name descname"><span class="pre">mut_rate_per_seq</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.mut_rate_per_seq" title="Link to this definition"></a></dt>
+<dd><p>A dictionary specifying the mutation rate per sequence for simulating mutations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.kmer_dicts">
+<span class="sig-name descname"><span class="pre">kmer_dicts</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.kmer_dicts" title="Link to this definition"></a></dt>
+<dd><p>A dictionary of k-mer dictionaries used for various analyses or simulations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">v_alleles,</span> <span class="pre">d_alleles,</span> <span class="pre">j_alleles</span></span></dt>
+<dd><p>family seperated dictionary of lists for storing allele information for V, D, and J gene segments, respectively.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.correction_maps">
+<span class="sig-name descname"><span class="pre">correction_maps</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.correction_maps" title="Link to this definition"></a></dt>
+<dd><p>A dictionary for storing maps used for correction or adjustment of sequences or simulation parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_config.DataConfig.asc_tables">
+<span class="sig-name descname"><span class="pre">asc_tables</span></span><a class="headerlink" href="#GenAIRR.utilities.data_config.DataConfig.asc_tables" title="Link to this definition"></a></dt>
+<dd><p>A dictionary for storing allele sequence cluster (ASC) tables, which group alleles based on sequence similarity and other criteria.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.utilities.data_utilities">
+<span id="genairr-utilities-data-utilities-module"></span><h2>GenAIRR.utilities.data_utilities module<a class="headerlink" href="#module-GenAIRR.utilities.data_utilities" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.data_utilities.create_allele_dict">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.data_utilities.</span></span><span class="sig-name descname"><span class="pre">create_allele_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fasta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/data_utilities.html#create_allele_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.data_utilities.create_allele_dict" title="Link to this definition"></a></dt>
+<dd><p>Constructs a dictionary that maps immunoglobulin gene types (V, D, or J) to their corresponding alleles,
+based on a provided IMGT-formatted reference FASTA file.</p>
+<p>Parameters:
+- fasta (file): A FASTA file that includes reference alleles for V, D, or J immunoglobulin genes,</p>
+<blockquote>
+<div><p>with sequences gapped as per IMGT guidelines. The headers of these sequences should comply with
+IMGT formatting standards.</p>
+</div></blockquote>
+<p>Returns:
+- allele_dict (dict): Returns a dictionary where keys are the gene types (V, D, or J) and the values</p>
+<blockquote>
+<div><p>are lists containing instances of the Allele class for each allele. This dictionary includes only
+alleles identified as functional or as open reading frames, indicated by &quot;F&quot; or &quot;ORF&quot; in their
+sequence headers, formatted as {Gene: [Allele, Allele, ...]}.</p>
+</div></blockquote>
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.utilities.file_utilities">
+<span id="genairr-utilities-file-utilities-module"></span><h2>GenAIRR.utilities.file_utilities module<a class="headerlink" href="#module-GenAIRR.utilities.file_utilities" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.file_utilities.parse_fasta">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.file_utilities.</span></span><span class="sig-name descname"><span class="pre">parse_fasta</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/file_utilities.html#parse_fasta"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.file_utilities.parse_fasta" title="Link to this definition"></a></dt>
+<dd><p>Parses a FASTA format file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file</strong> (<em>file</em>) -- A FASTA formatted file, each sequence is expected to have a
+header line starting with &quot;&gt;&quot;.</p>
+</dd>
+<dt class="field-even">Yields<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>generator</em> -- A generator object that produces each header and sequence</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.utilities.misc">
+<span id="genairr-utilities-misc-module"></span><h2>GenAIRR.utilities.misc module<a class="headerlink" href="#module-GenAIRR.utilities.misc" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.misc.translate">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.misc.</span></span><span class="sig-name descname"><span class="pre">translate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">seq</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/misc.html#translate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.misc.translate" title="Link to this definition"></a></dt>
+<dd><p>Translates a nucleotide sequence into a corresponding amino acid sequence using the standard genetic code.</p>
+<p>This function translates codons (three nucleotides) into amino acids and handles incomplete codons by adding a '.' symbol. Special symbols ('.', '-', 'N') in the sequence are handled as follows: '.' is replaced with '_', '-' with 'X', and 'N' with 'X'. Stop codons are represented by '*'.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>seq</strong> (<em>str</em>) -- The nucleotide sequence to be translated. The sequence should be a string of 'A', 'T', 'C', 'G', 'N', '.', or '-' characters.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The translated amino acid sequence. Amino acids are represented by their one-letter codes. Incomplete codons, gaps, and unknown nucleotides are represented by '.', 'X', and 'X', respectively.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.misc.weighted_choice">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.misc.</span></span><span class="sig-name descname"><span class="pre">weighted_choice</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">choices</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/misc.html#weighted_choice"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.misc.weighted_choice" title="Link to this definition"></a></dt>
+<dd><p>Selects a key from a dictionary of choices based on their associated weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>choices</strong> (<em>dict</em>) -- A dictionary where keys are the choices to select from and values are the weights of each choice.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A randomly selected key from the dictionary, where the probability of each key is weighted according to its associated value.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Any</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="GenAIRR.utilities.misc.weighted_choice_zero_break">
+<span class="sig-prename descclassname"><span class="pre">GenAIRR.utilities.misc.</span></span><span class="sig-name descname"><span class="pre">weighted_choice_zero_break</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">choices</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/utilities/misc.html#weighted_choice_zero_break"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.utilities.misc.weighted_choice_zero_break" title="Link to this definition"></a></dt>
+<dd><p>Selects a key from a dictionary of choices based on their associated weights, returning zero if the choices dictionary is empty.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>choices</strong> (<em>dict</em>) -- A dictionary where keys are the choices to select from and values are the weights of each choice.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A randomly selected key from the dictionary, where the probability of each key is weighted according to its associated value, or zero if the dictionary is empty.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Any</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.utilities">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-GenAIRR.utilities" title="Link to this heading"></a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="GenAIRR.simulation.html" class="btn btn-neutral float-left" title="GenAIRR.simulation package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Thomas Konstantinovsky &amp; Ayelet Peres.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

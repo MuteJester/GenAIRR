@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenAIRR.simulation package &mdash; GenAIRR  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=92fd9be5" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="_static/documentation_options.js?v=d048f138"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="GenAIRR.utilities package" href="GenAIRR.utilities.html" />
+    <link rel="prev" title="GenAIRR.sequence package" href="GenAIRR.sequence.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GenAIRR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">src</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="GenAIRR.html">GenAIRR package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="GenAIRR.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.alleles.html">GenAIRR.alleles package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.data.html">GenAIRR.data package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.mutation.html">GenAIRR.mutation package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.sequence.html">GenAIRR.sequence package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">GenAIRR.simulation package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="GenAIRR.utilities.html">GenAIRR.utilities package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="GenAIRR.html#module-GenAIRR">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GenAIRR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">src</a></li>
+          <li class="breadcrumb-item"><a href="GenAIRR.html">GenAIRR package</a></li>
+      <li class="breadcrumb-item active">GenAIRR.simulation package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/GenAIRR.simulation.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="genairr-simulation-package">
+<h1>GenAIRR.simulation package<a class="headerlink" href="#genairr-simulation-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-GenAIRR.simulation.heavy_chain_sequence_augmentor">
+<span id="genairr-simulation-heavy-chain-sequence-augmentor-module"></span><h2>GenAIRR.simulation.heavy_chain_sequence_augmentor module<a class="headerlink" href="#module-GenAIRR.simulation.heavy_chain_sequence_augmentor" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.simulation.heavy_chain_sequence_augmentor.</span></span><span class="sig-name descname"><span class="pre">HeavyChainSequenceAugmentor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataconfig:</span> <span class="pre">~GenAIRR.utilities.data_config.DataConfig</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args:</span> <span class="pre">~GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments</span> <span class="pre">=</span> <span class="pre">SequenceAugmentorArguments(min_mutation_rate=0.003</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mutation_rate=0.25</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_ratio=0.02</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_sequence_length=512</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mutation_model=&lt;class</span> <span class="pre">'GenAIRR.mutation.s5f.S5F'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">custom_mutation_model_path=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_coefficient=210</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_remove_coefficient=310</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_after_remove_coefficient=50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_sequence_add_proba=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">single_base_stream_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duplicate_leading_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_allele_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">corrupt_proba=0.7</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">short_d_length=5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_lambda_ratio=0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_mutations_record=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_ns_record=False)</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase" title="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceAugmentorBase</span></code></a></p>
+<p>Augmentor class for simulating and augmenting heavy chain immunoglobulin sequences.</p>
+<p>This class extends the SequenceAugmentorBase to include functionalities specific to heavy chain sequences,
+such as handling V, D, and J gene segments, and applying heavy chain-specific corrections and augmentations.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.alleles_used">
+<span class="sig-name descname"><span class="pre">alleles_used</span></span><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.alleles_used" title="Link to this definition"></a></dt>
+<dd><p>List of gene segment types used in heavy chain sequences, typically including 'v', 'd', and 'j'.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- Configuration object containing allele information and simulation parameters.</p></li>
+<li><p><strong>args</strong> (<a class="reference internal" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments" title="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments"><em>SequenceAugmentorArguments</em></a>) -- Object containing arguments for sequence simulation and augmentation.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id0">
+<span class="sig-name descname"><span class="pre">alleles_used</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">['v',</span> <span class="pre">'d',</span> <span class="pre">'j']</span></em><a class="headerlink" href="#id0" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.apply_deletion">
+<span class="sig-name descname"><span class="pre">apply_deletion</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor.apply_deletion"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.apply_deletion" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.attribute_position">
+<span class="sig-name descname"><span class="pre">attribute_position</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor.attribute_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.attribute_position" title="Link to this definition"></a></dt>
+<dd><p>Determines the gene segment (V, D, J, or NP regions) associated with a given position in a simulated heavy chain sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>simulated</strong> (<em>dict</em>) -- Dictionary containing the simulated sequence and its metadata.</p></li>
+<li><p><strong>position</strong> (<em>int</em>) -- The position within the sequence to be attributed.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The gene segment or region ('v', 'd', 'j', 'np1', 'np2') associated with the given position.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> -- If the position does not fall within the defined segments or regions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.correct_for_d_trims">
+<span class="sig-name descname"><span class="pre">correct_for_d_trims</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor.correct_for_d_trims"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.correct_for_d_trims" title="Link to this definition"></a></dt>
+<dd><p>Adjusts the D allele choices in the simulated sequence based on 5' and 3' trimming information.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulated</strong> (<em>dict</em>) -- Dictionary containing the simulated sequence and its metadata, including D allele trims.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.fix_d_position_after_trimming_index_ambiguity">
+<span class="sig-name descname"><span class="pre">fix_d_position_after_trimming_index_ambiguity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulation</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor.fix_d_position_after_trimming_index_ambiguity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.fix_d_position_after_trimming_index_ambiguity" title="Link to this definition"></a></dt>
+<dd><p>Corrects the start and end positions of the D gene segment in the simulated sequence to resolve ambiguities caused by trimming events.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulation</strong> (<em>dict</em>) -- Dictionary containing the simulated sequence and its metadata, including D allele positions and trimming details.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.load_correction_maps">
+<span class="sig-name descname"><span class="pre">load_correction_maps</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor.load_correction_maps"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.load_correction_maps" title="Link to this definition"></a></dt>
+<dd><p>Loads correction maps for V and D gene segments from the configuration object.</p>
+<p>These maps are used to adjust allele choices based on trimming events and to resolve ambiguities caused by similar alleles.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.short_d_validation">
+<span class="sig-name descname"><span class="pre">short_d_validation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor.short_d_validation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.short_d_validation" title="Link to this definition"></a></dt>
+<dd><p>Validates the length of the D gene segment in the simulated sequence. If the segment is shorter than a predefined threshold, it is labeled as &quot;Short-D&quot;.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulated</strong> (<em>dict</em>) -- Dictionary containing the simulated sequence and its metadata.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.simulate_augmented_sequence">
+<span class="sig-name descname"><span class="pre">simulate_augmented_sequence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor.simulate_augmented_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.simulate_augmented_sequence" title="Link to this definition"></a></dt>
+<dd><p>Generates an augmented heavy chain sequence, applying sequence corrections, potential corruption events at the beginning, and insertion of 'N' bases.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A dictionary containing the augmented sequence and associated metadata, ready for further analysis or training processes.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.simulate_sequence">
+<span class="sig-name descname"><span class="pre">simulate_sequence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/heavy_chain_sequence_augmentor.html#HeavyChainSequenceAugmentor.simulate_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.heavy_chain_sequence_augmentor.HeavyChainSequenceAugmentor.simulate_sequence" title="Link to this definition"></a></dt>
+<dd><p>Simulates a heavy chain sequence, applying mutations and generating relevant metadata.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A dictionary containing the simulated sequence, its metadata including gene segment positions, alleles, mutation rate, and trimming information.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.simulation.light_chain_sequence_augmentor">
+<span id="genairr-simulation-light-chain-sequence-augmentor-module"></span><h2>GenAIRR.simulation.light_chain_sequence_augmentor module<a class="headerlink" href="#module-GenAIRR.simulation.light_chain_sequence_augmentor" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainKappaLambdaSequenceAugmentor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.simulation.light_chain_sequence_augmentor.</span></span><span class="sig-name descname"><span class="pre">LightChainKappaLambdaSequenceAugmentor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lambda_dataconfig:</span> <span class="pre">~GenAIRR.utilities.data_config.DataConfig</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_dataconfig:</span> <span class="pre">~GenAIRR.utilities.data_config.DataConfig</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lambda_args:</span> <span class="pre">~GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments</span> <span class="pre">=</span> <span class="pre">SequenceAugmentorArguments(min_mutation_rate=0.003</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mutation_rate=0.25</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_ratio=0.02</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_sequence_length=512</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mutation_model=&lt;class</span> <span class="pre">'GenAIRR.mutation.s5f.S5F'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">custom_mutation_model_path=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_coefficient=210</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_remove_coefficient=310</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_after_remove_coefficient=50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_sequence_add_proba=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">single_base_stream_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duplicate_leading_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_allele_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">corrupt_proba=0.7</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">short_d_length=5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_lambda_ratio=0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_mutations_record=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_ns_record=False)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_args:</span> <span class="pre">~GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments</span> <span class="pre">=</span> <span class="pre">SequenceAugmentorArguments(min_mutation_rate=0.003</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mutation_rate=0.25</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_ratio=0.02</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_sequence_length=512</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mutation_model=&lt;class</span> <span class="pre">'GenAIRR.mutation.s5f.S5F'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">custom_mutation_model_path=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_coefficient=210</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_remove_coefficient=310</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_after_remove_coefficient=50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_sequence_add_proba=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">single_base_stream_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duplicate_leading_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_allele_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">corrupt_proba=0.7</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">short_d_length=5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_lambda_ratio=0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_mutations_record=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_ns_record=False)</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainKappaLambdaSequenceAugmentor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainKappaLambdaSequenceAugmentor" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>A class for augmenting both kappa and lambda light chain immunoglobulin sequences.</p>
+<p>This class manages two separate augmentors for kappa and lambda chains, allowing for the simulation of sequences based on a specified kappa to lambda ratio.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>lambda_dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- The data configuration object for lambda chain sequence simulation.</p></li>
+<li><p><strong>kappa_dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- The data configuration object for kappa chain sequence simulation.</p></li>
+<li><p><strong>lambda_args</strong> (<a class="reference internal" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments" title="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments"><em>SequenceAugmentorArguments</em></a>) -- The arguments object containing simulation parameters for lambda chains.</p></li>
+<li><p><strong>kappa_args</strong> (<a class="reference internal" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments" title="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments"><em>SequenceAugmentorArguments</em></a>) -- The arguments object containing simulation parameters for kappa chains.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainKappaLambdaSequenceAugmentor.columns">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">columns</span></span><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainKappaLambdaSequenceAugmentor.columns" title="Link to this definition"></a></dt>
+<dd><p>Provides a list of column names expected in the output of the simulate_augmented_sequence method.</p>
+<p>The column names are derived from the kappa chain augmentor, assuming both kappa and lambda augmentors produce the same set of columns.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A list of strings representing the column names in the augmented sequence output.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainKappaLambdaSequenceAugmentor.simulate_augmented_sequence">
+<span class="sig-name descname"><span class="pre">simulate_augmented_sequence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainKappaLambdaSequenceAugmentor.simulate_augmented_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainKappaLambdaSequenceAugmentor.simulate_augmented_sequence" title="Link to this definition"></a></dt>
+<dd><p>Simulates and augments either a kappa or lambda light chain sequence based on a predefined kappa to lambda ratio.</p>
+<p>Randomly chooses between kappa and lambda chain types to simulate a sequence accordingly.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A dictionary containing the augmented sequence and associated metadata for the chosen chain type.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.simulation.light_chain_sequence_augmentor.</span></span><span class="sig-name descname"><span class="pre">LightChainSequenceAugmentor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataconfig:</span> <span class="pre">~GenAIRR.utilities.data_config.DataConfig</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args:</span> <span class="pre">~GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments</span> <span class="pre">=</span> <span class="pre">SequenceAugmentorArguments(min_mutation_rate=0.003</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mutation_rate=0.25</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_ratio=0.02</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_sequence_length=512</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mutation_model=&lt;class</span> <span class="pre">'GenAIRR.mutation.s5f.S5F'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">custom_mutation_model_path=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_coefficient=210</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_remove_coefficient=310</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_after_remove_coefficient=50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_sequence_add_proba=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">single_base_stream_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duplicate_leading_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_allele_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">corrupt_proba=0.7</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">short_d_length=5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_lambda_ratio=0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_mutations_record=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_ns_record=False)</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase" title="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceAugmentorBase</span></code></a></p>
+<p>A class for augmenting light chain immunoglobulin sequences, extending the capabilities of the SequenceAugmentorBase class.</p>
+<p>This class specifically handles the augmentation of light chain sequences, taking into account the unique aspects of kappa and lambda light chains.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.alleles_used">
+<span class="sig-name descname"><span class="pre">alleles_used</span></span><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.alleles_used" title="Link to this definition"></a></dt>
+<dd><p>Specifies the alleles ('v', 'j') used in light chain sequences.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- The data configuration object containing settings for sequence simulation.</p></li>
+<li><p><strong>args</strong> (<a class="reference internal" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments" title="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments"><em>SequenceAugmentorArguments</em></a>) -- The arguments object containing simulation parameters.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.add_event">
+<span class="sig-name descname"><span class="pre">add_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">amount</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.add_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.add_event" title="Link to this definition"></a></dt>
+<dd><p>Simulates the addition of bases to the beginning of a light chain sequence, updating metadata to reflect the changes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata.</p></li>
+<li><p><strong>amount</strong> (<em>int</em><em>, </em><em>optional</em>) -- The number of bases to add. If not specified, the amount is sampled from a configured distribution.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id1">
+<span class="sig-name descname"><span class="pre">alleles_used</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">['v',</span> <span class="pre">'j']</span></em><a class="headerlink" href="#id1" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.attribute_position">
+<span class="sig-name descname"><span class="pre">attribute_position</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.attribute_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.attribute_position" title="Link to this definition"></a></dt>
+<dd><p>Determines the region (V, NP1, J) of a given position in a simulated light chain sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata.</p></li>
+<li><p><strong>position</strong> (<em>int</em>) -- The position in the sequence to be attributed.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The region name ('v', 'np1', 'j') corresponding to the given position.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> -- If the position does not fall within defined sequence regions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.fix_j_position_after_trimming_index_ambiguity">
+<span class="sig-name descname"><span class="pre">fix_j_position_after_trimming_index_ambiguity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulation</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.fix_j_position_after_trimming_index_ambiguity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.fix_j_position_after_trimming_index_ambiguity" title="Link to this definition"></a></dt>
+<dd><p>Corrects the J gene segment start position in the simulated sequence to address possible overlaps between the generated junction and the reference following a trimming event.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulation</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata, including J allele positions and trimming information.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.fix_v_position_after_trimming_index_ambiguity">
+<span class="sig-name descname"><span class="pre">fix_v_position_after_trimming_index_ambiguity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulation</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.fix_v_position_after_trimming_index_ambiguity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.fix_v_position_after_trimming_index_ambiguity" title="Link to this definition"></a></dt>
+<dd><p>Adjusts the V gene segment end position in the simulated sequence to account for potential overlaps between the generated junction and the reference after a trimming event.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulation</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata, including V allele positions and trimming details.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.load_correction_maps">
+<span class="sig-name descname"><span class="pre">load_correction_maps</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.load_correction_maps"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.load_correction_maps" title="Link to this definition"></a></dt>
+<dd><p>Loads allele correction maps for V gene segment start and end positions to account for similarities between different alleles after trimming events.</p>
+<p>These maps help in adjusting allele choices based on the amount removed from the start or end of a given allele, identifying equally likely options.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.remove_before_add_event">
+<span class="sig-name descname"><span class="pre">remove_before_add_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.remove_before_add_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.remove_before_add_event" title="Link to this definition"></a></dt>
+<dd><p>Simulates a sequence modification event where a portion is first removed from the start of the sequence, and then bases are added, updating metadata accordingly.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.remove_event">
+<span class="sig-name descname"><span class="pre">remove_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.remove_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.remove_event" title="Link to this definition"></a></dt>
+<dd><p>Simulates the removal of a portion of the sequence from the beginning for a light chain sequence, updating metadata to reflect the changes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.simulate_augmented_sequence">
+<span class="sig-name descname"><span class="pre">simulate_augmented_sequence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.simulate_augmented_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.simulate_augmented_sequence" title="Link to this definition"></a></dt>
+<dd><p>Simulates and augments a light chain sequence, incorporating sequence corrections, potential corruption at the beginning, and insertion of 'N' bases.</p>
+<blockquote>
+<div><dl class="simple">
+<dt>Returns:</dt><dd><p>dict: A dictionary containing the augmented sequence and associated metadata.</p>
+</dd>
+</dl>
+</div></blockquote>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.simulate_sequence">
+<span class="sig-name descname"><span class="pre">simulate_sequence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/light_chain_sequence_augmentor.html#LightChainSequenceAugmentor.simulate_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.light_chain_sequence_augmentor.LightChainSequenceAugmentor.simulate_sequence" title="Link to this definition"></a></dt>
+<dd><p>Simulates a light chain sequence, applying mutations according to the configured mutation model.</p>
+<blockquote>
+<div><p>This method generates a random light chain sequence, mutates it, and compiles relevant metadata into a dictionary.</p>
+<dl class="simple">
+<dt>Returns:</dt><dd><p>dict: A dictionary containing the simulated sequence, mutation rate, trimming details, and allele information.</p>
+</dd>
+</dl>
+</div></blockquote>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.simulation.sequence_augmentor_base">
+<span id="genairr-simulation-sequence-augmentor-base-module"></span><h2>GenAIRR.simulation.sequence_augmentor_base module<a class="headerlink" href="#module-GenAIRR.simulation.sequence_augmentor_base" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.Event">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.simulation.sequence_augmentor_base.</span></span><span class="sig-name descname"><span class="pre">Event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qualname</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">boundary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#Event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.Event" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Enum</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.Event.Add">
+<span class="sig-name descname"><span class="pre">Add</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">2</span></em><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.Event.Add" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.Event.Remove">
+<span class="sig-name descname"><span class="pre">Remove</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></em><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.Event.Remove" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.Event.Remove_Before_Add">
+<span class="sig-name descname"><span class="pre">Remove_Before_Add</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">3</span></em><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.Event.Remove_Before_Add" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.simulation.sequence_augmentor_base.</span></span><span class="sig-name descname"><span class="pre">SequenceAugmentorArguments</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">min_mutation_rate:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.003</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mutation_rate:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.25</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_ratio:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.02</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_sequence_length:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">512</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mutation_model:</span> <span class="pre">~GenAIRR.mutation.mutation_model.MutationModel</span> <span class="pre">=</span> <span class="pre">&lt;class</span> <span class="pre">'GenAIRR.mutation.s5f.S5F'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">custom_mutation_model_path:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_coefficient:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">210</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_remove_coefficient:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">310</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_after_remove_coefficient:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_sequence_add_proba:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">single_base_stream_proba:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duplicate_leading_proba:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_allele_proba:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">corrupt_proba:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.7</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">short_d_length:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_lambda_ratio:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_mutations_record:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_ns_record:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorArguments"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Configuration arguments for sequence augmentation processes, specifying mutation rates, indel simulation parameters, and other augmentation settings.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.min_mutation_rate">
+<span class="sig-name descname"><span class="pre">min_mutation_rate</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.min_mutation_rate" title="Link to this definition"></a></dt>
+<dd><p>The minimum mutation rate for simulating sequence mutations, defaulting to 0.003.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.max_mutation_rate">
+<span class="sig-name descname"><span class="pre">max_mutation_rate</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.max_mutation_rate" title="Link to this definition"></a></dt>
+<dd><p>The maximum mutation rate for simulating sequence mutations, defaulting to 0.25.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.simulate_indels">
+<span class="sig-name descname"><span class="pre">simulate_indels</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.simulate_indels" title="Link to this definition"></a></dt>
+<dd><p>Flag to determine whether indels should be simulated, defaulting to False.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.max_indels">
+<span class="sig-name descname"><span class="pre">max_indels</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.max_indels" title="Link to this definition"></a></dt>
+<dd><p>The maximum number of indels to simulate, defaulting to 5.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.deletion_proba">
+<span class="sig-name descname"><span class="pre">deletion_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.deletion_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of simulating a deletion event, defaulting to 0.5.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.insertion_proba">
+<span class="sig-name descname"><span class="pre">insertion_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.insertion_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of simulating an insertion event, defaulting to 0.5.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.n_ratio">
+<span class="sig-name descname"><span class="pre">n_ratio</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.n_ratio" title="Link to this definition"></a></dt>
+<dd><p>The ratio of 'N' bases to introduce as noise into sequences, defaulting to 0.02.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.max_sequence_length">
+<span class="sig-name descname"><span class="pre">max_sequence_length</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.max_sequence_length" title="Link to this definition"></a></dt>
+<dd><p>The maximum length of sequences to simulate, defaulting to 512.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.mutation_model">
+<span class="sig-name descname"><span class="pre">mutation_model</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.mutation_model" title="Link to this definition"></a></dt>
+<dd><p>The mutation model to use for sequence mutation simulation, defaulting to S5F.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="GenAIRR.mutation.html#GenAIRR.mutation.mutation_model.MutationModel" title="GenAIRR.mutation.mutation_model.MutationModel">MutationModel</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.custom_mutation_model_path">
+<span class="sig-name descname"><span class="pre">custom_mutation_model_path</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.custom_mutation_model_path" title="Link to this definition"></a></dt>
+<dd><p>The path to a custom mutation model file, if any, defaulting to None.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.nucleotide_add_coefficient">
+<span class="sig-name descname"><span class="pre">nucleotide_add_coefficient</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.nucleotide_add_coefficient" title="Link to this definition"></a></dt>
+<dd><p>The coefficient for the distribution of nucleotides added, defaulting to 210.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.nucleotide_remove_coefficient">
+<span class="sig-name descname"><span class="pre">nucleotide_remove_coefficient</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.nucleotide_remove_coefficient" title="Link to this definition"></a></dt>
+<dd><p>The coefficient for the distribution of nucleotides removed, defaulting to 310.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.nucleotide_add_after_remove_coefficient">
+<span class="sig-name descname"><span class="pre">nucleotide_add_after_remove_coefficient</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.nucleotide_add_after_remove_coefficient" title="Link to this definition"></a></dt>
+<dd><p>The coefficient for the distribution of nucleotides added after removal, defaulting to 50.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.random_sequence_add_proba">
+<span class="sig-name descname"><span class="pre">random_sequence_add_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.random_sequence_add_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of adding a random sequence during augmentation, defaulting to 1.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.single_base_stream_proba">
+<span class="sig-name descname"><span class="pre">single_base_stream_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.single_base_stream_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of adding a single base stream during augmentation, defaulting to 0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.duplicate_leading_proba">
+<span class="sig-name descname"><span class="pre">duplicate_leading_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.duplicate_leading_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of duplicating the leading base during augmentation, defaulting to 0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.random_allele_proba">
+<span class="sig-name descname"><span class="pre">random_allele_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.random_allele_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of adding a random allele during augmentation, defaulting to 0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.corrupt_proba">
+<span class="sig-name descname"><span class="pre">corrupt_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.corrupt_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of corrupting the sequence from the start, defaulting to 0.7.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.short_d_length">
+<span class="sig-name descname"><span class="pre">short_d_length</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.short_d_length" title="Link to this definition"></a></dt>
+<dd><p>The minimum length required from the D allele to not be tagged as &quot;Short-D&quot;, defaulting to 5.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.kappa_lambda_ratio">
+<span class="sig-name descname"><span class="pre">kappa_lambda_ratio</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.kappa_lambda_ratio" title="Link to this definition"></a></dt>
+<dd><p>The ratio of kappa to lambda light chains, defaulting to 0.5.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.save_mutations_record">
+<span class="sig-name descname"><span class="pre">save_mutations_record</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.save_mutations_record" title="Link to this definition"></a></dt>
+<dd><p>Whether to save the record of mutations in the sequence, defaulting to False.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.save_ns_record">
+<span class="sig-name descname"><span class="pre">save_ns_record</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments.save_ns_record" title="Link to this definition"></a></dt>
+<dd><p>Whether to save the record of 'N' bases in the sequence, defaulting to False.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id2">
+<span class="sig-name descname"><span class="pre">corrupt_proba</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.7</span></em><a class="headerlink" href="#id2" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id3">
+<span class="sig-name descname"><span class="pre">custom_mutation_model_path</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id3" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id4">
+<span class="sig-name descname"><span class="pre">deletion_proba</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">(0.5,)</span></em><a class="headerlink" href="#id4" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id5">
+<span class="sig-name descname"><span class="pre">duplicate_leading_proba</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#id5" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id6">
+<span class="sig-name descname"><span class="pre">insertion_proba</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">(0.5,)</span></em><a class="headerlink" href="#id6" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id7">
+<span class="sig-name descname"><span class="pre">kappa_lambda_ratio</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.5</span></em><a class="headerlink" href="#id7" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id8">
+<span class="sig-name descname"><span class="pre">max_indels</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">(5,)</span></em><a class="headerlink" href="#id8" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id9">
+<span class="sig-name descname"><span class="pre">max_mutation_rate</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.25</span></em><a class="headerlink" href="#id9" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id10">
+<span class="sig-name descname"><span class="pre">max_sequence_length</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">512</span></em><a class="headerlink" href="#id10" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id11">
+<span class="sig-name descname"><span class="pre">min_mutation_rate</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.003</span></em><a class="headerlink" href="#id11" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id12">
+<span class="sig-name descname"><span class="pre">mutation_model</span></span><a class="headerlink" href="#id12" title="Link to this definition"></a></dt>
+<dd><p>alias of <a class="reference internal" href="GenAIRR.mutation.html#GenAIRR.mutation.s5f.S5F" title="GenAIRR.mutation.s5f.S5F"><code class="xref py py-class docutils literal notranslate"><span class="pre">S5F</span></code></a></p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id13">
+<span class="sig-name descname"><span class="pre">n_ratio</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.02</span></em><a class="headerlink" href="#id13" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id14">
+<span class="sig-name descname"><span class="pre">nucleotide_add_after_remove_coefficient</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">50</span></em><a class="headerlink" href="#id14" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id15">
+<span class="sig-name descname"><span class="pre">nucleotide_add_coefficient</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">210</span></em><a class="headerlink" href="#id15" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id16">
+<span class="sig-name descname"><span class="pre">nucleotide_remove_coefficient</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">310</span></em><a class="headerlink" href="#id16" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id17">
+<span class="sig-name descname"><span class="pre">random_allele_proba</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#id17" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id18">
+<span class="sig-name descname"><span class="pre">random_sequence_add_proba</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></em><a class="headerlink" href="#id18" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id19">
+<span class="sig-name descname"><span class="pre">save_mutations_record</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></em><a class="headerlink" href="#id19" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id20">
+<span class="sig-name descname"><span class="pre">save_ns_record</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></em><a class="headerlink" href="#id20" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id21">
+<span class="sig-name descname"><span class="pre">short_d_length</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">5</span></em><a class="headerlink" href="#id21" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id22">
+<span class="sig-name descname"><span class="pre">simulate_indels</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">(False,)</span></em><a class="headerlink" href="#id22" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id23">
+<span class="sig-name descname"><span class="pre">single_base_stream_proba</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#id23" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">GenAIRR.simulation.sequence_augmentor_base.</span></span><span class="sig-name descname"><span class="pre">SequenceAugmentorBase</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataconfig:</span> <span class="pre">~GenAIRR.utilities.data_config.DataConfig</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args:</span> <span class="pre">~GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments</span> <span class="pre">=</span> <span class="pre">SequenceAugmentorArguments(min_mutation_rate=0.003</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mutation_rate=0.25</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_ratio=0.02</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_sequence_length=512</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mutation_model=&lt;class</span> <span class="pre">'GenAIRR.mutation.s5f.S5F'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">custom_mutation_model_path=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_coefficient=210</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_remove_coefficient=310</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nucleotide_add_after_remove_coefficient=50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_sequence_add_proba=1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">single_base_stream_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duplicate_leading_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_allele_proba=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">corrupt_proba=0.7</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">short_d_length=5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_lambda_ratio=0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_mutations_record=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_ns_record=False)</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></p>
+<p>An abstract base class for sequence augmentors, providing methods and attributes to simulate and augment immunoglobulin sequences.</p>
+<p>This class includes functionalities for simulating mutations, introducing noise (such as indels and base substitutions), and managing allele information for V, D, and J gene segments.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.dataconfig">
+<span class="sig-name descname"><span class="pre">dataconfig</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.dataconfig" title="Link to this definition"></a></dt>
+<dd><p>Configuration data for sequence simulation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig">DataConfig</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.min_mutation_rate">
+<span class="sig-name descname"><span class="pre">min_mutation_rate</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.min_mutation_rate" title="Link to this definition"></a></dt>
+<dd><p>The minimum mutation rate for simulating sequence mutations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.max_mutation_rate">
+<span class="sig-name descname"><span class="pre">max_mutation_rate</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.max_mutation_rate" title="Link to this definition"></a></dt>
+<dd><p>The maximum mutation rate for simulating sequence mutations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.mutation_model">
+<span class="sig-name descname"><span class="pre">mutation_model</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.mutation_model" title="Link to this definition"></a></dt>
+<dd><p>The model used for simulating mutations within sequences.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="GenAIRR.mutation.html#GenAIRR.mutation.mutation_model.MutationModel" title="GenAIRR.mutation.mutation_model.MutationModel">MutationModel</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.n_ratio">
+<span class="sig-name descname"><span class="pre">n_ratio</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.n_ratio" title="Link to this definition"></a></dt>
+<dd><p>The ratio of 'N' bases to introduce as noise into sequences.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.corrupt_proba">
+<span class="sig-name descname"><span class="pre">corrupt_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.corrupt_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of introducing corruption events at the beginning of sequences.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.simulate_indels">
+<span class="sig-name descname"><span class="pre">simulate_indels</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.simulate_indels" title="Link to this definition"></a></dt>
+<dd><p>Flag indicating whether to simulate insertions and deletions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.max_indels">
+<span class="sig-name descname"><span class="pre">max_indels</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.max_indels" title="Link to this definition"></a></dt>
+<dd><p>The maximum number of indels to simulate.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.deletion_proba">
+<span class="sig-name descname"><span class="pre">deletion_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.deletion_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of simulating a deletion event.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.insertion_proba">
+<span class="sig-name descname"><span class="pre">insertion_proba</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.insertion_proba" title="Link to this definition"></a></dt>
+<dd><p>The probability of simulating an insertion event.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.save_mutations_record">
+<span class="sig-name descname"><span class="pre">save_mutations_record</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.save_mutations_record" title="Link to this definition"></a></dt>
+<dd><p>Flag indicating whether to save the record of mutations applied to sequences.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.save_ns_record">
+<span class="sig-name descname"><span class="pre">save_ns_record</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.save_ns_record" title="Link to this definition"></a></dt>
+<dd><p>Flag indicating whether to save the record of 'N' bases introduced as noise.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataconfig</strong> (<a class="reference internal" href="GenAIRR.utilities.html#GenAIRR.utilities.data_config.DataConfig" title="GenAIRR.utilities.data_config.DataConfig"><em>DataConfig</em></a>) -- The data configuration object containing settings for sequence simulation.</p></li>
+<li><p><strong>args</strong> (<a class="reference internal" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments" title="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorArguments"><em>SequenceAugmentorArguments</em></a>) -- The arguments object containing simulation parameters.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.add_event">
+<span class="sig-name descname"><span class="pre">add_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">amount</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.add_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.add_event" title="Link to this definition"></a></dt>
+<dd><p>Simulates the addition of bases to the beginning of the sequence, adjusting metadata accordingly.</p>
+<blockquote>
+<div><dl class="simple">
+<dt>Args:</dt><dd><p>simulated (dict): A dictionary containing the simulated sequence and metadata.
+amount (int, optional): The number of bases to add. If not specified, the amount is sampled from a configured distribution.</p>
+</dd>
+</dl>
+</div></blockquote>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.alleles_used">
+<span class="sig-name descname"><span class="pre">alleles_used</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.alleles_used" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.attribute_position">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">attribute_position</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.attribute_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.attribute_position" title="Link to this definition"></a></dt>
+<dd><p>This method will take a simulated sequence and a position and return the name of the region it is in
+:param simulated:
+:param position:
+:return:</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.columns">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">columns</span></span><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.columns" title="Link to this definition"></a></dt>
+<dd><p>Returns a list of column names that would be present in the output of the simulate_augmented_sequence method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A list of strings representing the column names.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.correct_for_v_end_cut">
+<span class="sig-name descname"><span class="pre">correct_for_v_end_cut</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.correct_for_v_end_cut"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.correct_for_v_end_cut" title="Link to this definition"></a></dt>
+<dd><p>Corrects the V allele choices based on the trimming of the sequence's end, ensuring the chosen alleles remain consistent with the modified sequence.</p>
+<blockquote>
+<div><dl class="simple">
+<dt>Args:</dt><dd><p>simulated (dict): A dictionary containing the simulated sequence and metadata, including the current V allele and its trimmed length.</p>
+</dd>
+</dl>
+</div></blockquote>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.correct_for_v_start_add">
+<span class="sig-name descname"><span class="pre">correct_for_v_start_add</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.correct_for_v_start_add"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.correct_for_v_start_add" title="Link to this definition"></a></dt>
+<dd><p>Evaluates and corrects the V allele start position after an addition event, ensuring the V allele start position remains accurate despite sequence modifications.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata, including information about addition events and their impact on the V allele start position.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.correct_for_v_start_cut">
+<span class="sig-name descname"><span class="pre">correct_for_v_start_cut</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.correct_for_v_start_cut"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.correct_for_v_start_cut" title="Link to this definition"></a></dt>
+<dd><p>Adjusts the V allele choices in response to the sequence's start being trimmed, maintaining consistency between the chosen alleles and the altered sequence.</p>
+<blockquote>
+<div><dl class="simple">
+<dt>Args:</dt><dd><p>simulated (dict): A dictionary containing the simulated sequence and metadata, particularly details about the V allele and the amount trimmed from the start.</p>
+</dd>
+</dl>
+</div></blockquote>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.correct_mutation_rate">
+<span class="sig-name descname"><span class="pre">correct_mutation_rate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.correct_mutation_rate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.correct_mutation_rate" title="Link to this definition"></a></dt>
+<dd><p>Recalculates and updates the mutation rate in the simulated sequence metadata to reflect the actual mutation rate after sequence modifications such as insertions or deletions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata, including the current mutation log and sequence length.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.corrupt_sequence_beginning">
+<span class="sig-name descname"><span class="pre">corrupt_sequence_beginning</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.corrupt_sequence_beginning"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.corrupt_sequence_beginning" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.duplicate_leading">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">duplicate_leading</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">amount</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.duplicate_leading"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.duplicate_leading" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.fix_j_position_after_trimming_index_ambiguity">
+<span class="sig-name descname"><span class="pre">fix_j_position_after_trimming_index_ambiguity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulation</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.fix_j_position_after_trimming_index_ambiguity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.fix_j_position_after_trimming_index_ambiguity" title="Link to this definition"></a></dt>
+<dd><p>Addresses ambiguities in J allele positions due to sequence trimming, ensuring J allele boundaries are accurately represented.</p>
+<blockquote>
+<div><dl class="simple">
+<dt>Args:</dt><dd><p>simulation (dict): A dictionary containing the simulated sequence and metadata, including J allele positions and trimming details.</p>
+</dd>
+</dl>
+</div></blockquote>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.fix_v_position_after_trimming_index_ambiguity">
+<span class="sig-name descname"><span class="pre">fix_v_position_after_trimming_index_ambiguity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulation</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.fix_v_position_after_trimming_index_ambiguity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.fix_v_position_after_trimming_index_ambiguity" title="Link to this definition"></a></dt>
+<dd><p>Resolves any ambiguities in V allele positions resulting from sequence trimming, ensuring accurate representation of V allele boundaries.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulation</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata, including V allele positions and trimming details.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.get_allele_spesific_n_positions">
+<span class="sig-name descname"><span class="pre">get_allele_spesific_n_positions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_positions</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allele</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.get_allele_spesific_n_positions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.get_allele_spesific_n_positions" title="Link to this definition"></a></dt>
+<dd><p>Introduces 'N' bases into the simulated sequence based on the configured 'N' ratio, simulating sequencing errors or low-quality bases.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.get_original_index">
+<span class="sig-name descname"><span class="pre">get_original_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">corrupted_index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.get_original_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.get_original_index" title="Link to this definition"></a></dt>
+<dd><p>Calculates the original index in the uncorrupted sequence corresponding to a given index in the corrupted sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>corrupted_index</strong> (<em>int</em>) -- The index in the corrupted sequence.</p></li>
+<li><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing simulation metadata, including details of corruption events and amounts.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The original index in the uncorrupted sequence, or None if the index cannot be mapped back due to the nature of the corruption.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.insert_Ns">
+<span class="sig-name descname"><span class="pre">insert_Ns</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.insert_Ns"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.insert_Ns" title="Link to this definition"></a></dt>
+<dd><p>Introduces 'N' bases into the simulated sequence based on the configured 'N' ratio, simulating sequencing errors or low-quality bases.</p>
+<blockquote>
+<div><dl class="simple">
+<dt>Args:</dt><dd><p>simulated (dict): A dictionary containing the simulated sequence and metadata.</p>
+</dd>
+</dl>
+</div></blockquote>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.load_correction_maps">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">load_correction_maps</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.load_correction_maps"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.load_correction_maps" title="Link to this definition"></a></dt>
+<dd><p>Abstract method to load allele correction maps, which are used to adjust allele choices based on observed mutations and indels.</p>
+<p>Implementations should load correction maps specific to the sequence type being augmented (e.g., heavy or light chain sequences).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.perform_corruption">
+<span class="sig-name descname"><span class="pre">perform_corruption</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.perform_corruption"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.perform_corruption" title="Link to this definition"></a></dt>
+<dd><p>Determines whether a corruption event should be performed on the sequence based on the configured probability.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if a corruption event should be performed, False otherwise.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.process_before_return">
+<span class="sig-name descname"><span class="pre">process_before_return</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.process_before_return"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.process_before_return" title="Link to this definition"></a></dt>
+<dd><p>Performs final processing on the simulated sequence before returning it, including formatting allele lists and encoding mutation and 'N' base records.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>simulated</strong> (<em>dict</em>) -- A dictionary containing the simulated sequence and metadata.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.random_allele_section">
+<span class="sig-name descname"><span class="pre">random_allele_section</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">amount</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.random_allele_section"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.random_allele_section" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.random_nucleotides">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">random_nucleotides</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">amount</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.random_nucleotides"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.random_nucleotides" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.remove_before_add_event">
+<span class="sig-name descname"><span class="pre">remove_before_add_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.remove_before_add_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.remove_before_add_event" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.remove_event">
+<span class="sig-name descname"><span class="pre">remove_event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">simulated</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">autocorrect</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.remove_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.remove_event" title="Link to this definition"></a></dt>
+<dd><p>Simulates the removal of a portion of the sequence from the beginning, adjusting metadata accordingly.</p>
+<blockquote>
+<div><dl class="simple">
+<dt>Args:</dt><dd><p>simulated (dict): A dictionary containing the simulated sequence and metadata.
+autocorrect (bool): Whether to automatically correct allele choices based on the removal event.</p>
+</dd>
+</dl>
+</div></blockquote>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.sample_random_event">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">sample_random_event</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.sample_random_event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.sample_random_event" title="Link to this definition"></a></dt>
+<dd><p>Randomly selects a corruption event type (e.g., add, remove, remove before add) based on predefined probabilities.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>An enumerated value representing the selected corruption event type.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#GenAIRR.simulation.sequence_augmentor_base.Event" title="GenAIRR.simulation.sequence_augmentor_base.Event">Event</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.simulate_augmented_sequence">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">simulate_augmented_sequence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.simulate_augmented_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.simulate_augmented_sequence" title="Link to this definition"></a></dt>
+<dd><p>Abstract method to simulate and augment an immunoglobulin sequence, incorporating additional forms of sequence variation beyond basic V(D)J recombination and mutations.</p>
+<p>Implementations might include more complex forms of noise or variation, such as indels or base modifications, and should adjust the sequence and metadata accordingly.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A dictionary containing the augmented sequence and associated metadata.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.simulate_sequence">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">simulate_sequence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.simulate_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.simulate_sequence" title="Link to this definition"></a></dt>
+<dd><p>Abstract method to simulate an immunoglobulin sequence, incorporating V(D)J recombination, mutations, and potentially other forms of sequence variation.</p>
+<p>Implementations should generate a simulated sequence along with relevant metadata, such as the positions of gene segments and mutations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A dictionary containing the simulated sequence and associated metadata.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.single_base_stream">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">single_base_stream</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">amount</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.single_base_stream"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.single_base_stream" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.validate_sequence_length_after_addition">
+<span class="sig-name descname"><span class="pre">validate_sequence_length_after_addition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sequence</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">added</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/GenAIRR/simulation/sequence_augmentor_base.html#SequenceAugmentorBase.validate_sequence_length_after_addition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#GenAIRR.simulation.sequence_augmentor_base.SequenceAugmentorBase.validate_sequence_length_after_addition" title="Link to this definition"></a></dt>
+<dd><p>Ensures that the sequence length does not exceed the maximum allowed length after an addition event, trimming excess bases if necessary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sequence</strong> (<em>str</em>) -- The sequence after the addition event.</p></li>
+<li><p><strong>added</strong> (<em>int</em>) -- The number of bases added to the sequence.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A tuple containing the validated sequence and the adjusted number of bases added.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-GenAIRR.simulation">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-GenAIRR.simulation" title="Link to this heading"></a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="GenAIRR.sequence.html" class="btn btn-neutral float-left" title="GenAIRR.sequence package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="GenAIRR.utilities.html" class="btn btn-neutral float-right" title="GenAIRR.utilities package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Thomas Konstantinovsky &amp; Ayelet Peres.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

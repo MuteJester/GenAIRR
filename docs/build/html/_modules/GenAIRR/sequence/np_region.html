@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenAIRR.sequence.np_region &mdash; GenAIRR  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=92fd9be5" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=d048f138"></script>
+        <script src="../../../_static/doctools.js?v=888ff710"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            GenAIRR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">src</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">GenAIRR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">GenAIRR.sequence.np_region</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for GenAIRR.sequence.np_region</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">..utilities</span> <span class="kn">import</span> <span class="n">weighted_choice</span>
+
+
+<div class="viewcode-block" id="NP_Region">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.np_region.NP_Region">[docs]</a>
+<span class="k">class</span> <span class="nc">NP_Region</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an NP region in an immunoglobulin sequence, where the base</span>
+<span class="sd">    transitions are determined by a first-order Markov chain with position-specific transition matrices.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        transition_probs (dict): A dictionary where keys are position indices and values are</span>
+<span class="sd">            transition matrices (dict) indicating the probability of transitioning from one base to another.</span>
+<span class="sd">        first_base (str): The initial base of the NP region, used as the starting point for the Markov chain.</span>
+<span class="sd">        length (int): The total length of the NP region to be generated.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        transition_probs (dict): Position-specific transition probabilities for base changes.</span>
+<span class="sd">        first_base (str): The starting base of the NP region sequence.</span>
+<span class="sd">        length (int): The desired length of the NP region sequence.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transition_probs</span><span class="p">,</span> <span class="n">first_base</span><span class="p">,</span> <span class="n">length</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes an NP_Region instance with specified transition probabilities, initial base, and length.&quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">transition_probs</span> <span class="o">=</span> <span class="n">transition_probs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bases</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;A&quot;</span><span class="p">,</span> <span class="s2">&quot;C&quot;</span><span class="p">,</span> <span class="s2">&quot;G&quot;</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">first_base</span> <span class="o">=</span> <span class="n">first_base</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">=</span> <span class="n">length</span>
+
+<div class="viewcode-block" id="NP_Region.next_base">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.np_region.NP_Region.next_base">[docs]</a>
+    <span class="k">def</span> <span class="nf">next_base</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">current_base</span><span class="p">,</span> <span class="n">position</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Determines the next base in the NP region sequence based on the current base and position</span>
+<span class="sd">        using the provided transition probabilities.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            current_base (str): The current base in the sequence.</span>
+<span class="sd">            position (int): The current position in the NP region, used to select the appropriate transition matrix.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: The next base in the sequence, chosen based on the transition probabilities.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">next_base_options</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transition_probs</span><span class="p">[</span><span class="n">position</span><span class="p">][</span><span class="n">current_base</span><span class="p">])</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="n">weighted_choice</span><span class="p">(</span>
+            <span class="p">{</span><span class="n">next_base</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">transition_probs</span><span class="p">[</span><span class="n">position</span><span class="p">][</span><span class="n">current_base</span><span class="p">][</span><span class="n">next_base</span><span class="p">]</span> <span class="k">for</span> <span class="n">next_base</span> <span class="ow">in</span> <span class="n">next_base_options</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">base</span></div>
+
+
+<div class="viewcode-block" id="NP_Region.validate_next_base">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.np_region.NP_Region.validate_next_base">[docs]</a>
+    <span class="k">def</span> <span class="nf">validate_next_base</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">current_base</span><span class="p">,</span><span class="n">position</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Validates whether transition data is available for the current base at the given position,</span>
+<span class="sd">        ensuring that the Markov chain can continue.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            current_base (str): The current base in the sequence.</span>
+<span class="sd">            position (int): The current position in the NP region.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            bool: True if transition data is available and the sequence generation can continue, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="kc">True</span> <span class="k">if</span> <span class="n">current_base</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transition_probs</span><span class="p">[</span><span class="n">position</span><span class="p">]</span> <span class="k">else</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="NP_Region.generate_np_seq">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.np_region.NP_Region.generate_np_seq">[docs]</a>
+    <span class="k">def</span> <span class="nf">generate_np_seq</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generates an NP region sequence using a first-order Markov chain based on the provided transition</span>
+<span class="sd">        probabilities and initial base.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: The generated NP region sequence. If the sequence generation is halted due to lack of data,</span>
+<span class="sd">            the sequence is returned as is and its length is updated to reflect the actual generated length.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sequence</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">current_base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">first_base</span>
+        <span class="n">sequence</span> <span class="o">+=</span> <span class="n">current_base</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">validate_next_base</span><span class="p">(</span><span class="n">current_base</span><span class="p">,</span><span class="n">i</span><span class="p">):</span> <span class="c1"># valid position</span>
+                <span class="n">next_base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next_base</span><span class="p">(</span><span class="n">current_base</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+                <span class="n">sequence</span> <span class="o">+=</span> <span class="n">next_base</span>
+                <span class="n">current_base</span> <span class="o">=</span> <span class="n">next_base</span>
+            <span class="k">else</span><span class="p">:</span> <span class="c1">#not way to continue halt and update metadata!</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">sequence</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">sequence</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">sequence</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="NP_Region.create_np_region">
+<a class="viewcode-back" href="../../../GenAIRR.sequence.html#GenAIRR.sequence.np_region.NP_Region.create_np_region">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">create_np_region</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">NP_lengths</span><span class="p">,</span> <span class="n">NP_transitions</span><span class="p">,</span> <span class="n">which_NP</span><span class="p">,</span> <span class="n">first_base_dict</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Class method to generate an NP region sequence based on specified lengths, transitions,</span>
+<span class="sd">        the type of NP region (NP1 or NP2), and initial base probabilities.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            NP_lengths (dict): A dictionary mapping NP region types (e.g., &#39;NP1&#39;, &#39;NP2&#39;) to</span>
+<span class="sd">                their length distributions.</span>
+<span class="sd">            NP_transitions (dict): A dictionary mapping NP region types to their position-specific</span>
+<span class="sd">                transition probabilities.</span>
+<span class="sd">            which_NP (str): Specifies the type of NP region (&#39;NP1&#39; or &#39;NP2&#39;) for which the sequence is generated.</span>
+<span class="sd">            first_base_dict (dict): A dictionary mapping NP region types to the distribution of possible</span>
+<span class="sd">                initial bases.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: The generated NP region sequence. Returns an empty string if the specified length is zero.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">length</span> <span class="o">=</span> <span class="n">weighted_choice</span><span class="p">(</span><span class="n">NP_lengths</span><span class="p">[</span><span class="n">which_NP</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">length</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">first_base</span> <span class="o">=</span> <span class="n">weighted_choice</span><span class="p">(</span><span class="n">first_base_dict</span><span class="p">[</span><span class="n">which_NP</span><span class="p">])</span>
+            <span class="n">np_region</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">NP_transitions</span><span class="p">[</span><span class="n">which_NP</span><span class="p">],</span> <span class="n">first_base</span><span class="p">,</span> <span class="n">length</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">np_region</span><span class="o">.</span><span class="n">generate_np_seq</span><span class="p">()</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Thomas Konstantinovsky &amp; Ayelet Peres.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
