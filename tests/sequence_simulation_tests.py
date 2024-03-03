@@ -73,7 +73,7 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_heavychain_sequence_simulator(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
-        args = SequenceAugmentorArguments()
+        args = SequenceAugmentorArguments(simulate_indels=True)
 
         aug = HeavyChainSequenceAugmentor(heavychain_config, args)
         generated_seqs = []

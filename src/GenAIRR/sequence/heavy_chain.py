@@ -86,9 +86,9 @@ class HeavyChainSequence(BaseSequence):
         self.v_seq_start = 0
         self.v_seq_end = self.v_allele.ungapped_len - self.v_trim_3
         self.d_seq_start = self.v_seq_end + self.NP1_length
-        self.d_seq_end = self.d_seq_start + self.d_allele.ungapped_len - self.d_trim_3 - self.d_trim_5 - 1
+        self.d_seq_end = self.d_seq_start + self.d_allele.ungapped_len - self.d_trim_3 - self.d_trim_5
         self.j_seq_start = self.d_seq_end + self.NP2_length
-        self.j_seq_end = self.j_seq_start + self.j_allele.ungapped_len - self.j_trim_5 - 1
+        self.j_seq_end = self.j_seq_start + self.j_allele.ungapped_len - self.j_trim_5
 
     def _is_functional(self, sequence):
         """
