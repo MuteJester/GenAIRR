@@ -49,10 +49,10 @@ class SequenceAugmentorArguments:
         """
     min_mutation_rate: float = 0.003
     max_mutation_rate: float = 0.25
-    simulate_indels = False,
-    max_indels = 5,
-    deletion_proba = 0.5,
-    insertion_proba = 0.5,
+    simulate_indels: bool = False
+    max_indels:int = 5
+    deletion_proba: float = 0.5
+    insertion_proba: float = 0.5
     n_ratio: float = 0.02
     max_sequence_length: int = 512
     mutation_model: MutationModel = S5F

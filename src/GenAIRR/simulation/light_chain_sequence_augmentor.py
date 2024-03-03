@@ -82,6 +82,171 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         else:
             raise ValueError('Undefined Position!')
 
+    def apply_deletion(self, simulated, position):
+        sequence = simulated['sequence']
+        nucleotides_list = list(sequence)
+
+        deleted = nucleotides_list[position]
+        # print('-=-'*20)
+        # print(f'Deleting {deleted} From Position: {position}')
+        # print('-=-'*20)
+
+        after_deletion = nucleotides_list[:position] + nucleotides_list[position + 1:]
+
+        # update start/end positions
+        for reg in ['v_sequence_start', 'v_sequence_end', 'j_sequence_start', 'j_sequence_end']:
+            if simulated[reg] > position:
+                simulated[reg] = max(position, simulated[reg] - 1)
+
+        simulated['indels'][position] = 'D > ' + deleted
+
+        # correct N's and Mutations
+        corrected_mutations = {}
+        for pos in simulated['mutations']:
+            if pos > position:
+                corrected_mutations[max(position, pos - 1)] = simulated['mutations'][pos]
+            else:
+                corrected_mutations[pos] = simulated['mutations'][pos]
+
+        simulated['mutations'] = corrected_mutations
+
+        corrected_Ns = {}
+        for pos in simulated['Ns']:
+            if pos >= position:
+                corrected_Ns[max(position, pos - 1)] = simulated['Ns'][pos]
+            else:
+                corrected_Ns[pos] = simulated['Ns'][pos]
+
+        simulated['Ns'] = corrected_Ns
+
+        simulated['sequence'] = ''.join(after_deletion)
+
+    def apply_insertion(self, simulated, position):
+        sequence = simulated['sequence']
+        nucleotides_list = list(sequence)
+        random_base = random.choice(['A', 'T', 'C', 'G'])
+
+        # print('-=-'*20)
+        # print(f'Inserting {random_base} To Position: {position}')
+        # print('-=-'*20)
+        after_insertion = nucleotides_list[:position] + [random_base] + nucleotides_list[position:]
+        # update start/end positions
+        for reg in ['v_sequence_start', 'v_sequence_end', 'j_sequence_start', 'j_sequence_end']:
+            if simulated[reg] >= position:
+                simulated[reg] += 1
+
+        simulated['indels'][position] = 'I < ' + random_base
+        # correct N's and Mutations
+        corrected_mutations = {}
+        for pos in simulated['mutations']:
+            if pos >= position:
+                corrected_mutations[pos + 1] = simulated['mutations'][pos]
+            else:
+                corrected_mutations[pos] = simulated['mutations'][pos]
+
+        simulated['mutations'] = corrected_mutations
+
+        corrected_Ns = {}
+        for pos in simulated['Ns']:
+            if pos >= position:
+                corrected_Ns[pos + 1] = simulated['Ns'][pos]
+            else:
+                corrected_Ns[pos] = simulated['Ns'][pos]
+
+        simulated['Ns'] = corrected_Ns
+
+        simulated['sequence'] = ''.join(after_insertion)
+
+    def valid_indel_positions(self, simulated):
+        all_positions = set(range(0, simulated['j_sequence_end']))
+        # remove np regions
+        np1_positions = set(range(simulated['v_sequence_end'], simulated['j_sequence_start']))
+        all_positions -= np1_positions
+
+        # remove ns positions
+        all_positions -= set(simulated['Ns'].keys())
+        # remove mutations position
+        all_positions -= set(simulated['mutations'].keys())
+
+        return all_positions
+
+    def insert_indels(self, simulated):
+        # get valid position for indels excluding np regions, n's and mutated positions
+        valid_positions = list(self.valid_indel_positions(simulated))
+        num_indels = np.random.randint(0, self.max_indels, size=1).item()
+        num_indels = min(num_indels, len(valid_positions))
+        random.shuffle(valid_positions)
+        n_valid_positions = len(valid_positions)
+
+        for idx in range(num_indels):
+            indel_position = valid_positions[idx]
+
+            # choose action 1 = insertion -1 = deletion
+            action = np.random.choice([1, -1], size=1, p=[self.insertion_proba, self.deletion_proba]).item()
+            if action == 1:  # insertion case
+                # print('###'*30)
+                # print('Before Insertion')
+                # print("V segment: Start - {v_start}, End - {v_end}\n"
+                #       "D segment: Start - {d_start}, End - {d_end}\n"
+                #       "J segment: Start - {j_start}, End - {j_end}".format(
+                #           v_start=simulated['v_sequence_start'],
+                #           v_end=simulated['v_sequence_end'],
+                #           d_start=simulated['d_sequence_start'],
+                #           d_end=simulated['d_sequence_end'],
+                #           j_start=simulated['j_sequence_start'],
+                #           j_end=simulated['j_sequence_end']))
+                # print(simulated['Ns'])
+                # print(simulated['mutations'])
+
+                self.apply_insertion(simulated, indel_position)
+                # print('After Insertion')
+                # print("V segment: Start - {v_start}, End - {v_end}\n"
+                #       "D segment: Start - {d_start}, End - {d_end}\n"
+                #       "J segment: Start - {j_start}, End - {j_end}".format(
+                #           v_start=simulated['v_sequence_start'],
+                #           v_end=simulated['v_sequence_end'],
+                #           d_start=simulated['d_sequence_start'],
+                #           d_end=simulated['d_sequence_end'],
+                #           j_start=simulated['j_sequence_start'],
+                #           j_end=simulated['j_sequence_end']))
+                # print(simulated['Ns'])
+                # print(simulated['mutations'])
+                for update_idx in range(idx, idx + (num_indels - idx)):
+                    if valid_positions[update_idx] >= indel_position:
+                        valid_positions[update_idx] += 1
+            else:  # deletion case
+
+                # print('###'*30)
+                # print('Before Deletion')
+                # print("V segment: Start - {v_start}, End - {v_end}\n"
+                #       "D segment: Start - {d_start}, End - {d_end}\n"
+                #       "J segment: Start - {j_start}, End - {j_end}".format(
+                #           v_start=simulated['v_sequence_start'],
+                #           v_end=simulated['v_sequence_end'],
+                #           d_start=simulated['d_sequence_start'],
+                #           d_end=simulated['d_sequence_end'],
+                #           j_start=simulated['j_sequence_start'],
+                #           j_end=simulated['j_sequence_end']))
+                # print(simulated['Ns'])
+                # print(simulated['mutations'])
+                self.apply_deletion(simulated, indel_position)
+                #                 print('After Deletion')
+
+                #                 print("V segment: Start - {v_start}, End - {v_end}\n"
+                #                       "D segment: Start - {d_start}, End - {d_end}\n"
+                #                       "J segment: Start - {j_start}, End - {j_end}".format(
+                #                           v_start=simulated['v_sequence_start'],
+                #                           v_end=simulated['v_sequence_end'],
+                #                           d_start=simulated['d_sequence_start'],
+                #                           d_end=simulated['d_sequence_end'],
+                #                           j_start=simulated['j_sequence_start'],
+                #                           j_end=simulated['j_sequence_end']))
+                #                 print(simulated['Ns'])
+                #                 print(simulated['mutations'])
+
+                for update_idx in range(idx, idx + (num_indels - idx)):
+                    if valid_positions[update_idx] > indel_position:
+                        valid_positions[update_idx] -= 1
 
     # Sequence Simulation
     def simulate_sequence(self):
@@ -291,6 +456,10 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
 
         # 3. Add N's
         self.insert_Ns(simulated)
+
+        # Insert Indels:
+        if self.simulate_indels:
+            self.insert_indels(simulated)
 
         self.process_before_return(simulated)
 
