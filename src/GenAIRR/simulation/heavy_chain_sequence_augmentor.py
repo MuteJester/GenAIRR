@@ -110,7 +110,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         for reg in ['v_sequence_start', 'v_sequence_end', 'j_sequence_start', 'j_sequence_end', 'd_sequence_start',
                     'd_sequence_end']:
             if simulated[reg] > position:
-                simulated[reg] = max(position, simulated[reg] - 1)
+                simulated[reg] = simulated[reg] - 1
 
         simulated['indels'][position] = 'D > ' + deleted
 
@@ -118,7 +118,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         corrected_mutations = {}
         for pos in simulated['mutations']:
             if pos > position:
-                corrected_mutations[max(position, pos - 1)] = simulated['mutations'][pos]
+                corrected_mutations[pos-1] = simulated['mutations'][pos]
             else:
                 corrected_mutations[pos] = simulated['mutations'][pos]
 
@@ -127,7 +127,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         corrected_Ns = {}
         for pos in simulated['Ns']:
             if pos >= position:
-                corrected_Ns[max(position, pos - 1)] = simulated['Ns'][pos]
+                corrected_Ns[pos-1] = simulated['Ns'][pos]
             else:
                 corrected_Ns[pos] = simulated['Ns'][pos]
 

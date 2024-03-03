@@ -81,7 +81,218 @@ class TestSequenceSimulation(unittest.TestCase):
             generated_seqs.append(aug.simulate_augmented_sequence())
         self.assertEqual(len(generated_seqs), 100)
 
+    def test_insert_indels_correct_number(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=True)
 
-# This conditional ensures that the tests will run only if this script is executed, not when it's imported
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        # Test that the correct number of indels are inserted based on the configured probabilities and limits
+        simulated = {'sequence': 'ATCAGCAGTGGTGATTACGATTGGAGCTGGATCCGNCAGCCCCCAGGGAAGGGCCTGGAGTGGATTGGGAACATCTNTTACAGTGGGAGCACCTACTACAACCCGTCCCTCAAGAGTTGAGTTACCATATCATTAGANTNGCCCAAGAACCAGTTCTCCCTGAAACTGAGCTCTGTGACTGCCGCAGACACGGCCGTGTCTTACTGTGTCATCCGGGCCACCGCAGTGTTCGGAGGATCACGGGGTTAAACCTACTGGTACTGCGATCTCTGGGGCCATGGCANCCTGGTCACTGTCTCCTCCG',
+                     'v_sequence_start': 0,
+                     'v_sequence_end': 211,
+                     'd_sequence_start': 221,
+                     'd_sequence_end': 228,
+                     'j_sequence_start': 251,
+                     'j_sequence_end': 304,
+                     'v_allele': 'IGHVF3-G11*06',
+                     'd_allele': 'IGHD6-19*01',
+                     'j_allele': 'IGHJ2*01',
+                     'mutation_rate': 0.06283912099837222,
+                     'v_trim_5': 0,
+                     'v_trim_3': 3,
+                     'd_trim_5': 6,
+                     'd_trim_3': 8,
+                     'j_trim_5': 0,
+                     'j_trim_3': 0,
+                     'corruption_event': 'remove_before_add',
+                     'corruption_add_amount': 2,
+                     'corruption_remove_amount': 84,
+                     'mutations': {18: 'T>G',
+                      20: 'C>T',
+                      69: 'T>A',
+                      117: 'C>T',
+                      132: 'G>T',
+                      138: 'A>T',
+                      141: 'T>C',
+                      164: 'G>A',
+                      199: 'A>C',
+                      208: 'C>T',
+                      214: 'T>G',
+                      221: 'A>C',
+                      237: 'A>T',
+                      240: 'A>C',
+                      247: 'C>A',
+                      262: 'T>G',
+                      277: 'G>A',
+                      302: 'A>C'},
+                     'Ns': {35: 'C>N', 76: 'A>N', 137: 'C>N', 139: 'C>N', 283: 'N>N'},
+                     'indels': {}}
+        augmentor.max_indels = 5  # Set a limit on the max number of indels for testing
+        augmentor.insertion_proba = 0.5
+        augmentor.deletion_proba = 0.5
+        augmentor.insert_indels(simulated)
+        self.assertTrue(0 <= len(simulated['indels']) <= 5)
+
+    def test_simulate_sequence_structure(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=True)
+
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        # Test that simulate_sequence returns a dictionary with the expected structure and keys
+        simulated = augmentor.simulate_sequence()
+        expected_keys = ['sequence', 'v_sequence_start', 'v_sequence_end', 'd_sequence_start', 'd_sequence_end',
+                         'j_sequence_start', 'j_sequence_end', 'v_allele', 'd_allele', 'j_allele', 'mutation_rate',
+                         'v_trim_5', 'v_trim_3', 'd_trim_5', 'd_trim_3', 'j_trim_5', 'j_trim_3', 'corruption_event',
+                         'corruption_add_amount', 'corruption_remove_amount', 'mutations', 'Ns', 'indels']
+        self.assertTrue(all(key in simulated for key in expected_keys))
+
+    def test_apply_deletion_updates_positions(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=True)
+
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+
+        simulated = {
+            'sequence': 'ATGCGTACGATCG',
+            'v_sequence_start': 1,
+            'v_sequence_end': 3,
+            'd_sequence_start': 4,
+            'd_sequence_end': 7,
+            'j_sequence_start': 8,
+            'j_sequence_end': 12,
+            'Ns': {5: 'N'},
+            'mutations': {6: 'A'},
+            'indels':{}
+        }
+        augmentor.apply_deletion(simulated, 2)  # Deleting at position 2
+        # Test if the start/end positions are updated correctly
+        self.assertEqual(simulated['v_sequence_end'], 2)
+        self.assertEqual(simulated['d_sequence_start'], 3)
+        self.assertEqual(simulated['d_sequence_end'], 6)
+        self.assertEqual(simulated['j_sequence_start'], 7)
+        self.assertEqual(simulated['j_sequence_end'], 11)
+        # Test if N's and Mutations positions are updated correctly
+        self.assertNotIn(5, simulated['Ns'])
+        self.assertIn(4, simulated['Ns'])
+        self.assertNotIn(6, simulated['mutations'])
+        self.assertIn(5, simulated['mutations'])
+
+    def test_apply_insertion_updates_positions(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=True)
+
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        simulated = {
+            'sequence': 'ATGCGTACGATCG',
+            'v_sequence_start': 1,
+            'v_sequence_end': 3,
+            'd_sequence_start': 4,
+            'd_sequence_end': 7,
+            'j_sequence_start': 8,
+            'j_sequence_end': 12,
+            'Ns': {5: 'N'},
+            'mutations': {6: 'A'},
+            'indels': {}
+
+        }
+        augmentor.apply_insertion(simulated, 2)  # Inserting at position 2
+        # Test if the start/end positions are updated correctly
+        self.assertEqual(simulated['v_sequence_end'], 4)
+        self.assertEqual(simulated['d_sequence_start'], 5)
+        self.assertEqual(simulated['d_sequence_end'], 8)
+        self.assertEqual(simulated['j_sequence_start'], 9)
+        self.assertEqual(simulated['j_sequence_end'], 13)
+        # Test if N's and Mutations positions are updated correctly
+        self.assertNotIn(5, simulated['Ns'])
+        self.assertIn(6, simulated['Ns'])
+        self.assertNotIn(6, simulated['mutations'])
+        self.assertIn(7, simulated['mutations'])
+
+    def test_multiple_insertions(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=True)
+
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        simulated = {
+            'sequence': 'ATGCGTACGATCG',
+            'v_sequence_start': 1,
+            'v_sequence_end': 3,
+            'd_sequence_start': 4,
+            'd_sequence_end': 7,
+            'j_sequence_start': 8,
+            'j_sequence_end': 12,
+            'Ns': {5: 'N'},
+            'mutations': {6: 'A'},
+            'indels':{}
+        }
+        # ATXGXCGTACXGATCG
+        # Positions where nucleotides will be inserted
+        insert_positions = [2, 4, 10]
+        for pos in insert_positions:
+            augmentor.apply_insertion(simulated,pos)
+
+        inserted_bases = [simulated['sequence'][2],simulated['sequence'][4],simulated['sequence'][10]]
+
+        self.assertEqual(simulated['v_sequence_end'], 5)
+        self.assertEqual(simulated['d_sequence_start'], 6)
+        self.assertEqual(simulated['d_sequence_end'], 9)
+        self.assertEqual(simulated['j_sequence_start'], 11)
+        self.assertEqual(simulated['j_sequence_end'], 15)
+
+        self.assertNotIn(5, simulated['Ns'])
+        self.assertNotIn(6, simulated['mutations'])
+        self.assertIn(7, simulated['Ns'])
+        self.assertIn(8, simulated['mutations'])
+
+        expected_sequence = 'ATGCGTACGATCG'
+        expected_sequence = expected_sequence[:2]+inserted_bases[0]+expected_sequence[2:]
+        expected_sequence = expected_sequence[:4]+inserted_bases[1]+expected_sequence[4:]
+        expected_sequence = expected_sequence[:10]+inserted_bases[2]+expected_sequence[10:]
+
+        self.assertEqual(simulated['sequence'], expected_sequence)
+    def test_multiple_deletions(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=True)
+
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        simulated = {
+            'sequence': 'ATGCGTACGATCG',
+            'v_sequence_start': 1,
+            'v_sequence_end': 3,
+            'd_sequence_start': 4,
+            'd_sequence_end': 7,
+            'j_sequence_start': 8,
+            'j_sequence_end': 12,
+            'Ns': {5: 'N', 10: 'N'},
+            'mutations': {6: 'A', 12: 'G'},
+            'indels': {}
+        }
+        # Positions where nucleotides will be deleted
+        delete_positions = [2, 4, 9]  # Choose positions carefully to avoid index out of range errors
+
+        # Apply multiple deletions
+        for pos in sorted(delete_positions, reverse=True):  # Reverse order to maintain correct indexes during deletion
+            augmentor.apply_deletion(simulated, pos)
+
+        # After deletions, the end positions should have been shifted left by the number of deletions before them
+        self.assertEqual(simulated['v_sequence_end'], 3 - sum(pos < 3 for pos in delete_positions))
+        self.assertEqual(simulated['d_sequence_start'], 4 - sum(pos < 4 for pos in delete_positions))
+        self.assertEqual(simulated['d_sequence_end'], 7 - sum(pos < 7 for pos in delete_positions))
+        self.assertEqual(simulated['j_sequence_start'], 8 - sum(pos < 8 for pos in delete_positions))
+        self.assertEqual(simulated['j_sequence_end'], 12 - len(delete_positions))  # All deletions affect the j_sequence_end
+
+        # Test if N's and Mutations positions are updated correctly
+        # Their new positions should account for the total shift caused by deletions before their original positions
+        self.assertNotIn(5, simulated['Ns'])  # Original position 5 should be deleted
+        self.assertNotIn(6, simulated['mutations'])  # Original position 6 should be shifted left
+        self.assertIn(3, simulated['Ns'])  # New position after deletion at 4
+        self.assertIn(9, simulated['mutations'])  # New position after deletions at 2 and 4
+
+        # Ensure the sequence is updated correctly
+        expected_sequence = 'ATCTACGTCG'  # Expected sequence after deletions at positions 2, 4, and 9
+        self.assertEqual(simulated['sequence'], expected_sequence)
+
+
+
 if __name__ == '__main__':
     unittest.main()
