@@ -20,10 +20,8 @@ with resources.path('GenAIRR.data', 'HeavyChain_DataConfig_OGRDB_V2.pkl') as dat
         print(heavychain_config)
 
 
-# Define a test case class inheriting from unittest.TestCase
 class TestSequenceSimulation(unittest.TestCase):
 
-    # Define a setup method if you need to prepare anything before each test method (optional)
     def setUp(self):
         # Setup code here, e.g., initializing objects
         pass
@@ -44,8 +42,32 @@ class TestSequenceSimulation(unittest.TestCase):
         self.assertEqual(allele.family,'IGHVF1')
         self.assertEqual(allele.anchor,288)
 
+    def test_n_and_removal_ambiguity(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        alleles = [j for i in heavychain_config.v_alleles for j in heavychain_config.v_alleles[i]]
 
-    # Define your test methods, each starting with 'test_'
+        # find single position differing allele pairs
+        single_position_diff = []
+        for i in alleles:
+            for j in alleles:
+                if i == j:
+                    continue
+                else:
+                    if i.ungapped_len == j.ungapped_len and sum(
+                            [k != z for k, z in zip(i.ungapped_seq, j.ungapped_seq)]) == 1:
+                        single_position_diff.append(
+                            (i, j, [e for e, (k, z) in enumerate(zip(i.ungapped_seq, j.ungapped_seq)) if k != z][0]))
+
+        if len(single_position_diff) == 0:
+            return
+
+        s = 0
+        for a,b,p in single_position_diff:
+            x = heavychain_config.correction_maps['V_N_AMBIGUITY_CORRECTION_GRAPH'].find_indistinguishable_alleles(
+                a.name, [p])
+            s = s + (b.name in x and a.name in x)
+        self.assertEqual(s,len(single_position_diff))
+
     def test_single_sequence_generation(self):
         # Call the function you want to test with the inputs you want to test
         lc1_seq = LightChainSequence.create_random(lightchain_lambda_config)
