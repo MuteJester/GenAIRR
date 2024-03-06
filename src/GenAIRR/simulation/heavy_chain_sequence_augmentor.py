@@ -332,6 +332,19 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         simulation['d_sequence_start'] = d_start
         simulation['d_sequence_end'] = d_end
 
+
+    def distill_mutation_rate(self,simulated):
+        # remove mutations in NP region
+        np_positions = list(range(simulated['v_sequence_end'],simulated['d_sequence_start']+1))
+        np_positions += list(range(simulated['d_sequence_end'],simulated['j_sequence_start']+1))
+        mutations_in_np_regions = list(set(np_positions)&set(list(simulated['mutations'].keys())))
+        for pos in mutations_in_np_regions:
+            simulated['mutations'].pop(pos)
+
+        distilled_mutation_rate = (len(simulated['mutations'])+len(simulated['Ns']))/len(simulated['sequence'])
+        simulated['mutation_rate'] = distilled_mutation_rate
+
+
     # Sequence Simulation
     def simulate_sequence(self):
         """
@@ -351,9 +364,9 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             "d_sequence_end": gen.d_seq_end,
             "j_sequence_start": gen.j_seq_start,
             "j_sequence_end": gen.j_seq_end,
-            "v_allele": [gen.v_allele.name],
-            "d_allele": [gen.d_allele.name],
-            "j_allele": [gen.j_allele.name],
+            "v_call": [gen.v_allele.name],
+            "d_call": [gen.d_allele.name],
+            "j_call": [gen.j_allele.name],
             'mutation_rate': gen.mutation_freq,
             'v_trim_5': gen.v_trim_5,
             'v_trim_3': gen.v_trim_3,
@@ -408,6 +421,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         if self.simulate_indels:
             self.insert_indels(simulated)
 
+        self.distill_mutation_rate(simulated)
         self.process_before_return(simulated)
 
         return simulated

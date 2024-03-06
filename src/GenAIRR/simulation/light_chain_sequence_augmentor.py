@@ -347,6 +347,16 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
 
         simulation['j_sequence_start'] = j_start
 
+    def distill_mutation_rate(self, simulated):
+        # remove mutations in NP region
+        np_positions = list(range(simulated['v_sequence_end'], simulated['j_sequence_start'] + 1))
+        mutations_in_np_regions = list(set(np_positions) & set(list(simulated['mutations'].keys())))
+        for pos in mutations_in_np_regions:
+            simulated['mutations'].pop(pos)
+
+        distilled_mutation_rate = (len(simulated['mutations']) + len(simulated['Ns'])) / len(simulated['sequence'])
+        simulated['mutation_rate'] = distilled_mutation_rate
+
     def remove_event(self, simulated):
         """
                 Simulates the removal of a portion of the sequence from the beginning for a light chain sequence, updating metadata to reflect the changes.

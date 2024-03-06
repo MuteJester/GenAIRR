@@ -95,6 +95,8 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_heavychain_sequence_simulator(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        import base64
+
         args = SequenceAugmentorArguments(simulate_indels=True)
 
         aug = HeavyChainSequenceAugmentor(heavychain_config, args)
@@ -102,6 +104,23 @@ class TestSequenceSimulation(unittest.TestCase):
         for _ in range(100):
             generated_seqs.append(aug.simulate_augmented_sequence())
         self.assertEqual(len(generated_seqs), 100)
+
+
+    def test_mutation_rate(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        import base64
+        args = SequenceAugmentorArguments(simulate_indels=True,save_ns_record=True,save_mutations_record=True)
+
+        aug = HeavyChainSequenceAugmentor(heavychain_config, args)
+
+        same = 0
+        for _ in range(100):
+            gseq = aug.simulate_augmented_sequence()
+            seq_length = len(gseq['sequence'])
+            mutations = len(eval(base64.b64decode(gseq['mutations']).decode('ascii')))
+            Ns = len(eval(base64.b64decode(gseq['Ns']).decode('ascii')))
+            same += gseq['mutation_rate'] == ((Ns+mutations)/seq_length)
+        self.assertEqual(same, 100)
 
     def test_insert_indels_correct_number(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments

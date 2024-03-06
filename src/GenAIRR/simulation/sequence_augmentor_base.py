@@ -531,6 +531,10 @@ class SequenceAugmentorBase(ABC):
 
         simulation['j_sequence_start'] = j_start
 
+    @abstractmethod
+    def distill_mutation_rate(self):
+        pass
+
     # Sequence Simulation
     @abstractmethod
     def simulate_sequence(self):
