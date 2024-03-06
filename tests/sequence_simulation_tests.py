@@ -135,9 +135,9 @@ class TestSequenceSimulation(unittest.TestCase):
                      'd_sequence_end': 228,
                      'j_sequence_start': 251,
                      'j_sequence_end': 304,
-                     'v_allele': 'IGHVF3-G11*06',
-                     'd_allele': 'IGHD6-19*01',
-                     'j_allele': 'IGHJ2*01',
+                     'v_call': 'IGHVF3-G11*06',
+                     'd_call': 'IGHD6-19*01',
+                     'j_call': 'IGHJ2*01',
                      'mutation_rate': 0.06283912099837222,
                      'v_trim_5': 0,
                      'v_trim_3': 3,
@@ -182,7 +182,7 @@ class TestSequenceSimulation(unittest.TestCase):
         # Test that simulate_sequence returns a dictionary with the expected structure and keys
         simulated = augmentor.simulate_sequence()
         expected_keys = ['sequence', 'v_sequence_start', 'v_sequence_end', 'd_sequence_start', 'd_sequence_end',
-                         'j_sequence_start', 'j_sequence_end', 'v_allele', 'd_allele', 'j_allele', 'mutation_rate',
+                         'j_sequence_start', 'j_sequence_end', 'v_call', 'd_call', 'j_call', 'mutation_rate',
                          'v_trim_5', 'v_trim_3', 'd_trim_5', 'd_trim_3', 'j_trim_5', 'j_trim_3', 'corruption_event',
                          'corruption_add_amount', 'corruption_remove_amount', 'mutations', 'Ns', 'indels']
         self.assertTrue(all(key in simulated for key in expected_keys))

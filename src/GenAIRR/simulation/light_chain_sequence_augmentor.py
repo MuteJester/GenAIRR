@@ -269,8 +269,8 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             "v_sequence_end": gen.v_seq_end,
             "j_sequence_start": gen.j_seq_start,
             "j_sequence_end": gen.j_seq_end,
-            "v_allele": [gen.v_allele.name],
-            "j_allele": [gen.j_allele.name],
+            'v_call': [gen.v_allele.name],
+            'j_call': [gen.j_allele.name],
             'mutation_rate': gen.mutation_freq,
             'v_trim_5': gen.v_trim_5,
             'v_trim_3': gen.v_trim_3,
@@ -295,7 +295,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         # Extract Current V Metadata
         v_start, v_end = simulation['v_sequence_start'], simulation['v_sequence_end']
         v_allele_remainder = simulation['sequence'][v_start:v_end]
-        v_allele_ref = self.v_dict[simulation['v_allele'][0]]
+        v_allele_ref = self.v_dict[simulation['v_call'][0]]
 
         # Get the junction inserted after trimming to the sequence
         junction_3 = simulation['sequence'][v_end:simulation['j_sequence_start']]
@@ -326,7 +326,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         # Extract Current J Metadata
         j_start, j_end = simulation['j_sequence_start'], simulation['j_sequence_end']
         j_allele_remainder = simulation['sequence'][j_start:j_end]
-        j_allele_ref = self.j_dict[simulation['j_allele'][0]]
+        j_allele_ref = self.j_dict[simulation['j_call'][0]]
 
         # Get the junction inserted after trimming to the sequence
         junction_5 = simulation['sequence'][simulation['v_sequence_end']:j_start]

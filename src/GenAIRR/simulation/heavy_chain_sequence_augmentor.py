@@ -276,7 +276,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         trim_5 = simulated['d_trim_5']
         trim_3 = simulated['d_trim_3']
         # infer the precalculated map what alleles should be the ground truth for this sequence based on the trim
-        simulated['d_allele'] = list(self.d_trim_correction_map[simulated['d_allele'][0]][(trim_5, trim_3)])
+        simulated['d_call'] = list(self.d_trim_correction_map[simulated['d_call'][0]][(trim_5, trim_3)])
 
     def short_d_validation(self, simulated):
         """
@@ -287,7 +287,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         """
         d_length = simulated['d_sequence_end'] - simulated['d_sequence_start']
         if d_length < self.short_d_length:
-            simulated['d_allele'] = ['Short-D']
+            simulated['d_call'] = ['Short-D']
 
     def fix_d_position_after_trimming_index_ambiguity(self, simulation):
         """
@@ -299,7 +299,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         # Extract Current D Metadata
         d_start, d_end = simulation['d_sequence_start'], simulation['d_sequence_end']
         d_allele_remainder = simulation['sequence'][d_start:d_end]
-        d_allele_ref = self.d_dict[simulation['d_allele'][0]]
+        d_allele_ref = self.d_dict[simulation['d_call'][0]]
 
         # Get the junction inserted after trimming to the sequence
         junction_5 = simulation['sequence'][simulation['v_sequence_end']:d_start]

@@ -238,9 +238,9 @@ class SequenceAugmentorBase(ABC):
         v_allele_n_positions_original = [self.get_original_index(i, simulated) for i in v_allele_n_positions]
 
         indistinguishable_v_alleles = self.v_n_ambiguity_comparer.find_indistinguishable_alleles(
-            simulated['v_allele'][0], v_allele_n_positions_original)
-        simulated['v_allele'] = simulated['v_allele'] + list(
-            set(indistinguishable_v_alleles) - set(simulated['v_allele']))
+            simulated['v_call'][0], v_allele_n_positions_original)
+        simulated['v_call'] = simulated['v_call'] + list(
+            set(indistinguishable_v_alleles) - set(simulated['v_call']))
 
         # Adjust mutation rate to account for added "N's" by adding the ratio of N's added to the mutation rate
         # because we randomly sample position we might get a ratio of N's less than what was defined by the n_ratio
@@ -389,9 +389,9 @@ class SequenceAugmentorBase(ABC):
                 Args:
                     simulated (dict): A dictionary containing the simulated sequence and metadata, including the current V allele and its trimmed length.
         """
-        equivalent_alleles = self.v_end_allele_correction_map[simulated['v_allele'][0]][
+        equivalent_alleles = self.v_end_allele_correction_map[simulated['v_call'][0]][
             min(simulated['v_sequence_end'], self.max_v_end_correction_map_value)]
-        simulated['v_allele'] = simulated['v_allele'] + list(set(equivalent_alleles) - set(simulated['v_allele']))
+        simulated['v_call'] = simulated['v_call'] + list(set(equivalent_alleles) - set(simulated['v_call']))
 
     def correct_for_v_start_cut(self, simulated):
         """
@@ -401,9 +401,9 @@ class SequenceAugmentorBase(ABC):
                    simulated (dict): A dictionary containing the simulated sequence and metadata, particularly details about the V allele and the amount trimmed from the start.
        """
         removed = simulated['corruption_remove_amount']
-        equivalent_alleles = self.v_start_allele_correction_map[simulated['v_allele'][0]][
+        equivalent_alleles = self.v_start_allele_correction_map[simulated['v_call'][0]][
             min(removed, self.max_v_start_correction_map_value)]
-        simulated['v_allele'] = simulated['v_allele'] + list(set(equivalent_alleles) - set(simulated['v_allele']))
+        simulated['v_call'] = simulated['v_call'] + list(set(equivalent_alleles) - set(simulated['v_call']))
 
     def correct_for_v_start_add(self, simulated):
         """
@@ -418,7 +418,7 @@ class SequenceAugmentorBase(ABC):
             amount_removed = simulated['corruption_remove_amount']
 
             add_section = simulated['sequence'][:amount_added]
-            removed_section = self.v_dict[simulated['v_allele'][0]][:amount_removed]
+            removed_section = self.v_dict[simulated['v_call'][0]][:amount_removed]
 
             min_length = min(len(add_section), len(removed_section))
             to_adjust = 0
@@ -479,7 +479,7 @@ class SequenceAugmentorBase(ABC):
         # Extract Current V Metadata
         v_start, v_end = simulation['v_sequence_start'], simulation['v_sequence_end']
         v_allele_remainder = simulation['sequence'][v_start:v_end]
-        v_allele_ref = self.v_dict[simulation['v_allele'][0]]
+        v_allele_ref = self.v_dict[simulation['v_call'][0]]
 
         # Get the junction inserted after trimming to the sequence
         junction_3 = simulation['sequence'][v_end:simulation['d_sequence_start']]
@@ -510,7 +510,7 @@ class SequenceAugmentorBase(ABC):
         # Extract Current J Metadata
         j_start, j_end = simulation['j_sequence_start'], simulation['j_sequence_end']
         j_allele_remainder = simulation['sequence'][j_start:j_end]
-        j_allele_ref = self.j_dict[simulation['j_allele'][0]]
+        j_allele_ref = self.j_dict[simulation['j_call'][0]]
 
         # Get the junction inserted after trimming to the sequence
         junction_5 = simulation['sequence'][simulation['d_sequence_end']:j_start]
@@ -558,7 +558,7 @@ class SequenceAugmentorBase(ABC):
         """
         # Convert Allele From List to Comma Seperated String
         for gene in self.alleles_used:
-            simulated[f'{gene}_allele'] = ','.join(simulated[f'{gene}_allele'])
+            simulated[f'{gene}_call'] = ','.join(simulated[f'{gene}_call'])
 
         # convert mutations and N log to base64 for proper tabular preservation
         if self.save_ns_record:
