@@ -100,9 +100,6 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         nucleotides_list = list(sequence)
 
         deleted = nucleotides_list[position]
-        # print('-=-'*20)
-        # print(f'Deleting {deleted} From Position: {position}')
-        # print('-=-'*20)
 
         after_deletion = nucleotides_list[:position] + nucleotides_list[position + 1:]
 
@@ -133,16 +130,23 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
 
         simulated['Ns'] = corrected_Ns
 
+
         simulated['sequence'] = ''.join(after_deletion)
+        # Update log positions for deletions
+        updated_log = {}
+        for log_pos, log_entry in simulated['indels'].items():
+            if log_pos > position:
+                updated_log[log_pos - 1] = log_entry
+            elif log_pos < position:
+                updated_log[log_pos] = log_entry
+        simulated['indels'] = updated_log
 
     def apply_insertion(self, simulated, position):
         sequence = simulated['sequence']
         nucleotides_list = list(sequence)
         random_base = random.choice(['A', 'T', 'C', 'G'])
 
-        # print('-=-'*20)
-        # print(f'Inserting {random_base} To Position: {position}')
-        # print('-=-'*20)
+
         after_insertion = nucleotides_list[:position] + [random_base] + nucleotides_list[position:]
         # update start/end positions
         for reg in ['v_sequence_start', 'v_sequence_end', 'j_sequence_start', 'j_sequence_end', 'd_sequence_start',
@@ -169,6 +173,17 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
                 corrected_Ns[pos] = simulated['Ns'][pos]
 
         simulated['Ns'] = corrected_Ns
+
+        simulated['sequence'] = ''.join(after_insertion)
+
+        # Update log positions for insertions
+        updated_log = {}
+        for log_pos, log_entry in simulated['indels'].items():
+            if log_pos > position:
+                updated_log[log_pos + 1] = log_entry
+            else:
+                updated_log[log_pos] = log_entry
+        simulated['indels'] = updated_log
 
         simulated['sequence'] = ''.join(after_insertion)
 
@@ -201,65 +216,15 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             # choose action 1 = insertion -1 = deletion
             action = np.random.choice([1, -1], size=1, p=[self.insertion_proba, self.deletion_proba]).item()
             if action == 1:  # insertion case
-                # print('###'*30)
-                # print('Before Insertion')
-                # print("V segment: Start - {v_start}, End - {v_end}\n"
-                #       "D segment: Start - {d_start}, End - {d_end}\n"
-                #       "J segment: Start - {j_start}, End - {j_end}".format(
-                #           v_start=simulated['v_sequence_start'],
-                #           v_end=simulated['v_sequence_end'],
-                #           d_start=simulated['d_sequence_start'],
-                #           d_end=simulated['d_sequence_end'],
-                #           j_start=simulated['j_sequence_start'],
-                #           j_end=simulated['j_sequence_end']))
-                # print(simulated['Ns'])
-                # print(simulated['mutations'])
 
                 self.apply_insertion(simulated, indel_position)
-                # print('After Insertion')
-                # print("V segment: Start - {v_start}, End - {v_end}\n"
-                #       "D segment: Start - {d_start}, End - {d_end}\n"
-                #       "J segment: Start - {j_start}, End - {j_end}".format(
-                #           v_start=simulated['v_sequence_start'],
-                #           v_end=simulated['v_sequence_end'],
-                #           d_start=simulated['d_sequence_start'],
-                #           d_end=simulated['d_sequence_end'],
-                #           j_start=simulated['j_sequence_start'],
-                #           j_end=simulated['j_sequence_end']))
-                # print(simulated['Ns'])
-                # print(simulated['mutations'])
+
                 for update_idx in range(idx, idx + (num_indels - idx)):
                     if valid_positions[update_idx] >= indel_position:
                         valid_positions[update_idx] += 1
             else:  # deletion case
 
-                # print('###'*30)
-                # print('Before Deletion')
-                # print("V segment: Start - {v_start}, End - {v_end}\n"
-                #       "D segment: Start - {d_start}, End - {d_end}\n"
-                #       "J segment: Start - {j_start}, End - {j_end}".format(
-                #           v_start=simulated['v_sequence_start'],
-                #           v_end=simulated['v_sequence_end'],
-                #           d_start=simulated['d_sequence_start'],
-                #           d_end=simulated['d_sequence_end'],
-                #           j_start=simulated['j_sequence_start'],
-                #           j_end=simulated['j_sequence_end']))
-                # print(simulated['Ns'])
-                # print(simulated['mutations'])
                 self.apply_deletion(simulated, indel_position)
-                #                 print('After Deletion')
-
-                #                 print("V segment: Start - {v_start}, End - {v_end}\n"
-                #                       "D segment: Start - {d_start}, End - {d_end}\n"
-                #                       "J segment: Start - {j_start}, End - {j_end}".format(
-                #                           v_start=simulated['v_sequence_start'],
-                #                           v_end=simulated['v_sequence_end'],
-                #                           d_start=simulated['d_sequence_start'],
-                #                           d_end=simulated['d_sequence_end'],
-                #                           j_start=simulated['j_sequence_start'],
-                #                           j_end=simulated['j_sequence_end']))
-                #                 print(simulated['Ns'])
-                #                 print(simulated['mutations'])
 
                 for update_idx in range(idx, idx + (num_indels - idx)):
                     if valid_positions[update_idx] > indel_position:
