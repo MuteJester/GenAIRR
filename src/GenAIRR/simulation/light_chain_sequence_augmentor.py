@@ -118,6 +118,13 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
                 corrected_Ns[pos] = simulated['Ns'][pos]
 
         simulated['Ns'] = corrected_Ns
+        # Update log positions for deletions
+        updated_log = {}
+        for log_pos, log_entry in simulated['indels'].items():
+            if log_pos > position:
+                updated_log[log_pos - 1] = log_entry
+            elif log_pos < position:
+                updated_log[log_pos] = log_entry
 
         simulated['sequence'] = ''.join(after_deletion)
 
@@ -154,6 +161,15 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
                 corrected_Ns[pos] = simulated['Ns'][pos]
 
         simulated['Ns'] = corrected_Ns
+
+        # Update log positions for insertions
+        updated_log = {}
+        for log_pos, log_entry in simulated['indels'].items():
+            if log_pos > position:
+                updated_log[log_pos + 1] = log_entry
+            else:
+                updated_log[log_pos] = log_entry
+        simulated['indels'] = updated_log
 
         simulated['sequence'] = ''.join(after_insertion)
 
