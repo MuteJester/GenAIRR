@@ -135,10 +135,11 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         # Update log positions for deletions
         updated_log = {}
         for log_pos, log_entry in simulated['indels'].items():
-            if log_pos > position:
+            if log_pos >= position:
                 updated_log[log_pos - 1] = log_entry
             elif log_pos < position:
                 updated_log[log_pos] = log_entry
+
         simulated['indels'] = updated_log
 
     def apply_insertion(self, simulated, position):
