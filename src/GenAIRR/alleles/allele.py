@@ -27,7 +27,7 @@ class Allele(ABC):
         Attributes:
             name (str): The name of the allele.
             length (int): The length of the gapped sequence.
-            gapped_sequence (str): The gapped nucleotide sequence of the allele.
+            gapped_seq (str): The gapped nucleotide sequence of the allele.
             ungapped_seq (str): The ungapped nucleotide sequence derived from the gapped sequence.
             ungapped_len (int): The length of the ungapped sequence.
             family (str): The gene family derived from the allele name.
@@ -45,7 +45,7 @@ class Allele(ABC):
         """
         self.name = name
         self.length = int(length)
-        self.gapped_sequence = gapped_sequence
+        self.gapped_seq = gapped_sequence
         self.ungapped_seq = gapped_sequence.replace(".", "")
         self.ungapped_len = len(self.ungapped_seq)
         self.family = self.name.split("-")[0] if "-" in self.name else self.name.split("*")[0]
@@ -120,7 +120,7 @@ class VAllele(Allele):
 
             The anchor is identified based on the presence of a specific motif within the gapped sequence.
         """
-        cys_wider = self.gapped_sequence[306:315]
+        cys_wider = self.gapped_seq[306:315]
         self.anchor = self.ungapped_seq.rfind(cys_wider) + 3
 
     def _get_trim_length(self, trim_dicts):
