@@ -11,6 +11,7 @@ setup(
     url='https://github.com/MuteJester/GenAIRR',
     package_dir={'': 'src'},  # Tells setuptools to look for packages in the src directory
     packages=find_packages(where='src'),  # Automatically find and include all packages under src
+    package_data={'GenAIRR': ['data/*.pkl']},
     install_requires=[
         # List your project's dependencies here
         # e.g., 'numpy>=1.18.0', 'pandas>=1.0.0'
