@@ -22,7 +22,7 @@ Before you begin, ensure that you have Python 3.x installed on your system. GenA
 ```python
 import pandas as pd
 # Install GenAIRR using pip
-#!pip install GenAIRR
+!pip install GenAIRR
 ```
 
 ## Setting Up
