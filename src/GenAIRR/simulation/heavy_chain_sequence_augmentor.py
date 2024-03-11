@@ -343,6 +343,8 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             'corruption_event': 'no-corruption',
             'corruption_add_amount': 0,
             'corruption_remove_amount': 0,
+            'corruption_removed_section':'',
+            'corruption_added_section':'',
             'mutations': {pos: gen.mutations[pos] for pos in sorted(gen.mutations)},  # sort the mutations by position
             "Ns": dict(),
             'indels': dict(),

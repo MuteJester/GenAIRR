@@ -69,6 +69,7 @@ class SequenceAugmentorArguments:
     kappa_lambda_ratio: float = 0.5
     save_mutations_record: bool = False
     save_ns_record: bool = False
+    save_corruption_record: bool = False
 
 
 class SequenceAugmentorBase(ABC):
@@ -132,6 +133,7 @@ class SequenceAugmentorBase(ABC):
         # Class Misc
         self.chain_type = None
         self.save_mutations_record = args.save_mutations_record
+        self.save_corruption_record = args.save_corruption_record
         self.save_ns_record = args.save_ns_record
         self.v_alleles = sorted([i for j in self.dataconfig.v_alleles for i in self.dataconfig.v_alleles[j]],
                                 key=lambda x: x.name)
@@ -273,6 +275,8 @@ class SequenceAugmentorBase(ABC):
         v_length = simulated['v_sequence_end'] - simulated['v_sequence_start']
         amount_to_remove = self._sample_nucleotide_remove_distribution(v_length)
         # remove from the start of the sequence the sampled amount
+        # log removal
+        simulated['corruption_removed_section'] = simulated['sequence'][amount_to_remove:]
         simulated['sequence'] = simulated['sequence'][amount_to_remove:]
         # Update Simulation Metadata
         simulated['corruption_remove_amount'] = amount_to_remove
@@ -310,7 +314,7 @@ class SequenceAugmentorBase(ABC):
         # Sample the method by which addition will be made
         method = self._sample_corruption_add_method()
         # Modify the sequence
-        modified_sequence = method(amount_to_add, simulated['sequence'])
+        modified_sequence = method(amount_to_add,simulated)
         # Validate the modified sequence, make sure we didn't over add pass our max sequence size
         modified_sequence, amount_to_add = self.validate_sequence_length_after_addition(modified_sequence,
                                                                                         amount_to_add)
@@ -362,24 +366,29 @@ class SequenceAugmentorBase(ABC):
 
     # Different V Start "Add" Event Scenarios
     @staticmethod
-    def random_nucleotides(amount, sequence):
+    def random_nucleotides(amount, simulated):
         random_seq = ''.join(random.choices(['A', 'T', 'C', 'G'], k=amount))
-        return random_seq + sequence
+        simulated['corruption_added_section'] = random_seq
+        return random_seq + simulated['sequence']
 
     @staticmethod
-    def duplicate_leading(amount, sequence):
+    def duplicate_leading(amount, simulated):
+        sequence = simulated['sequence']
         cap = amount if amount < len(sequence) else len(sequence) - 1
+        simulated['corruption_added_section'] = sequence[:cap]
         return sequence[:cap] + sequence
 
-    def random_allele_section(self, amount, sequence):
+    def random_allele_section(self, amount, simulated):
         random_allele = random.choice(self.v_alleles).ungapped_seq.upper()
         cap = amount if amount < len(random_allele) else len(random_allele) - 1
-        return random_allele[:cap] + sequence
+        simulated['corruption_added_section'] = random_allele[:cap]
+        return random_allele[:cap] + simulated['sequence']
 
     @staticmethod
-    def single_base_stream(amount, sequence):
+    def single_base_stream(amount, simulated):
         random_base = random.choice(['A', 'T', 'G', 'C', 'N']) * amount
-        return random_base + sequence
+        simulated['corruption_added_section'] = random_base
+        return random_base + simulated['sequence']
 
     # Correction Functions
     def correct_for_v_end_cut(self, simulated):
@@ -561,15 +570,19 @@ class SequenceAugmentorBase(ABC):
             simulated[f'{gene}_call'] = ','.join(simulated[f'{gene}_call'])
 
         # convert mutations and N log to base64 for proper tabular preservation
-        if self.save_ns_record:
-            simulated['Ns'] = base64.b64encode(str(simulated['Ns']).encode('ascii'))
-        else:
+        if not self.save_ns_record:
+        #     simulated['Ns'] = base64.b64encode(str(simulated['Ns']).encode('ascii'))
+        # else:
             simulated.pop('Ns')
 
-        if self.save_mutations_record:
-            simulated['mutations'] = base64.b64encode(str(simulated['mutations']).encode('ascii'))
-        else:
+        if not self.save_mutations_record:
+        #     simulated['mutations'] = base64.b64encode(str(simulated['mutations']).encode('ascii'))
+        # else:
             simulated.pop('mutations')
+
+        if not self.save_corruption_record:
+            simulated.pop('corruption_removed_section')
+            simulated.pop('corruption_added_section')
 
     @abstractmethod
     def simulate_augmented_sequence(self):

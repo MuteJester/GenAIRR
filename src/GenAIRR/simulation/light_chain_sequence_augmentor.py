@@ -296,8 +296,11 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             'corruption_event': 'no-corruption',
             'corruption_add_amount': 0,
             'corruption_remove_amount': 0,
+            'corruption_removed_section': '',
+            'corruption_added_section': '',
             'mutations': {pos: gen.mutations[pos] for pos in sorted(gen.mutations)},  # sort the mutations by position
             "Ns": dict(),
+            'indels': dict()
         }
         return data
 
@@ -420,7 +423,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         # Sample the method by which addition will be made
         method = self._sample_corruption_add_method()
         # Modify the sequence
-        modified_sequence = method(amount_to_add, simulated['sequence'])
+        modified_sequence = method(amount_to_add, simulated)
         # Validate the modified sequence, make sure we didn't over add pass our max sequence size
         modified_sequence, amount_to_add = self.validate_sequence_length_after_addition(modified_sequence,
                                                                                         amount_to_add)

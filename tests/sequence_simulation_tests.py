@@ -112,7 +112,8 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_mutation_rate(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
         import base64
-        args = SequenceAugmentorArguments(simulate_indels=True,save_ns_record=True,save_mutations_record=True)
+        args = SequenceAugmentorArguments(simulate_indels=True,save_ns_record=True,save_mutations_record=True,
+                                          save_corruption_record=True)
 
         aug = HeavyChainSequenceAugmentor(heavychain_config, args)
 
@@ -120,8 +121,8 @@ class TestSequenceSimulation(unittest.TestCase):
         for _ in range(100):
             gseq = aug.simulate_augmented_sequence()
             seq_length = len(gseq['sequence'])
-            mutations = len(eval(base64.b64decode(gseq['mutations']).decode('ascii')))
-            Ns = len(eval(base64.b64decode(gseq['Ns']).decode('ascii')))
+            mutations = len(gseq['mutations'])#len(eval(base64.b64decode(gseq['mutations']).decode('ascii')))
+            Ns = len(gseq['Ns'])#len(eval(base64.b64decode(gseq['Ns']).decode('ascii')))
             same += gseq['mutation_rate'] == ((Ns+mutations)/seq_length)
         self.assertEqual(same, 100)
 
