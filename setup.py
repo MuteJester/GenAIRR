@@ -1,28 +1,37 @@
 from setuptools import setup, find_packages
 
+with open('README.md', 'r', encoding='utf-8') as fh:
+    long_description = fh.read()
+with open('requirements.txt') as f:
+    requirements = f.read().splitlines()
+
 setup(
     name='GenAIRR',
     version='0.1.0',
     author='Thomas Konstantinovsky & Ayelet Peres',
     author_email='thomaskon90@gmail.com',
-    description='Advanced IG Sequence Simulation Suit for Alignment Model Benchmarking',
-    long_description=open('README.md').read(),
+    description='An advanced immunoglobulin sequence simulation suite for benchmarking alignment models and sequence analysis.',
+    long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/MuteJester/GenAIRR',
-    package_dir={'': 'src'},  # Tells setuptools to look for packages in the src directory
-    packages=find_packages(where='src'),  # Automatically find and include all packages under src
-    package_data={'GenAIRR': ['data/*.pkl']},
-    install_requires=[
-        # List your project's dependencies here
-        # e.g., 'numpy>=1.18.0', 'pandas>=1.0.0'
-    ],
+    project_urls={
+        "Bug Tracker": "https://github.com/MuteJester/GenAIRR/issues"
+    },
+    package_dir={'': 'src'},
+    packages=find_packages(where='src'),
+    package_data={'GenAIRR': ['data/*.pkl', 'data/*.json']},  # Include any additional data files
+    include_package_data=True,  # Include everything in source control
+    install_requires=requirements,
     classifiers=[
-        # Choose your license as you wish
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Science/Research',
+        'Topic :: Scientific/Engineering :: Bio-Informatics',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
     ],
+    keywords='immunogenetics, sequence simulation, bioinformatics, alignment benchmarking',
     python_requires='>=3.7',
 )
