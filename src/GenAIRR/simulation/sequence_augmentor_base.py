@@ -276,7 +276,7 @@ class SequenceAugmentorBase(ABC):
         amount_to_remove = self._sample_nucleotide_remove_distribution(v_length)
         # remove from the start of the sequence the sampled amount
         # log removal
-        simulated['corruption_removed_section'] = simulated['sequence'][amount_to_remove:]
+        simulated['corruption_removed_section'] = simulated['sequence'][:amount_to_remove]
         simulated['sequence'] = simulated['sequence'][amount_to_remove:]
         # Update Simulation Metadata
         simulated['corruption_remove_amount'] = amount_to_remove
