@@ -3,7 +3,18 @@ from ..utilities.data_utilities import create_allele_dict
 from ..utilities.asc_utilities import create_asc_germline_set, hamming_distance
 from ..utilities import AlleleNComparer
 import pickle
-
+from collections import defaultdict
+from functools import partial
+def normalize_and_filter_convert_to_dict(obj):
+    if isinstance(obj, defaultdict):
+        nested_dict = {k: normalize_and_filter_convert_to_dict(v) for k, v in obj.items()}
+        if all(isinstance(val, float) for val in nested_dict.values()):
+            # Filter out keys that are not 'A', 'T', 'G', or 'C'
+            filtered_dict = {k: v for k, v in nested_dict.items() if k in ['A', 'T', 'G', 'C']}
+            total = sum(filtered_dict.values())
+            return {k: v / total for k, v in filtered_dict.items()}
+        return nested_dict
+    return obj
 
 class RandomDataConfigGenerator:
     def __init__(self, convert_to_asc=True):
@@ -278,31 +289,84 @@ class CustomDataConfigGenerator:
         self.dataconfig.j_alleles = j_alleles
 
     def _derive_gene_usage(self, data):
-
-        gene_use_dict = {'V':data['v_call'].apply(lambda x: x.split('*')[0]).value_counts().to_dict(),
-                         'J': data['j_call'].apply(lambda x: x.split('*')[0]).value_counts().to_dict()
+        gene_use_dict = {'V': (data['v_call'].apply(lambda x: x.split('*')[0]).value_counts() / len(data)).to_dict(),
+                         'J': (data['j_call'].apply(lambda x: x.split('*')[0]).value_counts() / len(data)).to_dict()
                          }
 
         if 'd_call' in data:
-            gene_use_dict['D'] = data['v_call'].apply(lambda x: x.split('*')[0]).value_counts().to_dict(),
+            gene_use_dict['D'] = (data['v_call'].apply(lambda x: x.split('*')[0]).value_counts() / len(data)).to_dict(),
 
         self.dataconfig.gene_use_dict = gene_use_dict
 
-    def _load_trimming_proportions(self, path):
-        with open(path, 'rb') as h:
-            self.dataconfig.trim_dicts = pickle.load(h)
+    def _derive_trimming_proportions(self, data):
 
-    def _load_np_lengths(self, path):
-        with open(path, 'rb') as h:
-            self.dataconfig.NP_lengths = pickle.load(h)
+        triming_dict = dict()
 
-    def _load_np_first_base_use(self, path):
-        with open(path, 'rb') as h:
-            self.dataconfig.NP_first_bases = pickle.load(h)
+        for gene in ['v', 'd', 'j']:
+            alleles = getattr(self.dataconfig, f'{gene}_alleles')
+            families = [i.name.split('-')[0] for j in alleles for i in alleles[j]]
+            families = list(set(families))
+            for trim in ['5', '3']:
+                triming_dict[f'{gene.upper()}_{trim}'] = dict()
+                for fam in families:
+                    samples = data[data[f'{gene}_call'].str.contains(fam)]
+                    trim_values = (samples[f'{gene}_trim_{trim}'].value_counts() / len(samples)).to_dict()
+                    triming_dict[f'{gene.upper()}_{trim}'][fam] = trim_values
 
-    def _load_np_transition_probabilities(self, path):
-        with open(path, 'rb') as h:
-            self.dataconfig.NP_transitions = pickle.load(h)
+        self.dataconfig.trim_dicts = triming_dict
+
+    def _derive_np_lengths(self, data):
+        np_lengths = {"NP1": {}, 'NP2': {}}
+        np1_lengths = data['d_sequence_start'] - data['v_sequence_end']
+        np1_lengths = (np1_lengths.value_counts() / len(np1_lengths)).to_dict()
+
+        np2_lengths = data['j_sequence_start'] - data['d_sequence_end']
+        np2_lengths = (np2_lengths.value_counts() / len(np2_lengths)).to_dict()
+
+        np_lengths['NP1'] = np1_lengths
+        np_lengths['NP2'] = np2_lengths
+
+        self.dataconfig.NP_lengths = np_lengths
+
+    def _derive_np_first_base_use(self, data):
+        NP_first_bases = {"NP1": {}, 'NP2': {}}
+        NP_first_bases['NP1'] = (
+                    data.apply(lambda x: x['sequence'][x['v_sequence_end'] + 1], axis=1).value_counts() / len(
+                data)).to_dict()
+        NP_first_bases['NP2'] = (
+                    data.apply(lambda x: x['sequence'][x['d_sequence_end'] + 1], axis=1).value_counts() / len(
+                data)).to_dict()
+
+        if 'N' in NP_first_bases['NP1']:
+            NP_first_bases['NP1'].pop('N')
+        if 'N' in NP_first_bases['NP2']:
+            NP_first_bases['NP2'].pop('N')
+
+        self.dataconfig.NP_first_bases = NP_first_bases
+
+    def _derive_np_transition_probabilities(self, data):
+        NP_transitions = {'NP1': {}, 'NP2': {}}
+
+        NP1 = data.apply(lambda x: x['sequence'][x['v_sequence_end']:x['d_sequence_start']], axis=1)
+        NP2 = data.apply(lambda x: x['sequence'][x['d_sequence_end']:x['j_sequence_start']], axis=1)
+
+        agg_dict = defaultdict(partial(defaultdict, float))
+        for np_seq in NP1:
+            for pos in range(len(np_seq) - 1):
+                if np_seq[pos] not in agg_dict[pos]:
+                    agg_dict[pos][np_seq[pos]] = defaultdict(float)
+                agg_dict[pos][np_seq[pos]][np_seq[pos + 1]] += 1
+        NP_transitions['NP1'] = normalize_and_filter_convert_to_dict(agg_dict)
+
+        agg_dict = defaultdict(partial(defaultdict, float))
+        for np_seq in NP2:
+            for pos in range(len(np_seq) - 1):
+                if np_seq[pos] not in agg_dict[pos]:
+                    agg_dict[pos][np_seq[pos]] = defaultdict(float)
+                agg_dict[pos][np_seq[pos]][np_seq[pos + 1]] += 1
+        NP_transitions['NP2'] = normalize_and_filter_convert_to_dict(agg_dict)
+
+        self.dataconfig.NP_transitions = NP_transitions
 
     def _derive_3_prime_correction_map(self, target_alleles):
         t_dict = {i.name: i for j in target_alleles for i in target_alleles[j]}
@@ -372,7 +436,7 @@ class CustomDataConfigGenerator:
         self.dataconfig.correction_maps[allele_ + '_N_AMBIGUITY_CORRECTION_GRAPH'] = comparer
 
     def make_dataconfig_from_existing_reference_files(self, v_reference_path, j_reference_path,
-                                                      custom_data,d_reference_path=None,
+                                                      custom_data, d_reference_path=None,
                                                       ):
 
         # update d flag
@@ -381,68 +445,6 @@ class CustomDataConfigGenerator:
         if self.has_d:
             # add D to aux list to calculate properties for D allele as well
             self.alleles.append('D')
-
-        # 1. read fasta references
-        if self.convert_to_asc:
-            # ASC logic goes here to resulting variables should be of the following foramt:
-            user_v_reference, v_asc_table = create_asc_germline_set(v_reference_path, segment="V")
-            # save asc table so reverse transformation will be available to the user
-            self.dataconfig.asc_tables['V'] = v_asc_table
-
-            user_j_reference = create_allele_dict(j_reference_path)
-            if self.has_d:
-                user_d_reference = create_allele_dict(d_reference_path)
-        else:
-
-            user_v_reference = create_allele_dict(v_reference_path)
-            if d_reference_path is not None:
-                user_d_reference = create_allele_dict(d_reference_path)
-            user_j_reference = create_allele_dict(j_reference_path)
-
-        print('=' * 50)
-        # 2. Fill in Data Config
-
-        # LOAD ALLELES
-        self._load_alleles(v_alleles=user_v_reference, d_alleles=user_d_reference, j_alleles=user_j_reference)
-        print('Alleles Mounted to DataConfig!...')
-        # RANDOM GENE USAGE
-        self._load_gene_usage(custom_data)
-        print('Random Gene Usage Mounted to DataConfig!...')
-
-        # TRIMMING PROPORTIONS
-        self._load_trimming_proportions(path_to_trimming_proportions)
-        print('Random Trimming Proportions Mounted to DataConfig!...')
-
-        # N REGIONS LENGTHS
-        self._load_np_lengths(path_to_np_lengths)
-        print('Random NP Region Lengths Mounted to DataConfig!...')
-
-        # N REGIONS  FIRST BASE USAGE
-        self._load_np_first_base_use(path_to_np_first_base)
-        print('Random NP Initial States Mounted to DataConfig!...')
-        # N REGIONS MARKOV TRANSITION MATRICES
-        self._load_np_transition_probabilities(path_to_np_markov_chain)
-        print('Random NP Markov Chain Mounted to DataConfig!...')
-
-        # 3. Fill in Data Config correction maps
-        self._derive_n_ambiguity_map(self.dataconfig.v_alleles)
-        print('V Ns Ambiguity Map Mounted to DataConfig!...')
-
-        self._derive_3_prime_correction_map(self.dataconfig.v_alleles)
-        print('V 3 Prime Ambiguity Map Mounted to DataConfig!...')
-        self._derive_5_prime_correction_map(self.dataconfig.v_alleles)
-        print('V 5 Prime Ambiguity Map Mounted to DataConfig!...')
-        self._derive_3_prime_correction_map(self.dataconfig.j_alleles)
-        print('J 3 Prime Ambiguity Map Mounted to DataConfig!...')
-        self._derive_5_prime_correction_map(self.dataconfig.j_alleles)
-        print('J 5 Prime Ambiguity Map Mounted to DataConfig!...')
-        if self.has_d:
-            self._derive_5_and_3_prime_correction_map(self.dataconfig.d_alleles)
-            print('D (5,3) Prime Ambiguity Map Mounted to DataConfig!...')
-
-        print('=' * 50)
-
-        return self.dataconfig
 
 
 class AdaptiveDataConfigGenerator:
