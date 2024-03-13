@@ -484,7 +484,8 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             self.corrupt_sequence_beginning(simulated)
 
         # 3. Add N's
-        self.insert_Ns(simulated)
+        if bool(np.random.binomial(1, self.n_proba)):
+            self.insert_Ns(simulated)
 
         # Insert Indels:
         if bool(np.random.binomial(1,self.simulate_indels)):

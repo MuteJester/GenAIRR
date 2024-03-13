@@ -26,11 +26,12 @@ class SequenceAugmentorArguments:
         Attributes:
             min_mutation_rate (float): The minimum mutation rate for simulating sequence mutations, defaulting to 0.003.
             max_mutation_rate (float): The maximum mutation rate for simulating sequence mutations, defaulting to 0.25.
-            simulate_indels (bool): Flag to determine whether indels should be simulated, defaulting to False.
+            simulate_indels (float): The probability of simulating a random amount of indels.
             max_indels (int): The maximum number of indels to simulate, defaulting to 5.
             deletion_proba (float): The probability of simulating a deletion event, defaulting to 0.5.
             insertion_proba (float): The probability of simulating an insertion event, defaulting to 0.5.
             n_ratio (float): The ratio of 'N' bases to introduce as noise into sequences, defaulting to 0.02.
+            n_proba (float): The probability of simulating an indel.
             max_sequence_length (int): The maximum length of sequences to simulate, defaulting to 512.
             mutation_model (MutationModel): The mutation model to use for sequence mutation simulation, defaulting to S5F.
             custom_mutation_model_path (str): The path to a custom mutation model file, if any, defaulting to None.
@@ -54,6 +55,7 @@ class SequenceAugmentorArguments:
     deletion_proba: float = 0.5
     insertion_proba: float = 0.5
     n_ratio: float = 0.02
+    n_proba: float = 1.0
     max_sequence_length: int = 512
     mutation_model: MutationModel = S5F
     custom_mutation_model_path: str = None
@@ -112,6 +114,7 @@ class SequenceAugmentorBase(ABC):
 
         # Noising Parameters
         self.n_ratio = args.n_ratio
+        self.n_proba = args.n_proba
         self.corrupt_proba = args.corrupt_proba
         self.nucleotide_add_distribution = st.beta(2, 3)
         self.nucleotide_remove_distribution = st.beta(2, 3)

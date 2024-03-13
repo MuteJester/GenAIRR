@@ -379,7 +379,8 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             self.corrupt_sequence_beginning(simulated)
 
         # 3. Add N's
-        self.insert_Ns(simulated)
+        if bool(np.random.binomial(1, self.n_proba)):
+            self.insert_Ns(simulated)
 
         # 4. Adjust D Allele , if the simulated length is smaller than short_d_length
         # class property, change the d allele to the "Short-D" label

@@ -97,7 +97,7 @@ class TestSequenceSimulation(unittest.TestCase):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
         import base64
 
-        args = SequenceAugmentorArguments(simulate_indels=True)
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
 
         aug = HeavyChainSequenceAugmentor(heavychain_config, args)
         generated_seqs = []
@@ -112,7 +112,7 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_mutation_rate(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
         import base64
-        args = SequenceAugmentorArguments(simulate_indels=True,save_ns_record=True,save_mutations_record=True,
+        args = SequenceAugmentorArguments(simulate_indels=0.2,save_ns_record=True,save_mutations_record=True,
                                           save_corruption_record=True)
 
         aug = HeavyChainSequenceAugmentor(heavychain_config, args)
@@ -128,7 +128,7 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_insert_indels_correct_number(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
-        args = SequenceAugmentorArguments(simulate_indels=True)
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
 
         augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
         # Test that the correct number of indels are inserted based on the configured probabilities and limits
@@ -180,7 +180,7 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_simulate_sequence_structure(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
-        args = SequenceAugmentorArguments(simulate_indels=True)
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
 
         augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
         # Test that simulate_sequence returns a dictionary with the expected structure and keys
@@ -193,7 +193,7 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_apply_deletion_updates_positions(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
-        args = SequenceAugmentorArguments(simulate_indels=True)
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
 
         augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
 
@@ -224,7 +224,7 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_apply_insertion_updates_positions(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
-        args = SequenceAugmentorArguments(simulate_indels=True)
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
 
         augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
         simulated = {
@@ -255,7 +255,7 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_multiple_insertions(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
-        args = SequenceAugmentorArguments(simulate_indels=True)
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
 
         augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
         original_sequence = 'ATGCGTACGATCG'
@@ -303,7 +303,7 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_multiple_deletions(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
-        args = SequenceAugmentorArguments(simulate_indels=True)
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
 
         augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
         simulated = {
