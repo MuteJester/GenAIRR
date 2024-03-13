@@ -49,7 +49,7 @@ class SequenceAugmentorArguments:
         """
     min_mutation_rate: float = 0.003
     max_mutation_rate: float = 0.25
-    simulate_indels: bool = False
+    simulate_indels: float = 0.2
     max_indels:int = 5
     deletion_proba: float = 0.5
     insertion_proba: float = 0.5

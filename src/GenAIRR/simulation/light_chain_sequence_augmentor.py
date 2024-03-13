@@ -189,7 +189,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
     def insert_indels(self, simulated):
         # get valid position for indels excluding np regions, n's and mutated positions
         valid_positions = list(self.valid_indel_positions(simulated))
-        num_indels = np.random.randint(0, self.max_indels, size=1).item()
+        num_indels = np.random.randint(1, self.max_indels, size=1).item()
         num_indels = min(num_indels, len(valid_positions))
         random.shuffle(valid_positions)
         n_valid_positions = len(valid_positions)
@@ -487,7 +487,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         self.insert_Ns(simulated)
 
         # Insert Indels:
-        if self.simulate_indels:
+        if bool(np.random.binomial(1,self.simulate_indels)):
             self.insert_indels(simulated)
 
         self.process_before_return(simulated)
