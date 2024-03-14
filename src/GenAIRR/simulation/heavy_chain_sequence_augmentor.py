@@ -358,7 +358,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
                 Returns:
                     dict: A dictionary containing the augmented sequence and associated metadata, ready for further analysis or training processes.
         """
-        # 1. Simulate a Sequence from AIRRship
+        # 1. Simulate a Naive Sequence
         simulated = self.simulate_sequence()
 
         # 1.1 Correction - Correct Start/End Positions Based on Generated Junctions
