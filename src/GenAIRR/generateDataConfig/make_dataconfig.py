@@ -1,3 +1,5 @@
+import pandas as pd
+
 from ..utilities import DataConfig
 from ..utilities.data_utilities import create_allele_dict
 from ..utilities.asc_utilities import create_asc_germline_set, hamming_distance
@@ -438,13 +440,76 @@ class CustomDataConfigGenerator:
     def make_dataconfig_from_existing_reference_files(self, v_reference_path, j_reference_path,
                                                       custom_data, d_reference_path=None,
                                                       ):
-
+        # load data
+        data = pd.read_csv(custom_data)
         # update d flag
         self.has_d = d_reference_path is not None
         user_d_reference = None
         if self.has_d:
             # add D to aux list to calculate properties for D allele as well
             self.alleles.append('D')
+
+        # 1. read fasta references
+        if self.convert_to_asc:
+            # ASC logic goes here to resulting variables should be of the following foramt:
+            user_v_reference, v_asc_table = create_asc_germline_set(v_reference_path, segment="V")
+            # save asc table so reverse transformation will be available to the user
+            self.dataconfig.asc_tables['V'] = v_asc_table
+
+            user_j_reference = create_allele_dict(j_reference_path)
+            if self.has_d:
+                user_d_reference = create_allele_dict(d_reference_path)
+        else:
+
+            user_v_reference = create_allele_dict(v_reference_path)
+            if d_reference_path is not None:
+                user_d_reference = create_allele_dict(d_reference_path)
+            user_j_reference = create_allele_dict(j_reference_path)
+
+        print('=' * 50)
+        # 2. Fill in Data Config
+
+        # LOAD ALLELES
+        self._load_alleles(v_alleles=user_v_reference, d_alleles=user_d_reference, j_alleles=user_j_reference)
+        print('Alleles Mounted to DataConfig!...')
+        # RANDOM GENE USAGE
+        self._derive_gene_usage(data)
+        print('Gene Usage Mounted to DataConfig!...')
+
+        # TRIMMING PROPORTIONS
+        self._derive_trimming_proportions(data)
+        print('Trimming Proportions Mounted to DataConfig!...')
+
+        # N REGIONS LENGTHS
+        self._derive_np_lengths(data)
+        print('NP Region Lengths Mounted to DataConfig!...')
+
+        # N REGIONS  FIRST BASE USAGE
+        self._derive_np_first_base_use(data)
+        print('NP Initial States Mounted to DataConfig!...')
+        # N REGIONS MARKOV TRANSITION MATRICES
+        self._derive_np_transition_probabilities(data)
+        print('NP Markov Chain Mounted to DataConfig!...')
+
+        # 3. Fill in Data Config correction maps
+        self._derive_n_ambiguity_map(self.dataconfig.v_alleles)
+        print('V Ns Ambiguity Map Mounted to DataConfig!...')
+
+        self._derive_3_prime_correction_map(self.dataconfig.v_alleles)
+        print('V 3 Prime Ambiguity Map Mounted to DataConfig!...')
+        self._derive_5_prime_correction_map(self.dataconfig.v_alleles)
+        print('V 5 Prime Ambiguity Map Mounted to DataConfig!...')
+        self._derive_3_prime_correction_map(self.dataconfig.j_alleles)
+        print('J 3 Prime Ambiguity Map Mounted to DataConfig!...')
+        self._derive_5_prime_correction_map(self.dataconfig.j_alleles)
+        print('J 5 Prime Ambiguity Map Mounted to DataConfig!...')
+        if self.has_d:
+            self._derive_5_and_3_prime_correction_map(self.dataconfig.d_alleles)
+            print('D (5,3) Prime Ambiguity Map Mounted to DataConfig!...')
+
+        print('=' * 50)
+
+        return self.dataconfig
 
 
 class AdaptiveDataConfigGenerator:

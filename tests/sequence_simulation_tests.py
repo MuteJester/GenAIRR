@@ -1,6 +1,7 @@
 import unittest
 
 from GenAIRR.alleles import VAllele
+from GenAIRR.generateDataConfig import RandomDataConfigGenerator, CustomDataConfigGenerator
 from GenAIRR.sequence import LightChainSequence, HeavyChainSequence
 import pickle
 from importlib import resources
@@ -106,8 +107,6 @@ class TestSequenceSimulation(unittest.TestCase):
 
         print([i['indels'] for i in generated_seqs])
         self.assertEqual(len(generated_seqs), 100)
-
-
 
     def test_mutation_rate(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
@@ -342,6 +341,41 @@ class TestSequenceSimulation(unittest.TestCase):
         # Ensure the sequence is updated correctly
         expected_sequence = 'ATCTACGTCG'  # Expected sequence after deletions at positions 2, 4, and 9
         self.assertEqual(simulated['sequence'], expected_sequence)
+
+    def test_random_dataconfig_generator(self):
+        dcg = RandomDataConfigGenerator(convert_to_asc=False)
+        random_dataconfig = dcg.make_dataconfig_from_existing_reference_files(v_reference_path='./IGHV.fasta',
+                                                                              d_reference_path='./IGHD.fasta',
+                                                                              j_reference_path='./IGHJ.fasta')
+        for gene in ['V','D','J']:
+            self.assertGreater(len(random_dataconfig.gene_use_dict[gene]),0)
+
+        for allele in ['V','D','J']:
+            self.assertGreaterEqual(len(random_dataconfig.trim_dicts[allele + '_5']),0)
+            self.assertGreaterEqual(len(random_dataconfig.trim_dicts[allele + '_3']),0)
+
+        for np in ['NP1','NP2']:
+            self.assertGreaterEqual(len(random_dataconfig.NP_lengths[np]),0)
+            self.assertGreaterEqual(len(random_dataconfig.NP_first_bases[np]),0)
+            self.assertGreaterEqual(len(random_dataconfig.NP_transitions[np]),0)
+
+    def test_custom_dataconfig_generator(self):
+        dcg = CustomDataConfigGenerator(convert_to_asc=False)
+        random_dataconfig = dcg.make_dataconfig_from_existing_reference_files(v_reference_path='./IGHV.fasta',
+                                                                              d_reference_path='./IGHD.fasta',
+                                                                              j_reference_path='./IGHJ.fasta',
+                                                                              custom_data='./inference_sample.csv')
+        for gene in ['V', 'D', 'J']:
+            self.assertGreater(len(random_dataconfig.gene_use_dict[gene]), 0)
+
+        for allele in ['V', 'D', 'J']:
+            self.assertGreaterEqual(len(random_dataconfig.trim_dicts[allele + '_5']), 0)
+            self.assertGreaterEqual(len(random_dataconfig.trim_dicts[allele + '_3']), 0)
+
+        for np in ['NP1', 'NP2']:
+            self.assertGreaterEqual(len(random_dataconfig.NP_lengths[np]), 0)
+            self.assertGreaterEqual(len(random_dataconfig.NP_first_bases[np]), 0)
+            self.assertGreaterEqual(len(random_dataconfig.NP_transitions[np]), 0)
 
 
 if __name__ == '__main__':
