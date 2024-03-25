@@ -42,6 +42,7 @@ class Uniform(MutationModel):
         positions_to_mutate += list(range(sequence.d_seq_start,sequence.d_seq_end))
         positions_to_mutate += list(range(sequence.j_seq_start,sequence.j_seq_end))
 
+        restricted_positions = []
         if ignor_anchors:
             v_anchor = sequence.junction_start
             j_anchor = sequence.junction_end
