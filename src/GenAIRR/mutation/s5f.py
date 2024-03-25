@@ -1,4 +1,6 @@
 import random
+
+from sqlalchemy import Null
 from ..mutation.mutation_model import MutationModel
 import pickle
 
@@ -170,8 +172,9 @@ class S5F(MutationModel):
         min_mutation_rate (float): The minimum mutation rate.
         max_mutation_rate (float): The maximum mutation rate.
         custom_model (str, optional): Path to a custom mutation model file.
+        productive (bool): Whether to ensure the sequence is productive (No stop codons and mutation in cdr3 anchors), defaulting to false.
     """
-    def __init__(self, min_mutation_rate=0, max_mutation_rate=0,custom_model=None):
+    def __init__(self, min_mutation_rate=0, max_mutation_rate=0, custom_model=None, productive=False):
         """Initialize an S5F mutation model with specified parameters."""
         self.targeting = None
         self.substitution = None
@@ -181,6 +184,7 @@ class S5F(MutationModel):
         self.bases = {'A', 'T', 'C', 'G'}
         self.loaded_metadata = False
         self.custom_model = custom_model
+        self.productive = productive
 
     def load_metadata(self, sequence):
         """Loads mutation model metadata based on the sequence type.
@@ -234,47 +238,107 @@ class S5F(MutationModel):
         # Log mutations
         mutations = dict()
 
+
         # 2. Extract 5-Mers
         fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
-
+                            
         # add a failsafe to insure while loop does not get locked
         patience = 0
 
-        while len(mutations) < target_number_of_mutations:
-            # 3. Mutability, Weighted Choice of Position Based on 5-Mer Likelihoods
-            sampled_position = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
+        # duplicate the loop for unproductive to not repeat if.
+        # productive
+        if self.productive:
+            # if productive do not include the positions of the anchors. 
+            reading_frame = [[2, 1, 0][idx % 3] for idx, element in enumerate(fiver_mers)]
+            v_anchor = sequence_object.junction_start
+            j_anchor = sequence_object.junction_end
+            restricted_positions = {v_anchor, v_anchor+1, v_anchor+2, j_anchor-3, j_anchor-2, j_anchor-1}
+            
+            while len(mutations) < target_number_of_mutations:
+                # 3. Mutability, Weighted Choice of Position Based on 5-Mer Likelihoods
+                sampled_position, chosen_index = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
+                # re-sample the position if it's in the anchor
+                in_anchor = chosen_index in restricted_positions
+                while in_anchor:
+                    sampled_position, chosen_index = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
+                    in_anchor = chosen_index in restricted_positions
+                # 4. Substitution
+                substitutions = self.substitution[sampled_position.sequence].dropna()  # drop Nan's - N's and Same Base
+                mutable_bases = substitutions.index
+                bases_likelihoods = substitutions.values
+                mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
+                # if mutation creates a stop codon and productive is true. generate a new mutations.
+                # under the assumption that the reading frame is 0. 
+                stop, codon = self._is_stop(sampled_position.nucleotides, mutation_to_apply, reading_frame[chosen_index])
+                while stop:
+                    sampled_position, chosen_index = self.weighted_choice(fiver_mers)
+                    in_anchor = chosen_index in restricted_positions
+                    while in_anchor:
+                        sampled_position, chosen_index = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
+                        in_anchor = chosen_index in restricted_positions
+                    substitutions = self.substitution[sampled_position.sequence].dropna()
+                    mutable_bases = substitutions.index
+                    bases_likelihoods = substitutions.values
+                    mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
+                    stop, codon = self._is_stop(sampled_position.nucleotides, mutation_to_apply, reading_frame[chosen_index])
+                # log
+                if sampled_position.position not in mutations:
+                    mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
+                else:
+                    mutations[sampled_position.position] += f'>{mutation_to_apply}'
+                # if mutation reverted previous mutation back to naive state, drop that record from the log
+                if mutation_to_apply == naive_sequence[sampled_position.position]:
+                    mutations.pop(sampled_position.position)
+                # 5. Apply Mutation
+                # This will also update all relevant 5-MERS and their likelihood with pointer like logic
+                sampled_position.change_center(mutation_to_apply, self.mutability)
+                patience += 1
+                # Patience logic
+                if patience > (target_number_of_mutations * 30) and target_number_of_mutations > 1:
+                    patience = 0
+                    # restart process
+                    mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
+                    target_number_of_mutations = int(mutation_rate * len(sequence_object.ungapped_seq))
+                    mutations = dict()
+                    # 2. Extract 5-Mers
+                    fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
+        else:
+            ## normal
+            while len(mutations) < target_number_of_mutations:
+                # 3. Mutability, Weighted Choice of Position Based on 5-Mer Likelihoods
+                sampled_position, chosen_index = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
+                
+                # 4. Substitution
+                substitutions = self.substitution[sampled_position.sequence].dropna()  # drop Nan's - N's and Same Base
+                mutable_bases = substitutions.index
+                bases_likelihoods = substitutions.values
+                mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
+        
+                # log
+                if sampled_position.position not in mutations:
+                    mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
+                else:
+                    mutations[sampled_position.position] += f'>{mutation_to_apply}'
 
-            # 4. Substitution
-            substitutions = self.substitution[sampled_position.sequence].dropna()  # drop Nan's - N's and Same Base
-            mutable_bases = substitutions.index
-            bases_likelihoods = substitutions.values
-            mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
+                # if mutation reverted previous mutation back to naive state, drop that record from the log
+                if mutation_to_apply == naive_sequence[sampled_position.position]:
+                    mutations.pop(sampled_position.position)
 
-            # log
-            if sampled_position.position not in mutations:
-                mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
-            else:
-                mutations[sampled_position.position] += f'>{mutation_to_apply}'
+                # 5. Apply Mutation
+                # This will also update all relevant 5-MERS and their likelihood with pointer like logic
+                sampled_position.change_center(mutation_to_apply, self.mutability)
 
-            # if mutation reverted previous mutation back to naive state, drop that record from the log
-            if mutation_to_apply == naive_sequence[sampled_position.position]:
-                mutations.pop(sampled_position.position)
-
-            # 5. Apply Mutation
-            # This will also update all relevant 5-MERS and their likelihood with pointer like logic
-            sampled_position.change_center(mutation_to_apply, self.mutability)
-
-            patience += 1
-            # Patience logic
-            if patience > (target_number_of_mutations * 30) and target_number_of_mutations > 1:
-                patience = 0
-                # restart process
-                mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
-                target_number_of_mutations = int(mutation_rate * len(sequence_object.ungapped_seq))
-                mutations = dict()
-                # 2. Extract 5-Mers
-                fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
-
+                patience += 1
+                # Patience logic
+                if patience > (target_number_of_mutations * 30) and target_number_of_mutations > 1:
+                    patience = 0
+                    # restart process
+                    mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
+                    target_number_of_mutations = int(mutation_rate * len(sequence_object.ungapped_seq))
+                    mutations = dict()
+                    # 2. Extract 5-Mers
+                    fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
+                        
         mutated_sequence = FiveMER.five_mers_to_dna(fiver_mers)
         return mutated_sequence, mutations, mutation_rate
 
@@ -302,4 +366,18 @@ class S5F(MutationModel):
         weights = [fm.likelihood if fm.likelihood == fm.likelihood else 0 for fm in five_mers]
         # Choose an index instead of the object
         chosen_index = random.choices(range(len(five_mers)), weights, k=1)[0]
-        return five_mers[chosen_index]
+        return five_mers[chosen_index], chosen_index
+
+    def _is_stop(self, nucleotides, new_base, reading_frame):
+        """Check if the mutation introduce a stop codon
+
+        Args:
+            nucleotides (_type_): The nucleotides of the five mer
+            new_base (_type_): The new mutated base
+        """
+        # replace center
+        nucs = [str(nuc) for nuc in nucleotides]
+        codon = nucs[0:2] + [new_base] + nucs[3:]
+        codon = ''.join(codon[reading_frame:reading_frame+3])
+        stop = codon in ["TAG", "TAA", "TGA"]
+        return stop, codon

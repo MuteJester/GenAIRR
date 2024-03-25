@@ -191,7 +191,7 @@ def asc_clust(germline_distance, germline_set, family_threshold = 75, allele_clu
         alleleClusterTable_copy.groupby(['Allele_Cluster', 'Family', 'duplicated_allele'])
         ['allele_idx'].transform('min')
     ).fillna(alleleClusterTable_copy['allele_idx'])
-    alleleClusterTable_copy['allele_index'] = alleleClusterTable_copy.groupby('Allele_Cluster')['allele_index'].apply(lambda x: x.diff().fillna(1).cumsum())
+    alleleClusterTable_copy['allele_index'] = alleleClusterTable_copy.groupby('Allele_Cluster', group_keys=True)['allele_index'].apply(lambda x: x.diff().fillna(1).cumsum())
     alleleClusterTable_copy = alleleClusterTable_copy.drop('allele_idx', axis=1)
     alleleClusterTable_copy['new_allele'] = alleleClusterTable_copy.apply(lambda row: f"{segment}F{row['Family']}-G{row['Allele_Cluster']}*{str(int(row['allele_index'])).zfill(2) if row['allele_index'] >= 1 else str(row['allele_index'])}", axis=1)
     alleleClusterTable_copy['new_allele'] += alleleClusterTable_copy['diff_pos_past_trim'].apply(lambda x: f"_{x}" if pd.notna(x) else "")

@@ -310,7 +310,31 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         distilled_mutation_rate = (len(simulated['mutations'])+len(simulated['Ns']))/len(simulated['sequence'])
         simulated['mutation_rate'] = distilled_mutation_rate
 
+    
+    def productive_cdr3_and_stop_codon(self,simulated):
+        # check for second cys, first trp, cdr3+v modulo 3, stop codon
+        sequence = simulated['sequence']
+        v_anchor_pos = self.v_anchor[simulated['v_call'][0]] + simulated['v_sequence_start'] - simulated['corruption_remove_amount'] # cyc position within the sequece
+        v_anchor_exists = sequence[v_anchor_pos:v_anchor_pos+3] in {'TGC', 'TGT'} # cyc codons
+        j_anchor_pos = self.j_anchor[simulated['j_call'][0]] + simulated['j_sequence_start'] - simulated['j_trim_5'] # trp position within the sequece
+        j_anchor_exists = sequence[j_anchor_pos:j_anchor_pos+3] in {'TTT','TTC', 'TGG'} # trp codons
+        simulated['cdr3_sequence_start'] = v_anchor_pos+3 # cdr3 start position (starts after the cyc)
+        simulated['cdr3_sequence_end'] = j_anchor_pos # cdr3 end position (ends before the trp)
+        simulated['vj_in_frame'] = ((j_anchor_pos - simulated['v_sequence_start'])%3==0) & ((v_anchor_pos - simulated['v_sequence_start'])%3==0) # check both the J to start and V anchor to start
+        stop_codon = False
+        for i in range(j_anchor_pos, simulated['v_sequence_start'], -3): # check for stop codon. break after finding on. looking at the entire sequence.
+            if sequence[i-3:i] in {'TAA', 'TAG', 'TGA'}:
+                stop_codon = True
+                break
+        if not stop_codon:# if a stop codon was not found. for good messure check the J anchor to the end. No need if we alredy found one.
+            for i in range(j_anchor_pos, simulated['j_sequence_end'], 3): # check for stop codon. break after finding on. looking at the entire sequence.
+                if sequence[i:i+3] in {'TAA', 'TAG', 'TGA'}:
+                    stop_codon = True
+                    break
+        simulated['stop_codon'] = stop_codon # add stop codon information
+        simulated['productive'] = v_anchor_exists & j_anchor_exists & bool(~stop_codon) & ((simulated['cdr3_sequence_end']-simulated['cdr3_sequence_start'])%3==0) # asses if the sequence is productive
 
+    
     # Sequence Simulation
     def simulate_sequence(self):
         """
@@ -319,9 +343,13 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
                 Returns:
                     dict: A dictionary containing the simulated sequence, its metadata including gene segment positions, alleles, mutation rate, and trimming information.
         """
+        # if productive is true. ensure the base sequence is productive. This will keep the VJ in frame prior to indels.
         gen = HeavyChainSequence.create_random(self.dataconfig)
+        if self.productive:
+            while not gen.functional:
+                gen = HeavyChainSequence.create_random(self.dataconfig)
         gen.mutate(self.mutation_model)
-
+        
         data = {
             "sequence": gen.mutated_seq,
             "v_sequence_start": gen.v_seq_start,
@@ -391,6 +419,10 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             self.insert_indels(simulated)
 
         self.distill_mutation_rate(simulated)
+        
+        # add sequence productivey assesment
+        self.productive_cdr3_and_stop_codon(simulated)
+        
         self.process_before_return(simulated)
 
         return simulated

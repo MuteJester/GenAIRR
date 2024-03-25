@@ -47,6 +47,7 @@ class SequenceAugmentorArguments:
             kappa_lambda_ratio (float): The ratio of kappa to lambda light chains, defaulting to 0.5.
             save_mutations_record (bool): Whether to save the record of mutations in the sequence, defaulting to False.
             save_ns_record (bool): Whether to save the record of 'N' bases in the sequence, defaulting to False.
+            productive (bool): Whether to generate a productive sequence (VJ in frame and no stop codons), defaulting to False.
         """
     min_mutation_rate: float = 0.003
     max_mutation_rate: float = 0.25
@@ -72,6 +73,7 @@ class SequenceAugmentorArguments:
     save_mutations_record: bool = False
     save_ns_record: bool = False
     save_corruption_record: bool = False
+    productive: bool = False
 
 
 class SequenceAugmentorBase(ABC):
@@ -93,7 +95,8 @@ class SequenceAugmentorBase(ABC):
            insertion_proba (float): The probability of simulating an insertion event.
            save_mutations_record (bool): Flag indicating whether to save the record of mutations applied to sequences.
            save_ns_record (bool): Flag indicating whether to save the record of 'N' bases introduced as noise.
-
+           productive (bool): Wheter to ensure the sequence is productive (No stop codons and mutation in cdr3 anchors), defaulting to false.
+            
        Args:
            dataconfig (DataConfig): The data configuration object containing settings for sequence simulation.
            args (SequenceAugmentorArguments): The arguments object containing simulation parameters.
@@ -108,9 +111,11 @@ class SequenceAugmentorBase(ABC):
         self.max_mutation_rate = args.max_mutation_rate
         if args.custom_mutation_model_path is not None:
             self.mutation_model = args.mutation_model(self.min_mutation_rate, self.max_mutation_rate,
-                                                      custom_model=args.custom_mutation_model_path)
+                                                      custom_model=args.custom_mutation_model_path, 
+                                                      productive=args.productive)
         else:
-            self.mutation_model = args.mutation_model(self.min_mutation_rate, self.max_mutation_rate)
+            self.mutation_model = args.mutation_model(self.min_mutation_rate, self.max_mutation_rate, 
+                                                      productive=args.productive)
 
         # Noising Parameters
         self.n_ratio = args.n_ratio
@@ -147,7 +152,10 @@ class SequenceAugmentorBase(ABC):
         self.j_dict = {i.name: i.ungapped_seq.upper() for i in self.j_alleles}
         self.max_v_length = max(map(lambda x: len(x.ungapped_seq), self.v_alleles))
         self.max_sequence_length = args.max_sequence_length
-
+        self.productive = args.productive
+        # productivity parameters
+        self.v_anchor = {i.name: i.anchor for i in self.v_alleles}
+        self.j_anchor = {i.name: i.anchor for i in self.j_alleles}
         # Loading Routines
         self.load_correction_maps()
 

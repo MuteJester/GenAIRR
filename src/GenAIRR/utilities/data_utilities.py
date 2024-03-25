@@ -50,9 +50,14 @@ def create_allele_dict(fasta):
                     continue
                 segment = 'V'
             if "J" in family:  # if allele doesn't have expected J anchor then don't use it
-                motif = re.compile('(ttt|ttc|tgg)(ggt|ggc|gga|ggg)[a-z]{3}(ggt|ggc|gga|ggg)')
-                match = motif.search(seq)
-                if match is None:
+                anchor = None
+                for frame in range(3):
+                    motif = re.compile('(ttt|ttc|tgg)(ggt|ggc|gga|ggg)[a-z]{3}(ggt|ggc|gga|ggg)')
+                    match = motif.search(seq[frame:])
+                    if match:
+                        if match.span()[0] % 3 == 0:
+                            anchor = match.span()[0] + frame - 1
+                if anchor is None:
                     continue
                 segment = 'J'
 

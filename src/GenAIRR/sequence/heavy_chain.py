@@ -70,8 +70,10 @@ class HeavyChainSequence(BaseSequence):
 
         self.ungapped_seq = nuc_seq.upper()
 
+        
         self.junction_length = self.get_junction_length()
-
+        self.junction_start = self.v_allele.anchor
+        self.junction_end = self.v_allele.anchor + self.junction_length
         self.junction = self.ungapped_seq[self.v_allele.anchor:
                                           self.v_allele.anchor + self.junction_length].upper()
 
