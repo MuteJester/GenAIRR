@@ -287,6 +287,8 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             "v_sequence_end": gen.v_seq_end,
             "j_sequence_start": gen.j_seq_start,
             "j_sequence_end": gen.j_seq_end,
+            "junction_sequence_start": gen.junction_start,
+            "junction_sequence_end": gen.junction_end,
             'v_call': [gen.v_allele.name],
             'j_call': [gen.j_allele.name],
             'mutation_rate': gen.mutation_freq,
@@ -302,7 +304,11 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             'corruption_added_section': '',
             'mutations': {pos: gen.mutations[pos] for pos in sorted(gen.mutations)},  # sort the mutations by position
             "Ns": dict(),
-            'indels': dict()
+            'indels': dict(),
+            'productive': gen.functional,
+            'stop_codon': gen.stop_codon,
+            'vj_in_frame': gen.vj_in_frame,
+            'note': gen.note
         }
         return data
 
@@ -406,6 +412,8 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         simulated['v_sequence_end'] -= amount_to_remove
         simulated['j_sequence_start'] -= amount_to_remove
         simulated['j_sequence_end'] -= amount_to_remove
+        simulated['junction_sequence_end'] -= amount_to_remove
+        simulated['junction_sequence_end'] -= amount_to_remove
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         self.correct_for_v_start_cut(simulated)
@@ -442,7 +450,9 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         simulated['v_sequence_end'] += amount_to_add
         simulated['j_sequence_start'] += amount_to_add
         simulated['j_sequence_end'] += amount_to_add
-
+        simulated['junction_sequence_end'] += amount_to_add
+        simulated['junction_sequence_end'] += amount_to_add
+        
     def remove_before_add_event(self, simulated):
         """
                 Simulates a sequence modification event where a portion is first removed from the start of the sequence, and then bases are added, updating metadata accordingly.
@@ -461,29 +471,6 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         # Sample how much to add after removal occurred
         amount_to_add = self._sample_nucleotide_add_after_remove_distribution()
         self.add_event(simulated, amount=amount_to_add)
-
-    def productive_cdr3_and_stop_codon(self,simulated):
-        # check for second cys, first trp, cdr3+v modulo 3, stop codon
-        sequence = simulated['sequence']
-        v_anchor_pos = self.v_anchor[simulated['v_call'][0]] + simulated['v_sequence_start'] - simulated['corruption_remove_amount'] # cyc position within the sequece
-        v_anchor_exists = sequence[v_anchor_pos:v_anchor_pos+3] in {'TGC', 'TGT'} # cyc codons
-        j_anchor_pos = self.j_anchor[simulated['j_call'][0]] + simulated['j_sequence_start'] - simulated['j_trim_5'] # trp position within the sequece
-        j_anchor_exists = sequence[j_anchor_pos:j_anchor_pos+3] in {'TTT','TTC', 'TGG'} # trp codons
-        simulated['cdr3_sequence_start'] = v_anchor_pos+3 # cdr3 start position (starts after the cyc)
-        simulated['cdr3_sequence_end'] = j_anchor_pos # cdr3 end position (ends before the trp)
-        simulated['vj_in_frame'] = ((j_anchor_pos - simulated['v_sequence_start'])%3==0) & ((v_anchor_pos - simulated['v_sequence_start'])%3==0) # check both the J to start and V anchor to start
-        stop_codon = False
-        for i in range(j_anchor_pos, simulated['v_sequence_start'], -3): # check for stop codon. break after finding on. looking at the entire sequence.
-            if sequence[i-3:i] in {'TAA', 'TAG', 'TGA'}:
-                stop_codon = True
-                break
-        if not stop_codon:# if a stop codon was not found. for good messure check the J anchor to the end. No need if we alredy found one.
-            for i in range(j_anchor_pos, simulated['j_sequence_end'], 3): # check for stop codon. break after finding on. looking at the entire sequence.
-                if sequence[i:i+3] in {'TAA', 'TAG', 'TGA'}:
-                    stop_codon = True
-                    break
-        simulated['stop_codon'] = stop_codon # add stop codon information
-        simulated['productive'] = v_anchor_exists & j_anchor_exists & bool(~stop_codon) & ((simulated['cdr3_sequence_end']-simulated['cdr3_sequence_start'])%3==0) # asses if the sequence is productive
 
     def simulate_augmented_sequence(self):
         """
@@ -515,9 +502,6 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         # Insert Indels:
         if bool(np.random.binomial(1,self.simulate_indels)):
             self.insert_indels(simulated)
-
-        # add sequence productivey assesment
-        self.productive_cdr3_and_stop_codon(simulated)
             
         self.process_before_return(simulated)
 

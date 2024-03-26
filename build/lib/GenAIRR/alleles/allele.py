@@ -258,12 +258,14 @@ class JAllele(Allele):
         ### testing the influence of including the correct frame for the J anchor. ###
         ### same concept but we will look for the motif based on the frame. Span%3 ###
         self.anchor = None
+        self.frame = None
         for frame in range(3):
             motif = re.compile('(ttt|ttc|tgg)(ggt|ggc|gga|ggg)[a-z]{3}(ggt|ggc|gga|ggg)')
             match = motif.search(self.ungapped_seq[frame:])
             if match:
                 if match.span()[0] % 3 == 0:
                     self.anchor = match.span()[0] + frame - 1 # correct for the end of the cdr3
+                    self.frame = frame - 1 # retain the frame of the J
                     
 
     def _get_trim_length(self, trim_dicts):

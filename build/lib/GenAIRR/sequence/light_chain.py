@@ -86,7 +86,11 @@ class LightChainSequence(BaseSequence):
         self.v_seq_end = self.v_allele.ungapped_len - self.v_trim_3
         self.j_seq_start = self.v_seq_end + self.NP1_length
         self.j_seq_end = self.j_seq_start + self.j_allele.ungapped_len - self.j_trim_5
-
+        self.junction_start = self.v_allele.anchor
+        self.junction_end = self.v_allele.anchor + self.junction_length
+        self.junction = self.ungapped_seq[self.junction_start:
+                                          (self.junction_end+1)].upper()
+        
     def _is_functional(self, sequence):
         """
        Evaluates whether the light chain sequence is functional based on the presence of in-frame junctions
@@ -96,12 +100,19 @@ class LightChainSequence(BaseSequence):
            sequence (str): The nucleotide sequence to evaluate for functionality.
        """
         self.functional = False
-        if (self.junction_length % 3) == 0 and self.check_stops(sequence) is False:
+        self.stop_codon = self.check_stops(sequence)
+        self.vj_in_frame = (self.junction_end % 3) == 0 and (self.junction_start % 3 == 0) and self.stop_codon is False
+        self.note = ''
+        if (self.junction_length % 3) == 0 and self.stop_codon is False:
             self.junction_aa = translate(self.junction)
-            if self.junction_aa.startswith("C") and (
-                    self.junction_aa.endswith("F") or self.junction_aa.endswith("W")):
-                self.functional = True
-
+            if self.junction_aa.startswith("C"):
+                if self.junction_aa.endswith("F") or self.junction_aa.endswith("W"):
+                    self.functional = True
+                else:
+                    self.note += 'J anchor (W/F) not present.'
+            else:
+                self.note += 'V second C not present.'
+                
     def mutate(self, mutation_model: MutationModel):
         """
         Applies mutations to the light chain sequence using the given mutation model.
@@ -118,9 +129,8 @@ class LightChainSequence(BaseSequence):
         self.mutations = mutations
         self.mutation_freq = mutation_rate
         self.mutation_count = len(mutations)
-
-        self.junction = self.mutated_seq[self.v_allele.anchor:
-                                         self.v_allele.anchor + self.junction_length].upper()
+        self.junction = self.mutated_seq[self.junction_start:
+                                          (self.junction_end+1)].upper()
         # mutation metadata updates
         self._is_functional(self.mutated_seq)
 

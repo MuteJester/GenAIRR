@@ -316,7 +316,8 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         sequence = simulated['sequence']
         v_anchor_pos = self.v_anchor[simulated['v_call'][0]] + simulated['v_sequence_start'] - simulated['corruption_remove_amount'] # cyc position within the sequece
         v_anchor_exists = sequence[v_anchor_pos:v_anchor_pos+3] in {'TGC', 'TGT'} # cyc codons
-        j_anchor_pos = self.j_anchor[simulated['j_call'][0]] + simulated['j_sequence_start'] - simulated['j_trim_5'] # trp position within the sequece
+        frame = self.j_frame[simulated['j_call'][0]] + 2
+        j_anchor_pos = self.j_anchor[simulated['j_call'][0]] + frame + simulated['j_sequence_start'] - simulated['j_trim_5'] # trp position within the sequece
         j_anchor_exists = sequence[j_anchor_pos:j_anchor_pos+3] in {'TTT','TTC', 'TGG'} # trp codons
         simulated['cdr3_sequence_start'] = v_anchor_pos+3 # cdr3 start position (starts after the cyc)
         simulated['cdr3_sequence_end'] = j_anchor_pos # cdr3 end position (ends before the trp)
@@ -333,6 +334,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
                     break
         simulated['stop_codon'] = stop_codon # add stop codon information
         simulated['productive'] = v_anchor_exists & j_anchor_exists & bool(~stop_codon) & ((simulated['cdr3_sequence_end']-simulated['cdr3_sequence_start'])%3==0) # asses if the sequence is productive
+        simulated['note'] = 'VH anchor not present.' if not v_anchor_exists else ''+ ''+ 'JH anchor not present.' if not j_anchor_exists else ''
 
     
     # Sequence Simulation
@@ -348,6 +350,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         if self.productive:
             while not gen.functional:
                 gen = HeavyChainSequence.create_random(self.dataconfig)
+        
         gen.mutate(self.mutation_model)
         
         data = {
@@ -358,6 +361,8 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             "d_sequence_end": gen.d_seq_end,
             "j_sequence_start": gen.j_seq_start,
             "j_sequence_end": gen.j_seq_end,
+            "junction_sequence_start": gen.junction_start,
+            "junction_sequence_end": gen.junction_end,
             "v_call": [gen.v_allele.name],
             "d_call": [gen.d_allele.name],
             "j_call": [gen.j_allele.name],
@@ -376,6 +381,10 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             'mutations': {pos: gen.mutations[pos] for pos in sorted(gen.mutations)},  # sort the mutations by position
             "Ns": dict(),
             'indels': dict(),
+            'productive': gen.functional,
+            'stop_codon': gen.stop_codon,
+            'vj_in_frame': gen.vj_in_frame,
+            'note': gen.note
         }
         return data
 
@@ -421,7 +430,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         self.distill_mutation_rate(simulated)
         
         # add sequence productivey assesment
-        self.productive_cdr3_and_stop_codon(simulated)
+        #self.productive_cdr3_and_stop_codon(simulated)
         
         self.process_before_return(simulated)
 

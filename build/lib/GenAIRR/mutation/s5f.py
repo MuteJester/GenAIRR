@@ -1,6 +1,4 @@
 import random
-
-from sqlalchemy import Null
 from ..mutation.mutation_model import MutationModel
 import pickle
 

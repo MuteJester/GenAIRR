@@ -156,6 +156,7 @@ class SequenceAugmentorBase(ABC):
         # productivity parameters
         self.v_anchor = {i.name: i.anchor for i in self.v_alleles}
         self.j_anchor = {i.name: i.anchor for i in self.j_alleles}
+        self.j_frame = {i.name: i.frame for i in self.j_alleles}
         # Loading Routines
         self.load_correction_maps()
 
@@ -305,6 +306,8 @@ class SequenceAugmentorBase(ABC):
         simulated['d_sequence_end'] -= amount_to_remove
         simulated['j_sequence_start'] -= amount_to_remove
         simulated['j_sequence_end'] -= amount_to_remove
+        simulated['junction_sequence_end'] -= amount_to_remove
+        simulated['junction_sequence_end'] -= amount_to_remove
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         if autocorrect:
@@ -344,6 +347,8 @@ class SequenceAugmentorBase(ABC):
         simulated['d_sequence_end'] += amount_to_add
         simulated['j_sequence_start'] += amount_to_add
         simulated['j_sequence_end'] += amount_to_add
+        simulated['junction_sequence_end'] += amount_to_add
+        simulated['junction_sequence_end'] += amount_to_add
 
     def remove_before_add_event(self, simulated):
         # ----- REMOVE PART -----#

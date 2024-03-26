@@ -25,7 +25,7 @@ class Uniform(MutationModel):
         self.productive = productive
 
 
-    def mutable_positions(self,sequence, ignor_anchors=False):
+    def mutable_positions(self,sequence):
         """Identifies mutable positions in the sequence, excluding (NP) regions.
 
         Args:
@@ -41,15 +41,8 @@ class Uniform(MutationModel):
         positions_to_mutate += list(range(sequence.v_seq_start,sequence.v_seq_end))
         positions_to_mutate += list(range(sequence.d_seq_start,sequence.d_seq_end))
         positions_to_mutate += list(range(sequence.j_seq_start,sequence.j_seq_end))
-
-        restricted_positions = []
-        if ignor_anchors:
-            v_anchor = sequence.junction_start
-            j_anchor = sequence.junction_end
-            restricted_positions = {v_anchor, v_anchor+1, v_anchor+2, j_anchor-2, j_anchor-1, j_anchor}
-            positions_to_mutate = [pos for pos in positions_to_mutate if pos not in restricted_positions]
-            
-        return positions_to_mutate, restricted_positions
+    
+        return positions_to_mutate
 
     def apply_mutation(self, sequence_object):
         """Applies mutations to the given sequence object based on the uniform mutation model.
@@ -65,23 +58,23 @@ class Uniform(MutationModel):
         sequence = sequence_object.ungapped_seq
         mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
         number_of_mutations = int(mutation_rate*len(sequence))
-        positions_to_mutate, restricted_positions = self.mutable_positions(sequence_object, self.productive)
-        positions_to_mutate = random.sample(positions_to_mutate,k=number_of_mutations)
+        possible_positions_to_mutate = self.mutable_positions(sequence_object)
+        positions_to_mutate = random.sample(possible_positions_to_mutate,k=number_of_mutations)
 
         # log mutations
         mutations = dict()
         mutated_sequence = list(sequence)
         if self.productive:
+            v_anchor = sequence_object.junction_start
+            j_anchor = sequence_object.junction_end
+            restricted_positions = {v_anchor:'v', 
+                                    v_anchor+1:'v', 
+                                    v_anchor+2:'v', 
+                                    j_anchor-2:'j', 
+                                    j_anchor-1:'j', 
+                                    j_anchor:'j'}
             for position in positions_to_mutate:
-                new_base = self._mutate_base(mutated_sequence[position])
-                # check if the mutation created a stop codon
-                stop = self._is_stop_codon(mutated_sequence, position, new_base)
-                while stop:
-                    position = random.sample(positions_to_mutate,k=1)[0] # get a new position.
-                    new_base = self._mutate_base(mutated_sequence[position])
-                    stop = self._is_stop_codon(mutated_sequence, position, new_base)
-                if position in restricted_positions:
-                    print(position)
+                position, new_base = self._productive_recursive(0, position, mutated_sequence, restricted_positions, possible_positions_to_mutate)
                 mutations[position] = f'{mutated_sequence[position]}>{new_base}'
                 mutated_sequence[position] = new_base
         else:
@@ -121,3 +114,21 @@ class Uniform(MutationModel):
         codon = ''.join( [new_base if pos == position else mutated_sequence[pos] for pos in positions])
         return codon in ["TAG", "TAA", "TGA"]
         
+    def _productive_recursive(self, counter, position, mutated_sequence, restricted_positions, positions_to_mutate):
+        if counter >= 100:
+            raise RecursionError("Maximum recursion depth exceeded")
+        new_base = self._mutate_base(mutated_sequence[position])
+        stop = self._is_stop_codon(mutated_sequence, position, new_base)
+        if stop:
+            position = random.sample(positions_to_mutate,k=1)[0]
+            return self._productive_recursive(counter, position, mutated_sequence, restricted_positions, positions_to_mutate = positions_to_mutate)
+        elif position in restricted_positions.keys():
+            tag = restricted_positions[position]
+            codon = ''.join([new_base if k ==position else mutated_sequence[k] for k, v in restricted_positions.items() if v == tag])
+            pattern = {'TGC', 'TGT'} if tag == 'v' else {'TTT', 'TTC', 'TGG'}
+            if codon in pattern:
+                return position, new_base
+            else:
+                position = random.sample(positions_to_mutate,k=1)[0]
+                return self._productive_recursive(counter, position, mutated_sequence, restricted_positions, positions_to_mutate = positions_to_mutate)
+        return position, new_base
