@@ -91,7 +91,7 @@ class HeavyChainSequence(BaseSequence):
         self.j_seq_start = self.d_seq_end + self.NP2_length
         self.j_seq_end = self.j_seq_start + self.j_allele.ungapped_len - self.j_trim_5
         self.junction_start = self.v_allele.anchor
-        self.junction_end = self.v_allele.anchor + self.junction_length - 1
+        self.junction_end = self.v_allele.anchor + self.junction_length
         
 
     def _is_functional(self, sequence):
@@ -104,7 +104,7 @@ class HeavyChainSequence(BaseSequence):
        """
         self.functional = False
         self.stop_codon = self.check_stops(sequence)
-        self.vj_in_frame = (self.junction_end % 3) == 0 and (self.junction_start % 3 == 0) and self.stop_codon is False
+        self.vj_in_frame = (self.junction_end % 3) == 0 and (self.junction_start % 3 == 0) and (self.junction_length % 3 == 0) and self.stop_codon is False
         self.note = ''
         if (self.junction_length % 3) == 0 and self.stop_codon is False:
             self.junction_aa = translate(self.junction)

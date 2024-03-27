@@ -2,7 +2,7 @@ import pickle
 import random
 import numpy as np
 import scipy.stats as st
-from ..utilities import AlleleNComparer
+from ..utilities import AlleleNComparer, translate
 from ..sequence import LightChainType
 from ..sequence import LightChainSequence
 from ..simulation import SequenceAugmentorArguments
@@ -472,6 +472,43 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         amount_to_add = self._sample_nucleotide_add_after_remove_distribution()
         self.add_event(simulated, amount=amount_to_add)
 
+    def fix_productive_call_after_indel(self,simulated):
+        sequence = simulated['sequence']
+        functional = simulated['productive']
+        stop_codon = simulated['stop_codon']
+        vj_in_frame = simulated['vj_in_frame']
+        note = simulated['note']
+        # stop codon
+        stops = ["TAG", "TAA", "TGA"]
+        for x in range(simulated['junction_sequence_end'], simulated['v_sequence_start'], -3):
+            if sequence[x-3:x] in stops:
+                stop_codon = True
+        if not stop_codon:
+            for x in range(simulated['junction_sequence_end'], len(sequence), 3):
+                if sequence[x:x+3] in stops:
+                    stop_codon = True
+        # vj in frame
+        from_j_to_start = (simulated['junction_sequence_end'] - simulated['v_sequence_start']) % 3 == 0
+        junction_length = (simulated['junction_sequence_end'] - simulated['junction_sequence_start']) % 3 == 0
+        from_v_to_start = (simulated['junction_sequence_start'] - simulated['v_sequence_start']) % 3 == 0
+        vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon is False
+        junction = sequence[simulated['junction_sequence_start']:simulated['junction_sequence_end']]
+        # prooductivity
+        if junction_length == 0 and stop_codon is False:
+            junction_aa = translate(junction)
+            if junction_aa.startswith("C"):
+                if junction_aa.endswith("F") or junction_aa.endswith("W"):
+                    functional = True
+                else:
+                    note += 'J anchor (W/F) not present.'
+            else:
+                note += 'V second C not present.'
+        # update the values
+        simulated['productive'] = functional
+        simulated['stop_codon'] = stop_codon
+        simulated['vj_in_frame'] = vj_in_frame
+        simulated['note'] = note
+        
     def simulate_augmented_sequence(self):
         """
             Simulates and augments a light chain sequence, incorporating sequence corrections, potential corruption at the beginning, and insertion of 'N' bases.
@@ -502,6 +539,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         # Insert Indels:
         if bool(np.random.binomial(1,self.simulate_indels)):
             self.insert_indels(simulated)
+            self.fix_productive_call_after_indel(simulated)
             
         self.process_before_return(simulated)
 

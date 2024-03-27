@@ -101,7 +101,7 @@ class LightChainSequence(BaseSequence):
        """
         self.functional = False
         self.stop_codon = self.check_stops(sequence)
-        self.vj_in_frame = (self.junction_end % 3) == 0 and (self.junction_start % 3 == 0) and self.stop_codon is False
+        self.vj_in_frame = (self.junction_end % 3) == 0 and (self.junction_start % 3 == 0) and (self.junction_length % 3 == 0) and self.stop_codon is False
         self.note = ''
         if (self.junction_length % 3) == 0 and self.stop_codon is False:
             self.junction_aa = translate(self.junction)

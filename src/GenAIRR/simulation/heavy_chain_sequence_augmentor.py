@@ -2,7 +2,7 @@ import pickle
 import random
 import numpy as np
 import scipy.stats as st
-from ..utilities import AlleleNComparer
+from ..utilities import AlleleNComparer, translate
 from ..sequence import HeavyChainSequence
 from ..simulation import SequenceAugmentorArguments
 from ..simulation.sequence_augmentor_base import SequenceAugmentorBase
@@ -105,7 +105,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
 
         # update start/end positions
         for reg in ['v_sequence_start', 'v_sequence_end', 'j_sequence_start', 'j_sequence_end', 'd_sequence_start',
-                    'd_sequence_end']:
+                    'd_sequence_end', 'junction_sequence_start' , 'junction_sequence_end']:
             if simulated[reg] > position:
                 simulated[reg] = simulated[reg] - 1
 
@@ -151,7 +151,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         after_insertion = nucleotides_list[:position] + [random_base] + nucleotides_list[position:]
         # update start/end positions
         for reg in ['v_sequence_start', 'v_sequence_end', 'j_sequence_start', 'j_sequence_end', 'd_sequence_start',
-                    'd_sequence_end']:
+                    'd_sequence_end', 'junction_sequence_start' , 'junction_sequence_end']:
             if simulated[reg] >= position:
                 simulated[reg] += 1
 
@@ -311,30 +311,42 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         simulated['mutation_rate'] = distilled_mutation_rate
 
     
-    def productive_cdr3_and_stop_codon(self,simulated):
-        # check for second cys, first trp, cdr3+v modulo 3, stop codon
+    def fix_productive_call_after_indel(self,simulated):
         sequence = simulated['sequence']
-        v_anchor_pos = self.v_anchor[simulated['v_call'][0]] + simulated['v_sequence_start'] - simulated['corruption_remove_amount'] # cyc position within the sequece
-        v_anchor_exists = sequence[v_anchor_pos:v_anchor_pos+3] in {'TGC', 'TGT'} # cyc codons
-        frame = self.j_frame[simulated['j_call'][0]] + 2
-        j_anchor_pos = self.j_anchor[simulated['j_call'][0]] + frame + simulated['j_sequence_start'] - simulated['j_trim_5'] # trp position within the sequece
-        j_anchor_exists = sequence[j_anchor_pos:j_anchor_pos+3] in {'TTT','TTC', 'TGG'} # trp codons
-        simulated['cdr3_sequence_start'] = v_anchor_pos+3 # cdr3 start position (starts after the cyc)
-        simulated['cdr3_sequence_end'] = j_anchor_pos # cdr3 end position (ends before the trp)
-        simulated['vj_in_frame'] = ((j_anchor_pos - simulated['v_sequence_start'])%3==0) & ((v_anchor_pos - simulated['v_sequence_start'])%3==0) # check both the J to start and V anchor to start
-        stop_codon = False
-        for i in range(j_anchor_pos, simulated['v_sequence_start'], -3): # check for stop codon. break after finding on. looking at the entire sequence.
-            if sequence[i-3:i] in {'TAA', 'TAG', 'TGA'}:
+        functional = simulated['productive']
+        stop_codon = simulated['stop_codon']
+        vj_in_frame = simulated['vj_in_frame']
+        note = simulated['note']
+        # stop codon
+        stops = ["TAG", "TAA", "TGA"]
+        for x in range(simulated['junction_sequence_end'], simulated['v_sequence_start'], -3):
+            if sequence[x-3:x] in stops:
                 stop_codon = True
-                break
-        if not stop_codon:# if a stop codon was not found. for good messure check the J anchor to the end. No need if we alredy found one.
-            for i in range(j_anchor_pos, simulated['j_sequence_end'], 3): # check for stop codon. break after finding on. looking at the entire sequence.
-                if sequence[i:i+3] in {'TAA', 'TAG', 'TGA'}:
+        if not stop_codon:
+            for x in range(simulated['junction_sequence_end'], len(sequence), 3):
+                if sequence[x:x+3] in stops:
                     stop_codon = True
-                    break
-        simulated['stop_codon'] = stop_codon # add stop codon information
-        simulated['productive'] = v_anchor_exists & j_anchor_exists & bool(~stop_codon) & ((simulated['cdr3_sequence_end']-simulated['cdr3_sequence_start'])%3==0) # asses if the sequence is productive
-        simulated['note'] = 'VH anchor not present.' if not v_anchor_exists else ''+ ''+ 'JH anchor not present.' if not j_anchor_exists else ''
+        # vj in frame
+        from_j_to_start = (simulated['junction_sequence_end'] - simulated['v_sequence_start']) % 3 == 0
+        junction_length = (simulated['junction_sequence_end'] - simulated['junction_sequence_start']) % 3 == 0
+        from_v_to_start = (simulated['junction_sequence_start'] - simulated['v_sequence_start']) % 3 == 0
+        vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon is False
+        junction = sequence[simulated['junction_sequence_start']:simulated['junction_sequence_end']]
+        # prooductivity
+        if junction_length == 0 and stop_codon is False:
+            junction_aa = translate(junction)
+            if junction_aa.startswith("C"):
+                if junction_aa.endswith("F") or junction_aa.endswith("W"):
+                    functional = True
+                else:
+                    note += 'J anchor (W/F) not present.'
+            else:
+                note += 'V second C not present.'
+        # update the values
+        simulated['productive'] = functional
+        simulated['stop_codon'] = stop_codon
+        simulated['vj_in_frame'] = vj_in_frame
+        simulated['note'] = note
 
     
     # Sequence Simulation
@@ -426,6 +438,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         # Insert Indels with probability = simulate_indels :
         if bool(np.random.binomial(1,self.simulate_indels)):
             self.insert_indels(simulated)
+            self.fix_productive_call_after_indel(simulated)
 
         self.distill_mutation_rate(simulated)
         
