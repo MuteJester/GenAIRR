@@ -31,7 +31,7 @@ class SequenceAugmentorArguments:
             deletion_proba (float): The probability of simulating a deletion event, defaulting to 0.5.
             insertion_proba (float): The probability of simulating an insertion event, defaulting to 0.5.
             n_ratio (float): The ratio of 'N' bases to introduce as noise into sequences, defaulting to 0.02.
-            n_proba (float): The probability of simulating an indel.
+            n_proba (float): The probability of simulating 'N'.
             max_sequence_length (int): The maximum length of sequences to simulate, defaulting to 512.
             mutation_model (MutationModel): The mutation model to use for sequence mutation simulation, defaulting to S5F.
             custom_mutation_model_path (str): The path to a custom mutation model file, if any, defaulting to None.
