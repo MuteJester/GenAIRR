@@ -306,7 +306,7 @@ class SequenceAugmentorBase(ABC):
         simulated['d_sequence_end'] -= amount_to_remove
         simulated['j_sequence_start'] -= amount_to_remove
         simulated['j_sequence_end'] -= amount_to_remove
-        simulated['junction_sequence_end'] -= amount_to_remove
+        simulated['junction_sequence_start'] -= amount_to_remove
         simulated['junction_sequence_end'] -= amount_to_remove
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
@@ -347,7 +347,7 @@ class SequenceAugmentorBase(ABC):
         simulated['d_sequence_end'] += amount_to_add
         simulated['j_sequence_start'] += amount_to_add
         simulated['j_sequence_end'] += amount_to_add
-        simulated['junction_sequence_end'] += amount_to_add
+        simulated['junction_sequence_start'] += amount_to_add
         simulated['junction_sequence_end'] += amount_to_add
 
     def remove_before_add_event(self, simulated):
