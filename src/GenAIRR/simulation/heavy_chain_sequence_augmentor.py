@@ -242,7 +242,9 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         trim_5 = simulated['d_trim_5']
         trim_3 = simulated['d_trim_3']
         # infer the precalculated map what alleles should be the ground truth for this sequence based on the trim
-        simulated['d_call'] = list(self.d_trim_correction_map[simulated['d_call'][0]][(trim_5, trim_3)])
+        #simulated['d_call'] = list(self.d_trim_correction_map[simulated['d_call'][0]][(trim_5, trim_3)])
+        # retaining the order such that the selected d allele is the first.
+        simulated['d_call'] = [simulated['d_call'][0]] + list(set(self.d_trim_correction_map[simulated['d_call'][0]][(trim_5, trim_3)]) - set(simulated['d_call'][0]))
 
     def short_d_validation(self, simulated):
         """
