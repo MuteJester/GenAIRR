@@ -31,7 +31,7 @@ class SequenceAugmentorArguments:
             deletion_proba (float): The probability of simulating a deletion event, defaulting to 0.5.
             insertion_proba (float): The probability of simulating an insertion event, defaulting to 0.5.
             n_ratio (float): The ratio of 'N' bases to introduce as noise into sequences, defaulting to 0.02.
-            n_proba (float): The probability of simulating an indel.
+            n_proba (float): The probability of simulating 'N'.
             max_sequence_length (int): The maximum length of sequences to simulate, defaulting to 512.
             mutation_model (MutationModel): The mutation model to use for sequence mutation simulation, defaulting to S5F.
             custom_mutation_model_path (str): The path to a custom mutation model file, if any, defaulting to None.
@@ -306,7 +306,7 @@ class SequenceAugmentorBase(ABC):
         simulated['d_sequence_end'] -= amount_to_remove
         simulated['j_sequence_start'] -= amount_to_remove
         simulated['j_sequence_end'] -= amount_to_remove
-        simulated['junction_sequence_end'] -= amount_to_remove
+        simulated['junction_sequence_start'] -= amount_to_remove
         simulated['junction_sequence_end'] -= amount_to_remove
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
@@ -347,7 +347,7 @@ class SequenceAugmentorBase(ABC):
         simulated['d_sequence_end'] += amount_to_add
         simulated['j_sequence_start'] += amount_to_add
         simulated['j_sequence_end'] += amount_to_add
-        simulated['junction_sequence_end'] += amount_to_add
+        simulated['junction_sequence_start'] += amount_to_add
         simulated['junction_sequence_end'] += amount_to_add
 
     def remove_before_add_event(self, simulated):

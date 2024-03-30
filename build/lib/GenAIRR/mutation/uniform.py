@@ -70,9 +70,9 @@ class Uniform(MutationModel):
             restricted_positions = {v_anchor:'v', 
                                     v_anchor+1:'v', 
                                     v_anchor+2:'v', 
+                                    j_anchor-3:'j', 
                                     j_anchor-2:'j', 
-                                    j_anchor-1:'j', 
-                                    j_anchor:'j'}
+                                    j_anchor-1:'j'}
             for position in positions_to_mutate:
                 position, new_base = self._productive_recursive(0, position, mutated_sequence, restricted_positions, possible_positions_to_mutate)
                 mutations[position] = f'{mutated_sequence[position]}>{new_base}'
