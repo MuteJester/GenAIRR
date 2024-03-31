@@ -4,7 +4,7 @@ import os
 module_dir = os.path.dirname(__file__)
 
 def builtin_heavy_chain_data_config():
-    data_path = os.path.join(module_dir, 'HeavyChain_DataConfig_OGRDB_V2.pkl')
+    data_path = os.path.join(module_dir, 'HeavyChain_DataConfig_OGRDB_V3.pkl')
     with open(data_path, 'rb') as h:
         return pickle.load(h)
 

@@ -3,23 +3,10 @@ import unittest
 from GenAIRR.alleles import VAllele
 from GenAIRR.generateDataConfig import RandomDataConfigGenerator, CustomDataConfigGenerator
 from GenAIRR.sequence import LightChainSequence, HeavyChainSequence
-import pickle
-from importlib import resources
-import GenAIRR
-
-with resources.path('GenAIRR.data', 'LightChain_KAPPA_DataConfigV2.pkl') as data_path:
-    with open(data_path, 'rb') as h:
-        lightchain_kappa_config = pickle.load(h)
-
-with resources.path('GenAIRR.data', 'LightChain_LAMBDA_DataConfigV2.pkl') as data_path:
-    with open(data_path, 'rb') as h:
-        lightchain_lambda_config = pickle.load(h)
-
-with resources.path('GenAIRR.data', 'HeavyChain_DataConfig_OGRDB_V2.pkl') as data_path:
-    with open(data_path, 'rb') as h:
-        heavychain_config = pickle.load(h)
-        print(heavychain_config)
-
+from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config
+lightchain_kappa_config = builtin_kappa_chain_data_config()
+lightchain_lambda_config = builtin_lambda_chain_data_config()
+heavychain_config = builtin_heavy_chain_data_config()
 
 class TestSequenceSimulation(unittest.TestCase):
 
