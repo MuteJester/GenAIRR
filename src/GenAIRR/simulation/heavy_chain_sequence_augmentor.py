@@ -335,7 +335,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon == False
         junction = sequence[simulated['junction_sequence_start']:simulated['junction_sequence_end']]
         # prooductivity
-        if junction_length == 0 and stop_codon is False:
+        if junction_length%3 == 0 and stop_codon == False:
             junction_aa = translate(junction)
             if junction_aa.startswith("C"):
                 if junction_aa.endswith("F") or junction_aa.endswith("W"):
