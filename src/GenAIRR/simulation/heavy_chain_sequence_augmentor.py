@@ -332,7 +332,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         from_j_to_start = (simulated['junction_sequence_end'] - simulated['v_sequence_start']) % 3 == 0
         junction_length = (simulated['junction_sequence_end'] - simulated['junction_sequence_start']) % 3 == 0
         from_v_to_start = (simulated['junction_sequence_start'] - simulated['v_sequence_start']) % 3 == 0
-        vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon is False
+        vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon == False
         junction = sequence[simulated['junction_sequence_start']:simulated['junction_sequence_end']]
         # prooductivity
         if junction_length == 0 and stop_codon is False:
