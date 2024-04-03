@@ -314,7 +314,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
 
     
     def fix_productive_call_after_indel(self,simulated):
-        sequence = simulated['sequence']
+        sequence = simulated['sequence'][simulated['v_sequence_start']:]
         functional = simulated['productive']
         stop_codon = simulated['stop_codon']
         vj_in_frame = simulated['vj_in_frame']
@@ -341,9 +341,13 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
                 if junction_aa.endswith("F") or junction_aa.endswith("W"):
                     functional = True
                 else:
+                    functional = False
                     note += 'J anchor (W/F) not present.'
             else:
+                functional = False
                 note += 'V second C not present.'
+        else:
+            functional = False
         # update the values
         simulated['productive'] = functional
         simulated['stop_codon'] = stop_codon

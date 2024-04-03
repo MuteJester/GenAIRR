@@ -13,8 +13,11 @@ src/GenAIRR/data/HH_S5F_META.pkl
 src/GenAIRR/data/HH_S5F_Opposite_META.pkl
 src/GenAIRR/data/HKL_S5F_META.pkl
 src/GenAIRR/data/HeavyChain_DataConfig_OGRDB_V2.pkl
+src/GenAIRR/data/HeavyChain_DataConfig_OGRDB_V3.pkl
 src/GenAIRR/data/LightChain_KAPPA_DataConfigV2.pkl
+src/GenAIRR/data/LightChain_KAPPA_DataConfigV3.pkl
 src/GenAIRR/data/LightChain_LAMBDA_DataConfigV2.pkl
+src/GenAIRR/data/LightChain_LAMBDA_DataConfigV3.pkl
 src/GenAIRR/data/__init__.py
 src/GenAIRR/generateDataConfig/__init__.py
 src/GenAIRR/generateDataConfig/make_dataconfig.py
@@ -39,3 +42,4 @@ src/GenAIRR/utilities/data_config.py
 src/GenAIRR/utilities/data_utilities.py
 src/GenAIRR/utilities/file_utilities.py
 src/GenAIRR/utilities/misc.py
+src/GenAIRR/utilities/report.py
