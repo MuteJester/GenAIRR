@@ -191,6 +191,8 @@ class TestSequenceSimulation(unittest.TestCase):
             'd_sequence_end': 7,
             'j_sequence_start': 8,
             'j_sequence_end': 12,
+            'junction_sequence_start':-1,
+            'junction_sequence_end': -1,
             'Ns': {5: 'N'},
             'mutations': {6: 'A'},
             'indels':{}
@@ -221,6 +223,8 @@ class TestSequenceSimulation(unittest.TestCase):
             'd_sequence_end': 7,
             'j_sequence_start': 8,
             'j_sequence_end': 12,
+            'junction_sequence_start': -1,
+            'junction_sequence_end': -1,
             'Ns': {5: 'N'},
             'mutations': {6: 'A'},
             'indels': {}
@@ -295,6 +299,8 @@ class TestSequenceSimulation(unittest.TestCase):
         simulated = {
             'sequence': 'ATGCGTACGATCG',
             'v_sequence_start': 1,
+            'junction_sequence_start':-1,
+            'junction_sequence_end':-1,
             'v_sequence_end': 3,
             'd_sequence_start': 4,
             'd_sequence_end': 7,
