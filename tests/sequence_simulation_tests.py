@@ -125,6 +125,8 @@ class TestSequenceSimulation(unittest.TestCase):
                      'd_sequence_end': 228,
                      'j_sequence_start': 251,
                      'j_sequence_end': 304,
+                     'junction_sequence_start': -1, #TODO make sure all the test also test for correct movment of  the junction positions
+                     'junction_sequence_end': -1,
                      'v_call': 'IGHVF3-G11*06',
                      'd_call': 'IGHD6-19*01',
                      'j_call': 'IGHJ2*01',
@@ -257,6 +259,8 @@ class TestSequenceSimulation(unittest.TestCase):
             'd_sequence_end': 7,
             'j_sequence_start': 8,
             'j_sequence_end': 12,
+            'junction_sequence_start': -1,
+            'junction_sequence_end': -1,
             'Ns': {5: 'N'},
             'mutations': {6: 'A'},
             'indels':{}
