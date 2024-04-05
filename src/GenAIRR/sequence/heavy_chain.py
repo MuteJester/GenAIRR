@@ -90,6 +90,12 @@ class HeavyChainSequence(BaseSequence):
         self.d_seq_end = self.d_seq_start + self.d_allele.ungapped_len - self.d_trim_3 - self.d_trim_5
         self.j_seq_start = self.d_seq_end + self.NP2_length
         self.j_seq_end = self.j_seq_start + self.j_allele.ungapped_len - self.j_trim_5
+        self.v_germline_start = 0
+        self.v_germline_end = self.v_allele.ungapped_len - self.v_trim_3
+        self.d_germline_start = self.d_trim_5
+        self.d_germline_end = self.d_allele.ungapped_len - self.d_trim_3
+        self.j_germline_start = self.j_trim_5
+        self.j_germline_end = self.j_allele.ungapped_len - self.j_trim_3
         self.junction_start = self.v_allele.anchor
         self.junction_end = self.v_allele.anchor + self.junction_length
         

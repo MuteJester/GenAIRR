@@ -86,6 +86,10 @@ class LightChainSequence(BaseSequence):
         self.v_seq_end = self.v_allele.ungapped_len - self.v_trim_3
         self.j_seq_start = self.v_seq_end + self.NP1_length
         self.j_seq_end = self.j_seq_start + self.j_allele.ungapped_len - self.j_trim_5
+        self.v_germline_start = 0
+        self.v_germline_end = self.v_allele.ungapped_len - self.v_trim_3
+        self.j_germline_start = self.j_trim_5
+        self.j_germline_end = self.j_allele.ungapped_len - self.j_trim_3
         self.junction_start = self.v_allele.anchor
         self.junction_end = self.v_allele.anchor + self.junction_length
         self.junction = self.ungapped_seq[self.junction_start:

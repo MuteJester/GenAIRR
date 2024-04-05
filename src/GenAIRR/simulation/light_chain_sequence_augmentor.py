@@ -287,6 +287,10 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             "v_sequence_end": gen.v_seq_end,
             "j_sequence_start": gen.j_seq_start,
             "j_sequence_end": gen.j_seq_end,
+            "v_germline_start": gen.v_germline_start,
+            "v_germline_end": gen.v_germline_end,
+            "j_germline_start": gen.j_germline_start,
+            "j_germline_end": gen.j_germline_end,
             "junction_sequence_start": gen.junction_start,
             "junction_sequence_end": gen.junction_end,
             'v_call': [gen.v_allele.name],
@@ -321,6 +325,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         """
         # Extract Current V Metadata
         v_start, v_end = simulation['v_sequence_start'], simulation['v_sequence_end']
+        v_germline_start, v_germline_end = simulation['v_germline_start'], simulation['v_germline_end']
         v_allele_remainder = simulation['sequence'][v_start:v_end]
         v_allele_ref = self.v_dict[simulation['v_call'][0]]
 
@@ -338,10 +343,12 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             # in case the current poistion in the junction matches the reference exapnd the d segment
             if a == b:
                 v_end += 1
+                v_germline_end += 1
             else:  # if the continuous streak is broken or non-existent break!
                 break
 
         simulation['v_sequence_end'] = v_end
+        simulation['v_germline_end'] = v_germline_end
 
     def fix_j_position_after_trimming_index_ambiguity(self, simulation):
         """
@@ -352,6 +359,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         """
         # Extract Current J Metadata
         j_start, j_end = simulation['j_sequence_start'], simulation['j_sequence_end']
+        j_germline_start, j_germline_end = simulation['j_germline_start'], simulation['j_germline_end']
         j_allele_remainder = simulation['sequence'][j_start:j_end]
         j_allele_ref = self.j_dict[simulation['j_call'][0]]
 
@@ -369,10 +377,12 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             # in case the current poistion in the junction matches the reference exapnd the d segment
             if a == b:
                 j_start -= 1
+                j_germline_start -= 1
             else:  # if the continuous streak is broken or non-existent break!
                 break
 
         simulation['j_sequence_start'] = j_start
+        simulation['j_germline_start'] = j_germline_start
 
     def distill_mutation_rate(self, simulated):
         # remove mutations in NP region
@@ -414,6 +424,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         simulated['j_sequence_end'] -= amount_to_remove
         simulated['junction_sequence_end'] -= amount_to_remove
         simulated['junction_sequence_end'] -= amount_to_remove
+        simulated['v_germline_start'] += amount_to_remove
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         self.correct_for_v_start_cut(simulated)

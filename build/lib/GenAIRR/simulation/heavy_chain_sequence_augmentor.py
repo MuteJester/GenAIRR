@@ -266,6 +266,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         """
         # Extract Current D Metadata
         d_start, d_end = simulation['d_sequence_start'], simulation['d_sequence_end']
+        d_germline_start, d_germline_end = simulation['d_germline_start'], simulation['d_germline_end']
         d_allele_remainder = simulation['sequence'][d_start:d_end]
         d_allele_ref = self.d_dict[simulation['d_call'][0]]
 
@@ -286,6 +287,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             # in case the current poistion in the junction matches the reference exapnd the d segment
             if a == b:
                 d_start -= 1
+                d_germline_start -= 1
             else:  # if the continuous streak is broken or non-existent break!
                 break
 
@@ -294,11 +296,14 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             # in case the current poistion in the junction matches the reference exapnd the d segment
             if a == b:
                 d_end += 1
+                d_germline_end += 1
             else:  # if the continious streak is broken or non existant break!
                 break
 
         simulation['d_sequence_start'] = d_start
         simulation['d_sequence_end'] = d_end
+        simulation['d_germline_start'] = d_germline_start
+        simulation['d_germline_end'] = d_germline_end
 
 
     def distill_mutation_rate(self,simulated):
@@ -332,10 +337,10 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         from_j_to_start = (simulated['junction_sequence_end'] - simulated['v_sequence_start']) % 3 == 0
         junction_length = (simulated['junction_sequence_end'] - simulated['junction_sequence_start']) % 3 == 0
         from_v_to_start = (simulated['junction_sequence_start'] - simulated['v_sequence_start']) % 3 == 0
-        vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon is False
+        vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon == False
         junction = sequence[simulated['junction_sequence_start']:simulated['junction_sequence_end']]
         # prooductivity
-        if junction_length == 0 and stop_codon is False:
+        if junction_length%3 == 0 and stop_codon == False:
             junction_aa = translate(junction)
             if junction_aa.startswith("C"):
                 if junction_aa.endswith("F") or junction_aa.endswith("W"):
@@ -379,6 +384,12 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             "d_sequence_end": gen.d_seq_end,
             "j_sequence_start": gen.j_seq_start,
             "j_sequence_end": gen.j_seq_end,
+            "v_germline_start": gen.v_germline_start,
+            "v_germline_end": gen.v_germline_end,
+            "d_germline_start": gen.d_germline_start,
+            "d_germline_end": gen.d_germline_end,
+            "j_germline_start": gen.j_germline_start,
+            "j_germline_end": gen.j_germline_end,
             "junction_sequence_start": gen.junction_start,
             "junction_sequence_end": gen.junction_end,
             "v_call": [gen.v_allele.name],

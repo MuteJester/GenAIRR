@@ -308,6 +308,7 @@ class SequenceAugmentorBase(ABC):
         simulated['j_sequence_end'] -= amount_to_remove
         simulated['junction_sequence_start'] -= amount_to_remove
         simulated['junction_sequence_end'] -= amount_to_remove
+        simulated['v_germline_start'] += amount_to_remove
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         if autocorrect:
@@ -456,6 +457,7 @@ class SequenceAugmentorBase(ABC):
 
             # Adjust V Start
             simulated['v_sequence_start'] -= to_adjust
+            simulated['v_germline_start'] -= to_adjust
             # Adjust Removed Amount
             simulated['corruption_remove_amount'] -= to_adjust
 
@@ -503,6 +505,7 @@ class SequenceAugmentorBase(ABC):
         """
         # Extract Current V Metadata
         v_start, v_end = simulation['v_sequence_start'], simulation['v_sequence_end']
+        v_germline_start, v_germline_end = simulation['v_germline_start'], simulation['v_germline_end']
         v_allele_remainder = simulation['sequence'][v_start:v_end]
         v_allele_ref = self.v_dict[simulation['v_call'][0]]
 
@@ -520,10 +523,12 @@ class SequenceAugmentorBase(ABC):
             # in case the current poistion in the junction matches the reference exapnd the d segment
             if a == b:
                 v_end += 1
+                v_germline_end += 1
             else:  # if the continuous streak is broken or non-existent break!
                 break
 
         simulation['v_sequence_end'] = v_end
+        simulation['v_germline_end'] = v_germline_end
 
     def fix_j_position_after_trimming_index_ambiguity(self, simulation):
         """
@@ -534,6 +539,7 @@ class SequenceAugmentorBase(ABC):
         """
         # Extract Current J Metadata
         j_start, j_end = simulation['j_sequence_start'], simulation['j_sequence_end']
+        j_germline_start, j_germline_end = simulation['j_germline_start'], simulation['j_germline_end']
         j_allele_remainder = simulation['sequence'][j_start:j_end]
         j_allele_ref = self.j_dict[simulation['j_call'][0]]
 
@@ -551,10 +557,12 @@ class SequenceAugmentorBase(ABC):
             # in case the current poistion in the junction matches the reference exapnd the d segment
             if a == b:
                 j_start -= 1
+                j_germline_start -= 1
             else:  # if the continuous streak is broken or non-existent break!
                 break
 
         simulation['j_sequence_start'] = j_start
+        simulation['j_germline_start'] = j_germline_start
 
     @abstractmethod
     def distill_mutation_rate(self):
