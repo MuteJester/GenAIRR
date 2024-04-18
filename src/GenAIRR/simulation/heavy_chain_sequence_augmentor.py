@@ -318,7 +318,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         simulated['mutation_rate'] = distilled_mutation_rate
 
     
-    def fix_productive_call_after_indel(self,simulated):
+    def fix_productive_call_after_corruption_indel(self,simulated):
         sequence = simulated['sequence'][simulated['v_sequence_start']:]
         functional = simulated['productive']
         stop_codon = simulated['stop_codon']
@@ -443,6 +443,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             # Inside this method, based on the corruption event we will also adjust the respective ground truth v
             # alleles
             self.corrupt_sequence_beginning(simulated)
+            self.fix_productive_call_after_corruption_indel(simulated)
 
         # 3. Add N's
         if bool(np.random.binomial(1, self.n_proba)):
@@ -455,7 +456,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         # Insert Indels with probability = simulate_indels :
         if bool(np.random.binomial(1,self.simulate_indels)):
             self.insert_indels(simulated)
-            self.fix_productive_call_after_indel(simulated)
+            self.fix_productive_call_after_corruption_indel(simulated)
 
         self.distill_mutation_rate(simulated)
         
