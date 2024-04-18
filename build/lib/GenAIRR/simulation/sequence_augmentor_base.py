@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from ..utilities.data_config import DataConfig
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import enum
 from ..mutation import MutationModel, S5F
 import scipy.stats as st
@@ -43,6 +43,7 @@ class SequenceAugmentorArguments:
             duplicate_leading_proba (float): The probability of duplicating the leading base during augmentation, defaulting to 0.
             random_allele_proba (float): The probability of adding a random allele during augmentation, defaulting to 0.
             corrupt_proba (float): The probability of corrupting the sequence from the start, defaulting to 0.7.
+            corrupt_events_proba (list): The probability for each of the possible corruption events: Add, Remove, Remove and Add, defaulting to [0.5, 0.5, 0] respectively.
             short_d_length (int): The minimum length required from the D allele to not be tagged as "Short-D", defaulting to 5.
             kappa_lambda_ratio (float): The ratio of kappa to lambda light chains, defaulting to 0.5.
             save_mutations_record (bool): Whether to save the record of mutations in the sequence, defaulting to False.
@@ -68,6 +69,7 @@ class SequenceAugmentorArguments:
     duplicate_leading_proba: float = 0
     random_allele_proba: float = 0
     corrupt_proba: float = 0.7
+    corrupt_events_proba: list = field(default_factory=lambda: [0.5,0.5,0])
     short_d_length: int = 5
     kappa_lambda_ratio: float = 0.5
     save_mutations_record: bool = False
@@ -121,6 +123,7 @@ class SequenceAugmentorBase(ABC):
         self.n_ratio = args.n_ratio
         self.n_proba = args.n_proba
         self.corrupt_proba = args.corrupt_proba
+        self.corrupt_events_proba = args.corrupt_events_proba
         self.nucleotide_add_distribution = st.beta(2, 3)
         self.nucleotide_remove_distribution = st.beta(2, 3)
         self.nucleotide_add_after_remove_distribution = st.beta(1, 3)
@@ -668,15 +671,15 @@ class SequenceAugmentorBase(ABC):
         """
         return bool(np.random.binomial(1, self.corrupt_proba))
 
-    @staticmethod
-    def sample_random_event():
+    #@staticmethod
+    def sample_random_event(self):
         """
                 Randomly selects a corruption event type (e.g., add, remove, remove before add) based on predefined probabilities.
 
                 Returns:
                     Event: An enumerated value representing the selected corruption event type.
         """
-        return np.random.choice([Event.Remove, Event.Add, Event.Remove_Before_Add], size=1, p=[0.4, 0.4, 0.2]).item()
+        return np.random.choice([Event.Remove, Event.Add, Event.Remove_Before_Add], size=1, p=self.corrupt_events_proba).item()
 
     def _sample_corruption_add_method(self):
         """

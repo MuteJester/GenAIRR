@@ -483,7 +483,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         amount_to_add = self._sample_nucleotide_add_after_remove_distribution()
         self.add_event(simulated, amount=amount_to_add)
 
-    def fix_productive_call_after_indel(self,simulated):
+    def fix_productive_call_after_corruption_indel(self,simulated):
         sequence = simulated['sequence']
         functional = simulated['productive']
         stop_codon = simulated['stop_codon']
@@ -542,6 +542,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             # Inside this method, based on the corruption event we will also adjust the respective ground truth v
             # alleles
             self.corrupt_sequence_beginning(simulated)
+            self.fix_productive_call_after_corruption_indel(simulated)
 
         # 3. Add N's
         if bool(np.random.binomial(1, self.n_proba)):
@@ -550,7 +551,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         # Insert Indels:
         if bool(np.random.binomial(1,self.simulate_indels)):
             self.insert_indels(simulated)
-            self.fix_productive_call_after_indel(simulated)
+            self.fix_productive_call_after_corruption_indel(simulated)
             
         self.process_before_return(simulated)
 
