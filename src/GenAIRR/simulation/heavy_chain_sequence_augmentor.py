@@ -319,7 +319,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
 
     
     def fix_productive_call_after_corruption_indel(self,simulated):
-        sequence = simulated['sequence'][simulated['v_sequence_start']:]
+        sequence = simulated['sequence']
         functional = simulated['productive']
         stop_codon = simulated['stop_codon']
         vj_in_frame = simulated['vj_in_frame']
@@ -340,7 +340,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon == False
         junction = sequence[simulated['junction_sequence_start']:simulated['junction_sequence_end']]
         # prooductivity
-        if junction_length%3 == 0 and stop_codon == False:
+        if junction_length and stop_codon == False:
             junction_aa = translate(junction)
             if junction_aa.startswith("C"):
                 if junction_aa.endswith("F") or junction_aa.endswith("W"):
@@ -352,6 +352,10 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
                 functional = False
                 note += 'V second C not present.'
         else:
+            if stop_codon == True:
+                note += 'Stop codon present.'
+            if junction_length == False:
+                note += 'Junction length not divisible by 3.'
             functional = False
         # update the values
         simulated['productive'] = functional
