@@ -320,9 +320,8 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
     
     def fix_productive_call_after_corruption_indel(self,simulated):
         sequence = simulated['sequence']
-        functional = simulated['productive']
-        stop_codon = simulated['stop_codon']
-        vj_in_frame = simulated['vj_in_frame']
+        functional = False
+        stop_codon = False
         note = simulated['note']
         # stop codon
         stops = ["TAG", "TAA", "TGA"]
