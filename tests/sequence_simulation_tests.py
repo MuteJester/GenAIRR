@@ -92,7 +92,7 @@ class TestSequenceSimulation(unittest.TestCase):
         for _ in range(100):
             generated_seqs.append(aug.simulate_augmented_sequence())
 
-        print([i['indels'] for i in generated_seqs])
+
         self.assertEqual(len(generated_seqs), 100)
 
     def test_mutation_rate(self):
