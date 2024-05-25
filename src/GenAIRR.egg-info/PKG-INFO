@@ -3,6 +3,7 @@ Name: GenAIRR
 Version: 0.1.0
 Summary: An advanced immunoglobulin sequence simulation suite for benchmarking alignment models and sequence analysis.
 Home-page: https://github.com/MuteJester/GenAIRR
+Download-URL: https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.1.0.tar.gz
 Author: Thomas Konstantinovsky & Ayelet Peres
 Author-email: thomaskon90@gmail.com
 Project-URL: Bug Tracker, https://github.com/MuteJester/GenAIRR/issues
@@ -17,6 +18,10 @@ Classifier: Programming Language :: Python :: 3.8
 Classifier: Programming Language :: Python :: 3.9
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
+Requires-Dist: pandas~=1.5.3
+Requires-Dist: numpy~=1.24.3
+Requires-Dist: scipy~=1.11.1
+Requires-Dist: setuptools~=68.0.0
 
 # GenAIRR: AIRR Sequence Simulator
 

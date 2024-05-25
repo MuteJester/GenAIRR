@@ -14,6 +14,7 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/MuteJester/GenAIRR',
+    download_url='https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.1.0.tar.gz',
     project_urls={
         "Bug Tracker": "https://github.com/MuteJester/GenAIRR/issues"
     },
@@ -33,5 +34,5 @@ setup(
         'Programming Language :: Python :: 3.9',
     ],
     keywords='immunogenetics, sequence simulation, bioinformatics, alignment benchmarking',
-    python_requires='>=3.7',
+    python_requires='>=3.9',
 )
