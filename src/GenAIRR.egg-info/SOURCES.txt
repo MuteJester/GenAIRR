@@ -1,4 +1,6 @@
+MANIFEST.in
 README.md
+requirements.txt
 setup.py
 src/GenAIRR/__init__.py
 src/GenAIRR.egg-info/PKG-INFO
