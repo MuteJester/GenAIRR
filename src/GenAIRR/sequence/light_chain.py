@@ -66,10 +66,7 @@ class LightChainSequence(BaseSequence):
         self.j_trim_3 = j_trim_3
 
         self.ungapped_seq = nuc_seq.upper()
-
         self.junction_length = self.get_junction_length()
-        self.junction_start = self.v_allele.anchor
-        self.junction_end = self.v_allele.anchor + self.junction_length
 
         self.junction = self.ungapped_seq[self.v_allele.anchor:
                                           self.v_allele.anchor + self.junction_length].upper()
@@ -92,8 +89,6 @@ class LightChainSequence(BaseSequence):
         self.j_germline_end = self.j_allele.ungapped_len - self.j_trim_3
         self.junction_start = self.v_allele.anchor
         self.junction_end = self.v_allele.anchor + self.junction_length
-        self.junction = self.ungapped_seq[self.junction_start:
-                                          (self.junction_end+1)].upper()
         
     def _is_functional(self, sequence):
         """
@@ -146,9 +141,9 @@ class LightChainSequence(BaseSequence):
         Returns:
             int: The total length of the junction region, including CDR3 and flanking conserved regions.
         """
-
-        junction_length = self.v_seq_end - (self.v_allele.anchor - 1) - self.v_trim_3 + self.NP1_length + \
-                          (self.j_allele.anchor + 2) - self.j_trim_5
+                                  
+        junction_length = self.v_allele.length - (self.v_allele.anchor - 1) - self.v_trim_3 + \
+            self.NP1_length  + (self.j_allele.anchor + 2) - self.j_trim_5
         return junction_length
 
     def check_stops(self, seq):

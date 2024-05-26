@@ -502,18 +502,26 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         from_j_to_start = (simulated['junction_sequence_end'] - simulated['v_sequence_start']) % 3 == 0
         junction_length = (simulated['junction_sequence_end'] - simulated['junction_sequence_start']) % 3 == 0
         from_v_to_start = (simulated['junction_sequence_start'] - simulated['v_sequence_start']) % 3 == 0
-        vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon is False
+        vj_in_frame = from_j_to_start and junction_length and from_v_to_start and stop_codon == False
         junction = sequence[simulated['junction_sequence_start']:simulated['junction_sequence_end']]
         # prooductivity
-        if junction_length == 0 and stop_codon is False:
+        if junction_length and stop_codon == False:
             junction_aa = translate(junction)
             if junction_aa.startswith("C"):
                 if junction_aa.endswith("F") or junction_aa.endswith("W"):
                     functional = True
                 else:
+                    functional = False
                     note += 'J anchor (W/F) not present.'
             else:
+                functional = False
                 note += 'V second C not present.'
+        else:
+            if stop_codon == True:
+                note += 'Stop codon present.'
+            if junction_length == False:
+                note += 'Junction length not divisible by 3.'
+            functional = False
         # update the values
         simulated['productive'] = functional
         simulated['stop_codon'] = stop_codon
