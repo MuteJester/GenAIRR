@@ -128,8 +128,8 @@ class LightChainSequence(BaseSequence):
         self.mutations = mutations
         self.mutation_freq = mutation_rate
         self.mutation_count = len(mutations)
-        self.junction = self.mutated_seq[self.junction_start:
-                                          (self.junction_end+1)].upper()
+        self.junction = self.mutated_seq[self.v_allele.anchor:
+                                          self.v_allele.anchor + self.junction_length].upper()
         # mutation metadata updates
         self._is_functional(self.mutated_seq)
 

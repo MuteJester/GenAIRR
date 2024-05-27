@@ -279,8 +279,9 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         if self.productive:
             while not gen.functional:
                 gen = LightChainSequence.create_random(self.dataconfig)
+        
         gen.mutate(self.mutation_model)
-
+        
         data = {
             "sequence": gen.mutated_seq,
             "v_sequence_start": gen.v_seq_start,
@@ -485,9 +486,8 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
 
     def fix_productive_call_after_corruption_indel(self,simulated):
         sequence = simulated['sequence']
-        functional = simulated['productive']
-        stop_codon = simulated['stop_codon']
-        vj_in_frame = simulated['vj_in_frame']
+        functional = False
+        stop_codon = False
         note = simulated['note']
         # stop codon
         stops = ["TAG", "TAA", "TGA"]
