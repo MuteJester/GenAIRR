@@ -96,7 +96,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         # update start/end positions
         for reg in ['v_sequence_start', 'v_sequence_end', 'j_sequence_start', 'j_sequence_end']:
             if simulated[reg] > position:
-                simulated[reg] = max(position, simulated[reg] - 1)
+                simulated[reg] = simulated[reg] - 1
 
         simulated['indels'][position] = 'D > ' + deleted
 
