@@ -27,63 +27,39 @@ class HeavyChainSequence(BaseSequence):
         self.simulate_sequence(dataconfig)
 
     def simulate_sequence(self, dataconfig: DataConfig):
-        """
-        Simulates the heavy chain sequence by trimming V, D, J alleles, adding NP1 and NP2 regions,
-        and assembling the final sequence.
+        self.simulate_trimmed_sequences(dataconfig)
+        self.simulate_NP_regions(dataconfig)
+        self.assemble_sequence()
+        self.calculate_junction_properties()
+        self.update_metadata()
+        self.check_functionality()
 
-        Args:
-            dataconfig (DataConfig): Configuration data for sequence simulation, including trimming dictionaries,
-            NP lengths, and transition probabilities.
-        """
-        v_allele = self.v_allele
-        d_allele = self.d_allele
-        j_allele = self.j_allele
-
-
+    def simulate_NP_regions(self, dataconfig: DataConfig):
         self.NP1_region = NP_Region.create_np_region(dataconfig.NP_lengths, dataconfig.NP_transitions, "NP1",
                                                      dataconfig.NP_first_bases)
         self.NP2_region = NP_Region.create_np_region(dataconfig.NP_lengths, dataconfig.NP_transitions, "NP2",
                                                      dataconfig.NP_first_bases)
-
         self.NP1_length = len(self.NP1_region)
         self.NP2_length = len(self.NP2_region)
 
-        v_trimmed_seq, v_trim_5, v_trim_3 = v_allele.get_trimmed(dataconfig.trim_dicts)
-        d_trimmed_seq, d_trim_5, d_trim_3 = d_allele.get_trimmed(dataconfig.trim_dicts)
-        j_trimmed_seq, j_trim_5, j_trim_3 = j_allele.get_trimmed(dataconfig.trim_dicts)
+    def simulate_trimmed_sequences(self, dataconfig: DataConfig):
+        self.v_trimmed_seq, self.v_trim_5, self.v_trim_3 = self.v_allele.get_trimmed(dataconfig.trim_dicts)
+        self.d_trimmed_seq, self.d_trim_5, self.d_trim_3 = self.d_allele.get_trimmed(dataconfig.trim_dicts)
+        self.j_trimmed_seq, self.j_trim_5, self.j_trim_3 = self.j_allele.get_trimmed(dataconfig.trim_dicts)
 
-        nuc_seq = (
-                v_trimmed_seq
+    def assemble_sequence(self):
+        self.ungapped_seq = (
+                self.v_trimmed_seq
                 + self.NP1_region
-                + d_trimmed_seq
+                + self.d_trimmed_seq
                 + self.NP2_region
-                + j_trimmed_seq
-        )
-
-        # log trims
-        self.v_trim_5 = v_trim_5
-        self.v_trim_3 = v_trim_3
-        self.d_trim_5 = d_trim_5
-        self.d_trim_3 = d_trim_3
-        self.j_trim_5 = j_trim_5
-        self.j_trim_3 = j_trim_3
-
-        self.ungapped_seq = nuc_seq.upper()
-
-        
+                + self.j_trimmed_seq
+        ).upper()
+    def calculate_junction_properties(self):
         self.junction_length = self.get_junction_length()
-        
-        self.junction = self.ungapped_seq[self.v_allele.anchor:
-                                          self.v_allele.anchor + self.junction_length].upper()
-        
-        self.update_metadata()
-        self._is_functional(self.ungapped_seq)
+        self.junction = self.ungapped_seq[self.v_allele.anchor:self.v_allele.anchor + self.junction_length].upper()
 
     def update_metadata(self):
-        """
-        Updates the metadata for the heavy chain sequence, including the start and end positions
-        of the V, D, and J segments, and the Junction.
-        """
         self.v_seq_start = 0
         self.v_seq_end = self.v_allele.ungapped_len - self.v_trim_3
         self.d_seq_start = self.v_seq_end + self.NP1_length
@@ -98,21 +74,18 @@ class HeavyChainSequence(BaseSequence):
         self.j_germline_end = self.j_allele.ungapped_len - self.j_trim_3
         self.junction_start = self.v_allele.anchor
         self.junction_end = self.v_allele.anchor + self.junction_length
-        
 
-    def _is_functional(self, sequence):
-        """
-       Evaluates whether the heavy chain sequence is functional based on the presence of in-frame junctions
-       without stop codons and specific amino acid motifs at the junction boundaries.
-
-       Args:
-           sequence (str): The nucleotide sequence to evaluate for functionality.
-       """
+    def check_functionality(self,sequence=None):
         self.functional = False
-        self.stop_codon = self.check_stops(sequence)
-        self.vj_in_frame = (self.junction_end % 3) == 0 and (self.junction_start % 3 == 0) and (self.junction_length % 3 == 0) and self.stop_codon is False
+        self.stop_codon = self.check_stops(self.ungapped_seq if sequence is None else sequence)
+        self.vj_in_frame = (
+                (self.junction_end % 3) == 0
+                and (self.junction_start % 3 == 0)
+                and (self.junction_length % 3 == 0)
+                and not self.stop_codon
+        )
         self.note = ''
-        if (self.junction_length % 3) == 0 and self.stop_codon is False:
+        if (self.junction_length % 3) == 0 and not self.stop_codon:
             self.junction_aa = translate(self.junction)
             if self.junction_aa.startswith("C"):
                 if self.junction_aa.endswith("F") or self.junction_aa.endswith("W"):
@@ -121,7 +94,6 @@ class HeavyChainSequence(BaseSequence):
                     self.note += 'J anchor (W/F) not present.'
             else:
                 self.note += 'V second C not present.'
-
     def mutate(self, mutation_model: MutationModel):
         """
         Applies mutations to the heavy chain sequence using the given mutation model.
@@ -141,7 +113,7 @@ class HeavyChainSequence(BaseSequence):
         self.junction = self.mutated_seq[self.v_allele.anchor:
                                           self.v_allele.anchor + self.junction_length].upper()
         # mutation metadata updates
-        self._is_functional(self.mutated_seq)
+        self.check_functionality(self.mutated_seq)
 
     def get_junction_length(self):
         """
