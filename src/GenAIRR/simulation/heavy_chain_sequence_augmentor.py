@@ -288,6 +288,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             if a == b:
                 d_start -= 1
                 d_germline_start -= 1
+                d_trim_5 -= 1
             else:  # if the continuous streak is broken or non-existent break!
                 break
 
@@ -297,6 +298,8 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             if a == b:
                 d_end += 1
                 d_germline_end += 1
+                d_trim_3 -= 1
+
             else:  # if the continious streak is broken or non existant break!
                 break
 
@@ -304,6 +307,9 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         simulation['d_sequence_end'] = d_end
         simulation['d_germline_start'] = d_germline_start
         simulation['d_germline_end'] = d_germline_end
+        simulation['d_trim_5'] = d_trim_5
+        simulation['d_trim_3'] = d_trim_3
+
 
 
     def distill_mutation_rate(self,simulated):

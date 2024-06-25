@@ -527,11 +527,13 @@ class SequenceAugmentorBase(ABC):
             if a == b:
                 v_end += 1
                 v_germline_end += 1
+                v_trim_3 -= 1
             else:  # if the continuous streak is broken or non-existent break!
                 break
 
         simulation['v_sequence_end'] = v_end
         simulation['v_germline_end'] = v_germline_end
+        simulation['v_trim_3'] = v_trim_3
 
     def fix_j_position_after_trimming_index_ambiguity(self, simulation):
         """
@@ -561,11 +563,13 @@ class SequenceAugmentorBase(ABC):
             if a == b:
                 j_start -= 1
                 j_germline_start -= 1
+                j_trim_5 -= 1
             else:  # if the continuous streak is broken or non-existent break!
                 break
 
         simulation['j_sequence_start'] = j_start
         simulation['j_germline_start'] = j_germline_start
+        simulation['j_trim_5'] = j_trim_5
 
     @abstractmethod
     def distill_mutation_rate(self):
