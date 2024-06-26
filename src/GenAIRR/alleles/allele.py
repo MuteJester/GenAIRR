@@ -12,10 +12,12 @@ class AlleleTypes(Enum):
             V: Represents the V allele type.
             D: Represents the D allele type.
             J: Represents the J allele type.
+            C: Represents the Constant allele type.
         """
     V = auto()
     D = auto()
     J = auto()
+    C = auto() # constant
 
 
 class Allele(ABC):
@@ -266,7 +268,61 @@ class JAllele(Allele):
                 if match.span()[0] % 3 == 0:
                     self.anchor = match.span()[0] + frame # correct for the end of the cdr3
                     self.frame = frame # retain the frame of the J
-                    
+
+
+    def _get_trim_length(self, trim_dicts):
+        """Determines the trim lengths for the J allele's sequence based on provided trimming dictionaries.
+
+        Args:
+            trim_dicts (dict): A dictionary specifying trimming lengths for different allele types.
+
+        Returns:
+            tuple: A tuple of integers representing the trim lengths at the 5' end, as the 3' end is not trimmed for J alleles.
+        """
+        trim_3 = 0  # set to 0 - J will never be trimmed at 3'
+        trim_5 = 0  # set to 0 - V will never be trimmed at 5'
+
+        trim_5_dict = trim_dicts["J_5"]
+        if self.family in trim_5_dict:
+            prob_dict = trim_5_dict[self.family]
+        else:
+            prob_dict = random.choice(list(trim_5_dict.values()))
+
+        valid_5_trims = filter(lambda t5: (t5 < self.length) or (t5 < self.anchor), prob_dict)
+        prob_dict = {amount: prob_dict[amount] for amount in valid_5_trims}
+        trim_5 = weighted_choice_zero_break(prob_dict)
+        return int(trim_5), int(trim_3)  # make sure type is not float
+
+    def get_trimmed(self, trim_dict):
+        """Returns the trimmed sequence of the J allele along with the 5' trim length.
+
+        Args:
+            trim_dict (dict): A dictionary specifying trimming lengths for the J allele.
+
+        Returns:
+            tuple: The trimmed sequence and the trim length at the 5' end.
+        """
+        trim_5, trim_3 = self._get_trim_length(trim_dict)
+        sequence = self.ungapped_seq
+        return sequence[trim_5:], trim_5, trim_3
+
+
+class CAllele(Allele):
+    """Represents a Constant allele with specific trimming and analysis behaviors.
+
+    This class extends the Allele base class, providing implementations for C allele-specific methods.
+
+    Attributes:
+        type (AlleleTypes): The type of the allele, fixed to AlleleTypes.C for Constant alleles.
+    """
+    type = AlleleTypes.C
+
+    def _find_anchor(self):
+        """Finds the anchor position within the allele sequence.
+
+           This method must be implemented by subclasses based on allele-specific criteria.
+        """
+        pass
 
     def _get_trim_length(self, trim_dicts):
         """Determines the trim lengths for the J allele's sequence based on provided trimming dictionaries.

@@ -18,10 +18,6 @@ Classifier: Programming Language :: Python :: 3.8
 Classifier: Programming Language :: Python :: 3.9
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
-Requires-Dist: pandas~=1.5.3
-Requires-Dist: numpy~=1.24.3
-Requires-Dist: scipy~=1.11.1
-Requires-Dist: setuptools~=68.0.0
 
 # GenAIRR: AIRR Sequence Simulator
 

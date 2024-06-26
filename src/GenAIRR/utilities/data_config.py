@@ -1,4 +1,3 @@
-
 class DataConfig:
     """
         Configuration class for storing data related to sequence generation, allele usage, trimming, and mutation rates.
@@ -18,7 +17,8 @@ class DataConfig:
             correction_maps (dict): A dictionary for storing maps used for correction or adjustment of sequences or simulation parameters.
             asc_tables (dict): A dictionary for storing allele sequence cluster (ASC) tables, which group alleles based on sequence similarity and other criteria.
     """
-    def __init__(self,):
+
+    def __init__(self):
 
         # Config Variables
         self.family_use_dict = {}
@@ -32,6 +32,20 @@ class DataConfig:
         self.v_alleles = None
         self.d_alleles = None
         self.j_alleles = None
+        self.c_alleles = None
+        self.name = None
 
         self.correction_maps = dict()
         self.asc_tables = dict()
+
+    def __repr__(self):
+        fmst = f"<{self.name} - Data Config>"
+        if self.v_alleles is not None:
+            fmst += f'-<{len([i for j in self.v_alleles for i in self.v_alleles[j]])} V Alleles>'
+        if self.d_alleles is not None:
+            fmst += f'-<{len([i for j in self.d_alleles for i in self.d_alleles[j]])} D Alleles>'
+        if self.j_alleles is not None:
+            fmst += f'-<{len([i for j in self.j_alleles for i in self.j_alleles[j]])} J Alleles>'
+        if self.c_alleles is not None:
+            fmst += f'-<{len([i for j in self.c_alleles for i in self.c_alleles[j]])} C Alleles>'
+        return fmst

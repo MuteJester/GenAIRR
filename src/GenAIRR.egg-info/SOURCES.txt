@@ -42,6 +42,7 @@ src/GenAIRR/utilities/__init__.py
 src/GenAIRR/utilities/asc_utilities.py
 src/GenAIRR/utilities/data_config.py
 src/GenAIRR/utilities/data_utilities.py
+src/GenAIRR/utilities/derive_similarity_maps.py
 src/GenAIRR/utilities/file_utilities.py
 src/GenAIRR/utilities/misc.py
 src/GenAIRR/utilities/report.py
