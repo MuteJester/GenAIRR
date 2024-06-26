@@ -22,7 +22,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             dataconfig (DataConfig): The data configuration object containing settings for sequence simulation.
             args (SequenceAugmentorArguments): The arguments object containing simulation parameters.
     """
-    alleles_used = ['v', 'j']
+    alleles_used = ['v', 'j','c']
 
     def __init__(self, dataconfig: DataConfig, args: SequenceAugmentorArguments = SequenceAugmentorArguments()):
         super().__init__(dataconfig, args)
@@ -296,11 +296,13 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             "junction_sequence_end": gen.junction_end,
             'v_call': [gen.v_allele.name],
             'j_call': [gen.j_allele.name],
+            'c_call': [gen.c_allele.name],
             'mutation_rate': gen.mutation_freq,
             'v_trim_5': gen.v_trim_5,
             'v_trim_3': gen.v_trim_3,
             'j_trim_5': gen.j_trim_5,
             'j_trim_3': gen.j_trim_3,
+            'c_trim_3': gen.c_trim_3,
             'type': self.chain_type,
             'corruption_event': 'no-corruption',
             'corruption_add_amount': 0,

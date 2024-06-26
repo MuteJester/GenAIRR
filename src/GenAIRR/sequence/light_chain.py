@@ -47,12 +47,15 @@ class LightChainSequence(BaseSequence):
     def simulate_trimmed_sequences(self, dataconfig: DataConfig):
         self.v_trimmed_seq, self.v_trim_5, self.v_trim_3 = self.v_allele.get_trimmed(dataconfig.trim_dicts)
         self.j_trimmed_seq, self.j_trim_5, self.j_trim_3 = self.j_allele.get_trimmed(dataconfig.trim_dicts)
+        self.c_trimmed_seq, self.c_trim_5, self.c_trim_3 = self.c_allele.get_trimmed(dataconfig.trim_dicts)
+
 
     def assemble_sequence(self):
         self.ungapped_seq = (
             self.v_trimmed_seq
             + self.NP1_region
             + self.j_trimmed_seq
+            + self.c_trimmed_seq
         ).upper()
 
     def calculate_junction_properties(self):
@@ -115,16 +118,20 @@ class LightChainSequence(BaseSequence):
     def create_random(cls, dataconfig: DataConfig):
         random_v_allele = random.choice([i for j in dataconfig.v_alleles for i in dataconfig.v_alleles[j]])
         random_j_allele = random.choice([i for j in dataconfig.j_alleles for i in dataconfig.j_alleles[j]])
-        return cls([random_v_allele, random_j_allele], dataconfig)
+        random_c_allele = random.choice([i for j in dataconfig.c_alleles for i in dataconfig.c_alleles[j]])
+
+        return cls([random_v_allele, random_j_allele,random_c_allele], dataconfig)
 
     def __repr__(self):
-        total_length = self.j_seq_end
+        total_length = len(self.ungapped_seq)
         proportional_length = lambda start, end: int((end - start) / total_length * 100)
 
         v_length = proportional_length(self.v_seq_start, self.v_seq_end)
         j_length = proportional_length(self.j_seq_start, self.j_seq_end)
+        c_length = proportional_length(self.j_seq_end, total_length)
 
         v_part = f"{self.v_seq_start}|{'-' * v_length}V({self.v_allele.name})|{self.v_seq_end}"
         j_part = f"{self.j_seq_start}|{'-' * j_length}J({self.j_allele.name})|{self.j_seq_end}"
+        c_part = f"{self.j_seq_end}|{'-' * c_length}C({self.c_allele.name})|{total_length}"
 
-        return f"{v_part}|{j_part}"
+        return f"{v_part}|{j_part}|{c_part}"

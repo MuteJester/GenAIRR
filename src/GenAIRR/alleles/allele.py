@@ -336,15 +336,15 @@ class CAllele(Allele):
         trim_3 = 0  # set to 0 - J will never be trimmed at 3'
         trim_5 = 0  # set to 0 - V will never be trimmed at 5'
 
-        trim_5_dict = trim_dicts["J_5"]
-        if self.family in trim_5_dict:
-            prob_dict = trim_5_dict[self.family]
+        trim_3_dict = trim_dicts["C_3"]
+        if self.family in trim_3_dict:
+            prob_dict = trim_3_dict[self.family]
         else:
-            prob_dict = random.choice(list(trim_5_dict.values()))
+            prob_dict = random.choice(list(trim_3_dict.values()))
 
-        valid_5_trims = filter(lambda t5: (t5 < self.length) or (t5 < self.anchor), prob_dict)
-        prob_dict = {amount: prob_dict[amount] for amount in valid_5_trims}
-        trim_5 = weighted_choice_zero_break(prob_dict)
+        valid_3_trims = filter(lambda amount: amount < self.length, prob_dict)
+        prob_dict = {amount: prob_dict[amount] for amount in valid_3_trims}
+        trim_3 = weighted_choice_zero_break(prob_dict)
         return int(trim_5), int(trim_3)  # make sure type is not float
 
     def get_trimmed(self, trim_dict):
@@ -358,4 +358,5 @@ class CAllele(Allele):
         """
         trim_5, trim_3 = self._get_trim_length(trim_dict)
         sequence = self.ungapped_seq
-        return sequence[trim_5:], trim_5, trim_3
+        trimmed_seq = sequence[:-trim_3 if trim_3 > 0 else None]
+        return trimmed_seq, trim_5, trim_3

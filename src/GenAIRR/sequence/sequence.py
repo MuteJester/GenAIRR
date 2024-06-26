@@ -48,6 +48,7 @@ class BaseSequence(ABC):
         self.d_allele = next((allele for allele in alleles if allele.type == AlleleTypes.D), None)
         self.j_allele = next((allele for allele in alleles if allele.type == AlleleTypes.J), None)
         assert self.j_allele is not None  # Must Have J Allele!
+        self.c_allele = next((allele for allele in alleles if allele.type == AlleleTypes.C), None)
         self.NP1_region = ""
         self.NP2_region = ""
         self.NP1_length = 0

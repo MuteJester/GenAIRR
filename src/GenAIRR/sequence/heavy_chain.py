@@ -46,6 +46,8 @@ class HeavyChainSequence(BaseSequence):
         self.v_trimmed_seq, self.v_trim_5, self.v_trim_3 = self.v_allele.get_trimmed(dataconfig.trim_dicts)
         self.d_trimmed_seq, self.d_trim_5, self.d_trim_3 = self.d_allele.get_trimmed(dataconfig.trim_dicts)
         self.j_trimmed_seq, self.j_trim_5, self.j_trim_3 = self.j_allele.get_trimmed(dataconfig.trim_dicts)
+        self.c_trimmed_seq, self.c_trim_5, self.c_trim_3 = self.c_allele.get_trimmed(dataconfig.trim_dicts)
+
 
     def assemble_sequence(self):
         self.ungapped_seq = (
@@ -54,6 +56,7 @@ class HeavyChainSequence(BaseSequence):
                 + self.d_trimmed_seq
                 + self.NP2_region
                 + self.j_trimmed_seq
+                + self.c_trimmed_seq
         ).upper()
     def calculate_junction_properties(self):
         self.junction_length = self.get_junction_length()
@@ -160,7 +163,9 @@ class HeavyChainSequence(BaseSequence):
         random_v_allele = random.choice([i for j in dataconfig.v_alleles for i in dataconfig.v_alleles[j]])
         random_d_allele = random.choice([i for j in dataconfig.d_alleles for i in dataconfig.d_alleles[j]])
         random_j_allele = random.choice([i for j in dataconfig.j_alleles for i in dataconfig.j_alleles[j]])
-        return cls([random_v_allele, random_d_allele, random_j_allele], dataconfig)
+        random_c_allele = random.choice([i for j in dataconfig.c_alleles for i in dataconfig.c_alleles[j]])
+
+        return cls([random_v_allele, random_d_allele, random_j_allele,random_c_allele], dataconfig)
 
     def __repr__(self):
         """
@@ -170,16 +175,18 @@ class HeavyChainSequence(BaseSequence):
         Returns:
             str: A string representation of the heavy chain sequence, including V, D, and J segments.
         """
-        total_length = self.j_seq_end  # Assuming j_seq_end is the end of the sequence
+        total_length = len(self.ungapped_seq)  # Assuming j_seq_end is the end of the sequence
         proportional_length = lambda start, end: int((end - start) / total_length * 100)  # Example scale factor
 
         v_length = proportional_length(self.v_seq_start, self.v_seq_end)
         d_length = proportional_length(self.d_seq_start, self.d_seq_end) if self.d_seq_start != self.d_seq_end else 0
         j_length = proportional_length(self.j_seq_start, self.j_seq_end)
+        c_length = proportional_length(self.j_seq_end, total_length)
 
         # Construct ASCII drawing
         v_part = f"{self.v_seq_start}|{'-' * v_length}V({self.v_allele.name})|{self.v_seq_end}"
         d_part = f"{self.d_seq_start}|{'-' * d_length}D({self.d_allele.name})|{self.d_seq_end}" if d_length > 0 else ""
         j_part = f"{self.j_seq_start}|{'-' * j_length}J({self.j_allele.name})|{self.j_seq_end}"
+        c_part = f"{self.j_seq_end}|{'-' * c_length}C({self.c_allele.name})|{total_length}"
 
-        return f"{v_part}{'|' if d_length > 0 else ''}{d_part}{'|' if d_length > 0 else ''}{j_part}"
+        return f"{v_part}{'|' if d_length > 0 else ''}{d_part}{'|' if d_length > 0 else ''}{j_part}|{c_part}"
