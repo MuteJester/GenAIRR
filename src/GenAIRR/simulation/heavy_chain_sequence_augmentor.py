@@ -310,8 +310,6 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         simulation['d_trim_5'] = d_trim_5
         simulation['d_trim_3'] = d_trim_3
 
-
-
     def distill_mutation_rate(self,simulated):
         # remove mutations in NP region
         np_positions = list(range(simulated['v_sequence_end'],simulated['d_sequence_start']+1))
@@ -367,7 +365,6 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         simulated['stop_codon'] = stop_codon
         simulated['vj_in_frame'] = vj_in_frame
         simulated['note'] = note
-
     
     # Sequence Simulation
     def simulate_sequence(self):
