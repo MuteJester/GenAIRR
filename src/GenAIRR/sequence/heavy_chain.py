@@ -149,7 +149,7 @@ class HeavyChainSequence(BaseSequence):
         return False
 
     @classmethod
-    def create_random(cls, dataconfig: DataConfig):
+    def create_random(cls, dataconfig: DataConfig,specific_v=None,specific_d=None,specific_j=None):
         """
         Creates a random instance of `HeavyChainSequence` with randomly selected V, D, and J alleles from the given
         `DataConfig`.
@@ -160,9 +160,21 @@ class HeavyChainSequence(BaseSequence):
         Returns:
             HeavyChainSequence: A new `HeavyChainSequence` instance with randomly chosen alleles and simulated sequence.
         """
-        random_v_allele = random.choice([i for j in dataconfig.v_alleles for i in dataconfig.v_alleles[j]])
-        random_d_allele = random.choice([i for j in dataconfig.d_alleles for i in dataconfig.d_alleles[j]])
-        random_j_allele = random.choice([i for j in dataconfig.j_alleles for i in dataconfig.j_alleles[j]])
+        if specific_v is None:
+            random_v_allele = random.choice([i for j in dataconfig.v_alleles for i in dataconfig.v_alleles[j]])
+        else:
+            random_v_allele = specific_v
+
+        if specific_d is None:
+            random_d_allele = random.choice([i for j in dataconfig.d_alleles for i in dataconfig.d_alleles[j]])
+        else:
+            random_d_allele = specific_d
+
+        if specific_j is None:
+            random_j_allele = random.choice([i for j in dataconfig.j_alleles for i in dataconfig.j_alleles[j]])
+        else:
+            random_j_allele = specific_j
+
         random_c_allele = random.choice([i for j in dataconfig.c_alleles for i in dataconfig.c_alleles[j]])
 
         return cls([random_v_allele, random_d_allele, random_j_allele,random_c_allele], dataconfig)

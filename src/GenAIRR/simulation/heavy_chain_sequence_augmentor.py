@@ -367,18 +367,23 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         simulated['note'] = note
     
     # Sequence Simulation
-    def simulate_sequence(self):
+    def simulate_sequence(self,specific_v=None,specific_d=None,specific_j=None):
         """
                 Simulates a heavy chain sequence, applying mutations and generating relevant metadata.
+                specific_v,specific_d,specific_j are argument you can pass alleles object to in order to force simulation
+                of a sequence with specific v,d,j parameters.
+                If only 1 of the arguments is passed,the remaining will be randomly generated.
 
                 Returns:
                     dict: A dictionary containing the simulated sequence, its metadata including gene segment positions, alleles, mutation rate, and trimming information.
         """
         # if productive is true. ensure the base sequence is productive. This will keep the VJ in frame prior to indels.
-        gen = HeavyChainSequence.create_random(self.dataconfig)
+        gen = HeavyChainSequence.create_random(self.dataconfig,specific_v=specific_v,
+                                               specific_d=specific_d,specific_j=specific_j)
         if self.productive:
             while not gen.functional:
-                gen = HeavyChainSequence.create_random(self.dataconfig)
+                gen = HeavyChainSequence.create_random(self.dataconfig,specific_v=specific_v,
+                                                       specific_d=specific_d,specific_j=specific_j)
         
         gen.mutate(self.mutation_model)
         
@@ -425,15 +430,22 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         }
         return data
 
-    def simulate_augmented_sequence(self):
+    def simulate_augmented_sequence(self,specific_v=None,specific_d=None,specific_j=None):
         """
-                Generates an augmented heavy chain sequence, applying sequence corrections, potential corruption events at the beginning, and insertion of 'N' bases.
+            Generates an augmented heavy chain sequence, applying sequence corrections, potential corruption events at the beginning,indels, and insertion of 'N' bases.
 
-                Returns:
-                    dict: A dictionary containing the augmented sequence and associated metadata, ready for further analysis or training processes.
-        """
+            Parameters:
+                specific_v (Optional[allele object]): The specific V allele to use for simulation. If provided, will override random generation for V allele.
+                specific_d (Optional[allele object]): The specific D allele to use for simulation. If provided, will override random generation for D allele.
+                specific_j (Optional[allele object]): The specific J allele to use for simulation. If provided, will override random generation for J allele.
+
+            If only one or two of `specific_v`, `specific_d`, or `specific_j` are provided, the remaining alleles will be randomly generated.
+
+            Returns:
+                dict: A dictionary containing the augmented sequence and associated metadata, ready for further analysis or training processes.
+         """
         # 1. Simulate a Naive Sequence
-        simulated = self.simulate_sequence()
+        simulated = self.simulate_sequence(specific_v=specific_v,specific_d=specific_d,specific_j=specific_j)
 
         # 1.1 Correction - Correct Start/End Positions Based on Generated Junctions
         self.fix_v_position_after_trimming_index_ambiguity(simulated)

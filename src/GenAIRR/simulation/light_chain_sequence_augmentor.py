@@ -265,7 +265,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
                         valid_positions[update_idx] -= 1
 
     # Sequence Simulation
-    def simulate_sequence(self):
+    def simulate_sequence(self, specific_v=None, specific_j=None):
         """
             Simulates a light chain sequence, applying mutations according to the configured mutation model.
 
@@ -275,7 +275,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
                     dict: A dictionary containing the simulated sequence, mutation rate, trimming details, and allele information.
         """
         # Sample Sequence
-        gen = LightChainSequence.create_random(self.dataconfig)
+        gen = LightChainSequence.create_random(self.dataconfig,specific_v=specific_v,specific_j=specific_j)
         if self.productive:
             while not gen.functional:
                 gen = LightChainSequence.create_random(self.dataconfig)
@@ -530,7 +530,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
         simulated['vj_in_frame'] = vj_in_frame
         simulated['note'] = note
         
-    def simulate_augmented_sequence(self):
+    def simulate_augmented_sequence(self, specific_v=None, specific_j=None):
         """
             Simulates and augments a light chain sequence, incorporating sequence corrections, potential corruption at the beginning, and insertion of 'N' bases.
 
@@ -538,7 +538,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
                     dict: A dictionary containing the augmented sequence and associated metadata.
         """
         # 1. Simulate a Naive Sequence
-        simulated = self.simulate_sequence()
+        simulated = self.simulate_sequence(specific_v=specific_v, specific_j=specific_j)
 
         # 1.1 Correction - Correct Start/End Positions Based on Generated Junctions
         self.fix_v_position_after_trimming_index_ambiguity(simulated)
@@ -587,21 +587,44 @@ class LightChainKappaLambdaSequenceAugmentor:
         self.kappa_augmentor = LightChainSequenceAugmentor(kappa_dataconfig, kappa_args)
         self.kappa_lambda_ratio = lambda_args.kappa_lambda_ratio
 
-    def simulate_augmented_sequence(self):
+    def simulate_augmented_sequence(self, specific_v=None, specific_j=None, chain_type=None):
         """
-                Simulates and augments either a kappa or lambda light chain sequence based on a predefined kappa to lambda ratio.
+        Simulates and augments either a kappa or lambda light chain sequence based on a predefined kappa to lambda ratio.
 
-                Randomly chooses between kappa and lambda chain types to simulate a sequence accordingly.
+        Parameters:
+            specific_v (Optional[allele object]): The specific V allele to use for simulation. If provided, `chain_type` must also be specified.
+            specific_j (Optional[allele object]): The specific J allele to use for simulation. If provided, `chain_type` must also be specified.
+            chain_type (Optional[LightChainType]): The type of light chain to simulate. Must be either LightChainType.KAPPA or LightChainType.LAMBDA.
+                                                   If provided, the method will use this value and not sample randomly.
 
-                Returns:
-                    dict: A dictionary containing the augmented sequence and associated metadata for the chosen chain type.
+        If `specific_v` or `specific_j` is provided, `chain_type` must also be specified. If only one of `specific_v` or `specific_j` is provided, the
+        remaining allele will be randomly generated. If neither `specific_v` nor `specific_j` is provided, a random chain type will be chosen unless
+        `chain_type` is specified.
+
+        Returns:
+            dict: A dictionary containing the augmented sequence and associated metadata for the chosen chain type.
+
+        Raises:
+            ValueError: If `specific_v` or `specific_j` is provided without specifying `chain_type`.
         """
-        chain_type = np.random.choice([LightChainType.KAPPA, LightChainType.LAMBDA], size=1, p=[self.kappa_lambda_ratio,
-                                                                                                1 - self.kappa_lambda_ratio]).item()
-        if chain_type == LightChainType.KAPPA:
-            return self.kappa_augmentor.simulate_augmented_sequence()
+
+        if (specific_v or specific_j) and not chain_type:
+            raise ValueError("If `specific_v` or `specific_j` is provided, `chain_type` must also be specified.")
+
+        if chain_type:
+            if chain_type == LightChainType.KAPPA:
+                return self.kappa_augmentor.simulate_augmented_sequence(specific_v=specific_v, specific_j=specific_j)
+            elif chain_type == LightChainType.LAMBDA:
+                return self.lambda_augmentor.simulate_augmented_sequence(specific_v=specific_v, specific_j=specific_j)
+            else:
+                raise ValueError("`chain_type` must be either LightChainType.KAPPA or LightChainType.LAMBDA.")
         else:
-            return self.lambda_augmentor.simulate_augmented_sequence()
+            chain_type = np.random.choice([LightChainType.KAPPA, LightChainType.LAMBDA], size=1,
+                                          p=[self.kappa_lambda_ratio, 1 - self.kappa_lambda_ratio]).item()
+            if chain_type == LightChainType.KAPPA:
+                return self.kappa_augmentor.simulate_augmented_sequence(specific_v,specific_j)
+            else:
+                return self.lambda_augmentor.simulate_augmented_sequence(specific_v,specific_j)
 
     @property
     def columns(self):
