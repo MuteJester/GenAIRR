@@ -58,7 +58,7 @@ class SequenceAugmentorArguments:
     insertion_proba: float = 0.5
     n_ratio: float = 0.02
     n_proba: float = 1.0
-    max_sequence_length: int = 512
+    max_sequence_length: int = 576
     mutation_model: MutationModel = S5F
     custom_mutation_model_path: str = None
     nucleotide_add_coefficient: float = 210
