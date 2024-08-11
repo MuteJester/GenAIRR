@@ -81,6 +81,7 @@ class HeavyChainSequence(BaseSequence):
     def check_functionality(self,sequence=None):
         self.functional = False
         self.stop_codon = self.check_stops(self.ungapped_seq if sequence is None else sequence)
+
         self.vj_in_frame = (
                 (self.junction_end % 3) == 0
                 and (self.junction_start % 3 == 0)

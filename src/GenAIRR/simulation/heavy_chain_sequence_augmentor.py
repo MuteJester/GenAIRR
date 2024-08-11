@@ -42,6 +42,8 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         # Loading Routines
         self.load_correction_maps()
 
+        # list alleles with 
+
     # Loading Routines
     def load_correction_maps(self):
         """

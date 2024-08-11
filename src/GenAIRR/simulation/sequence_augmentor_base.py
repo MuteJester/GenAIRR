@@ -72,8 +72,8 @@ class SequenceAugmentorArguments:
     corrupt_events_proba: list = field(default_factory=lambda: [0.5,0.5,0])
     short_d_length: int = 5
     kappa_lambda_ratio: float = 0.5
-    save_mutations_record: bool = False
-    save_ns_record: bool = False
+    save_mutations_record: bool = True
+    save_ns_record: bool = True
     save_corruption_record: bool = False
     productive: bool = False
 
