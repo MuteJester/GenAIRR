@@ -30,6 +30,173 @@ class TestSequenceSimulation(unittest.TestCase):
         self.assertEqual(allele.family,'IGHVF1')
         self.assertEqual(allele.anchor,288)
 
+    def test_fix_v_position_after_trimming_index_ambiguity(self):
+        # CREATE a sequence that has a junction that recreates a part of the reference alleles
+        # test wheter the index was correctly updated for the v
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        simulated = {
+            'sequence': 'TGTNCTTCCAGTACACCTGAAGGGTGGGTACTCGTTACCCTTCTCGCTCTNTTAGGATATTGGGTCAGCAAGTGGATGACAAAGAGGGATGNACTCAGATTGGCGTGTAGTGGAGGAGGTGCAGCTGGTGGAGTCTGGGGGANGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTCAGTAGCTATAGCATGAACTNGGTCCGCCAGGCTCNAGGGAAGGGTCTGGAGTGGGTTTCATACATCAGTAGTAGTAGTAATAGCATATACTACGCAGACTCTGTNAAGGGCCGATTCACCATCTCCAGAGACAANGCCAAGAACTCACTGTATCTGCAAATGAACAGCCTGAGAGCCGAGGACACGGCTATNTATTACTGTGCGAGAGATGTNCTTCCAGTACACCTGAAGGGTGGGTACTCGTTACCCTTCTCGCTCTNTTAGGATATTGGGTCAGCAAGTGGATGACAAAGAGGGATGNACTCAGATTGGCGTGTAGTGGAGGAGGTGCAGCTGGTGGAGTCTGGGGGANGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTCAGTAGCTATAGCATGAACTNGGTCCGCCAGGCTCNAGGGAAGGGTCTGGAGTGGGTTTCATACATCAGTAGTAGTAGTAATAGCATATACTACG',
+            'v_sequence_start': 115,
+            'v_sequence_end': 410,
+            'd_sequence_start': 421,
+            'd_sequence_end': 431,
+            'j_sequence_start': 445,
+            'j_sequence_end': 494,
+            'v_germline_start': 0,
+            'v_germline_end': 295,
+            'd_germline_start': 4,
+            'd_germline_end': 14,
+            'j_germline_start': 2,
+            'j_germline_end': 51,
+            'junction_sequence_start': 400,
+            'junction_sequence_end': 463,
+            'v_call': ['IGHVF10-G52*05','IGHVF10-G52*04'],
+            'v_trim_5': 0,
+            'v_trim_3': 1,
+            'd_trim_5': 4,
+            'd_trim_3': 5,
+            'j_trim_5': 2,
+            'j_trim_3': 0,
+            'c_trim_3': 25,}
+        augmentor.fix_v_position_after_trimming_index_ambiguity(simulated)
+
+        self.assertEqual(simulated['v_trim_3'],0)
+        self.assertEqual(simulated['v_sequence_end'],411)
+        self.assertEqual(simulated['v_germline_end'],296)
+    def test_fix_d_position_after_trimming_index_ambiguity(self):
+        # CREATE a sequence that has a junction that recreates a part of the reference alleles
+        # test wheter the index was correctly updated for the v
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        simulated = {
+            'sequence': 'TGTNCTTCCAGTACACCTGAAGGGTGGGTACTCGTTACCCTTCTCGCTCTNTTAGGATATTGGGTCAGCAAGTGGATGACAAAGAGGGATGNACTCAGATTGGCGTGTAGTGGAGGAGGTGCAGCTGGTGGAGTCTGGGGGANGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTCAGTAGCTATAGCATGAACTNGGTCCGCCAGGCTCNAGGGAAGGGTCTGGAGTGGGTTTCATACATCAGTAGTAGTAGTAATAGCATATACTACGCAGACTCTGTNAAGGGCCGATTCACCATCTCCAGAGACAANGCCAAGAACTCACTGTATCTGCAAATGAACAGCCTGAGAGCCGAGGACACGGCTATNTATTACTGTGCGAGAGTTCCAGGGCACTACGGTGGTAACAAAACTGGTTNGACCCCTGGGGCCAGTGAACCCTGGTCACCGTCTCCTCAGGCTTCCACCAAGGGC',
+            'v_sequence_start': 115,
+            'v_sequence_end': 410,
+            'd_sequence_start': 421,
+            'd_sequence_end': 431,
+            'j_sequence_start': 445,
+            'j_sequence_end': 494,
+            'v_germline_start': 0,
+            'v_germline_end': 295,
+            'd_germline_start': 4,
+            'd_germline_end': 14,
+            'j_germline_start': 2,
+            'j_germline_end': 51,
+            'junction_sequence_start': 400,
+            'junction_sequence_end': 463,
+            'v_call': 'IGHVF10-G52*05,IGHVF10-G52*04',
+            'd_call': ['IGHD4-23*01','IGHD4-23*01'],
+            'j_call': 'IGHJ5*02',
+            'c_call': 'IGHG3*09',
+            'mutation_rate': 0.03143418467583497,
+            'v_trim_5': 0,
+            'v_trim_3': 1,
+            'd_trim_5': 4,
+            'd_trim_3': 5,
+            'j_trim_5': 2,
+            'j_trim_3': 0,
+            'c_trim_3': 25,
+            'corruption_event': 'add',
+            'corruption_add_amount': 115,
+            'corruption_remove_amount': 0,
+            'mutations': {246: 'G>T',
+                          267: 'T>C',
+                          281: 'G>A',
+                          284: 'C>G',
+                          391: 'G>A',
+                          469: 'G>T'},
+            'Ns': {3: 'A>N',
+                   50: 'A>N',
+                   91: 'A>N',
+                   142: 'G>N',
+                   221: 'G>N',
+                   236: 'C>N',
+                   306: 'G>N',
+                   336: 'T>N',
+                   393: 'G>N',
+                   453: 'C>N'},
+            'indels': {},
+            'productive': False,
+            'stop_codon': True,
+            'vj_in_frame': False,
+            'note': 'Stop codon present.'}
+        augmentor.fix_d_position_after_trimming_index_ambiguity(simulated)
+
+        self.assertEqual(simulated['d_trim_3'],3)
+        self.assertEqual(simulated['d_trim_5'],2)
+        self.assertEqual(simulated['d_sequence_start'],419)
+        self.assertEqual(simulated['d_sequence_end'],433)
+        self.assertEqual(simulated['d_germline_start'], 2)
+        self.assertEqual(simulated['d_germline_end'], 16)
+    def test_fix_j_position_after_trimming_index_ambiguity(self):
+        # CREATE a sequence that has a junction that recreates a part of the reference alleles
+        # test wheter the index was correctly updated for the v
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        simulated = {
+            'sequence': 'TGTNCTTCCAGTACACCTGAAGGGTGGGTACTCGTTACCCTTCTCGCTCTNTTAGGATATTGGGTCAGCAAGTGGATGACAAAGAGGGATGNACTCAGATTGGCGTGTAGTGGAGGAGGTGCAGCTGGTGGAGTCTGGGGGANGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTCAGTAGCTATAGCATGAACTNGGTCCGCCAGGCTCNAGGGAAGGGTCTGGAGTGGGTTTCATACATCAGTAGTAGTAGTAATAGCATATACTACGCAGACTCTGTNAAGGGCCGATTCACCATCTCCAGAGACAANGCCAAGAACTCACTGTATCTGCAAATGAACAGCCTGAGAGCCGAGGACACGGCTATNTATTACTGTGCGAGAGTTCCAGGGCATTACGGTGGTAGGGTCCGCCCGGACTACGGTGGTAGGGTCCGCCCGGAAAACTGGTTNGACCCCTGGGGCCAGTGAACCCTGGTCACCGTCTCCTCAGGCTTCCACCAAGGGC',
+            'v_sequence_start': 115,
+            'v_sequence_end': 410,
+            'd_sequence_start': 421,
+            'd_sequence_end': 431,
+            'j_sequence_start': 445,
+            'j_sequence_end': 494,
+            'v_germline_start': 0,
+            'v_germline_end': 295,
+            'd_germline_start': 4,
+            'd_germline_end': 14,
+            'j_germline_start': 2,
+            'j_germline_end': 51,
+            'junction_sequence_start': 400,
+            'junction_sequence_end': 463,
+            'v_call': 'IGHVF10-G52*05,IGHVF10-G52*04',
+            'd_call': ['IGHD4-23*01','IGHD4-23*01'],
+            'j_call': ['IGHJ5*02'],
+            'c_call': 'IGHG3*09',
+            'mutation_rate': 0.03143418467583497,
+            'v_trim_5': 0,
+            'v_trim_3': 1,
+            'd_trim_5': 4,
+            'd_trim_3': 5,
+            'j_trim_5': 2,
+            'j_trim_3': 0,
+            'c_trim_3': 25,
+            'corruption_event': 'add',
+            'corruption_add_amount': 115,
+            'corruption_remove_amount': 0,
+            'mutations': {246: 'G>T',
+                          267: 'T>C',
+                          281: 'G>A',
+                          284: 'C>G',
+                          391: 'G>A',
+                          469: 'G>T'},
+            'Ns': {3: 'A>N',
+                   50: 'A>N',
+                   91: 'A>N',
+                   142: 'G>N',
+                   221: 'G>N',
+                   236: 'C>N',
+                   306: 'G>N',
+                   336: 'T>N',
+                   393: 'G>N',
+                   453: 'C>N'},
+            'indels': {},
+            'productive': False,
+            'stop_codon': True,
+            'vj_in_frame': False,
+            'note': 'Stop codon present.'}
+        augmentor.fix_j_position_after_trimming_index_ambiguity(simulated)
+
+        self.assertEqual(simulated['j_trim_3'],0)
+        self.assertEqual(simulated['j_trim_5'],0)
+        self.assertEqual(simulated['j_sequence_start'],443)
+        self.assertEqual(simulated['j_germline_start'],0)
+
+
     def test_n_and_removal_ambiguity(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
         alleles = [j for i in heavychain_config.v_alleles for j in heavychain_config.v_alleles[i]]
