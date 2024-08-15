@@ -464,6 +464,31 @@ print("Mutated Sequence:", sequence_object.mutated_seq)
     
 
 
+### Simulating TCR-Beta Sequences 
+GenAIRR also support TCRB sequence simulation. Here's how you can simulate TCRB Sequences.
+
+
+
+
+```python
+# Customize augmentation arguments with your desired mutation rates
+from GenAIRR.TCR.simulation import TCRHeavyChainSequenceAugmentor, SequenceAugmentorArguments
+from GenAIRR.data import builtin_tcrb_data_config
+
+tcr_data_config = builtin_tcrb_data_config()
+custom_args = SequenceAugmentorArguments(simulate_indels=0.2)
+
+# Initialize the augmentor with custom arguments
+custom_augmentor = TCRHeavyChainSequenceAugmentor(tcr_data_config, custom_args)
+
+# Generate 100 sequences
+generated_seqs = []
+for _ in range(100):
+    generated_seqs.append(custom_augmentor.simulate_augmented_sequence())
+
+print("Generated Sequences:", generated_seqs)
+
+```
 
 ## Conclusion
 
