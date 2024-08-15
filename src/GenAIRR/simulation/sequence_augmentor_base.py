@@ -49,6 +49,7 @@ class SequenceAugmentorArguments:
             save_mutations_record (bool): Whether to save the record of mutations in the sequence, defaulting to False.
             save_ns_record (bool): Whether to save the record of 'N' bases in the sequence, defaulting to False.
             productive (bool): Whether to generate a productive sequence (VJ in frame and no stop codons), defaulting to False.
+            substitution_probability (float) : if this value is above 0, when applying mutation with the given min and max mutation rate, there will be a probability equals to this value that instead of a mutation a random substitution will be applied
         """
     min_mutation_rate: float = 0.003
     max_mutation_rate: float = 0.25
@@ -76,7 +77,7 @@ class SequenceAugmentorArguments:
     save_ns_record: bool = True
     save_corruption_record: bool = False
     productive: bool = False
-
+    substitution_probability : float = 0
 
 class SequenceAugmentorBase(ABC):
     """

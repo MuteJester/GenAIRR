@@ -1,158 +1,13 @@
 import random
+
+import numpy as np
+
+from .s5f import FiveMER
 from ..mutation.mutation_model import MutationModel
 import pickle
 
-
-class Nucleotide:
-    """Represents a single nucleotide in a DNA sequence.
-
-   Attributes:
-       value (str): The nucleotide character (A, T, C, G).
-       adjacent (list): A list of references to adjacent `FiveMER` objects containing this nucleotide.
-
-   Args:
-       value (str): The nucleotide character.
-   """
-    def __init__(self, value):
-        """Initialize a Nucleotide with a given value."""
-        self.value = value
-        self.adjacent = []  # References to adjacent nucleotides
-
-    def update_value(self, new_value, update_callback=None):
-        """Updates the nucleotide's value and optionally triggers a callback for each adjacent FiveMER.
-
-        Args:
-            new_value (str): The new nucleotide value.
-            update_callback (function, optional): A callback function to be called for each adjacent FiveMER.
-        """
-        self.value = new_value
-        if update_callback:
-            for five_mer in self.adjacent:
-                update_callback(five_mer)
-
-    def __repr__(self):
-        """String representation of the Nucleotide object."""
-        return self.value
-
-
-class FiveMER:
-    """Represents a 5-mer, a sequence of 5 nucleotides, in a DNA sequence.
-
-    Attributes:
-        nucleotides (list): A list of `Nucleotide` objects that make up the 5-mer.
-        sequence (str): The nucleotide sequence of the 5-mer.
-        position (int): The position of the 5-mer within a larger sequence.
-        likelihood (float): The likelihood or probability of this 5-mer being mutated.
-        modified (bool): Indicates whether the 5-mer has been modified.
-
-    Args:
-        nucleotides (list): A list of `Nucleotide` objects.
-    """
-    def __init__(self, nucleotides):
-        """Initialize a FiveMER with a list of Nucleotide objects."""
-        self.nucleotides = nucleotides  # List of Nucleotide objects
-        for nuc in self.nucleotides:
-            nuc.adjacent.append(self)
-        self.sequence = ''.join([nuc.value for nuc in nucleotides])
-        self.position = None
-        self.likelihood = 0
-        self.modified = False
-
-    def update_sequence(self, mutability=None):
-        """Updates the 5-mer sequence and optionally its mutability likelihood.
-
-        Args:
-            mutability (dict, optional): A dictionary mapping 5-mer sequences to their mutability likelihoods.
-        """
-        self.sequence = ''.join([nuc.value for nuc in self.nucleotides])
-        if mutability is not None:
-            self.likelihood = self.likelihood if self.sequence not in mutability else mutability[self.sequence]
-
-    def change_center(self, new_value, mutability=None):
-        """Changes the central nucleotide of the 5-mer and updates sequences and likelihoods.
-
-        Args:
-            new_value (str): The new value for the central nucleotide.
-            mutability (dict, optional): A dictionary mapping 5-mer sequences to their mutability likelihoods.
-        """
-        center_nucleotide = self.nucleotides[2]  # Assuming 0-indexed, 2 is the center
-        # Pass the update callback to update_value
-        center_nucleotide.update_value(new_value, lambda fm: fm.update_sequence(mutability))
-        self.modified = True
-
-    def __repr__(self):
-        """String representation of the FiveMER object."""
-        return ''.join([i.value for i in self.nucleotides])
-
-    def __eq__(self, other):
-        """Defines equality comparison for FiveMER objects with other FiveMER objects or strings."""
-        if isinstance(other, FiveMER):
-            return self.sequence == other.sequence
-        elif isinstance(other, str):
-            return self.sequence == other
-        else:
-            raise TypeError("Unsupported comparison between FiveMER and {}".format(type(other)))
-
-    @staticmethod
-    def create_five_mers(dna_sequence, mutability=None):
-        """Creates a list of FiveMER objects from a DNA sequence.
-
-        Args:
-            dna_sequence (str): The DNA sequence from which to create 5-mers.
-            mutability (dict, optional): A dictionary mapping 5-mer sequences to their mutability likelihoods.
-
-        Returns:
-            list: A list of FiveMER objects.
-        """
-        # Step 1: Pad the sequence
-        padded_sequence = 'NN' + dna_sequence + 'NN'
-
-        # Step 2: Create Nucleotide objects for the padded sequence
-        nucleotides = [Nucleotide(nuc) for nuc in padded_sequence]
-        # Step 3: Group nucleotides into FiveMER objects
-        five_mers = []
-        for i in range(len(dna_sequence)):  # Iterate based on the original sequence length
-            five_mer_nucleotides = nucleotides[i:i + 5]
-            five_mer = FiveMER(five_mer_nucleotides)
-            five_mer.position = i  # Position of the original second nucleotide (central in unpadded)
-
-            # if mutability map was supplied
-            if mutability is not None:
-                str_five_mer = five_mer.sequence
-                five_mer.likelihood = 0 if str_five_mer not in mutability else mutability[str_five_mer]
-
-            five_mers.append(five_mer)
-
-        return five_mers
-
-    @staticmethod
-    def five_mers_to_dna(five_mers):
-        """Converts a list of FiveMER objects back into a DNA sequence string.
-
-        Args:
-            five_mers (list): A list of FiveMER objects.
-
-        Returns:
-            str: The DNA sequence reconstructed from the FiveMER objects.
-        """
-        if not five_mers:
-            return ""
-
-        # Start with the central nucleotide of the first FiveMER (skipping initial padding)
-        dna_sequence = five_mers[0].nucleotides[2].value
-
-        # Iterate over the remaining FiveMERs and append only the last nucleotide of each
-        for five_mer in five_mers[1:-1]:  # Skip the last FiveMER with padding
-            dna_sequence += five_mer.nucleotides[2].value
-
-        # Add the central nucleotide of the last FiveMER (which is the actual last nucleotide of the DNA)
-        dna_sequence += five_mers[-1].nucleotides[2].value
-
-        return dna_sequence
-
-
-class S5F(MutationModel):
-    """Implements the S5F mutation model, a specific model for simulating mutations in DNA sequences.
+class S5F_w_Substitutions(MutationModel):
+    """Implements the S5F mutation model with Uniform Substituions, a specific model for simulating mutations in DNA sequences.
 
     This class extends `MutationModel` and provides an implementation for applying mutations based on the S5F model.
 
@@ -172,7 +27,9 @@ class S5F(MutationModel):
         custom_model (str, optional): Path to a custom mutation model file.
         productive (bool): Whether to ensure the sequence is productive (No stop codons and mutation in cdr3 anchors), defaulting to false.
     """
-    def __init__(self, min_mutation_rate=0, max_mutation_rate=0, custom_model=None, productive=False):
+
+    def __init__(self, min_mutation_rate=0, max_mutation_rate=0, custom_model=None, productive=False,
+                 substitution_probability=0):
         """Initialize an S5F mutation model with specified parameters."""
         self.targeting = None
         self.substitution = None
@@ -183,6 +40,7 @@ class S5F(MutationModel):
         self.loaded_metadata = False
         self.custom_model = custom_model
         self.productive = productive
+        self.substitution_probability = substitution_probability
 
     def load_metadata(self, sequence):
         """Loads mutation model metadata based on the sequence type.
@@ -212,6 +70,24 @@ class S5F(MutationModel):
             with open(self.custom_model, 'rb') as h:
                 self.mutability, self.substitution, self.targeting = pickle.load(h)
 
+    def mutable_positions(self, sequence):
+        """Identifies mutable positions in the sequence, excluding (NP) regions.
+
+        Args:
+            sequence (Sequence): The sequence object containing V, D, and J region start and end positions.
+            ignor_anchors (bool): Whether to ignor the anchors positions, defaulting to false.
+        Returns:
+            list: A list of positions that are eligible for mutation, combining positions from V, D, and J regions.
+        """
+
+        positions_to_mutate = []
+
+        # add v region positions
+        positions_to_mutate += list(range(sequence.v_seq_start, sequence.v_seq_end))
+        positions_to_mutate += list(range(sequence.d_seq_start, sequence.d_seq_end))
+        positions_to_mutate += list(range(sequence.j_seq_start, sequence.j_seq_end))
+
+        return positions_to_mutate
     def apply_mutation(self, sequence_object):
         """Applies mutations to a given sequence object based on the S5F mutation model.
 
@@ -236,28 +112,28 @@ class S5F(MutationModel):
         # Log mutations
         mutations = dict()
 
-
         # 2. Extract 5-Mers
         fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
-                            
+
         # add a failsafe to insure while loop does not get locked
         patience = 0
 
         # duplicate the loop for unproductive to not repeat if.
         # productive
         if self.productive:
-            # if productive do not include the positions of the anchors. 
+            # if productive do not include the positions of the anchors.
             reading_frame = [[2, 1, 0][idx % 3] for idx, element in enumerate(fiver_mers)]
             v_anchor = sequence_object.junction_start
             j_anchor = sequence_object.junction_end
-            restricted_positions = {v_anchor:'v', 
-                                    v_anchor+1:'v', 
-                                    v_anchor+2:'v', 
-                                    j_anchor-3:'j', 
-                                    j_anchor-2:'j', 
-                                    j_anchor-1:'j'}
+            restricted_positions = {v_anchor: 'v',
+                                    v_anchor + 1: 'v',
+                                    v_anchor + 2: 'v',
+                                    j_anchor - 3: 'j',
+                                    j_anchor - 2: 'j',
+                                    j_anchor - 1: 'j'}
             while len(mutations) < target_number_of_mutations:
-                sampled_position, mutation_to_apply = self._productive_recursive(0, fiver_mers, reading_frame, restricted_positions)
+                sampled_position, mutation_to_apply = self._productive_recursive(0, fiver_mers, reading_frame,
+                                                                                 restricted_positions)
                 # log
                 if sampled_position.position not in mutations:
                     mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
@@ -282,24 +158,42 @@ class S5F(MutationModel):
         else:
             ## normal
             while len(mutations) < target_number_of_mutations:
-                # 3. Mutability, Weighted Choice of Position Based on 5-Mer Likelihoods
-                sampled_position, chosen_index = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
-                
-                # 4. Substitution
-                substitutions = self.substitution[sampled_position.sequence].dropna()  # drop Nan's - N's and Same Base
-                mutable_bases = substitutions.index
-                bases_likelihoods = substitutions.values
-                mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
-        
-                # log
-                if sampled_position.position not in mutations:
-                    mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
-                else:
-                    mutations[sampled_position.position] += f'>{mutation_to_apply}'
 
-                # if mutation reverted previous mutation back to naive state, drop that record from the log
-                if mutation_to_apply == naive_sequence[sampled_position.position]:
-                    mutations.pop(sampled_position.position)
+                # if true perform random substitution instead of s5f mutation:
+                if np.random.binomial(1,self.substitution_probability,size=1).item():
+                    sampled_position, chosen_index = self.weighted_choice(fiver_mers)
+                    base = sampled_position[2].nucleotides.value
+                    mutation_to_apply = random.choice(list(self.bases - {base}))
+
+                    # log
+                    if sampled_position.position not in mutations:
+                        mutations[sampled_position.position] = f'S|{sampled_position.sequence[2]}>{mutation_to_apply}'
+                    else:
+                        mutations[sampled_position.position] += f'>{mutation_to_apply}'
+
+                    # if mutation reverted previous mutation back to naive state, drop that record from the log
+                    if mutation_to_apply == naive_sequence[sampled_position.position]:
+                        mutations.pop(sampled_position.position)
+
+                else:
+                    # 3. Mutability, Weighted Choice of Position Based on 5-Mer Likelihoods
+                    sampled_position, chosen_index = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
+
+                    # 4. Substitution
+                    substitutions = self.substitution[sampled_position.sequence].dropna()  # drop Nan's - N's and Same Base
+                    mutable_bases = substitutions.index
+                    bases_likelihoods = substitutions.values
+                    mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
+
+                    # log
+                    if sampled_position.position not in mutations:
+                        mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
+                    else:
+                        mutations[sampled_position.position] += f'>{mutation_to_apply}'
+
+                    # if mutation reverted previous mutation back to naive state, drop that record from the log
+                    if mutation_to_apply == naive_sequence[sampled_position.position]:
+                        mutations.pop(sampled_position.position)
 
                 # 5. Apply Mutation
                 # This will also update all relevant 5-MERS and their likelihood with pointer like logic
@@ -315,7 +209,7 @@ class S5F(MutationModel):
                     mutations = dict()
                     # 2. Extract 5-Mers
                     fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
-                        
+
         mutated_sequence = FiveMER.five_mers_to_dna(fiver_mers)
         return mutated_sequence, mutations, mutation_rate
 
@@ -355,14 +249,14 @@ class S5F(MutationModel):
         # replace center
         nucs = [str(nuc) for nuc in nucleotides]
         codon = nucs[0:2] + [new_base] + nucs[3:]
-        codon = ''.join(codon[reading_frame:reading_frame+3])
+        codon = ''.join(codon[reading_frame:reading_frame + 3])
         stop = codon in ["TAG", "TAA", "TGA"]
         return stop, codon
-    
+
     def _productive_recursive(self, counter, fiver_mers, reading_frame, restricted_positions):
         if counter >= 1000:
             raise RecursionError("Maximum recursion depth exceeded")
-        counter+=1
+        counter += 1
         sampled_position, chosen_index = self.weighted_choice(fiver_mers)
         substitutions = self.substitution[sampled_position.sequence].dropna()
         mutable_bases = substitutions.index
@@ -376,7 +270,7 @@ class S5F(MutationModel):
             _reading_frame = reading_frame[chosen_index]
             nucs = [str(nuc) for nuc in sampled_position.nucleotides]
             codon = nucs[0:2] + [mutation_to_apply] + nucs[3:]
-            codon = ''.join(codon[_reading_frame:_reading_frame+3])
+            codon = ''.join(codon[_reading_frame:_reading_frame + 3])
             pattern = {'TGC', 'TGT'} if tag == 'v' else {'TTT', 'TTC', 'TGG'}
             if codon in pattern:
                 return sampled_position, mutation_to_apply

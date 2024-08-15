@@ -549,7 +549,8 @@ class TestSequenceSimulation(unittest.TestCase):
         dcg = RandomDataConfigGenerator(convert_to_asc=False)
         random_dataconfig = dcg.make_dataconfig_from_existing_reference_files(v_reference_path='./IGHV.fasta',
                                                                               d_reference_path='./IGHD.fasta',
-                                                                              j_reference_path='./IGHJ.fasta')
+                                                                              j_reference_path='./IGHJ.fasta',
+                                                                              c_reference_path='./IGHC.fasta')
         for gene in ['V','D','J']:
             self.assertGreater(len(random_dataconfig.gene_use_dict[gene]),0)
 
