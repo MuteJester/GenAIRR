@@ -1,7 +1,7 @@
 import csv
 import re
 from collections import defaultdict
-from ..alleles.allele import VAllele, JAllele, DAllele
+from ..alleles.allele import VAllele, JAllele, DAllele,CAllele
 from ..utilities import parse_fasta
 
 def create_allele_dict(fasta):
@@ -22,7 +22,7 @@ def create_allele_dict(fasta):
     """
 
     allele_dict = defaultdict(list)
-    allele_class_map = {'V':VAllele,'D':DAllele,'J':JAllele}
+    allele_class_map = {'V':VAllele,'D':DAllele,'J':JAllele,'C':CAllele}
     with open(fasta) as f:
         for header, seq in parse_fasta(f):
             
@@ -60,6 +60,8 @@ def create_allele_dict(fasta):
                 if anchor is None:
                     continue
                 segment = 'J'
+            if "C" in family:
+                segment = 'C'
 
             gene = allele.split("*")[0]
             

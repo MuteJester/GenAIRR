@@ -2,17 +2,17 @@ import pickle
 import random
 import numpy as np
 import scipy.stats as st
-from ..utilities import AlleleNComparer, translate
-from ..sequence import HeavyChainSequence
+from ...utilities import AlleleNComparer, translate
+from ..sequence import TCRHeavyChainSequence
 from ..simulation import SequenceAugmentorArguments
 from ..simulation.sequence_augmentor_base import SequenceAugmentorBase
-from ..utilities.data_config import DataConfig
+from ...utilities.data_config import DataConfig
 import base64
 
 
-class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
+class TCRHeavyChainSequenceAugmentor(SequenceAugmentorBase):
     """
-        Augmentor class for simulating and augmenting heavy chain immunoglobulin sequences.
+        Augmentor class for simulating and augmenting heavy chain TCR sequences.
 
         This class extends the SequenceAugmentorBase to include functionalities specific to heavy chain sequences,
         such as handling V, D, and J gene segments, and applying heavy chain-specific corrections and augmentations.
@@ -323,7 +323,6 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         distilled_mutation_rate = (len(simulated['mutations'])+len(simulated['Ns']))/len(simulated['sequence'])
         simulated['mutation_rate'] = distilled_mutation_rate
 
-    
     def fix_productive_call_after_corruption_indel(self,simulated):
         sequence = simulated['sequence']
         functional = False
@@ -380,11 +379,11 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
                     dict: A dictionary containing the simulated sequence, its metadata including gene segment positions, alleles, mutation rate, and trimming information.
         """
         # if productive is true. ensure the base sequence is productive. This will keep the VJ in frame prior to indels.
-        gen = HeavyChainSequence.create_random(self.dataconfig,specific_v=specific_v,
+        gen = TCRHeavyChainSequence.create_random(self.dataconfig,specific_v=specific_v,
                                                specific_d=specific_d,specific_j=specific_j)
         if self.productive:
             while not gen.functional:
-                gen = HeavyChainSequence.create_random(self.dataconfig,specific_v=specific_v,
+                gen = TCRHeavyChainSequence.create_random(self.dataconfig,specific_v=specific_v,
                                                        specific_d=specific_d,specific_j=specific_j)
         
         gen.mutate(self.mutation_model)

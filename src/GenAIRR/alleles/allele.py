@@ -204,13 +204,18 @@ class DAllele(Allele):
             prob_5_dict = trim_5_dict[self.family]
         else:
             prob_5_dict = random.choice(list(trim_5_dict.values()))
-        trim_5 = weighted_choice_zero_break(prob_5_dict)
+
+        valid_d5_trim_amounts = filter(lambda amount: amount + trim_5 < self.length, prob_5_dict)
+        valid_d5_trim_amounts = {amount: prob_5_dict[amount] for amount in valid_d5_trim_amounts}
+        trim_5 = weighted_choice_zero_break(valid_d5_trim_amounts)
 
         trim_3_dict = trim_dicts["D_3"]
         if self.family in trim_3_dict:
             prob_3_dict = trim_3_dict[self.family]
         else:
             prob_3_dict = random.choice(list(trim_3_dict.values()))
+
+
 
         valid_d3_trim_amounts = filter(lambda amount: amount + trim_5 < self.length, prob_3_dict)
 

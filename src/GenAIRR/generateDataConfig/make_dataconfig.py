@@ -26,11 +26,12 @@ class RandomDataConfigGenerator:
         # initialize an empty dataconfig object this class will populate
         self.dataconfig = DataConfig()
         # initialize auxiliary list for allele tracking
-        self.alleles = ['V', 'J']
+        self.alleles = ['V', 'J','C']
 
     def _get_reference_pointers(self):
         # aux list
-        pointer_to_reference = {'V': self.dataconfig.v_alleles, 'J': self.dataconfig.j_alleles}
+        pointer_to_reference = {'V': self.dataconfig.v_alleles, 'J': self.dataconfig.j_alleles,
+                                'C':self.dataconfig.c_alleles}
         if self.has_d:
             pointer_to_reference['D'] = self.dataconfig.d_alleles
         return pointer_to_reference
@@ -42,16 +43,18 @@ class RandomDataConfigGenerator:
             probabilities[i] = (base ** i) / total_sum
         return probabilities
 
-    def _load_alleles(self, v_alleles, j_alleles, d_alleles=None):
+    def _load_alleles(self, v_alleles, j_alleles,c_alleles, d_alleles=None):
         self.dataconfig.v_alleles = v_alleles
         self.dataconfig.d_alleles = d_alleles
         self.dataconfig.j_alleles = j_alleles
+        self.dataconfig.c_alleles = c_alleles
+
 
     def _load_random_gene_usage(self):
 
         pointer_to_reference = self._get_reference_pointers()
 
-        gene_use_dict = {'V': dict(), 'J': dict()}
+        gene_use_dict = {'V': dict(), 'J': dict(),'C':dict()}
         if self.has_d:
             gene_use_dict['D'] = dict()
 
@@ -189,7 +192,8 @@ class RandomDataConfigGenerator:
         allele_ = str(r_allele.type).split('.')[1]  # returns "V" , "D" or "J"
         self.dataconfig.correction_maps[allele_ + '_N_AMBIGUITY_CORRECTION_GRAPH'] = comparer
 
-    def make_dataconfig_from_existing_reference_files(self, v_reference_path, j_reference_path, d_reference_path=None):
+    def make_dataconfig_from_existing_reference_files(self, v_reference_path, j_reference_path,c_reference_path,
+                                                      d_reference_path=None):
 
         # update d flag
         self.has_d = d_reference_path is not None
@@ -206,6 +210,8 @@ class RandomDataConfigGenerator:
             self.dataconfig.asc_tables['V'] = v_asc_table
 
             user_j_reference = create_allele_dict(j_reference_path)
+            user_c_reference = create_allele_dict(c_reference_path)
+
             if self.has_d:
                 user_d_reference = create_allele_dict(d_reference_path)
         else:
@@ -214,12 +220,15 @@ class RandomDataConfigGenerator:
             if d_reference_path is not None:
                 user_d_reference = create_allele_dict(d_reference_path)
             user_j_reference = create_allele_dict(j_reference_path)
+            user_c_reference = create_allele_dict(c_reference_path)
+
 
         print('=' * 50)
         # 2. Fill in Data Config
 
         # LOAD ALLELES
-        self._load_alleles(v_alleles=user_v_reference, d_alleles=user_d_reference, j_alleles=user_j_reference)
+        self._load_alleles(v_alleles=user_v_reference, d_alleles=user_d_reference, j_alleles=user_j_reference,
+                           c_alleles=user_c_reference)
         print('Alleles Mounted to DataConfig!...')
         # RANDOM GENE USAGE
         self._load_random_gene_usage()
@@ -273,7 +282,8 @@ class CustomDataConfigGenerator:
 
     def _get_reference_pointers(self):
         # aux list
-        pointer_to_reference = {'V': self.dataconfig.v_alleles, 'J': self.dataconfig.j_alleles}
+        pointer_to_reference = {'V': self.dataconfig.v_alleles, 'J': self.dataconfig.j_alleles,
+                                'C':self.dataconfig.c_alleles}
         if self.has_d:
             pointer_to_reference['D'] = self.dataconfig.d_alleles
         return pointer_to_reference

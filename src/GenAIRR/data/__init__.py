@@ -17,3 +17,8 @@ def builtin_lambda_chain_data_config():
     data_path = os.path.join(module_dir, 'LightChain_LAMBDA_DataConfigV3.pkl')
     with open(data_path, 'rb') as h:
         return pickle.load(h)
+
+def builtin_tcrb_data_config():
+    data_path = os.path.join(module_dir, 'TCRB_DATACONFIG.pkl')
+    with open(data_path, 'rb') as h:
+        return pickle.load(h)

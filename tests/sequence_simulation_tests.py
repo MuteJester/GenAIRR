@@ -1,4 +1,7 @@
 import unittest
+import random
+
+import numpy as np
 
 from GenAIRR.alleles import VAllele
 from GenAIRR.generateDataConfig import RandomDataConfigGenerator, CustomDataConfigGenerator
@@ -196,7 +199,28 @@ class TestSequenceSimulation(unittest.TestCase):
         self.assertEqual(simulated['j_sequence_start'],443)
         self.assertEqual(simulated['j_germline_start'],0)
 
+    def test_correct_for_v_end_cut(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
+        augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
+        # choose one random v allele
+        v_allele = random.choice(augmentor.v_alleles)
+        v_seq = v_allele.ungapped_seq
+        v_seq_end = v_allele.length
+        random_trim_end_trim = np.random.randint(0, v_seq_end)
+        trimmed_seq = v_seq[:-random_trim_end_trim]
+        ambig = []
+        for allele in augmentor.v_alleles:
+            if trimmed_seq in allele.ungapped_seq:
+                ambig.append(allele.name)
 
+        simulated = {'v_call':[v_allele.name],
+                                                        'v_sequence_end':v_seq_end-random_trim_end_trim}
+        augmentor.correct_for_v_end_cut(simulated)
+        print(simulated)
+        print(ambig)
+        same_alleles = set(ambig)&set(simulated['v_call'])
+        self.assertTrue(len(same_alleles) == len(ambig))
     def test_n_and_removal_ambiguity(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
         alleles = [j for i in heavychain_config.v_alleles for j in heavychain_config.v_alleles[i]]
@@ -255,6 +279,21 @@ class TestSequenceSimulation(unittest.TestCase):
         args = SequenceAugmentorArguments(simulate_indels=0.2)
 
         aug = HeavyChainSequenceAugmentor(heavychain_config, args)
+        generated_seqs = []
+        for _ in range(100):
+            generated_seqs.append(aug.simulate_augmented_sequence())
+
+
+        self.assertEqual(len(generated_seqs), 100)
+
+    def test_tcr_sequence_simulator(self):
+        from GenAIRR.TCR.simulation import TCRHeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        import base64
+        from GenAIRR.data import builtin_tcrb_data_config
+
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
+
+        aug = TCRHeavyChainSequenceAugmentor(builtin_tcrb_data_config(), args)
         generated_seqs = []
         for _ in range(100):
             generated_seqs.append(aug.simulate_augmented_sequence())
