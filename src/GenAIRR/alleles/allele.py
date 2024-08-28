@@ -140,9 +140,11 @@ class VAllele(Allele):
         trim_3_dict = trim_dicts["V_3"]
         # choose trim length/prob dict by gene family
         if self.family in trim_3_dict:
-            prob_dict = trim_3_dict[self.family]
+            prob_dict = trim_3_dict[self.family][self.gene]
         else:
-            prob_dict = random.choice(list(trim_3_dict.values()))
+            random_fam = random.choice(list(trim_3_dict.values()))
+            prob_dict = random.choice(list(random_fam.values()))
+
 
         # prevent entire allele or anchor from being removed
         valid_trim_amounts = filter(lambda amount: (amount < self.length) or \
@@ -201,9 +203,10 @@ class DAllele(Allele):
 
         trim_5_dict = trim_dicts["D_5"]
         if self.family in trim_5_dict:
-            prob_5_dict = trim_5_dict[self.family]
+            prob_5_dict = trim_5_dict[self.family][self.gene]
         else:
-            prob_5_dict = random.choice(list(trim_5_dict.values()))
+            random_fam = random.choice(list(trim_5_dict.values()))
+            prob_5_dict = random.choice(list(random_fam.values()))
 
         valid_d5_trim_amounts = filter(lambda amount: amount + trim_5 < self.length, prob_5_dict)
         valid_d5_trim_amounts = {amount: prob_5_dict[amount] for amount in valid_d5_trim_amounts}
@@ -211,9 +214,10 @@ class DAllele(Allele):
 
         trim_3_dict = trim_dicts["D_3"]
         if self.family in trim_3_dict:
-            prob_3_dict = trim_3_dict[self.family]
+            prob_3_dict = trim_3_dict[self.family][self.gene]
         else:
-            prob_3_dict = random.choice(list(trim_3_dict.values()))
+            random_fam = random.choice(list(trim_3_dict.values()))
+            prob_3_dict = random.choice(list(random_fam.values()))
 
 
 
@@ -289,9 +293,10 @@ class JAllele(Allele):
 
         trim_5_dict = trim_dicts["J_5"]
         if self.family in trim_5_dict:
-            prob_dict = trim_5_dict[self.family]
+            prob_dict = trim_5_dict[self.family][self.gene]
         else:
-            prob_dict = random.choice(list(trim_5_dict.values()))
+            random_fam = random.choice(list(trim_5_dict.values()))
+            prob_dict = random.choice(list(random_fam.values()))
 
         valid_5_trims = filter(lambda t5: (t5 < self.length) or (t5 < self.anchor), prob_dict)
         prob_dict = {amount: prob_dict[amount] for amount in valid_5_trims}
@@ -343,9 +348,10 @@ class CAllele(Allele):
 
         trim_3_dict = trim_dicts["C_3"]
         if self.family in trim_3_dict:
-            prob_dict = trim_3_dict[self.family]
+            prob_dict = trim_3_dict[self.family][self.gene]
         else:
-            prob_dict = random.choice(list(trim_3_dict.values()))
+            random_fam = random.choice(list(trim_3_dict.values()))
+            prob_dict = random.choice(list(random_fam.values()))
 
         valid_3_trims = filter(lambda amount: amount < self.length, prob_dict)
         prob_dict = {amount: prob_dict[amount] for amount in valid_3_trims}
