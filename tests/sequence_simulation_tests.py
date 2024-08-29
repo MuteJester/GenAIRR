@@ -268,6 +268,7 @@ class TestSequenceSimulation(unittest.TestCase):
             matches.append(len(same_alleles) == len(ambig))
 
         self.assertTrue(sum(matches) == 2*N)
+
     def test_n_and_removal_ambiguity(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
         alleles = [j for i in heavychain_config.v_alleles for j in heavychain_config.v_alleles[i]]

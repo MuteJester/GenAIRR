@@ -324,7 +324,6 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         distilled_mutation_rate = (len(simulated['mutations'])+len(simulated['Ns']))/len(simulated['sequence'])
         simulated['mutation_rate'] = distilled_mutation_rate
 
-    
     def fix_productive_call_after_corruption_indel(self,simulated):
         sequence = simulated['sequence']
         functional = False
