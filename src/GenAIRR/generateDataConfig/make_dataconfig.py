@@ -1,5 +1,5 @@
 import pandas as pd
-
+from ..utilities.derive_similarity_maps import AmbiguityAlleleTrimMapDeriver
 from ..utilities import DataConfig
 from ..utilities.data_utilities import create_allele_dict
 from ..utilities.asc_utilities import create_asc_germline_set, hamming_distance
@@ -72,14 +72,23 @@ class RandomDataConfigGenerator:
         pointer_to_reference = self._get_reference_pointers()
         trim_dicts = dict()
         for allele in self.alleles:
+            allele_type = allele
             # get only the families
-            allele_families = sorted(list(set([i.split('-')[0] for i in pointer_to_reference[allele]])))
+            alleles = {i for j in pointer_to_reference[allele] for i in pointer_to_reference[allele][j]}
             # each family gets up to max_trim trimming amount options with decaying probabilities
             probabilities = self.generate_decaying_probabilities(max_trim)
-            trim_dict = {i: probabilities for i in allele_families}
 
-            trim_dicts[allele + '_5'] = trim_dict
-            trim_dicts[allele + '_3'] = trim_dict
+            trim_dict = {}
+            for allele in alleles:
+                if allele.family not in trim_dict:
+                    trim_dict[allele.family] = {}
+                    trim_dict[allele.family][allele.gene] = probabilities
+                else:
+                    trim_dict[allele.family][allele.gene] = probabilities
+
+
+            trim_dicts[allele_type + '_5'] = trim_dict
+            trim_dicts[allele_type + '_3'] = trim_dict
 
         self.dataconfig.trim_dicts = trim_dicts
 
@@ -125,62 +134,21 @@ class RandomDataConfigGenerator:
 
         self.dataconfig.NP_transitions = NP_transitions
 
-    def _derive_3_prime_correction_map(self, target_alleles):
-        t_dict = {i.name: i for j in target_alleles for i in target_alleles[j]}
-        trim_map = dict()
-        for t_allele in t_dict.values():
-            trim_map[t_allele.name] = dict()
-            seq_length = len(t_allele.ungapped_seq)
-            for trim_3 in range(seq_length + 1):
-                # Trim from the right (3' end)
-                trimmed = t_allele.ungapped_seq[:seq_length - trim_3] if trim_3 > 0 else t_allele.ungapped_seq
-                trim_map[t_allele.name][seq_length - trim_3] = []
-                for v_c_allele in t_dict.values():
-                    # Check if the trimmed sequence is a substring of the v_c_allele sequence
-                    if trimmed in v_c_allele.ungapped_seq:
-                        trim_map[t_allele.name][seq_length - trim_3].append(v_c_allele.name)
-        r_allele = list(t_dict.values())[0]
-        allele_ = str(r_allele.type).split('.')[1]  # returns "V" , "D" or "J"
-        self.dataconfig.correction_maps[allele_ + '_3_TRIM_SIMILARITY_MAP'] = trim_map
+    def _derive_allele_trim_ambiguity_correction_maps(self):
+        amd = AmbiguityAlleleTrimMapDeriver()
 
-    def _derive_5_prime_correction_map(self, target_alleles):
-        t_dict = {i.name: i for j in target_alleles for i in target_alleles[j]}
+        v_5_trim_map, v_3_trim_map = amd.derive_v_trim_ambiguity_map(self.dataconfig)
+        j_5_trim_map, j_3_trim_map = amd.derive_j_trim_ambiguity_map(self.dataconfig)
 
-        trim_map = dict()
-        for t_allele in t_dict.values():
-            trim_map[t_allele.name] = dict()
-            for trim_5 in range(len(t_allele.ungapped_seq) + 1):
-                trimmed = t_allele.ungapped_seq[trim_5:] if trim_5 > 0 else t_allele.ungapped_seq
-                trim_map[t_allele.name][trim_5] = []
-                for v_c_allele in t_dict.values():
-                    # Check if the trimmed sequence is a substring of the v_c_allele sequence
-                    if trimmed in v_c_allele.ungapped_seq:
-                        trim_map[t_allele.name][trim_5].append(v_c_allele.name)
-        r_allele = list(t_dict.values())[0]
-        allele_ = str(r_allele.type).split('.')[1]  # returns "V" , "D" or "J"
-        self.dataconfig.correction_maps[allele_ + '_5_TRIM_SIMILARITY_MAP'] = trim_map
+        self.dataconfig.correction_maps['V_3_TRIM_SIMILARITY_MAP'] = v_3_trim_map
+        self.dataconfig.correction_maps['V_5_TRIM_SIMILARITY_MAP'] = v_5_trim_map
+        self.dataconfig.correction_maps['J_3_TRIM_SIMILARITY_MAP'] = j_3_trim_map
+        self.dataconfig.correction_maps['J_5_TRIM_SIMILARITY_MAP'] = j_5_trim_map
+        if len(self.dataconfig.d_alleles) > 0:
+            d_5_3_trim_map= amd.derive_d_trim_ambiguity_map(self.dataconfig)
+            self.dataconfig.correction_maps['D_5_3_TRIM_SIMILARITY_MAP'] = d_5_3_trim_map
 
-    def _derive_5_and_3_prime_correction_map(self, target_alleles):
-        t_dict = {i.name: i for j in target_alleles for i in target_alleles[j]}
-        t_list = [i for j in target_alleles for i in target_alleles[j]]
-        trim_map = dict()
-        for t_allele in t_list:
-            trim_map[t_allele.name] = dict()
-            for trim_5 in range(len(t_allele.ungapped_seq) + 1):
-                for trim_3 in range(len(t_allele.ungapped_seq) - trim_5 + 1):
-                    # Correctly handle the trimming for t_allele
-                    trimmed = t_allele.ungapped_seq[trim_5:] if trim_5 > 0 else t_allele.ungapped_seq
-                    trimmed = trimmed[:-trim_3] if trim_3 > 0 else trimmed
 
-                    trim_map[t_allele.name][(trim_5, trim_3)] = []
-                    for d_c_allele in t_list:
-                        # Check if the trimmed sequence is a substring of the d_c_allele sequence
-                        if trimmed in d_c_allele.ungapped_seq:
-                            trim_map[t_allele.name][(trim_5, trim_3)].append(d_c_allele.name)
-
-        r_allele = list(t_dict.values())[0]
-        allele_ = str(r_allele.type).split('.')[1]  # returns "V" , "D" or "J"
-        self.dataconfig.correction_maps[allele_ + '_5_3_TRIM_SIMILARITY_MAP'] = trim_map
 
     def _derive_n_ambiguity_map(self, target_alleles):
         t_dict = {i.name: i for j in target_alleles for i in target_alleles[j]}
@@ -253,17 +221,9 @@ class RandomDataConfigGenerator:
         self._derive_n_ambiguity_map(self.dataconfig.v_alleles)
         print('V Ns Ambiguity Map Mounted to DataConfig!...')
 
-        self._derive_3_prime_correction_map(self.dataconfig.v_alleles)
-        print('V 3 Prime Ambiguity Map Mounted to DataConfig!...')
-        self._derive_5_prime_correction_map(self.dataconfig.v_alleles)
-        print('V 5 Prime Ambiguity Map Mounted to DataConfig!...')
-        self._derive_3_prime_correction_map(self.dataconfig.j_alleles)
-        print('J 3 Prime Ambiguity Map Mounted to DataConfig!...')
-        self._derive_5_prime_correction_map(self.dataconfig.j_alleles)
-        print('J 5 Prime Ambiguity Map Mounted to DataConfig!...')
-        if self.has_d:
-            self._derive_5_and_3_prime_correction_map(self.dataconfig.d_alleles)
-            print('D (5,3) Prime Ambiguity Map Mounted to DataConfig!...')
+        self._derive_allele_trim_ambiguity_correction_maps()
+        print('Allele Trim Ambiguity Maps Mounted to DataConfig!...')
+
 
         print('=' * 50)
 
