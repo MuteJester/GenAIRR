@@ -200,27 +200,74 @@ class TestSequenceSimulation(unittest.TestCase):
         self.assertEqual(simulated['j_germline_start'],0)
 
     def test_correct_for_v_end_cut(self):
+        # Heavy Chain
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
         args = SequenceAugmentorArguments(simulate_indels=0.2)
         augmentor = HeavyChainSequenceAugmentor(heavychain_config, args)
         # choose one random v allele
-        v_allele = random.choice(augmentor.v_alleles)
-        v_seq = v_allele.ungapped_seq
-        v_seq_end = v_allele.length
-        random_trim_end_trim = np.random.randint(0, v_seq_end)
-        trimmed_seq = v_seq[:-random_trim_end_trim]
-        ambig = []
-        for allele in augmentor.v_alleles:
-            if trimmed_seq in allele.ungapped_seq:
-                ambig.append(allele.name)
+        matches = []
+        N = 50
+        for _ in range(N): # repeat this N times each time random scenario
+            v_allele = random.choice(augmentor.v_alleles)
+            v_seq = v_allele.ungapped_seq
+            v_seq_end = v_allele.length
+            random_trim_end_trim = np.random.randint(1, v_seq_end)
+            trimmed_seq = v_seq[:-random_trim_end_trim]
+            ambig = []
+            for allele in augmentor.v_alleles:
+                if trimmed_seq in allele.ungapped_seq:
+                    ambig.append(allele.name)
 
-        simulated = {'v_call':[v_allele.name],
-                                                        'v_sequence_end':v_seq_end-random_trim_end_trim}
-        augmentor.correct_for_v_end_cut(simulated)
-        print(simulated)
-        print(ambig)
-        same_alleles = set(ambig)&set(simulated['v_call'])
-        self.assertTrue(len(same_alleles) == len(ambig))
+            simulated = {'v_call':[v_allele.name],'v_sequence_end':v_seq_end-random_trim_end_trim,
+                         'v_trim_3':random_trim_end_trim}
+            augmentor.correct_for_v_end_cut(simulated)
+            #print(simulated)
+            #print(ambig)
+            same_alleles = set(ambig)&set(simulated['v_call'])
+
+            matches.append(len(same_alleles) == len(ambig))
+
+
+        # Light Chain
+        from GenAIRR.simulation import LightChainKappaLambdaSequenceAugmentor, SequenceAugmentorArguments
+        args = SequenceAugmentorArguments(simulate_indels=0.2)
+        augmentor = LightChainKappaLambdaSequenceAugmentor(kappa_dataconfig=lightchain_kappa_config,
+        lambda_dataconfig=lightchain_lambda_config, kappa_args=args,lambda_args=args)
+        # choose one random v allele
+        for _ in range(N):  # repeat this N times each time random scenario
+            v_alleles = augmentor.kappa_augmentor.v_alleles+augmentor.lambda_augmentor.v_alleles
+            v_allele = random.choice(v_alleles)
+            if 'IGK' in v_allele.name:
+                mode = 'kappa'
+                v_alleles = augmentor.kappa_augmentor.v_alleles
+
+            else:
+                mode = 'lambda'
+                v_alleles = augmentor.lambda_augmentor.v_alleles
+
+            v_seq = v_allele.ungapped_seq
+            v_seq_end = v_allele.length
+            random_trim_end_trim = np.random.randint(1, v_seq_end)
+            trimmed_seq = v_seq[:-random_trim_end_trim]
+            ambig = []
+            for allele in v_alleles:
+                if trimmed_seq in allele.ungapped_seq:
+                    ambig.append(allele.name)
+
+            simulated = {'v_call': [v_allele.name], 'v_sequence_end': v_seq_end - random_trim_end_trim,
+                         'v_trim_3': random_trim_end_trim}
+
+            if mode == 'kappa':
+                augmentor.kappa_augmentor.correct_for_v_end_cut(simulated)
+            else:
+                augmentor.lambda_augmentor.correct_for_v_end_cut(simulated)
+            #print(simulated)
+            #print(ambig)
+            same_alleles = set(ambig) & set(simulated['v_call'])
+
+            matches.append(len(same_alleles) == len(ambig))
+
+        self.assertTrue(sum(matches) == 2*N)
     def test_n_and_removal_ambiguity(self):
         from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
         alleles = [j for i in heavychain_config.v_alleles for j in heavychain_config.v_alleles[i]]

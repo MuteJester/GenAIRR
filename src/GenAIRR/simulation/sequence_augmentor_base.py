@@ -419,8 +419,9 @@ class SequenceAugmentorBase(ABC):
                 Args:
                     simulated (dict): A dictionary containing the simulated sequence and metadata, including the current V allele and its trimmed length.
         """
-        equivalent_alleles = self.v_end_allele_correction_map[simulated['v_call'][0]][
-            min(simulated['v_sequence_end'], self.max_v_end_correction_map_value)]
+        sampled_v = simulated['v_call'][0]
+        valid_length = min(simulated['v_trim_3'], self.max_v_end_correction_map_value)
+        equivalent_alleles = self.v_end_allele_correction_map[sampled_v][valid_length]
         simulated['v_call'] = simulated['v_call'] + list(set(equivalent_alleles) - set(simulated['v_call']))
 
     def correct_for_v_start_cut(self, simulated):
