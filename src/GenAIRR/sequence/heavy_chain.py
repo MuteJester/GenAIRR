@@ -48,7 +48,6 @@ class HeavyChainSequence(BaseSequence):
         self.j_trimmed_seq, self.j_trim_5, self.j_trim_3 = self.j_allele.get_trimmed(dataconfig.trim_dicts)
         self.c_trimmed_seq, self.c_trim_5, self.c_trim_3 = self.c_allele.get_trimmed(dataconfig.trim_dicts)
 
-
     def assemble_sequence(self):
         self.ungapped_seq = (
                 self.v_trimmed_seq

@@ -1,4 +1,7 @@
 import random
+
+import pandas as pd
+
 from ..mutation.mutation_model import MutationModel
 import pickle
 
@@ -66,7 +69,7 @@ class FiveMER:
         """
         self.sequence = ''.join([nuc.value for nuc in self.nucleotides])
         if mutability is not None:
-            self.likelihood = self.likelihood if self.sequence not in mutability else mutability[self.sequence]
+            self.likelihood = mutability.get(self.sequence, self.likelihood)
 
     def change_center(self, new_value, mutability=None):
         """Changes the central nucleotide of the 5-mer and updates sequences and likelihoods.
@@ -104,22 +107,23 @@ class FiveMER:
         Returns:
             list: A list of FiveMER objects.
         """
-        # Step 1: Pad the sequence
-        padded_sequence = 'NN' + dna_sequence + 'NN'
+        # Step 1: Pad the sequence and precompute some constants
+        padded_sequence = f'NN{dna_sequence}NN'
+        sequence_length = len(dna_sequence)
 
-        # Step 2: Create Nucleotide objects for the padded sequence
-        nucleotides = [Nucleotide(nuc) for nuc in padded_sequence]
-        # Step 3: Group nucleotides into FiveMER objects
+        # Step 2: Create FiveMER objects and populate the list
         five_mers = []
-        for i in range(len(dna_sequence)):  # Iterate based on the original sequence length
-            five_mer_nucleotides = nucleotides[i:i + 5]
-            five_mer = FiveMER(five_mer_nucleotides)
+        for i in range(sequence_length):  # Iterate based on the original sequence length
+            # Extract the 5-mer string directly
+            five_mer_nucleotides = padded_sequence[i:i + 5]
+
+            # Create the FiveMER object
+            five_mer = FiveMER([Nucleotide(nuc) for nuc in five_mer_nucleotides])
             five_mer.position = i  # Position of the original second nucleotide (central in unpadded)
 
-            # if mutability map was supplied
+            # Apply mutability likelihood if available
             if mutability is not None:
-                str_five_mer = five_mer.sequence
-                five_mer.likelihood = 0 if str_five_mer not in mutability else mutability[str_five_mer]
+                five_mer.likelihood = mutability.get(five_mer_nucleotides, 0)
 
             five_mers.append(five_mer)
 
@@ -224,6 +228,14 @@ class S5F(MutationModel):
         # 1. Load the Likelihoods File
         if not self.loaded_metadata:
             self.load_metadata(sequence_object)
+            # check if substitution map is a dataframe convert it to a nested dict to make access more efficient
+            self.substitution = self.substitution.to_dict(orient='dict')
+            # Remove keys with NaN values in each dictionary
+            self.substitution = {
+                outer_key: {inner_key: inner_value for inner_key, inner_value in outer_dict.items() if
+                            not pd.isna(inner_value)}
+                for outer_key, outer_dict in self.substitution.items()
+            }
             self.loaded_metadata = True
 
         # 1.1 Sample Mutation Rate
@@ -286,9 +298,9 @@ class S5F(MutationModel):
                 sampled_position, chosen_index = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
                 
                 # 4. Substitution
-                substitutions = self.substitution[sampled_position.sequence].dropna()  # drop Nan's - N's and Same Base
-                mutable_bases = substitutions.index
-                bases_likelihoods = substitutions.values
+                substitutions = self.substitution[sampled_position.sequence]
+                mutable_bases = list(substitutions.keys())
+                bases_likelihoods = list(substitutions.values())
                 mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
         
                 # log
@@ -340,10 +352,18 @@ class S5F(MutationModel):
         Returns:
             FiveMER: A randomly selected FiveMER object, weighted by likelihood.
         """
-        weights = [fm.likelihood if fm.likelihood == fm.likelihood else 0 for fm in five_mers]
-        # Choose an index instead of the object
-        chosen_index = random.choices(range(len(five_mers)), weights, k=1)[0]
-        return five_mers[chosen_index], chosen_index
+        total_weight = 0
+        cumulative_weights = []
+
+        for fm in five_mers:
+            weight = fm.likelihood if fm.likelihood == fm.likelihood else 0
+            total_weight += weight
+            cumulative_weights.append(total_weight)
+
+        r = random.uniform(0, total_weight)
+        for i, cumulative_weight in enumerate(cumulative_weights):
+            if r < cumulative_weight:
+                return five_mers[i], i
 
     def _is_stop_codon(self, nucleotides, new_base, reading_frame):
         """Check if the mutation introduce a stop codon
