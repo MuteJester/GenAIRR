@@ -1,3 +1,7 @@
+"""
+Note:
+    Adapted from https://github.com/Cowanlab/airrship
+"""
 import re
 import random
 from abc import ABC, abstractmethod

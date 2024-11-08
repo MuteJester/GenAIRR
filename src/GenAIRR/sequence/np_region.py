@@ -16,6 +16,9 @@ class NP_Region:
         transition_probs (dict): Position-specific transition probabilities for base changes.
         first_base (str): The starting base of the NP region sequence.
         length (int): The desired length of the NP region sequence.
+        
+    Note:
+        Adapted from https://github.com/Cowanlab/airrship
     """
 
     def __init__(self, transition_probs, first_base, length):
