@@ -8,6 +8,9 @@ GenAIRR is a Python module designed to generate synthetic Adaptive Immune Recept
 - **Precision in Allele-Specific Corrections**: Utilize sophisticated correction maps to accurately handle allele-specific trimming events and ambiguities.
 - **Indel Simulation Capability**: Reflect the intricacies of sequencing data by simulating insertions and deletions within sequences.
 
+# Acknowledgements
+Some parts of the code were inspired and adapted from https://github.com/Cowanlab/airrship
+
 # Quick Start Guide to GenAIRR
 
 Welcome to the Quick Start Guide for GenAIRR, a Python module designed for generating synthetic Adaptive Immune Receptor Repertoire (AIRR) sequences. This guide will walk you through the basic usage of GenAIRR, including setting up your environment, simulating heavy and light chain sequences, and customizing your simulations.
