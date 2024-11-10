@@ -1,4 +1,5 @@
 from GenAIRR.container.SimulationContainer import SimulationContainer
+from GenAIRR.pipeline.plot_parameters import CORRECTION_STEP_HEADING_COLOR
 from GenAIRR.steps.StepBase import AugmentationStep
 from GenAIRR.utilities import DataConfig
 
@@ -67,8 +68,16 @@ class FixDPositionAfterTrimmingIndexAmbiguity(AugmentationStep):
         self.fix_d_position_after_trimming_index_ambiguity(container)
 
     def get_graph_node(self):
-        """Returns a string representation of the step for GraphViz with relevant information."""
-        return (
-            f'"FixDPositionAfterTrimmingIndexAmbiguity" [label="FixDPositionAfterTrimmingIndexAmbiguity\\n'
-            f'Corrects D segment start/end positions\\nHandles trimming ambiguities"]'
-        )
+        """Generates a detailed GraphViz node representation with constructor details in an HTML-like format."""
+        step_name = "Fix D Position After Trimming Ambiguity"
+
+        # Constructing an HTML-like label using a table for detailed formatting
+        label = f"""
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        <TR><TD COLSPAN="2" BGCOLOR="lightsteelblue"><B>{step_name}</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Description</B></TD><TD ALIGN="LEFT">Corrects D segment start/end positions</TD></TR>
+        </TABLE>
+        
+        """
+
+        return label, 'box', "filled,rounded", CORRECTION_STEP_HEADING_COLOR, "Helvetica", "black"

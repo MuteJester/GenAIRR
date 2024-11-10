@@ -3,6 +3,7 @@ import random
 import numpy as np
 
 from ..container.SimulationContainer import SimulationContainer
+from ..pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
 from ..simulation import Event
 from ..steps.StepBase import AugmentationStep
 from ..utilities import DataConfig, translate
@@ -12,13 +13,19 @@ import scipy.stats as st
 class CorruptSequenceBeginning(AugmentationStep):
     def __init__(self, corruption_probability, corrupt_events_proba=None, max_sequence_length=576,
                  nucleotide_add_coefficient=210,
-                 nucleotide_remove_coefficient=310, nucleotide_add_after_remove_coefficient=50):
+                 nucleotide_remove_coefficient=310, nucleotide_add_after_remove_coefficient=50,
+                 random_sequence_add_proba=1,single_base_stream_proba=0,
+                 duplicate_leading_proba=0,random_allele_proba=0):
         super().__init__()
 
         self.max_sequence_length = max_sequence_length
         if corrupt_events_proba is None:
             corrupt_events_proba = [0.3, 0.3, 0.3]
         self.corrupt_events_proba = corrupt_events_proba
+        self.random_sequence_add_proba = random_sequence_add_proba
+        self.single_base_stream_proba = single_base_stream_proba
+        self.duplicate_leading_proba = duplicate_leading_proba
+        self.random_allele_proba = random_allele_proba
         self.corruption_probability = corruption_probability
 
         self.nucleotide_add_distribution = st.beta(2, 3)
@@ -41,29 +48,29 @@ class CorruptSequenceBeginning(AugmentationStep):
         self.v_dict = {i.name: i.ungapped_seq.upper() for i in self.v_alleles}
 
     @staticmethod
-    def random_nucleotides(amount, simulated):
+    def random_nucleotides(amount, container: SimulationContainer):
         random_seq = ''.join(random.choices(['A', 'T', 'C', 'G'], k=amount))
-        simulated['corruption_added_section'] = random_seq
-        return random_seq + simulated['sequence']
+        container.corruption_added_section = random_seq
+        return random_seq + container.sequence
 
     @staticmethod
-    def duplicate_leading(amount, simulated):
-        sequence = simulated['sequence']
+    def duplicate_leading(amount, container: SimulationContainer):
+        sequence = container.sequence
         cap = amount if amount < len(sequence) else len(sequence) - 1
-        simulated['corruption_added_section'] = sequence[:cap]
+        container.corruption_added_section = sequence[:cap]
         return sequence[:cap] + sequence
 
-    def random_allele_section(self, amount, simulated):
+    def random_allele_section(self, amount, container: SimulationContainer):
         random_allele = random.choice(self.v_alleles).ungapped_seq.upper()
         cap = amount if amount < len(random_allele) else len(random_allele) - 1
-        simulated['corruption_added_section'] = random_allele[:cap]
-        return random_allele[:cap] + simulated['sequence']
+        container.corruption_added_section = random_allele[:cap]
+        return random_allele[:cap] + container.sequence
 
     @staticmethod
-    def single_base_stream(amount, simulated):
+    def single_base_stream(amount, container: SimulationContainer):
         random_base = random.choice(['A', 'T', 'G', 'C', 'N']) * amount
-        simulated['corruption_added_section'] = random_base
-        return random_base + simulated['sequence']
+        container.corruption_added_section = random_base
+        return random_base + container.sequence
 
     def validate_sequence_length_after_addition(self, sequence, added):
         """
@@ -371,10 +378,25 @@ class CorruptSequenceBeginning(AugmentationStep):
             self.fix_productive_call_after_corruption_indel(container)
 
     def get_graph_node(self):
-        """Returns a string representation of the step for GraphViz with relevant information."""
-        return (
-            f'"CorruptSequenceBeginning" [label="CorruptSequenceBeginning\\n'
-            f'Corruption Probability: {self.corruption_probability}\\n'
-            f'Events Probability: {self.corrupt_events_proba}\\n'
-            f'Max Sequence Length: {self.max_sequence_length}"]'
-        )
+        """Generates a detailed GraphViz node representation with constructor details in an HTML-like format."""
+        step_name = "Corrupt Sequence 5' End"
+
+        # Constructing an HTML-like label using a table for detailed formatting
+        label = f"""
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        <TR><TD COLSPAN="2" BGCOLOR="lightsteelblue"><B>{step_name}</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Corruption Probability</B></TD><TD ALIGN="LEFT">{self.corruption_probability}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Add Event Probability</B></TD><TD ALIGN="LEFT">{self.corrupt_events_proba[0]}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Remove Event Probability</B></TD><TD ALIGN="LEFT">{self.corrupt_events_proba[1]}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Remove Than Add Event Probability</B></TD><TD ALIGN="LEFT">{self.corrupt_events_proba[2]}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Add Type: |Random Sequence| Probability</B></TD><TD ALIGN="LEFT">{self.random_sequence_add_proba}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Add Type: |Single Base Stream | Probability</B></TD><TD ALIGN="LEFT">{self.single_base_stream_proba}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Add Type: |Duplicate Leading| Probability</B></TD><TD ALIGN="LEFT">{self.duplicate_leading_proba}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Add Type: |Random Allele Section| Probability</B></TD><TD ALIGN="LEFT">{self.random_allele_proba}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Max Sequence Length</B></TD><TD ALIGN="LEFT">{self.max_sequence_length}</TD></TR>
+        </TABLE>
+        
+        """
+
+
+        return label, 'box', "filled,rounded", CORRUPTION_STEP_BOX_COLOR, "Helvetica", "black"

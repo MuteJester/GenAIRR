@@ -1,4 +1,5 @@
 from ..container.SimulationContainer import SimulationContainer
+from ..pipeline.plot_parameters import CORRECTION_STEP_HEADING_COLOR
 from ..steps.StepBase import AugmentationStep
 from ..utilities import DataConfig
 
@@ -29,5 +30,16 @@ class CorrectForDTrims(AugmentationStep):
         self.correct_for_d_trims(container)
 
     def get_graph_node(self):
-        """Returns a string representation of the step for GraphViz with relevant information."""
-        return f'"CorrectForDTrims" [label="CorrectForDTrims\\nD trim correction map used"]'
+        """Generates a detailed GraphViz node representation with constructor details in an HTML-like format."""
+        step_name = "Correct For D Trims"
+
+        # Constructing an HTML-like label using a table for detailed formatting
+        label = f"""
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        <TR><TD COLSPAN="2" BGCOLOR="lightsteelblue"><B>{step_name}</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><B>D Trim Correction Map</B></TD><TD ALIGN="LEFT">Loaded</TD></TR>
+        </TABLE>
+        
+        """
+
+        return label, 'box', "filled,rounded", CORRECTION_STEP_HEADING_COLOR, "Helvetica", "black"

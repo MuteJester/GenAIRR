@@ -1,10 +1,11 @@
-from random import random
+import random
 
 import numpy as np
 
-from GenAIRR.container.SimulationContainer import SimulationContainer
-from GenAIRR.steps.StepBase import AugmentationStep
-from GenAIRR.utilities import DataConfig
+from ..container.SimulationContainer import SimulationContainer
+from ..pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
+from ..steps.StepBase import AugmentationStep
+from ..utilities import DataConfig
 
 
 class InsertNs(AugmentationStep):
@@ -52,10 +53,10 @@ class InsertNs(AugmentationStep):
             nucleotides_list[index] = "N"
 
         # Concatenate the list back into a string
-        container['sequence'] = ''.join(nucleotides_list)
+        container.sequence = ''.join(nucleotides_list)
 
         # Sort the N's insertion log
-        container['Ns'] = {pos: container['Ns'][pos] for pos in sorted(container['Ns'])}
+        container.Ns = {pos: container['Ns'][pos] for pos in sorted(container['Ns'])}
 
         # Get All the N Poistion Inserted to the V Allele
         v_allele_n_positions = self.get_allele_spesific_n_positions(container, 'v')
@@ -92,9 +93,17 @@ class InsertNs(AugmentationStep):
             self.insert_Ns(container)
 
     def get_graph_node(self):
-        """Returns a string representation of the step for GraphViz with relevant information."""
-        return (
-            f'"InsertNs" [label="InsertNs\\n'
-            f'N Ratio: {self.n_ratio}\\n'
-            f'Probability: {self.n_proba}"]'
-        )
+        """Generates a detailed GraphViz node representation with constructor details in an HTML-like format."""
+        step_name = "Insert Ns"
+
+        # Constructing an HTML-like label using a table for detailed formatting
+        label = f"""
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        <TR><TD COLSPAN="2" BGCOLOR="lightsteelblue"><B>{step_name}</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><B>N Ratio</B></TD><TD ALIGN="LEFT">{self.n_ratio}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Probability</B></TD><TD ALIGN="LEFT">{self.n_proba}</TD></TR>
+        </TABLE>
+        
+        """
+
+        return label, 'box', "filled,rounded", CORRUPTION_STEP_BOX_COLOR, "Helvetica", "black"

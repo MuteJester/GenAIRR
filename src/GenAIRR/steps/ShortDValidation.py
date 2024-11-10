@@ -1,4 +1,5 @@
 from GenAIRR.container.SimulationContainer import SimulationContainer
+from GenAIRR.pipeline.plot_parameters import VALIDATION_STEP_BOX_COLOR
 from GenAIRR.steps.StepBase import AugmentationStep
 from GenAIRR.utilities import DataConfig
 
@@ -21,8 +22,16 @@ class ShortDValidation(AugmentationStep):
         self.short_d_validation(container)
 
     def get_graph_node(self):
-        """Returns a string representation of the step for GraphViz with relevant information."""
-        return (
-            f'"ShortDValidation" [label="ShortDValidation\\n'
-            f'Short D Length Threshold: {self.short_d_length}"]'
-        )
+        """Generates a detailed GraphViz node representation with constructor details in an HTML-like format."""
+        step_name = "Short D Validation"
+
+        # Constructing an HTML-like label using a table for detailed formatting
+        label = f"""
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        <TR><TD COLSPAN="2" BGCOLOR="lightsteelblue"><B>{step_name}</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Short D Length Threshold</B></TD><TD ALIGN="LEFT">{self.short_d_length}</TD></TR>
+        </TABLE>
+        
+        """
+
+        return label, 'box', "filled,rounded", VALIDATION_STEP_BOX_COLOR, "Helvetica", "black"

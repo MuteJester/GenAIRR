@@ -1,12 +1,72 @@
 class SimulationContainer:
-    def __init__(self, sequence_instance):
+    def __init__(self, sequence_instance=None):
         """
-        Initializes the SimulationContainer using a sequence instance inherited from BaseSequence.
+        Initializes the SimulationContainer. If a sequence_instance is not provided,
+        all values are set to None by default.
 
         Args:
-            sequence_instance (BaseSequence): An instance of a class inherited from BaseSequence (e.g., HeavyChainSequence).
+            sequence_instance (BaseSequence, optional): An instance of a class inherited from BaseSequence.
         """
-        # Extract sequence and related properties from the sequence instance
+        if sequence_instance:
+            # Extract sequence and related properties from the sequence instance
+            self.from_instance(sequence_instance)
+        else:
+            # Initialize all attributes to None if no sequence_instance is provided
+            self.sequence = 'None'
+            self.v_call = []
+            self.d_call = []
+            self.j_call = []
+            self.c_call = []
+
+            # Position metadata
+            self.v_sequence_start = 0
+            self.v_sequence_end = 0
+            self.d_sequence_start = 0
+            self.d_sequence_end = 0
+            self.j_sequence_start = 0
+            self.j_sequence_end = 0
+
+            # Germline positions
+            self.v_germline_start = 0
+            self.v_germline_end = 0
+            self.d_germline_start = 0
+            self.d_germline_end = 0
+            self.j_germline_start = 0
+            self.j_germline_end = 0
+
+            # Junction positions
+            self.junction_sequence_start = 0
+            self.junction_sequence_end = 0
+
+            # Mutation and trimming information
+            self.mutation_rate = 0
+            self.mutations = dict()
+            self.indels = dict()
+            self.Ns = dict()
+
+            # Trimming data
+            self.v_trim_5 = 0
+            self.v_trim_3 = 0
+            self.d_trim_5 = 0
+            self.d_trim_3 = 0
+            self.j_trim_5 = 0
+            self.j_trim_3 = 0
+            self.c_trim_3 = 0
+
+            # Productivity and assessment flags
+            self.productive = None
+            self.stop_codon = None
+            self.vj_in_frame = None
+            self.note = ''
+
+            # Corruption metadata
+            self.corruption_event = 'no-corruption'
+            self.corruption_add_amount = 0
+            self.corruption_remove_amount = 0
+            self.corruption_removed_section = ''
+            self.corruption_added_section = ''
+
+    def from_instance(self,sequence_instance):
         self.sequence = sequence_instance.mutated_seq
         self.v_call = [sequence_instance.v_allele.name]
         self.d_call = [sequence_instance.d_allele.name]
@@ -60,7 +120,6 @@ class SimulationContainer:
         self.corruption_remove_amount = 0
         self.corruption_removed_section = ''
         self.corruption_added_section = ''
-
     def add_mutation(self, position, mutation):
         """Add a mutation log entry."""
         self.mutations[position] = mutation
@@ -166,4 +225,11 @@ class SimulationContainer:
         try:
             return getattr(self, key)
         except AttributeError:
+            raise KeyError(f"'{key}' not found in the SimulationContainer.")
+
+    def __setitem__(self, key, value):
+        """Allow setting attributes using dictionary-like access."""
+        if hasattr(self, key):
+            setattr(self, key, value)
+        else:
             raise KeyError(f"'{key}' not found in the SimulationContainer.")

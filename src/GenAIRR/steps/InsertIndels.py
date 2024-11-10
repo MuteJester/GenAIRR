@@ -3,6 +3,7 @@ import random
 import numpy as np
 
 from GenAIRR.container.SimulationContainer import SimulationContainer
+from GenAIRR.pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
 from GenAIRR.steps.StepBase import AugmentationStep
 from GenAIRR.utilities import DataConfig, translate
 
@@ -202,11 +203,19 @@ class InsertIndels(AugmentationStep):
             self.fix_productive_call_after_corruption_indel(container)
 
     def get_graph_node(self):
-        """Returns a string representation of the step for GraphViz with relevant information."""
-        return (
-            f'"InsertIndels" [label="InsertIndels\\n'
-            f'Insertion Probability: {self.insertion_probability}\\n'
-            f'Max Indels: {self.max_indels}\\n'
-            f'Insertion Proba: {self.insertion_proba}\\n'
-            f'Deletion Proba: {self.deletion_proba}"]'
-        )
+        """Generates a detailed GraphViz node representation with constructor details in an HTML-like format."""
+        step_name = "Insert Indels"
+
+        # Constructing an HTML-like label using a table for detailed formatting
+        label = f"""
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        <TR><TD COLSPAN="2" BGCOLOR="lightsteelblue"><B>{step_name}</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Insertion Probability</B></TD><TD ALIGN="LEFT">{self.insertion_probability}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Max Indels</B></TD><TD ALIGN="LEFT">{self.max_indels}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Insertion Proba</B></TD><TD ALIGN="LEFT">{self.insertion_proba}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Deletion Proba</B></TD><TD ALIGN="LEFT">{self.deletion_proba}</TD></TR>
+        </TABLE>
+        
+        """
+
+        return label, 'box', "filled,rounded", CORRUPTION_STEP_BOX_COLOR, "Helvetica", "black"
