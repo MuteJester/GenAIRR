@@ -14,7 +14,7 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/MuteJester/GenAIRR',
-    download_url='https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.1.4.tar.gz',
+    download_url='https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.2.0.tar.gz',
     project_urls={
         "Bug Tracker": "https://github.com/MuteJester/GenAIRR/issues"
     },

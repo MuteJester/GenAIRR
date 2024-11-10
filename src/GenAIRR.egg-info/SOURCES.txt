@@ -8,6 +8,13 @@ src/GenAIRR.egg-info/SOURCES.txt
 src/GenAIRR.egg-info/dependency_links.txt
 src/GenAIRR.egg-info/requires.txt
 src/GenAIRR.egg-info/top_level.txt
+src/GenAIRR/TCR/__init__.py
+src/GenAIRR/TCR/sequence/__init__.py
+src/GenAIRR/TCR/sequence/heavy_chain.py
+src/GenAIRR/TCR/sequence/np_region.py
+src/GenAIRR/TCR/simulation/__init__.py
+src/GenAIRR/TCR/simulation/heavy_chain_sequence_augmentor.py
+src/GenAIRR/TCR/simulation/sequence_augmentor_base.py
 src/GenAIRR/alleles/__init__.py
 src/GenAIRR/alleles/allele.py
 src/GenAIRR/data/HH_S5F_60_META.pkl
@@ -20,6 +27,7 @@ src/GenAIRR/data/LightChain_KAPPA_DataConfigV2.pkl
 src/GenAIRR/data/LightChain_KAPPA_DataConfigV3.pkl
 src/GenAIRR/data/LightChain_LAMBDA_DataConfigV2.pkl
 src/GenAIRR/data/LightChain_LAMBDA_DataConfigV3.pkl
+src/GenAIRR/data/TCRB_DATACONFIG.pkl
 src/GenAIRR/data/__init__.py
 src/GenAIRR/generateDataConfig/__init__.py
 src/GenAIRR/generateDataConfig/make_dataconfig.py
@@ -27,6 +35,7 @@ src/GenAIRR/mutation/__init__.py
 src/GenAIRR/mutation/config.py
 src/GenAIRR/mutation/mutation_model.py
 src/GenAIRR/mutation/s5f.py
+src/GenAIRR/mutation/s5f_with_substitutions.py
 src/GenAIRR/mutation/uniform.py
 src/GenAIRR/sequence/__init__.py
 src/GenAIRR/sequence/heavy_chain.py
