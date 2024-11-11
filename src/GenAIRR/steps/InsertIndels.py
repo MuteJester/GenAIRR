@@ -9,11 +9,11 @@ from GenAIRR.utilities import DataConfig, translate
 
 
 class InsertIndels(AugmentationStep):
-    def __init__(self, insertion_probability,max_indels,insertion_proba,deletion_proba):
+    def __init__(self, indel_probability,max_indels,insertion_proba,deletion_proba):
         super().__init__()
         self.deletion_proba = deletion_proba
         self.insertion_proba = insertion_proba
-        self.insertion_probability = insertion_probability
+        self.indel_probability = indel_probability
         self.max_indels = max_indels
 
     def valid_indel_positions(self, container: SimulationContainer):
@@ -198,7 +198,7 @@ class InsertIndels(AugmentationStep):
 
     def apply(self, container: SimulationContainer) -> None:
         # Insert indels if the condition is met
-        if bool(np.random.binomial(1, self.insertion_probability)):
+        if bool(np.random.binomial(1, self.indel_probability)):
             self.insert_indels(container)
             self.fix_productive_call_after_corruption_indel(container)
 
@@ -210,7 +210,7 @@ class InsertIndels(AugmentationStep):
         label = f"""
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
         <TR><TD COLSPAN="2" BGCOLOR="lightsteelblue"><B>{step_name}</B></TD></TR>
-        <TR><TD ALIGN="LEFT"><B>Insertion Probability</B></TD><TD ALIGN="LEFT">{self.insertion_probability}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Insertion Probability</B></TD><TD ALIGN="LEFT">{self.indel_probability}</TD></TR>
         <TR><TD ALIGN="LEFT"><B>Max Indels</B></TD><TD ALIGN="LEFT">{self.max_indels}</TD></TR>
         <TR><TD ALIGN="LEFT"><B>Insertion Proba</B></TD><TD ALIGN="LEFT">{self.insertion_proba}</TD></TR>
         <TR><TD ALIGN="LEFT"><B>Deletion Proba</B></TD><TD ALIGN="LEFT">{self.deletion_proba}</TD></TR>
