@@ -69,7 +69,7 @@ class SimulationContainer:
     def from_instance(self,sequence_instance):
         self.sequence = sequence_instance.mutated_seq
         self.v_call = [sequence_instance.v_allele.name]
-        self.d_call = [sequence_instance.d_allele.name]
+        self.d_call = [] if sequence_instance.d_allele is None else [sequence_instance.d_allele.name]
         self.j_call = [sequence_instance.j_allele.name]
         self.c_call = [sequence_instance.c_allele.name]
 
@@ -84,8 +84,8 @@ class SimulationContainer:
         # Germline positions
         self.v_germline_start = sequence_instance.v_germline_start
         self.v_germline_end = sequence_instance.v_germline_end
-        self.d_germline_start = sequence_instance.d_germline_start
-        self.d_germline_end = sequence_instance.d_germline_end
+        self.d_germline_start = sequence_instance.d_germline_start if hasattr(sequence_instance,'d_germline_start') else None
+        self.d_germline_end = sequence_instance.d_germline_end if hasattr(sequence_instance,'d_germline_end') else None
         self.j_germline_start = sequence_instance.j_germline_start
         self.j_germline_end = sequence_instance.j_germline_end
 
@@ -102,8 +102,8 @@ class SimulationContainer:
         # Trimming data
         self.v_trim_5 = sequence_instance.v_trim_5
         self.v_trim_3 = sequence_instance.v_trim_3
-        self.d_trim_5 = sequence_instance.d_trim_5
-        self.d_trim_3 = sequence_instance.d_trim_3
+        self.d_trim_5 = sequence_instance.d_trim_5 if hasattr(sequence_instance,'d_trim_5') else None
+        self.d_trim_3 = sequence_instance.d_trim_3 if hasattr(sequence_instance,'d_trim_3') else None
         self.j_trim_5 = sequence_instance.j_trim_5
         self.j_trim_3 = sequence_instance.j_trim_3
         self.c_trim_3 = sequence_instance.c_trim_3
@@ -120,6 +120,7 @@ class SimulationContainer:
         self.corruption_remove_amount = 0
         self.corruption_removed_section = ''
         self.corruption_added_section = ''
+
     def add_mutation(self, position, mutation):
         """Add a mutation log entry."""
         self.mutations[position] = mutation
@@ -175,6 +176,20 @@ class SimulationContainer:
         else:
             # If no corruption or unknown corruption event, assume the index is unchanged
             return corrupted_index
+
+    def update_from_dict(self, updates):
+        """
+        Updates the attributes of the container from a dictionary.
+
+        Args:
+            updates (dict): A dictionary where keys match attribute names of the container.
+        """
+        for key, value in updates.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                raise KeyError(f"'{key}' not found in the SimulationContainer.")
+
 
     def get_dict(self):
         """Return a summary dictionary similar."""
