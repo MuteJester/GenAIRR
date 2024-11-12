@@ -8,8 +8,18 @@ GenAIRR is a Python module designed to generate synthetic Adaptive Immune Recept
 - **Precision in Allele-Specific Corrections**: Utilize sophisticated correction maps to accurately handle allele-specific trimming events and ambiguities.
 - **Indel Simulation Capability**: Reflect the intricacies of sequencing data by simulating insertions and deletions within sequences.
 
-# Visit GenAIRR's Documentation 
-[GenAIRR's ReadTheDocs](https://genairr.readthedocs.io/en/latest/)
+<br />
+<p align="center">
+
+  <h2 align="center">LZGraphs</h2>
+
+  <p align="center">
+    <br />
+    <a href="[https://MuteJester.github.io/LZGraphs/](https://genairr.readthedocs.io/en/latest/)"><strong>Explore the docs »</strong></a>
+    <br />
+    <br />
+  </p>
+</p>
 
 # Acknowledgements
 Some parts of the code were inspired and adapted from https://github.com/Cowanlab/airrship
