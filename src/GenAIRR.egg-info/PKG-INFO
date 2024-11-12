@@ -1,9 +1,9 @@
 Metadata-Version: 2.1
 Name: GenAIRR
-Version: 0.2.0
+Version: 0.3.0
 Summary: An advanced immunoglobulin sequence simulation suite for benchmarking alignment models and sequence analysis.
 Home-page: https://github.com/MuteJester/GenAIRR
-Download-URL: https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.2.0.tar.gz
+Download-URL: https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.3.0.tar.gz
 Author: Thomas Konstantinovsky & Ayelet Peres
 Author-email: thomaskon90@gmail.com
 Project-URL: Bug Tracker, https://github.com/MuteJester/GenAIRR/issues
@@ -18,6 +18,7 @@ Classifier: Programming Language :: Python :: 3.8
 Classifier: Programming Language :: Python :: 3.9
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
+License-File: LICENSE
 
 # GenAIRR: AIRR Sequence Simulator
 
@@ -28,6 +29,12 @@ GenAIRR is a Python module designed to generate synthetic Adaptive Immune Recept
 - **Advanced Mutation and Augmentation**: Introduce mutations and augment sequences to closely mimic the natural diversity and sequencing artifacts.
 - **Precision in Allele-Specific Corrections**: Utilize sophisticated correction maps to accurately handle allele-specific trimming events and ambiguities.
 - **Indel Simulation Capability**: Reflect the intricacies of sequencing data by simulating insertions and deletions within sequences.
+
+# Visit GenAIRR's Documentation 
+[GenAIRR's ReadTheDocs](https://genairr.readthedocs.io/en/latest/)
+
+# Acknowledgements
+Some parts of the code were inspired and adapted from https://github.com/Cowanlab/airrship
 
 # Quick Start Guide to GenAIRR
 

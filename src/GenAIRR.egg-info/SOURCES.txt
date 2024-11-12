@@ -1,3 +1,4 @@
+LICENSE
 MANIFEST.in
 README.md
 requirements.txt
@@ -17,6 +18,8 @@ src/GenAIRR/TCR/simulation/heavy_chain_sequence_augmentor.py
 src/GenAIRR/TCR/simulation/sequence_augmentor_base.py
 src/GenAIRR/alleles/__init__.py
 src/GenAIRR/alleles/allele.py
+src/GenAIRR/container/SimulationContainer.py
+src/GenAIRR/container/__init__.py
 src/GenAIRR/data/HH_S5F_60_META.pkl
 src/GenAIRR/data/HH_S5F_META.pkl
 src/GenAIRR/data/HH_S5F_Opposite_META.pkl
@@ -37,6 +40,10 @@ src/GenAIRR/mutation/mutation_model.py
 src/GenAIRR/mutation/s5f.py
 src/GenAIRR/mutation/s5f_with_substitutions.py
 src/GenAIRR/mutation/uniform.py
+src/GenAIRR/pipeline/AugmentationPipeline.py
+src/GenAIRR/pipeline/__init__.py
+src/GenAIRR/pipeline/pipeline_parameters.py
+src/GenAIRR/pipeline/plot_parameters.py
 src/GenAIRR/sequence/__init__.py
 src/GenAIRR/sequence/heavy_chain.py
 src/GenAIRR/sequence/light_chain.py
@@ -46,6 +53,19 @@ src/GenAIRR/simulation/__init__.py
 src/GenAIRR/simulation/heavy_chain_sequence_augmentor.py
 src/GenAIRR/simulation/light_chain_sequence_augmentor.py
 src/GenAIRR/simulation/sequence_augmentor_base.py
+src/GenAIRR/steps/CorrectForDTrims.py
+src/GenAIRR/steps/CorrectForVEndCut.py
+src/GenAIRR/steps/CorruptSequenceBeginning.py
+src/GenAIRR/steps/DistillMutationRate.py
+src/GenAIRR/steps/FixDPositionAfterTrimmingIndexAmbiguity.py
+src/GenAIRR/steps/FixJPositionAfterTrimmingIndexAmbiguity.py
+src/GenAIRR/steps/FixVPositionAfterTrimmingIndexAmbiguity.py
+src/GenAIRR/steps/InsertIndels.py
+src/GenAIRR/steps/InsertNs.py
+src/GenAIRR/steps/ShortDValidation.py
+src/GenAIRR/steps/SimulateSequence.py
+src/GenAIRR/steps/StepBase.py
+src/GenAIRR/steps/__init__.py
 src/GenAIRR/utilities/AlleleNComparer.py
 src/GenAIRR/utilities/__init__.py
 src/GenAIRR/utilities/asc_utilities.py
