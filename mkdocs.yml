@@ -2,6 +2,8 @@ site_name: GenAIRR Documentation
 nav:
   - Home: index.md
   - Getting Started: getting_started.md
+  - GenAIRR Flow: genairr_flow.md
+  - How to Create a Custom DataConfig Instance : custom_data_config.md
 
 theme:
   name: readthedocs

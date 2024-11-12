@@ -15,7 +15,7 @@ GenAIRR's core architecture is modular, allowing flexibility in building, modify
 To start building simulations and exploring GenAIRR's potential, refer to the following resources:
 
 - **[Introductory Tutorial](tutorials/Quick%20Start%20Guide.ipynb)**: Get started by creating your first GenAIRR simulation pipeline.
-- **[Examples and Use Cases](examples)**: Browse a collection of example models that showcase different capabilities of GenAIRR, providing insights into how to build and extend the framework for specific needs.
+- **[Advanced Tutorial](tutorials/Advanced%20Custom%20Generation.ipynb)**: Browse a collection of example models that showcase different capabilities of GenAIRR, providing insights into how to build and extend the framework for specific needs.
 
 ## Building a GenAIRR Pipeline
 

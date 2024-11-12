@@ -29,6 +29,7 @@ pip install GenAIRR
 For help getting started with Mesa, check out these resources:
 
 - [Getting Started] - Learn about GenAIRR's core concepts and components
+- [Advanced Control] - Learn about manipulation of GenAIRR's core components
 - [GenAIRR Examples] - Browse various application and example implementations using GenAIRR
 - [GitHub Discussions] - Ask questions, make requests and discuss GenAIRR
 
@@ -40,8 +41,13 @@ GenAIRR is an open source project and welcomes contributions:
 - [Issue Tracker] - Report bugs or suggest features
 - [Contributors Guide] - Learn how to contribute
 
+#### GenAIRR Publication
+
 The original GenAIRR Briefings in Bioinformatics paper is [available here](https://academic.oup.com/bib/article/25/6/bbae556/7863770).
 
+
+#### Acknowledgments
+Some parts of GenAIRR we inspired and adapted from the [AIRRship](https://github.com/Cowanlab/airrship) Package
 
 [contributors guide]: https://github.com/MuteJester/GenAIRR/blob/main/CONTRIBUTING.md
 [github repository]: https://github.com/MuteJester/GenAIRR
@@ -49,5 +55,6 @@ The original GenAIRR Briefings in Bioinformatics paper is [available here](https
 [issue tracker]: https://github.com/MuteJester/GenAIRR/issues
 [GenAIRR]: https://github.com/MuteJester/GenAIRR
 [mesa overview]: overview
-[GenAIRR examples]: https://github.com/MuteJester/GenAIRR/tree/master/tutorials
+[GenAIRR examples]: https://github.com/MuteJester/GenAIRR/tree/master/docs/tutorials
 [Getting started]: getting_started
+[Advanced Control]: tutorials/Advanced%20Custom%20Generation.ipynb
