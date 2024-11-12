@@ -11,7 +11,7 @@ GenAIRR is a Python module designed to generate synthetic Adaptive Immune Recept
 <br />
 <p align="center">
 
-  <h2 align="center">LZGraphs</h2>
+  <h2 align="center">GenAIRR Docs</h2>
 
   <p align="center">
     <br />
