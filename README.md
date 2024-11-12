@@ -10,15 +10,15 @@ GenAIRR is a Python module designed to generate synthetic Adaptive Immune Recept
 
 <br />
 <p align="center">
-
-  <h2 align="center">GenAIRR Docs</h2>
-
+  <h2 align="center">GenAIRR Documentation</h2>
   <p align="center">
+    Comprehensive documentation and guides for getting started with GenAIRR.
     <br />
-    <a href="[https://MuteJester.github.io/LZGraphs/](https://genairr.readthedocs.io/en/latest/)"><strong>Explore the docs »</strong></a>
+    <a href="https://genairr.readthedocs.io/en/latest/"><strong>Explore the Docs »</strong></a>
     <br />
   </p>
 </p>
+
 
 # Acknowledgements
 Some parts of the code were inspired and adapted from https://github.com/Cowanlab/airrship
