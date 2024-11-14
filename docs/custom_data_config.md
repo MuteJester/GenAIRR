@@ -11,7 +11,6 @@ def __init__(self):
     self.NP_transitions = {}
     self.NP_first_bases = {}
     self.NP_lengths = {}
-    self.mut_rate_per_seq = {}
     self.kmer_dicts = {}
     self.v_alleles = None
     self.d_alleles = None

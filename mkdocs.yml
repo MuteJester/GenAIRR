@@ -4,6 +4,7 @@ nav:
   - Getting Started: getting_started.md
   - GenAIRR Flow: genairr_flow.md
   - How to Create a Custom DataConfig Instance : custom_data_config.md
+  - "Generating a Dataset with All Allele Combinations Equally Represented": tutorials/Generating_Uniform_Allele_Distribution_Dataset.ipynb
 
 theme:
   name: readthedocs
