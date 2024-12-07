@@ -1,3 +1,4 @@
+from .StepBase import AugmentationStep
 from .SimulateSequence import SimulateSequence
 from .CorrectForDTrims import CorrectForDTrims
 from .CorrectForVEndCut import CorrectForVEndCut

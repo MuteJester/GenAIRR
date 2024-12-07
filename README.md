@@ -44,7 +44,8 @@ pip install GenAIRR
 Begin by importing essential modules and initializing the `AugmentedPipeline`:
 
 ```python
-from GenAIRR.pipeline import AugmentedPipeline
+from GenAIRR.pipeline import AugmentationPipeline
+from GenAIRR.steps import AugmentationStep
 from GenAIRR.utilities import DataConfig
 from GenAIRR.data import builtin_heavy_chain_data_config, builtin_kappa_chain_data_config
 from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY
