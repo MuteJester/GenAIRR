@@ -1,7 +1,7 @@
 import random
 
 import pandas as pd
-
+from ..utilities.misc import check_stops, STOP_CODONS
 from ..mutation.mutation_model import MutationModel
 import pickle
 
@@ -16,6 +16,7 @@ class Nucleotide:
    Args:
        value (str): The nucleotide character.
    """
+
     def __init__(self, value):
         """Initialize a Nucleotide with a given value."""
         self.value = value
@@ -51,6 +52,7 @@ class FiveMER:
     Args:
         nucleotides (list): A list of `Nucleotide` objects.
     """
+
     def __init__(self, nucleotides):
         """Initialize a FiveMER with a list of Nucleotide objects."""
         self.nucleotides = nucleotides  # List of Nucleotide objects
@@ -176,6 +178,7 @@ class S5F(MutationModel):
         custom_model (str, optional): Path to a custom mutation model file.
         productive (bool): Whether to ensure the sequence is productive (No stop codons and mutation in cdr3 anchors), defaulting to false.
     """
+
     def __init__(self, min_mutation_rate=0, max_mutation_rate=0, custom_model=None, productive=False):
         """Initialize an S5F mutation model with specified parameters."""
         self.targeting = None
@@ -187,6 +190,7 @@ class S5F(MutationModel):
         self.loaded_metadata = False
         self.custom_model = custom_model
         self.productive = productive
+        self.stop_codons = {"TAG", "TAA", "TGA"}
 
     def load_metadata(self, sequence):
         """Loads mutation model metadata based on the sequence type.
@@ -248,10 +252,9 @@ class S5F(MutationModel):
         # Log mutations
         mutations = dict()
 
-
         # 2. Extract 5-Mers
         fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
-                            
+
         # add a failsafe to insure while loop does not get locked
         patience = 0
 
@@ -262,14 +265,15 @@ class S5F(MutationModel):
             reading_frame = [[2, 1, 0][idx % 3] for idx, element in enumerate(fiver_mers)]
             v_anchor = sequence_object.junction_start
             j_anchor = sequence_object.junction_end
-            restricted_positions = {v_anchor:'v', 
-                                    v_anchor+1:'v', 
-                                    v_anchor+2:'v', 
-                                    j_anchor-3:'j', 
-                                    j_anchor-2:'j', 
-                                    j_anchor-1:'j'}
+            restricted_positions = {v_anchor: 'v',
+                                    v_anchor + 1: 'v',
+                                    v_anchor + 2: 'v',
+                                    j_anchor - 3: 'j',
+                                    j_anchor - 2: 'j',
+                                    j_anchor - 1: 'j'}
             while len(mutations) < target_number_of_mutations:
-                sampled_position, mutation_to_apply = self._productive_recursive(0, fiver_mers, reading_frame, restricted_positions)
+                sampled_position, mutation_to_apply = self._productive_constrained_mutation(fiver_mers, reading_frame,
+                                                                                            restricted_positions)
                 # log
                 if sampled_position.position not in mutations:
                     mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
@@ -280,9 +284,21 @@ class S5F(MutationModel):
                     mutations.pop(sampled_position.position)
                 # 5. Apply Mutation
                 # This will also update all relevant 5-MERS and their likelihood with pointer like logic
+                #debug
+                #prev_postion = sampled_position.sequence[2]
                 sampled_position.change_center(mutation_to_apply, self.mutability)
+                # if check_stops(FiveMER.five_mers_to_dna(fiver_mers)):
+                #     sampled_position.change_center(prev_postion, self.mutability)
+                #     prev_postion = None
+
                 patience += 1
                 # Patience logic
+                if check_stops(FiveMER.five_mers_to_dna(fiver_mers)):
+                    mutation_rate = random.uniform(self.min_mutation_rate, self.max_mutation_rate)
+                    target_number_of_mutations = int(mutation_rate * len(sequence_object.ungapped_seq))
+                    mutations = dict()
+                    # 2. Extract 5-Mers
+                    fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
                 if patience > (target_number_of_mutations * 30) and target_number_of_mutations > 1:
                     patience = 0
                     # restart process
@@ -296,13 +312,13 @@ class S5F(MutationModel):
             while len(mutations) < target_number_of_mutations:
                 # 3. Mutability, Weighted Choice of Position Based on 5-Mer Likelihoods
                 sampled_position, chosen_index = self.weighted_choice(fiver_mers)  # likelihoods are normalized here
-                
+
                 # 4. Substitution
                 substitutions = self.substitution[sampled_position.sequence]
                 mutable_bases = list(substitutions.keys())
                 bases_likelihoods = list(substitutions.values())
                 mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
-        
+
                 # log
                 if sampled_position.position not in mutations:
                     mutations[sampled_position.position] = f'{sampled_position.sequence[2]}>{mutation_to_apply}'
@@ -327,7 +343,7 @@ class S5F(MutationModel):
                     mutations = dict()
                     # 2. Extract 5-Mers
                     fiver_mers = FiveMER.create_five_mers(sequence_object.ungapped_seq, self.mutability)
-                        
+
         mutated_sequence = FiveMER.five_mers_to_dna(fiver_mers)
         return mutated_sequence, mutations, mutation_rate
 
@@ -366,27 +382,118 @@ class S5F(MutationModel):
                 return five_mers[i], i
 
     def _is_stop_codon(self, nucleotides, new_base, reading_frame):
-        """Check if the mutation introduce a stop codon
+        """Check if the mutation introduces a stop codon in the current, previous, or next reading frame.
 
         Args:
-            nucleotides (_type_): The nucleotides of the five mer
-            new_base (_type_): The new mutated base
+            nucleotides (list): The nucleotides of the five mer.
+            new_base (str): The new mutated base.
+            reading_frame (int): The current reading frame.
+
+        Returns:
+            tuple: A tuple containing a boolean indicating if a stop codon is present and the codon sequence.
         """
-        # replace center
+        # Replace center nucleotide with the new base
         nucs = [str(nuc) for nuc in nucleotides]
-        codon = nucs[0:2] + [new_base] + nucs[3:]
-        codon = ''.join(codon[reading_frame:reading_frame+3])
-        stop = codon in ["TAG", "TAA", "TGA"]
-        return stop, codon
-    
+        nucs[2] = new_base
+
+        # Check the current reading frame
+        codon = ''.join(nucs[reading_frame:reading_frame + 3])
+        tests = []
+        if codon in STOP_CODONS:
+            tests.append(True)
+
+        # Check the previous reading frame if possible
+        if reading_frame > 0:
+            prev_codon = ''.join(nucs[reading_frame - 1:reading_frame + 2])
+            if prev_codon in STOP_CODONS:
+                tests.append(True)
+
+        # Check the next reading frame if possible
+        if reading_frame < 2:
+            next_codon = ''.join(nucs[reading_frame + 1:reading_frame + 4])
+            if next_codon in STOP_CODONS:
+                tests.append(True)
+
+        return any(tests), codon
+
+    def _test_stop_codon_formation(self, fivemer):
+        stop_codon_nucleotides = []
+
+        # Check each possible nucleotide replacement
+        for nucleotide in self.bases:
+            # Replace the center nucleotide
+            new_sequence = list(fivemer.sequence)
+            new_sequence[2] = nucleotide  # Center position is index 2
+            new_sequence = ''.join(new_sequence)
+
+            # Check if any 3-mer in the new sequence is a stop codon
+            for i in range(len(new_sequence) - 2):
+                if new_sequence[i:i + 3] in self.stop_codons:
+                    stop_codon_nucleotides.append(nucleotide)
+                    break
+        return stop_codon_nucleotides
+
+    def _reweight_substitution_likelihoods(self, likelihood_dict, stop_codon_nucleotides):
+        # Remove stop codon nucleotides from the likelihood dictionary
+        copy_of_likelihood_dict = likelihood_dict.copy()
+
+        for stop_codon_nucleotide in stop_codon_nucleotides:
+            copy_of_likelihood_dict.pop(stop_codon_nucleotide, None)
+
+        # Normalize the remaining likelihoods
+        total_likelihood = sum(copy_of_likelihood_dict.values())
+        for base in copy_of_likelihood_dict:
+            copy_of_likelihood_dict[base] /= total_likelihood
+
+        return copy_of_likelihood_dict
+
+    def _productive_constrained_mutation(self, fiver_mers, reading_frame, restricted_positions):
+        counter = 0
+        while counter < 1000:
+            counter += 1
+            sampled_position, chosen_index = self.weighted_choice(fiver_mers)
+            stop_codon_potential_nucleotides = self._test_stop_codon_formation(sampled_position)
+            substitutions = self.substitution[sampled_position.sequence]
+            substitutions_modified = self._reweight_substitution_likelihoods(substitutions,
+                                                                             stop_codon_potential_nucleotides)
+            mutable_bases = list(substitutions_modified.keys())
+            bases_likelihoods = list(substitutions_modified.values())
+
+            if len(bases_likelihoods) == 0:  # no valid mutation will avoid stop codon formation
+                continue
+
+            mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
+            stop, codon = self._is_stop_codon(sampled_position.nucleotides, mutation_to_apply,
+                                              reading_frame[chosen_index])
+            if stop:
+                continue
+            elif chosen_index in restricted_positions.keys():
+                tag = restricted_positions[chosen_index]
+                _reading_frame = reading_frame[chosen_index]
+                nucs = [str(nuc) for nuc in sampled_position.nucleotides]
+                codon = nucs[0:2] + [mutation_to_apply] + nucs[3:]
+                codon = ''.join(codon[_reading_frame:_reading_frame + 3])
+                pattern = {'TGC', 'TGT'} if tag == 'v' else {'TTT', 'TTC', 'TGG'}
+                if codon in pattern:
+                    return sampled_position, mutation_to_apply
+                else:
+                    continue
+            return sampled_position, mutation_to_apply
+        raise AssertionError("Maximum iteration depth exceeded")
+
     def _productive_recursive(self, counter, fiver_mers, reading_frame, restricted_positions):
         if counter >= 1000:
             raise RecursionError("Maximum recursion depth exceeded")
-        counter+=1
+        counter += 1
         sampled_position, chosen_index = self.weighted_choice(fiver_mers)
-        substitutions = self.substitution[sampled_position.sequence].dropna()
-        mutable_bases = substitutions.index
-        bases_likelihoods = substitutions.values
+        stop_codon_potential_nucleotides = self._test_stop_codon_formation(sampled_position)
+        substitutions = self.substitution[sampled_position.sequence]
+        substitutions_modified = self._reweight_substitution_likelihoods(substitutions,
+                                                                         stop_codon_potential_nucleotides)
+        mutable_bases = list(substitutions_modified.keys())
+        bases_likelihoods = list(substitutions_modified.values())
+        if len(bases_likelihoods) == 0:  # no valid mutation will avoid stop codon formation
+            return self._productive_recursive(counter, fiver_mers, reading_frame, restricted_positions)
         mutation_to_apply = random.choices(mutable_bases, weights=bases_likelihoods, k=1)[0]
         stop, codon = self._is_stop_codon(sampled_position.nucleotides, mutation_to_apply, reading_frame[chosen_index])
         if stop:
@@ -396,12 +503,10 @@ class S5F(MutationModel):
             _reading_frame = reading_frame[chosen_index]
             nucs = [str(nuc) for nuc in sampled_position.nucleotides]
             codon = nucs[0:2] + [mutation_to_apply] + nucs[3:]
-            codon = ''.join(codon[_reading_frame:_reading_frame+3])
+            codon = ''.join(codon[_reading_frame:_reading_frame + 3])
             pattern = {'TGC', 'TGT'} if tag == 'v' else {'TTT', 'TTC', 'TGG'}
             if codon in pattern:
                 return sampled_position, mutation_to_apply
             else:
                 return self._productive_recursive(counter, fiver_mers, reading_frame, restricted_positions)
         return sampled_position, mutation_to_apply
-
-

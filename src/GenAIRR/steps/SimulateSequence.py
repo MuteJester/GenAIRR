@@ -70,6 +70,7 @@ class SimulateSequence(AugmentationStep):
             while not gen.functional:
                 gen = self.sequence_constructor_instance.create_random(self.dataconfig, **gen_args)
 
+
         container.from_instance(gen)
         # Apply mutation -
         gen.mutate(self.mutation_model)

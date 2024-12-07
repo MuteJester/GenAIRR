@@ -1,5 +1,6 @@
 import random
 
+STOP_CODONS = {"TAG", "TAA", "TGA"}
 
 def weighted_choice(choices):
     """
@@ -75,3 +76,24 @@ def translate(seq):
         else:
             protein += table[codon]
     return protein
+
+def check_stops(seq,return_pos=False):
+        """
+        Checks the given sequence for the presence of stop codons.
+
+        Args:
+            seq (str): The nucleotide sequence to check for stop codons.
+
+        Returns:
+            bool: True if a stop codon is found, False otherwise.
+        """
+        for x in range(0, len(seq), 3):
+            if seq[x:x + 3] in STOP_CODONS:
+                if return_pos:
+                    return True,x
+                else:
+                    return True
+        if return_pos:
+            return False,-1
+        else:
+            return False

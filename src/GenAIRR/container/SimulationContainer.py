@@ -10,9 +10,11 @@ class SimulationContainer:
         if sequence_instance:
             # Extract sequence and related properties from the sequence instance
             self.from_instance(sequence_instance)
+            self.sequence_instance = sequence_instance
         else:
             # Initialize all attributes to None if no sequence_instance is provided
             self.sequence = 'None'
+            self.sequence_instance = None
             self.v_call = []
             self.d_call = []
             self.j_call = []

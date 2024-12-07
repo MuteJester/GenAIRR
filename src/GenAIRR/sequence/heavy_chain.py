@@ -1,5 +1,5 @@
 import random
-
+from ..utilities.misc import check_stops
 from ..mutation import MutationModel
 from ..sequence import NP_Region
 from ..sequence.sequence import BaseSequence
@@ -79,7 +79,7 @@ class HeavyChainSequence(BaseSequence):
 
     def check_functionality(self,sequence=None):
         self.functional = False
-        self.stop_codon = self.check_stops(self.ungapped_seq if sequence is None else sequence)
+        self.stop_codon,pos = self.check_stops(self.ungapped_seq if sequence is None else sequence,return_pos=True)
 
         self.vj_in_frame = (
                 (self.junction_end % 3) == 0
@@ -97,6 +97,9 @@ class HeavyChainSequence(BaseSequence):
                     self.note += 'J anchor (W/F) not present.'
             else:
                 self.note += 'V second C not present.'
+
+
+
     def mutate(self, mutation_model: MutationModel):
         """
         Applies mutations to the heavy chain sequence using the given mutation model.
@@ -132,7 +135,7 @@ class HeavyChainSequence(BaseSequence):
                           self.NP2_length + (self.j_allele.anchor + 2) - self.j_trim_5
         return junction_length
 
-    def check_stops(self, seq):
+    def check_stops(self, seq,return_pos=False):
         """
         Checks the given sequence for the presence of stop codons.
 
@@ -145,8 +148,14 @@ class HeavyChainSequence(BaseSequence):
         stops = ["TAG", "TAA", "TGA"]
         for x in range(0, len(seq), 3):
             if seq[x:x + 3] in stops:
-                return True
-        return False
+                if return_pos:
+                    return True,x
+                else:
+                    return True
+        if return_pos:
+            return False,-1
+        else:
+            return False
 
     @classmethod
     def create_random(cls, dataconfig: DataConfig,specific_v=None,specific_d=None,specific_j=None):

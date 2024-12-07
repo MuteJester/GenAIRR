@@ -341,6 +341,34 @@ class TestSequenceSimulation(unittest.TestCase):
             for _ in range(100):
                 generated_seqs.append(pipeline.execute().get_dict())
             self.assertEqual(len(generated_seqs), 100)
+
+
+    def test_heavy_chain_all_productive(self):
+        for dataconfig_loader, chain_type in zip([builtin_heavy_chain_data_config
+                                                  ],
+                                                 [CHAIN_TYPE_BCR_HEAVY
+                                                  ]):
+            AugmentationStep.set_dataconfig(dataconfig_loader(), chain_type=chain_type)
+
+            pipeline = AugmentationPipeline([
+                SimulateSequence(S5F(min_mutation_rate=0.003,max_mutation_rate=0.25,productive=True), True),
+                FixVPositionAfterTrimmingIndexAmbiguity(),
+                FixDPositionAfterTrimmingIndexAmbiguity(),
+                FixJPositionAfterTrimmingIndexAmbiguity(),
+                CorrectForVEndCut(),
+                CorrectForDTrims(),
+                CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
+                InsertNs(0.02, 0.5),
+                ShortDValidation(),
+                InsertIndels(0, 5, 0.5, 0.5),
+                DistillMutationRate()
+            ])
+
+            generated_seqs = []
+            for _ in range(100):
+                gen = pipeline.execute()
+                generated_seqs.append(gen.get_dict()['productive'])
+            self.assertEqual(100,sum(generated_seqs))
     def test_tcr_sequence_simulator(self):
         from GenAIRR.TCR.simulation import TCRHeavyChainSequenceAugmentor, SequenceAugmentorArguments
         import base64

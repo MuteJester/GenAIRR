@@ -334,6 +334,25 @@ class TestSequenceSimulation(unittest.TestCase):
 
         self.assertEqual(len(generated_seqs), 100)
 
+    def test_heavychain_sequence_simulator_all_productive(self):
+        from GenAIRR.simulation import HeavyChainSequenceAugmentor, SequenceAugmentorArguments
+        import base64
+
+        args = SequenceAugmentorArguments(simulate_indels=0.2,productive=True)
+
+        aug = HeavyChainSequenceAugmentor(heavychain_config, args)
+        generated_seqs = []
+        productive=[]
+        for _ in range(100):
+            sim = aug.simulate_augmented_sequence()
+            generated_seqs.append(sim)
+            productive.append(sim['productive'])
+
+
+        self.assertEqual(len(generated_seqs), 100)
+        self.assertEqual(sum(productive), 100)
+
+
     def test_tcr_sequence_simulator(self):
         from GenAIRR.TCR.simulation import TCRHeavyChainSequenceAugmentor, SequenceAugmentorArguments
         import base64
