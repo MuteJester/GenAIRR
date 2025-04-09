@@ -46,7 +46,7 @@ class TCRHeavyChainSequence(BaseSequence):
         self.v_trimmed_seq, self.v_trim_5, self.v_trim_3 = self.v_allele.get_trimmed(dataconfig.trim_dicts)
         self.d_trimmed_seq, self.d_trim_5, self.d_trim_3 = self.d_allele.get_trimmed(dataconfig.trim_dicts)
         self.j_trimmed_seq, self.j_trim_5, self.j_trim_3 = self.j_allele.get_trimmed(dataconfig.trim_dicts)
-        self.c_trimmed_seq, self.c_trim_5, self.c_trim_3 = self.c_allele.get_trimmed(dataconfig.trim_dicts)
+        #self.c_trimmed_seq, self.c_trim_5, self.c_trim_3 = self.c_allele.get_trimmed(dataconfig.trim_dicts)
 
     def assemble_sequence(self):
         self.ungapped_seq = (
@@ -55,7 +55,7 @@ class TCRHeavyChainSequence(BaseSequence):
                 + self.d_trimmed_seq
                 + self.NP2_region
                 + self.j_trimmed_seq
-                + self.c_trimmed_seq
+                #+ self.c_trimmed_seq
         ).upper()
     def calculate_junction_properties(self):
         self.junction_length = self.get_junction_length()
@@ -187,12 +187,13 @@ class TCRHeavyChainSequence(BaseSequence):
         else:
             random_j_allele = specific_j
 
-        all_c_alleles = [i for j in dataconfig.c_alleles for i in dataconfig.c_alleles[j]]
-        filtered_c_alleles = list(filter(lambda x: 'TRBC' + group in x.name, all_c_alleles))
+        # deprecated on 2025-09-04
+        #all_c_alleles = [i for j in dataconfig.c_alleles for i in dataconfig.c_alleles[j]]
+        #filtered_c_alleles = list(filter(lambda x: 'TRBC' + group in x.name, all_c_alleles))
 
-        random_c_allele = random.choice(filtered_c_alleles)
+        #random_c_allele = random.choice(filtered_c_alleles)
 
-        return cls([random_v_allele, random_d_allele, random_j_allele,random_c_allele], dataconfig)
+        return cls([random_v_allele, random_d_allele, random_j_allele], dataconfig)
 
     def __repr__(self):
         """
@@ -214,6 +215,6 @@ class TCRHeavyChainSequence(BaseSequence):
         v_part = f"{self.v_seq_start}|{'-' * v_length}V({self.v_allele.name})|{self.v_seq_end}"
         d_part = f"{self.d_seq_start}|{'-' * d_length}D({self.d_allele.name})|{self.d_seq_end}" if d_length > 0 else ""
         j_part = f"{self.j_seq_start}|{'-' * j_length}J({self.j_allele.name})|{self.j_seq_end}"
-        c_part = f"{self.j_seq_end}|{'-' * c_length}C({self.c_allele.name})|{total_length}"
+        #c_part = f"{self.j_seq_end}|{'-' * c_length}C({self.c_allele.name})|{total_length}"
 
-        return f"{v_part}{'|' if d_length > 0 else ''}{d_part}{'|' if d_length > 0 else ''}{j_part}|{c_part}"
+        return f"{v_part}{'|' if d_length > 0 else ''}{d_part}{'|' if d_length > 0 else ''}{j_part}"#|{c_part}"

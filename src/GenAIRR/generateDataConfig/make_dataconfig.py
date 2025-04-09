@@ -271,21 +271,25 @@ class CustomDataConfigGenerator:
         self.dataconfig.gene_use_dict = gene_use_dict
 
     def _derive_trimming_proportions(self, data):
-
-        triming_dict = dict()
-
+        trim_dicts = dict()
         for gene in ['v', 'd', 'j']:
             alleles = getattr(self.dataconfig, f'{gene}_alleles')
-            families = [i.name.split('-')[0] for j in alleles for i in alleles[j]]
-            families = list(set(families))
+            alleles = [i for j in alleles for i in alleles[j]]
             for trim in ['5', '3']:
-                triming_dict[f'{gene.upper()}_{trim}'] = dict()
-                for fam in families:
-                    samples = data[data[f'{gene}_call'].str.contains(fam)]
+                trim_dicts[f'{gene.upper()}_{trim}'] = dict()
+                for allele in alleles:
+                    samples = data[data[f'{gene}_call'].str.contains(allele.gene)]
                     trim_values = (samples[f'{gene}_trim_{trim}'].value_counts() / len(samples)).to_dict()
-                    triming_dict[f'{gene.upper()}_{trim}'][fam] = trim_values
+                    # sort the dictionary by key
+                    trim_values = dict(sorted(trim_values.items()))
 
-        self.dataconfig.trim_dicts = triming_dict
+                    if allele.family not in trim_dicts[f'{gene.upper()}_{trim}']:
+                        trim_dicts[f'{gene.upper()}_{trim}'][allele.family] = {}
+                        trim_dicts[f'{gene.upper()}_{trim}'][allele.family][allele.gene] = trim_values
+                    else:
+                        trim_dicts[f'{gene.upper()}_{trim}'][allele.family][allele.gene] = trim_values
+
+        self.dataconfig.trim_dicts = trim_dicts
 
     def _derive_np_lengths(self, data):
         np_lengths = {"NP1": {}, 'NP2': {}}
@@ -349,11 +353,11 @@ class CustomDataConfigGenerator:
             for trim_3 in range(seq_length + 1):
                 # Trim from the right (3' end)
                 trimmed = t_allele.ungapped_seq[:seq_length - trim_3] if trim_3 > 0 else t_allele.ungapped_seq
-                trim_map[t_allele.name][seq_length - trim_3] = []
+                trim_map[t_allele.name][trim_3] = []
                 for v_c_allele in t_dict.values():
                     # Check if the trimmed sequence is a substring of the v_c_allele sequence
                     if trimmed in v_c_allele.ungapped_seq:
-                        trim_map[t_allele.name][seq_length - trim_3].append(v_c_allele.name)
+                        trim_map[t_allele.name][trim_3].append(v_c_allele.name)
         r_allele = list(t_dict.values())[0]
         allele_ = str(r_allele.type).split('.')[1]  # returns "V" , "D" or "J"
         self.dataconfig.correction_maps[allele_ + '_3_TRIM_SIMILARITY_MAP'] = trim_map

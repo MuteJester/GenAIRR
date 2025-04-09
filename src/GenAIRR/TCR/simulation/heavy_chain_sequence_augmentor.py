@@ -24,7 +24,7 @@ class TCRHeavyChainSequenceAugmentor(SequenceAugmentorBase):
             dataconfig (DataConfig): Configuration object containing allele information and simulation parameters.
             args (SequenceAugmentorArguments): Object containing arguments for sequence simulation and augmentation.
     """
-    alleles_used = ['v', 'd', 'j','c']
+    alleles_used = ['v', 'd', 'j']
 
     def __init__(self, dataconfig: DataConfig, args: SequenceAugmentorArguments = SequenceAugmentorArguments()):
         super().__init__(dataconfig, args)
@@ -407,7 +407,7 @@ class TCRHeavyChainSequenceAugmentor(SequenceAugmentorBase):
             "v_call": [gen.v_allele.name],
             "d_call": [gen.d_allele.name],
             "j_call": [gen.j_allele.name],
-            "c_call": [gen.c_allele.name],
+            #"c_call": [gen.c_allele.name],
             'mutation_rate': gen.mutation_freq,
             'v_trim_5': gen.v_trim_5,
             'v_trim_3': gen.v_trim_3,
@@ -415,7 +415,7 @@ class TCRHeavyChainSequenceAugmentor(SequenceAugmentorBase):
             'd_trim_3': gen.d_trim_3,
             'j_trim_5': gen.j_trim_5,
             'j_trim_3': gen.j_trim_3,
-            'c_trim_3': gen.c_trim_3,
+            #'c_trim_3': gen.c_trim_3,
             'corruption_event': 'no-corruption',
             'corruption_add_amount': 0,
             'corruption_remove_amount': 0,

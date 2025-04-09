@@ -73,7 +73,7 @@ class SimulationContainer:
         self.v_call = [sequence_instance.v_allele.name]
         self.d_call = [] if sequence_instance.d_allele is None else [sequence_instance.d_allele.name]
         self.j_call = [sequence_instance.j_allele.name]
-        self.c_call = [sequence_instance.c_allele.name]
+        self.c_call = [sequence_instance.c_allele.name] if getattr(sequence_instance, "c_allele", None) else [None]
 
         # Position metadata
         self.v_sequence_start = sequence_instance.v_seq_start
@@ -108,7 +108,7 @@ class SimulationContainer:
         self.d_trim_3 = sequence_instance.d_trim_3 if hasattr(sequence_instance,'d_trim_3') else None
         self.j_trim_5 = sequence_instance.j_trim_5
         self.j_trim_3 = sequence_instance.j_trim_3
-        self.c_trim_3 = sequence_instance.c_trim_3
+        self.c_trim_3 = sequence_instance.c_trim_3 if getattr(sequence_instance, "c_trim_3", None) else None
 
         # Productivity and assessment flags
         self.productive = sequence_instance.functional

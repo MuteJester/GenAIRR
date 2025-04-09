@@ -94,7 +94,7 @@ class SimulateSequence(AugmentationStep):
         container.v_call = [gen.v_allele.name]
         container.d_call = [] if not HAS_D[self.chain_type] else [gen.d_allele.name]
         container.j_call = [gen.j_allele.name]
-        container.c_call = [gen.c_allele.name]
+        container.c_call = [gen.c_allele.name] if getattr(gen, 'c_allele', None) else [None]
         container.mutation_rate = gen.mutation_freq
         container.mutations = {pos: gen.mutations[pos] for pos in sorted(gen.mutations)}
         container.productive = gen.functional

@@ -6,7 +6,7 @@ from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config
 from GenAIRR.steps import SimulateSequence,FixVPositionAfterTrimmingIndexAmbiguity,FixDPositionAfterTrimmingIndexAmbiguity,FixJPositionAfterTrimmingIndexAmbiguity
 from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
-from GenAIRR.mutation import S5F
+from GenAIRR.mutation import S5F, Uniform
 from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_BCR_LIGHT_LAMBDA
 from GenAIRR.alleles import VAllele
 from GenAIRR.container.SimulationContainer import SimulationContainer
@@ -369,19 +369,31 @@ class TestSequenceSimulation(unittest.TestCase):
                 gen = pipeline.execute()
                 generated_seqs.append(gen.get_dict()['productive'])
             self.assertEqual(100,sum(generated_seqs))
+
     def test_tcr_sequence_simulator(self):
-        from GenAIRR.TCR.simulation import TCRHeavyChainSequenceAugmentor, SequenceAugmentorArguments
         import base64
+        from GenAIRR.pipeline import CHAIN_TYPE_TCR_BETA
         from GenAIRR.data import builtin_tcrb_data_config
 
-        args = SequenceAugmentorArguments(simulate_indels=0.2)
+        AugmentationStep.set_dataconfig(builtin_tcrb_data_config(), chain_type=CHAIN_TYPE_TCR_BETA)
 
-        aug = TCRHeavyChainSequenceAugmentor(builtin_tcrb_data_config(), args)
+        pipeline = AugmentationPipeline([
+            SimulateSequence(Uniform(), True),
+            FixVPositionAfterTrimmingIndexAmbiguity(),
+            FixDPositionAfterTrimmingIndexAmbiguity(),
+            FixJPositionAfterTrimmingIndexAmbiguity(),
+            CorrectForVEndCut(),
+            CorrectForDTrims(),
+            CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
+            InsertNs(0.02, 0.5),
+            ShortDValidation(),
+            InsertIndels(0.5, 5, 0.5, 0.5),
+            DistillMutationRate()
+        ])
+
         generated_seqs = []
         for _ in range(100):
-            generated_seqs.append(aug.simulate_augmented_sequence())
-
-
+            generated_seqs.append(pipeline.execute().get_dict())
         self.assertEqual(len(generated_seqs), 100)
 
     def test_mutation_rate(self):
@@ -653,6 +665,7 @@ class TestSequenceSimulation(unittest.TestCase):
                                                                               j_reference_path='./IGHJ.fasta',
                                                                               custom_data='./inference_sample.csv')
         for gene in ['V', 'D', 'J']:
+
             self.assertGreater(len(random_dataconfig.gene_use_dict[gene]), 0)
 
         for allele in ['V', 'D', 'J']:
