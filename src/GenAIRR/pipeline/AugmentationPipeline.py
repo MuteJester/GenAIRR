@@ -19,6 +19,21 @@ class AugmentationPipeline:
             step.apply(container)
         return container
 
+    def __getitem__(self, index) -> AugmentationStep:
+        """
+        Returns the step at the specified index.
+
+        Args:
+            index (int): The index of the step to retrieve.
+
+        Returns:
+            AugmentationStep: The step at the specified index.
+        """
+        return self.steps[index]
+
+    def __setitem__(self, key, value):
+        self.steps[key] = value
+
     def plot(self, filename='pipeline_diagram'):
         """
         Creates and saves a visually enhanced GraphViz diagram of the pipeline showing each step as a detailed block.

@@ -1,5 +1,5 @@
 import random
-
+import re
 from ...mutation import MutationModel
 from ..sequence import NP_Region
 from ...sequence.sequence import BaseSequence
@@ -24,7 +24,9 @@ class TCRHeavyChainSequence(BaseSequence):
         Initializes a `HeavyChainSequence` with the given alleles and simulates the sequence using the provided data configuration.
         """
         super().__init__(alleles)
+
         self.simulate_sequence(dataconfig)
+
 
     def simulate_sequence(self, dataconfig: DataConfig):
         self.simulate_trimmed_sequences(dataconfig)
@@ -45,6 +47,7 @@ class TCRHeavyChainSequence(BaseSequence):
     def simulate_trimmed_sequences(self, dataconfig: DataConfig):
         self.v_trimmed_seq, self.v_trim_5, self.v_trim_3 = self.v_allele.get_trimmed(dataconfig.trim_dicts)
         self.d_trimmed_seq, self.d_trim_5, self.d_trim_3 = self.d_allele.get_trimmed(dataconfig.trim_dicts)
+
         self.j_trimmed_seq, self.j_trim_5, self.j_trim_3 = self.j_allele.get_trimmed(dataconfig.trim_dicts)
         #self.c_trimmed_seq, self.c_trim_5, self.c_trim_3 = self.c_allele.get_trimmed(dataconfig.trim_dicts)
 

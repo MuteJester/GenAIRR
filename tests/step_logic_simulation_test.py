@@ -1,10 +1,11 @@
 import unittest
 import random
-
+import re
 import numpy as np
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config
-from GenAIRR.steps import SimulateSequence,FixVPositionAfterTrimmingIndexAmbiguity,FixDPositionAfterTrimmingIndexAmbiguity,FixJPositionAfterTrimmingIndexAmbiguity
+from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, \
+    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity, FilterTCRDJAmbiguities
 from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
 from GenAIRR.mutation import S5F, Uniform
 from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_BCR_LIGHT_LAMBDA
@@ -12,7 +13,8 @@ from GenAIRR.alleles import VAllele
 from GenAIRR.container.SimulationContainer import SimulationContainer
 from GenAIRR.generateDataConfig import RandomDataConfigGenerator, CustomDataConfigGenerator
 from GenAIRR.sequence import LightChainSequence, HeavyChainSequence
-from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config
+from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config\
+    , builtin_tcrb_data_config
 from GenAIRR.steps import FixVPositionAfterTrimmingIndexAmbiguity, FixDPositionAfterTrimmingIndexAmbiguity, \
     FixJPositionAfterTrimmingIndexAmbiguity, CorrectForVEndCut
 from GenAIRR.steps.StepBase import AugmentationStep
@@ -20,7 +22,8 @@ from GenAIRR.steps.StepBase import AugmentationStep
 lightchain_kappa_config = builtin_kappa_chain_data_config()
 lightchain_lambda_config = builtin_lambda_chain_data_config()
 heavychain_config = builtin_heavy_chain_data_config()
-from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_BCR_LIGHT_LAMBDA
+
+from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_BCR_LIGHT_LAMBDA,CHAIN_TYPE_TCR_BETA
 class TestSequenceSimulation(unittest.TestCase):
 
     def setUp(self):
@@ -342,6 +345,50 @@ class TestSequenceSimulation(unittest.TestCase):
                 generated_seqs.append(pipeline.execute().get_dict())
             self.assertEqual(len(generated_seqs), 100)
 
+    def test_tcrb_sequence_simulator(self):
+        for dataconfig_loader, chain_type in zip([builtin_tcrb_data_config
+                                                  ],
+                                                 [CHAIN_TYPE_TCR_BETA
+                                                  ]):
+            AugmentationStep.set_dataconfig(dataconfig_loader(), chain_type=chain_type)
+
+            pipeline = AugmentationPipeline([
+                SimulateSequence(Uniform(), True),
+                FixVPositionAfterTrimmingIndexAmbiguity(),
+                FixDPositionAfterTrimmingIndexAmbiguity(),
+                FixJPositionAfterTrimmingIndexAmbiguity(),
+                CorrectForVEndCut(),
+                CorrectForDTrims(),
+                FilterTCRDJAmbiguities(),
+                CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
+                InsertNs(0.02, 0.5),
+                ShortDValidation(),
+                InsertIndels(0.5, 5, 0.5, 0.5),
+                DistillMutationRate()
+            ])
+
+            def test_correct_dj_selection(generated):
+                # check if d1 was selected then all j_{num>=1} should be selected, if d2 was selected then all j_{num>=2} should be selected
+                for d_call in generated['d_call']:
+                    d_gene_num = re.search(r'\d+', d_call)
+                    if d_gene_num:
+                        d_gene_num = int(d_gene_num.group())
+                        for j_call in generated['j_call']:
+                            j_gene_num = re.search(r'\d+', j_call)
+                            if j_gene_num:
+                                j_gene_num = int(j_gene_num.group())
+                                if j_gene_num < d_gene_num:
+                                    return False
+                return True
+
+
+            generated_seqs = []
+            for _ in range(1000):
+                generated = pipeline.execute().get_dict()
+                self.assertTrue(test_correct_dj_selection(generated))
+                if test_correct_dj_selection(generated):
+                    generated_seqs.append(generated)
+            self.assertEqual(len(generated_seqs), 1000)
 
     def test_heavy_chain_all_productive(self):
         for dataconfig_loader, chain_type in zip([builtin_heavy_chain_data_config
