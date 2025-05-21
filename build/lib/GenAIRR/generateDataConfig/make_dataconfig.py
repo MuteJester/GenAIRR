@@ -1,4 +1,4 @@
-from ..utilities import DataConfig
+from ..dataconfig import DataConfig
 from ..utilities.data_utilities import create_allele_dict
 from ..utilities.asc_utilities import create_asc_germline_set, hamming_distance
 from ..utilities import AlleleNComparer

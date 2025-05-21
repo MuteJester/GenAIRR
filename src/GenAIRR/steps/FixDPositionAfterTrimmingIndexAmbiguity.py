@@ -1,7 +1,8 @@
 from GenAIRR.container.SimulationContainer import SimulationContainer
 from GenAIRR.pipeline.plot_parameters import CORRECTION_STEP_HEADING_COLOR
 from GenAIRR.steps.StepBase import AugmentationStep
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
+
 
 class FixDPositionAfterTrimmingIndexAmbiguity(AugmentationStep):
 

@@ -207,11 +207,11 @@ class S5F(MutationModel):
 
         if self.custom_model is None:
             if type(sequence) == HeavyChainSequence:
-                with resources.path('GenAIRR.data', 'HH_S5F_META.pkl') as data_path:
+                with resources.path('GenAIRR.data.mutation_model_parameters', 'HH_S5F_META.pkl') as data_path:
                     with open(data_path, 'rb') as h:
                         self.mutability, self.substitution, self.targeting = pickle.load(h)
             elif type(sequence) == LightChainSequence:
-                with resources.path('GenAIRR.data', 'HKL_S5F_META.pkl') as data_path:
+                with resources.path('GenAIRR.data.mutation_model_parameters', 'HKL_S5F_META.pkl') as data_path:
                     with open(data_path, 'rb') as h:
                         self.mutability, self.substitution, self.targeting = pickle.load(h)
             else:

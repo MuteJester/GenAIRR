@@ -5,7 +5,7 @@ import numpy as np
 from ..container.SimulationContainer import SimulationContainer
 from ..pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
 from ..steps.StepBase import AugmentationStep
-from ..utilities import DataConfig
+from ..dataconfig import DataConfig
 
 
 class InsertNs(AugmentationStep):

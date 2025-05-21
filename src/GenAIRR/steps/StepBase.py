@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from ..container.SimulationContainer import SimulationContainer
-from ..utilities import DataConfig
+from ..dataconfig import DataConfig
+from ..parameters import ChainType
 
 
 class AugmentationStep(ABC):
@@ -8,7 +9,7 @@ class AugmentationStep(ABC):
     dataconfig = None
     chain_type = None
     @classmethod
-    def set_dataconfig(cls, config: DataConfig,chain_type: int):
+    def set_dataconfig(cls, config: DataConfig,chain_type: ChainType):
         cls.dataconfig = config
         cls.chain_type = chain_type
     @abstractmethod

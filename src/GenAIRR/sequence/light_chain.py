@@ -4,7 +4,7 @@ from ..mutation import MutationModel
 from ..sequence import NP_Region
 from ..sequence.sequence import BaseSequence
 from ..utilities import translate
-from ..utilities.data_config import DataConfig
+from GenAIRR.dataconfig.data_config import DataConfig
 
 
 class LightChainType(Enum):

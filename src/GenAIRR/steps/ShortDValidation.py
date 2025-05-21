@@ -1,7 +1,8 @@
 from GenAIRR.container.SimulationContainer import SimulationContainer
 from GenAIRR.pipeline.plot_parameters import VALIDATION_STEP_BOX_COLOR
 from GenAIRR.steps.StepBase import AugmentationStep
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
+
 
 class ShortDValidation(AugmentationStep):
     def __init__(self,short_d_length = 5):

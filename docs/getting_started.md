@@ -31,13 +31,13 @@ from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbigu
 from GenAIRR.mutation import S5F
 from GenAIRR.data import builtin_heavy_chain_data_config
 from GenAIRR.steps.StepBase import AugmentationStep
-from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY
+from GenAIRR.parameters import ChainType
 from GenAIRR.steps import SimulateSequence,FixVPositionAfterTrimmingIndexAmbiguity,FixDPositionAfterTrimmingIndexAmbiguity,FixJPositionAfterTrimmingIndexAmbiguity
 from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
 from GenAIRR.mutation import S5F
 
 # Set up the data configuration and pipeline
-AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(),chain_type=CHAIN_TYPE_BCR_HEAVY)
+AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(),chain_type=ChainType.BCR_HEAVY)
 pipeline = AugmentationPipeline([
     SimulateSequence(mutation_model = S5F(min_mutation_rate=0.003,max_mutation_rate=0.25),productive = True),
     FixVPositionAfterTrimmingIndexAmbiguity(),

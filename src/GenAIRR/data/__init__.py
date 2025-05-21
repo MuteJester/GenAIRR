@@ -2,6 +2,7 @@ import pickle
 import os
 
 module_dir = os.path.dirname(__file__)
+module_dir = os.path.join(module_dir, 'builtin_dataconfigs')
 
 def builtin_heavy_chain_data_config():
     data_path = os.path.join(module_dir, 'HeavyChain_DataConfig_OGRDB_V3.pkl')

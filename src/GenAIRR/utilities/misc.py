@@ -1,4 +1,5 @@
 import random
+from collections import defaultdict
 
 STOP_CODONS = {"TAG", "TAA", "TGA"}
 
@@ -97,3 +98,14 @@ def check_stops(seq,return_pos=False):
             return False,-1
         else:
             return False
+
+def normalize_and_filter_convert_to_dict(obj):
+    if isinstance(obj, defaultdict):
+        nested_dict = {k: normalize_and_filter_convert_to_dict(v) for k, v in obj.items()}
+        if all(isinstance(val, float) for val in nested_dict.values()):
+            # Filter out keys that are not 'A', 'T', 'G', or 'C'
+            filtered_dict = {k: v for k, v in nested_dict.items() if k in ['A', 'T', 'G', 'C']}
+            total = sum(filtered_dict.values())
+            return {k: v / total for k, v in filtered_dict.items()}
+        return nested_dict
+    return obj

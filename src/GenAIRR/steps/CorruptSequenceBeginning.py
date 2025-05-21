@@ -6,7 +6,8 @@ from ..container.SimulationContainer import SimulationContainer
 from ..pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
 from ..simulation import Event
 from ..steps.StepBase import AugmentationStep
-from ..utilities import DataConfig, translate
+from ..utilities import translate
+from ..dataconfig import DataConfig
 import scipy.stats as st
 
 

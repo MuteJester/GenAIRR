@@ -1,13 +1,12 @@
-import pickle
 import random
 import numpy as np
 import scipy.stats as st
-from ..utilities import AlleleNComparer, translate
+from ..utilities import translate
 from ..sequence import LightChainType
 from ..sequence import LightChainSequence
 from ..simulation import SequenceAugmentorArguments
 from ..simulation.sequence_augmentor_base import SequenceAugmentorBase
-from ..utilities.data_config import DataConfig
+from GenAIRR.dataconfig.data_config import DataConfig
 
 class LightChainSequenceAugmentor(SequenceAugmentorBase):
     """
@@ -42,7 +41,6 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
 
                These maps help in adjusting allele choices based on the amount removed from the start or end of a given allele, identifying equally likely options.
        """
-        from importlib import resources
         """
         This will load the V start and V end maps that tell us given the amount removed from the start or end
         of a given allele what option are equally likely

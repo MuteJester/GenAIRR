@@ -1,13 +1,11 @@
-import pickle
 import random
 import numpy as np
 import scipy.stats as st
-from ..utilities import AlleleNComparer, translate
+from ..utilities import translate
 from ..sequence import HeavyChainSequence
 from ..simulation import SequenceAugmentorArguments
 from ..simulation.sequence_augmentor_base import SequenceAugmentorBase
-from ..utilities.data_config import DataConfig
-import base64
+from GenAIRR.dataconfig.data_config import DataConfig
 
 
 class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
@@ -51,7 +49,6 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
 
                 These maps are used to adjust allele choices based on trimming events and to resolve ambiguities caused by similar alleles.
         """
-        from importlib import resources
         """
         This will load the V start and V end maps that tell us given the amount removed from the start or end
         of a given allele what option are equally likely

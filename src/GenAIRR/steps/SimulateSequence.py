@@ -1,9 +1,8 @@
 from ..container.SimulationContainer import SimulationContainer
-from ..pipeline.pipeline_parameters import CHAIN_TYPE_2_NAME, CHAIN_TYPE_BCR_HEAVY, CHAIN_TYPE_TCR_ALPHA, \
-    CHAIN_TYPE_TCR_BETA, CHAIN_TYPE_BCR_LIGHT_KAPPA, CHAIN_TYPE_BCR_LIGHT_LAMBDA, HAS_D
+from ..parameters import ChainType,CHAIN_TYPE_INFO
 from ..pipeline.plot_parameters import SIMULATION_STEP_BOX_COLOR
 from ..steps.StepBase import AugmentationStep
-from ..utilities import DataConfig
+from ..dataconfig import DataConfig
 from ..sequence import HeavyChainSequence
 
 
@@ -34,13 +33,13 @@ class SimulateSequence(AugmentationStep):
         Returns:
             class: The sequence class corresponding to the chain type.
         """
-        if self.chain_type == CHAIN_TYPE_BCR_HEAVY:
+        if self.chain_type == ChainType.BCR_HEAVY:
             from ..sequence import HeavyChainSequence
             return HeavyChainSequence
-        elif self.chain_type == CHAIN_TYPE_BCR_LIGHT_LAMBDA or self.chain_type == CHAIN_TYPE_BCR_LIGHT_KAPPA:
+        elif self.chain_type == ChainType.BCR_LIGHT_LAMBDA or self.chain_type == ChainType.BCR_LIGHT_KAPPA:
             from ..sequence import LightChainSequence
             return LightChainSequence
-        elif self.chain_type == CHAIN_TYPE_TCR_BETA:
+        elif self.chain_type == ChainType.TCR_BETA:
             from ..TCR.sequence.heavy_chain import TCRHeavyChainSequence
             return TCRHeavyChainSequence
         else:
@@ -59,7 +58,7 @@ class SimulateSequence(AugmentationStep):
         }
 
         # Only add specific_d if the chain type has a D segment
-        if HAS_D[self.chain_type]:
+        if CHAIN_TYPE_INFO[self.chain_type].has_d:
             gen_args['specific_d'] = self.specific_d
 
         # Create the sequence using the constructor instance
@@ -92,7 +91,7 @@ class SimulateSequence(AugmentationStep):
         container.junction_sequence_start = gen.junction_start
         container.junction_sequence_end = gen.junction_end
         container.v_call = [gen.v_allele.name]
-        container.d_call = [] if not HAS_D[self.chain_type] else [gen.d_allele.name]
+        container.d_call = [] if not CHAIN_TYPE_INFO[self.chain_type].has_d else [gen.d_allele.name]
         container.j_call = [gen.j_allele.name]
         container.c_call = [gen.c_allele.name] if getattr(gen, 'c_allele', None) else [None]
         container.mutation_rate = gen.mutation_freq
@@ -116,7 +115,7 @@ class SimulateSequence(AugmentationStep):
         label = f"""
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
         <TR><TD COLSPAN="2" BGCOLOR="lightsteelblue"><B>{step_name}</B></TD></TR>
-        <TR><TD ALIGN="LEFT"><B>Chain Type</B></TD><TD ALIGN="LEFT">{CHAIN_TYPE_2_NAME[self.chain_type]}</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>Chain Type</B></TD><TD ALIGN="LEFT">{ChainType[self.chain_type].name}</TD></TR>
         <TR><TD ALIGN="LEFT"><B>Mutation Model</B></TD><TD ALIGN="LEFT">{mutation_model_name}</TD></TR>
         <TR><TD ALIGN="LEFT"><B>Productive</B></TD><TD ALIGN="LEFT">{self.productive}</TD></TR>
         <TR><TD ALIGN="LEFT"><B>Specific V Allele</B></TD><TD ALIGN="LEFT">{self.specific_v}</TD></TR>

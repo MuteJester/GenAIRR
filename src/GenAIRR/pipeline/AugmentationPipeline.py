@@ -1,7 +1,7 @@
 from ..container.SimulationContainer import SimulationContainer
 from ..steps import SimulateSequence
 from ..steps.StepBase import AugmentationStep
-from ..utilities import DataConfig
+from ..dataconfig import DataConfig
 from graphviz import Digraph
 from ..container.SimulationContainer import SimulationContainer
 

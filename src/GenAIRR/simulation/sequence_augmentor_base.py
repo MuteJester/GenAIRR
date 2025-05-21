@@ -1,12 +1,10 @@
 from abc import ABC, abstractmethod
-from ..utilities.data_config import DataConfig
+from GenAIRR.dataconfig.data_config import DataConfig
 from dataclasses import dataclass, field
 import enum
 from ..mutation import MutationModel, S5F
 import scipy.stats as st
-import pickle
 import random
-import base64
 import numpy as np
 
 

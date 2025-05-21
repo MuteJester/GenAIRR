@@ -9,7 +9,8 @@ from tqdm.auto import tqdm
 from GenAIRR.alleles import AlleleTypes
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.steps import AugmentationStep
-from GenAIRR.utilities import DataConfig
+from GenAIRR.dataconfig import DataConfig
+
 from GenAIRR.data import builtin_heavy_chain_data_config, builtin_kappa_chain_data_config
 from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY
 from GenAIRR.steps import (

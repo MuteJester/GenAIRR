@@ -1,7 +1,7 @@
 from ..alleles import AlleleTypes
 from abc import ABC, abstractmethod
 
-from ..utilities.data_config import DataConfig
+from GenAIRR.dataconfig.data_config import DataConfig
 
 
 class BaseSequence(ABC):

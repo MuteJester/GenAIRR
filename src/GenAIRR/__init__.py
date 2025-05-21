@@ -3,4 +3,3 @@ from . import alleles
 from . import sequence
 from . import mutation
 from . import simulation
-from . import generateDataConfig

@@ -1,7 +1,7 @@
 from ..container.SimulationContainer import SimulationContainer
 from ..pipeline.plot_parameters import CORRECTION_STEP_HEADING_COLOR
 from ..steps.StepBase import AugmentationStep
-from ..utilities import DataConfig
+from ..dataconfig import DataConfig
 
 
 class CorrectForVEndCut(AugmentationStep):

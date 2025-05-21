@@ -5,8 +5,8 @@ import numpy as np
 from GenAIRR.container.SimulationContainer import SimulationContainer
 from GenAIRR.pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
 from GenAIRR.steps.StepBase import AugmentationStep
-from GenAIRR.utilities import DataConfig, translate
-
+from GenAIRR.utilities import translate
+from GenAIRR.dataconfig import DataConfig
 
 class InsertIndels(AugmentationStep):
     def __init__(self, indel_probability,max_indels,insertion_proba,deletion_proba):

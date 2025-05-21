@@ -2,28 +2,27 @@ import unittest
 import random
 import re
 import numpy as np
+
+from GenAIRR.parameters import ChainType
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.data import builtin_heavy_chain_data_config,builtin_lambda_chain_data_config,builtin_kappa_chain_data_config
 from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, \
     FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity, FilterTCRDJAmbiguities
 from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
 from GenAIRR.mutation import S5F, Uniform
-from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_BCR_LIGHT_LAMBDA
 from GenAIRR.alleles import VAllele
 from GenAIRR.container.SimulationContainer import SimulationContainer
-from GenAIRR.generateDataConfig import RandomDataConfigGenerator, CustomDataConfigGenerator
 from GenAIRR.sequence import LightChainSequence, HeavyChainSequence
 from GenAIRR.data import builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,builtin_lambda_chain_data_config\
     , builtin_tcrb_data_config
 from GenAIRR.steps import FixVPositionAfterTrimmingIndexAmbiguity, FixDPositionAfterTrimmingIndexAmbiguity, \
     FixJPositionAfterTrimmingIndexAmbiguity, CorrectForVEndCut
 from GenAIRR.steps.StepBase import AugmentationStep
+from GenAIRR.parameters import ChainType,CHAIN_TYPE_INFO
 
 lightchain_kappa_config = builtin_kappa_chain_data_config()
 lightchain_lambda_config = builtin_lambda_chain_data_config()
 heavychain_config = builtin_heavy_chain_data_config()
-
-from GenAIRR.pipeline import CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_KAPPA,CHAIN_TYPE_BCR_LIGHT_LAMBDA,CHAIN_TYPE_TCR_BETA
 class TestSequenceSimulation(unittest.TestCase):
 
     def setUp(self):
@@ -49,7 +48,7 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_fix_v_position_after_trimming_index_ambiguity(self):
         # CREATE a sequence that has a junction that recreates a part of the reference alleles
         # test wheter the index was correctly updated for the v
-        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=CHAIN_TYPE_BCR_HEAVY)
+        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=ChainType.BCR_HEAVY)
         simulated = {
             'sequence': 'TGTNCTTCCAGTACACCTGAAGGGTGGGTACTCGTTACCCTTCTCGCTCTNTTAGGATATTGGGTCAGCAAGTGGATGACAAAGAGGGATGNACTCAGATTGGCGTGTAGTGGAGGAGGTGCAGCTGGTGGAGTCTGGGGGANGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTCAGTAGCTATAGCATGAACTNGGTCCGCCAGGCTCNAGGGAAGGGTCTGGAGTGGGTTTCATACATCAGTAGTAGTAGTAATAGCATATACTACGCAGACTCTGTNAAGGGCCGATTCACCATCTCCAGAGACAANGCCAAGAACTCACTGTATCTGCAAATGAACAGCCTGAGAGCCGAGGACACGGCTATNTATTACTGTGCGAGAGATGTNCTTCCAGTACACCTGAAGGGTGGGTACTCGTTACCCTTCTCGCTCTNTTAGGATATTGGGTCAGCAAGTGGATGACAAAGAGGGATGNACTCAGATTGGCGTGTAGTGGAGGAGGTGCAGCTGGTGGAGTCTGGGGGANGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTCAGTAGCTATAGCATGAACTNGGTCCGCCAGGCTCNAGGGAAGGGTCTGGAGTGGGTTTCATACATCAGTAGTAGTAGTAATAGCATATACTACG',
             'v_sequence_start': 115,
@@ -86,7 +85,7 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_fix_d_position_after_trimming_index_ambiguity(self):
         # CREATE a sequence that has a junction that recreates a part of the reference alleles
         # test wheter the index was correctly updated for the v
-        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=CHAIN_TYPE_BCR_HEAVY)
+        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=ChainType.BCR_HEAVY)
         simulated = {
             'sequence': 'TGTNCTTCCAGTACACCTGAAGGGTGGGTACTCGTTACCCTTCTCGCTCTNTTAGGATATTGGGTCAGCAAGTGGATGACAAAGAGGGATGNACTCAGATTGGCGTGTAGTGGAGGAGGTGCAGCTGGTGGAGTCTGGGGGANGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTCAGTAGCTATAGCATGAACTNGGTCCGCCAGGCTCNAGGGAAGGGTCTGGAGTGGGTTTCATACATCAGTAGTAGTAGTAATAGCATATACTACGCAGACTCTGTNAAGGGCCGATTCACCATCTCCAGAGACAANGCCAAGAACTCACTGTATCTGCAAATGAACAGCCTGAGAGCCGAGGACACGGCTATNTATTACTGTGCGAGAGTTCCAGGGCACTACGGTGGTAACAAAACTGGTTNGACCCCTGGGGCCAGTGAACCCTGGTCACCGTCTCCTCAGGCTTCCACCAAGGGC',
             'v_sequence_start': 115,
@@ -153,7 +152,7 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_fix_j_position_after_trimming_index_ambiguity(self):
         # CREATE a sequence that has a junction that recreates a part of the reference alleles
         # test wheter the index was correctly updated for the v
-        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=CHAIN_TYPE_BCR_HEAVY)
+        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=ChainType.BCR_HEAVY)
         simulated = {
             'sequence': 'TGTNCTTCCAGTACACCTGAAGGGTGGGTACTCGTTACCCTTCTCGCTCTNTTAGGATATTGGGTCAGCAAGTGGATGACAAAGAGGGATGNACTCAGATTGGCGTGTAGTGGAGGAGGTGCAGCTGGTGGAGTCTGGGGGANGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTCAGTAGCTATAGCATGAACTNGGTCCGCCAGGCTCNAGGGAAGGGTCTGGAGTGGGTTTCATACATCAGTAGTAGTAGTAATAGCATATACTACGCAGACTCTGTNAAGGGCCGATTCACCATCTCCAGAGACAANGCCAAGAACTCACTGTATCTGCAAATGAACAGCCTGAGAGCCGAGGACACGGCTATNTATTACTGTGCGAGAGTTCCAGGGCATTACGGTGGTAGGGTCCGCCCGGACTACGGTGGTAGGGTCCGCCCGGAAAACTGGTTNGACCCCTGGGGCCAGTGAACCCTGGTCACCGTCTCCTCAGGCTTCCACCAAGGGC',
             'v_sequence_start': 115,
@@ -224,8 +223,8 @@ class TestSequenceSimulation(unittest.TestCase):
         N = 100
 
         for dataconfig_loader,chain_type in zip([builtin_heavy_chain_data_config,builtin_kappa_chain_data_config,
-                                                 builtin_lambda_chain_data_config],[CHAIN_TYPE_BCR_HEAVY,CHAIN_TYPE_BCR_LIGHT_KAPPA,
-                                                                                    CHAIN_TYPE_BCR_LIGHT_LAMBDA]):
+                                                 builtin_lambda_chain_data_config],[ChainType.BCR_HEAVY,ChainType.BCR_LIGHT_KAPPA,
+                                                                                    ChainType.BCR_LIGHT_LAMBDA]):
             AugmentationStep.set_dataconfig(dataconfig_loader(), chain_type=chain_type)
             step = CorrectForVEndCut()
             aux = FixVPositionAfterTrimmingIndexAmbiguity()
@@ -295,8 +294,8 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_lighchain_sequence_simulator(self):
         for dataconfig_loader,chain_type in zip([builtin_kappa_chain_data_config,
-                                                 builtin_lambda_chain_data_config],[CHAIN_TYPE_BCR_LIGHT_KAPPA,
-                                                                                    CHAIN_TYPE_BCR_LIGHT_LAMBDA]):
+                                                 builtin_lambda_chain_data_config],[ChainType.BCR_LIGHT_KAPPA,
+                                                                                    ChainType.BCR_LIGHT_KAPPA]):
             AugmentationStep.set_dataconfig(dataconfig_loader(), chain_type=chain_type)
 
 
@@ -322,7 +321,7 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_heavychain_sequence_simulator(self):
         for dataconfig_loader, chain_type in zip([builtin_heavy_chain_data_config
                                                   ],
-                                                 [CHAIN_TYPE_BCR_HEAVY
+                                                 [ChainType.BCR_HEAVY
                                                   ]):
             AugmentationStep.set_dataconfig(dataconfig_loader(), chain_type=chain_type)
 
@@ -348,7 +347,7 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_tcrb_sequence_simulator(self):
         for dataconfig_loader, chain_type in zip([builtin_tcrb_data_config
                                                   ],
-                                                 [CHAIN_TYPE_TCR_BETA
+                                                 [ChainType.TCR_BETA
                                                   ]):
             AugmentationStep.set_dataconfig(dataconfig_loader(), chain_type=chain_type)
 
@@ -393,7 +392,7 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_heavy_chain_all_productive(self):
         for dataconfig_loader, chain_type in zip([builtin_heavy_chain_data_config
                                                   ],
-                                                 [CHAIN_TYPE_BCR_HEAVY
+                                                 [ChainType.BCR_HEAVY
                                                   ]):
             AugmentationStep.set_dataconfig(dataconfig_loader(), chain_type=chain_type)
 
@@ -419,10 +418,9 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_tcr_sequence_simulator(self):
         import base64
-        from GenAIRR.pipeline import CHAIN_TYPE_TCR_BETA
         from GenAIRR.data import builtin_tcrb_data_config
 
-        AugmentationStep.set_dataconfig(builtin_tcrb_data_config(), chain_type=CHAIN_TYPE_TCR_BETA)
+        AugmentationStep.set_dataconfig(builtin_tcrb_data_config(), chain_type=ChainType.TCR_BETA)
 
         pipeline = AugmentationPipeline([
             SimulateSequence(Uniform(), True),
@@ -688,11 +686,14 @@ class TestSequenceSimulation(unittest.TestCase):
         self.assertEqual(simulated['sequence'], expected_sequence)
 
     def test_random_dataconfig_generator(self):
-        dcg = RandomDataConfigGenerator(convert_to_asc=False)
-        random_dataconfig = dcg.make_dataconfig_from_existing_reference_files(v_reference_path='./IGHV.fasta',
-                                                                              d_reference_path='./IGHD.fasta',
-                                                                              j_reference_path='./IGHJ.fasta',
-                                                                              c_reference_path='./IGHC.fasta')
+        from GenAIRR.dataconfig.make import RandomDataConfigBuilder
+        dcg = RandomDataConfigBuilder(convert_to_asc=False)
+        random_dataconfig = dcg.make( v_reference_path='./IGHV.fasta',
+                                      d_reference_path='./IGHD.fasta',
+                                      j_reference_path='./IGHJ.fasta',
+                                      c_reference_path='./IGHC.fasta'
+                                      )
+
         for gene in ['V','D','J']:
             self.assertGreater(len(random_dataconfig.gene_use_dict[gene]),0)
 
@@ -706,11 +707,14 @@ class TestSequenceSimulation(unittest.TestCase):
             self.assertGreaterEqual(len(random_dataconfig.NP_transitions[np]),0)
 
     def test_custom_dataconfig_generator(self):
-        dcg = CustomDataConfigGenerator(convert_to_asc=False)
-        random_dataconfig = dcg.make_dataconfig_from_existing_reference_files(v_reference_path='./IGHV.fasta',
-                                                                              d_reference_path='./IGHD.fasta',
-                                                                              j_reference_path='./IGHJ.fasta',
-                                                                              custom_data='./inference_sample.csv')
+        from GenAIRR.dataconfig.make import CustomDataConfigBuilder
+        dcg = CustomDataConfigBuilder(convert_to_asc=False)
+        random_dataconfig = dcg.make( v_reference_path='./IGHV.fasta',
+                                      d_reference_path='./IGHD.fasta',
+                                      j_reference_path='./IGHJ.fasta',
+                                      c_reference_path='./IGHC.fasta',
+                                      custom_data='./inference_sample.csv'
+                                      )
         for gene in ['V', 'D', 'J']:
 
             self.assertGreater(len(random_dataconfig.gene_use_dict[gene]), 0)
@@ -729,7 +733,7 @@ class TestSequenceSimulation(unittest.TestCase):
         Test the CorrectForDTrims step to verify that it correctly updates the d_call attribute based on the D 5' and 3' trims.
         """
         # setting up the data configuration and correction map
-        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=CHAIN_TYPE_BCR_HEAVY)
+        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=ChainType.BCR_HEAVY)
 
         # create a mock correction map for testing purposes
         d_trim_correction_map = {
@@ -785,7 +789,7 @@ class TestSequenceSimulation(unittest.TestCase):
         Test the CorrectForVEndCut step to verify that it correctly updates the v_call attribute based on V end trimming.
         """
         # setting up the data configuration and correction map
-        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type=CHAIN_TYPE_BCR_HEAVY)
+        AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(), chain_type= ChainType.BCR_HEAVY)
 
         # create a mock correction map for testing purposes
         v_end_correction_map = {
