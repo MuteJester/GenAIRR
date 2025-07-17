@@ -14,13 +14,22 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/MuteJester/GenAIRR',
-    download_url='https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.4.tar.gz',
+    download_url='https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.5.1.tar.gz',
     project_urls={
         "Bug Tracker": "https://github.com/MuteJester/GenAIRR/issues"
     },
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
-    package_data={'GenAIRR': ['data/*.pkl', 'data/*.json']},  # Include any additional data files
+    package_data={
+        'GenAIRR': [
+            'data/*.pkl', 
+            'data/*.json',
+            'data/builtin_dataconfigs/*.pkl',
+            'data/builtin_dataconfigs/*.json',
+            'data/mutation_model_parameters/*.pkl',
+            'data/mutation_model_parameters/*.json'
+        ]
+    },  # Include data files from subfolders
     include_package_data=True,  # Include everything in source control
     install_requires=requirements,
     classifiers=[

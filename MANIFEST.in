@@ -1,2 +1,5 @@
 include requirements.txt
 include README.md
+recursive-include src/GenAIRR/data *.pkl *.json
+recursive-include src/GenAIRR/data/builtin_dataconfigs *.pkl *.json
+recursive-include src/GenAIRR/data/mutation_model_parameters *.pkl *.json

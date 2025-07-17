@@ -77,3 +77,9 @@ src/GenAIRR/utilities/derive_similarity_maps.py
 src/GenAIRR/utilities/file_utilities.py
 src/GenAIRR/utilities/misc.py
 src/GenAIRR/utilities/report.py
+tests/test_advanced_features.py
+tests/test_comprehensive_suite.py
+tests/test_config.py
+tests/test_core_functionality.py
+tests/test_documentation_examples.py
+tests/test_enhanced_sequence_simulation.py
