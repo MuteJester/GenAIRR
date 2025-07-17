@@ -24,7 +24,9 @@ src/GenAIRR/data/__init__.py
 src/GenAIRR/data/builtin_dataconfigs/__init__.py
 src/GenAIRR/data/mutation_model_parameters/__init__.py
 src/GenAIRR/dataconfig/__init__.py
+src/GenAIRR/dataconfig/config_info.py
 src/GenAIRR/dataconfig/data_config.py
+src/GenAIRR/dataconfig/enums.py
 src/GenAIRR/dataconfig/make/__init__.py
 src/GenAIRR/dataconfig/make/base_dataconfig_builder.py
 src/GenAIRR/dataconfig/make/custom.py
@@ -39,8 +41,6 @@ src/GenAIRR/mutation/mutation_model.py
 src/GenAIRR/mutation/s5f.py
 src/GenAIRR/mutation/s5f_with_substitutions.py
 src/GenAIRR/mutation/uniform.py
-src/GenAIRR/parameters/__init__.py
-src/GenAIRR/parameters/pipeline_parameters.py
 src/GenAIRR/pipeline/AugmentationPipeline.py
 src/GenAIRR/pipeline/__init__.py
 src/GenAIRR/pipeline/plot_parameters.py

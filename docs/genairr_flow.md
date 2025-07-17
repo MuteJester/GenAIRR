@@ -13,9 +13,9 @@ The `DataConfig` object is the cornerstone of any GenAIRR simulation. It encapsu
 ### Example: Loading a `DataConfig`
 To load a built-in `DataConfig` for heavy chains:
 ```python
-from GenAIRR.data import builtin_heavy_chain_data_config
+from GenAIRR.data import HUMAN_IGH_OGRDB
 
-heavy_chain_config = builtin_heavy_chain_data_config()
+heavy_chain_config = HUMAN_IGH_OGRDB
 ```
 
 This instance can now be used as the foundation for generating sequences and building simulation pipelines.
@@ -27,9 +27,9 @@ With a `DataConfig` instance, users can directly create naive sequences using pr
 ### Example: Creating a Naive Heavy Chain Sequence
 ```python
 from GenAIRR.sequence import HeavyChainSequence
-from GenAIRR.data import builtin_heavy_chain_data_config
+from GenAIRR.data import HUMAN_IGH_OGRDB
 
-config = builtin_heavy_chain_data_config()
+config = HUMAN_IGH_OGRDB
 naive_sequence = HeavyChainSequence.create_random(config)
 
 print("Generated Sequence:", naive_sequence.mutated_seq)
@@ -50,9 +50,9 @@ from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.mutation import S5F
 
 pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(), productive=True),
+    SimulateSequence(S5F(), True),
     FixVPositionAfterTrimmingIndexAmbiguity(),
-    InsertIndels(probability=0.5, max_indels=3, insertion_proba=0.5, deletion_proba=0.5)
+    InsertIndels(0.5, 3, 0.5, 0.5)
 ])
 ```
 
@@ -93,7 +93,7 @@ class ReverseSequenceStep(AugmentationStep):
 To use this custom step in a pipeline:
 ```python
 pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(), productive=True),
+    SimulateSequence(S5F(), True),
     ReverseSequenceStep()
 ])
 ```

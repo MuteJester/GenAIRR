@@ -62,7 +62,7 @@ GenAIRR fills that gap with a **plug-and-play, fully-extensible simulation engin
 # Python ≥ 3.9
 pip install GenAIRR
 # or the bleeding edge
-pip install git+https://github.com/your-org/GenAIRR.git
+pip install git+https://github.com/MuteJester/GenAIRR.git
 ````
 
 ---
@@ -73,20 +73,17 @@ Below is a 60-second tour. See [`/examples`](examples/) for notebooks and CLI us
 
 ```python
 from GenAIRR.pipeline import AugmentationPipeline
-from GenAIRR.parameters import ChainType,CHAIN_TYPE_INFO
 from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity
 from GenAIRR.mutation import S5F
-from GenAIRR.data import builtin_heavy_chain_data_config
+from GenAIRR.data import HUMAN_IGH_OGRDB
 from GenAIRR.steps.StepBase import AugmentationStep
 
-# 1️⃣  Configure built-in germline & chain type
-data_cfg = builtin_heavy_chain_data_config()
-AugmentationStep.set_dataconfig(config = data_cfg,
-                                chain_type=ChainType.BCR_HEAVY)
+# 1️⃣  Configure built-in germline data
+AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
 
 # 2️⃣  Build a minimal pipeline
 pipeline = AugmentationPipeline([
-    SimulateSequence(mutation_model=S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
+    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), True),
     FixVPositionAfterTrimmingIndexAmbiguity()
 ])
 
@@ -109,24 +106,16 @@ from GenAIRR.steps import (
 )
 
 pipeline = AugmentationPipeline([
-    SimulateSequence(mutation_model=S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
+    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), True),
     FixVPositionAfterTrimmingIndexAmbiguity(),
     FixDPositionAfterTrimmingIndexAmbiguity(),
     FixJPositionAfterTrimmingIndexAmbiguity(),
     CorrectForVEndCut(),
     CorrectForDTrims(),
-    CorruptSequenceBeginning(
-        corruption_probability=0.7,
-        corrupt_events_proba=[0.4, 0.4, 0.2],
-        max_sequence_length=576,
-        nucleotide_add_coefficient=210,
-        nucleotide_remove_coefficient=310,
-        nucleotide_add_after_remove_coefficient=50,
-        random_sequence_add_proba=1
-    ),
-    InsertNs(n_ratio=0.02, proba=0.5),
-    ShortDValidation(short_d_length=5),
-    InsertIndels(indel_probability=0.5, max_indels=5, insertion_proba=0.5, deletion_proba=0.5),
+    CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
+    InsertNs(0.02, 0.5),
+    ShortDValidation(),
+    InsertIndels(0.5, 5, 0.5, 0.5),
     DistillMutationRate()
 ])
 result = pipeline.execute()
@@ -136,7 +125,7 @@ result = pipeline.execute()
 
 ```python
 from GenAIRR.mutation import Uniform
-naive_step = SimulateSequence(mutation_model=Uniform(0, 0), productive=True)
+naive_step = SimulateSequence(Uniform(0, 0), True)
 pipeline = AugmentationPipeline([naive_step])
 naive_seq = pipeline.execute()
 print(naive_seq.sequence)
@@ -146,11 +135,11 @@ print(naive_seq.sequence)
 
 ```python
 custom_step = SimulateSequence(
-    mutation_model=S5F(0.003, 0.25),
-    productive=True,
-    specific_v=data_cfg.allele_list('v')[0],# specific V allele (as Allele object)
-    specific_d=data_cfg.allele_list('d')[0],# specific D allele (as Allele object)
-    specific_j=data_cfg.allele_list('j')[0] # specific J allele (as Allele object)
+    S5F(0.003, 0.25),
+    True,
+    specific_v=HUMAN_IGH_OGRDB.v_alleles['IGHV1-2*02'][0],  # specific V allele
+    specific_d=HUMAN_IGH_OGRDB.d_alleles['IGHD3-10*01'][0], # specific D allele  
+    specific_j=HUMAN_IGH_OGRDB.j_alleles['IGHJ4*02'][0]     # specific J allele
 )
 pipeline = AugmentationPipeline([custom_step])
 print(pipeline.execute().get_dict())
@@ -208,7 +197,7 @@ PMID: 39489605 | PMCID: PMC11531861
 
 ## 📜 License
 
-Distributed under the MIT License. See **[LICENSE](LICENSE)** for details.
+Distributed under the GPL3 License. See **[LICENSE](LICENSE)** for details.
 
 ---
 

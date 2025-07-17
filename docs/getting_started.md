@@ -29,31 +29,29 @@ Below is a simple pipeline that demonstrates how to create a sequence simulation
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity
 from GenAIRR.mutation import S5F
-from GenAIRR.data import builtin_heavy_chain_data_config
+from GenAIRR.data import HUMAN_IGH_OGRDB
 from GenAIRR.steps.StepBase import AugmentationStep
-from GenAIRR.parameters import ChainType
-from GenAIRR.steps import SimulateSequence,FixVPositionAfterTrimmingIndexAmbiguity,FixDPositionAfterTrimmingIndexAmbiguity,FixJPositionAfterTrimmingIndexAmbiguity
-from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
+from GenAIRR.steps import (SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, 
+                          FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity)
+from GenAIRR.steps import (CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning, 
+                          InsertNs, InsertIndels, ShortDValidation, DistillMutationRate)
 from GenAIRR.mutation import S5F
 
 # Set up the data configuration and pipeline
-AugmentationStep.set_dataconfig(builtin_heavy_chain_data_config(),chain_type=ChainType.BCR_HEAVY)
+AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
 pipeline = AugmentationPipeline([
-    SimulateSequence(mutation_model = S5F(min_mutation_rate=0.003,max_mutation_rate=0.25),productive = True),
+    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), True),
     FixVPositionAfterTrimmingIndexAmbiguity(),
     FixDPositionAfterTrimmingIndexAmbiguity(),
     FixJPositionAfterTrimmingIndexAmbiguity(),
     CorrectForVEndCut(),
     CorrectForDTrims(),
-    CorruptSequenceBeginning(corruption_probability = 0.7,corrupt_events_proba = [0.4,0.4,0.2],max_sequence_length = 576,nucleotide_add_coefficient = 210,
-                             nucleotide_remove_coefficient = 310,nucleotide_add_after_remove_coefficient = 50,random_sequence_add_proba = 1,
-                             single_base_stream_proba = 0,duplicate_leading_proba = 0,random_allele_proba = 0),
-    InsertNs(n_ratio = 0.02,proba = 0.5),
-    ShortDValidation(short_d_length= 5),
-    InsertIndels(indel_probability = 0.5,max_indels = 5,insertion_proba=0.5,deletion_proba=0.5),
+    CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
+    InsertNs(0.02, 0.5),
+    ShortDValidation(),
+    InsertIndels(0.5, 5, 0.5, 0.5),
     DistillMutationRate()
-    ])
-
+])
 
 # Run the pipeline and retrieve the simulated sequence
 simulation_result = pipeline.execute()

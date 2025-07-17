@@ -1,13 +1,8 @@
 # GenAIRR: Modular Ig Sequence Simulation
 
-
 [GenAIRR](https://github.com/MuteJester/GenAIRR) is an AGPL-3 licensed Ig Sequence Simulation framework in Python.
 
-GenAIRR allows users to quickly create complex, modular simulation pipeline
-using built-in core components (such as Sequence structure, Alleles, Augmenters and Pipelines) or customized implementations;
-visualize your simulation pipelines, experiment and modify various hyperparameters to control with high precison over the
-process effecting sequences. Its goal is to allow covering a wide rage of scenarios both typical and atypical once to aid
-in the study, benchmarking and development of Ig sequence oriented algorithm such as sequence alignment.
+GenAIRR allows users to quickly create complex, modular simulation pipeline using built-in core components (such as Sequence structure, Alleles, Augmenters and Pipelines) or customized implementations; visualize your simulation pipelines, experiment and modify various hyperparameters to control with high precision over the process affecting sequences. Its goal is to allow covering a wide range of scenarios both typical and atypical to aid in the study, benchmarking and development of Ig sequence oriented algorithms such as sequence alignment.
 
 ## Features
 
@@ -15,7 +10,30 @@ in the study, benchmarking and development of Ig sequence oriented algorithm suc
 - Flexible mutation models and corruption management through "Step" based logic
 - New Steps Can be Implemented and Inserted into any Pipeline
 - Built-in detailed Data Config files containing empirical distribution and reference data
-- Highly sensetive ambiguity resolution framework to insure reliable ground truth meta information on each simulated sequence
+- Highly sensitive ambiguity resolution framework to ensure reliable ground truth meta information on each simulated sequence
+
+## Documentation Guide
+
+### Getting Started
+- **[Step-by-Step Tutorial](step_by_step_tutorial.md)** - Build your first pipeline from scratch
+- **[Quick Start Guide](tutorials/Quick Start Guide.ipynb)** - Interactive Jupyter notebook
+- **[Getting Started](getting_started.md)** - Basic concepts and examples
+
+### Understanding GenAIRR
+- **[Biological Context](biological_context.md)** - What biological processes are being simulated
+- **[GenAIRR Flow](genairr_flow.md)** - How the simulation pipeline works
+- **[Best Practices](best_practices.md)** - Guidelines for effective use
+
+### Reference Materials  
+- **[Parameter Reference](parameter_reference.md)** - Detailed parameter explanations
+- **[API Reference](api_reference.md)** - Quick syntax reference
+- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
+- **[Migration Guide](migration_guide.md)** - Upgrading from older versions
+
+### Advanced Topics
+- **[Advanced Custom Generation](tutorials/Advanced Custom Generation.ipynb)** - Custom allele selection
+- **[Introduction to DataConfig](tutorials/Introduction to the DataConfig Object.ipynb)** - Data configuration details
+- **[Custom Data Config](custom_data_config.md)** - Using your own germline data
 
 ## Using GenAIRR
 ### Installation Options

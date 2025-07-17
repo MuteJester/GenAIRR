@@ -1,9 +1,9 @@
 from ..container.SimulationContainer import SimulationContainer
-from ..parameters import ChainType,CHAIN_TYPE_INFO
 from ..pipeline.plot_parameters import SIMULATION_STEP_BOX_COLOR
 from ..steps.StepBase import AugmentationStep
 from ..dataconfig import DataConfig
 from ..sequence import HeavyChainSequence
+from ..dataconfig.enums import ChainType
 
 
 class SimulateSequence(AugmentationStep):
@@ -58,7 +58,7 @@ class SimulateSequence(AugmentationStep):
         }
 
         # Only add specific_d if the chain type has a D segment
-        if CHAIN_TYPE_INFO[self.chain_type].has_d:
+        if self.chain_type.has_d:
             gen_args['specific_d'] = self.specific_d
 
         # Create the sequence using the constructor instance
@@ -91,7 +91,7 @@ class SimulateSequence(AugmentationStep):
         container.junction_sequence_start = gen.junction_start
         container.junction_sequence_end = gen.junction_end
         container.v_call = [gen.v_allele.name]
-        container.d_call = [] if not CHAIN_TYPE_INFO[self.chain_type].has_d else [gen.d_allele.name]
+        container.d_call = [] if not self.chain_type.has_d else [gen.d_allele.name]
         container.j_call = [gen.j_allele.name]
         container.c_call = [gen.c_allele.name] if getattr(gen, 'c_allele', None) else [None]
         container.mutation_rate = gen.mutation_freq
