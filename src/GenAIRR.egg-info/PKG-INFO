@@ -1,9 +1,9 @@
 Metadata-Version: 2.1
 Name: GenAIRR
-Version: 0.5
+Version: 0.5.1
 Summary: An advanced immunoglobulin sequence simulation suite for benchmarking alignment models and sequence analysis.
 Home-page: https://github.com/MuteJester/GenAIRR
-Download-URL: https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.5.tar.gz
+Download-URL: https://github.com/MuteJester/GenAIRR/archive/refs/tags/0.5.1.tar.gz
 Author: Thomas Konstantinovsky & Ayelet Peres
 Author-email: thomaskon90@gmail.com
 Project-URL: Bug Tracker, https://github.com/MuteJester/GenAIRR/issues

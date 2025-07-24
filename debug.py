@@ -1,28 +1,62 @@
-import pickle
+import random
+import logging
+import time
 import os
-import sys
+from dataclasses import dataclass
+from itertools import product
+from multiprocessing import cpu_count, Pool, Manager
+from typing import List, Optional, Tuple, Any, Dict
+import math
 
-# STEP 1: Patch the module path (fake the old one)
-import GenAIRR.dataconfig as new_module
+import pandas as pd
+from tqdm.auto import tqdm
 
-sys.modules["GenAIRR.utilities.data_config"] = new_module
+from GenAIRR.alleles import AlleleTypes
+from GenAIRR.pipeline import AugmentationPipeline
+from GenAIRR.steps import AugmentationStep
+from GenAIRR.dataconfig import DataConfig
+from GenAIRR.steps import (
+    SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, FixDPositionAfterTrimmingIndexAmbiguity,
+    FixJPositionAfterTrimmingIndexAmbiguity, CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning,
+    InsertNs, InsertIndels, ShortDValidation, DistillMutationRate
+)
+import pickle
+from GenAIRR.mutation import S5F, Uniform
+# Load data configuration
+dataconfig_path = "C:/Users/tomas/Downloads/HUMAN_IGL_OGRDB.pkl"
 
-# STEP 2: Paths to files
-data_dir = r"C:\Users\tomas\Desktop\AlignAIRR\tests"
-file_map = {
-    'Genotyped_DataConfig.pkl': 'Genotyped_DataConfig.pkl',
-}
+with open(dataconfig_path, 'rb') as h:
+    dataconfig = pickle.load(h)
 
-# STEP 3: Load and re-save
-for filename in file_map:
-    full_path = os.path.join(data_dir, filename)
+AugmentationStep.set_dataconfig(dataconfig)
+# Initialize simulator
+is_productive = True  # Set to True for productive sequences
+SimulateSequence.MAX_GENERATION_ATTEMPTS = 25
 
-    # Load with old module path alias
-    with open(full_path, 'rb') as f:
-        obj = pickle.load(f)
+pipeline=AugmentationPipeline([
+        SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.2), is_productive),
+        # FixVPositionAfterTrimmingIndexAmbiguity(),
+        # FixJPositionAfterTrimmingIndexAmbiguity(),
+        # CorrectForVEndCut(),
+        # CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
+        # InsertNs(0.02, 0.5),
+        # InsertIndels(0.5, 5, 0.5, 0.5),
+        # DistillMutationRate()
+    ])
 
-    # Re-save with updated module path
-    with open(full_path, 'wb') as f:
-        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+TOTAL = 900
+prod_count = 0
+for i in tqdm(range(TOTAL), desc="Simulating sequences"):
+    if prod_count >= 100:
+        break
+    try:
+        # Execute the pipeline to simulate a sequence
+        seq = pipeline.execute()
+        # Check if the sequence is productive
+        if seq.productive():
+            prod_count += 1
+            print(f"Productive Sequence {prod_count}: {seq.sequence}")
+    except Exception as e:
+        print(f"Error during simulation: {e}")
 
-    print(f"Resaved: {filename}")
+print(f"Total productive sequences simulated: {prod_count}")

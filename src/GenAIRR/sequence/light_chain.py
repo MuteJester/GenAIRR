@@ -47,7 +47,8 @@ class LightChainSequence(BaseSequence):
     def simulate_trimmed_sequences(self, dataconfig: DataConfig):
         self.v_trimmed_seq, self.v_trim_5, self.v_trim_3 = self.v_allele.get_trimmed(dataconfig.trim_dicts)
         self.j_trimmed_seq, self.j_trim_5, self.j_trim_3 = self.j_allele.get_trimmed(dataconfig.trim_dicts)
-        self.c_trimmed_seq, self.c_trim_5, self.c_trim_3 = self.c_allele.get_trimmed(dataconfig.trim_dicts)
+        if self.c_allele is not None:
+            self.c_trimmed_seq, self.c_trim_5, self.c_trim_3 = self.c_allele.get_trimmed(dataconfig.trim_dicts)
 
 
     def assemble_sequence(self):
@@ -55,8 +56,12 @@ class LightChainSequence(BaseSequence):
             self.v_trimmed_seq
             + self.NP1_region
             + self.j_trimmed_seq
-            + self.c_trimmed_seq
-        ).upper()
+
+        )
+        if self.c_allele is not None:
+            self.ungapped_seq += self.c_trimmed_seq
+
+        self.ungapped_seq = self.ungapped_seq.upper()
 
     def calculate_junction_properties(self):
         self.junction_length = self.get_junction_length()
@@ -128,7 +133,7 @@ class LightChainSequence(BaseSequence):
 
         random_c_allele = random.choice([i for j in dataconfig.c_alleles for i in dataconfig.c_alleles[j]])
 
-        return cls([random_v_allele, random_j_allele,random_c_allele], dataconfig)
+        return cls([random_v_allele, random_j_allele], dataconfig) # removed C allele will be fixed later
 
     def __repr__(self):
         total_length = len(self.ungapped_seq)

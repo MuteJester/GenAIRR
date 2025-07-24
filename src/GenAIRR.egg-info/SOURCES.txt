@@ -21,7 +21,16 @@ src/GenAIRR/alleles/allele.py
 src/GenAIRR/container/SimulationContainer.py
 src/GenAIRR/container/__init__.py
 src/GenAIRR/data/__init__.py
+src/GenAIRR/data/builtin_dataconfigs/HUMAN_IGH_EXTENDED.pkl
+src/GenAIRR/data/builtin_dataconfigs/HUMAN_IGH_OGRDB.pkl
+src/GenAIRR/data/builtin_dataconfigs/HUMAN_IGK_OGRDB.pkl
+src/GenAIRR/data/builtin_dataconfigs/HUMAN_IGL_OGRDB.pkl
+src/GenAIRR/data/builtin_dataconfigs/HUMAN_TCRB_IMGT.pkl
 src/GenAIRR/data/builtin_dataconfigs/__init__.py
+src/GenAIRR/data/mutation_model_parameters/HH_S5F_60_META.pkl
+src/GenAIRR/data/mutation_model_parameters/HH_S5F_META.pkl
+src/GenAIRR/data/mutation_model_parameters/HH_S5F_Opposite_META.pkl
+src/GenAIRR/data/mutation_model_parameters/HKL_S5F_META.pkl
 src/GenAIRR/data/mutation_model_parameters/__init__.py
 src/GenAIRR/dataconfig/__init__.py
 src/GenAIRR/dataconfig/config_info.py

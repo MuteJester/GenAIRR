@@ -7,6 +7,7 @@ from ..dataconfig.enums import ChainType
 
 
 class SimulateSequence(AugmentationStep):
+    MAX_GENERATION_ATTEMPTS = 25
     def __init__(self, mutation_model, productive=False, specific_v=None, specific_d=None, specific_j=None):
         """
         Initializes the step for simulating a heavy chain sequence.
@@ -51,7 +52,8 @@ class SimulateSequence(AugmentationStep):
 
         Args:
             container (SimulationContainer): The container to store the simulated sequence data.
-        """
+            """
+
         gen_args = {
             'specific_v': self.specific_v,
             'specific_j': self.specific_j
@@ -65,9 +67,18 @@ class SimulateSequence(AugmentationStep):
         gen = self.sequence_constructor_instance.create_random(self.dataconfig, **gen_args)
 
         # Ensure productivity if specified
-        if self.productive:
-            while not gen.functional:
+        if self.productive and not gen.functional:
+            for _ in range(self.MAX_GENERATION_ATTEMPTS):
                 gen = self.sequence_constructor_instance.create_random(self.dataconfig, **gen_args)
+                if gen.functional:
+                    break  #exit the loop
+            else:
+                # This block now prints a warning instead of raising an error
+                print(
+                    f"Warning: Failed to generate a productive sequence after {self.MAX_GENERATION_ATTEMPTS} attempts. "
+                    f"Proceeding with the last non-functional sequence. "
+                    f"Parameters: V={self.specific_v}, J={self.specific_j}" + "D={}".format(self.specific_d if self.chain_type.has_d else "N/A")
+                )
 
 
         container.from_instance(gen)
