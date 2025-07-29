@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: GenAIRR
 Version: 0.5.1
 Summary: An advanced immunoglobulin sequence simulation suite for benchmarking alignment models and sequence analysis.
@@ -19,6 +19,25 @@ Classifier: Programming Language :: Python :: 3.9
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 License-File: LICENSE
+Requires-Dist: pandas~=1.5.3
+Requires-Dist: numpy~=1.24.3
+Requires-Dist: scipy~=1.11.1
+Requires-Dist: setuptools~=68.0.0
+Requires-Dist: graphviz~=0.20.3
+Requires-Dist: tqdm~=4.67.1
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: download-url
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license-file
+Dynamic: project-url
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
 
 <!-- -------------------------------------------------------- -->
 <!-- Banner / Logo (optional) -->
