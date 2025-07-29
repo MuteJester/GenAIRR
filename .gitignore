@@ -1,2 +1,5 @@
 /venv/
 debug.py
+/build/
+/dist/
+*.egg-info/
