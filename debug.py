@@ -46,12 +46,14 @@ pipeline=AugmentationPipeline([
 
 TOTAL = 900
 prod_count = 0
+results = []
 for i in tqdm(range(TOTAL), desc="Simulating sequences"):
     if prod_count >= 100:
         break
     try:
         # Execute the pipeline to simulate a sequence
         seq = pipeline.execute()
+        results.append(seq.get_dict())
         # Check if the sequence is productive
         if seq.productive():
             prod_count += 1
@@ -59,4 +61,6 @@ for i in tqdm(range(TOTAL), desc="Simulating sequences"):
     except Exception as e:
         print(f"Error during simulation: {e}")
 
-print(f"Total productive sequences simulated: {prod_count}")
+#save as dataframe
+#
+pd.DataFrame(results).to_csv("C:/Users/tomas/Downloads/test_results.csv", index=False)
