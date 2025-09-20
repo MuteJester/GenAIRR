@@ -3,3 +3,6 @@ debug.py
 /build/
 /dist/
 *.egg-info/
+# Keep release tools tracked but ignore local secrets file
+!/tools/
+/tools/pypi.secrets.ps1

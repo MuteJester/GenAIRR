@@ -7,7 +7,7 @@ with open('requirements.txt') as f:
 
 setup(
     name='GenAIRR',
-    version='0.5.2',
+    version='0.6.0',
     author='Thomas Konstantinovsky & Ayelet Peres',
     author_email='thomaskon90@gmail.com',
     description='An advanced immunoglobulin sequence simulation suite for benchmarking alignment models and sequence analysis.',
