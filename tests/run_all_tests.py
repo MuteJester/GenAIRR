@@ -122,10 +122,10 @@ def main():
         # Add current directory to path for imports
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         
-        from test_core_functionality import TestSequenceSimulation
-        from test_comprehensive_suite import EnhancedGenAIRRTests
-        from test_advanced_features import SpecializedGenAIRRTests
-        from test_enhanced_sequence_simulation import EnhancedSequenceSimulationTests
+        from tests.core.test_core_functionality import TestSequenceSimulation
+        from tests.advanced.test_comprehensive_suite import EnhancedGenAIRRTests
+        from tests.advanced.test_advanced_features import SpecializedGenAIRRTests
+        from tests.advanced.test_enhanced_sequence_simulation import EnhancedSequenceSimulationTests
         
         test_suites = [
             ("Core Functionality Tests", TestSequenceSimulation),
@@ -152,45 +152,7 @@ def main():
     
     # Print comprehensive summary
     print_summary(test_result)
-    
-    # Provide recommendations
-    print(f"\n{'='*60}")
-    print("RECOMMENDATIONS")
-    print('='*60)
-    
-    if test_result.failed_tests > 0 or test_result.error_tests > 0:
-        print("❌ Some tests failed or had errors.")
-        print("   Recommendations:")
-        print("   1. Review failed test details above")
-        print("   2. Check for missing dependencies")
-        print("   3. Verify data configuration files are present")
-        print("   4. Ensure proper GenAIRR library installation")
-    else:
-        print("✅ All tests passed successfully!")
-        print("   Your GenAIRR installation is working correctly.")
-        print("   The enhanced test coverage provides confidence in:")
-        print("   • Core functionality (alleles, sequences, mutations)")
-        print("   • Pipeline operations and step ordering")
-        print("   • Data configuration and validation")
-        print("   • Utility functions and edge cases")
-        print("   • Performance and memory management")
-        print("   • Error handling and robustness")
-    
-    print(f"\n{'='*60}")
-    print("TEST COVERAGE AREAS")
-    print('='*60)
-    print("✅ Allele creation and trimming")
-    print("✅ Mutation models (S5F, Uniform)")
-    print("✅ Sequence generation and variability")
-    print("✅ Pipeline construction and execution")
-    print("✅ Data configuration validation")
-    print("✅ Utility function testing")
-    print("✅ Error handling and edge cases")
-    print("✅ Light chain vs Heavy chain differences")
-    print("✅ TCR-specific functionality")
-    print("✅ Performance and stress testing")
-    print("✅ Biological validity checks")
-    
+
     # Return appropriate exit code
     if test_result.failed_tests > 0 or test_result.error_tests > 0:
         return 1

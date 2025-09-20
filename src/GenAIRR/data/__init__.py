@@ -1,5 +1,7 @@
 import os
 import pickle
+import logging
+from importlib.resources import files
 
 _CONFIG_NAMES = {
     'HUMAN_IGH_OGRDB',
@@ -9,7 +11,7 @@ _CONFIG_NAMES = {
     'HUMAN_TCRB_IMGT',
 }
 
-_DATA_CONFIG_DIR = os.path.join(os.path.dirname(__file__), 'builtin_dataconfigs')
+_logger = logging.getLogger(__name__)
 _CACHE = {}  # Cache to store already loaded data
 
 
@@ -25,16 +27,16 @@ def __getattr__(name: str):
         raise AttributeError(f"Module '{__name__}' has no attribute '{name}'")
 
     filename = f"{name}.pkl"
-    full_path = os.path.join(_DATA_CONFIG_DIR, filename)
+    resource = files(__package__).joinpath('builtin_dataconfigs', filename)
 
-    print(f"Loading '{name}' data config...")
+    _logger.info("Loading '%s' data config...", name)
 
     try:
-        with open(full_path, 'rb') as f:
+        with resource.open('rb') as f:
             # The loaded object is now complete and already has the .metadata attribute
             data_config = pickle.load(f)
     except FileNotFoundError:
-        raise FileNotFoundError(f"Could not find data file for '{name}' at: {full_path}")
+        raise FileNotFoundError(f"Could not find data file for '{name}' (resource: {resource})")
     except Exception as e:
         raise ImportError(f"Could not load data config '{name}': {e}") from e
 

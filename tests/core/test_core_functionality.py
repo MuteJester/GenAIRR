@@ -711,11 +711,11 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_random_dataconfig_generator(self):
         from GenAIRR.dataconfig.make import RandomDataConfigBuilder
         dcg = RandomDataConfigBuilder(convert_to_asc=False)
-        random_dataconfig = dcg.make( v_reference_path='./IGHV.fasta',
-                                      d_reference_path='./IGHD.fasta',
-                                      j_reference_path='./IGHJ.fasta',
-                                      c_reference_path='./IGHC.fasta'
-                                      )
+        random_dataconfig = dcg.make(v_reference_path='../data/IGHV.fasta',
+                                     d_reference_path='../data/IGHD.fasta',
+                                     j_reference_path='../data/IGHJ.fasta',
+                                     c_reference_path='../data/IGHC.fasta'
+                                     )
 
         for gene in ['V','D','J']:
             self.assertGreater(len(random_dataconfig.gene_use_dict[gene]),0)
@@ -732,12 +732,12 @@ class TestSequenceSimulation(unittest.TestCase):
     def test_custom_dataconfig_generator(self):
         from GenAIRR.dataconfig.make import CustomDataConfigBuilder
         dcg = CustomDataConfigBuilder(convert_to_asc=False)
-        random_dataconfig = dcg.make( v_reference_path='./IGHV.fasta',
-                                      d_reference_path='./IGHD.fasta',
-                                      j_reference_path='./IGHJ.fasta',
-                                      c_reference_path='./IGHC.fasta',
-                                      custom_data='./inference_sample.csv'
-                                      )
+        random_dataconfig = dcg.make(v_reference_path='../data/IGHV.fasta',
+                                     d_reference_path='../data/IGHD.fasta',
+                                     j_reference_path='../data/IGHJ.fasta',
+                                     c_reference_path='../data/IGHC.fasta',
+                                     custom_data='../data/inference_sample.csv'
+                                     )
         for gene in ['V', 'D', 'J']:
 
             self.assertGreater(len(random_dataconfig.gene_use_dict[gene]), 0)
