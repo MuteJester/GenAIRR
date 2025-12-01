@@ -42,6 +42,7 @@ AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
 mutation_model = S5F(min_mutation_rate=0.02, max_mutation_rate=0.08)
 
 # Option 2: Simple uniform mutations  
+# from GenAIRR.mutation import Uniform
 # mutation_model = Uniform(min_mutation_rate=0.02, max_mutation_rate=0.08)
 ```
 
@@ -57,7 +58,7 @@ mutation_model = S5F(min_mutation_rate=0.02, max_mutation_rate=0.08)
 ```python
 # Generate the basic sequence
 simulate_step = SimulateSequence(
-    mutation_model=mutation_model,
+    mutation_model,
     productive=True  # Ensures functional sequences
 )
 ```
@@ -185,12 +186,13 @@ with open('simulated_sequences.fasta', 'w') as f:
 ### 1. Specific Allele Usage
 ```python
 # Force specific V, D, J combination
-specific_v = HUMAN_IGH_OGRDB.v_alleles['IGHV1-2*02'][0]
-specific_d = HUMAN_IGH_OGRDB.d_alleles['IGHD3-10*01'][0]
-specific_j = HUMAN_IGH_OGRDB.j_alleles['IGHJ4*02'][0]
+# Note: Allele families use IGHVF (family) naming in OGRDB
+specific_v = HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1'][0]  # First allele in family
+specific_d = HUMAN_IGH_OGRDB.d_alleles['IGHD1-1'][0]
+specific_j = HUMAN_IGH_OGRDB.j_alleles['IGHJ1'][0]
 
 custom_step = SimulateSequence(
-    S5F(0.02, 0.08), 
+    S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), 
     productive=True,
     specific_v=specific_v,
     specific_d=specific_d,
@@ -207,7 +209,7 @@ AugmentationStep.set_dataconfig(HUMAN_IGK_OGRDB)
 
 # Light chain pipeline (no D segment steps)
 light_pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(0.02, 0.08), True),
+    SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True),
     FixVPositionAfterTrimmingIndexAmbiguity(),
     FixJPositionAfterTrimmingIndexAmbiguity(),  # No D segment
     CorrectForVEndCut(),
@@ -222,10 +224,10 @@ light_pipeline = AugmentationPipeline([
 ### 3. Naive vs Memory Comparison
 ```python
 # Naive B cells (low mutation)
-naive_step = SimulateSequence(S5F(0.001, 0.01), True)
+naive_step = SimulateSequence(S5F(min_mutation_rate=0.001, max_mutation_rate=0.01), productive=True)
 
 # Memory B cells (moderate mutation)  
-memory_step = SimulateSequence(S5F(0.02, 0.08), True)
+memory_step = SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True)
 
 # Generate both types
 naive_pipeline = AugmentationPipeline([naive_step, ...])

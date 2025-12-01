@@ -27,7 +27,7 @@ Based on biological literature and empirical data:
 
 ```python
 # Realistic memory B cell simulation
-SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), True)
+SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True)
 ```
 
 ### 3. Pipeline Order Matters
@@ -36,7 +36,7 @@ Follow this recommended step order:
 ```python
 pipeline = AugmentationPipeline([
     # 1. Generate base sequence with mutations
-    SimulateSequence(S5F(0.003, 0.25), True),
+    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
     
     # 2. Fix position ambiguities (order matters!)
     FixVPositionAfterTrimmingIndexAmbiguity(),
@@ -141,7 +141,7 @@ AugmentationStep.set_dataconfig(HUMAN_IGK_OGRDB)
 ```python
 # Faster execution with reasonable quality
 pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(0.01, 0.05), True),  # Lower mutation range
+    SimulateSequence(S5F(min_mutation_rate=0.01, max_mutation_rate=0.05), productive=True),  # Lower mutation range
     FixVPositionAfterTrimmingIndexAmbiguity(),
     FixJPositionAfterTrimmingIndexAmbiguity(),
     CorruptSequenceBeginning(0.5, [0.5, 0.5, 0], 400, 150, 200, 30),  # Reduced complexity
@@ -158,7 +158,7 @@ pipeline = AugmentationPipeline([
 def create_benchmark_dataset():
     sequences = []
     for mutation_rate in [0.01, 0.05, 0.1, 0.2]:
-        step = SimulateSequence(S5F(mutation_rate, mutation_rate), True)
+        step = SimulateSequence(S5F(mutation_rate, mutation_rate), productive=True)
         local_pipeline = AugmentationPipeline([step, ...])
         
         for _ in range(100):

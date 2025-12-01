@@ -32,18 +32,22 @@ This document provides detailed explanations of key parameters used throughout G
 ### S5F (Context-Dependent Model)
 - **min_mutation_rate**: Minimum mutation frequency (e.g., 0.003 = 0.3%)
 - **max_mutation_rate**: Maximum mutation frequency (e.g., 0.25 = 25%)
-- **productive**: If `True`, avoids mutations that create stop codons
+- **custom_model**: Path to custom mutation model file (optional)
+- **productive**: If `True`, avoids mutations that create stop codons and preserves CDR3 anchors
 
 ### Uniform (Simple Model)
 - **min_mutation_rate**: Minimum mutation frequency
 - **max_mutation_rate**: Maximum mutation frequency
+- **productive**: If `True`, avoids mutations that create stop codons and preserves CDR3 anchors
 
 ## Data Configuration
 
 ### Built-in Configs
-- **HUMAN_IGH_OGRDB**: Heavy chain immunoglobulin data
-- **HUMAN_IGK_OGRDB**: Kappa light chain data  
-- **HUMAN_IGL_OGRDB**: Lambda light chain data
+- **HUMAN_IGH_OGRDB**: Heavy chain immunoglobulin data (OGRDB)
+- **HUMAN_IGH_EXTENDED**: Extended heavy chain immunoglobulin data
+- **HUMAN_IGK_OGRDB**: Kappa light chain data (OGRDB)
+- **HUMAN_IGL_OGRDB**: Lambda light chain data (OGRDB)
+- **HUMAN_TCRB_IMGT**: T-cell receptor beta data (IMGT)
 
 ## Performance Tips
 

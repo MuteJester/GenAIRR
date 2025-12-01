@@ -11,7 +11,11 @@ from GenAIRR.steps import (
     InsertNs, InsertIndels, ShortDValidation, DistillMutationRate
 )
 from GenAIRR.mutation import S5F, Uniform
-from GenAIRR.data import HUMAN_IGH_OGRDB, HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB, HUMAN_TCRB_IMGT
+from GenAIRR.data import (
+    HUMAN_IGH_OGRDB, HUMAN_IGH_EXTENDED,
+    HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB, 
+    HUMAN_TCRB_IMGT
+)
 from GenAIRR.steps.StepBase import AugmentationStep
 ```
 
@@ -19,10 +23,11 @@ from GenAIRR.steps.StepBase import AugmentationStep
 
 | Config | Description | Use Case |
 |--------|-------------|----------|
-| `HUMAN_IGH_OGRDB` | Human heavy chain immunoglobulin | BCR heavy chain simulation |
-| `HUMAN_IGK_OGRDB` | Human kappa light chain | BCR kappa light chain simulation |
-| `HUMAN_IGL_OGRDB` | Human lambda light chain | BCR lambda light chain simulation |
-| `HUMAN_TCRB_IMGT` | Human T-cell receptor beta | TCR-β simulation |
+| `HUMAN_IGH_OGRDB` | Human heavy chain immunoglobulin (OGRDB) | BCR heavy chain simulation |
+| `HUMAN_IGH_EXTENDED` | Extended human heavy chain immunoglobulin | Extended BCR heavy chain simulation |
+| `HUMAN_IGK_OGRDB` | Human kappa light chain (OGRDB) | BCR kappa light chain simulation |
+| `HUMAN_IGL_OGRDB` | Human lambda light chain (OGRDB) | BCR lambda light chain simulation |
+| `HUMAN_TCRB_IMGT` | Human T-cell receptor beta (IMGT) | TCR-β simulation |
 
 ## Basic Pipeline Setup
 
@@ -45,14 +50,30 @@ sequence_data = result.get_dict()
 ### 1. Sequence Simulation
 ```python
 # S5F mutation model with mutation rate range
-SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), True)
+SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True)
 
 # Uniform mutation model
-SimulateSequence(Uniform(min_rate=0.0, max_rate=0.1), True)
+SimulateSequence(Uniform(min_mutation_rate=0.0, max_mutation_rate=0.1), productive=True)
 
 # Naive sequence (no mutations)
-SimulateSequence(Uniform(0, 0), True)
+SimulateSequence(Uniform(min_mutation_rate=0, max_mutation_rate=0), productive=True)
+
+# With specific alleles
+SimulateSequence(
+    S5F(min_mutation_rate=0.02, max_mutation_rate=0.08),
+    productive=True,
+    specific_v=v_allele_object,
+    specific_d=d_allele_object,
+    specific_j=j_allele_object
+)
 ```
+
+**Parameters:**
+- `mutation_model`: Instance of mutation model (S5F or Uniform)
+- `productive`: Ensure sequence is productive (default: False)
+- `specific_v`: Specific V allele object (optional)
+- `specific_d`: Specific D allele object (optional, only for chains with D segment)
+- `specific_j`: Specific J allele object (optional)
 
 ### 2. Position Fixing Steps
 ```python
@@ -155,14 +176,25 @@ pipeline = AugmentationPipeline([
 ### S5F Model
 Context-aware somatic hypermutation model based on empirical data.
 ```python
-S5F(min_mutation_rate=0.003, max_mutation_rate=0.25)
+S5F(min_mutation_rate=0.003, max_mutation_rate=0.25, custom_model=None, productive=False)
 ```
+
+**Parameters:**
+- `min_mutation_rate`: Minimum mutation rate (default: 0)
+- `max_mutation_rate`: Maximum mutation rate (default: 0)
+- `custom_model`: Path to custom mutation model file (default: None)
+- `productive`: Ensure no stop codons and preserve CDR3 anchors (default: False)
 
 ### Uniform Model
 Simple uniform random mutation model.
 ```python
-Uniform(min_rate=0.0, max_rate=0.1)
+Uniform(min_mutation_rate=0.0, max_mutation_rate=0.0, productive=False)
 ```
+
+**Parameters:**
+- `min_mutation_rate`: Minimum mutation rate (default: 0)
+- `max_mutation_rate`: Maximum mutation rate (default: 0)
+- `productive`: Ensure no stop codons and preserve CDR3 anchors (default: False)
 
 ## Accessing Results
 
@@ -183,15 +215,26 @@ mutations = data['mutations']        # Mutation positions and changes
 ## Custom Allele Selection
 
 ```python
-# Access specific alleles
-v_allele = HUMAN_IGH_OGRDB.v_alleles['IGHV1-2*02'][0]
-d_allele = HUMAN_IGH_OGRDB.d_alleles['IGHD3-10*01'][0]
-j_allele = HUMAN_IGH_OGRDB.j_alleles['IGHJ4*02'][0]
+# Access specific alleles by family name (returns list of alleles)
+# Note: Allele families are organized by gene family groups (e.g., IGHVF1-G1)
+v_allele = HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1'][0]  # First allele in family
+d_allele = HUMAN_IGH_OGRDB.d_alleles['IGHD1-1'][0]    # First allele in family
+j_allele = HUMAN_IGH_OGRDB.j_alleles['IGHJ1'][0]      # First allele in family
+
+# View available allele families
+print("V allele families:", list(HUMAN_IGH_OGRDB.v_alleles.keys())[:5])
+print("D allele families:", list(HUMAN_IGH_OGRDB.d_alleles.keys())[:5])
+print("J allele families:", list(HUMAN_IGH_OGRDB.j_alleles.keys())[:5])
+
+# View alleles in a specific family
+family_alleles = HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1']
+for allele in family_alleles:
+    print(allele.name)  # e.g., 'IGHVF1-G1*01', 'IGHVF1-G1*02', etc.
 
 # Use in simulation
 custom_step = SimulateSequence(
-    S5F(0.003, 0.25),
-    True,
+    S5F(min_mutation_rate=0.003, max_mutation_rate=0.25),
+    productive=True,
     specific_v=v_allele,
     specific_d=d_allele,
     specific_j=j_allele

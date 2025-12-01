@@ -53,11 +53,17 @@ SimulateSequence(S5F(0.001, 0.01), True)
 
 **Solution**: Check available alleles first:
 ```python
-# List available V alleles
-print(list(HUMAN_IGH_OGRDB.v_alleles.keys()))
+# List available V allele families
+print("V allele families:", list(HUMAN_IGH_OGRDB.v_alleles.keys())[:5])
 
-# Access specific allele properly
-v_allele = HUMAN_IGH_OGRDB.v_alleles['IGHV1-2*02'][0]
+# Access specific allele properly (using family name)
+v_allele = HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1'][0]  # First allele in family
+d_allele = HUMAN_IGH_OGRDB.d_alleles['IGHD1-1'][0]
+j_allele = HUMAN_IGH_OGRDB.j_alleles['IGHJ1'][0]
+
+# View all alleles in a family
+for allele in HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1']:
+    print(allele.name)  # e.g., 'IGHVF1-G1*01', 'IGHVF1-G1*02', etc.
 ```
 
 ### 5. "Pipeline execution is very slow"

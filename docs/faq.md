@@ -32,7 +32,7 @@ from GenAIRR.data import HUMAN_IGH_OGRDB
 from GenAIRR.steps.StepBase import AugmentationStep
 
 AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
-pipeline = AugmentationPipeline([SimulateSequence(S5F(), True)])
+pipeline = AugmentationPipeline([SimulateSequence(S5F(), productive=True)])
 sequence = pipeline.execute()
 print(sequence.sequence)
 ```
@@ -211,10 +211,10 @@ light = light_pipeline.execute()
 **A:** Adjust parameters to reflect biology:
 ```python
 # Autoimmune (higher mutation)
-SimulateSequence(S5F(0.05, 0.15), True)
+SimulateSequence(S5F(min_mutation_rate=0.05, max_mutation_rate=0.15), productive=True)
 
 # Immunodeficiency (lower diversity - use specific alleles)
-SimulateSequence(S5F(0.001, 0.02), True, specific_v=common_allele)
+SimulateSequence(S5F(min_mutation_rate=0.001, max_mutation_rate=0.02), productive=True, specific_v=common_allele)
 ```
 
 ### Q: Can I add custom mutation patterns?

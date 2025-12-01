@@ -27,20 +27,20 @@ Below is a simple pipeline that demonstrates how to create a sequence simulation
 
 ```python
 from GenAIRR.pipeline import AugmentationPipeline
-from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity
+from GenAIRR.steps import (
+    SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, 
+    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity,
+    CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning, 
+    InsertNs, InsertIndels, ShortDValidation, DistillMutationRate
+)
 from GenAIRR.mutation import S5F
 from GenAIRR.data import HUMAN_IGH_OGRDB
 from GenAIRR.steps.StepBase import AugmentationStep
-from GenAIRR.steps import (SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, 
-                          FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity)
-from GenAIRR.steps import (CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning, 
-                          InsertNs, InsertIndels, ShortDValidation, DistillMutationRate)
-from GenAIRR.mutation import S5F
 
 # Set up the data configuration and pipeline
 AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
 pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), True),
+    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
     FixVPositionAfterTrimmingIndexAmbiguity(),
     FixDPositionAfterTrimmingIndexAmbiguity(),
     FixJPositionAfterTrimmingIndexAmbiguity(),

@@ -31,8 +31,10 @@ SimulateSequence(mutation_model=S5F(min_mutation_rate=0.003, max_mutation_rate=0
 
 **New Syntax:**
 ```python
-SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), True)
+SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True)
 ```
+
+**Note:** The `productive` parameter is now a keyword argument for clarity.
 
 ### 3. Pipeline Step Parameters
 
