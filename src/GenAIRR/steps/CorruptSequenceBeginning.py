@@ -12,22 +12,65 @@ import scipy.stats as st
 
 
 class CorruptSequenceBeginning(AugmentationStep):
-    def __init__(self, corruption_probability, corrupt_events_proba=None, max_sequence_length=576,
-                 nucleotide_add_coefficient=210,
-                 nucleotide_remove_coefficient=310, nucleotide_add_after_remove_coefficient=50,
-                 random_sequence_add_proba=1,single_base_stream_proba=0,
-                 duplicate_leading_proba=0,random_allele_proba=0):
+    """
+    Simulates 5' end corruption of sequences, modeling sequencing artifacts.
+
+    This step can add, remove, or remove-then-add nucleotides at the beginning
+    of sequences to simulate real-world sequencing issues like PCR artifacts
+    and primer binding.
+
+    Note:
+        This step handles corruption events only. For enforcing sequencing
+        platform read length limits, use EnforceSequenceLength after this step.
+
+    Args:
+        probability: Probability that corruption occurs (0.0-1.0). Default: 0.7
+        event_weights: Weights for [add, remove, remove_then_add] events. Default: (0.4, 0.4, 0.2)
+        nucleotide_add_coefficient: Scale factor for nucleotide addition distribution. Default: 210
+        nucleotide_remove_coefficient: Scale factor for nucleotide removal distribution. Default: 310
+        nucleotide_add_after_remove_coefficient: Scale factor for add-after-remove. Default: 50
+        random_sequence_add_probability: Weight for random nucleotide addition method. Default: 1.0
+        single_base_stream_probability: Weight for single base repeat method. Default: 0.0
+        duplicate_leading_probability: Weight for duplicating leading bases method. Default: 0.0
+        random_allele_probability: Weight for random allele section method. Default: 0.0
+
+    Example:
+        # Use defaults
+        step = CorruptSequenceBeginning()
+
+        # Customize specific parameters
+        step = CorruptSequenceBeginning(probability=0.9, nucleotide_add_coefficient=150)
+
+        # For length enforcement, add EnforceSequenceLength after this step:
+        # pipeline = AugmentationPipeline([
+        #     ...,
+        #     CorruptSequenceBeginning(),
+        #     EnforceSequenceLength(max_length=576),
+        #     ...
+        # ])
+    """
+
+    def __init__(
+        self,
+        *,
+        probability: float = 0.7,
+        event_weights: tuple = (0.4, 0.4, 0.2),
+        nucleotide_add_coefficient: int = 210,
+        nucleotide_remove_coefficient: int = 310,
+        nucleotide_add_after_remove_coefficient: int = 50,
+        random_sequence_add_probability: float = 1.0,
+        single_base_stream_probability: float = 0.0,
+        duplicate_leading_probability: float = 0.0,
+        random_allele_probability: float = 0.0,
+    ):
         super().__init__()
 
-        self.max_sequence_length = max_sequence_length
-        if corrupt_events_proba is None:
-            corrupt_events_proba = [0.3, 0.3, 0.3]
-        self.corrupt_events_proba = corrupt_events_proba
-        self.random_sequence_add_proba = random_sequence_add_proba
-        self.single_base_stream_proba = single_base_stream_proba
-        self.duplicate_leading_proba = duplicate_leading_proba
-        self.random_allele_proba = random_allele_proba
-        self.corruption_probability = corruption_probability
+        self.corrupt_events_proba = list(event_weights)
+        self.random_sequence_add_proba = random_sequence_add_probability
+        self.single_base_stream_proba = single_base_stream_probability
+        self.duplicate_leading_proba = duplicate_leading_probability
+        self.random_allele_proba = random_allele_probability
+        self.corruption_probability = probability
 
         self.nucleotide_add_distribution = st.beta(2, 3)
         self.nucleotide_remove_distribution = st.beta(2, 3)
@@ -37,16 +80,55 @@ class CorruptSequenceBeginning(AugmentationStep):
         self.nucleotide_remove_coef = nucleotide_remove_coefficient
         self.nucleotide_add_after_remove_coef = nucleotide_add_after_remove_coefficient
 
-        self.v_start_allele_correction_map = self.dataconfig.correction_maps['V_5_TRIM_SIMILARITY_MAP']
-        self.max_v_start_correction_map_value = max(
-            self.v_start_allele_correction_map[list(self.v_start_allele_correction_map)[0]])
+        # Lazy-initialized attributes (populated on first access after config is bound)
+        self._v_start_allele_correction_map = None
+        self._max_v_start_correction_map_value = None
+        self._v_alleles = None
+        self._j_alleles = None
+        self._v_dict = None
 
-        self.v_alleles = sorted([i for j in self.dataconfig.v_alleles for i in self.dataconfig.v_alleles[j]],
-                                key=lambda x: x.name)
+    def _ensure_config_loaded(self):
+        """Initialize dataconfig-dependent attributes on first use."""
+        if self._v_start_allele_correction_map is None:
+            self._v_start_allele_correction_map = self.dataconfig.correction_maps['V_5_TRIM_SIMILARITY_MAP']
+            self._max_v_start_correction_map_value = max(
+                self._v_start_allele_correction_map[list(self._v_start_allele_correction_map)[0]])
 
-        self.j_alleles = sorted([i for j in self.dataconfig.j_alleles for i in self.dataconfig.j_alleles[j]],
-                                key=lambda x: x.name)
-        self.v_dict = {i.name: i.ungapped_seq.upper() for i in self.v_alleles}
+            self._v_alleles = sorted(
+                [i for j in self.dataconfig.v_alleles for i in self.dataconfig.v_alleles[j]],
+                key=lambda x: x.name
+            )
+
+            self._j_alleles = sorted(
+                [i for j in self.dataconfig.j_alleles for i in self.dataconfig.j_alleles[j]],
+                key=lambda x: x.name
+            )
+            self._v_dict = {i.name: i.ungapped_seq.upper() for i in self._v_alleles}
+
+    @property
+    def v_start_allele_correction_map(self):
+        self._ensure_config_loaded()
+        return self._v_start_allele_correction_map
+
+    @property
+    def max_v_start_correction_map_value(self):
+        self._ensure_config_loaded()
+        return self._max_v_start_correction_map_value
+
+    @property
+    def v_alleles(self):
+        self._ensure_config_loaded()
+        return self._v_alleles
+
+    @property
+    def j_alleles(self):
+        self._ensure_config_loaded()
+        return self._j_alleles
+
+    @property
+    def v_dict(self):
+        self._ensure_config_loaded()
+        return self._v_dict
 
     @staticmethod
     def random_nucleotides(amount, container: SimulationContainer):
@@ -73,25 +155,6 @@ class CorruptSequenceBeginning(AugmentationStep):
         container.corruption_added_section = random_base
         return random_base + container.sequence
 
-    def validate_sequence_length_after_addition(self, sequence, added):
-        """
-                Ensures that the sequence length does not exceed the maximum allowed length after an addition event, trimming excess bases if necessary.
-
-                Args:
-                    sequence (str): The sequence after the addition event.
-                    added (int): The number of bases added to the sequence.
-
-                Returns:
-                    tuple: A tuple containing the validated sequence and the adjusted number of bases added.
-        """
-        if len(sequence) > self.max_sequence_length:
-            # Calculate how much did we over add to based on our maximum sequence length
-            slack = len(sequence) - self.max_sequence_length
-            # remove the slack from the begging and update the added variable to match the final added amount
-            return sequence[slack:], added - slack
-        else:
-            return sequence, added
-
     def _sample_nucleotide_add_distribution(self):
         """
             Samples from a predefined distribution to determine the number of nucleotides to add during a sequence augmentation event.
@@ -100,7 +163,7 @@ class CorruptSequenceBeginning(AugmentationStep):
                     int: The number of nucleotides to be added to the sequence.
         """
         sample = (self.nucleotide_add_coef * self.nucleotide_add_distribution.rvs(size=1)).astype(int)
-        return sample.item()
+        return max(1, sample.item())
 
     def _sample_nucleotide_remove_distribution(self, v_length):
         """
@@ -117,7 +180,7 @@ class CorruptSequenceBeginning(AugmentationStep):
         # make sure that no matter how much we get from sampling the predefined distribution we wont get a value
         # larger than the total v length we have in our sequence
         sample = min(sample, v_length)
-        return sample
+        return max(1, sample)
 
     def _sample_nucleotide_add_after_remove_distribution(self):
         """
@@ -128,7 +191,7 @@ class CorruptSequenceBeginning(AugmentationStep):
         """
         sample = (self.nucleotide_add_after_remove_coef * self.nucleotide_add_after_remove_distribution.rvs(
             size=1)).astype(int)
-        return sample.item()
+        return max(1, sample.item())
 
     def _sample_corruption_add_method(self):
         """
@@ -153,9 +216,7 @@ class CorruptSequenceBeginning(AugmentationStep):
 
         # recalculate the mutation ratio based on the current mutation log
         n_mutations = len(container.mutations)
-        # the actual sequence length without any noise at the start or at the end
-        sequence_length = container.j_sequence_end - container.v_sequence_start
-        mutation_ratio = n_mutations / sequence_length
+        mutation_ratio = n_mutations / len(container.sequence)
         # update the mutation_rate in the simulation log
         container.mutation_rate = mutation_ratio
 
@@ -243,9 +304,7 @@ class CorruptSequenceBeginning(AugmentationStep):
         # Update mutation log, remove the mutations that were removed with the remove event
         # and while updating the mutations log correct the position of the mutations accordingly
         container.mutations = {i - amount_to_remove: j for i, j in container.mutations.items() if
-                               i > amount_to_remove}
-        # Adjust mutation rate
-        self.correct_mutation_rate(container)
+                               i >= amount_to_remove}
 
         # Adjust Start/End Position Accordingly
         container.v_sequence_start = 0
@@ -257,6 +316,9 @@ class CorruptSequenceBeginning(AugmentationStep):
         container.junction_sequence_start -= amount_to_remove
         container.junction_sequence_end -= amount_to_remove
         container.v_germline_start += amount_to_remove
+
+        # Adjust mutation rate (after positions are updated so denominator is correct)
+        self.correct_mutation_rate(container)
 
         # Correction - Add All V Alleles That Cant be Distinguished Based on the Amount Cut from the V Allele
         if autocorrect:
@@ -272,15 +334,12 @@ class CorruptSequenceBeginning(AugmentationStep):
         """
         # Update Simulation Metadata
         container.corruption_event = 'add'
-        # Sample the Amount to Add by default, if a spesific value is given via the amount variable,use it.
+        # Sample the Amount to Add by default, if a specific value is given via the amount variable, use it.
         amount_to_add = self._sample_nucleotide_add_distribution() if amount is None else amount
         # Sample the method by which addition will be made
         method = self._sample_corruption_add_method()
         # Modify the sequence
         modified_sequence = method(amount_to_add, container)
-        # Validate the modified sequence, make sure we didn't over add pass our max sequence size
-        modified_sequence, amount_to_add = self.validate_sequence_length_after_addition(modified_sequence,
-                                                                                        amount_to_add)
         # Update Simulation Sequence
         container.sequence = modified_sequence
 
@@ -333,7 +392,7 @@ class CorruptSequenceBeginning(AugmentationStep):
         sequence = container.sequence
         functional = False
         stop_codon = False
-        note = container.note
+        note = ''
         # stop codon
         stops = ["TAG", "TAA", "TGA"]
         for x in range(container.junction_sequence_end, container.v_sequence_start, -3):
@@ -394,7 +453,6 @@ class CorruptSequenceBeginning(AugmentationStep):
         <TR><TD ALIGN="LEFT"><B>Add Type: |Single Base Stream | Probability</B></TD><TD ALIGN="LEFT">{self.single_base_stream_proba}</TD></TR>
         <TR><TD ALIGN="LEFT"><B>Add Type: |Duplicate Leading| Probability</B></TD><TD ALIGN="LEFT">{self.duplicate_leading_proba}</TD></TR>
         <TR><TD ALIGN="LEFT"><B>Add Type: |Random Allele Section| Probability</B></TD><TD ALIGN="LEFT">{self.random_allele_proba}</TD></TR>
-        <TR><TD ALIGN="LEFT"><B>Max Sequence Length</B></TD><TD ALIGN="LEFT">{self.max_sequence_length}</TD></TR>
         </TABLE>
         
         """

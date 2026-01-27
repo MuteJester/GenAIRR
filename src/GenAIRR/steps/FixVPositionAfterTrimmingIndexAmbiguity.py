@@ -8,12 +8,38 @@ from GenAIRR.dataconfig import DataConfig
 class FixVPositionAfterTrimmingIndexAmbiguity(AugmentationStep):
     def __init__(self):
         super().__init__()
-        self.v_alleles = sorted([i for j in self.dataconfig.v_alleles for i in self.dataconfig.v_alleles[j]],
-                                key=lambda x: x.name)
+        # Lazy-initialized attributes (populated on first access after config is bound)
+        self._v_alleles = None
+        self._j_alleles = None
+        self._v_dict = None
 
-        self.j_alleles = sorted([i for j in self.dataconfig.j_alleles for i in self.dataconfig.j_alleles[j]],
-                                key=lambda x: x.name)
-        self.v_dict = {i.name: i.ungapped_seq.upper() for i in self.v_alleles}
+    def _ensure_config_loaded(self):
+        """Initialize dataconfig-dependent attributes on first use."""
+        if self._v_alleles is None:
+            self._v_alleles = sorted(
+                [i for j in self.dataconfig.v_alleles for i in self.dataconfig.v_alleles[j]],
+                key=lambda x: x.name
+            )
+            self._j_alleles = sorted(
+                [i for j in self.dataconfig.j_alleles for i in self.dataconfig.j_alleles[j]],
+                key=lambda x: x.name
+            )
+            self._v_dict = {i.name: i.ungapped_seq.upper() for i in self._v_alleles}
+
+    @property
+    def v_alleles(self):
+        self._ensure_config_loaded()
+        return self._v_alleles
+
+    @property
+    def j_alleles(self):
+        self._ensure_config_loaded()
+        return self._j_alleles
+
+    @property
+    def v_dict(self):
+        self._ensure_config_loaded()
+        return self._v_dict
 
     def fix_v_position_after_trimming_index_ambiguity(self, container):
         """
@@ -28,8 +54,11 @@ class FixVPositionAfterTrimmingIndexAmbiguity(AugmentationStep):
         v_allele_remainder = container.sequence[v_start:v_end]
         v_allele_ref = self.v_dict[container.v_call[0]]
 
-        # Get the junction inserted after trimming to the sequence
-        junction_3 = container.sequence[v_end:container.d_sequence_start]
+        # Get the NP region after V end (NP1 region)
+        # For heavy chains: V_end to D_start; for light chains: V_end to J_start
+        has_d = container.d_call and container.d_call[0]
+        np_end = container.d_sequence_start if has_d else container.j_sequence_start
+        junction_3 = container.sequence[v_end:np_end]
 
         # Get the trimming lengths
         v_trim_3 = container.v_trim_3

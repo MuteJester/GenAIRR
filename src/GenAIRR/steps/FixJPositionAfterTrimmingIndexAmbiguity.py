@@ -6,11 +6,42 @@ from ..dataconfig import DataConfig
 class FixJPositionAfterTrimmingIndexAmbiguity(AugmentationStep):
     def __init__(self):
         super().__init__()
-        self.j_alleles = sorted([i for j in self.dataconfig.j_alleles for i in self.dataconfig.j_alleles[j]],
-                                key=lambda x: x.name)
-        self.j_dict = {i.name: i.ungapped_seq.upper() for i in self.j_alleles}
-        self.j_anchor = {i.name: i.anchor for i in self.j_alleles}
-        self.j_frame = {i.name: i.frame for i in self.j_alleles}
+        # Lazy-initialized attributes (populated on first access after config is bound)
+        self._j_alleles = None
+        self._j_dict = None
+        self._j_anchor = None
+        self._j_frame = None
+
+    def _ensure_config_loaded(self):
+        """Initialize dataconfig-dependent attributes on first use."""
+        if self._j_alleles is None:
+            self._j_alleles = sorted(
+                [i for j in self.dataconfig.j_alleles for i in self.dataconfig.j_alleles[j]],
+                key=lambda x: x.name
+            )
+            self._j_dict = {i.name: i.ungapped_seq.upper() for i in self._j_alleles}
+            self._j_anchor = {i.name: i.anchor for i in self._j_alleles}
+            self._j_frame = {i.name: i.frame for i in self._j_alleles}
+
+    @property
+    def j_alleles(self):
+        self._ensure_config_loaded()
+        return self._j_alleles
+
+    @property
+    def j_dict(self):
+        self._ensure_config_loaded()
+        return self._j_dict
+
+    @property
+    def j_anchor(self):
+        self._ensure_config_loaded()
+        return self._j_anchor
+
+    @property
+    def j_frame(self):
+        self._ensure_config_loaded()
+        return self._j_frame
 
     def fix_j_position_after_trimming_index_ambiguity(self, container):
         """
@@ -25,8 +56,11 @@ class FixJPositionAfterTrimmingIndexAmbiguity(AugmentationStep):
         j_allele_remainder = container.sequence[j_start:j_end]
         j_allele_ref = self.j_dict[container.j_call[0]]
 
-        # Get the junction inserted after trimming to the sequence
-        junction_5 = container['sequence'][container['d_sequence_end']:j_start]
+        # Get the NP region before J start (NP2 for heavy, NP1 for light)
+        # For heavy chains: D_end to J_start; for light chains: V_end to J_start
+        has_d = container.d_call and container.d_call[0]
+        np_start = container.d_sequence_end if has_d else container.v_sequence_end
+        junction_5 = container.sequence[np_start:j_start]
 
         # Get the trimming lengths
         j_trim_5 = container.j_trim_5

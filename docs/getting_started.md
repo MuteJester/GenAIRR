@@ -1,104 +1,230 @@
-# Getting Started with GenAIRR
+# Installation & Quick Start
 
-**GenAIRR** is a comprehensive and modular framework designed for simulating, analyzing, and enhancing immunoglobulin (Ig) sequence data. It facilitates the creation of sophisticated Ig sequence simulations, supporting both basic and complex scenarios. Whether you are studying immune responses, developing algorithms for sequence analysis, or benchmarking data, GenAIRR offers the tools you need to achieve precise, customized simulations.
+This guide covers installing GenAIRR and running your first simulation. By the end, you will have generated a realistic immunoglobulin heavy chain sequence with somatic hypermutation.
 
-## Overview of GenAIRR
+## Installation
 
-GenAIRR's core architecture is modular, allowing flexibility in building, modifying, and visualizing Ig simulation pipelines. Its components can be used independently or combined to create full simulation workflows. These modules are organized into key categories:
+Install the latest stable release from PyPI:
 
-1. **Simulation**: Core classes that help construct and simulate sequences, including alleles and mutation models.
-2. **Correction and Validation**: Tools and steps for refining and validating sequences to ensure reliable ground truth data.
-3. **Pipeline Integration**: The framework for designing complex pipelines using modular steps and easily integrating custom augmenters.
+```bash
+pip install GenAIRR
+```
 
-## Tutorials and Examples
+GenAIRR requires **Python 3.9+** and depends on NumPy, SciPy, and pandas.
 
-To start building simulations and exploring GenAIRR's potential, refer to the following resources:
+!!! tip "Virtual environment recommended"
+    Install GenAIRR inside a virtual environment (`venv` or `conda`) to avoid dependency conflicts with other packages.
 
-- **[Introductory Tutorial](tutorials/Quick%20Start%20Guide.ipynb)**: Get started by creating your first GenAIRR simulation pipeline.
-- **[Advanced Tutorial](tutorials/Advanced%20Custom%20Generation.ipynb)**: Browse a collection of example models that showcase different capabilities of GenAIRR, providing insights into how to build and extend the framework for specific needs.
-
-## Building a GenAIRR Pipeline
-
-GenAIRR supports customizable pipelines through a set of modular steps, each of which can be modified or extended. Steps such as `SimulateSequence`, `CorrectForVEndCut`, and `InsertIndels` are examples of augmenters that can be combined to create pipelines tailored to various research goals.
-
-### Example of a Basic Pipeline
-
-Below is a simple pipeline that demonstrates how to create a sequence simulation in GenAIRR:
+To verify the installation:
 
 ```python
-from GenAIRR.pipeline import AugmentationPipeline
-from GenAIRR.steps import (
-    SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, 
-    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity,
-    CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning, 
-    InsertNs, InsertIndels, ShortDValidation, DistillMutationRate
+import GenAIRR
+print(GenAIRR.__version__)
+```
+
+---
+
+## Core Concepts in 60 Seconds
+
+GenAIRR has four core building blocks:
+
+| Component | Purpose |
+|-----------|---------|
+| **DataConfig** | Holds germline allele sets, trimming distributions, and empirical data for a species/chain type |
+| **Pipeline** | Executes an ordered list of steps against a config to produce a simulated sequence |
+| **Steps** | Individual transformations — sequence generation, correction, artifact injection |
+| **SimulationContainer** | The output object carrying the sequence, annotations, and metadata |
+
+Their relationship:
+
+```
+DataConfig ──► Pipeline(config, steps) ──► SimulationContainer
+                    │
+                    ├── SimulateSequence
+                    ├── Fix...Ambiguity
+                    ├── CorrectFor...
+                    └── InsertIndels, InsertNs, ...
+```
+
+---
+
+## Your First Simulation
+
+### One-liner with `simulate()`
+
+The fastest way to generate a sequence:
+
+```python
+from GenAIRR import simulate, HUMAN_IGH_OGRDB, S5F
+
+result = simulate(HUMAN_IGH_OGRDB, S5F(0.01, 0.05))
+print(result.sequence)
+```
+
+`simulate()` creates a minimal pipeline internally — it runs `SimulateSequence` and `FixVPositionAfterTrimmingIndexAmbiguity`, then returns a `SimulationContainer`.
+
+!!! note "When to use `simulate()` vs `Pipeline`"
+    Use `simulate()` for quick exploratory work. Switch to an explicit `Pipeline` when you need artifact simulation, custom step ordering, or measurement steps like `DistillMutationRate`.
+
+**Parameters:**
+
+- `config` — a `DataConfig` instance (e.g., `HUMAN_IGH_OGRDB` for human heavy chain)
+- `mutation_model` — an `S5F` or `Uniform` instance specifying the mutation rate range
+- `productive` — if `True` (default), only generates in-frame sequences without stop codons
+- `n` — number of sequences to generate (default: 1; returns a list when `n > 1`)
+
+### Generating multiple sequences
+
+```python
+results = simulate(HUMAN_IGH_OGRDB, S5F(0.01, 0.05), n=100)
+print(f"Generated {len(results)} sequences")
+```
+
+---
+
+## Building an Explicit Pipeline
+
+For full control, create a `Pipeline` with your choice of steps:
+
+```python
+from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
+
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[
+        steps.SimulateSequence(
+            S5F(min_mutation_rate=0.01, max_mutation_rate=0.05),
+            productive=True
+        ),
+        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixDPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
+        steps.CorrectForVEndCut(),
+        steps.CorrectForDTrims(),
+        steps.DistillMutationRate(),
+    ]
 )
-from GenAIRR.mutation import S5F
-from GenAIRR.data import HUMAN_IGH_OGRDB
-from GenAIRR.steps.StepBase import AugmentationStep
 
-# Set up the data configuration and pipeline
-AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
-pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
-    FixVPositionAfterTrimmingIndexAmbiguity(),
-    FixDPositionAfterTrimmingIndexAmbiguity(),
-    FixJPositionAfterTrimmingIndexAmbiguity(),
-    CorrectForVEndCut(),
-    CorrectForDTrims(),
-    CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-    InsertNs(0.02, 0.5),
-    ShortDValidation(),
-    InsertIndels(0.5, 5, 0.5, 0.5),
-    DistillMutationRate()
-])
-
-# Run the pipeline and retrieve the simulated sequence
-simulation_result = pipeline.execute()
-print(simulation_result.get_dict())
+result = pipeline.execute()
+data = result.get_dict()
 ```
 
-### Customizing and Adding Steps
-
-GenAIRR's modular nature allows users to insert their own custom steps at any stage of the pipeline. This makes it possible to introduce new augmenters, mutation models, or validation processes. See the [tutorial on extending GenAIRR](tutorials/extend_tutorial) for guidance on implementing custom steps.
-
-## Understanding Key GenAIRR Components
-
-### Sequence and Allele Classes
-
-GenAIRR includes built-in classes that represent different Ig sequence types, such as `HeavyChainSequence` and `LightChainSequence`. These classes encapsulate methods for generating and mutating sequences, ensuring flexible customization for various Ig chain types.
-
-### Correction and Validation Modules
-
-Validation and correction steps are essential to maintain accurate sequence data. GenAIRR includes modules like `CorrectForDTrims` and `FixJPositionAfterTrimmingIndexAmbiguity`, which automatically adjust sequence metadata to reflect trimming or mutation changes.
-
-### Mutation Models
-
-Built-in mutation models such as `S5F` simulate realistic mutation patterns based on empirical data. Custom models can also be defined to match specific research needs.
-
-## Visualization and Analysis
-
-Visualizing simulation pipelines is easy with GenAIRR. The framework includes tools for generating GraphViz representations of pipeline structures, making it straightforward to understand the flow of steps and the transformations applied at each stage.
-
-### Example of Pipeline Visualization
+Each call to `pipeline.execute()` produces one `SimulationContainer`. The container holds all annotations:
 
 ```python
-pipeline.plot('pipeline_diagram')
+print(data['sequence'][:60])     # nucleotide sequence
+print(data['v_call'])            # V allele used
+print(data['d_call'])            # D allele used
+print(data['j_call'])            # J allele used
+print(data['mutation_rate'])     # fraction of mutated positions
+print(data['mutations'])         # dict of {position: "X>Y"} changes
+print(data['productive'])        # True if in-frame, no stop codons
 ```
 
-This will save a diagram of the pipeline structure as an image, allowing you to visualize the sequential process.
+---
 
-## Best Practices and Recommendations
+## Available Data Configurations
 
-For optimal use of GenAIRR:
+GenAIRR ships with pre-built configs derived from the OGRDB and IMGT germline databases:
 
-- **Utilize Data Configurations**: Take advantage of built-in data configurations (`builtin_heavy_chain_data_config`, etc.) for empirical distributions and allele references.
-- **Verify Step Outputs**: Ensure that each pipeline step produces the expected results by testing with sample data.
-- **Explore Customization**: Don't hesitate to implement your own steps if the built-in ones don’t fully meet your needs.
+| Import name | Chain type | Species | Segments |
+|-------------|-----------|---------|----------|
+| `HUMAN_IGH_OGRDB` | Heavy (IGH) | Human | V, D, J |
+| `HUMAN_IGH_EXTENDED` | Heavy (IGH) | Human | V, D, J (extended set) |
+| `HUMAN_IGK_OGRDB` | Kappa light (IGK) | Human | V, J |
+| `HUMAN_IGL_OGRDB` | Lambda light (IGL) | Human | V, J |
+| `HUMAN_TCRB_IMGT` | TCR Beta (TRB) | Human | V, D, J |
 
-## Further Resources
+Import them directly:
 
-### Community and Support
+```python
+from GenAIRR import HUMAN_IGH_OGRDB, HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB, HUMAN_TCRB_IMGT
+```
 
-- **[GitHub Issues](https://github.com/MuteJester/GenAIRR/issues)**: Report bugs or request features.
+---
 
+## Available Mutation Models
+
+### S5F — Context-Dependent Mutation
+
+The S5F model captures the context-dependent substitution patterns observed in real somatic hypermutation. Mutation probability at each position depends on the surrounding 5-mer motif.
+
+```python
+from GenAIRR import S5F
+
+model = S5F(min_mutation_rate=0.01, max_mutation_rate=0.05)
+```
+
+### Uniform — Position-Independent Mutation
+
+Each position has equal probability of mutation, regardless of sequence context. Useful for null-model comparisons.
+
+```python
+from GenAIRR.mutation import Uniform
+
+model = Uniform(min_mutation_rate=0.01, max_mutation_rate=0.05)
+```
+
+**Choosing mutation rates** — the `min_mutation_rate` and `max_mutation_rate` define a range; each simulated sequence samples a rate uniformly from this range. Typical ranges:
+
+| Cell type | Mutation rate range |
+|-----------|-------------------|
+| Naive B cells | 0.001 – 0.01 |
+| Memory B cells | 0.02 – 0.08 |
+| Plasma cells | 0.05 – 0.25 |
+
+---
+
+## Exporting Results
+
+### To pandas DataFrame
+
+```python
+import pandas as pd
+
+sequences = [pipeline.execute().get_dict() for _ in range(100)]
+df = pd.DataFrame(sequences)
+df.to_csv('simulated_sequences.csv', index=False)
+```
+
+### To FASTA
+
+```python
+with open('sequences.fasta', 'w') as f:
+    for i, seq in enumerate(sequences):
+        f.write(f">seq_{i:04d}\n{seq['sequence']}\n")
+```
+
+---
+
+## Reproducibility
+
+GenAIRR provides seed management for deterministic output:
+
+```python
+from GenAIRR import set_seed, get_seed, reset_seed
+
+set_seed(42)
+result_a = pipeline.execute()
+
+set_seed(42)
+result_b = pipeline.execute()
+
+assert result_a.sequence == result_b.sequence  # identical
+```
+
+- `set_seed(n)` — fix the global random state
+- `get_seed()` — retrieve the current seed value
+- `reset_seed()` — clear the seed, restoring non-deterministic behavior
+
+!!! warning "Remember to reset"
+    If you set a seed for a reproducibility check, call `reset_seed()` afterwards to restore non-deterministic behavior for production runs.
+
+---
+
+## Next Steps
+
+- **[Step-by-Step Tutorial](step_by_step_tutorial.md)** — Detailed walkthrough of building a full pipeline with explanations for each step
+- **[How the Pipeline Works](genairr_flow.md)** — Architecture deep-dive into DataConfig, Steps, and SimulationContainer
+- **[Biological Context](biological_context.md)** — The immunobiology behind GenAIRR's simulation model
+- **[Parameter Reference](parameter_reference.md)** — Complete parameter documentation for every step

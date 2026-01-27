@@ -4,20 +4,24 @@ Common issues and their solutions when using GenAIRR.
 
 ## Common Errors
 
-### 1. "AttributeError: 'NoneType' object has no attribute..."
+### 1. "AttributeError" or "TypeError" when creating pipelines
 
-**Problem**: DataConfig not set before running pipeline steps.
+!!! note "Most common cause"
+    This almost always means you are using old API syntax. See the [Migration Guide](migration_guide.md) for a full before/after comparison.
 
-**Solution**: Always call `AugmentationStep.set_dataconfig()` before creating pipelines:
+**Problem**: Using the old API or wrong constructor syntax.
+
+**Solution**: Pass `config` to the Pipeline constructor and use keyword arguments for steps:
 ```python
-from GenAIRR.steps.StepBase import AugmentationStep
-from GenAIRR.data import HUMAN_IGH_OGRDB
+from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
 
-# ALWAYS do this first
-AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
-
-# Then create your pipeline
-pipeline = AugmentationPipeline([...])
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[
+        steps.SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
+        # ... more steps
+    ]
+)
 ```
 
 ### 2. "No functional sequences generated"
@@ -31,7 +35,7 @@ pipeline = AugmentationPipeline([...])
 
 ```python
 # Use productive sequences
-SimulateSequence(S5F(0.003, 0.25), productive=True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True)
 ```
 
 ### 3. "Empty mutations dictionary"
@@ -41,10 +45,10 @@ SimulateSequence(S5F(0.003, 0.25), productive=True)
 **Solution**: Increase mutation rates or use S5F for realistic mutations:
 ```python
 # Instead of this (no mutations)
-SimulateSequence(Uniform(0, 0), True)
+steps.SimulateSequence(Uniform(min_mutation_rate=0, max_mutation_rate=0), productive=True)
 
 # Use this for naive sequences with potential for mutations
-SimulateSequence(S5F(0.001, 0.01), True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.001, max_mutation_rate=0.01), productive=True)
 ```
 
 ### 4. "Allele not found in data config"
@@ -63,7 +67,7 @@ j_allele = HUMAN_IGH_OGRDB.j_alleles['IGHJ1'][0]
 
 # View all alleles in a family
 for allele in HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1']:
-    print(allele.name)  # e.g., 'IGHVF1-G1*01', 'IGHVF1-G1*02', etc.
+    print(allele.name)
 ```
 
 ### 5. "Pipeline execution is very slow"
@@ -75,7 +79,7 @@ for allele in HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1']:
 
 ```python
 # Faster execution
-SimulateSequence(S5F(0.003, 0.05), True)  # Lower max rate
+steps.SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.05), productive=True)
 ```
 
 ## Performance Optimization
@@ -85,9 +89,12 @@ SimulateSequence(S5F(0.003, 0.05), True)  # Lower max rate
 - Use `get_dict()` only when needed (it creates copies)
 
 ### Speed Tips
-- Use built-in data configs (they're pre-optimized)
-- Avoid very high mutation rates (>0.3) unless necessary
-- Set reasonable max_sequence_length values
+
+!!! tip "Quick wins for faster generation"
+    - Use built-in data configs (they're pre-optimized and lazily loaded)
+    - Avoid very high mutation rates (>0.3) unless necessary
+    - Use `EnforceSequenceLength` to cap sequence length
+    - Set `productive=False` if you don't need the productivity guarantee
 
 ## Debugging Tips
 
@@ -100,7 +107,7 @@ for i, step in enumerate(pipeline.steps):
 
 ### Inspect Container State
 ```python
-# After each step
+# After execution
 container = pipeline.execute()
 print("Sequence length:", len(container.sequence))
 print("Mutations count:", len(container.mutations))

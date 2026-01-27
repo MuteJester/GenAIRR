@@ -2,7 +2,7 @@ import random
 from ..mutation import MutationModel
 from ..sequence import NP_Region
 from ..sequence.sequence import BaseSequence
-from ..utilities import translate
+from ..validation import FunctionalityValidator
 from GenAIRR.dataconfig.data_config import DataConfig
 
 
@@ -18,6 +18,10 @@ class HeavyChainSequence(BaseSequence):
             alleles (list): A list of `Allele` instances for the V, D, and J gene segments.
             dataconfig (DataConfig): A `DataConfig` instance containing configuration data for sequence simulation.
         """
+
+    # Class-level validator instance (shared across all instances)
+    _functionality_validator = FunctionalityValidator()
+
     def __init__(self, alleles, dataconfig: DataConfig):
         """
         Initializes a `HeavyChainSequence` with the given alleles and simulates the sequence using the provided data configuration.
@@ -76,26 +80,28 @@ class HeavyChainSequence(BaseSequence):
         self.junction_start = self.v_allele.anchor
         self.junction_end = self.v_allele.anchor + self.junction_length
 
-    def check_functionality(self,sequence=None):
-        self.functional = False
-        self.stop_codon,pos = self.check_stops(self.ungapped_seq if sequence is None else sequence,return_pos=True)
+    def check_functionality(self, sequence=None):
+        """
+        Assess functionality of the sequence using the FunctionalityValidator.
 
-        self.vj_in_frame = (
-                (self.junction_end % 3) == 0
-                and (self.junction_start % 3 == 0)
-                and (self.junction_length % 3 == 0)
-                and not self.stop_codon
+        Args:
+            sequence: Optional sequence to check. If None, uses self.ungapped_seq.
+        """
+        seq_to_check = sequence if sequence is not None else self.ungapped_seq
+
+        # Use the class-level validator
+        result = self._functionality_validator.assess(
+            seq_to_check,
+            self.junction_start,
+            self.junction_end
         )
-        self.note = ''
-        if (self.junction_length % 3) == 0 and not self.stop_codon:
-            self.junction_aa = translate(self.junction)
-            if self.junction_aa.startswith("C"):
-                if self.junction_aa.endswith("F") or self.junction_aa.endswith("W"):
-                    self.functional = True
-                else:
-                    self.note += 'J anchor (W/F) not present.'
-            else:
-                self.note += 'V second C not present.'
+
+        # Set all attributes from the result
+        self.functional = result.functional
+        self.stop_codon = result.stop_codon
+        self.vj_in_frame = result.vj_in_frame
+        self.junction_aa = result.junction_aa
+        self.note = result.note
 
 
 
@@ -134,27 +140,23 @@ class HeavyChainSequence(BaseSequence):
                           self.NP2_length + (self.j_allele.anchor + 2) - self.j_trim_5
         return junction_length
 
-    def check_stops(self, seq,return_pos=False):
+    def check_stops(self, seq, return_pos=False):
         """
         Checks the given sequence for the presence of stop codons.
 
         Args:
             seq (str): The nucleotide sequence to check for stop codons.
+            return_pos (bool): If True, return tuple (has_stop, position).
 
         Returns:
-            bool: True if a stop codon is found, False otherwise.
+            If return_pos is False: bool - True if a stop codon is found.
+            If return_pos is True: tuple (bool, int) - (has_stop, position).
         """
-        stops = ["TAG", "TAA", "TGA"]
-        for x in range(0, len(seq), 3):
-            if seq[x:x + 3] in stops:
-                if return_pos:
-                    return True,x
-                else:
-                    return True
+        has_stop, pos = self._functionality_validator.check_stop_codons(seq)
         if return_pos:
-            return False,-1
+            return has_stop, pos
         else:
-            return False
+            return has_stop
 
     @classmethod
     def create_random(cls, dataconfig: DataConfig,specific_v=None,specific_d=None,specific_j=None):

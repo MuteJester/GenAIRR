@@ -8,9 +8,28 @@ class FixDPositionAfterTrimmingIndexAmbiguity(AugmentationStep):
 
     def __init__(self):
         super().__init__()
-        self.d_alleles = sorted([i for j in self.dataconfig.d_alleles for i in self.dataconfig.d_alleles[j]],
-                                key=lambda x: x.name)
-        self.d_dict = {i.name: i.ungapped_seq.upper() for i in self.d_alleles}
+        # Lazy-initialized attributes (populated on first access after config is bound)
+        self._d_alleles = None
+        self._d_dict = None
+
+    def _ensure_config_loaded(self):
+        """Initialize dataconfig-dependent attributes on first use."""
+        if self._d_alleles is None:
+            self._d_alleles = sorted(
+                [i for j in self.dataconfig.d_alleles for i in self.dataconfig.d_alleles[j]],
+                key=lambda x: x.name
+            )
+            self._d_dict = {i.name: i.ungapped_seq.upper() for i in self._d_alleles}
+
+    @property
+    def d_alleles(self):
+        self._ensure_config_loaded()
+        return self._d_alleles
+
+    @property
+    def d_dict(self):
+        self._ensure_config_loaded()
+        return self._d_dict
 
     def fix_d_position_after_trimming_index_ambiguity(self, container):
         """

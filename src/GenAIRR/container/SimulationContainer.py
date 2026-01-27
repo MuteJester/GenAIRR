@@ -68,6 +68,7 @@ class SimulationContainer:
             self.corruption_removed_section = ''
             self.corruption_added_section = ''
 
+
     def from_instance(self,sequence_instance):
         self.sequence = sequence_instance.mutated_seq
         self.v_call = [sequence_instance.v_allele.name]
@@ -122,6 +123,7 @@ class SimulationContainer:
         self.corruption_remove_amount = 0
         self.corruption_removed_section = ''
         self.corruption_added_section = ''
+
 
     def add_mutation(self, position, mutation):
         """Add a mutation log entry."""

@@ -1,3 +1,6 @@
+import warnings
+from typing import Optional, List
+
 from ..container.SimulationContainer import SimulationContainer
 from ..steps import SimulateSequence
 from ..steps.StepBase import AugmentationStep
@@ -7,12 +10,71 @@ from ..container.SimulationContainer import SimulationContainer
 
 
 class AugmentationPipeline:
-    def __init__(self, steps: list):
+    """
+    Pipeline for executing a sequence of augmentation steps.
+
+    Args:
+        steps: List of AugmentationStep instances to execute in order.
+        config: DataConfig containing reference data and parameters.
+                If not provided, falls back to class-level config (deprecated).
+
+    Example:
+        >>> from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
+        >>> pipeline = Pipeline(
+        ...     config=HUMAN_IGH_OGRDB,
+        ...     steps=[
+        ...         steps.SimulateSequence(S5F(0.003, 0.25), productive=True),
+        ...         steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+        ...     ]
+        ... )
+        >>> result = pipeline.execute()
+    """
+
+    def __init__(self, steps: List[AugmentationStep], config: Optional[DataConfig] = None):
         self.steps = steps
+        self._config = config
+
+    @property
+    def config(self) -> DataConfig:
+        """Returns the pipeline's DataConfig, with fallback to class-level config."""
+        if self._config is not None:
+            return self._config
+
+        # Fallback to class-level config for backwards compatibility
+        if AugmentationStep._class_dataconfig is not None:
+            warnings.warn(
+                "Using class-level AugmentationStep.set_dataconfig() is deprecated. "
+                "Pass config directly to Pipeline: Pipeline(config=your_config, steps=[...])",
+                DeprecationWarning,
+                stacklevel=3
+            )
+            return AugmentationStep._class_dataconfig
+
+        raise ValueError(
+            "No DataConfig provided. Pass config to Pipeline: "
+            "Pipeline(config=HUMAN_IGH_OGRDB, steps=[...])"
+        )
 
     def execute(self) -> SimulationContainer:
+        """
+        Execute all pipeline steps and return the simulation result.
+
+        Returns:
+            SimulationContainer with the simulated sequence and metadata.
+
+        Raises:
+            Exception: If the first step is not a SimulateSequence instance.
+            ValueError: If no DataConfig is available.
+        """
         if len(self.steps) == 0 or type(self.steps[0]) != SimulateSequence:
             raise Exception("First Step must be an instance of SimulateSequence")
+
+        # Get config (either from pipeline or class-level with deprecation warning)
+        config = self.config
+
+        # Bind config to all steps before execution
+        for step in self.steps:
+            step._bind_config(config)
 
         container = SimulationContainer()
         for step in self.steps:

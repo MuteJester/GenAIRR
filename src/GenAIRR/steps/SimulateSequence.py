@@ -22,7 +22,15 @@ class SimulateSequence(AugmentationStep):
         self.specific_v = specific_v
         self.specific_d = specific_d
         self.specific_j = specific_j
-        self.sequence_constructor_instance = self._get_sequence_class()
+        # Lazy-initialized (depends on dataconfig which may not be available at construction)
+        self._sequence_constructor_instance = None
+
+    @property
+    def sequence_constructor_instance(self):
+        """Lazily get the sequence constructor class based on chain type."""
+        if self._sequence_constructor_instance is None:
+            self._sequence_constructor_instance = self._get_sequence_class()
+        return self._sequence_constructor_instance
 
     def _get_sequence_class(self):
         """

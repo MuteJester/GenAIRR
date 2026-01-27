@@ -9,10 +9,10 @@ from unittest.mock import Mock, patch
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.steps import (
     SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity,
-    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity, 
-    FilterTCRDJAmbiguities, CorrectForVEndCut, CorrectForDTrims, 
-    CorruptSequenceBeginning, InsertNs, InsertIndels, ShortDValidation, 
-    DistillMutationRate
+    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity,
+    FilterTCRDJAmbiguities, CorrectForVEndCut, CorrectForDTrims,
+    CorruptSequenceBeginning, EnforceSequenceLength, InsertNs, InsertIndels,
+    ShortDValidation, DistillMutationRate
 )
 from GenAIRR.mutation import S5F, Uniform
 from GenAIRR.alleles import VAllele, DAllele, JAllele
@@ -224,10 +224,11 @@ class EnhancedGenAIRRTests(unittest.TestCase):
             FixJPositionAfterTrimmingIndexAmbiguity(),
             CorrectForVEndCut(),
             CorrectForDTrims(),
-            CorruptSequenceBeginning(0.5, [0.4, 0.4, 0.2], 300, 100, 200, 20),
-            InsertNs(0.01, 0.3),
+            CorruptSequenceBeginning(probability=0.5, event_weights=(0.4, 0.4, 0.2)),
+            EnforceSequenceLength(max_length=300),
+            InsertNs(n_ratio=0.01, probability=0.3),
             ShortDValidation(),
-            InsertIndels(0.3, 3, 0.5, 0.5),
+            InsertIndels(probability=0.3, max_indels=3),
             DistillMutationRate()
         ])
         
@@ -391,9 +392,10 @@ class EnhancedGenAIRRTests(unittest.TestCase):
             FixVPositionAfterTrimmingIndexAmbiguity(),
             FixJPositionAfterTrimmingIndexAmbiguity(),
             CorrectForVEndCut(),
-            CorruptSequenceBeginning(0.3, [0.5, 0.3, 0.2], 200, 50, 100, 10),
-            InsertNs(0.01, 0.2),
-            InsertIndels(0.2, 2, 0.5, 0.5),
+            CorruptSequenceBeginning(probability=0.3, event_weights=(0.5, 0.3, 0.2)),
+            EnforceSequenceLength(max_length=200),
+            InsertNs(n_ratio=0.01, probability=0.2),
+            InsertIndels(probability=0.2, max_indels=2),
             DistillMutationRate()
         ])
         
@@ -422,7 +424,7 @@ class EnhancedGenAIRRTests(unittest.TestCase):
             FixVPositionAfterTrimmingIndexAmbiguity(),
             FixJPositionAfterTrimmingIndexAmbiguity(),
             CorrectForVEndCut(),
-            InsertNs(0.005, 0.1),
+            InsertNs(n_ratio=0.005, probability=0.1),
             DistillMutationRate()
         ])
         
@@ -567,26 +569,31 @@ class EnhancedGenAIRRTests(unittest.TestCase):
     def test_np_region_generation_consistency(self):
         """Test NP region generation follows Markov chain principles."""
         from GenAIRR.sequence.np_region import NP_Region
-        
+
+        # Get the maximum possible NP length from the config
+        max_np_length = max(
+            max(self.heavychain_config.NP_lengths['NP1'].keys()),
+            max(self.heavychain_config.NP_lengths['NP2'].keys())
+        )
+
         # Test multiple NP region generations
         for region_type in ['NP1', 'NP2']:
-            for length in [5, 10, 15, 25]:
-                if length in self.heavychain_config.NP_lengths[region_type]:
-                    np_seq = NP_Region.create_np_region(
-                        self.heavychain_config.NP_lengths,
-                        self.heavychain_config.NP_transitions,
-                        region_type,
-                        self.heavychain_config.NP_first_bases
-                    )
-                    
-                    if np_seq:  # Only test if sequence was generated
-                        # Should only contain valid bases
-                        valid_bases = set('ATCGN')
-                        self.assertTrue(set(np_seq).issubset(valid_bases))
-                        
-                        # Should have reasonable length (allowing for early termination)
-                        self.assertGreater(len(np_seq), 0)
-                        self.assertLessEqual(len(np_seq), length + 5)  # Allow some variance
+            for _ in range(20):  # Generate multiple sequences to test consistency
+                np_seq = NP_Region.create_np_region(
+                    self.heavychain_config.NP_lengths,
+                    self.heavychain_config.NP_transitions,
+                    region_type,
+                    self.heavychain_config.NP_first_bases
+                )
+
+                if np_seq:  # Only test if sequence was generated
+                    # Should only contain valid bases
+                    valid_bases = set('ATCGN')
+                    self.assertTrue(set(np_seq).issubset(valid_bases))
+
+                    # Should have reasonable length (within config's possible range)
+                    self.assertGreater(len(np_seq), 0)
+                    self.assertLessEqual(len(np_seq), max_np_length + 5)  # Allow some variance
 
     def test_junction_boundary_accuracy(self):
         """Test that junction boundaries are correctly calculated."""
@@ -778,11 +785,12 @@ class EnhancedGenAIRRTests(unittest.TestCase):
         ]
         
         for prob, events in corruption_scenarios:
-            step = CorruptSequenceBeginning(prob, events, 300, 50, 150, 20)
-            
+            step = CorruptSequenceBeginning(probability=prob, event_weights=tuple(events))
+
             pipeline = AugmentationPipeline([
                 SimulateSequence(S5F(), True),
                 step,
+                EnforceSequenceLength(max_length=300),
                 DistillMutationRate()
             ])
             
@@ -816,7 +824,7 @@ class EnhancedGenAIRRTests(unittest.TestCase):
             FixVPositionAfterTrimmingIndexAmbiguity(),
             FixDPositionAfterTrimmingIndexAmbiguity(),
             FixJPositionAfterTrimmingIndexAmbiguity(),
-            InsertIndels(0.8, 3, 0.5, 0.5),  # High probability for testing
+            InsertIndels(probability=0.8, max_indels=3),  # High probability for testing
             DistillMutationRate()
         ])
         
@@ -964,15 +972,20 @@ class EnhancedGenAIRRTests(unittest.TestCase):
         """Test that allele family and gene naming is consistent."""
         for allele_type in ['v_alleles', 'd_alleles', 'j_alleles']:
             alleles_dict = getattr(self.heavychain_config, allele_type)
-            
-            for family_name, alleles in alleles_dict.items():
+
+            for dict_key, alleles in alleles_dict.items():
                 for allele in alleles:
-                    # Family name should match allele's family
-                    self.assertEqual(allele.family, family_name)
-                    
-                    # Gene should be part of family
-                    self.assertTrue(allele.gene.startswith(family_name.split('-')[0]))
-                    
+                    # Dictionary key should start with allele's family
+                    # (OGRDB keys like 'IGHVF1-G1' include gene suffix,
+                    # while allele.family is just 'IGHVF1')
+                    self.assertTrue(
+                        dict_key.startswith(allele.family) or allele.family.startswith(dict_key.split('-')[0]),
+                        f"Dict key '{dict_key}' should be related to family '{allele.family}'"
+                    )
+
+                    # Gene should be part of family (check first portion)
+                    self.assertTrue(allele.gene.startswith(allele.family.split('-')[0]))
+
                     # Name should include gene
                     self.assertTrue(allele.name.startswith(allele.gene))
 
@@ -1274,17 +1287,18 @@ class EnhancedGenAIRRTests(unittest.TestCase):
         ]
         
         for prob, events in corruption_configs:
-            step = CorruptSequenceBeginning(prob, events, 300, 50, 150, 20)
-            
+            step = CorruptSequenceBeginning(probability=prob, event_weights=tuple(events))
+
             pipeline = AugmentationPipeline([
                 SimulateSequence(S5F(), True),
                 step,
+                EnforceSequenceLength(max_length=300),
                 DistillMutationRate()
             ])
-            
+
             result = pipeline.execute()
             result_dict = result.get_dict()
-            
+
             self.assertIn('corruption_event', result_dict)
             self.assertIn('sequence', result_dict)
 
@@ -1292,18 +1306,18 @@ class EnhancedGenAIRRTests(unittest.TestCase):
         """Test indel insertion with various parameters."""
         # Test with high indel probability
         high_indel_step = InsertIndels(
-            indel_probability=0.9,
+            probability=0.9,
             max_indels=5,
-            insertion_proba=0.5,
-            deletion_proba=0.5
+            insertion_probability=0.5,
+            deletion_probability=0.5
         )
-        
+
         # Test with low indel probability
         low_indel_step = InsertIndels(
-            indel_probability=0.1,
+            probability=0.1,
             max_indels=1,
-            insertion_proba=0.7,
-            deletion_proba=0.3
+            insertion_probability=0.7,
+            deletion_probability=0.3
         )
         
         for step in [high_indel_step, low_indel_step]:
@@ -1331,7 +1345,7 @@ class EnhancedGenAIRRTests(unittest.TestCase):
         ]
         
         for n_prob, n_conv in n_insertion_configs:
-            step = InsertNs(n_prob, n_conv)
+            step = InsertNs(n_ratio=n_prob, probability=n_conv)
             
             pipeline = AugmentationPipeline([
                 SimulateSequence(S5F(), True),

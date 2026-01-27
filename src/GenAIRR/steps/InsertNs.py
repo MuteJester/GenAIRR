@@ -9,18 +9,45 @@ from ..dataconfig import DataConfig
 
 
 class InsertNs(AugmentationStep):
-    def __init__(self, n_ratio,proba):
+    """
+    Inserts 'N' bases (ambiguous nucleotides) into sequences.
+
+    This step simulates sequencing errors or low-quality bases by randomly
+    replacing nucleotides with 'N' characters.
+
+    Args:
+        n_ratio: Ratio of N's to insert (n_ratio * sequence_length). Default: 0.02
+        probability: Probability that this step is applied (0.0-1.0). Default: 0.5
+
+    Example:
+        # Use defaults
+        step = InsertNs()
+
+        # Customize specific parameters
+        step = InsertNs(n_ratio=0.05, probability=0.8)
+    """
+
+    def __init__(
+        self,
+        *,
+        n_ratio: float = 0.02,
+        probability: float = 0.5,
+    ):
         super().__init__()
-        """
-
-        :param n_ratio: this will control how many N's to add to the sequence, n_ratio*sequence_length is the number of
-        random N's that will be added to the sequence when this step is applied
-        :param proba: the probability that this step is applied
-        """
-
-        self.v_n_ambiguity_comparer = self.dataconfig.correction_maps['V_N_AMBIGUITY_CORRECTION_GRAPH']
         self.n_ratio = n_ratio
-        self.n_proba = proba
+        self.n_proba = probability
+        # Lazy-initialized attribute (populated on first access after config is bound)
+        self._v_n_ambiguity_comparer = None
+
+    def _ensure_config_loaded(self):
+        """Initialize dataconfig-dependent attributes on first use."""
+        if self._v_n_ambiguity_comparer is None:
+            self._v_n_ambiguity_comparer = self.dataconfig.correction_maps['V_N_AMBIGUITY_CORRECTION_GRAPH']
+
+    @property
+    def v_n_ambiguity_comparer(self):
+        self._ensure_config_loaded()
+        return self._v_n_ambiguity_comparer
 
     def get_allele_spesific_n_positions(self, container, allele):
         """
@@ -51,6 +78,9 @@ class InsertNs(AugmentationStep):
             container.add_N_insertion(index, nucleotides_list[index])
             # Make the N insertion
             nucleotides_list[index] = "N"
+            # Remove mutation entry if this position was mutated — the original base is now N
+            if index in container.mutations:
+                del container.mutations[index]
 
         # Concatenate the list back into a string
         container.sequence = ''.join(nucleotides_list)

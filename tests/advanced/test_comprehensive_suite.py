@@ -22,10 +22,10 @@ from unittest.mock import Mock, patch
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.steps import (
     SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity,
-    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity, 
-    FilterTCRDJAmbiguities, CorrectForVEndCut, CorrectForDTrims, 
-    CorruptSequenceBeginning, InsertNs, InsertIndels, ShortDValidation, 
-    DistillMutationRate
+    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity,
+    FilterTCRDJAmbiguities, CorrectForVEndCut, CorrectForDTrims,
+    CorruptSequenceBeginning, EnforceSequenceLength, InsertNs, InsertIndels,
+    ShortDValidation, DistillMutationRate
 )
 from GenAIRR.mutation import S5F, Uniform
 from GenAIRR.alleles import VAllele, DAllele, JAllele
@@ -261,10 +261,11 @@ class EnhancedGenAIRRTests(unittest.TestCase):
             FixJPositionAfterTrimmingIndexAmbiguity(),
             CorrectForVEndCut(),
             CorrectForDTrims(),
-            CorruptSequenceBeginning(0.5, [0.4, 0.4, 0.2], 300, 100, 200, 20),
-            InsertNs(0.01, 0.3),
+            CorruptSequenceBeginning(probability=0.5, event_weights=(0.4, 0.4, 0.2)),
+            EnforceSequenceLength(max_length=300),
+            InsertNs(n_ratio=0.01, probability=0.3),
             ShortDValidation(),
-            InsertIndels(0.3, 3, 0.5, 0.5),
+            InsertIndels(probability=0.3, max_indels=3),
             DistillMutationRate()
         ])
         
@@ -428,9 +429,10 @@ class EnhancedGenAIRRTests(unittest.TestCase):
             FixVPositionAfterTrimmingIndexAmbiguity(),
             FixJPositionAfterTrimmingIndexAmbiguity(),
             CorrectForVEndCut(),
-            CorruptSequenceBeginning(0.3, [0.5, 0.3, 0.2], 200, 50, 100, 10),
-            InsertNs(0.01, 0.2),
-            InsertIndels(0.2, 2, 0.5, 0.5),
+            CorruptSequenceBeginning(probability=0.3, event_weights=(0.5, 0.3, 0.2)),
+            EnforceSequenceLength(max_length=200),
+            InsertNs(n_ratio=0.01, probability=0.2),
+            InsertIndels(probability=0.2, max_indels=2),
             DistillMutationRate()
         ])
         
@@ -459,7 +461,7 @@ class EnhancedGenAIRRTests(unittest.TestCase):
             FixVPositionAfterTrimmingIndexAmbiguity(),
             FixJPositionAfterTrimmingIndexAmbiguity(),
             CorrectForVEndCut(),
-            InsertNs(0.005, 0.1),
+            InsertNs(n_ratio=0.005, probability=0.1),
             DistillMutationRate()
         ])
         
@@ -707,11 +709,12 @@ class EnhancedGenAIRRTests(unittest.TestCase):
         ]
         
         for prob, events in corruption_configs:
-            step = CorruptSequenceBeginning(prob, events, 300, 50, 150, 20)
-            
+            step = CorruptSequenceBeginning(probability=prob, event_weights=tuple(events))
+
             pipeline = AugmentationPipeline([
                 SimulateSequence(S5F(), True),
                 step,
+                EnforceSequenceLength(max_length=300),
                 DistillMutationRate()
             ])
             
@@ -725,18 +728,18 @@ class EnhancedGenAIRRTests(unittest.TestCase):
         """Test indel insertion with various parameters."""
         # Test with high indel probability
         high_indel_step = InsertIndels(
-            indel_probability=0.9,
+            probability=0.9,
             max_indels=5,
-            insertion_proba=0.5,
-            deletion_proba=0.5
+            insertion_probability=0.5,
+            deletion_probability=0.5
         )
-        
+
         # Test with low indel probability
         low_indel_step = InsertIndels(
-            indel_probability=0.1,
+            probability=0.1,
             max_indels=1,
-            insertion_proba=0.7,
-            deletion_proba=0.3
+            insertion_probability=0.7,
+            deletion_probability=0.3
         )
         
         for step in [high_indel_step, low_indel_step]:
@@ -764,7 +767,7 @@ class EnhancedGenAIRRTests(unittest.TestCase):
         ]
         
         for n_prob, n_conv in n_insertion_configs:
-            step = InsertNs(n_prob, n_conv)
+            step = InsertNs(n_ratio=n_prob, probability=n_conv)
             
             pipeline = AugmentationPipeline([
                 SimulateSequence(S5F(), True),

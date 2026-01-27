@@ -23,6 +23,9 @@ Understanding the biological processes simulated by GenAIRR.
 
 Light chains lack D segments, making them simpler than heavy chains.
 
+!!! note "Chain type determines pipeline steps"
+    The presence or absence of D segments is the main factor that determines which pipeline steps to include. See [Pipeline Operations](concepts/pipeline_operations.md) for chain-specific step lists.
+
 ## Biological Processes Simulated
 
 ### 1. V(D)J Recombination
@@ -30,15 +33,30 @@ Light chains lack D segments, making them simpler than heavy chains.
 
 **How GenAIRR simulates it**:
 ```python
-# Random selection of segments
-HeavyChainSequence.create_random(config)
+from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
 
-# Or controlled selection
-SimulateSequence(
-    S5F(), True,
-    specific_v=v_allele,
-    specific_d=d_allele, 
-    specific_j=j_allele
+# Random selection of segments
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[steps.SimulateSequence(S5F(min_mutation_rate=0.01, max_mutation_rate=0.05), productive=True)]
+)
+
+# Or controlled selection with specific alleles
+v_allele = HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1'][0]
+d_allele = HUMAN_IGH_OGRDB.d_alleles['IGHD1-1'][0]
+j_allele = HUMAN_IGH_OGRDB.j_alleles['IGHJ1'][0]
+
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[
+        steps.SimulateSequence(
+            S5F(min_mutation_rate=0.01, max_mutation_rate=0.05),
+            productive=True,
+            specific_v=v_allele,
+            specific_d=d_allele,
+            specific_j=j_allele
+        )
+    ]
 )
 ```
 
@@ -49,7 +67,10 @@ SimulateSequence(
 - Occurs primarily in germinal centers
 - Targets CDR regions more than framework regions
 - Context-dependent (certain sequence motifs mutate more)
-- Rate: ~10⁻³ to 10⁻⁴ per base pair per cell division
+- Rate: ~10^-3 to 10^-4 per base pair per cell division
+
+!!! tip "S5F captures context dependence"
+    The S5F mutation model uses empirically derived 5-mer substitution probabilities, faithfully reproducing the WRC/GYW hotspot bias observed in real SHM data.
 
 **How GenAIRR simulates it**:
 ```python
@@ -69,8 +90,8 @@ Uniform(min_mutation_rate=0.01, max_mutation_rate=0.05)
 **How GenAIRR simulates it**:
 ```python
 # These steps model the biological trimming and joining process
-CorrectForVEndCut(),      # V segment 3' trimming
-CorrectForDTrims(),       # D segment 5' and 3' trimming
+steps.CorrectForVEndCut()      # V segment 3' trimming
+steps.CorrectForDTrims()       # D segment 5' and 3' trimming
 ```
 
 ### 4. Sequencing Artifacts
@@ -82,9 +103,10 @@ CorrectForDTrims(),       # D segment 5' and 3' trimming
 
 **How GenAIRR simulates it**:
 ```python
-CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),  # 5' degradation
-InsertNs(0.02, 0.5),                                                  # Ambiguous bases
-InsertIndels(0.5, 5, 0.5, 0.5)                                       # Sequencing errors
+steps.CorruptSequenceBeginning(probability=0.7, event_weights=(0.4, 0.4, 0.2)),  # 5' degradation
+steps.EnforceSequenceLength(max_length=576),   # Read length limits
+steps.InsertNs(n_ratio=0.02, probability=0.5),  # Ambiguous bases
+steps.InsertIndels(probability=0.5, max_indels=5)  # Sequencing errors
 ```
 
 ## Mutation Patterns by Cell Type
@@ -95,16 +117,16 @@ InsertIndels(0.5, 5, 0.5, 0.5)                                       # Sequencin
 - **Function**: Recently formed, not antigen-experienced
 
 ```python
-SimulateSequence(S5F(0.001, 0.01), productive=True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.001, max_mutation_rate=0.01), productive=True)
 ```
 
-### Memory B Cells  
+### Memory B Cells
 - **Location**: Secondary lymphoid organs
 - **Mutations**: Moderate (2-8%)
 - **Function**: Long-lived, antigen-experienced
 
 ```python
-SimulateSequence(S5F(0.02, 0.08), productive=True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True)
 ```
 
 ### Plasma Cells
@@ -113,7 +135,7 @@ SimulateSequence(S5F(0.02, 0.08), productive=True)
 - **Function**: Antibody-secreting effector cells
 
 ```python
-SimulateSequence(S5F(0.05, 0.25), productive=True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.05, max_mutation_rate=0.25), productive=True)
 ```
 
 ### Germinal Center B Cells
@@ -122,7 +144,7 @@ SimulateSequence(S5F(0.05, 0.25), productive=True)
 - **Function**: Undergoing selection and affinity maturation
 
 ```python
-SimulateSequence(S5F(0.01, 0.15), productive=True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.01, max_mutation_rate=0.15), productive=True)
 ```
 
 ## Chain Pairing
@@ -142,7 +164,7 @@ Each T cell receptor consists of:
 
 ### Sequence Positions
 - **v_sequence_start/end**: Where V segment appears in final sequence
-- **d_sequence_start/end**: Where D segment appears (heavy/TCR-β only)
+- **d_sequence_start/end**: Where D segment appears (heavy/TCR-beta only)
 - **j_sequence_start/end**: Where J segment appears
 - **junction_start/end**: CDR3 region boundaries
 
@@ -160,7 +182,7 @@ Each T cell receptor consists of:
 ## Clinical Relevance
 
 ### Immune Repertoire Diversity
-- Healthy individuals: >10¹¹ unique BCR sequences
+- Healthy individuals: >10^11 unique BCR sequences
 - Repertoire changes with age, disease, vaccination
 - Clonal expansion indicates immune response
 
@@ -176,30 +198,30 @@ Each T cell receptor consists of:
 Track how B cell repertoires change post-vaccination:
 ```python
 # Pre-vaccination (naive-like)
-pre_vax = SimulateSequence(S5F(0.001, 0.01), True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.001, max_mutation_rate=0.01), productive=True)
 
 # Post-vaccination (activated)
-post_vax = SimulateSequence(S5F(0.02, 0.08), True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True)
 ```
 
 ### 2. Aging Studies
 Model how repertoires change with age:
 ```python
 # Young repertoire (high diversity)
-young = SimulateSequence(S5F(0.005, 0.02), True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.005, max_mutation_rate=0.02), productive=True)
 
 # Aged repertoire (more mutations, less diversity)
-aged = SimulateSequence(S5F(0.02, 0.1), True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.1), productive=True)
 ```
 
 ### 3. Disease Modeling
 Compare healthy vs. disease states:
 ```python
 # Healthy memory response
-healthy = SimulateSequence(S5F(0.02, 0.06), True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.06), productive=True)
 
 # Autoimmune (potentially higher mutation)
-autoimmune = SimulateSequence(S5F(0.05, 0.15), True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.05, max_mutation_rate=0.15), productive=True)
 ```
 
 This biological context helps explain why GenAIRR's simulation steps exist and how to choose appropriate parameters for your research questions.

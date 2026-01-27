@@ -12,6 +12,10 @@ Common questions about GenAIRR and their answers.
 - Generating synthetic datasets for research
 
 ### Q: Do I need biology knowledge to use GenAIRR?
+
+!!! tip "New to immunology?"
+    Start with the [Biological Context](biological_context.md) page for a concise primer, then follow the [Step-by-Step Tutorial](step_by_step_tutorial.md).
+
 **A:** Basic understanding helps, but it's not required. Start with:
 1. The [Step-by-Step Tutorial](step_by_step_tutorial.md) for hands-on learning
 2. The [Biological Context Guide](biological_context.md) for background
@@ -23,16 +27,22 @@ Common questions about GenAIRR and their answers.
 ## Basic Usage
 
 ### Q: What's the minimum code to generate a sequence?
-**A:** Just 6 lines:
+**A:** Just 3 lines using the convenience function:
 ```python
-from GenAIRR.pipeline import AugmentationPipeline
-from GenAIRR.steps import SimulateSequence
-from GenAIRR.mutation import S5F
-from GenAIRR.data import HUMAN_IGH_OGRDB
-from GenAIRR.steps.StepBase import AugmentationStep
+from GenAIRR import simulate, HUMAN_IGH_OGRDB, S5F
 
-AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
-pipeline = AugmentationPipeline([SimulateSequence(S5F(), productive=True)])
+result = simulate(HUMAN_IGH_OGRDB, S5F(0.003, 0.25))
+print(result.sequence)
+```
+
+Or with a pipeline for more control:
+```python
+from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
+
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[steps.SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True)]
+)
 sequence = pipeline.execute()
 print(sequence.sequence)
 ```
@@ -45,10 +55,13 @@ print(sequence.sequence)
 
 About 1/3 of natural V(D)J recombination events are productive.
 
-### Q: Why do I get an AttributeError when creating pipelines?
-**A:** You forgot to set the data configuration. Always call this first:
+### Q: Why do I get an error when creating pipelines?
+**A:** Make sure you pass the config to the Pipeline constructor:
 ```python
-AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[...]
+)
 ```
 
 ## Parameters and Configuration
@@ -56,7 +69,7 @@ AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
 ### Q: What mutation rates should I use?
 **A:** Depends on the cell type you're modeling:
 - **Naive B cells**: 0.001-0.01 (0.1-1%)
-- **Memory B cells**: 0.02-0.08 (2-8%)  
+- **Memory B cells**: 0.02-0.08 (2-8%)
 - **Plasma cells**: 0.05-0.25 (5-25%)
 
 ### Q: What's the difference between S5F and Uniform mutation models?
@@ -68,12 +81,19 @@ AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
 ### Q: Can I simulate light chains?
 **A:** Yes! Use the appropriate data configuration:
 ```python
-from GenAIRR.data import HUMAN_IGK_OGRDB  # Kappa light chain
-# or
-from GenAIRR.data import HUMAN_IGL_OGRDB  # Lambda light chain
+from GenAIRR import Pipeline, steps, HUMAN_IGK_OGRDB, S5F
+# or HUMAN_IGL_OGRDB for lambda light chain
 
-AugmentationStep.set_dataconfig(HUMAN_IGK_OGRDB)
-# Note: Skip D-segment steps in your pipeline
+pipeline = Pipeline(
+    config=HUMAN_IGK_OGRDB,
+    steps=[
+        steps.SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True),
+        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixJPositionAfterTrimmingIndexAmbiguity(),  # No D segment steps
+        steps.CorrectForVEndCut(),
+        steps.DistillMutationRate(),
+    ]
+)
 ```
 
 ## Pipeline Design
@@ -90,10 +110,10 @@ AugmentationStep.set_dataconfig(HUMAN_IGK_OGRDB)
 1. `SimulateSequence` (always first)
 2. Position fixes (`FixVPositionAfterTrimmingIndexAmbiguity`, etc.)
 3. Biological corrections (`CorrectForVEndCut`, etc.)
-4. Sequencing artifacts (`CorruptSequenceBeginning`, `InsertNs`, etc.)
-5. Quality control (`ShortDValidation`)
-6. Structural variants (`InsertIndels`)
-7. Finalization (`DistillMutationRate`)
+4. Finalization (`DistillMutationRate`)
+5. Sequencing artifacts (`CorruptSequenceBeginning`, `EnforceSequenceLength`, `InsertNs`)
+6. Quality control (`ShortDValidation`)
+7. Structural variants (`InsertIndels`)
 
 ### Q: Can I create custom pipeline steps?
 **A:** Yes! Inherit from `AugmentationStep` and implement the `apply` method:
@@ -169,52 +189,56 @@ for i in range(10):
 
 ### Q: My sequences all look the same!
 **A:** Check these:
-- Mutation rates aren't zero: `S5F(0.01, 0.05)` not `S5F(0, 0)`
+- Mutation rates aren't zero: `S5F(min_mutation_rate=0.01, max_mutation_rate=0.05)` not `S5F(0, 0)`
 - Using different alleles: Check if you're forcing specific alleles
-- Random seed: Don't set `random.seed()` for production use
+- Random seed: Don't set a fixed seed for production use
 
 ### Q: I'm getting very short sequences!
-**A:** Adjust `CorruptSequenceBeginning` parameters:
+**A:** Adjust corruption and length parameters:
 ```python
 # Less aggressive corruption
-CorruptSequenceBeginning(0.3, [0.7, 0.3, 0], 400, 100, 150, 20)
+steps.CorruptSequenceBeginning(probability=0.3, event_weights=(0.7, 0.3, 0))
+steps.EnforceSequenceLength(max_length=400)
 ```
 
 ### Q: How do I reproduce results?
-**A:** Set random seeds before generation:
+**A:** Use GenAIRR's built-in seed management:
 ```python
-import random
-import numpy as np
+from GenAIRR import set_seed, get_seed, reset_seed
 
-random.seed(42)
-np.random.seed(42)
+set_seed(42)
 # Now generate sequences...
 ```
 
 ## Advanced Usage
 
 ### Q: Can I simulate paired heavy/light chains?
-**A:** Not directly, but you can generate them separately:
+**A:** Not directly, but you can generate them separately using different pipelines:
 ```python
-# Heavy chain
-AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
+from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, HUMAN_IGK_OGRDB, S5F
+
+heavy_pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[steps.SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True)]
+)
+
+light_pipeline = Pipeline(
+    config=HUMAN_IGK_OGRDB,
+    steps=[steps.SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True)]
+)
+
 heavy = heavy_pipeline.execute()
-
-# Light chain  
-AugmentationStep.set_dataconfig(HUMAN_IGK_OGRDB)
 light = light_pipeline.execute()
-
-# Pair them logically in your analysis
 ```
 
 ### Q: How do I model specific diseases or conditions?
 **A:** Adjust parameters to reflect biology:
 ```python
 # Autoimmune (higher mutation)
-SimulateSequence(S5F(min_mutation_rate=0.05, max_mutation_rate=0.15), productive=True)
+steps.SimulateSequence(S5F(min_mutation_rate=0.05, max_mutation_rate=0.15), productive=True)
 
 # Immunodeficiency (lower diversity - use specific alleles)
-SimulateSequence(S5F(min_mutation_rate=0.001, max_mutation_rate=0.02), productive=True, specific_v=common_allele)
+steps.SimulateSequence(S5F(min_mutation_rate=0.001, max_mutation_rate=0.02), productive=True, specific_v=common_allele)
 ```
 
 ### Q: Can I add custom mutation patterns?
@@ -224,12 +248,12 @@ SimulateSequence(S5F(min_mutation_rate=0.001, max_mutation_rate=0.02), productiv
 
 ### Q: Where can I find more examples?
 **A:** Check these resources:
-- [Jupyter notebooks in docs/tutorials/](tutorials/)
-- [Examples in the README](../README.md)
+- [Jupyter notebook tutorials](tutorials/Quick Start Guide.ipynb)
+- [GitHub repository](https://github.com/MuteJester/GenAIRR)
 - [Step-by-step tutorial](step_by_step_tutorial.md)
 
 ### Q: How do I report bugs or request features?
-**A:** 
+**A:**
 1. Check existing GitHub issues first
 2. Create a minimal reproducible example
 3. Include your Python version and GenAIRR version

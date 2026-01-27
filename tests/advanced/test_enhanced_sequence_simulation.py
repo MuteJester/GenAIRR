@@ -17,8 +17,8 @@ from unittest.mock import Mock, patch
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.steps import (
     SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity,
-    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity, 
-    CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning, 
+    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity,
+    CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning, EnforceSequenceLength,
     InsertNs, InsertIndels, ShortDValidation, DistillMutationRate
 )
 from GenAIRR.mutation import S5F, Uniform
@@ -265,11 +265,12 @@ class EnhancedSequenceSimulationTests(unittest.TestCase):
 
     def test_corruption_step_biological_realism(self):
         """Test that sequence corruption maintains biological realism."""
-        corruption_step = CorruptSequenceBeginning(0.8, [0.4, 0.3, 0.3], 300, 100, 200, 50)
-        
+        corruption_step = CorruptSequenceBeginning(probability=0.8, event_weights=(0.4, 0.3, 0.3))
+
         pipeline = AugmentationPipeline([
             SimulateSequence(S5F(), True),
             corruption_step,
+            EnforceSequenceLength(max_length=300),
             DistillMutationRate()
         ])
         
@@ -316,7 +317,7 @@ class EnhancedSequenceSimulationTests(unittest.TestCase):
 
     def test_indel_insertion_logic_validation(self):
         """Test indel insertion logic and position validation."""
-        indel_step = InsertIndels(0.7, 5, 0.5, 0.5)
+        indel_step = InsertIndels(probability=0.7, max_indels=5)
         
         pipeline = AugmentationPipeline([
             SimulateSequence(S5F(), True),

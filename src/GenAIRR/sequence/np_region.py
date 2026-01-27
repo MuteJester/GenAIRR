@@ -82,9 +82,9 @@ class NP_Region:
                 current_base = next_base
             else: #not way to continue halt and update metadata!
                 self.length = len(sequence)
-                return sequence.lower()
+                return sequence.upper()
 
-        return sequence.lower()
+        return sequence.upper()
 
     @classmethod
     def create_np_region(cls, NP_lengths, NP_transitions, which_NP, first_base_dict):

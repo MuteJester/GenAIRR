@@ -7,7 +7,18 @@ class CorrectForDTrims(AugmentationStep):
 
     def __init__(self):
         super().__init__()
-        self.d_trim_correction_map = self.dataconfig.correction_maps['D_5_3_TRIM_SIMILARITY_MAP']
+        # Lazy-initialized attribute (populated on first access after config is bound)
+        self._d_trim_correction_map = None
+
+    def _ensure_config_loaded(self):
+        """Initialize dataconfig-dependent attributes on first use."""
+        if self._d_trim_correction_map is None:
+            self._d_trim_correction_map = self.dataconfig.correction_maps['D_5_3_TRIM_SIMILARITY_MAP']
+
+    @property
+    def d_trim_correction_map(self):
+        self._ensure_config_loaded()
+        return self._d_trim_correction_map
 
     def correct_for_d_trims(self, container):
         """

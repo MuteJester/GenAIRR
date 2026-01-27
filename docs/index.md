@@ -1,78 +1,144 @@
 # GenAIRR: Modular Ig Sequence Simulation
 
-[GenAIRR](https://github.com/MuteJester/GenAIRR) is an AGPL-3 licensed Ig Sequence Simulation framework in Python.
+**GenAIRR** is a Python framework for simulating immunoglobulin (Ig) and adaptive immune receptor sequences. It provides a modular, pipeline-based architecture for generating realistic synthetic AIRR data — from naive B-cell sequences to fully mutated, sequencing-artifact-laden reads.
 
-GenAIRR allows users to quickly create complex, modular simulation pipeline using built-in core components (such as Sequence structure, Alleles, Augmenters and Pipelines) or customized implementations; visualize your simulation pipelines, experiment and modify various hyperparameters to control with high precision over the process affecting sequences. Its goal is to allow covering a wide range of scenarios both typical and atypical to aid in the study, benchmarking and development of Ig sequence oriented algorithms such as sequence alignment.
+GenAIRR is designed for researchers and developers who need synthetic immune receptor data for benchmarking alignment tools, training machine learning models, or studying V(D)J recombination and somatic hypermutation.
 
-## Features
+```python
+from GenAIRR import simulate, HUMAN_IGH_OGRDB, S5F
 
-- Built-in core sequence structure components
-- Flexible mutation models and corruption management through "Step" based logic
-- New Steps Can be Implemented and Inserted into any Pipeline
-- Built-in detailed Data Config files containing empirical distribution and reference data
-- Highly sensitive ambiguity resolution framework to ensure reliable ground truth meta information on each simulated sequence
+# Generate a single simulated heavy chain sequence
+result = simulate(HUMAN_IGH_OGRDB, S5F(0.01, 0.05))
+print(result.sequence)
+```
 
-## Documentation Guide
+---
 
-### Getting Started
-- **[Step-by-Step Tutorial](step_by_step_tutorial.md)** - Build your first pipeline from scratch
-- **[Quick Start Guide](tutorials/Quick Start Guide.ipynb)** - Interactive Jupyter notebook
-- **[Getting Started](getting_started.md)** - Basic concepts and examples
+## Key Features
 
-### Understanding GenAIRR
-- **[Biological Context](biological_context.md)** - What biological processes are being simulated
-- **[GenAIRR Flow](genairr_flow.md)** - How the simulation pipeline works
-- **[Best Practices](best_practices.md)** - Guidelines for effective use
+**Modular Pipeline Architecture**
+:   Build simulation workflows from composable steps. Each step modifies a `SimulationContainer` and can be added, removed, or reordered freely.
 
-### Reference Materials  
-- **[Parameter Reference](parameter_reference.md)** - Detailed parameter explanations
-- **[API Reference](api_reference.md)** - Quick syntax reference
-- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
-- **[Migration Guide](migration_guide.md)** - Upgrading from older versions
+**Biologically Realistic Mutation Models**
+:   Built-in S5F (context-dependent) and Uniform mutation models simulate somatic hypermutation at configurable rates.
 
-### Advanced Topics
-- **[Advanced Custom Generation](tutorials/Advanced Custom Generation.ipynb)** - Custom allele selection
-- **[Introduction to DataConfig](tutorials/Introduction to the DataConfig Object.ipynb)** - Data configuration details
-- **[Custom Data Config](custom_data_config.md)** - Using your own germline data
+**Empirical Germline Data**
+:   Pre-built `DataConfig` objects contain V, D, and J allele sets, trimming distributions, and nucleotide addition patterns derived from real repertoire data (OGRDB).
 
-## Using GenAIRR
-### Installation Options
-To install our latest stable release, run:
+**Sequencing Artifact Simulation**
+:   Simulate real-world data imperfections — 5' truncation, N-base insertions, insertions/deletions, and read-length limits.
+
+**Ambiguity Resolution**
+:   Automatic correction steps resolve positional ambiguities introduced by trimming, ensuring accurate ground-truth annotations.
+
+**Reproducibility**
+:   Seed management (`set_seed`, `get_seed`, `reset_seed`) enables deterministic sequence generation.
+
+---
+
+## Supported Chains
+
+| Config | Chain | Species |
+|--------|-------|---------|
+| `HUMAN_IGH_OGRDB` | Heavy (IGH) | Human |
+| `HUMAN_IGK_OGRDB` | Kappa light (IGK) | Human |
+| `HUMAN_IGL_OGRDB` | Lambda light (IGL) | Human |
+| `HUMAN_TRB_OGRDB` | T-cell receptor beta (TRB) | Human |
+
+---
+
+## Installation
 
 ```bash
 pip install GenAIRR
 ```
-### Resources
 
-For help getting started with Mesa, check out these resources:
+Requires Python 3.9+.
 
-- [Getting Started] - Learn about GenAIRR's core concepts and components
-- [Advanced Control] - Learn about manipulation of GenAIRR's core components
-- [GenAIRR Examples] - Browse various application and example implementations using GenAIRR
-- [GitHub Discussions] - Ask questions, make requests and discuss GenAIRR
+---
 
-### Development and Support
+## Quick Example: Full Pipeline
 
-GenAIRR is an open source project and welcomes contributions:
+For complete control over the simulation process, build a pipeline with explicit steps:
 
-- [GitHub Repository] - Access the source code
-- [Issue Tracker] - Report bugs or suggest features
-- [Contributors Guide] - Learn how to contribute
+```python
+from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
 
-#### GenAIRR Publication
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[
+        # 1. Generate a mutated sequence
+        steps.SimulateSequence(
+            S5F(min_mutation_rate=0.01, max_mutation_rate=0.05),
+            productive=True
+        ),
+        # 2. Resolve positional ambiguities
+        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixDPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
+        # 3. Biological corrections
+        steps.CorrectForVEndCut(),
+        steps.CorrectForDTrims(),
+        # 4. Record mutation rate
+        steps.DistillMutationRate(),
+        # 5. Simulate sequencing artifacts
+        steps.CorruptSequenceBeginning(),
+        steps.EnforceSequenceLength(),
+        steps.InsertNs(),
+        # 6. Quality variants
+        steps.ShortDValidation(),
+        steps.InsertIndels(),
+    ]
+)
 
-The original GenAIRR Briefings in Bioinformatics paper is [available here](https://academic.oup.com/bib/article/25/6/bbae556/7863770).
+result = pipeline.execute()
+data = result.get_dict()
+print(data['v_call'], data['mutation_rate'])
+```
 
+---
 
-#### Acknowledgments
-Some parts of GenAIRR we inspired and adapted from the [AIRRship](https://github.com/Cowanlab/airrship) Package
+## Documentation Overview
 
-[contributors guide]: https://github.com/MuteJester/GenAIRR/blob/main/CONTRIBUTING.md
-[github repository]: https://github.com/MuteJester/GenAIRR
-[github discussions]: https://github.com/MuteJester/GenAIRRdiscussions
-[issue tracker]: https://github.com/MuteJester/GenAIRR/issues
-[GenAIRR]: https://github.com/MuteJester/GenAIRR
-[mesa overview]: overview
-[GenAIRR examples]: https://github.com/MuteJester/GenAIRR/tree/master/docs/tutorials
-[Getting started]: getting_started
-[Advanced Control]: tutorials/Advanced%20Custom%20Generation.ipynb
+### Getting Started
+- **[Installation & Quick Start](getting_started.md)** — Install GenAIRR and run your first simulation
+- **[Step-by-Step Tutorial](step_by_step_tutorial.md)** — Build a pipeline from scratch with explanations at each stage
+
+### User Guide
+- **[Biological Context](biological_context.md)** — The immunobiology behind GenAIRR's simulation model
+- **[How the Pipeline Works](genairr_flow.md)** — Architecture: DataConfig, Pipeline, Steps, and SimulationContainer
+- **[Best Practices](best_practices.md)** — Guidelines for realistic and reproducible simulations
+
+### Tutorials (Jupyter Notebooks)
+- **[Quick Start Guide](tutorials/Quick Start Guide.ipynb)** — Interactive introduction
+- **[Advanced Custom Generation](tutorials/Advanced Custom Generation.ipynb)** — Specific allele selection and chain-type control
+- **[Introduction to DataConfig](tutorials/Introduction to the DataConfig Object.ipynb)** — Explore allele sets and distributions
+- **[Creating Custom DataConfig](tutorials/Creating Custom DataConfig from FASTA Files.ipynb)** — Build configs from your own FASTA files
+- **[Uniform Allele Distribution](tutorials/Generating_Uniform_Allele_Distribution_Dataset.ipynb)** — Generate balanced benchmarking datasets
+
+### Reference
+- **[API Reference](api_reference.md)** — Classes, methods, and function signatures
+- **[Parameter Reference](parameter_reference.md)** — Detailed parameter descriptions for every step
+
+### Advanced
+- **[Custom DataConfig](custom_data_config.md)** — Create DataConfig instances from your own germline databases
+
+### Support
+- **[FAQ](faq.md)** — Frequently asked questions
+- **[Troubleshooting](troubleshooting.md)** — Common issues and solutions
+- **[Migration Guide](migration_guide.md)** — Upgrading from previous versions
+
+---
+
+## Citation
+
+If you use GenAIRR in your research, please cite:
+
+> GenAIRR — *Briefings in Bioinformatics*, 2024.
+> [DOI: 10.1093/bib/bbae556](https://academic.oup.com/bib/article/25/6/bbae556/7863770)
+
+## Links
+
+- [GitHub Repository](https://github.com/MuteJester/GenAIRR)
+- [Issue Tracker](https://github.com/MuteJester/GenAIRR/issues)
+- [PyPI Package](https://pypi.org/project/GenAIRR/)

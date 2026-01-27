@@ -7,9 +7,27 @@ from ..dataconfig import DataConfig
 class CorrectForVEndCut(AugmentationStep):
     def __init__(self):
         super().__init__()
-        self.v_end_allele_correction_map = self.dataconfig.correction_maps['V_3_TRIM_SIMILARITY_MAP']
-        self.max_v_end_correction_map_value = max(
-            self.v_end_allele_correction_map[list(self.v_end_allele_correction_map)[0]])
+        # Lazy-initialized attributes (populated on first access after config is bound)
+        self._v_end_allele_correction_map = None
+        self._max_v_end_correction_map_value = None
+
+    def _ensure_config_loaded(self):
+        """Initialize dataconfig-dependent attributes on first use."""
+        if self._v_end_allele_correction_map is None:
+            self._v_end_allele_correction_map = self.dataconfig.correction_maps['V_3_TRIM_SIMILARITY_MAP']
+            self._max_v_end_correction_map_value = max(
+                self._v_end_allele_correction_map[list(self._v_end_allele_correction_map)[0]]
+            )
+
+    @property
+    def v_end_allele_correction_map(self):
+        self._ensure_config_loaded()
+        return self._v_end_allele_correction_map
+
+    @property
+    def max_v_end_correction_map_value(self):
+        self._ensure_config_loaded()
+        return self._max_v_end_correction_map_value
 
     def correct_for_v_end_cut(self, container):
         """

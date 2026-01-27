@@ -20,7 +20,7 @@ import numpy as np
 from GenAIRR.pipeline import AugmentationPipeline
 from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, \
     FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity, FilterTCRDJAmbiguities
-from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
+from GenAIRR.steps import CorrectForVEndCut,CorrectForDTrims,CorruptSequenceBeginning,EnforceSequenceLength,InsertNs,InsertIndels,ShortDValidation,DistillMutationRate
 from GenAIRR.mutation import S5F, Uniform
 from GenAIRR.alleles import VAllele
 from GenAIRR.container.SimulationContainer import SimulationContainer
@@ -255,12 +255,16 @@ class TestSequenceSimulation(unittest.TestCase):
             AugmentationStep.set_dataconfig(dataconfig)
             step = CorrectForVEndCut()
             aux = FixVPositionAfterTrimmingIndexAmbiguity()
+            # Use the step's max correction map value as the trim limit
+            # to test within the step's actual coverage range
+            max_trim = step.max_v_end_correction_map_value
             # choose one random v allele
             for _ in range(N): # repeat this N times each time random scenario
                 v_allele = random.choice(aux.v_alleles)
                 v_seq = v_allele.ungapped_seq
                 v_seq_end = v_allele.length
-                random_trim_end_trim = np.random.randint(1, v_seq_end)
+                # Limit trim to max_trim to stay within correction map coverage
+                random_trim_end_trim = np.random.randint(1, min(max_trim + 1, v_seq_end))
                 trimmed_seq = v_seq[:-random_trim_end_trim]
                 ambig = []
                 for allele in aux.v_alleles:
@@ -332,10 +336,11 @@ class TestSequenceSimulation(unittest.TestCase):
                 FixJPositionAfterTrimmingIndexAmbiguity(),
                 CorrectForVEndCut(),
                 # CorrectForDTrims(),
-                CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-                InsertNs(0.02, 0.5),
+                CorruptSequenceBeginning(),
+                EnforceSequenceLength(),
+                InsertNs(),
                 # ShortDValidation(),
-                InsertIndels(0.5,5,0.5,0.5),
+                InsertIndels(),
                 DistillMutationRate()
             ])
 
@@ -355,10 +360,11 @@ class TestSequenceSimulation(unittest.TestCase):
                 FixJPositionAfterTrimmingIndexAmbiguity(),
                 CorrectForVEndCut(),
                 CorrectForDTrims(),
-                CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-                InsertNs(0.02, 0.5),
+                CorruptSequenceBeginning(),
+                EnforceSequenceLength(),
+                InsertNs(),
                 ShortDValidation(),
-                InsertIndels(0.5, 5, 0.5, 0.5),
+                InsertIndels(),
                 DistillMutationRate()
             ])
 
@@ -380,10 +386,11 @@ class TestSequenceSimulation(unittest.TestCase):
                 CorrectForVEndCut(),
                 CorrectForDTrims(),
                 FilterTCRDJAmbiguities(),
-                CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-                InsertNs(0.02, 0.5),
+                CorruptSequenceBeginning(),
+                EnforceSequenceLength(),
+                InsertNs(),
                 ShortDValidation(),
-                InsertIndels(0.5, 5, 0.5, 0.5),
+                InsertIndels(),
                 DistillMutationRate()
             ])
 
@@ -421,10 +428,11 @@ class TestSequenceSimulation(unittest.TestCase):
                 FixJPositionAfterTrimmingIndexAmbiguity(),
                 CorrectForVEndCut(),
                 CorrectForDTrims(),
-                CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-                InsertNs(0.02, 0.5),
+                CorruptSequenceBeginning(),
+                EnforceSequenceLength(),
+                InsertNs(),
                 ShortDValidation(),
-                InsertIndels(0, 5, 0.5, 0.5),
+                InsertIndels(probability=0),
                 DistillMutationRate()
             ])
 
@@ -452,10 +460,11 @@ class TestSequenceSimulation(unittest.TestCase):
             FixJPositionAfterTrimmingIndexAmbiguity(),
             CorrectForVEndCut(),
             CorrectForDTrims(),
-            CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-            InsertNs(0.02, 0.5),
+            CorruptSequenceBeginning(),
+            EnforceSequenceLength(),
+            InsertNs(),
             ShortDValidation(),
-            InsertIndels(0.5, 5, 0.5, 0.5),
+            InsertIndels(),
             DistillMutationRate()
         ])
 
@@ -710,11 +719,13 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_random_dataconfig_generator(self):
         from GenAIRR.dataconfig.make import RandomDataConfigBuilder
+        import os
+        test_data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
         dcg = RandomDataConfigBuilder(convert_to_asc=False)
-        random_dataconfig = dcg.make(v_reference_path='../data/IGHV.fasta',
-                                     d_reference_path='../data/IGHD.fasta',
-                                     j_reference_path='../data/IGHJ.fasta',
-                                     c_reference_path='../data/IGHC.fasta'
+        random_dataconfig = dcg.make(v_reference_path=os.path.join(test_data_dir, 'IGHV.fasta'),
+                                     d_reference_path=os.path.join(test_data_dir, 'IGHD.fasta'),
+                                     j_reference_path=os.path.join(test_data_dir, 'IGHJ.fasta'),
+                                     c_reference_path=os.path.join(test_data_dir, 'IGHC.fasta')
                                      )
 
         for gene in ['V','D','J']:
@@ -731,12 +742,14 @@ class TestSequenceSimulation(unittest.TestCase):
 
     def test_custom_dataconfig_generator(self):
         from GenAIRR.dataconfig.make import CustomDataConfigBuilder
+        import os
+        test_data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
         dcg = CustomDataConfigBuilder(convert_to_asc=False)
-        random_dataconfig = dcg.make(v_reference_path='../data/IGHV.fasta',
-                                     d_reference_path='../data/IGHD.fasta',
-                                     j_reference_path='../data/IGHJ.fasta',
-                                     c_reference_path='../data/IGHC.fasta',
-                                     custom_data='../data/inference_sample.csv'
+        random_dataconfig = dcg.make(v_reference_path=os.path.join(test_data_dir, 'IGHV.fasta'),
+                                     d_reference_path=os.path.join(test_data_dir, 'IGHD.fasta'),
+                                     j_reference_path=os.path.join(test_data_dir, 'IGHJ.fasta'),
+                                     c_reference_path=os.path.join(test_data_dir, 'IGHC.fasta'),
+                                     custom_data=os.path.join(test_data_dir, 'inference_sample.csv')
                                      )
         for gene in ['V', 'D', 'J']:
 
@@ -771,7 +784,7 @@ class TestSequenceSimulation(unittest.TestCase):
         }
 
         # mock the data config to include the correction map
-        AugmentationStep.dataconfig.correction_maps = {
+        AugmentationStep._class_dataconfig.correction_maps = {
             'D_5_3_TRIM_SIMILARITY_MAP': d_trim_correction_map
         }
 
@@ -828,13 +841,13 @@ class TestSequenceSimulation(unittest.TestCase):
         }
 
         # mock the data config to include the correction map and max value
-        AugmentationStep.dataconfig.correction_maps = {
+        AugmentationStep._class_dataconfig.correction_maps = {
             'V_3_TRIM_SIMILARITY_MAP': v_end_correction_map
         }
 
         # initialize the step and set max correction value
         step = CorrectForVEndCut()
-        step.max_v_end_correction_map_value = 3  # Set max for test consistency
+        step._max_v_end_correction_map_value = 3  # Set max for test consistency
 
         # create a simulated container instance with initial data
         simulated_data = {

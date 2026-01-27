@@ -1,264 +1,472 @@
-# GenAIRR API Quick Reference
+# API Reference
 
-## Essential Imports
+Complete reference for GenAIRR's public API — classes, functions, and their signatures.
 
-```python
-from GenAIRR.pipeline import AugmentationPipeline
-from GenAIRR.steps import (
-    SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity,
-    FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity,
-    CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning,
-    InsertNs, InsertIndels, ShortDValidation, DistillMutationRate
-)
-from GenAIRR.mutation import S5F, Uniform
-from GenAIRR.data import (
-    HUMAN_IGH_OGRDB, HUMAN_IGH_EXTENDED,
-    HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB, 
-    HUMAN_TCRB_IMGT
-)
-from GenAIRR.steps.StepBase import AugmentationStep
-```
+---
 
-## Data Configurations
-
-| Config | Description | Use Case |
-|--------|-------------|----------|
-| `HUMAN_IGH_OGRDB` | Human heavy chain immunoglobulin (OGRDB) | BCR heavy chain simulation |
-| `HUMAN_IGH_EXTENDED` | Extended human heavy chain immunoglobulin | Extended BCR heavy chain simulation |
-| `HUMAN_IGK_OGRDB` | Human kappa light chain (OGRDB) | BCR kappa light chain simulation |
-| `HUMAN_IGL_OGRDB` | Human lambda light chain (OGRDB) | BCR lambda light chain simulation |
-| `HUMAN_TCRB_IMGT` | Human T-cell receptor beta (IMGT) | TCR-β simulation |
-
-## Basic Pipeline Setup
+## Top-Level Imports
 
 ```python
-# Set data configuration
-AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
+from GenAIRR import (
+    # Core
+    Pipeline,               # AugmentationPipeline alias
+    steps,                  # Namespace for all augmentation steps
+    simulate,               # One-liner convenience function
+    SimulationContainer,    # Result object
 
-# Create pipeline
-pipeline = AugmentationPipeline([
-    # Add steps here
-])
+    # Mutation models
+    S5F,                    # Context-dependent mutation
+    Uniform,                # Position-independent mutation
 
-# Execute simulation
-result = pipeline.execute()
-sequence_data = result.get_dict()
-```
+    # Data configurations
+    HUMAN_IGH_OGRDB,        # Human heavy chain (OGRDB)
+    HUMAN_IGH_EXTENDED,     # Human heavy chain (extended set)
+    HUMAN_IGK_OGRDB,        # Human kappa light chain (OGRDB)
+    HUMAN_IGL_OGRDB,        # Human lambda light chain (OGRDB)
+    HUMAN_TCRB_IMGT,        # Human TCR beta (IMGT)
 
-## Core Pipeline Steps
-
-### 1. Sequence Simulation
-```python
-# S5F mutation model with mutation rate range
-SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True)
-
-# Uniform mutation model
-SimulateSequence(Uniform(min_mutation_rate=0.0, max_mutation_rate=0.1), productive=True)
-
-# Naive sequence (no mutations)
-SimulateSequence(Uniform(min_mutation_rate=0, max_mutation_rate=0), productive=True)
-
-# With specific alleles
-SimulateSequence(
-    S5F(min_mutation_rate=0.02, max_mutation_rate=0.08),
-    productive=True,
-    specific_v=v_allele_object,
-    specific_d=d_allele_object,
-    specific_j=j_allele_object
+    # Reproducibility
+    set_seed, get_seed, reset_seed,
 )
 ```
 
-**Parameters:**
-- `mutation_model`: Instance of mutation model (S5F or Uniform)
-- `productive`: Ensure sequence is productive (default: False)
-- `specific_v`: Specific V allele object (optional)
-- `specific_d`: Specific D allele object (optional, only for chains with D segment)
-- `specific_j`: Specific J allele object (optional)
+---
 
-### 2. Position Fixing Steps
+## `simulate()`
+
 ```python
-FixVPositionAfterTrimmingIndexAmbiguity()
-FixDPositionAfterTrimmingIndexAmbiguity()
-FixJPositionAfterTrimmingIndexAmbiguity()
+simulate(config, mutation_model, productive=True, n=1)
 ```
 
-### 3. Correction Steps
+One-liner convenience function. Creates a minimal pipeline (`SimulateSequence` + `FixVPositionAfterTrimmingIndexAmbiguity`) and executes it.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `config` | `DataConfig` | — | Germline data configuration |
+| `mutation_model` | `MutationModel` | — | S5F or Uniform instance |
+| `productive` | `bool` | `True` | Only generate in-frame sequences without stop codons |
+| `n` | `int` | `1` | Number of sequences to generate |
+
+**Returns:** `SimulationContainer` if `n=1`, `List[SimulationContainer]` if `n > 1`.
+
 ```python
-CorrectForVEndCut()
-CorrectForDTrims()
+from GenAIRR import simulate, HUMAN_IGH_OGRDB, S5F
+
+result = simulate(HUMAN_IGH_OGRDB, S5F(0.01, 0.05))
+results = simulate(HUMAN_IGH_OGRDB, S5F(0.01, 0.05), n=100)
 ```
 
-### 4. Sequence Corruption
+---
+
+## `Pipeline`
+
 ```python
-# Parameters: corruption_prob, events_proba, max_length, add_coeff, remove_coeff, add_after_remove_coeff
-CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50)
+Pipeline(steps, config=None)
 ```
 
-### 5. N Insertion
+Alias for `AugmentationPipeline`. Executes a list of steps in order, passing a shared `SimulationContainer` through each.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `steps` | `List[AugmentationStep]` | — | Ordered list of pipeline steps |
+| `config` | `DataConfig` | `None` | Germline data configuration. Required for most steps. |
+
+### Methods
+
+#### `execute()`
+
 ```python
-# Parameters: n_ratio, probability
-InsertNs(0.02, 0.5)
+pipeline.execute() -> SimulationContainer
 ```
 
-### 6. Indel Insertion
+Creates an empty `SimulationContainer`, runs each step's `.apply()` method on it, and returns the populated container.
+
+#### `plot(filename)`
+
 ```python
-# Parameters: indel_probability, max_indels, insertion_proba, deletion_proba
-InsertIndels(0.5, 5, 0.5, 0.5)
+pipeline.plot(filename) -> None
 ```
 
-### 7. Validation Steps
-```python
-ShortDValidation()  # Validates D region length
-DistillMutationRate()  # Calculates final mutation rate
-```
+Generates a GraphViz diagram of the pipeline structure and saves it as an image.
 
-## Complete Pipeline Examples
-
-### Heavy Chain (Full Pipeline)
-```python
-AugmentationStep.set_dataconfig(HUMAN_IGH_OGRDB)
-
-pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), True),
-    FixVPositionAfterTrimmingIndexAmbiguity(),
-    FixDPositionAfterTrimmingIndexAmbiguity(),
-    FixJPositionAfterTrimmingIndexAmbiguity(),
-    CorrectForVEndCut(),
-    CorrectForDTrims(),
-    CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-    InsertNs(0.02, 0.5),
-    ShortDValidation(),
-    InsertIndels(0.5, 5, 0.5, 0.5),
-    DistillMutationRate()
-])
-```
-
-### Light Chain (Kappa)
-```python
-AugmentationStep.set_dataconfig(HUMAN_IGK_OGRDB)
-
-pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), True),
-    FixVPositionAfterTrimmingIndexAmbiguity(),
-    FixJPositionAfterTrimmingIndexAmbiguity(),
-    CorrectForVEndCut(),
-    CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-    InsertNs(0.02, 0.5),
-    InsertIndels(0.5, 5, 0.5, 0.5),
-    DistillMutationRate()
-])
-```
-
-### TCR Beta Chain
-```python
-from GenAIRR.steps import FilterTCRDJAmbiguities
-
-AugmentationStep.set_dataconfig(HUMAN_TCRB_IMGT)
-
-pipeline = AugmentationPipeline([
-    SimulateSequence(Uniform(), True),
-    FixVPositionAfterTrimmingIndexAmbiguity(),
-    FixDPositionAfterTrimmingIndexAmbiguity(),
-    FixJPositionAfterTrimmingIndexAmbiguity(),
-    CorrectForVEndCut(),
-    CorrectForDTrims(),
-    FilterTCRDJAmbiguities(),  # TCR-specific filtering
-    CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-    InsertNs(0.02, 0.5),
-    ShortDValidation(),
-    InsertIndels(0.5, 5, 0.5, 0.5),
-    DistillMutationRate()
-])
-```
+---
 
 ## Mutation Models
 
-### S5F Model
-Context-aware somatic hypermutation model based on empirical data.
+### `S5F`
+
 ```python
-S5F(min_mutation_rate=0.003, max_mutation_rate=0.25, custom_model=None, productive=False)
+S5F(min_mutation_rate=0.0, max_mutation_rate=0.0, custom_model=None, productive=False)
 ```
 
-**Parameters:**
-- `min_mutation_rate`: Minimum mutation rate (default: 0)
-- `max_mutation_rate`: Maximum mutation rate (default: 0)
-- `custom_model`: Path to custom mutation model file (default: None)
-- `productive`: Ensure no stop codons and preserve CDR3 anchors (default: False)
+Context-dependent somatic hypermutation model. Mutation probability at each position depends on the surrounding 5-mer sequence motif.
 
-### Uniform Model
-Simple uniform random mutation model.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `min_mutation_rate` | `float` | `0.0` | Lower bound of mutation rate range |
+| `max_mutation_rate` | `float` | `0.0` | Upper bound of mutation rate range |
+| `custom_model` | `str` | `None` | Path to a custom S5F model file |
+| `productive` | `bool` | `False` | Avoid stop codons and preserve CDR3 anchor residues |
+
+### `Uniform`
+
 ```python
 Uniform(min_mutation_rate=0.0, max_mutation_rate=0.0, productive=False)
 ```
 
-**Parameters:**
-- `min_mutation_rate`: Minimum mutation rate (default: 0)
-- `max_mutation_rate`: Maximum mutation rate (default: 0)
-- `productive`: Ensure no stop codons and preserve CDR3 anchors (default: False)
+Position-independent mutation model. Each base has equal probability of mutation regardless of sequence context.
 
-## Accessing Results
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `min_mutation_rate` | `float` | `0.0` | Lower bound of mutation rate range |
+| `max_mutation_rate` | `float` | `0.0` | Upper bound of mutation rate range |
+| `productive` | `bool` | `False` | Avoid stop codons and preserve CDR3 anchor residues |
+
+---
+
+## Steps
+
+All steps inherit from `AugmentationStep` and implement `.apply(container: SimulationContainer) -> None`.
+
+### `SimulateSequence`
 
 ```python
-result = pipeline.execute()
-data = result.get_dict()
-
-# Key result fields
-sequence = data['sequence']          # The simulated sequence
-productive = data['productive']      # Whether sequence is productive
-v_call = data['v_call']             # V gene assignment
-d_call = data['d_call']             # D gene assignment
-j_call = data['j_call']             # J gene assignment
-mutation_rate = data['mutation_rate'] # Final mutation rate
-mutations = data['mutations']        # Mutation positions and changes
+steps.SimulateSequence(mutation_model, productive=False, specific_v=None, specific_d=None, specific_j=None)
 ```
 
-## Custom Allele Selection
+Performs V(D)J recombination and applies mutations. Always the first step in a pipeline.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `mutation_model` | `MutationModel` | — | S5F or Uniform instance |
+| `productive` | `bool` | `False` | Only generate in-frame, stop-codon-free sequences |
+| `specific_v` | `VAllele` | `None` | Force a specific V allele |
+| `specific_d` | `DAllele` | `None` | Force a specific D allele (heavy/TRB only) |
+| `specific_j` | `JAllele` | `None` | Force a specific J allele |
+
+### `FixVPositionAfterTrimmingIndexAmbiguity`
 
 ```python
-# Access specific alleles by family name (returns list of alleles)
-# Note: Allele families are organized by gene family groups (e.g., IGHVF1-G1)
-v_allele = HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1'][0]  # First allele in family
-d_allele = HUMAN_IGH_OGRDB.d_alleles['IGHD1-1'][0]    # First allele in family
-j_allele = HUMAN_IGH_OGRDB.j_alleles['IGHJ1'][0]      # First allele in family
+steps.FixVPositionAfterTrimmingIndexAmbiguity()
+```
 
-# View available allele families
-print("V allele families:", list(HUMAN_IGH_OGRDB.v_alleles.keys())[:5])
-print("D allele families:", list(HUMAN_IGH_OGRDB.d_alleles.keys())[:5])
-print("J allele families:", list(HUMAN_IGH_OGRDB.j_alleles.keys())[:5])
+Resolves V segment boundary ambiguity caused by trimming. No parameters.
 
-# View alleles in a specific family
-family_alleles = HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1']
-for allele in family_alleles:
-    print(allele.name)  # e.g., 'IGHVF1-G1*01', 'IGHVF1-G1*02', etc.
+### `FixDPositionAfterTrimmingIndexAmbiguity`
 
-# Use in simulation
-custom_step = SimulateSequence(
-    S5F(min_mutation_rate=0.003, max_mutation_rate=0.25),
-    productive=True,
-    specific_v=v_allele,
-    specific_d=d_allele,
-    specific_j=j_allele
+```python
+steps.FixDPositionAfterTrimmingIndexAmbiguity()
+```
+
+Resolves D segment boundary ambiguity. Use for heavy chain and TRB only. No parameters.
+
+### `FixJPositionAfterTrimmingIndexAmbiguity`
+
+```python
+steps.FixJPositionAfterTrimmingIndexAmbiguity()
+```
+
+Resolves J segment boundary ambiguity. No parameters.
+
+### `CorrectForVEndCut`
+
+```python
+steps.CorrectForVEndCut()
+```
+
+Adjusts V-end position when 3' trimming extends into the coding region. No parameters.
+
+### `CorrectForDTrims`
+
+```python
+steps.CorrectForDTrims()
+```
+
+Adjusts D segment boundaries after 5'/3' trimming. Heavy chain and TRB only. No parameters.
+
+### `DistillMutationRate`
+
+```python
+steps.DistillMutationRate()
+```
+
+Computes the mutation rate by comparing the mutated sequence to the germline and stores it in the container. **Place before artifact steps** to get a clean biological mutation rate.
+
+### `CorruptSequenceBeginning`
+
+```python
+steps.CorruptSequenceBeginning(
+    *,
+    probability=0.7,
+    event_weights=(0.4, 0.4, 0.2),
+    nucleotide_add_coefficient=210,
+    nucleotide_remove_coefficient=310,
+    nucleotide_add_after_remove_coefficient=50,
+    random_sequence_add_probability=1.0
 )
 ```
 
-## Batch Simulation
+Simulates 5' end degradation. All parameters are keyword-only.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `probability` | `float` | `0.7` | Probability of applying corruption |
+| `event_weights` | `tuple` | `(0.4, 0.4, 0.2)` | Weights for (add, remove, add-after-remove) events |
+| `nucleotide_add_coefficient` | `int` | `210` | Controls distribution of nucleotides added |
+| `nucleotide_remove_coefficient` | `int` | `310` | Controls distribution of nucleotides removed |
+| `nucleotide_add_after_remove_coefficient` | `int` | `50` | Controls nucleotides added after removal |
+| `random_sequence_add_probability` | `float` | `1.0` | Probability of adding random (vs germline-matching) bases |
+
+### `EnforceSequenceLength`
 
 ```python
-# Generate multiple sequences
-results = []
-for _ in range(100):
-    result = pipeline.execute()
-    results.append(result.get_dict())
-
-# Convert to DataFrame for analysis
-import pandas as pd
-df = pd.DataFrame(results)
+steps.EnforceSequenceLength(*, max_length=576)
 ```
 
-## Common Parameter Patterns
+Truncates sequences exceeding `max_length` nucleotides from the 3' end, simulating sequencing platform read-length limits.
 
-- **Probabilities**: Values between 0.0 and 1.0
-- **Mutation rates**: Typically 0.001 to 0.3 (0.1% to 30%)
-- **Sequence lengths**: Usually 200-600 nucleotides for full sequences
-- **Trimming**: 0-20 nucleotides typically
-- **Indel counts**: Usually 1-10 per sequence
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_length` | `int` | `576` | Maximum allowed sequence length |
+
+### `InsertNs`
+
+```python
+steps.InsertNs(*, n_ratio=0.02, probability=0.5)
+```
+
+Replaces random positions with 'N' to simulate ambiguous base calls.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `n_ratio` | `float` | `0.02` | Fraction of positions to replace |
+| `probability` | `float` | `0.5` | Probability of applying N-insertion to a given sequence |
+
+### `InsertIndels`
+
+```python
+steps.InsertIndels(*, probability=0.5, max_indels=5, insertion_probability=0.5, deletion_probability=0.5)
+```
+
+Introduces random insertions and deletions.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `probability` | `float` | `0.5` | Probability of applying indels |
+| `max_indels` | `int` | `5` | Maximum number of indel events |
+| `insertion_probability` | `float` | `0.5` | Relative weight for insertion events |
+| `deletion_probability` | `float` | `0.5` | Relative weight for deletion events |
+
+### `ShortDValidation`
+
+```python
+steps.ShortDValidation(short_d_length=5)
+```
+
+Validates D segment length and adjusts annotations for short D regions.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `short_d_length` | `int` | `5` | Threshold below which D is considered "short" |
+
+### `FilterTCRDJAmbiguities`
+
+```python
+steps.FilterTCRDJAmbiguities()
+```
+
+Filters ambiguous D-J assignments specific to TCR beta chains. No parameters.
+
+---
+
+## `SimulationContainer`
+
+The mutable data object returned by `pipeline.execute()`. Holds the simulated sequence, annotations, and metadata.
+
+### Data Access
+
+```python
+result = pipeline.execute()
+
+# Dictionary export
+data = result.get_dict()
+
+# Direct attribute access
+print(result.sequence)
+print(result.v_call)
+
+# Dictionary-style access
+print(result['mutation_rate'])
+result['mutation_rate'] = 0.05
+```
+
+### Methods
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `get_dict()` | `-> dict` | Export all fields as a plain dictionary |
+| `add_mutation(position, change)` | `-> None` | Log a mutation (e.g., `add_mutation(150, "A>T")`) |
+| `shift_positions(offset)` | `-> None` | Shift all position annotations by `offset` |
+| `update_from_dict(d)` | `-> None` | Bulk-update attributes from a dictionary |
+
+### Output Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sequence` | `str` | Final nucleotide sequence |
+| `v_call` | `str` | V allele name(s) |
+| `d_call` | `str` | D allele name(s) |
+| `j_call` | `str` | J allele name(s) |
+| `v_sequence_start` / `end` | `int` | V segment position in final sequence |
+| `d_sequence_start` / `end` | `int` | D segment position |
+| `j_sequence_start` / `end` | `int` | J segment position |
+| `v_germline_start` / `end` | `int` | Position within original V gene |
+| `d_germline_start` / `end` | `int` | Position within original D gene |
+| `j_germline_start` / `end` | `int` | Position within original J gene |
+| `junction_start` / `end` | `int` | CDR3 region boundaries |
+| `np1_length` | `int` | NP1 region length |
+| `np2_length` | `int` | NP2 region length |
+| `mutations` | `dict` | `{position: "X>Y"}` mutation log |
+| `mutation_rate` | `float` | Fraction of mutated positions |
+| `productive` | `bool` | In-frame, no stop codons |
+| `vj_in_frame` | `bool` | V and J maintain reading frame |
+| `stop_codon` | `bool` | Premature stop codon present |
+| `indels` | `dict` | Indel information |
+
+---
+
+## Seed Management
+
+```python
+from GenAIRR import set_seed, get_seed, reset_seed
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `set_seed(seed)` | `seed: int` | Fix the global random state for reproducible output |
+| `get_seed()` | `-> int` | Retrieve the current seed value |
+| `reset_seed()` | `-> None` | Clear the seed, restoring non-deterministic behavior |
+
+---
+
+## Data Configurations
+
+| Import | Chain | Species | Has D segment |
+|--------|-------|---------|---------------|
+| `HUMAN_IGH_OGRDB` | Heavy (IGH) | Human | Yes |
+| `HUMAN_IGH_EXTENDED` | Heavy (IGH) | Human | Yes |
+| `HUMAN_IGK_OGRDB` | Kappa light (IGK) | Human | No |
+| `HUMAN_IGL_OGRDB` | Lambda light (IGL) | Human | No |
+| `HUMAN_TCRB_IMGT` | TCR Beta (TRB) | Human | Yes |
+
+### Accessing Alleles
+
+```python
+config = HUMAN_IGH_OGRDB
+
+# List all gene families
+list(config.v_alleles.keys())  # ['IGHVF1-G1', 'IGHVF1-G2', ...]
+list(config.d_alleles.keys())  # ['IGHD1-1', 'IGHD1-7', ...]
+list(config.j_alleles.keys())  # ['IGHJ1', 'IGHJ2', ...]
+
+# Get alleles for a gene
+alleles = config.v_alleles['IGHVF1-G1']  # List[VAllele]
+allele = alleles[0]
+print(allele.name)      # 'IGHVF1-G1*01'
+print(allele.family)    # 'IGHVF1'
+print(allele.gene)      # 'IGHVF1-G1'
+print(allele.length)    # 301
+print(allele.sequence)  # nucleotide sequence string
+```
+
+---
+
+## Complete Pipeline Examples
+
+### Heavy Chain
+
+```python
+from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
+
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[
+        steps.SimulateSequence(S5F(min_mutation_rate=0.01, max_mutation_rate=0.05), productive=True),
+        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixDPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
+        steps.CorrectForVEndCut(),
+        steps.CorrectForDTrims(),
+        steps.DistillMutationRate(),
+        steps.CorruptSequenceBeginning(),
+        steps.EnforceSequenceLength(),
+        steps.InsertNs(),
+        steps.ShortDValidation(),
+        steps.InsertIndels(),
+    ]
+)
+```
+
+### Kappa Light Chain
+
+```python
+from GenAIRR import Pipeline, steps, HUMAN_IGK_OGRDB, S5F
+
+pipeline = Pipeline(
+    config=HUMAN_IGK_OGRDB,
+    steps=[
+        steps.SimulateSequence(S5F(min_mutation_rate=0.01, max_mutation_rate=0.05), productive=True),
+        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
+        steps.CorrectForVEndCut(),
+        steps.DistillMutationRate(),
+        steps.CorruptSequenceBeginning(),
+        steps.EnforceSequenceLength(),
+        steps.InsertNs(),
+        steps.InsertIndels(),
+    ]
+)
+```
+
+### TCR Beta
+
+```python
+from GenAIRR import Pipeline, steps, HUMAN_TCRB_IMGT
+from GenAIRR.mutation import Uniform
+
+pipeline = Pipeline(
+    config=HUMAN_TCRB_IMGT,
+    steps=[
+        steps.SimulateSequence(Uniform(min_mutation_rate=0.0, max_mutation_rate=0.01), productive=True),
+        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixDPositionAfterTrimmingIndexAmbiguity(),
+        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
+        steps.CorrectForVEndCut(),
+        steps.CorrectForDTrims(),
+        steps.FilterTCRDJAmbiguities(),
+        steps.DistillMutationRate(),
+        steps.CorruptSequenceBeginning(),
+        steps.EnforceSequenceLength(),
+        steps.InsertNs(),
+        steps.ShortDValidation(),
+        steps.InsertIndels(),
+    ]
+)
+```
+
+### Custom Step
+
+```python
+from GenAIRR.steps.StepBase import AugmentationStep
+from GenAIRR.container.SimulationContainer import SimulationContainer
+
+class MyStep(AugmentationStep):
+    def __init__(self, *, threshold=0.5):
+        super().__init__()
+        self.threshold = threshold
+
+    def apply(self, container: SimulationContainer) -> None:
+        # self.data_config is set automatically by the Pipeline
+        # Modify container in place
+        pass
+```

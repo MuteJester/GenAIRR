@@ -9,20 +9,52 @@ from GenAIRR.utilities import translate
 from GenAIRR.dataconfig import DataConfig
 
 class InsertIndels(AugmentationStep):
-    def __init__(self, indel_probability,max_indels,insertion_proba,deletion_proba):
+    """
+    Inserts insertions and deletions (indels) into sequences.
+
+    This step simulates sequencing errors or biological variations by randomly
+    inserting or deleting nucleotides at valid positions in the sequence.
+
+    Args:
+        probability: Probability that indels are inserted (0.0-1.0). Default: 0.5
+        max_indels: Maximum number of indels to insert. Default: 5
+        insertion_probability: Relative weight for insertions vs deletions. Default: 0.5
+        deletion_probability: Relative weight for deletions vs insertions. Default: 0.5
+
+    Example:
+        # Use defaults
+        step = InsertIndels()
+
+        # Customize specific parameters
+        step = InsertIndels(probability=0.3, max_indels=3)
+    """
+
+    def __init__(
+        self,
+        *,
+        probability: float = 0.5,
+        max_indels: int = 5,
+        insertion_probability: float = 0.5,
+        deletion_probability: float = 0.5,
+    ):
         super().__init__()
-        self.deletion_proba = deletion_proba
-        self.insertion_proba = insertion_proba
-        self.indel_probability = indel_probability
+        self.deletion_proba = deletion_probability
+        self.insertion_proba = insertion_probability
+        self.indel_probability = probability
         self.max_indels = max_indels
 
     def valid_indel_positions(self, container: SimulationContainer):
         all_positions = set(range(0, container.j_sequence_end))
         # remove np regions
-        np1_positions = set(range(container.v_sequence_end, container.d_sequence_start))
-        np2_positions = set(range(container.d_sequence_end, container.j_sequence_start))
-        all_positions -= np1_positions
-        all_positions -= np2_positions
+        has_d = container.d_call and container.d_call[0]
+        if has_d:
+            np1_positions = set(range(container.v_sequence_end, container.d_sequence_start))
+            np2_positions = set(range(container.d_sequence_end, container.j_sequence_start))
+            all_positions -= np1_positions
+            all_positions -= np2_positions
+        else:
+            np_positions = set(range(container.v_sequence_end, container.j_sequence_start))
+            all_positions -= np_positions
 
         # remove ns positions
         all_positions -= set(container.Ns.keys())
@@ -59,10 +91,11 @@ class InsertIndels(AugmentationStep):
 
         corrected_Ns = {}
         for pos in container.Ns:
-            if pos >= position:
+            if pos > position:
                 corrected_Ns[pos-1] = container.Ns[pos]
-            else:
+            elif pos < position:
                 corrected_Ns[pos] = container.Ns[pos]
+            # pos == position: dropped (nucleotide was deleted)
 
         container.Ns = corrected_Ns
 
@@ -71,9 +104,9 @@ class InsertIndels(AugmentationStep):
         # Update log positions for deletions
         updated_log = {}
         for log_pos, log_entry in container.indels.items():
-            if log_pos >= position:
+            if log_pos > position:
                 updated_log[log_pos - 1] = log_entry
-            elif log_pos < position:
+            else:
                 updated_log[log_pos] = log_entry
 
         container.indels = updated_log
@@ -122,8 +155,6 @@ class InsertIndels(AugmentationStep):
                 updated_log[log_pos] = log_entry
         container.indels = updated_log
 
-        container.sequence = ''.join(after_insertion)
-
     def insert_indels(self, container: SimulationContainer):
         # get valid position for indels excluding np regions, n's and mutated positions
         valid_positions = list(self.valid_indel_positions(container))
@@ -156,7 +187,7 @@ class InsertIndels(AugmentationStep):
         sequence = container.sequence
         functional = False
         stop_codon = False
-        note = container.note
+        note = ''
         # stop codon
         stops = ["TAG", "TAA", "TGA"]
         for x in range(container.junction_sequence_end, container.v_sequence_start, -3):

@@ -1,125 +1,258 @@
-# Structure and Flow of Simulation in GenAIRR
+# How the Pipeline Works
 
-GenAIRR provides a robust framework for simulating immunoglobulin (Ig) sequences, offering flexibility and precision through its modular structure. At the heart of this framework are `DataConfig` instances, `Sequence` classes like `HeavyChainSequence`, and customizable pipelines composed of augmentation steps. This page explores the general structure and flow of simulations in GenAIRR, emphasizing the role of `DataConfig`, how to create and run simulations, and how to develop custom augmentation steps to tailor simulations to specific needs.
+This page explains GenAIRR's architecture — how `DataConfig`, `Pipeline`, `Steps`, and `SimulationContainer` fit together, and the order of operations when a pipeline executes.
 
-## The Importance of `DataConfig`
+---
 
-The `DataConfig` object is the cornerstone of any GenAIRR simulation. It encapsulates all essential distributions, empirical data, and validation mappings required for realistic Ig sequence simulations. A `DataConfig` instance holds:
-- **Allelic distributions**: Information about V, D, J alleles and their usage probabilities.
-- **Trim and mutation distributions**: Probabilities and distributions for nucleotide trimming and mutation rates.
-- **Correction maps**: Objects that help correct and validate generated sequences by resolving ambiguities.
-- **Empirical data**: Data derived from real Ig sequence observations for accurate modeling.
+## Architecture Overview
 
-### Example: Loading a `DataConfig`
-To load a built-in `DataConfig` for heavy chains:
-```python
-from GenAIRR.data import HUMAN_IGH_OGRDB
-
-heavy_chain_config = HUMAN_IGH_OGRDB
+```
+                   ┌──────────────┐
+                   │  DataConfig   │  Germline alleles, trimming distributions,
+                   │  (immutable)  │  NP-region models, correction maps
+                   └──────┬───────┘
+                          │
+                          ▼
+              ┌───────────────────────┐
+              │       Pipeline        │
+              │  config + [steps...]  │
+              └───────────┬───────────┘
+                          │  .execute()
+                          ▼
+              ┌───────────────────────┐
+              │  SimulationContainer  │ ◄── created empty
+              └───────────┬───────────┘
+                          │
+          ┌───────────────┼───────────────┐
+          ▼               ▼               ▼
+    ┌──────────┐   ┌──────────┐   ┌──────────┐
+    │  Step 1  │──►│  Step 2  │──►│  Step N  │
+    └──────────┘   └──────────┘   └──────────┘
+          │               │               │
+          └───────────────┼───────────────┘
+                          ▼
+              ┌───────────────────────┐
+              │  SimulationContainer  │ ◄── populated with results
+              └───────────────────────┘
 ```
 
-This instance can now be used as the foundation for generating sequences and building simulation pipelines.
+1. The **Pipeline** receives a `DataConfig` and a list of steps
+2. On `.execute()`, it creates an empty `SimulationContainer`
+3. Each step's `.apply(container)` method is called in order, mutating the container in place
+4. The final container is returned to the caller
 
-## Basic Sequence Simulation
+---
 
-With a `DataConfig` instance, users can directly create naive sequences using predefined classes such as `HeavyChainSequence`. This approach is ideal for generating simple, unguided sequences with realistic characteristics.
+## DataConfig
 
-### Example: Creating a Naive Heavy Chain Sequence
+A `DataConfig` encapsulates everything needed to simulate sequences for a specific species and chain type:
+
+| Attribute | Contents |
+|-----------|----------|
+| `v_alleles`, `d_alleles`, `j_alleles` | Dictionaries mapping gene names to lists of `Allele` objects |
+| `trim_dicts` | Trimming length distributions for each segment end (V_3, D_5, D_3, J_5) |
+| `NP_transitions` | Markov chain transition matrices for NP-region nucleotide generation |
+| `NP_first_bases` | Starting nucleotide distributions for NP regions |
+| `NP_lengths` | Length distributions for NP1 and NP2 regions |
+| `correction_maps` | Ambiguity resolution structures (trim similarity maps, N-ambiguity graphs) |
+
+### Built-in Configs
+
 ```python
-from GenAIRR.sequence import HeavyChainSequence
-from GenAIRR.data import HUMAN_IGH_OGRDB
-
-config = HUMAN_IGH_OGRDB
-naive_sequence = HeavyChainSequence.create_random(config)
-
-print("Generated Sequence:", naive_sequence.mutated_seq)
+from GenAIRR import HUMAN_IGH_OGRDB, HUMAN_IGK_OGRDB, HUMAN_IGL_OGRDB, HUMAN_TCRB_IMGT
 ```
 
-This code snippet creates a naive heavy chain sequence using the provided configuration. While generating naive sequences can be insightful, more complex simulations often require a sequence to undergo various augmentation steps for better analysis and study.
+These are lazily loaded — the data is only read from disk when first accessed.
 
-## Custom Simulation Pipelines
+### Custom Configs
 
-The real power of GenAIRR lies in its ability to create customizable pipelines composed of different augmentation steps. Each pipeline is essentially a sequence of steps that modifies a `SimulationContainer` instance to reflect specific simulation logic.
+You can create a `DataConfig` from your own FASTA files using `CustomDataConfigGenerator`. See [Custom DataConfig](custom_data_config.md) for details.
 
-### Structure of a Pipeline
+---
 
-A pipeline in GenAIRR is simply a list of step instances:
+## Pipeline
+
+The `Pipeline` class (aliased from `AugmentationPipeline`) is the main entry point:
+
 ```python
-from GenAIRR.steps import SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity, InsertIndels
-from GenAIRR.pipeline import AugmentationPipeline
-from GenAIRR.mutation import S5F
+from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
 
-pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(), True),
-    FixVPositionAfterTrimmingIndexAmbiguity(),
-    InsertIndels(0.5, 3, 0.5, 0.5)
-])
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[
+        steps.SimulateSequence(S5F(min_mutation_rate=0.01, max_mutation_rate=0.05), productive=True),
+        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+        steps.CorrectForVEndCut(),
+    ]
+)
 ```
 
-### Executing a Pipeline
+**Key behavior:**
 
-Each step takes in a `SimulationContainer` instance and modifies it based on the step's logic. Running a pipeline is straightforward:
+- `config` is passed to each step automatically — steps do not need to know about the config at construction time
+- Steps execute in list order; earlier steps' modifications are visible to later steps
+- Each `.execute()` call produces an independent `SimulationContainer`
+- The pipeline is reusable — call `.execute()` as many times as needed
+
+!!! tip "Pipeline reuse"
+    Construct the pipeline once, then call `.execute()` in a loop to generate thousands of sequences. There is no per-call overhead beyond the simulation itself.
+
+---
+
+## Steps
+
+Every step inherits from `AugmentationStep` and implements an `.apply(container)` method. Steps fall into four categories:
+
+### 1. Sequence Generation
+
+| Step | Purpose |
+|------|---------|
+| `SimulateSequence` | Performs V(D)J recombination, applies mutations, populates the container with the initial sequence and annotations |
+
+This is always the first step.
+
+### 2. Position Correction
+
+| Step | Purpose |
+|------|---------|
+| `FixVPositionAfterTrimmingIndexAmbiguity` | Resolves V segment boundary ambiguity caused by trimming |
+| `FixDPositionAfterTrimmingIndexAmbiguity` | Resolves D segment boundary ambiguity (heavy/TRB only) |
+| `FixJPositionAfterTrimmingIndexAmbiguity` | Resolves J segment boundary ambiguity |
+| `CorrectForVEndCut` | Adjusts V-end position when trimming extends into the coding region |
+| `CorrectForDTrims` | Adjusts D boundaries after 5'/3' trimming (heavy/TRB only) |
+| `ShortDValidation` | Validates short D segments |
+
+These steps ensure that ground-truth annotations remain accurate after trimming introduces positional ambiguity.
+
+### 3. Measurement
+
+| Step | Purpose |
+|------|---------|
+| `DistillMutationRate` | Computes and stores the mutation rate. Must be placed **before** artifact steps. |
+
+### 4. Artifact Simulation
+
+| Step | Purpose |
+|------|---------|
+| `CorruptSequenceBeginning` | Simulates 5' end degradation (truncation, random base addition) |
+| `EnforceSequenceLength` | Truncates sequences to a maximum read length |
+| `InsertNs` | Replaces random positions with 'N' (ambiguous bases) |
+| `InsertIndels` | Introduces insertion/deletion errors |
+
+### Recommended Step Order
+
 ```python
-container = pipeline.execute()
-print(container.get_dict())  # View the updated simulation data
+steps=[
+    # 1. Generation
+    steps.SimulateSequence(...),
+    # 2. Position corrections
+    steps.FixVPositionAfterTrimmingIndexAmbiguity(),
+    steps.FixDPositionAfterTrimmingIndexAmbiguity(),   # heavy/TRB only
+    steps.FixJPositionAfterTrimmingIndexAmbiguity(),
+    # 3. Biological corrections
+    steps.CorrectForVEndCut(),
+    steps.CorrectForDTrims(),                          # heavy/TRB only
+    # 4. Measurement (before artifacts)
+    steps.DistillMutationRate(),
+    # 5. Artifacts
+    steps.CorruptSequenceBeginning(),
+    steps.EnforceSequenceLength(),
+    steps.InsertNs(),
+    # 6. Validation + errors
+    steps.ShortDValidation(),
+    steps.InsertIndels(),
+]
 ```
 
-This flow ensures that the sequence undergoes a series of predefined modifications, reflecting realistic biological processes such as mutations, indels, or trimming corrections.
+---
 
-### Example Steps Explained
+## SimulationContainer
 
-- **SimulateSequence**: This step initializes the simulation by creating a sequence using the provided mutation model and ensuring that it meets criteria such as productivity.
-- **FixVPositionAfterTrimmingIndexAmbiguity**: Corrects the position of V sequences after trimming to ensure consistency.
-- **InsertIndels**: Inserts or deletes bases at random positions to simulate real sequence alterations.
+The `SimulationContainer` is the mutable data object passed through the pipeline. After execution, it contains all sequence data and annotations.
 
-## Developing Custom Steps
+### Accessing Data
 
-GenAIRR's flexibility allows users to create their own augmentation steps to match unique simulation goals. Custom steps inherit from the `AugmentationStep` base class and override the `apply` method to implement specific logic.
+```python
+result = pipeline.execute()
 
-### Example: Creating a Custom Step
+# As a dictionary
+data = result.get_dict()
+print(data['sequence'])
+print(data['v_call'])
 
-Below is an example of a custom step that reverses the sequence in the `SimulationContainer`:
+# Dictionary-style access
+print(result['mutation_rate'])
+result['mutation_rate'] = 0.05
+```
+
+### Key Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sequence` | `str` | Final nucleotide sequence |
+| `v_call` | `str` | V allele name(s) used |
+| `d_call` | `str` | D allele name(s) used |
+| `j_call` | `str` | J allele name(s) used |
+| `v_sequence_start` / `end` | `int` | V segment position in final sequence |
+| `d_sequence_start` / `end` | `int` | D segment position in final sequence |
+| `j_sequence_start` / `end` | `int` | J segment position in final sequence |
+| `v_germline_start` / `end` | `int` | Position within original V gene |
+| `d_germline_start` / `end` | `int` | Position within original D gene |
+| `j_germline_start` / `end` | `int` | Position within original J gene |
+| `junction_start` / `end` | `int` | CDR3 region boundaries |
+| `mutations` | `dict` | `{position: "X>Y"}` mutation log |
+| `mutation_rate` | `float` | Fraction of mutated positions |
+| `productive` | `bool` | In-frame and no stop codons |
+| `vj_in_frame` | `bool` | V and J maintain reading frame |
+| `stop_codon` | `bool` | Premature stop codon present |
+| `indels` | `dict` | Inserted indel information |
+
+### Utility Methods
+
+- `add_mutation(position, change)` — log a mutation
+- `shift_positions(offset)` — shift all position annotations (used after insertions/deletions)
+- `update_from_dict(d)` — bulk-update attributes from a dictionary
+- `get_dict()` — export all fields as a plain dictionary
+
+---
+
+## Writing Custom Steps
+
+Create a custom step by subclassing `AugmentationStep`:
+
 ```python
 from GenAIRR.steps.StepBase import AugmentationStep
 from GenAIRR.container.SimulationContainer import SimulationContainer
 
-class ReverseSequenceStep(AugmentationStep):
+class MyCustomStep(AugmentationStep):
+    def __init__(self, *, my_param=0.5):
+        self.my_param = my_param
+
     def apply(self, container: SimulationContainer) -> None:
-        """Reverses the sequence in the SimulationContainer."""
-        container.sequence = container.sequence[::-1]  # Reverse the sequence
-        container.note += " Sequence reversed."
+        # Access the config via self.data_config (set automatically by Pipeline)
+        # Modify the container in place
+        if some_condition:
+            container.sequence = modified_sequence
 ```
 
-To use this custom step in a pipeline:
+Use it in a pipeline:
+
 ```python
-pipeline = AugmentationPipeline([
-    SimulateSequence(S5F(), True),
-    ReverseSequenceStep()
-])
+pipeline = Pipeline(
+    config=HUMAN_IGH_OGRDB,
+    steps=[
+        steps.SimulateSequence(S5F(min_mutation_rate=0.01, max_mutation_rate=0.05), productive=True),
+        MyCustomStep(my_param=0.8),
+    ]
+)
 ```
 
-## The Role of `SimulationContainer`
+The pipeline automatically sets `self.data_config` on each step before calling `.apply()`.
 
-The `SimulationContainer` class is the central data structure that holds simulation results. Each step in the pipeline reads from and updates this container, ensuring continuity and coherence throughout the process.
+---
 
-### Key Features of `SimulationContainer`
+## Next Steps
 
-- **Attributes**: Stores sequence data, metadata, mutation logs, and more.
-- **Flexible Interaction**: Offers dictionary-like access to attributes and can be updated using dictionaries.
-- **Methods for Manipulation**:
-  - `add_mutation()`: Log a new mutation.
-  - `shift_positions()`: Shift all sequence positions, useful after insertions or deletions.
-  - `update_from_dict()`: Update the container's attributes with data from a dictionary.
-
-### Example: Interacting with `SimulationContainer`
-```python
-container = SimulationContainer()
-container.add_mutation(150, "A>T")
-container.shift_positions(5)
-print(container["mutation_rate"])  # Accessing data
-container["mutation_rate"] = 0.05  # Modifying data
-```
-
-## Summary
-
-GenAIRR's simulation flow is modular and adaptable, starting with the foundational `DataConfig` instance and building up to complex pipelines with multiple augmentation steps. Whether using predefined sequences like `HeavyChainSequence` or crafting custom simulation pipelines, users can tailor their workflows to fit specific research needs. Each augmentation step modifies the `SimulationContainer`, providing an intuitive and powerful way to simulate Ig sequences accurately and efficiently.
+- **[Step-by-Step Tutorial](step_by_step_tutorial.md)** — Build a pipeline from scratch
+- **[Parameter Reference](parameter_reference.md)** — Detailed parameter docs for every step
+- **[Custom DataConfig](custom_data_config.md)** — Create configs from your own germline data

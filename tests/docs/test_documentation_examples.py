@@ -40,7 +40,7 @@ def test_full_pipeline_example():
     from GenAIRR.steps import (
         SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity,
         FixDPositionAfterTrimmingIndexAmbiguity, FixJPositionAfterTrimmingIndexAmbiguity,
-        CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning,
+        CorrectForVEndCut, CorrectForDTrims, CorruptSequenceBeginning, EnforceSequenceLength,
         InsertNs, InsertIndels, ShortDValidation, DistillMutationRate
     )
     from GenAIRR.mutation import S5F
@@ -56,10 +56,11 @@ def test_full_pipeline_example():
         FixJPositionAfterTrimmingIndexAmbiguity(),
         CorrectForVEndCut(),
         CorrectForDTrims(),
-        CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-        InsertNs(0.02, 0.5),
+        CorruptSequenceBeginning(),
+        EnforceSequenceLength(),
+        InsertNs(),
         ShortDValidation(),
-        InsertIndels(0.5, 5, 0.5, 0.5),
+        InsertIndels(),
         DistillMutationRate()
     ])
     
@@ -99,7 +100,7 @@ def test_light_chain_example():
     from GenAIRR.steps import (
         SimulateSequence, FixVPositionAfterTrimmingIndexAmbiguity,
         FixJPositionAfterTrimmingIndexAmbiguity, CorrectForVEndCut,
-        CorruptSequenceBeginning, InsertNs, InsertIndels, DistillMutationRate
+        CorruptSequenceBeginning, EnforceSequenceLength, InsertNs, InsertIndels, DistillMutationRate
     )
     from GenAIRR.mutation import S5F
     from GenAIRR.data import HUMAN_IGK_OGRDB
@@ -112,15 +113,16 @@ def test_light_chain_example():
         FixVPositionAfterTrimmingIndexAmbiguity(),
         FixJPositionAfterTrimmingIndexAmbiguity(),
         CorrectForVEndCut(),
-        CorruptSequenceBeginning(0.7, [0.4, 0.4, 0.2], 576, 210, 310, 50),
-        InsertNs(0.02, 0.5),
-        InsertIndels(0.5, 5, 0.5, 0.5),
+        CorruptSequenceBeginning(),
+        EnforceSequenceLength(),
+        InsertNs(),
+        InsertIndels(),
         DistillMutationRate()
     ])
-    
+
     result = pipeline.execute()
     data = result.get_dict()
-    
+
     assert 'sequence' in data
     assert 'd_call' not in data or data['d_call'] == []  # Light chains don't have D genes
     print("✓ Light Chain example works correctly")
