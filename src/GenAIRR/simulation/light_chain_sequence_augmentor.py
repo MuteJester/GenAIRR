@@ -1,6 +1,4 @@
 import random
-import numpy as np
-import scipy.stats as st
 from ..utilities import translate
 from ..sequence import LightChainType
 from ..sequence import LightChainSequence
@@ -26,9 +24,9 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
     def __init__(self, dataconfig: DataConfig, args: SequenceAugmentorArguments = SequenceAugmentorArguments()):
         super().__init__(dataconfig, args)
 
-        self.nucleotide_add_distribution = st.beta(2, 3)
-        self.nucleotide_remove_distribution = st.beta(2, 3)
-        self.nucleotide_add_after_remove_distribution = st.beta(1, 3)
+        self.nucleotide_add_distribution = (2, 3)
+        self.nucleotide_remove_distribution = (2, 3)
+        self.nucleotide_add_after_remove_distribution = (1, 3)
         self.chain_type = LightChainType.KAPPA if 'IGKV' in list(self.dataconfig.v_alleles)[
             0] else LightChainType.LAMBDA
         # Loading Routines
@@ -187,7 +185,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
     def insert_indels(self, simulated):
         # get valid position for indels excluding np regions, n's and mutated positions
         valid_positions = list(self.valid_indel_positions(simulated))
-        num_indels = np.random.randint(1, self.max_indels, size=1).item()
+        num_indels = random.randint(1, self.max_indels - 1)
         num_indels = min(num_indels, len(valid_positions))
         random.shuffle(valid_positions)
         n_valid_positions = len(valid_positions)
@@ -196,7 +194,7 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             indel_position = valid_positions[idx]
 
             # choose action 1 = insertion -1 = deletion
-            action = np.random.choice([1, -1], size=1, p=[self.insertion_proba, self.deletion_proba]).item()
+            action = random.choices([1, -1], weights=[self.insertion_proba, self.deletion_proba], k=1)[0]
             if action == 1:  # insertion case
                 # print('###'*30)
                 # print('Before Insertion')
@@ -553,11 +551,11 @@ class LightChainSequenceAugmentor(SequenceAugmentorBase):
             self.fix_productive_call_after_corruption_indel(simulated)
 
         # 3. Add N's
-        if bool(np.random.binomial(1, self.n_proba)):
+        if random.random() < self.n_proba:
             self.insert_Ns(simulated)
 
         # Insert Indels:
-        if bool(np.random.binomial(1,self.simulate_indels)):
+        if random.random() < self.simulate_indels:
             self.insert_indels(simulated)
             self.fix_productive_call_after_corruption_indel(simulated)
             
@@ -617,8 +615,8 @@ class LightChainKappaLambdaSequenceAugmentor:
             else:
                 raise ValueError("`chain_type` must be either LightChainType.KAPPA or LightChainType.LAMBDA.")
         else:
-            chain_type = np.random.choice([LightChainType.KAPPA, LightChainType.LAMBDA], size=1,
-                                          p=[self.kappa_lambda_ratio, 1 - self.kappa_lambda_ratio]).item()
+            chain_type = random.choices([LightChainType.KAPPA, LightChainType.LAMBDA],
+                                          weights=[self.kappa_lambda_ratio, 1 - self.kappa_lambda_ratio], k=1)[0]
             if chain_type == LightChainType.KAPPA:
                 return self.kappa_augmentor.simulate_augmented_sequence(specific_v,specific_j)
             else:

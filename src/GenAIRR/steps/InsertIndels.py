@@ -1,7 +1,5 @@
 import random
 
-import numpy as np
-
 from GenAIRR.container.SimulationContainer import SimulationContainer
 from GenAIRR.pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
 from GenAIRR.steps.StepBase import AugmentationStep
@@ -158,7 +156,7 @@ class InsertIndels(AugmentationStep):
     def insert_indels(self, container: SimulationContainer):
         # get valid position for indels excluding np regions, n's and mutated positions
         valid_positions = list(self.valid_indel_positions(container))
-        num_indels = np.random.randint(1, self.max_indels, size=1).item()
+        num_indels = random.randint(1, self.max_indels - 1)
         num_indels = min(num_indels, len(valid_positions))
         random.shuffle(valid_positions)
         n_valid_positions = len(valid_positions)
@@ -167,7 +165,7 @@ class InsertIndels(AugmentationStep):
             indel_position = valid_positions[idx]
 
             # choose action 1 = insertion -1 = deletion
-            action = np.random.choice([1, -1], size=1, p=[self.insertion_proba, self.deletion_proba]).item()
+            action = random.choices([1, -1], weights=[self.insertion_proba, self.deletion_proba], k=1)[0]
             if action == 1:  # insertion case
 
                 self.apply_insertion(container, indel_position)
@@ -229,7 +227,7 @@ class InsertIndels(AugmentationStep):
 
     def apply(self, container: SimulationContainer) -> None:
         # Insert indels if the condition is met
-        if bool(np.random.binomial(1, self.indel_probability)):
+        if random.random() < self.indel_probability:
             self.insert_indels(container)
             self.fix_productive_call_after_corruption_indel(container)
 

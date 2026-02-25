@@ -1,4 +1,6 @@
-import pandas as pd
+import csv
+from collections import Counter
+
 from GenAIRR.dataconfig.make.base_dataconfig_builder import BaseDataConfigGenerator
 from GenAIRR.dataconfig.make.auxiliary_builders.correction_map_builder import CorrectionMapBuilder
 from GenAIRR.dataconfig.make.auxiliary_builders.trimming_proportion_builder import TrimmingProbabilityGenerator
@@ -7,18 +9,51 @@ from GenAIRR.utilities.data_utilities import create_allele_dict
 from GenAIRR.utilities.asc_utilities import create_asc_germline_set
 
 
+def _load_airr_data(custom_data):
+    """Load AIRR data from a CSV path or list of dicts."""
+    if isinstance(custom_data, str):
+        with open(custom_data, newline='') as f:
+            return list(csv.DictReader(f))
+    elif isinstance(custom_data, list):
+        return custom_data
+    else:
+        # Backwards compat: accept pandas DataFrame
+        try:
+            return custom_data.to_dict(orient='records')
+        except AttributeError:
+            raise TypeError(
+                "custom_data must be a CSV file path, a list of dicts, "
+                "or a pandas DataFrame"
+            )
+
+
+def _counter_to_prob_dict(counter):
+    """Convert a Counter to a {value: probability} dict."""
+    total = sum(counter.values())
+    if total == 0:
+        return {}
+    return {k: v / total for k, v in counter.items()}
+
+
 class CustomDataConfigBuilder(BaseDataConfigGenerator):
     def __init__(self, convert_to_asc=True):
         super().__init__(convert_to_asc)
         self.correction_builder = CorrectionMapBuilder(self.dataconfig)
 
     def _derive_gene_usage(self, data):
+        v_counts = Counter(row['v_call'].split('*')[0] for row in data)
+        j_counts = Counter(row['j_call'].split('*')[0] for row in data)
+
         gene_use_dict = {
-            'V': (data['v_call'].apply(lambda x: x.split('*')[0]).value_counts() / len(data)).to_dict(),
-            'J': (data['j_call'].apply(lambda x: x.split('*')[0]).value_counts() / len(data)).to_dict()
+            'V': _counter_to_prob_dict(v_counts),
+            'J': _counter_to_prob_dict(j_counts),
         }
-        if 'd_call' in data:
-            gene_use_dict['D'] = (data['d_call'].apply(lambda x: x.split('*')[0]).value_counts() / len(data)).to_dict()
+
+        # Check if d_call column exists in the data
+        if data and 'd_call' in data[0]:
+            d_counts = Counter(row['d_call'].split('*')[0] for row in data)
+            gene_use_dict['D'] = _counter_to_prob_dict(d_counts)
+
         self.dataconfig.gene_use_dict = gene_use_dict
 
     def _derive_trimming_proportions(self, data):
@@ -30,13 +65,23 @@ class CustomDataConfigBuilder(BaseDataConfigGenerator):
                 col_trim = f'{gene}_trim_{trim_side}'
 
                 for allele in alleles:
-                    # Fallback to decaying probabilities if column missing or too few samples
-                    if col_call not in data.columns:
+                    # Check if the call column exists in the data
+                    has_col = data and col_call in data[0]
+
+                    if not has_col:
                         trim_values = TrimmingProbabilityGenerator.generate_decaying_probabilities(50)
                     else:
-                        samples = data[data[col_call].astype(str).str.contains(allele.gene)]
+                        # Filter rows where the call column contains the allele gene name
+                        samples = [
+                            row for row in data
+                            if allele.gene in str(row.get(col_call, ''))
+                        ]
                         if len(samples) > 100:
-                            trim_values = (samples[col_trim].value_counts() / len(samples)).to_dict()
+                            trim_counts = Counter(
+                                int(float(row[col_trim])) for row in samples
+                                if col_trim in row and row[col_trim] not in (None, '', 'NA')
+                            )
+                            trim_values = _counter_to_prob_dict(trim_counts)
                         else:
                             trim_values = TrimmingProbabilityGenerator.generate_decaying_probabilities(50)
 
@@ -44,9 +89,9 @@ class CustomDataConfigBuilder(BaseDataConfigGenerator):
                     family_dict = gene_trim_dict.setdefault(allele.family, {})
                     family_dict[allele.gene] = trim_values
 
-    def make(self, v_reference_path, j_reference_path,custom_data,c_reference_path=None,
+    def make(self, v_reference_path, j_reference_path, custom_data, c_reference_path=None,
              d_reference_path=None):
-        data = custom_data if type(custom_data) == pd.DataFrame else pd.read_csv(custom_data)
+        data = _load_airr_data(custom_data)
         self.has_d = d_reference_path is not None
         if self.has_d and 'D' not in self.alleles:
             self.alleles.append('D')

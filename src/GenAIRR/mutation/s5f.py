@@ -5,11 +5,10 @@ Context-dependent 5-mer mutation model that uses position-specific mutation
 probabilities based on the surrounding sequence context.
 """
 
+import math
 import random
 import pickle
 from typing import Dict, Optional, Tuple, List, Set
-
-import pandas as pd
 
 from .mutation_model import MutationModel
 from .context import MutationContext, ChainType
@@ -269,7 +268,7 @@ class S5F(MutationModel):
                 outer_key: {
                     inner_key: inner_value
                     for inner_key, inner_value in outer_dict.items()
-                    if not pd.isna(inner_value)
+                    if isinstance(inner_value, (int, float)) and not math.isnan(inner_value)
                 }
                 for outer_key, outer_dict in substitution.items()
             }

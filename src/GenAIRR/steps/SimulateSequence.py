@@ -1,9 +1,13 @@
+import logging
+
 from ..container.SimulationContainer import SimulationContainer
 from ..pipeline.plot_parameters import SIMULATION_STEP_BOX_COLOR
 from ..steps.StepBase import AugmentationStep
 from ..dataconfig import DataConfig
 from ..sequence import HeavyChainSequence
 from ..dataconfig.enums import ChainType
+
+logger = logging.getLogger(__name__)
 
 
 class SimulateSequence(AugmentationStep):
@@ -82,10 +86,14 @@ class SimulateSequence(AugmentationStep):
                     break  #exit the loop
             else:
                 # This block now prints a warning instead of raising an error
-                print(
-                    f"Warning: Failed to generate a productive sequence after {self.MAX_GENERATION_ATTEMPTS} attempts. "
-                    f"Proceeding with the last non-functional sequence. "
-                    f"Parameters: V={self.specific_v}, J={self.specific_j}" + "D={}".format(self.specific_d if self.chain_type.has_d else "N/A")
+                logger.warning(
+                    "Failed to generate a productive sequence after %d attempts. "
+                    "Proceeding with the last non-functional sequence. "
+                    "Parameters: V=%s, D=%s, J=%s",
+                    self.MAX_GENERATION_ATTEMPTS,
+                    self.specific_v,
+                    self.specific_d if self.chain_type.has_d else "N/A",
+                    self.specific_j,
                 )
 
 

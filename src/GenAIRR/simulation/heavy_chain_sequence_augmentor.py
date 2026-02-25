@@ -1,6 +1,4 @@
 import random
-import numpy as np
-import scipy.stats as st
 from ..utilities import translate
 from ..sequence import HeavyChainSequence
 from ..simulation import SequenceAugmentorArguments
@@ -27,9 +25,9 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
     def __init__(self, dataconfig: DataConfig, args: SequenceAugmentorArguments = SequenceAugmentorArguments()):
         super().__init__(dataconfig, args)
 
-        self.nucleotide_add_distribution = st.beta(2, 3)
-        self.nucleotide_remove_distribution = st.beta(2, 3)
-        self.nucleotide_add_after_remove_distribution = st.beta(1, 3)
+        self.nucleotide_add_distribution = (2, 3)
+        self.nucleotide_remove_distribution = (2, 3)
+        self.nucleotide_add_after_remove_distribution = (1, 3)
 
         self.short_d_length = args.short_d_length
         # Class Misc
@@ -205,7 +203,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
     def insert_indels(self, simulated):
         # get valid position for indels excluding np regions, n's and mutated positions
         valid_positions = list(self.valid_indel_positions(simulated))
-        num_indels = np.random.randint(1, self.max_indels, size=1).item()
+        num_indels = random.randint(1, self.max_indels - 1)
         num_indels = min(num_indels, len(valid_positions))
         random.shuffle(valid_positions)
         n_valid_positions = len(valid_positions)
@@ -214,7 +212,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             indel_position = valid_positions[idx]
 
             # choose action 1 = insertion -1 = deletion
-            action = np.random.choice([1, -1], size=1, p=[self.insertion_proba, self.deletion_proba]).item()
+            action = random.choices([1, -1], weights=[self.insertion_proba, self.deletion_proba], k=1)[0]
             if action == 1:  # insertion case
 
                 self.apply_insertion(simulated, indel_position)
@@ -465,7 +463,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
             self.fix_productive_call_after_corruption_indel(simulated)
 
         # 3. Add N's
-        if bool(np.random.binomial(1, self.n_proba)):
+        if random.random() < self.n_proba:
             self.insert_Ns(simulated)
 
         # 4. Adjust D Allele , if the simulated length is smaller than short_d_length
@@ -473,7 +471,7 @@ class HeavyChainSequenceAugmentor(SequenceAugmentorBase):
         self.short_d_validation(simulated)
 
         # Insert Indels with probability = simulate_indels :
-        if bool(np.random.binomial(1,self.simulate_indels)):
+        if random.random() < self.simulate_indels:
             self.insert_indels(simulated)
             self.fix_productive_call_after_corruption_indel(simulated)
 

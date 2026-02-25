@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 from functools import partial
 from ....utilities.misc import normalize_and_filter_convert_to_dict
 
@@ -71,24 +71,38 @@ class NPMarkovParameterBuilder:
         Derive all NP-region parameters directly from observed sequence data.
 
         Args:
-            data (pd.DataFrame): AIRR-style annotated dataframe with V, D, J calls and positions.
+            data: List of dicts (AIRR-style rows) with keys like
+                  'v_sequence_end', 'd_sequence_start', 'd_sequence_end',
+                  'j_sequence_start', 'sequence'.
         """
         self.set_lengths_from_data(data)
         self.set_first_bases_from_data(data)
         self.set_transitions_from_data(data)
 
+    @staticmethod
+    def _counter_to_prob_dict(counter):
+        """Convert a Counter to a {value: probability} dict."""
+        total = sum(counter.values())
+        if total == 0:
+            return {}
+        return {k: v / total for k, v in counter.items()}
+
     def set_lengths_from_data(self, data):
         """
         Derive NP1 and NP2 length distributions from real AIRR data.
         """
-        lengths = {}
+        np1_counts = Counter(
+            int(row['d_sequence_start']) - int(row['v_sequence_end'])
+            for row in data
+        )
+        lengths = {'NP1': self._counter_to_prob_dict(np1_counts)}
 
-        np1_lengths = data['d_sequence_start'] - data['v_sequence_end']
-        np2_lengths = data['j_sequence_start'] - data['d_sequence_end']
-
-        lengths['NP1'] = (np1_lengths.value_counts() / len(np1_lengths)).to_dict()
         if self.has_d:
-            lengths['NP2'] = (np2_lengths.value_counts() / len(np2_lengths)).to_dict()
+            np2_counts = Counter(
+                int(row['j_sequence_start']) - int(row['d_sequence_end'])
+                for row in data
+            )
+            lengths['NP2'] = self._counter_to_prob_dict(np2_counts)
 
         self.dataconfig.NP_lengths = lengths
 
@@ -99,17 +113,23 @@ class NPMarkovParameterBuilder:
         np_first_bases = {}
 
         # NP1 starts right after V
-        np1_first = data.apply(lambda x: x['sequence'][x['v_sequence_end'] + 1], axis=1)
-        np_first_bases['NP1'] = (np1_first.value_counts() / len(np1_first)).to_dict()
+        np1_first = Counter(
+            row['sequence'][int(row['v_sequence_end']) + 1]
+            for row in data
+            if int(row['v_sequence_end']) + 1 < len(row['sequence'])
+        )
+        np1_first.pop('N', None)
+        np_first_bases['NP1'] = self._counter_to_prob_dict(np1_first)
 
         if self.has_d:
             # NP2 starts right after D
-            np2_first = data.apply(lambda x: x['sequence'][x['d_sequence_end'] + 1], axis=1)
-            np_first_bases['NP2'] = (np2_first.value_counts() / len(np2_first)).to_dict()
-
-        # Remove ambiguous 'N'
-        for region in np_first_bases:
-            np_first_bases[region].pop('N', None)
+            np2_first = Counter(
+                row['sequence'][int(row['d_sequence_end']) + 1]
+                for row in data
+                if int(row['d_sequence_end']) + 1 < len(row['sequence'])
+            )
+            np2_first.pop('N', None)
+            np_first_bases['NP2'] = self._counter_to_prob_dict(np2_first)
 
         self.dataconfig.NP_first_bases = np_first_bases
 
@@ -122,9 +142,15 @@ class NPMarkovParameterBuilder:
 
         def extract_sequences(region):
             if region == 'NP1':
-                return data.apply(lambda x: x['sequence'][x['v_sequence_end']:x['d_sequence_start']], axis=1)
+                return [
+                    row['sequence'][int(row['v_sequence_end']):int(row['d_sequence_start'])]
+                    for row in data
+                ]
             elif region == 'NP2':
-                return data.apply(lambda x: x['sequence'][x['d_sequence_end']:x['j_sequence_start']], axis=1)
+                return [
+                    row['sequence'][int(row['d_sequence_end']):int(row['j_sequence_start'])]
+                    for row in data
+                ]
 
         for region in self.np_regions:
             agg_dict = defaultdict(partial(defaultdict, float))

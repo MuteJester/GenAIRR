@@ -3,8 +3,11 @@ from dataclasses import dataclass
 from itertools import product
 from multiprocessing import cpu_count, Pool
 
-import pandas as pd
-from tqdm.auto import tqdm
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    def tqdm(iterable, **kwargs):
+        return iterable
 
 from GenAIRR.alleles import AlleleTypes
 from GenAIRR.pipeline import AugmentationPipeline
@@ -156,7 +159,7 @@ class UnbiasedDatasetSimulator:
             )
 
         dataset = [item for sublist in results for item in sublist]
-        return pd.DataFrame(dataset)
+        return dataset
 #
 
 

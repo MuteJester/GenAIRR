@@ -1,7 +1,5 @@
 import random
 
-import numpy as np
-
 from .s5f import FiveMER
 from ..mutation.mutation_model import MutationModel
 import pickle
@@ -160,7 +158,7 @@ class S5F_w_Substitutions(MutationModel):
             while len(mutations) < target_number_of_mutations:
 
                 # if true perform random substitution instead of s5f mutation:
-                if np.random.binomial(1,self.substitution_probability,size=1).item():
+                if random.random() < self.substitution_probability:
                     sampled_position, chosen_index = self.weighted_choice(fiver_mers)
                     base = sampled_position[2].nucleotides.value
                     mutation_to_apply = random.choice(list(self.bases - {base}))

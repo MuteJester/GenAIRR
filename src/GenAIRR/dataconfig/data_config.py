@@ -1,10 +1,14 @@
-import pickle
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Any
 
 from GenAIRR.dataconfig.config_info import ConfigInfo
 import copy
 from GenAIRR.alleles.allele import Allele
+
+
+class DataConfigError(Exception):
+    """Raised when a DataConfig fails validation."""
+
 
 @dataclass
 class DataConfig:
@@ -15,13 +19,12 @@ class DataConfig:
     """
     # --- Attributes ---
     name: Optional[str] = None
-    metadata:ConfigInfo = None
+    metadata: Optional[ConfigInfo] = None
 
     # Gene usage frequencies
-    family_use_dict: Dict[str, float] = field(default_factory=dict)
-    gene_use_dict: Dict[str, float] = field(default_factory=dict)
+    gene_use_dict: Dict[str, Any] = field(default_factory=dict)
 
-    # Allele dictionaries (grouped by family)
+    # Allele dictionaries (grouped by gene name → list of allele objects)
     v_alleles: Optional[Dict[str, List[Allele]]] = None
     d_alleles: Optional[Dict[str, List[Allele]]] = None
     j_alleles: Optional[Dict[str, List[Allele]]] = None
@@ -33,11 +36,66 @@ class DataConfig:
     NP_first_bases: Dict[str, Any] = field(default_factory=dict)
     NP_lengths: Dict[str, Any] = field(default_factory=dict)
 
-    # Simulation and analysis parameters
-    mut_rate_per_seq: Dict[str, float] = field(default_factory=dict)
-    kmer_dicts: Dict[str, Any] = field(default_factory=dict)
+    # Correction maps and ASC tables
     correction_maps: Dict[str, Any] = field(default_factory=dict)
     asc_tables: Dict[str, Any] = field(default_factory=dict)
+
+    def validate(self):
+        """
+        Validate that this DataConfig has the minimum required fields for simulation.
+
+        Raises:
+            DataConfigError: If any required field is missing or malformed.
+        """
+        errors = []
+
+        # Metadata
+        if self.metadata is not None and not isinstance(self.metadata, ConfigInfo):
+            errors.append(f"metadata must be a ConfigInfo instance, got {type(self.metadata).__name__}")
+
+        # Alleles
+        if not self.v_alleles or len(self.v_alleles) == 0:
+            errors.append("v_alleles is required and must be non-empty")
+        if not self.j_alleles or len(self.j_alleles) == 0:
+            errors.append("j_alleles is required and must be non-empty")
+
+        # D alleles: required when metadata says has_d
+        if self.metadata and self.metadata.has_d:
+            if not self.d_alleles or len(self.d_alleles) == 0:
+                errors.append("d_alleles is required for chains with D segments (metadata.has_d=True)")
+
+        # Gene usage
+        if not self.gene_use_dict:
+            errors.append("gene_use_dict is required and must be non-empty")
+        else:
+            for key in ("V", "J"):
+                if key not in self.gene_use_dict:
+                    errors.append(f"gene_use_dict must contain '{key}' key")
+
+        # Trim dicts
+        if not self.trim_dicts:
+            errors.append("trim_dicts is required and must be non-empty")
+        else:
+            for key in ("V_3", "J_5"):
+                if key not in self.trim_dicts:
+                    errors.append(f"trim_dicts must contain '{key}' key")
+            if self.metadata and self.metadata.has_d:
+                for key in ("D_5", "D_3"):
+                    if key not in self.trim_dicts:
+                        errors.append(f"trim_dicts must contain '{key}' key for chains with D segments")
+
+        # NP region parameters
+        if not self.NP_lengths:
+            errors.append("NP_lengths is required and must be non-empty")
+        if not self.NP_first_bases:
+            errors.append("NP_first_bases is required and must be non-empty")
+        if not self.NP_transitions:
+            errors.append("NP_transitions is required and must be non-empty")
+
+        if errors:
+            raise DataConfigError(
+                f"DataConfig '{self.name or 'Unnamed'}' failed validation:\n  - " + "\n  - ".join(errors)
+            )
 
     def _unfold_alleles(self, gene_segment: str) -> List[str]:
         """Unfolds the alleles for a given gene segment (v, d, j, c) into a flat list."""

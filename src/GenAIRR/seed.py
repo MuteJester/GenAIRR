@@ -20,8 +20,6 @@ Usage:
 import random
 from typing import Optional
 
-import numpy as np
-
 
 _current_seed: Optional[int] = None
 
@@ -50,7 +48,11 @@ def set_seed(seed: int) -> None:
     global _current_seed
     _current_seed = seed
     random.seed(seed)
-    np.random.seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except ImportError:
+        pass
 
 
 def get_seed() -> Optional[int]:
@@ -88,4 +90,8 @@ def reset_seed() -> None:
     _current_seed = None
     # Seed from system entropy (None triggers this behavior)
     random.seed(None)
-    np.random.seed(None)
+    try:
+        import numpy as np
+        np.random.seed(None)
+    except ImportError:
+        pass

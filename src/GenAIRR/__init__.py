@@ -35,6 +35,9 @@ from .data import (
     HUMAN_TCRB_IMGT,
 )
 
+# DataConfig and metadata
+from .dataconfig import DataConfig, DataConfigError, ConfigInfo, ChainType, Species
+
 # Container for results
 from .container import SimulationContainer
 
@@ -101,6 +104,12 @@ __all__ = [
     "HUMAN_IGK_OGRDB",
     "HUMAN_IGL_OGRDB",
     "HUMAN_TCRB_IMGT",
+    # DataConfig and metadata
+    "DataConfig",
+    "DataConfigError",
+    "ConfigInfo",
+    "ChainType",
+    "Species",
     # Convenience function
     "simulate",
 ]

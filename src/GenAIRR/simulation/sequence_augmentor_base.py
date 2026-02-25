@@ -3,9 +3,7 @@ from GenAIRR.dataconfig.data_config import DataConfig
 from dataclasses import dataclass, field
 import enum
 from ..mutation import MutationModel, S5F
-import scipy.stats as st
 import random
-import numpy as np
 
 
 # Corruption Events
@@ -123,9 +121,9 @@ class SequenceAugmentorBase(ABC):
         self.n_proba = args.n_proba
         self.corrupt_proba = args.corrupt_proba
         self.corrupt_events_proba = args.corrupt_events_proba
-        self.nucleotide_add_distribution = st.beta(2, 3)
-        self.nucleotide_remove_distribution = st.beta(2, 3)
-        self.nucleotide_add_after_remove_distribution = st.beta(1, 3)
+        self.nucleotide_add_distribution = (2, 3)
+        self.nucleotide_remove_distribution = (2, 3)
+        self.nucleotide_add_after_remove_distribution = (1, 3)
 
         self.nucleotide_add_coef = args.nucleotide_add_coefficient
         self.nucleotide_remove_coef = args.nucleotide_remove_coefficient
@@ -635,8 +633,8 @@ class SequenceAugmentorBase(ABC):
                 Returns:
                     int: The number of nucleotides to be added to the sequence.
         """
-        sample = (self.nucleotide_add_coef * self.nucleotide_add_distribution.rvs(size=1)).astype(int)
-        return sample.item()
+        sample = int(self.nucleotide_add_coef * random.betavariate(*self.nucleotide_add_distribution))
+        return sample
 
     def _sample_nucleotide_remove_distribution(self, v_length):
         """
@@ -649,7 +647,7 @@ class SequenceAugmentorBase(ABC):
                     int: The number of nucleotides to be removed from the sequence.
         """
         # Sample amount based on predefined distribution
-        sample = (self.nucleotide_remove_coef * self.nucleotide_remove_distribution.rvs(size=1)).astype(int).item()
+        sample = int(self.nucleotide_remove_coef * random.betavariate(*self.nucleotide_remove_distribution))
         # make sure that no matter how much we get from sampling the predefined distribution we wont get a value
         # larger than the total v length we have in our sequence
         sample = min(sample, v_length)
@@ -662,9 +660,8 @@ class SequenceAugmentorBase(ABC):
                 Returns:
                     int: The number of nucleotides to be added to the sequence following a removal event.
         """
-        sample = (self.nucleotide_add_after_remove_coef * self.nucleotide_add_after_remove_distribution.rvs(
-            size=1)).astype(int)
-        return sample.item()
+        sample = int(self.nucleotide_add_after_remove_coef * random.betavariate(*self.nucleotide_add_after_remove_distribution))
+        return sample
 
     def perform_corruption(self):
         """
@@ -673,7 +670,7 @@ class SequenceAugmentorBase(ABC):
                 Returns:
                     bool: True if a corruption event should be performed, False otherwise.
         """
-        return bool(np.random.binomial(1, self.corrupt_proba))
+        return random.random() < self.corrupt_proba
 
     #@staticmethod
     def sample_random_event(self):
@@ -683,7 +680,7 @@ class SequenceAugmentorBase(ABC):
                 Returns:
                     Event: An enumerated value representing the selected corruption event type.
         """
-        return np.random.choice([Event.Remove, Event.Add, Event.Remove_Before_Add], size=1, p=self.corrupt_events_proba).item()
+        return random.choices([Event.Remove, Event.Add, Event.Remove_Before_Add], weights=self.corrupt_events_proba, k=1)[0]
 
     def _sample_corruption_add_method(self):
         """

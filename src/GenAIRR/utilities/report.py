@@ -1,6 +1,18 @@
-import pandas as pd
-import altair as alt
-import datapane as dp
+try:
+    import pandas as pd
+    import altair as alt
+    import datapane as dp
+except ImportError:
+    pd = alt = dp = None
+
+
+def _require_report_deps():
+    if pd is None or alt is None or dp is None:
+        raise ImportError(
+            "Report requires optional dependencies: pandas, altair, datapane. "
+            "Install them with: pip install pandas altair datapane"
+        )
+
 
 class Report:
     def __init__(self, data, path="report.html", open=False):
@@ -12,6 +24,7 @@ class Report:
         - path: The output path for the report file. Default is "report.html".
         - open: Flag indicating whether to open the report file after creation. Default is False.
         """
+        _require_report_deps()
         self._load_data(data)
         self.path = path
         self.open = open

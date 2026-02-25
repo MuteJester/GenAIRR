@@ -1,14 +1,11 @@
 import random
 
-import numpy as np
-
 from ..container.SimulationContainer import SimulationContainer
 from ..pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
 from ..simulation import Event
 from ..steps.StepBase import AugmentationStep
 from ..utilities import translate
 from ..dataconfig import DataConfig
-import scipy.stats as st
 
 
 class CorruptSequenceBeginning(AugmentationStep):
@@ -72,9 +69,9 @@ class CorruptSequenceBeginning(AugmentationStep):
         self.random_allele_proba = random_allele_probability
         self.corruption_probability = probability
 
-        self.nucleotide_add_distribution = st.beta(2, 3)
-        self.nucleotide_remove_distribution = st.beta(2, 3)
-        self.nucleotide_add_after_remove_distribution = st.beta(1, 3)
+        self.nucleotide_add_beta_params = (2, 3)
+        self.nucleotide_remove_beta_params = (2, 3)
+        self.nucleotide_add_after_remove_beta_params = (1, 3)
 
         self.nucleotide_add_coef = nucleotide_add_coefficient
         self.nucleotide_remove_coef = nucleotide_remove_coefficient
@@ -162,8 +159,8 @@ class CorruptSequenceBeginning(AugmentationStep):
                 Returns:
                     int: The number of nucleotides to be added to the sequence.
         """
-        sample = (self.nucleotide_add_coef * self.nucleotide_add_distribution.rvs(size=1)).astype(int)
-        return max(1, sample.item())
+        sample = int(self.nucleotide_add_coef * random.betavariate(*self.nucleotide_add_beta_params))
+        return max(1, sample)
 
     def _sample_nucleotide_remove_distribution(self, v_length):
         """
@@ -176,7 +173,7 @@ class CorruptSequenceBeginning(AugmentationStep):
                     int: The number of nucleotides to be removed from the sequence.
         """
         # Sample amount based on predefined distribution
-        sample = (self.nucleotide_remove_coef * self.nucleotide_remove_distribution.rvs(size=1)).astype(int).item()
+        sample = int(self.nucleotide_remove_coef * random.betavariate(*self.nucleotide_remove_beta_params))
         # make sure that no matter how much we get from sampling the predefined distribution we wont get a value
         # larger than the total v length we have in our sequence
         sample = min(sample, v_length)
@@ -189,9 +186,8 @@ class CorruptSequenceBeginning(AugmentationStep):
                 Returns:
                     int: The number of nucleotides to be added to the sequence following a removal event.
         """
-        sample = (self.nucleotide_add_after_remove_coef * self.nucleotide_add_after_remove_distribution.rvs(
-            size=1)).astype(int)
-        return max(1, sample.item())
+        sample = int(self.nucleotide_add_after_remove_coef * random.betavariate(*self.nucleotide_add_after_remove_beta_params))
+        return max(1, sample)
 
     def _sample_corruption_add_method(self):
         """
@@ -270,7 +266,7 @@ class CorruptSequenceBeginning(AugmentationStep):
                 Returns:
                     bool: True if a corruption event should be performed, False otherwise.
         """
-        return bool(np.random.binomial(1, self.corruption_probability))
+        return random.random() < self.corruption_probability
 
     def sample_random_event(self):
         """
@@ -279,8 +275,10 @@ class CorruptSequenceBeginning(AugmentationStep):
                 Returns:
                     Event: An enumerated value representing the selected corruption event type.
         """
-        return np.random.choice([Event.Remove, Event.Add, Event.Remove_Before_Add], size=1,
-                                p=self.corrupt_events_proba).item()
+        return random.choices(
+            [Event.Remove, Event.Add, Event.Remove_Before_Add],
+            weights=self.corrupt_events_proba, k=1
+        )[0]
 
     def remove_event(self, container, autocorrect=True):
         """

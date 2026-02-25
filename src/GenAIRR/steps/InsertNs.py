@@ -1,7 +1,5 @@
 import random
 
-import numpy as np
-
 from ..container.SimulationContainer import SimulationContainer
 from ..pipeline.plot_parameters import CORRUPTION_STEP_BOX_COLOR
 from ..steps.StepBase import AugmentationStep
@@ -117,7 +115,7 @@ class InsertNs(AugmentationStep):
 
     @property
     def simulate_Ns(self):
-        return bool(np.random.binomial(1, self.n_proba))
+        return random.random() < self.n_proba
     def apply(self, container: SimulationContainer) -> None:
         if self.simulate_Ns:
             self.insert_Ns(container)

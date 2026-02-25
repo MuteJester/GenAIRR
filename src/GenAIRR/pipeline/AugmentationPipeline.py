@@ -5,8 +5,6 @@ from ..container.SimulationContainer import SimulationContainer
 from ..steps import SimulateSequence
 from ..steps.StepBase import AugmentationStep
 from ..dataconfig import DataConfig
-from graphviz import Digraph
-from ..container.SimulationContainer import SimulationContainer
 
 
 class AugmentationPipeline:
@@ -103,6 +101,13 @@ class AugmentationPipeline:
         Args:
             filename (str): The name of the file to save the diagram as (without extension).
         """
+        try:
+            from graphviz import Digraph
+        except ImportError:
+            raise ImportError(
+                "graphviz is required for pipeline visualization. "
+                "Install it with: pip install graphviz"
+            )
         dot = Digraph(comment='Augmentation Pipeline')
 
 
