@@ -87,7 +87,7 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             CACHE_DIR="$HOME/Library/Caches/cibuildwheel"
           elif [ "$RUNNER_OS" = "Windows" ]; then
-            CACHE_DIR="$LOCALAPPDATA/cibuildwheel/Cache"
+            CACHE_DIR="$LOCALAPPDATA/pypa/cibuildwheel/Cache"
           else
             CACHE_DIR="$HOME/.cache/cibuildwheel"
           fi
