@@ -1,0 +1,93 @@
+.section {
+  padding: 3rem 1.5rem;
+}
+
+.sectionAlt {
+  background: var(--ifm-background-surface-color, #f5f7fa);
+}
+
+[data-theme='dark'] .sectionAlt {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sectionInner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.sectionTitle {
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin: 0 0 1rem;
+  letter-spacing: -0.01em;
+  border: none;
+}
+
+/* ── Install block ── */
+
+.installBlock {
+  text-align: center;
+}
+
+.installCode {
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 10px;
+  padding: 0.75rem 1rem 0.75rem 1.4rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.92rem;
+}
+
+[data-theme='dark'] .installCode {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.copyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 6px;
+  padding: 0.3em 0.5em;
+  cursor: pointer;
+  color: var(--ifm-color-emphasis-600);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.copyBtn:hover {
+  color: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+}
+
+.copiedLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #00b4a0;
+}
+
+.installNote {
+  font-size: 0.82rem;
+  color: var(--ifm-color-emphasis-500);
+  margin-top: 0.6rem;
+  max-width: none;
+}
+
+/* ── Citation ── */
+
+.cite {
+  padding: 1.5rem 1.5rem;
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.citeText {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-600);
+  margin: 0;
+  max-width: none;
+}

@@ -1,63 +1,62 @@
 # Contributing to GenAIRR
 
-As an open-source project, **GenAIRR** welcomes contributions in various forms, catering to all levels of expertise, from beginners to experienced developers. Our goal is to foster a collaborative environment where everyone can contribute and learn. Whether you’re interested in improving the documentation, submitting bug reports, or adding new features, your input is valuable to us.
+**GenAIRR** welcomes contributions from everyone — bug reports, documentation improvements, new features, and code patches. No contribution is too small.
 
-## Contribution Opportunities
+Large changes should be discussed first via [GitHub Issues](https://github.com/MuteJester/GenAIRR/issues).
 
-Contributions can come in many forms, including:
+## Development Setup
 
-- Code patches
-- Bug reports and reviews of patches
-- New feature development
-- Enhancements to documentation
-- Tutorials and examples
+```bash
+git clone https://github.com/MuteJester/GenAIRR.git
+cd GenAIRR
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[all]"    # builds the C backend automatically
+pytest tests/ -x -q        # run the test suite
+```
 
-No contribution is too small! However, large changes should be discussed beforehand via our [GitHub Discussions] or by opening [an issue].
+**Requirements**: Python 3.9+, a C compiler (gcc/clang/MSVC), and CMake 3.14+ (auto-installed by pip as a build dependency).
+
+## Project Structure
+
+```
+src/GenAIRR/
+├── experiment.py        # Experiment DSL (public entry point)
+├── protocol.py          # Compilation to C engine
+├── steps.py             # Step descriptors
+├── _native/             # C backend (ctypes bindings)
+│   ├── __init__.py      # CSimulator wrapper
+│   └── csrc/            # C source code
+├── dataconfig/          # DataConfig, builders, GDC I/O
+├── data/                # 106+ built-in DataConfig pickles
+└── utilities/           # Helpers, IMGT regions
+```
+
+## Running Tests
+
+```bash
+pytest tests/ -x -q          # all tests
+pytest tests/test_c_backend.py -x -q   # C backend only
+```
 
 ## Release Process
 
-GenAIRR uses automated PyPI publishing through GitHub Actions. When you create a new release, the package will be automatically published to PyPI.
+GenAIRR uses GitHub Actions for CI and automated publishing:
+
+1. **Tests** run on every push/PR (Linux, macOS, Windows × Python 3.10–3.12).
+2. **Wheels** are built via cibuildwheel for all platforms when a tag is pushed.
+3. **Publishing** to PyPI happens automatically on GitHub Release or version tag.
 
 ### Creating a Release
 
-You can trigger automatic PyPI publishing in two ways:
-
-#### Option 1: Create a GitHub Release (Recommended)
-1. Go to the [Releases page](https://github.com/MuteJester/GenAIRR/releases)
-2. Click "Create a new release"
-3. Create a new tag with the version number (e.g., `v0.6.0`)
-4. Add release notes describing the changes
-5. Click "Publish release"
-
-#### Option 2: Push a Git Tag
-1. Update the version in `setup.py`
-2. Commit your changes
-3. Create and push a git tag:
+1. Update the version in `setup.py` and `src/GenAIRR/_native/csrc/include/genairr/genairr.h`
+2. Update `CHANGELOG.md`
+3. Commit, tag, and push:
    ```bash
-   git tag v0.6.0
-   git push origin v0.6.0
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
+4. Create a GitHub Release from the tag.
 
 ### Prerequisites
 
-For automatic PyPI publishing to work, the repository must have:
-- A `PYPI_API_TOKEN` secret configured in the GitHub repository settings
-- The token should have permission to publish to the GenAIRR package on PyPI
-
-### What Happens Automatically
-
-When a release is created or a tag is pushed:
-1. GitHub Actions will trigger the `Upload Python Package` workflow
-2. The workflow will:
-   - Set up a Python environment
-   - Install build dependencies
-   - Build the package (both source distribution and wheel)
-   - Publish to PyPI using the stored API token
-
-### Troubleshooting
-
-If the automatic publishing fails:
-1. Check the Actions tab for error details
-2. Verify the `PYPI_API_TOKEN` secret is correctly configured
-3. Ensure the version number in `setup.py` matches the tag/release
-4. Check that the version doesn't already exist on PyPI
+- `PYPI_API_TOKEN` secret must be configured in GitHub repository settings.

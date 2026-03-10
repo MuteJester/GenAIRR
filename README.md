@@ -1,313 +1,283 @@
 <h1 align="center">GenAIRR</h1>
 
 <p align="center">
-  <b>Adaptive Immune Receptor Repertoire Sequence Simulator</b><br/>
-  Generate realistic BCR &amp; TCR repertoires with full ground-truth annotations in Python.
+  <b>Synthetic Adaptive Immune Receptor Repertoire Generator</b>
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/GenAIRR/"><img src="https://img.shields.io/pypi/v/GenAIRR.svg?logo=pypi&logoColor=white" alt="PyPI version"></a>
-  <a href="https://genairr.readthedocs.io/en/latest/"><img src="https://img.shields.io/readthedocs/genairr?logo=readthedocs" alt="Docs"></a>
+  <a href="https://pypi.org/project/GenAIRR/"><img src="https://img.shields.io/pypi/v/GenAIRR.svg?logo=pypi&logoColor=white" alt="PyPI"></a>
+  <a href="https://github.com/MuteJester/GenAIRR/actions/workflows/test.yml"><img src="https://github.com/MuteJester/GenAIRR/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://pypi.org/project/GenAIRR/"><img src="https://img.shields.io/pypi/pyversions/GenAIRR.svg?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE"><img src="https://img.shields.io/github/license/MuteJester/GenAIRR" alt="License"></a>
 </p>
 
----
-
-## Why GenAIRR?
-
-Benchmarking sequence aligners, studying somatic hypermutation, or training ML models on immune repertoires requires large, perfectly-annotated datasets — not noisy snippets of real sequencing data.
-
-GenAIRR is a **plug-and-play, fully-extensible simulation engine** that produces realistic immunoglobulin and TCR sequences while giving you complete ground-truth labels for every position, mutation, and gene segment.
-
----
-
-## Key Features
-
-| Category | Highlights |
-| -------- | ---------- |
-| **Realistic Simulation** | Context-aware S5F mutations, indels, allele-specific trimming, NP-region modelling |
-| **Composable Pipelines** | Chain together built-in & custom steps into simulation pipelines |
-| **Multi-Chain Support** | Heavy chain, kappa/lambda light chains, and TCR-beta out of the box |
-| **Research-ready Output** | Full ground-truth annotations, JSON/pandas export, deterministic seeds |
-| **Docs & Tutorials** | Step-by-step guides, Jupyter notebooks, API reference |
+<p align="center">
+  High-performance BCR and TCR sequence simulation with full ground-truth annotations.<br/>
+  C engine &middot; 23 species &middot; zero mandatory dependencies &middot; cross-platform wheels
+</p>
 
 ---
 
 ## Installation
 
 ```bash
-# Python >= 3.9
 pip install GenAIRR
 ```
+
+Pre-built wheels are available for **Linux**, **macOS**, and **Windows** (Python 3.9+). No compiler required.
 
 ---
 
 ## Quick Start
 
-### One-liner
+```python
+from GenAIRR import Experiment
+from GenAIRR.ops import rate
+
+# Generate 1,000 mutated human heavy-chain sequences
+result = Experiment.on("human_igh").mutate(rate(0.02, 0.08)).run(n=1000, seed=42)
+
+# Each record is an AIRR-format dict with full ground truth
+rec = result[0]
+rec["sequence"]      # full nucleotide sequence
+rec["v_call"]        # e.g. "IGHVF10-G50*04"
+rec["d_call"]        # e.g. "IGHD2-21*02"
+rec["j_call"]        # e.g. "IGHJ4*02"
+rec["mutation_rate"]  # e.g. 0.054
+rec["productive"]     # True / False
+```
+
+### Realistic Sequencing Experiment
 
 ```python
-from GenAIRR import simulate, HUMAN_IGH_OGRDB, S5F
-
-result = simulate(HUMAN_IGH_OGRDB, S5F(0.003, 0.25))
-print(result.sequence)
-```
-```
-CAGGTGCAGCTGCAGGAGTCGGGCCCAGGACTGGTGAAGCCTTCGGGGACCCTGTCCCTCACCTGCGCTG...
-```
-
-Generate multiple sequences at once:
-```python
-results = simulate(HUMAN_IGH_OGRDB, S5F(0.003, 0.25), n=100)
-```
-
-### Pipeline (Full Control)
-
-For complete control over the simulation, use the Pipeline API:
-
-```python
-from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
-
-pipeline = Pipeline(
-    config=HUMAN_IGH_OGRDB,
-    steps=[
-        steps.SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
-        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
-        steps.FixDPositionAfterTrimmingIndexAmbiguity(),
-        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
-        steps.CorrectForVEndCut(),
-        steps.CorrectForDTrims(),
-        steps.DistillMutationRate(),
-    ]
+from GenAIRR import Experiment
+from GenAIRR.ops import (
+    with_d_inversion, with_receptor_revision,
+    rate, model, with_isotype_rates, with_antigen_selection,
+    with_primer_mask, with_umi, with_pcr,
+    with_5prime_loss, with_3prime_loss, with_quality_profile,
+    with_indels, with_ns,
 )
 
-sim = pipeline.execute()
-print(sim.get_dict())
-```
-```python
-{
-    'sequence': 'CAGGTGCAGCTGCAGGAGTCGGGCCCAGGACTGGTGAAGCCTTCG...',
-    'v_call': ['IGHVF3-G8*04'],
-    'd_call': ['IGHD6-6*01'],
-    'j_call': ['IGHJ4*02'],
-    'productive': True,
-    'mutation_rate': 0.0027,
-    'mutations': {142: 'T>C'},
-    'v_sequence_start': 0,
-    'v_sequence_end': 293,
-    'd_sequence_start': 298,
-    'd_sequence_end': 316,
-    'j_sequence_start': 323,
-    'j_sequence_end': 367,
-    # ... and more fields
-}
-```
+result = (
+    Experiment.on("human_igh")
 
-Every output includes the full sequence, V/D/J gene calls, mutation positions, region boundaries, and quality metrics — ready for downstream analysis.
+    # V(D)J recombination with biological events
+    .recombine(
+        with_d_inversion(0.15),
+        with_receptor_revision(0.05),
+    )
 
----
+    # Somatic hypermutation with CSR and selection pressure
+    .mutate(
+        model("s5f"),
+        rate(0.01, 0.05),
+        with_isotype_rates(),
+        with_antigen_selection(0.5),
+    )
 
-## Examples
+    # Library preparation
+    .prepare(
+        with_primer_mask(),
+        with_umi(12),
+        with_pcr(error_rate=1e-4, cycles=30),
+    )
 
-### Full Heavy-Chain Pipeline
+    # Sequencing artifacts
+    .sequence(
+        with_5prime_loss(min_remove=5, max_remove=30),
+        with_3prime_loss(min_remove=5, max_remove=20),
+        with_quality_profile(base=0.001, peak=0.02),
+    )
 
-A production-ready pipeline that simulates sequences with biological corrections and sequencing artifacts:
+    # Post-sequencing noise
+    .observe(
+        with_indels(prob=0.005),
+        with_ns(prob=0.005),
+    )
 
-```python
-from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
-
-pipeline = Pipeline(
-    config=HUMAN_IGH_OGRDB,
-    steps=[
-        # Core: generate sequence with somatic hypermutation
-        steps.SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
-
-        # Correct ground-truth positions after trimming ambiguities
-        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
-        steps.FixDPositionAfterTrimmingIndexAmbiguity(),
-        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
-        steps.CorrectForVEndCut(),
-        steps.CorrectForDTrims(),
-
-        # Calculate final mutation rate
-        steps.DistillMutationRate(),
-
-        # Simulate sequencing artifacts
-        steps.CorruptSequenceBeginning(),   # 5' end degradation
-        steps.EnforceSequenceLength(),      # read-length limit
-        steps.InsertNs(),                   # ambiguous base calls
-        steps.ShortDValidation(),           # D-region QC
-        steps.InsertIndels(),               # sequencing indels
-    ]
-)
-
-result = pipeline.execute()
-```
-
-### Naive Sequence (No Mutations)
-
-```python
-from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, Uniform
-
-pipeline = Pipeline(
-    config=HUMAN_IGH_OGRDB,
-    steps=[steps.SimulateSequence(Uniform(0, 0), productive=True)]
-)
-naive_seq = pipeline.execute()
-```
-
-### Light Chain
-
-```python
-from GenAIRR import Pipeline, steps, HUMAN_IGK_OGRDB, S5F
-
-pipeline = Pipeline(
-    config=HUMAN_IGK_OGRDB,  # kappa light chain (no D segment)
-    steps=[
-        steps.SimulateSequence(S5F(min_mutation_rate=0.02, max_mutation_rate=0.08), productive=True),
-        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
-        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
-        steps.CorrectForVEndCut(),
-        steps.DistillMutationRate(),
-    ]
+    .run(n=1000, seed=42)
 )
 ```
 
-### Custom Allele Combination
+### Streaming (Memory-Efficient)
 
 ```python
-from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
+from GenAIRR import Experiment
+from GenAIRR.ops import rate
 
-pipeline = Pipeline(
-    config=HUMAN_IGH_OGRDB,
-    steps=[
-        steps.SimulateSequence(
-            S5F(0.003, 0.25),
-            productive=True,
-            specific_v=HUMAN_IGH_OGRDB.v_alleles['IGHVF1-G1'][0],
-            specific_d=HUMAN_IGH_OGRDB.d_alleles['IGHD1-1'][0],
-            specific_j=HUMAN_IGH_OGRDB.j_alleles['IGHJ1'][0]
-        )
-    ]
-)
+sim = Experiment.on("human_igh").mutate(rate(0.05, 0.15)).compile(seed=42)
+
+for record in sim.stream():
+    print(record["v_call"])  # one dict at a time, no accumulation
+    break                    # infinite iterator — break when done
 ```
 
-### Batch Generation
+### Export
 
 ```python
-import pandas as pd
-from GenAIRR import Pipeline, steps, HUMAN_IGH_OGRDB, S5F
-
-pipeline = Pipeline(
-    config=HUMAN_IGH_OGRDB,
-    steps=[
-        steps.SimulateSequence(S5F(min_mutation_rate=0.003, max_mutation_rate=0.25), productive=True),
-        steps.FixVPositionAfterTrimmingIndexAmbiguity(),
-        steps.FixDPositionAfterTrimmingIndexAmbiguity(),
-        steps.FixJPositionAfterTrimmingIndexAmbiguity(),
-        steps.CorrectForVEndCut(),
-        steps.CorrectForDTrims(),
-        steps.DistillMutationRate(),
-    ]
-)
-
-# Generate 1000 sequences as a DataFrame
-df = pd.DataFrame([pipeline.execute().get_dict() for _ in range(1000)])
-df.to_csv('simulated_repertoire.csv', index=False)
+result.to_csv("repertoire.tsv")          # AIRR TSV
+result.to_fasta("repertoire.fasta")      # FASTA
+df = result.to_dataframe()               # pandas DataFrame
 ```
 
 ---
 
-## Mutation Models
+## Output Fields
 
-| Model | Description | When to use |
-| ----- | ----------- | ----------- |
-| `S5F` | Context-dependent somatic hypermutation based on empirical 5-mer frequencies | Realistic antibody maturation studies |
-| `Uniform` | Uniform random mutations | Baselines, ablation experiments |
-| **Custom** | Implement `BaseMutationModel` | Your own evolutionary scenarios |
+Every record is a dictionary containing the **absolute ground truth** of the
+simulated sequence. Unlike real-world aligners that must infer gene assignments
+from statistical models and heuristics, GenAIRR knows the exact origin of every
+nucleotide. The metadata reflects what a hypothetical perfect aligner would
+report if it could examine the sequence with full knowledge of the rearrangement
+process &mdash; no ambiguity, no probabilistic gene usage priors, no alignment
+scoring trade-offs.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sequence` | str | Full nucleotide sequence (post-corruption if artifacts are enabled) |
+| `sequence_length` | int | Length of `sequence` in bases |
+| `germline_alignment` | str | Ungapped germline reference aligned to `sequence` (lowercase = germline, uppercase = mutated, `N` = non-templated) |
+| **V gene** | | |
+| `v_call` | str | V allele name |
+| `v_sequence_start` | int | Start of the V segment in `sequence` (0-based) |
+| `v_sequence_end` | int | End of the V segment in `sequence` (exclusive) |
+| `v_germline_start` | int | Start position within the V germline allele |
+| `v_germline_end` | int | End position within the V germline allele |
+| `v_trim_5` | int | Bases trimmed from the 5' end of V |
+| `v_trim_3` | int | Bases trimmed from the 3' end of V |
+| **D gene** | | |
+| `d_call` | str | D allele name (empty for light chains / chains without D) |
+| `d_sequence_start` | int | Start of the D segment in `sequence` |
+| `d_sequence_end` | int | End of the D segment in `sequence` |
+| `d_germline_start` | int | Start position within the D germline allele |
+| `d_germline_end` | int | End position within the D germline allele |
+| `d_trim_5` | int | Bases trimmed from the 5' end of D |
+| `d_trim_3` | int | Bases trimmed from the 3' end of D |
+| **J gene** | | |
+| `j_call` | str | J allele name |
+| `j_sequence_start` | int | Start of the J segment in `sequence` |
+| `j_sequence_end` | int | End of the J segment in `sequence` |
+| `j_germline_start` | int | Start position within the J germline allele |
+| `j_germline_end` | int | End position within the J germline allele |
+| `j_trim_5` | int | Bases trimmed from the 5' end of J |
+| `j_trim_3` | int | Bases trimmed from the 3' end of J |
+| **Junction** | | |
+| `junction_nt` | str | Junction nucleotide sequence (V-anchor to J-anchor inclusive) |
+| `junction_aa` | str | Junction amino acid translation |
+| `junction_start` | int | Junction start position in `sequence` |
+| `junction_end` | int | Junction end position in `sequence` |
+| `junction_length` | int | Junction length in nucleotides |
+| **N/P regions** | | |
+| `np1_region` | str | NP1 nucleotide sequence (between V and D, or V and J) |
+| `np1_length` | int | NP1 length in bases |
+| `np2_region` | str | NP2 nucleotide sequence (between D and J) |
+| `np2_length` | int | NP2 length in bases |
+| **Somatic hypermutation** | | |
+| `mutation_rate` | float | Fraction of positions mutated |
+| `n_mutations` | int | Total number of point mutations |
+| `mutations` | str | Comma-separated list of mutations (e.g. `13:a>T,30:g>A`) |
+| **Functionality** | | |
+| `productive` | bool | Whether the sequence is productive (in-frame, no stop codons) |
+| `vj_in_frame` | bool | Whether V and J segments are in the same reading frame |
+| `stop_codon` | bool | Whether the junction contains a stop codon |
+| `note` | str | Reason for non-productivity (e.g. `VJ out of frame.`) |
+| **Isotype** | | |
+| `c_call` | str | Constant region allele (when CSR is enabled) |
+| **Artifact annotations** | | |
+| `n_pcr_errors` | int | Number of PCR-introduced errors |
+| `pcr_errors` | str | Comma-separated list of PCR error positions and substitutions |
+| `n_sequencing_errors` | int | Number of sequencing-introduced errors |
+| `sequencing_errors` | str | Comma-separated list of sequencing error positions and substitutions |
+| `is_reverse_complement` | bool | Whether the sequence was reverse-complemented |
+| `is_contaminant` | bool | Whether the sequence is a contaminant spike-in |
+
+All coordinates are 0-based. Gene segment boundaries account for trimming,
+N/P additions, and any 5'/3' corruption, so they point to the exact positions
+in the final `sequence` string.
+
+---
+
+## Supported Species & Chains
+
+GenAIRR ships with **106 built-in configurations** covering 23 species (sourced from IMGT and OGRDB).
 
 ```python
-from GenAIRR import S5F, Uniform
+from GenAIRR import list_configs
+print(list_configs())  # all available configs
+```
 
-# Realistic context-aware SHM
-s5f = S5F(min_mutation_rate=0.01, max_mutation_rate=0.05)
+| Species | BCR | TCR |
+|---------|-----|-----|
+| Human | IGH, IGK, IGL | TCRA, TCRB, TCRD, TCRG |
+| Mouse | IGH, IGK, IGL | TCRA, TCRB, TCRD, TCRG |
+| Rat | IGH, IGK, IGL | &mdash; |
+| Rabbit | IGH, IGK, IGL | TCRA, TCRB, TCRD, TCRG |
+| Dog | IGH, IGK, IGL | TCRA, TCRB, TCRD, TCRG |
+| Cat | IGK, IGL | TCRA, TCRB, TCRD, TCRG |
+| Rhesus | IGH, IGK, IGL | TCRA, TCRB, TCRD, TCRG |
 
-# Simple uniform mutations
-uniform = Uniform(min_mutation_rate=0.01, max_mutation_rate=0.05)
+<details>
+<summary>All 23 species</summary>
+
+Alpaca, Cat, Chicken, Cow, Cynomolgus, Dog, Dromedary, Ferret, Goat, Gorilla,
+Horse, Human, Mouse (generic + C57BL/6J), Pig, Platypus, Rabbit, Rat, Rhesus,
+Salmon, Sheep, Trout, Zebrafish.
+
+</details>
+
+```python
+Experiment.on("mouse_igh").run(n=500)
+Experiment.on("rabbit_tcrb").run(n=500)
+Experiment.on("rhesus_igk").run(n=500)
 ```
 
 ---
 
-## Available Data Configurations
+## Key Features
 
-| Config | Chain | Source |
-| ------ | ----- | ------ |
-| `HUMAN_IGH_OGRDB` | Heavy chain (BCR) | OGRDB |
-| `HUMAN_IGH_EXTENDED` | Heavy chain extended | OGRDB |
-| `HUMAN_IGK_OGRDB` | Kappa light chain | OGRDB |
-| `HUMAN_IGL_OGRDB` | Lambda light chain | OGRDB |
-| `HUMAN_TCRB_IMGT` | TCR-beta | IMGT |
+- **C simulation engine** &mdash; 15,000&ndash;30,000 sequences/second end-to-end on a single core
+- **Context-aware S5F somatic hypermutation** &mdash; 5-mer motif-based targeting with empirical substitution profiles
+- **Full AIRR-format output** &mdash; V/D/J calls, germline alignments, junction boundaries, mutation annotations
+- **Sequencing artifact simulation** &mdash; 5'/3' degradation, indels, N-insertions, quality errors, PCR artifacts
+- **Biological processes** &mdash; D-gene inversion, receptor revision, class switch recombination, selection pressure
+- **Allele locking** &mdash; constrain simulation to specific V/D/J alleles
+- **Deterministic seeds** &mdash; fully reproducible results across runs and platforms
+- **Zero mandatory dependencies** &mdash; optional extras for DataConfig building, visualization, and MCP
 
 ---
 
 ## Reproducibility
 
 ```python
-from GenAIRR import set_seed, get_seed, reset_seed
-
-set_seed(42)         # deterministic results
-print(get_seed())    # check current seed
-reset_seed()         # back to random
+# Pass a seed for deterministic, reproducible results
+result = Experiment.on("human_igh").run(n=1000, seed=42)
 ```
 
 ---
 
-## Documentation
+## Optional Extras
 
-- **[Getting Started](https://genairr.readthedocs.io/en/latest/getting_started.html)** — Overview and first pipeline
-- **[Step-by-Step Tutorial](https://genairr.readthedocs.io/en/latest/step_by_step_tutorial.html)** — Build a pipeline from scratch
-- **[API Reference](https://genairr.readthedocs.io/en/latest/api_reference.html)** — All classes, parameters, and defaults
-- **[Migration Guide](https://genairr.readthedocs.io/en/latest/migration_guide.html)** — Upgrading from older versions
-- **[Biological Context](https://genairr.readthedocs.io/en/latest/biological_context.html)** — What biological processes are simulated
-
----
-
-## Roadmap
-
-- [ ] Selection-aware mutation model
-- [ ] Additional germline databases
-- [ ] Sphinx auto-generated API docs from docstrings
-
-*See [open issues](https://github.com/MuteJester/GenAIRR/issues).* Feel something's missing? [Open a feature request](https://github.com/MuteJester/GenAIRR/issues/new).
-
----
-
-## Contributing
-
-Contributions are welcome! Please read our [contributing guide](CONTRIBUTING.md) and check the **good first issue** label.
+```bash
+pip install GenAIRR[all]          # numpy, scipy, graphviz, tqdm, fastmcp
+pip install GenAIRR[dataconfig]   # numpy + scipy (custom DataConfig building)
+pip install GenAIRR[mcp]          # FastMCP server for AI-assisted analysis
+```
 
 ---
 
 ## Citing GenAIRR
 
-If GenAIRR helps your research, please cite:
+If GenAIRR is useful in your research, please cite:
 
-```
-Konstantinovsky T, Peres A, Polak P, Yaari G.
-An unbiased comparison of immunoglobulin sequence aligners.
-Briefings in Bioinformatics. 2024 Sep 23; 25(6): bbae556.
-https://doi.org/10.1093/bib/bbae556
-PMID: 39489605 | PMCID: PMC11531861
-```
+> Konstantinovsky T, Peres A, Polak P, Yaari G. An unbiased comparison of immunoglobulin sequence aligners. *Briefings in Bioinformatics*. 2024;25(6):bbae556. [doi:10.1093/bib/bbae556](https://doi.org/10.1093/bib/bbae556)
 
 ---
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 
-Distributed under the GPL-3.0 License. See **[LICENSE](LICENSE)** for details.
-
----
-
-## Acknowledgements
-
-GenAIRR is inspired by and builds upon work from the immunoinformatics community — especially [AIRRship](https://github.com/Cowanlab/airrship).
+GPL-3.0. See [LICENSE](LICENSE).

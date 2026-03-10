@@ -2,8 +2,12 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Any
 
 from GenAIRR.dataconfig.config_info import ConfigInfo
+from GenAIRR.dataconfig.enums import ChainType
 import copy
 from GenAIRR.alleles.allele import Allele
+
+
+DEFAULT_P_NUCLEOTIDE_LENGTH_PROBS = {0: 0.50, 1: 0.25, 2: 0.15, 3: 0.07, 4: 0.03}
 
 
 class DataConfigError(Exception):
@@ -40,6 +44,23 @@ class DataConfig:
     correction_maps: Dict[str, Any] = field(default_factory=dict)
     asc_tables: Dict[str, Any] = field(default_factory=dict)
 
+    # P-nucleotide length distribution (0-4 bp, geometric decay)
+    p_nucleotide_length_probs: Dict[int, float] = field(
+        default_factory=lambda: dict(DEFAULT_P_NUCLEOTIDE_LENGTH_PROBS)
+    )
+
+    # D-J pairing map: {D_gene_name: [compatible_J_gene_name, ...]}
+    # When None, no D-J family pairing constraint is applied.
+    dj_pairing_map: Optional[Dict[str, list]] = None
+
+    def __getattr__(self, name):
+        # Backward compat for pickled DataConfigs missing new fields
+        if name == 'p_nucleotide_length_probs':
+            return dict(DEFAULT_P_NUCLEOTIDE_LENGTH_PROBS)
+        if name == 'dj_pairing_map':
+            return None
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
     def validate(self):
         """
         Validate that this DataConfig has the minimum required fields for simulation.
@@ -63,6 +84,13 @@ class DataConfig:
         if self.metadata and self.metadata.has_d:
             if not self.d_alleles or len(self.d_alleles) == 0:
                 errors.append("d_alleles is required for chains with D segments (metadata.has_d=True)")
+        # Consistency: has_d=False but d_alleles provided
+        if self.metadata and not self.metadata.has_d:
+            if self.d_alleles and len(self.d_alleles) > 0:
+                errors.append(
+                    "d_alleles is non-empty but metadata.has_d=False. "
+                    "Either remove d_alleles or set has_d=True."
+                )
 
         # Gene usage
         if not self.gene_use_dict:
@@ -83,14 +111,6 @@ class DataConfig:
                 for key in ("D_5", "D_3"):
                     if key not in self.trim_dicts:
                         errors.append(f"trim_dicts must contain '{key}' key for chains with D segments")
-
-        # NP region parameters
-        if not self.NP_lengths:
-            errors.append("NP_lengths is required and must be non-empty")
-        if not self.NP_first_bases:
-            errors.append("NP_first_bases is required and must be non-empty")
-        if not self.NP_transitions:
-            errors.append("NP_transitions is required and must be non-empty")
 
         if errors:
             raise DataConfigError(

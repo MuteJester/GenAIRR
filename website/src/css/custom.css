@@ -1,0 +1,348 @@
+/* =============================================================================
+   GenAIRR Documentation — Custom Stylesheet
+   Primary: #1a6fac (deep science blue)  Accent: #00b4a0 (teal)
+   ============================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* --- Light mode --- */
+:root {
+  --ifm-color-primary: #1a6fac;
+  --ifm-color-primary-dark: #175f95;
+  --ifm-color-primary-darker: #145a8a;
+  --ifm-color-primary-darkest: #104a72;
+  --ifm-color-primary-light: #3d8ec5;
+  --ifm-color-primary-lighter: #4a96ca;
+  --ifm-color-primary-lightest: #6badd5;
+
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --ifm-heading-font-weight: 700;
+  --ifm-font-weight-semibold: 600;
+  --ifm-code-font-size: 95%;
+  --ifm-code-border-radius: 4px;
+  --ifm-global-radius: 6px;
+
+  --genairr-accent: #00b4a0;
+  --genairr-accent-transparent: rgba(0, 180, 160, 0.12);
+  --genairr-purple: #8b5cc4;
+  --genairr-purple-transparent: rgba(139, 92, 196, 0.12);
+
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+
+  /* ── Swiss Lab tokens (playground) ── */
+  --pg-background: #FFFFFF;
+  --pg-foreground: #1A1D23;
+  --pg-card: #FFFFFF;
+  --pg-secondary: #F0F1F3;
+  --pg-muted: #F5F6F8;
+  --pg-muted-fg: #6B7280;
+  --pg-border: #D4D7DD;
+  --pg-destructive: #DC2626;
+  --pg-accent: #1a6fac;
+  --pg-accent-fg: #FFFFFF;
+
+  /* Gene segment colors */
+  --gene-v: #4A90D9;
+  --gene-d: #E8685A;
+  --gene-j: #E8A838;
+  --gene-np: #5DC48C;
+
+  /* Op category colors */
+  --cat-rearrangement: #1a6fac;
+  --cat-mutation: #0d9488;
+  --cat-biology: #7c3aed;
+  --cat-artifact: #ea580c;
+
+  /* Type scale (4 steps) */
+  --text-caption: 0.75rem;
+  --text-body-sm: 0.875rem;
+  --text-body: 1rem;
+  --text-heading: 1.125rem;
+}
+
+/* --- Dark mode --- */
+[data-theme='dark'] {
+  --ifm-color-primary: #3d8ec5;
+  --ifm-color-primary-dark: #2d7fb8;
+  --ifm-color-primary-darker: #1a6fac;
+  --ifm-color-primary-darkest: #145a8a;
+  --ifm-color-primary-light: #5aa3d5;
+  --ifm-color-primary-lighter: #6badd5;
+  --ifm-color-primary-lightest: #8dc2e2;
+
+  --ifm-background-color: #1a1f2b;
+  --ifm-background-surface-color: #222838;
+
+  --genairr-accent: #00d4be;
+  --genairr-accent-transparent: rgba(0, 212, 190, 0.12);
+
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+
+  /* ── Swiss Lab dark tokens (playground) ── */
+  --pg-background: #111318;
+  --pg-foreground: #E5E7EB;
+  --pg-card: #1A1D23;
+  --pg-secondary: #23272F;
+  --pg-muted: #23272F;
+  --pg-muted-fg: #9CA3AF;
+  --pg-border: #374151;
+  --pg-destructive: #EF4444;
+  --pg-accent: #4A90D9;
+  --pg-accent-fg: #FFFFFF;
+}
+
+/* --- Typography --- */
+h1 {
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-weight: 600;
+}
+
+p {
+  max-width: 75ch;
+  line-height: 1.7;
+}
+
+/* --- Code block refinements --- */
+.prism-code {
+  border-radius: 6px;
+}
+
+/* --- Smooth theme transitions --- */
+body,
+.navbar,
+.main-wrapper,
+.footer {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* =============================================================================
+   Concepts pages — styled visual elements
+   ============================================================================= */
+
+/* ── Node diagram card ── */
+.node-diagram {
+  background: linear-gradient(135deg, #f0f7ff 0%, #f8fafc 100%);
+  border: 1px solid #d0dde8;
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+[data-theme='dark'] .node-diagram {
+  background: linear-gradient(135deg, #1a2235 0%, #1e2738 100%);
+  border-color: #2d3a4d;
+}
+
+.node-diagram .nd-title {
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ifm-color-primary);
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.node-diagram .nd-field {
+  display: grid;
+  grid-template-columns: 140px 80px 1fr;
+  gap: 0 0.75rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+}
+
+[data-theme='dark'] .node-diagram .nd-field {
+  border-bottom-color: rgba(255,255,255,0.04);
+}
+
+.node-diagram .nd-field:last-child {
+  border-bottom: none;
+}
+
+.node-diagram .nd-name {
+  color: var(--ifm-color-primary);
+  font-weight: 500;
+}
+
+.node-diagram .nd-type {
+  color: var(--genairr-accent);
+  opacity: 0.85;
+}
+
+.node-diagram .nd-desc {
+  color: var(--ifm-font-color-base);
+  opacity: 0.8;
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.82rem;
+}
+
+/* ── Segment color chips ── */
+.seg-chip {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.seg-v   { background: rgba(74,144,217,0.15); color: #2a6cb5; }
+.seg-np  { background: rgba(93,196,140,0.15); color: #2d8f5a; }
+.seg-d   { background: rgba(232,104,90,0.15); color: #c04a3a; }
+.seg-j   { background: rgba(232,168,56,0.15); color: #b07d20; }
+.seg-umi { background: rgba(139,92,196,0.15); color: #6b3fa0; }
+.seg-adp { background: rgba(156,163,175,0.15); color: #6b7280; }
+
+[data-theme='dark'] .seg-v   { color: #6badd5; }
+[data-theme='dark'] .seg-np  { color: #5dc48c; }
+[data-theme='dark'] .seg-d   { color: #e8685a; }
+[data-theme='dark'] .seg-j   { color: #e8a838; }
+[data-theme='dark'] .seg-umi { color: #a982d9; }
+[data-theme='dark'] .seg-adp { color: #9ca3af; }
+
+/* ── Flag badge ── */
+.flag-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 3px;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.72rem;
+  font-weight: 500;
+  background: rgba(0,0,0,0.06);
+  color: var(--ifm-font-color-base);
+  margin: 0.1rem 0.15rem;
+}
+
+[data-theme='dark'] .flag-badge {
+  background: rgba(255,255,255,0.08);
+}
+
+/* ── Pipeline step boxes ── */
+.pipeline-phase {
+  margin: 1.5rem 0;
+  border-left: 4px solid var(--ifm-color-primary);
+  background: rgba(26,111,172,0.03);
+  border-radius: 0 8px 8px 0;
+  padding: 1rem 1.25rem;
+}
+
+[data-theme='dark'] .pipeline-phase {
+  background: rgba(61,142,197,0.06);
+}
+
+.pipeline-phase.phase-bio    { border-left-color: var(--genairr-purple); background: rgba(139,92,196,0.03); }
+.pipeline-phase.phase-mutate { border-left-color: var(--genairr-accent); background: rgba(0,180,160,0.03); }
+.pipeline-phase.phase-corrupt { border-left-color: #ea580c; background: rgba(234,88,12,0.03); }
+.pipeline-phase.phase-serial  { border-left-color: #6b7280; background: rgba(107,114,128,0.03); }
+
+[data-theme='dark'] .pipeline-phase.phase-bio    { background: rgba(139,92,196,0.06); }
+[data-theme='dark'] .pipeline-phase.phase-mutate { background: rgba(0,212,190,0.06); }
+[data-theme='dark'] .pipeline-phase.phase-corrupt { background: rgba(234,88,12,0.06); }
+[data-theme='dark'] .pipeline-phase.phase-serial  { background: rgba(107,114,128,0.06); }
+
+.pipeline-phase .phase-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 0.5rem;
+}
+
+.pipeline-phase .phase-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.pipeline-phase .step-tag {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+  background: rgba(0,0,0,0.05);
+}
+
+[data-theme='dark'] .pipeline-phase .step-tag {
+  background: rgba(255,255,255,0.06);
+}
+
+/* ── Sequence visualization ── */
+.seq-vis {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.8rem;
+  line-height: 2;
+  padding: 1rem 1.25rem;
+  background: #fafbfc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin: 1rem 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+[data-theme='dark'] .seq-vis {
+  background: #1a2030;
+  border-color: #2d3a4d;
+}
+
+.seq-vis .sv-label {
+  display: inline-block;
+  width: 140px;
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ifm-font-color-secondary);
+  text-align: right;
+  padding-right: 0.75rem;
+}
+
+.seq-vis .sv-v   { color: var(--gene-v); }
+.seq-vis .sv-np  { color: var(--gene-np); }
+.seq-vis .sv-d   { color: var(--gene-d); }
+.seq-vis .sv-j   { color: var(--gene-j); }
+.seq-vis .sv-mut { color: #dc2626; font-weight: 700; text-transform: uppercase; }
+.seq-vis .sv-n   { color: #9ca3af; }
+
+/* ── Mermaid diagram overrides ── */
+.docusaurus-mermaid-container {
+  margin: 1.5rem 0;
+}
+
+.docusaurus-mermaid-container svg {
+  max-width: 100%;
+}
+
+/* ── Callout card ── */
+.callout-card {
+  background: linear-gradient(135deg, rgba(26,111,172,0.06) 0%, rgba(0,180,160,0.04) 100%);
+  border: 1px solid rgba(26,111,172,0.15);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 1.5rem 0;
+}
+
+[data-theme='dark'] .callout-card {
+  background: linear-gradient(135deg, rgba(61,142,197,0.08) 0%, rgba(0,212,190,0.05) 100%);
+  border-color: rgba(61,142,197,0.2);
+}
+
+.callout-card .cc-title {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 0.4rem;
+  color: var(--ifm-color-primary);
+}
+
+.callout-card .cc-body {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  opacity: 0.9;
+}

@@ -1,9 +1,57 @@
+# ── Virtual environments ─────────────────────────────────────
 /venv/
-debug.py
-/scripts/
+.venv/
+
+# ── Python build artifacts ───────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.egg
+*.egg-info/
 /build/
 /dist/
-*.egg-info/
+*.whl
+
+# ── C build artifacts ────────────────────────────────────────
+src/GenAIRR/_native/csrc/build/
+src/GenAIRR/_native/csrc/build_profile/
+*.so
+*.dylib
+*.dll
+*.pyd
+*.o
+*.a
+*.obj
+*.lib
+gmon.out
+
+# ── Built documentation ─────────────────────────────────────
+site/
+
+# ── IDE / editor ────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Testing / coverage ──────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.tox/
+
+# ── Project-specific ────────────────────────────────────────
+debug.py
+/scripts/
+.private/
+_old_docs/
+.mcp.json
+.claude/
+
 # Keep release tools tracked but ignore local secrets file
 !/tools/
 /tools/pypi.secrets.ps1

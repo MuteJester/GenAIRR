@@ -2,13 +2,11 @@ class CorrectionMapBuilder:
     """
     Helper class for building various correction maps used in immunoglobulin sequence alignment.
 
-    This class encapsulates logic for computing:
-        - 5' trimming similarity maps
-        - 3' trimming similarity maps
-        - Combined 5' and 3' trimming maps
-        - N-ambiguity correction graphs
-
-    Correction maps are stored in the `correction_maps` attribute of the provided DataConfig instance.
+    .. deprecated::
+        Correction maps are now computed lazily during graph compilation by
+        each op's ``configure()`` method via ``ops._correction_map_builders``.
+        This class is kept for backward compatibility but is no longer called
+        by the standard DataConfig builders.
     """
 
     def __init__(self, dataconfig):
@@ -18,6 +16,14 @@ class CorrectionMapBuilder:
         Args:
             dataconfig (DataConfig): The DataConfig object where correction maps will be stored.
         """
+        import warnings
+        warnings.warn(
+            "CorrectionMapBuilder is deprecated. Correction maps are now "
+            "computed lazily during graph compilation by each op's configure() method. "
+            "See GenAIRR.ops._correction_map_builders for the standalone builder functions.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.dataconfig = dataconfig
 
     def _flatten_alleles(self, target_alleles):

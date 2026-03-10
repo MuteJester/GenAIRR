@@ -1,0 +1,214 @@
+.section {
+  padding: 4rem 1.5rem;
+}
+
+.sectionInner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.sectionTitle {
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 800;
+  margin: 0 0 0.4rem;
+  letter-spacing: -0.02em;
+  border: none;
+}
+
+.sectionSub {
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--ifm-color-emphasis-600);
+  margin: 0 auto 2.5rem;
+  max-width: 520px;
+  line-height: 1.6;
+}
+
+/* ── Pipeline layout ── */
+
+.pipelineContainer {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 2.5rem;
+  align-items: start;
+}
+
+/* ── Left: mini code window ── */
+
+.pipelineCode {
+  position: sticky;
+  top: calc(var(--ifm-navbar-height, 60px) + 1.5rem);
+}
+
+.miniCodeWindow {
+  background: #1e1e2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+[data-theme='dark'] .miniCodeWindow {
+  background: #111318;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.miniCodeHeader {
+  display: flex;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.miniDots {
+  display: flex;
+  gap: 6px;
+}
+
+.miniDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.miniDot[data-color='red']    { background: #ff5f57; }
+.miniDot[data-color='yellow'] { background: #febc2e; }
+.miniDot[data-color='green']  { background: #28c840; }
+
+.miniCodeBody {
+  padding: 1rem 1.2rem;
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.8;
+  overflow-x: auto;
+}
+
+.miniCodeBody code {
+  color: #cdd6f4;
+  background: none;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  white-space: pre;
+}
+
+/* ── Right: phase cards ── */
+
+.pipelinePhases {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.phaseCard {
+  background: var(--ifm-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-left: 3px solid var(--phase-color, var(--ifm-color-primary));
+  border-radius: 10px;
+  padding: 1.1rem 1.3rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.phaseCard:hover {
+  transform: translateX(4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='dark'] .phaseCard:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.phaseHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.phaseIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.phaseMethod {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: none;
+  padding: 0;
+  border: none;
+}
+
+.phaseTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0 0 0.25em;
+}
+
+.phaseDesc {
+  font-size: 0.82rem;
+  color: var(--ifm-color-emphasis-600);
+  line-height: 1.5;
+  margin: 0 0 0.6rem;
+  max-width: none;
+}
+
+.opsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.opTag {
+  display: inline-block;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.68rem;
+  font-weight: 500;
+  background: var(--ifm-color-emphasis-100);
+  color: var(--ifm-color-emphasis-700);
+  padding: 0.15em 0.5em;
+  border-radius: 4px;
+  border: 1px solid var(--ifm-color-emphasis-200);
+}
+
+[data-theme='dark'] .opTag {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Phase connector ── */
+
+.phaseConnector {
+  display: flex;
+  justify-content: center;
+  padding: 0.25rem 0;
+  color: var(--ifm-color-emphasis-300);
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 800px) {
+  .pipelineContainer {
+    grid-template-columns: 1fr;
+  }
+
+  .pipelineCode {
+    position: static;
+  }
+
+  .miniCodeWindow {
+    max-width: 320px;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .section {
+    padding: 2.5rem 1rem;
+  }
+}

@@ -1,5 +1,0 @@
-# No required dependencies for core simulation.
-# Optional dependencies (only needed for specific features):
-#   numpy, scipy  — required for DataConfig creation (allele clustering)
-#   graphviz      — required for pipeline.plot() visualization
-#   tqdm          — progress bars for UnbiasedDatasetSimulator

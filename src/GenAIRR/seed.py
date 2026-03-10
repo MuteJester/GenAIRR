@@ -9,12 +9,11 @@ Usage:
     >>> set_seed(42)
     >>> # All subsequent pipeline executions will be reproducible
 
-    >>> from GenAIRR import simulate, HUMAN_IGH_OGRDB, S5F, set_seed
+    >>> from GenAIRR import Experiment, set_seed
     >>> set_seed(42)
-    >>> result1 = simulate(HUMAN_IGH_OGRDB, S5F(0.003, 0.25))
-    >>> set_seed(42)
-    >>> result2 = simulate(HUMAN_IGH_OGRDB, S5F(0.003, 0.25))
-    >>> assert result1.sequence == result2.sequence  # Always True
+    >>> r1 = Experiment.on("human_igh").somatic_hypermutation().run(n=1, seed=42)
+    >>> r2 = Experiment.on("human_igh").somatic_hypermutation().run(n=1, seed=42)
+    >>> assert r1[0]["sequence"] == r2[0]["sequence"]  # Always True
 """
 
 import random
@@ -36,10 +35,10 @@ def set_seed(seed: int) -> None:
         seed: Integer seed value. Use the same seed to reproduce exact results.
 
     Example:
-        >>> from GenAIRR import set_seed, simulate, HUMAN_IGH_OGRDB, S5F
+        >>> from GenAIRR import set_seed, Experiment
         >>> set_seed(42)
-        >>> result = simulate(HUMAN_IGH_OGRDB, S5F(0.003, 0.25))
-        >>> # Running the above with seed 42 will always produce the same sequence
+        >>> result = Experiment.on("human_igh").somatic_hypermutation().run(n=10, seed=42)
+        >>> # Running the above with seed 42 will always produce the same sequences
 
     Note:
         Call set_seed() before any simulation to ensure reproducibility.

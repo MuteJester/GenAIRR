@@ -336,11 +336,3 @@ def profile(fasta):
     from cProfile import Profile
     germline_set = create_allele_dict(fasta)
     cProfile.run('create_asc_germline_set(germline_set)')
-    with Profile() as profile:
-        print(f"{fib(35) = }")
-        (
-            Stats(profile)
-            .strip_dirs()
-            .sort_stats(SortKey.CALLS)
-            .print_stats()
-        )

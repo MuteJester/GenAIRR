@@ -1,12 +1,14 @@
 import csv
+import logging
 from collections import Counter
 
 from GenAIRR.dataconfig.make.base_dataconfig_builder import BaseDataConfigGenerator
-from GenAIRR.dataconfig.make.auxiliary_builders.correction_map_builder import CorrectionMapBuilder
 from GenAIRR.dataconfig.make.auxiliary_builders.trimming_proportion_builder import TrimmingProbabilityGenerator
 from GenAIRR.dataconfig.make.auxiliary_builders.np_markov_chain_builder import NPMarkovParameterBuilder
 from GenAIRR.utilities.data_utilities import create_allele_dict
 from GenAIRR.utilities.asc_utilities import create_asc_germline_set
+
+logger = logging.getLogger(__name__)
 
 
 def _load_airr_data(custom_data):
@@ -36,9 +38,11 @@ def _counter_to_prob_dict(counter):
 
 
 class CustomDataConfigBuilder(BaseDataConfigGenerator):
-    def __init__(self, convert_to_asc=True):
-        super().__init__(convert_to_asc)
-        self.correction_builder = CorrectionMapBuilder(self.dataconfig)
+    def __init__(self, convert_to_asc=True, *, species=None, chain_type=None, reference_set=None):
+        super().__init__(
+            convert_to_asc,
+            species=species, chain_type=chain_type, reference_set=reference_set,
+        )
 
     def _derive_gene_usage(self, data):
         v_counts = Counter(row['v_call'].split('*')[0] for row in data)
@@ -90,42 +94,55 @@ class CustomDataConfigBuilder(BaseDataConfigGenerator):
                     family_dict[allele.gene] = trim_values
 
     def make(self, v_reference_path, j_reference_path, custom_data, c_reference_path=None,
-             d_reference_path=None):
+             d_reference_path=None, *, v_anchor_finder=None, j_anchor_finder=None,
+             keep_anchorless=False):
+        """
+        Construct a DataConfig derived from empirical AIRR data.
+
+        Args:
+            v_reference_path: V gene FASTA file path or preloaded dict.
+            j_reference_path: J gene FASTA file path or preloaded dict.
+            custom_data: AIRR CSV path, list of dicts, or pandas DataFrame.
+            c_reference_path: C gene FASTA file path or preloaded dict (optional).
+            d_reference_path: D gene FASTA file path or preloaded dict (optional).
+            v_anchor_finder: Custom V anchor callable (see ``create_allele_dict``).
+            j_anchor_finder: Custom J anchor callable (see ``create_allele_dict``).
+            keep_anchorless: If True, keep V/J alleles without anchors
+                (they can be sampled but never produce productive sequences).
+
+        Returns:
+            DataConfig with empirically derived distributions and validated metadata.
+        """
         data = _load_airr_data(custom_data)
         self.has_d = d_reference_path is not None
         if self.has_d and 'D' not in self.alleles:
             self.alleles.append('D')
 
         # Load references
-        v, j, c, d = self._read_reference_files(v_reference_path, j_reference_path, c_reference_path, d_reference_path)
+        v, j, c, d = self._read_reference_files(
+            v_reference_path, j_reference_path, c_reference_path, d_reference_path,
+            v_anchor_finder=v_anchor_finder, j_anchor_finder=j_anchor_finder,
+            keep_anchorless=keep_anchorless,
+        )
         self._load_alleles(v_alleles=v, j_alleles=j, c_alleles=c, d_alleles=d)
-        print('Alleles Mounted to DataConfig!...')
+        logger.info('Alleles mounted to DataConfig')
 
         # Gene usage
         self._derive_gene_usage(data)
-        print('Gene Usage Mounted to DataConfig!...')
+        logger.info('Gene usage mounted to DataConfig')
 
         # Trimming proportions
         self._load_trimming_probs()
         self._derive_trimming_proportions(data)
-        print('Trimming Proportions Mounted to DataConfig!...')
+        logger.info('Trimming proportions mounted to DataConfig')
 
         # NP parameters
         npgen = NPMarkovParameterBuilder(self.dataconfig, self.has_d)
         npgen.derive_all_from_data(data)
-        print('NP Parameters Mounted to DataConfig!...')
+        logger.info('NP parameters mounted to DataConfig')
 
-        # Correction maps
-        self.correction_builder.build_n_ambiguity_map(self.dataconfig.v_alleles)
-        print('V Ns Ambiguity Map Mounted to DataConfig!...')
+        # Correction maps are computed lazily during graph compilation
+        self._finalize()
+        logger.info('DataConfig build complete')
 
-        self.correction_builder.build_3_prime_trim_map(self.dataconfig.v_alleles)
-        self.correction_builder.build_5_prime_trim_map(self.dataconfig.v_alleles)
-        self.correction_builder.build_3_prime_trim_map(self.dataconfig.j_alleles)
-        self.correction_builder.build_5_prime_trim_map(self.dataconfig.j_alleles)
-        if self.has_d and self.dataconfig.d_alleles:
-            self.correction_builder.build_5_and_3_prime_trim_map(self.dataconfig.d_alleles)
-            print('D (5,3) Prime Ambiguity Map Mounted to DataConfig!...')
-
-        print('=' * 50)
         return self.dataconfig

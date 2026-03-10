@@ -26,6 +26,7 @@ class Species(Enum):
     # Common Mammalian Models
     HUMAN = "Human"
     MOUSE = "Mouse"
+    MOUSE_C57BL6J = "Mouse C57BL/6J"
     RAT = "Rat"
     RABBIT = "Rabbit"
     GUINEA_PIG = "Guinea Pig"
@@ -34,20 +35,34 @@ class Species(Enum):
     RHESUS_MACAQUE = "Rhesus Macaque"
     CYNOMOLGUS_MACAQUE = "Cynomolgus Macaque"
     MARMOSET = "Marmoset"
+    CHIMPANZEE = "Chimpanzee"
+    GORILLA = "Gorilla"
+    SUMATRAN_ORANGUTAN = "Sumatran Orangutan"
+    BORNEAN_ORANGUTAN = "Bornean Orangutan"
+    OWL_MONKEY = "Owl Monkey"
+    RING_TAILED_LEMUR = "Ring-tailed Lemur"
 
     # Agricultural and Domestic Animals
     PIG = "Pig"
-    COW = "Cow"  # or Bovine
+    COW = "Cow"
     SHEEP = "Sheep"
     GOAT = "Goat"
     HORSE = "Horse"
     DOG = "Dog"
     CAT = "Cat"
 
-    # Camelids (for Heavy-Chain-Only Antibodies)
+    # Camelids
     LLAMA = "Llama"
     ALPACA = "Alpaca"
     DROMEDARY_CAMEL = "Dromedary Camel"
+
+    # Mustelids
+    FERRET = "Ferret"
+    AMERICAN_MINK = "American Mink"
+
+    # Other Mammals
+    NAKED_MOLE_RAT = "Naked Mole-rat"
+    PLATYPUS = "Platypus"
 
     # Birds
     CHICKEN = "Chicken"
@@ -56,12 +71,12 @@ class Species(Enum):
 
     # Fish and Aquatic Vertebrates
     ZEBRAFISH = "Zebrafish"
-    TROUT = "Trout"  # e.g., Rainbow Trout
-    SALMON = "Salmon"  # e.g., Atlantic Salmon
-    CATFISH = "Catfish"  # e.g., Channel Catfish
-    SHARK = "Shark"  # For IgNAR Receptors
+    TROUT = "Trout"
+    SALMON = "Salmon"
+    CATFISH = "Catfish"
+    ATLANTIC_COD = "Atlantic Cod"
+    SHARK = "Shark"
 
     # Other
-    FERRET = "Ferret"  # Important model for influenza
-    BAT = "Bat"  # Increasing interest in viral immunology
+    BAT = "Bat"
 

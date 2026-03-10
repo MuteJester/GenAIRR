@@ -41,13 +41,16 @@ class Allele(ABC):
             anchor (int): The anchor position within the sequence, specific to allele type.
         """
 
-    def __init__(self, name, gapped_sequence, length):
+    def __init__(self, name, gapped_sequence, length, *, anchor_override=None):
         """Initializes an Allele instance.
 
             Args:
                 name (str): The name of the allele.
                 gapped_sequence (str): The gapped nucleotide sequence.
                 length (int): The length of the gapped sequence.
+                anchor_override (int, optional): If provided, overrides the
+                    anchor position computed by ``_find_anchor()``. Useful for
+                    non-standard species whose anchors differ from the defaults.
         """
         self.name = name
         self.length = int(length)
@@ -58,6 +61,8 @@ class Allele(ABC):
         self.gene = self.name.split("*")[0]
         self.anchor = None
         self._find_anchor()
+        if anchor_override is not None:
+            self.anchor = anchor_override
 
     @abstractmethod
     def _find_anchor(self):

@@ -1,7 +1,12 @@
 import random
 from collections import defaultdict
 
-STOP_CODONS = {"TAG", "TAA", "TGA"}
+_COMPLEMENT = str.maketrans('ATCGatcg', 'TAGCtagc')
+
+
+def reverse_complement(seq: str) -> str:
+    """Return the reverse complement of a DNA sequence."""
+    return seq.translate(_COMPLEMENT)[::-1]
 
 def weighted_choice(choices):
     """
@@ -78,26 +83,20 @@ def translate(seq):
             protein += table[codon]
     return protein
 
-def check_stops(seq,return_pos=False):
-        """
-        Checks the given sequence for the presence of stop codons.
+def parse_mutation(mutation_str: str):
+    """Parse a mutation string into (original_base, final_base).
 
-        Args:
-            seq (str): The nucleotide sequence to check for stop codons.
+    Handles single-step ("A>T") and multi-step ("A>T>G") mutation formats.
 
-        Returns:
-            bool: True if a stop codon is found, False otherwise.
-        """
-        for x in range(0, len(seq), 3):
-            if seq[x:x + 3] in STOP_CODONS:
-                if return_pos:
-                    return True,x
-                else:
-                    return True
-        if return_pos:
-            return False,-1
-        else:
-            return False
+    Args:
+        mutation_str: Mutation string with ">" separators.
+
+    Returns:
+        Tuple of (original_base, final_base).
+    """
+    parts = mutation_str.split(">")
+    return parts[0], parts[-1]
+
 
 def normalize_and_filter_convert_to_dict(obj):
     if isinstance(obj, defaultdict):
@@ -109,3 +108,25 @@ def normalize_and_filter_convert_to_dict(obj):
             return {k: v / total for k, v in filtered_dict.items()}
         return nested_dict
     return obj
+
+
+def parse_fasta(file):
+    """Parse a FASTA format file.
+
+    Args:
+        file: A file-like object with FASTA content.
+
+    Yields:
+        Tuples of (header, sequence) for each entry.
+    """
+    header, seq = None, []
+    for line in file:
+        line = line.rstrip("\n")
+        if line.startswith(">"):
+            if header:
+                yield header, "".join(seq)
+            header, seq = line, []
+        else:
+            seq.append(line)
+    if header:
+        yield header, "".join(seq)

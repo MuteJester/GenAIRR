@@ -1,0 +1,11 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='640' height='320' viewBox='0 0 640 320'>
+  <rect x='0' y='0' width='640' height='320' fill='white'/>
+  <line x1='40' y1='40' x2='40' y2='280' stroke='#333' stroke-width='1'/>
+  <line x1='40' y1='280' x2='600' y2='280' stroke='#333' stroke-width='1'/>
+  <rect x="40.0" y="160.0" width="50.4" height="120.0" fill="#4A90D9"/><rect x="96.0" y="40.0" width="50.4" height="240.0" fill="#4A90D9"/><rect x="152.0" y="86.2" width="50.4" height="193.8" fill="#4A90D9"/><rect x="208.0" y="95.4" width="50.4" height="184.6" fill="#4A90D9"/><rect x="264.0" y="76.9" width="50.4" height="203.1" fill="#4A90D9"/><rect x="320.0" y="132.3" width="50.4" height="147.7" fill="#4A90D9"/><rect x="376.0" y="113.8" width="50.4" height="166.2" fill="#4A90D9"/><rect x="432.0" y="58.5" width="50.4" height="221.5" fill="#4A90D9"/><rect x="488.0" y="49.2" width="50.4" height="230.8" fill="#4A90D9"/><rect x="544.0" y="141.5" width="50.4" height="138.5" fill="#4A90D9"/>
+  <text x='40' y='304' font-size='12' fill='#333'>0.008</text>
+  <text x='570' y='304' font-size='12' fill='#333'>0.049</text>
+  <text x='320.0' y='312' font-size='12' fill='#333' text-anchor='middle'>Mutation rate</text>
+  <text x='14' y='160.0' font-size='12' fill='#333' transform='rotate(-90 14,160.0)' text-anchor='middle'>Count</text>
+  <text x='320.0' y='20' font-size='14' fill='#111' text-anchor='middle'>Mutation rate distribution (n=200)</text>
+</svg>

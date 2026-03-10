@@ -1,0 +1,157 @@
+cmake_minimum_required(VERSION 3.14)
+project(genairr-c VERSION 0.1.0 LANGUAGES C)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+# ── Build options ────────────────────────────────────────────────
+option(GENAIRR_BUILD_TESTS "Build C test executables" ON)
+option(GENAIRR_BUILD_BENCHMARKS "Build C benchmark executables" ON)
+
+# ── Compiler warnings (GCC/Clang only) ──────────────────────────
+if(NOT MSVC)
+    add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes)
+else()
+    add_compile_options(/W3)
+    # MSVC needs _USE_MATH_DEFINES for M_PI in <math.h>
+    add_compile_definitions(_USE_MATH_DEFINES)
+    # Suppress warnings about POSIX function names (fdopen -> _fdopen etc.)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
+# ── Include paths ─────────────────────────────────────────────────
+include_directories(${CMAKE_SOURCE_DIR}/include)
+
+# ── Library: libgenairr ───────────────────────────────────────────
+set(LIB_SOURCES
+    src/core/aseq.c
+    src/allele/allele_pool.c
+    src/pipeline/sim_config.c
+    src/pipeline/pipeline.c
+    src/rearrangement/sample.c
+    src/rearrangement/trim.c
+    src/rearrangement/assemble.c
+    src/core/airr.c
+    src/mutation/s5f.c
+    src/mutation/uniform.c
+    src/util/rand_util.c
+    src/util/trace.c
+    src/corruption/corrupt_5_prime.c
+    src/corruption/corrupt_3_prime.c
+    src/corruption/quality_errors.c
+    src/corruption/pcr_amplification.c
+    src/corruption/simulate_umi.c
+    src/corruption/reverse_complement.c
+    src/corruption/spike_contaminants.c
+    src/corruption/insert_indels.c
+    src/corruption/insert_ns.c
+    src/corruption/paired_end.c
+    src/corruption/long_read_errors.c
+    src/corruption/trim_to_length.c
+    src/corruption/primer_mask.c
+    src/simulation/d_inversion.c
+    src/simulation/receptor_revision.c
+    src/simulation/selection_pressure.c
+    src/simulation/simulate_csr.c
+    src/core/allele_bitmap.c
+    src/core/codon.c
+    src/core/functionality.c
+    src/io/gdc_write.c
+    src/io/gdc_read.c
+)
+
+add_library(genairr STATIC ${LIB_SOURCES})
+target_include_directories(genairr PUBLIC ${CMAKE_SOURCE_DIR}/include)
+
+# ── Shared library: libgenairr.so / .dylib / .dll (Python bindings) ─
+set(API_SOURCES
+    src/api/genairr_api.c
+)
+
+add_library(genairr_shared SHARED ${LIB_SOURCES} ${API_SOURCES})
+set_target_properties(genairr_shared PROPERTIES
+    OUTPUT_NAME genairr
+    POSITION_INDEPENDENT_CODE ON
+    SOVERSION 0
+    VERSION ${PROJECT_VERSION}
+)
+target_include_directories(genairr_shared PUBLIC ${CMAKE_SOURCE_DIR}/include)
+
+# Link math library (implicit on MSVC)
+if(NOT MSVC)
+    target_link_libraries(genairr_shared m)
+endif()
+
+# ── Tests ─────────────────────────────────────────────────────────
+if(GENAIRR_BUILD_TESTS)
+    enable_testing()
+
+    # Helper: link math only on non-MSVC
+    if(NOT MSVC)
+        set(MATH_LIB m)
+    else()
+        set(MATH_LIB "")
+    endif()
+
+    add_executable(test_aseq tests/test_aseq.c)
+    target_link_libraries(test_aseq genairr ${MATH_LIB})
+    add_test(NAME test_aseq COMMAND test_aseq)
+
+    add_executable(test_pipeline tests/test_pipeline.c)
+    target_link_libraries(test_pipeline genairr ${MATH_LIB})
+    add_test(NAME test_pipeline COMMAND test_pipeline)
+
+    add_executable(test_airr tests/test_airr.c)
+    target_link_libraries(test_airr genairr ${MATH_LIB})
+    add_test(NAME test_airr COMMAND test_airr)
+
+    add_executable(test_corrections tests/test_corrections.c)
+    target_link_libraries(test_corrections genairr ${MATH_LIB})
+    add_test(NAME test_corrections COMMAND test_corrections)
+
+    add_executable(test_s5f tests/test_s5f.c)
+    target_link_libraries(test_s5f genairr ${MATH_LIB})
+    add_test(NAME test_s5f COMMAND test_s5f)
+
+    add_executable(test_real_data tests/test_real_data.c data/human_igh_imgt.c)
+    target_include_directories(test_real_data PRIVATE ${CMAKE_SOURCE_DIR}/data)
+    target_link_libraries(test_real_data genairr ${MATH_LIB})
+    add_test(NAME test_real_data COMMAND test_real_data)
+
+    add_executable(test_serialize tests/test_serialize.c)
+    target_link_libraries(test_serialize genairr ${MATH_LIB})
+    add_test(NAME test_serialize COMMAND test_serialize)
+
+    add_executable(test_ops tests/test_ops.c)
+    target_link_libraries(test_ops genairr ${MATH_LIB})
+    add_test(NAME test_ops COMMAND test_ops)
+
+    add_executable(test_bitmap tests/test_bitmap.c)
+    target_link_libraries(test_bitmap genairr ${MATH_LIB})
+    add_test(NAME test_bitmap COMMAND test_bitmap)
+
+    add_executable(test_functionality tests/test_functionality.c)
+    target_link_libraries(test_functionality genairr ${MATH_LIB})
+    add_test(NAME test_functionality COMMAND test_functionality)
+
+    add_executable(test_codon_rail tests/test_codon_rail.c)
+    target_link_libraries(test_codon_rail genairr ${MATH_LIB})
+    add_test(NAME test_codon_rail COMMAND test_codon_rail)
+
+    add_executable(test_gdc tests/test_gdc.c)
+    target_link_libraries(test_gdc genairr ${MATH_LIB})
+    add_test(NAME test_gdc COMMAND test_gdc)
+endif()
+
+# ── Benchmarks ─────────────────────────────────────────────────
+if(GENAIRR_BUILD_BENCHMARKS)
+    if(NOT MSVC)
+        set(MATH_LIB m)
+    else()
+        set(MATH_LIB "")
+    endif()
+
+    add_executable(bench_e2e benchmarks/bench_e2e.c data/human_igh_imgt.c)
+    target_include_directories(bench_e2e PRIVATE ${CMAKE_SOURCE_DIR}/data)
+    target_link_libraries(bench_e2e genairr ${MATH_LIB})
+endif()

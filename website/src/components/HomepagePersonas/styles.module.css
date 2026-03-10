@@ -1,0 +1,107 @@
+.section {
+  padding: 3.5rem 1.5rem;
+}
+
+.sectionAlt {
+  background: var(--ifm-background-surface-color, #f5f7fa);
+}
+
+[data-theme='dark'] .sectionAlt {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sectionInner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.sectionTitle {
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 800;
+  margin: 0 0 1.8rem;
+  letter-spacing: -0.02em;
+  border: none;
+}
+
+.paths {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.2rem;
+}
+
+.pathCard {
+  background: var(--ifm-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  padding: 1.6rem 1.4rem 1.3rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+  color: var(--ifm-font-color-base);
+  display: flex;
+  flex-direction: column;
+}
+
+.pathCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+  text-decoration: none;
+  color: var(--ifm-font-color-base);
+}
+
+[data-theme='dark'] .pathCard:hover {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+
+.pathCard_bio { border-top: 3px solid #1a6fac; }
+.pathCard_ml  { border-top: 3px solid #00b4a0; }
+.pathCard_dev { border-top: 3px solid #8b5cc4; }
+
+.pathIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.8rem;
+}
+
+.pathIcon_bio { background: rgba(26, 111, 172, 0.1);  color: #1a6fac; }
+.pathIcon_ml  { background: rgba(0, 180, 160, 0.1);   color: #00b4a0; }
+.pathIcon_dev { background: rgba(139, 92, 196, 0.1);   color: #8b5cc4; }
+
+[data-theme='dark'] .pathIcon_bio { background: rgba(61, 142, 197, 0.15);  color: #5ba8d9; }
+[data-theme='dark'] .pathIcon_ml  { background: rgba(0, 212, 190, 0.12);   color: #00d4be; }
+[data-theme='dark'] .pathIcon_dev { background: rgba(163, 128, 212, 0.12); color: #b38ee6; }
+
+.pathTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 0.35em;
+}
+
+.pathDesc {
+  font-size: 0.87rem;
+  color: var(--ifm-color-emphasis-600);
+  line-height: 1.55;
+  margin: 0;
+  flex: 1;
+  max-width: none;
+}
+
+.pathLink {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ifm-color-primary);
+  margin-top: 0.8rem;
+}
+
+@media (max-width: 900px) {
+  .paths { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .paths { grid-template-columns: 1fr; }
+  .section { padding: 2.5rem 1rem; }
+}

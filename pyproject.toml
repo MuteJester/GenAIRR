@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "cmake>=3.14", "ninja>=1.10"]
+build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel]
+# Skip PyPy, 32-bit, and musl i686
+skip = "pp* *-musllinux_i686 *-win32"
+
+# Smoke test: verify the C library loads after wheel install
+test-command = "python -c \"from GenAIRR._native import get_version; print('GenAIRR C backend:', get_version())\""
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+# manylinux2014 images have cmake pre-installed
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]

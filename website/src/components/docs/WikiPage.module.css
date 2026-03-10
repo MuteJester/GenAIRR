@@ -1,0 +1,168 @@
+.article {
+  position: relative;
+  line-height: 1.7;
+  font-size: 0.95rem;
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  padding: 1rem 1.25rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.article :global(h2) {
+  border-bottom: 1px solid var(--ifm-color-emphasis-300);
+  padding-bottom: 0.2rem;
+  margin-top: 1.2rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.article :global(h3) {
+  margin-top: 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.article :global(p) {
+  margin: 0.5rem 0;
+}
+
+.shortdesc {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.9rem;
+  margin: 0 0 0.4rem;
+}
+
+.hatnote {
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+  color: var(--ifm-color-emphasis-700);
+  font-style: italic;
+}
+
+.hatnote::before {
+  content: "Note: ";
+  font-weight: 600;
+}
+
+.lead {
+  font-size: 1rem;
+  margin: 0 0 1rem;
+}
+
+.infobox {
+  float: right;
+  width: 260px;
+  margin: 0 0 1rem 1rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: var(--ifm-background-surface-color);
+  padding: 0.35rem;
+  font-size: 0.9rem;
+  clear: right;
+}
+
+.infoboxTable {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--ifm-background-surface-color);
+}
+
+.infoboxTable th {
+  text-align: center;
+  font-weight: 700;
+  background: var(--ifm-color-emphasis-100);
+  padding: 0.35rem 0.25rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+}
+
+.infoboxLabel {
+  color: var(--ifm-font-color-base);
+  vertical-align: top;
+  padding: 0.2rem 0.3rem 0.2rem 0;
+  width: 40%;
+  font-weight: 600;
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+}
+
+.infoboxValue {
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+}
+
+.toc {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: var(--ifm-color-emphasis-100);
+  padding: 0.5rem 0.75rem;
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  display: table;
+}
+
+.tocTitle {
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.tocList {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.thumb {
+  float: right;
+  width: 240px;
+  margin: 0 0 1rem 1rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: var(--ifm-color-emphasis-100);
+  padding: 0.35rem;
+  clear: right;
+}
+
+.thumb img {
+  max-width: 100%;
+  height: auto;
+}
+
+.thumbCaption {
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-top: 0.35rem;
+}
+
+.figure {
+  margin: 0.5rem 0 1rem;
+}
+
+.figure img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--ifm-color-emphasis-300);
+}
+
+.figcaption {
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-top: 0.4rem;
+}
+
+.note {
+  border-left: 3px solid var(--ifm-color-primary);
+  background: var(--ifm-color-emphasis-100);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  margin: 0.75rem 0;
+}
+
+@media (max-width: 996px) {
+  .infobox {
+    float: none;
+    width: auto;
+    margin: 0 0 1rem 0;
+  }
+
+  .thumb {
+    float: none;
+    width: auto;
+    margin: 0 0 1rem 0;
+  }
+}

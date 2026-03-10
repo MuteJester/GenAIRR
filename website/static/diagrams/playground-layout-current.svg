@@ -1,0 +1,46 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='720' height='260' viewBox='0 0 720 260'>
+  <defs>
+    <marker id='arrow' markerWidth='8' markerHeight='8' refX='6' refY='3' orient='auto'>
+      <path d='M0,0 L0,6 L6,3 z' fill='#333'/>
+    </marker>
+  </defs>
+
+  <rect x='20' y='20' width='680' height='220' rx='10' ry='10' fill='#fafafa' stroke='#d0d0d0'/>
+  <text x='40' y='45' font-size='12' fill='#111'>Current playground layout</text>
+
+  <!-- Pipeline row -->
+  <rect x='50' y='60' width='420' height='36' rx='6' ry='6' fill='#f7f7f7' stroke='#333'/>
+  <text x='260' y='83' font-size='11' fill='#111' text-anchor='middle'>Pipeline chips</text>
+
+  <!-- Add button -->
+  <rect x='485' y='60' width='80' height='36' rx='6' ry='6' fill='#ffffff' stroke='#333' stroke-dasharray='4 3'/>
+  <text x='525' y='83' font-size='11' fill='#111' text-anchor='middle'>+ Add</text>
+
+  <!-- Run bar -->
+  <rect x='50' y='110' width='360' height='32' rx='6' ry='6' fill='#f7f7f7' stroke='#333'/>
+  <text x='230' y='131' font-size='11' fill='#111' text-anchor='middle'>Run bar</text>
+
+  <!-- Run button -->
+  <rect x='420' y='108' width='110' height='36' rx='6' ry='6' fill='#00b4a0' stroke='#008a7a'/>
+  <text x='475' y='131' font-size='11' fill='#fff' text-anchor='middle'>Run</text>
+
+  <!-- Code toggle -->
+  <rect x='540' y='108' width='90' height='36' rx='6' ry='6' fill='#ffffff' stroke='#333'/>
+  <text x='585' y='131' font-size='10' fill='#111' text-anchor='middle'>Show code</text>
+
+  <!-- Parameter editor -->
+  <rect x='50' y='160' width='280' height='60' rx='6' ry='6' fill='#f7f7f7' stroke='#333'/>
+  <text x='190' y='195' font-size='11' fill='#111' text-anchor='middle'>Parameter editor</text>
+
+  <!-- Results -->
+  <rect x='350' y='160' width='310' height='60' rx='6' ry='6' fill='#f7f7f7' stroke='#333'/>
+  <text x='505' y='195' font-size='11' fill='#111' text-anchor='middle'>Results table</text>
+
+  <!-- Callouts -->
+  <rect x='472' y='52' width='100' height='52' rx='8' ry='8' fill='none' stroke='#d9534f' stroke-width='2' stroke-dasharray='5 4'/>
+  <rect x='412' y='100' width='128' height='52' rx='8' ry='8' fill='none' stroke='#d9534f' stroke-width='2' stroke-dasharray='5 4'/>
+  <text x='610' y='78' font-size='10' fill='#d9534f'>Competing CTAs</text>
+
+  <line x1='330' y1='190' x2='350' y2='190' stroke='#d9534f' stroke-width='1.2' marker-end='url(#arrow)'/>
+  <text x='330' y='210' font-size='10' fill='#d9534f' text-anchor='end'>Params detached from results</text>
+</svg>

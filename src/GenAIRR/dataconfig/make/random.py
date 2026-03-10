@@ -1,10 +1,12 @@
+import logging
+
 from GenAIRR.dataconfig.make.base_dataconfig_builder import BaseDataConfigGenerator
-from GenAIRR.dataconfig.make.auxiliary_builders.correction_map_builder import CorrectionMapBuilder
 from GenAIRR.dataconfig.make.auxiliary_builders.trimming_proportion_builder import TrimmingProbabilityGenerator
 from GenAIRR.dataconfig.make.auxiliary_builders.np_markov_chain_builder import NPMarkovParameterBuilder
-from GenAIRR.utilities.AlleleNComparer import AlleleNComparer
 from GenAIRR.utilities.data_utilities import create_allele_dict
 from GenAIRR.utilities.asc_utilities import create_asc_germline_set
+
+logger = logging.getLogger(__name__)
 
 
 class RandomDataConfigBuilder(BaseDataConfigGenerator):
@@ -12,6 +14,12 @@ class RandomDataConfigBuilder(BaseDataConfigGenerator):
     Generator that creates a DataConfig object with random (uniform/decaying) distributions
     for gene usage, trimming, and NP region parameters.
     """
+
+    def __init__(self, convert_to_asc=False, *, species=None, chain_type=None, reference_set=None):
+        super().__init__(
+            convert_to_asc,
+            species=species, chain_type=chain_type, reference_set=reference_set,
+        )
 
     def _load_random_gene_usage(self):
         """
@@ -30,39 +38,47 @@ class RandomDataConfigBuilder(BaseDataConfigGenerator):
 
         self.dataconfig.gene_use_dict = gene_use_dict
 
-    def make(self, v_reference_path, j_reference_path, c_reference_path, d_reference_path=None):
+    def make(self, v_reference_path, j_reference_path, c_reference_path=None,
+             d_reference_path=None, *, v_anchor_finder=None, j_anchor_finder=None,
+             keep_anchorless=False):
         """
-        Main method to construct and return a DataConfig with all randomly simulated components.
+        Construct and return a DataConfig with all randomly simulated components.
+
+        Args:
+            v_reference_path: V gene FASTA file path or preloaded dict.
+            j_reference_path: J gene FASTA file path or preloaded dict.
+            c_reference_path: C gene FASTA file path or preloaded dict (optional).
+            d_reference_path: D gene FASTA file path or preloaded dict (optional).
+            v_anchor_finder: Custom V anchor callable (see ``create_allele_dict``).
+            j_anchor_finder: Custom J anchor callable (see ``create_allele_dict``).
+            keep_anchorless: If True, keep V/J alleles without anchors
+                (they can be sampled but never produce productive sequences).
+
+        Returns:
+            DataConfig with random distributions and validated metadata.
         """
         # Read and load reference sequences
-        v, j, c, d = self._read_reference_files(v_reference_path, j_reference_path, c_reference_path, d_reference_path)
+        v, j, c, d = self._read_reference_files(
+            v_reference_path, j_reference_path, c_reference_path, d_reference_path,
+            v_anchor_finder=v_anchor_finder, j_anchor_finder=j_anchor_finder,
+            keep_anchorless=keep_anchorless,
+        )
         self._load_alleles(v_alleles=v, j_alleles=j, c_alleles=c, d_alleles=d)
-        print('Alleles Mounted to DataConfig!...')
+        logger.info('Alleles mounted to DataConfig')
 
         # Random gene usage and trimming proportions
         self._load_random_gene_usage()
-        print('Random Gene Usage Mounted to DataConfig!...')
+        logger.info('Random gene usage mounted to DataConfig')
 
         self._load_trimming_probs()
-        print('Random Trimming Proportions Mounted to DataConfig!...')
+        logger.info('Random trimming proportions mounted to DataConfig')
 
         np_generator = NPMarkovParameterBuilder(self.dataconfig, has_d=self.has_d)
         np_generator.generate_all_random(max_length=50)
-        print('Random NP Parameters Mounted to DataConfig!...')
+        logger.info('Random NP parameters mounted to DataConfig')
 
-        # Derive correction maps
-        self.correction_builder.build_n_ambiguity_map(self.dataconfig.v_alleles)
-        print('V Ns Ambiguity Map Mounted to DataConfig!...')
-
-        self.correction_builder.build_5_prime_trim_map(self.dataconfig.v_alleles)
-        self.correction_builder.build_3_prime_trim_map(self.dataconfig.v_alleles)
-        self.correction_builder.build_5_prime_trim_map(self.dataconfig.j_alleles)
-        self.correction_builder.build_3_prime_trim_map(self.dataconfig.j_alleles)
-
-        if self.has_d and self.dataconfig.d_alleles:
-            self.correction_builder.build_5_and_3_prime_trim_map(self.dataconfig.d_alleles)
-
-        print('Allele Trim Ambiguity Maps Mounted to DataConfig!...')
-        print('=' * 50)
+        # Correction maps are computed lazily during graph compilation
+        self._finalize()
+        logger.info('DataConfig build complete')
 
         return self.dataconfig

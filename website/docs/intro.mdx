@@ -1,0 +1,114 @@
+---
+title: GenAIRR Documentation
+sidebar_label: Welcome
+slug: /
+---
+
+# GenAIRR Documentation
+
+**GenAIRR** is a high-performance simulator for adaptive immune receptor sequences (BCR and TCR).
+It produces synthetic sequences in AIRR format with **absolute ground-truth annotations** — every
+V/D/J call, every mutation position, every trimming length is known exactly because the simulator
+constructed the sequence from scratch.
+
+```python
+from GenAIRR import Experiment
+from GenAIRR.ops import rate
+
+result = Experiment.on("human_igh").mutate(rate(0.02, 0.08)).run(n=1000, seed=42)
+```
+
+## Why GenAIRR?
+
+- **Ground truth** — Every output field reflects what actually happened during simulation, not what an aligner inferred. This makes GenAIRR data ideal for training and benchmarking alignment tools.
+- **Fast** — A C simulation engine produces 15,000–30,000 sequences per second on a single core.
+- **Broad coverage** — 106 built-in configurations across 23 species, sourced from IMGT and OGRDB.
+- **Realistic** — Context-aware S5F somatic hypermutation, D-gene inversion, receptor revision, class switch recombination, sequencing artifacts, and more.
+- **Zero mandatory dependencies** — Pure Python + compiled C extension. Pre-built wheels for Linux, macOS, and Windows.
+
+## Where to start
+
+import Link from '@docusaurus/Link';
+
+<div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', margin: '1.5rem 0'}}>
+
+<div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderRadius: '8px', padding: '1.25rem'}}>
+
+### Quick Start
+
+Install GenAIRR, run your first simulation, and inspect the output.
+
+<Link to="/docs/getting-started/quick-start">Get started →</Link>
+
+</div>
+
+<div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderRadius: '8px', padding: '1.25rem'}}>
+
+### Choosing a Config
+
+Pick the right species and chain type for your experiment.
+
+<Link to="/docs/getting-started/choosing-config">Choose a config →</Link>
+
+</div>
+
+<div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderRadius: '8px', padding: '1.25rem'}}>
+
+### Understanding Output
+
+Learn what each of the 47 output fields means and how coordinates work.
+
+<Link to="/docs/getting-started/interpreting-results">Read the guide →</Link>
+
+</div>
+
+</div>
+
+## The Experiment DSL
+
+GenAIRR uses a fluent builder called `Experiment` with five biological phases:
+
+```python
+from GenAIRR import Experiment
+from GenAIRR.ops import (
+    rate, model,
+    with_5prime_loss, with_3prime_loss,
+    with_indels, with_ns,
+)
+
+result = (
+    Experiment.on("human_igh")
+
+    # Somatic hypermutation
+    .mutate(
+        model("s5f"),
+        rate(0.02, 0.08),
+    )
+
+    # Sequencing artifacts
+    .sequence(
+        with_5prime_loss(min_remove=5, max_remove=30),
+        with_3prime_loss(min_remove=5, max_remove=20),
+    )
+
+    # Post-sequencing noise
+    .observe(
+        with_indels(prob=0.01),
+        with_ns(prob=0.005),
+    )
+
+    .run(n=1000, seed=42)
+)
+```
+
+Each phase maps to a stage of a real sequencing experiment. You only include the phases you need — calling `.run()` on a bare `Experiment.on(...)` produces unmutated, uncorrupted rearrangements.
+
+## Site map
+
+| Section | What you'll find |
+|---------|-----------------|
+| [**Start Here**](/docs/getting-started/quick-start) | Installation, first simulation, output interpretation |
+| [**Guides**](/docs/guides/) | Recipes for common tasks — SHM, artifacts, export, workflows |
+| [**Concepts**](/docs/concepts/) | Biology background, system architecture, DataConfig internals |
+| [**Reference**](/docs/reference/) | Full API docs, ops catalog, output fields, species coverage |
+| [**Help**](/docs/help/) | FAQ, troubleshooting, migration from v0.6.x |

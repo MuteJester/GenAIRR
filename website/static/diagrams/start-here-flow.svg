@@ -1,0 +1,45 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='760' height='280' viewBox='0 0 760 280'>
+  <defs>
+    <marker id='arrow' markerWidth='8' markerHeight='8' refX='6' refY='3' orient='auto'>
+      <path d='M0,0 L0,6 L6,3 z' fill='#333'/>
+    </marker>
+  </defs>
+
+  <!-- Path labels -->
+  <text x='220' y='30' font-size='12' fill='#111' text-anchor='middle'>Path A: Quick simulation</text>
+  <text x='220' y='170' font-size='12' fill='#111' text-anchor='middle'>Path B: Build a protocol</text>
+
+  <!-- Start -->
+  <rect x='20' y='110' width='140' height='40' rx='6' ry='6' fill='#f8f9fa' stroke='#333'/>
+  <text x='90' y='134' font-size='12' fill='#111' text-anchor='middle'>Choose config</text>
+
+  <!-- Path A -->
+  <rect x='200' y='50' width='180' height='40' rx='6' ry='6' fill='#f8f9fa' stroke='#333'/>
+  <text x='290' y='74' font-size='12' fill='#111' text-anchor='middle'>simulate(...)</text>
+
+  <rect x='410' y='50' width='180' height='40' rx='6' ry='6' fill='#f8f9fa' stroke='#333'/>
+  <text x='500' y='74' font-size='12' fill='#111' text-anchor='middle'>SimulationResult</text>
+
+  <rect x='610' y='50' width='130' height='40' rx='6' ry='6' fill='#f8f9fa' stroke='#333'/>
+  <text x='675' y='74' font-size='12' fill='#111' text-anchor='middle'>Interpret</text>
+
+  <!-- Path B -->
+  <rect x='200' y='190' width='180' height='40' rx='6' ry='6' fill='#f8f9fa' stroke='#333'/>
+  <text x='290' y='214' font-size='12' fill='#111' text-anchor='middle'>Protocol + compile</text>
+
+  <rect x='410' y='190' width='180' height='40' rx='6' ry='6' fill='#f8f9fa' stroke='#333'/>
+  <text x='500' y='214' font-size='12' fill='#111' text-anchor='middle'>SimulationGraph</text>
+
+  <rect x='610' y='190' width='130' height='40' rx='6' ry='6' fill='#f8f9fa' stroke='#333'/>
+  <text x='675' y='214' font-size='12' fill='#111' text-anchor='middle'>execute()</text>
+
+  <!-- Arrows -->
+  <line x1='160' y1='130' x2='200' y2='70' stroke='#333' stroke-width='1.4' marker-end='url(#arrow)'/>
+  <line x1='160' y1='130' x2='200' y2='210' stroke='#333' stroke-width='1.4' marker-end='url(#arrow)'/>
+
+  <line x1='380' y1='70' x2='410' y2='70' stroke='#333' stroke-width='1.4' marker-end='url(#arrow)'/>
+  <line x1='590' y1='70' x2='610' y2='70' stroke='#333' stroke-width='1.4' marker-end='url(#arrow)'/>
+
+  <line x1='380' y1='210' x2='410' y2='210' stroke='#333' stroke-width='1.4' marker-end='url(#arrow)'/>
+  <line x1='590' y1='210' x2='610' y2='210' stroke='#333' stroke-width='1.4' marker-end='url(#arrow)'/>
+</svg>
