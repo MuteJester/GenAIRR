@@ -54,6 +54,9 @@ def _find_library() -> str:
     if sys.platform == "win32":
         candidates.append(here / "csrc" / "build" / "Release" / _LIB_NAME)
         candidates.append(here / "csrc" / "build" / "Debug" / _LIB_NAME)
+        # 3b. Setuptools may place the DLL alongside the package root
+        candidates.append(here.parent / _LIB_NAME)  # src/GenAIRR/
+        candidates.append(here.parent.parent / _LIB_NAME)  # src/
 
     # 4. System paths (Unix only)
     if sys.platform != "win32":
@@ -64,8 +67,10 @@ def _find_library() -> str:
         if path.exists():
             return str(path)
 
+    searched = "\n".join(f"  - {p}" for p in candidates)
     raise ImportError(
-        f"Cannot find {_LIB_NAME}. Install with:\n"
+        f"Cannot find {_LIB_NAME}. Searched:\n{searched}\n"
+        "Install with:\n"
         "  pip install -e .      (builds C backend automatically)\n"
         "Or build manually:\n"
         "  cd src/GenAIRR/_native/csrc && mkdir -p build && cd build\n"

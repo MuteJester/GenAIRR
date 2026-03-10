@@ -48,6 +48,14 @@ class CMakeBuild(build_ext):
             "-DGENAIRR_BUILD_BENCHMARKS=OFF",
         ]
 
+        # MSVC multi-config generators ignore CMAKE_*_OUTPUT_DIRECTORY
+        # and need per-config variants to avoid placing DLLs in Release/ subdirs
+        if os.name == "nt":
+            cmake_args += [
+                f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{cfg.upper()}={output_dir}",
+                f"-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_{cfg.upper()}={output_dir}",
+            ]
+
         build_args = ["--config", cfg]
 
         # Parallel build
