@@ -11,12 +11,11 @@ test-command = "python -c \"from GenAIRR._native import get_version; print('GenA
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64", "aarch64"]
-# manylinux2014 images have cmake pre-installed
-manylinux-x86_64-image = "manylinux2014"
-manylinux-aarch64-image = "manylinux2014"
+# Let cibuildwheel choose its default manylinux images
+# cmake and ninja are build-system requires, installed automatically by pip
 
 [tool.cibuildwheel.macos]
-archs = ["x86_64", "arm64"]
+archs = ["arm64"]
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]

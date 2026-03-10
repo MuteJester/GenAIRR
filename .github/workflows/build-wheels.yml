@@ -51,12 +51,13 @@ jobs:
         include:
           - os: ubuntu-latest
             cibw_archs: "x86_64 aarch64"
-          - os: macos-13
-            cibw_archs: "x86_64"
+            artifact_name: "wheels-linux"
           - os: macos-latest
             cibw_archs: "arm64"
+            artifact_name: "wheels-macos-arm64"
           - os: windows-latest
             cibw_archs: "AMD64"
+            artifact_name: "wheels-windows"
 
     steps:
       - uses: actions/checkout@v4
@@ -114,7 +115,7 @@ jobs:
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ matrix.cibw_archs }}
+          name: ${{ matrix.artifact_name }}
           path: ./wheelhouse/*.whl
 
   # ── Build source distribution ──────────────────────────────────
