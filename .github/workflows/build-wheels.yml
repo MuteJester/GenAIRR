@@ -33,7 +33,7 @@ jobs:
 
       - name: Install package (builds C backend)
         run: |
-          pip install pytest
+          pip install pytest pandas
           pip install -e ".[all]"
 
       - name: Run tests

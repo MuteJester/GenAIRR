@@ -275,7 +275,7 @@ def _segment_panel(seg: dict, rec: dict, mutations: Dict[int, str], sequence: st
             f'<div class="metric-grid g3">'
             + _metric("LENGTH", f"{seg_len} bp")
             + _metric("MUTATIONS", str(mut_count), RED if mut_count > 0 else None)
-            + _metric("3' TRIM", f"{_int(rec, "v_trim_3")} bp")
+            + _metric("3' TRIM", f"{_int(rec, 'v_trim_3')} bp")
             + "</div>"
         )
         if seg_len > 0:
@@ -292,8 +292,8 @@ def _segment_panel(seg: dict, rec: dict, mutations: Dict[int, str], sequence: st
         body_parts.append(
             f'<div class="metric-grid g4">'
             + _metric("LENGTH", f"{seg_len} bp")
-            + _metric("5' TRIM", f"{_int(rec, "d_trim_5")} bp")
-            + _metric("3' TRIM", f"{_int(rec, "d_trim_3")} bp")
+            + _metric("5' TRIM", f"{_int(rec, 'd_trim_5')} bp")
+            + _metric("3' TRIM", f"{_int(rec, 'd_trim_3')} bp")
             + _metric("INVERTED", "YES" if d_inv else "NO", RED if d_inv else None)
             + "</div>"
         )
@@ -311,7 +311,7 @@ def _segment_panel(seg: dict, rec: dict, mutations: Dict[int, str], sequence: st
             f'<div class="metric-grid g3">'
             + _metric("LENGTH", f"{seg_len} bp")
             + _metric("MUTATIONS", str(mut_count), RED if mut_count > 0 else None)
-            + _metric("5' TRIM", f"{_int(rec, "j_trim_5")} bp")
+            + _metric("5' TRIM", f"{_int(rec, 'j_trim_5')} bp")
             + "</div>"
         )
         if seg_len > 0:
