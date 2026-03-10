@@ -61,6 +61,11 @@ jobs:
         with:
           platforms: arm64
 
+      # Pre-install virtualenv to avoid cibuildwheel downloading it from
+      # GitHub (which frequently hits HTTP 429 rate limits).
+      - name: Pre-cache virtualenv for cibuildwheel
+        run: pip install virtualenv
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22
         env:
@@ -68,6 +73,8 @@ jobs:
           CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_ARCHS_LINUX: "x86_64 aarch64"
           CIBW_ARCHS_WINDOWS: "AMD64"
+          # Use pip-installed virtualenv instead of downloading virtualenv.pyz
+          CIBW_DEPENDENCY_VERSIONS: "latest"
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
