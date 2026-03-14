@@ -16,6 +16,10 @@
   C engine &middot; 23 species &middot; zero mandatory dependencies &middot; cross-platform wheels
 </p>
 
+<p align="center">
+  <a href="https://mutejester.github.io/GenAIRR/"><b>📖 Documentation</b></a>
+</p>
+
 ---
 
 ## Installation
