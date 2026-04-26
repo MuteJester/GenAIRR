@@ -46,6 +46,7 @@ struct GenAIRRSimulator {
     Pipeline      pipeline;
     AlleleCorrectionSet corr;
     uint64_t      seed;
+    RngState      rng_state;      /* per-simulator PCG32; pointed to by cfg.rng */
     /* Trace */
     bool          trace_enabled;
     TraceLog      trace;
@@ -73,6 +74,10 @@ static int init_from_gdc(GenAIRRSimulator *sim) {
     }
 
     sim_config_init(&sim->cfg, ct);
+    /* Wire the simulator's owned RngState into the SimConfig so step
+     * functions can draw via cfg->rng. ensure_seeded() seeds it on
+     * the first simulate() call. */
+    sim->cfg.rng = &sim->rng_state;
     gdc_populate_sim_config(&sim->cfg, &sim->gdc);
 
     /* Load S5F if present */
@@ -334,6 +339,8 @@ void genairr_set_seed(GenAIRRSimulator *sim, uint64_t seed) {
 
 /* ── Simulate ────────────────────────────────────────────────── */
 
+static void ensure_seeded(GenAIRRSimulator *sim);
+
 int genairr_simulate(GenAIRRSimulator *sim, int n,
                       const char *output_path) {
     if (!sim || n <= 0 || !output_path) return -1;
@@ -344,12 +351,8 @@ int genairr_simulate(GenAIRRSimulator *sim, int n,
     /* Compile if needed */
     compile(sim);
 
-    /* Seed RNG */
-    if (sim->seed != 0) {
-        rand_seed((unsigned int)sim->seed);
-    } else {
-        rand_seed((unsigned int)(time(NULL) ^ (intptr_t)(uintptr_t)sim));
-    }
+    /* Seed RNG (once only — avoid re-seeding on batched calls) */
+    ensure_seeded(sim);
 
     /* Write header */
     airr_write_tsv_header(fp);
@@ -382,7 +385,7 @@ int genairr_simulate(GenAIRRSimulator *sim, int n,
                 sim->s5f.min_mutation_rate = min_r;
                 sim->s5f.max_mutation_rate = max_r;
             }
-            s5f_mutate(&sim->s5f, &seq, &rec, &s5f_result);
+            s5f_mutate(&sim->s5f, &seq, &rec, &sim->rng_state, &s5f_result);
             if (use_csr) {
                 sim->s5f.min_mutation_rate = base_min;
                 sim->s5f.max_mutation_rate = base_max;
@@ -405,11 +408,8 @@ int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
 
     compile(sim);
 
-    if (sim->seed != 0) {
-        rand_seed((unsigned int)sim->seed);
-    } else {
-        rand_seed((unsigned int)(time(NULL) ^ (intptr_t)(uintptr_t)sim));
-    }
+    /* Seed RNG (once only — avoid re-seeding on batched calls) */
+    ensure_seeded(sim);
 
     airr_write_tsv_header(fp);
 
@@ -437,7 +437,7 @@ int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
                 sim->s5f.min_mutation_rate = min_r;
                 sim->s5f.max_mutation_rate = max_r;
             }
-            s5f_mutate(&sim->s5f, &seq, &rec, &s5f_result);
+            s5f_mutate(&sim->s5f, &seq, &rec, &sim->rng_state, &s5f_result);
             if (use_csr) {
                 sim->s5f.min_mutation_rate = base_min;
                 sim->s5f.max_mutation_rate = base_max;
@@ -457,11 +457,19 @@ int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
 
 static void ensure_seeded(GenAIRRSimulator *sim) {
     if (!sim->seeded) {
+        uint64_t seed;
         if (sim->seed != 0) {
-            rand_seed((unsigned int)sim->seed);
+            /* Explicit seed: deterministic, independent of simulator
+             * identity. Two simulators with the same SimConfig and
+             * same explicit seed produce byte-identical output. */
+            seed = sim->seed;
         } else {
-            rand_seed((unsigned int)(time(NULL) ^ (intptr_t)(uintptr_t)sim));
+            /* Auto-seed: mix wall time with simulator address so two
+             * concurrent simulators in the same process get distinct
+             * streams even when both default. */
+            seed = (uint64_t)time(NULL) ^ (uint64_t)(uintptr_t)sim;
         }
+        rng_seed(&sim->rng_state, seed, 0);
         sim->seeded = true;
     }
 }
@@ -517,7 +525,7 @@ int genairr_simulate_one(GenAIRRSimulator *sim,
             sim->s5f.max_mutation_rate = max_r;
             TRACE("[csr] adjusted_rates=[%.4f, %.4f]", min_r, max_r);
         }
-        s5f_mutate(&sim->s5f, &seq, &rec, &s5f_result);
+        s5f_mutate(&sim->s5f, &seq, &rec, &sim->rng_state, &s5f_result);
         if (use_csr) {
             sim->s5f.min_mutation_rate = base_min;
             sim->s5f.max_mutation_rate = base_max;

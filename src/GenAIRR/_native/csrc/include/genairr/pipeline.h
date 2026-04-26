@@ -113,6 +113,10 @@ struct SimRecord {
     int  revision_footprint_length;
     char original_v_allele_name[GENAIRR_MAX_ALLELE_NAME];
 
+    /* Indel counts (set by insert_indels step) */
+    int  n_insertions;
+    int  n_deletions;
+
     /* Note/status (small fixed buffer) */
     char note[256];
 };

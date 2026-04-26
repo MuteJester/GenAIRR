@@ -18,6 +18,7 @@
  */
 
 #include "genairr/s5f.h"
+#include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <stdlib.h>
 #include <string.h>
@@ -204,15 +205,9 @@ static int bisect_left(const double *arr, int n, double value) {
     return lo < n ? lo : n - 1;
 }
 
-/* ── Internal: random double in [lo, hi) ─────────────────────── */
-
-static double rand_uniform(double lo, double hi) {
-    return lo + ((double)rand() / ((double)RAND_MAX + 1.0)) * (hi - lo);
-}
-
-static double rand_01(void) {
-    return (double)rand() / ((double)RAND_MAX + 1.0);
-}
+/* The per-simulator PCG32 RNG is now plumbed through s5f_mutate's
+ * `rng` parameter; the local rand_uniform/rand_01 shadow defns that
+ * wrapped libc rand() were removed in T0-5. */
 
 /* ── Codon stop check for productive mode ────────────────────── */
 
@@ -230,7 +225,7 @@ static bool is_stop_codon(char b1, char b2, char b3) {
  * ═══════════════════════════════════════════════════════════════ */
 
 void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
-                 S5FResult *result) {
+                 struct RngState *rng, S5FResult *result) {
     (void)rec;  /* used in productive mode for anchor positions */
 
     memset(result, 0, sizeof(*result));
@@ -240,8 +235,8 @@ void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
     if (n == 0) return;
 
     /* Sample mutation rate */
-    double mutation_rate = rand_uniform(model->min_mutation_rate,
-                                         model->max_mutation_rate);
+    double mutation_rate = rng_uniform_lh(rng, model->min_mutation_rate,
+                                          model->max_mutation_rate);
     int target_mutations = (int)(mutation_rate * n);
 
     TRACE("[s5f] rate_range=[%.4f, %.4f], sampled_rate=%.4f, seq_len=%d, target=%d, productive_guard=%s",
@@ -327,7 +322,7 @@ void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
             continue;
         }
 
-        int sel = fenwick_select(&fenwick, rand_uniform(0.0, total_w));
+        int sel = fenwick_select(&fenwick, rng_uniform_lh(rng, 0.0, total_w));
         if (sel < 0 || sel >= n) {
             consecutive_failures++;
             if (consecutive_failures >= MAX_CONSECUTIVE_FAILURES) break;
@@ -344,7 +339,7 @@ void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
         }
 
         /* Choose target base from cumulative distribution */
-        int chosen = bisect_left(sub->cumulative, sub->count, rand_01());
+        int chosen = bisect_left(sub->cumulative, sub->count, rng_uniform(rng));
         char mutation_to = sub->bases[chosen];
 
         /* Skip if substitution matrix drew the same base (silent non-mutation) */

@@ -183,7 +183,8 @@ void allele_call_derive(const AlleleBitmap *bm, const ASeq *seq,
             const char *trimmed = rec->v_allele->seq + (v_len - trim_3);
 
             Nuc *np = seq->seg_first[SEG_NP1];
-            for (int i = 0; i < trim_3 && np && np->segment == SEG_NP1;
+            for (int i = 0; i < trim_3 && np && np->segment == SEG_NP1
+                         && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
                  i++, np = np->next) {
                 if (trimmed[i] != np->current) break;
                 VOTE(v_len - trim_3 + i, np->current);
@@ -200,7 +201,8 @@ void allele_call_derive(const AlleleBitmap *bm, const ASeq *seq,
 
                 Nuc *np = seq->seg_last[np_seg];
                 for (int i = trim_5 - 1;
-                     i >= 0 && np && np->segment == np_seg;
+                     i >= 0 && np && np->segment == np_seg
+                     && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
                      i--, np = np->prev) {
                     if (j_ref[i] != np->current) break;
                     VOTE(i, np->current);
@@ -217,7 +219,8 @@ void allele_call_derive(const AlleleBitmap *bm, const ASeq *seq,
 
             Nuc *np = seq->seg_last[SEG_NP1];
             for (int i = trim_5 - 1;
-                 i >= 0 && np && np->segment == SEG_NP1;
+                 i >= 0 && np && np->segment == SEG_NP1
+                 && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
                  i--, np = np->prev) {
                 if (d_ref[i] != np->current) break;
                 VOTE(i, np->current);
@@ -233,7 +236,8 @@ void allele_call_derive(const AlleleBitmap *bm, const ASeq *seq,
             const char *trimmed = rec->d_allele->seq + (d_len - trim_3);
 
             Nuc *np = seq->seg_first[SEG_NP2];
-            for (int i = 0; i < trim_3 && np && np->segment == SEG_NP2;
+            for (int i = 0; i < trim_3 && np && np->segment == SEG_NP2
+                         && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
                  i++, np = np->next) {
                 if (trimmed[i] != np->current) break;
                 VOTE(d_len - trim_3 + i, np->current);

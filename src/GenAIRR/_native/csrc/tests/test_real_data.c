@@ -22,6 +22,9 @@
 
 static SimConfig cfg;
 static S5FModel  s5f;
+/* Test-local PCG32 RNG. Attached to cfg.rng in main(); reseeded per
+ * test via rng_seed(&_test_rng, N, 0) instead of the old srand(N). */
+static RngState  _test_rng;
 
 /* ══════════════════════════════════════════════════════════════════
  * Config Loading Tests
@@ -147,7 +150,7 @@ static int test_s5f_model_loaded(void) {
  * ══════════════════════════════════════════════════════════════════ */
 
 static int test_pipeline_rearrange(void) {
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
 
     Pipeline pl;
     pl = pipeline_build(&cfg);
@@ -192,7 +195,7 @@ static int test_pipeline_rearrange(void) {
 }
 
 static int test_pipeline_with_s5f(void) {
-    srand(100);
+    rng_seed(&_test_rng, 100, 0);
 
     Pipeline pl;
     pl = pipeline_build(&cfg);
@@ -206,7 +209,7 @@ static int test_pipeline_with_s5f(void) {
 
     /* Apply S5F mutations */
     S5FResult result;
-    s5f_mutate(&s5f, &seq, &rec, &result);
+    s5f_mutate(&s5f, &seq, &rec, &_test_rng, &result);
 
     /* Check mutations occurred */
     if (result.count == 0) {
@@ -247,7 +250,7 @@ static int test_pipeline_with_s5f(void) {
 }
 
 static int test_airr_derivation(void) {
-    srand(200);
+    rng_seed(&_test_rng, 200, 0);
 
     Pipeline pl;
     pl = pipeline_build(&cfg);
@@ -333,7 +336,7 @@ static int test_correction_maps_build(void) {
 }
 
 static int test_reassess_with_real_alleles(void) {
-    srand(300);
+    rng_seed(&_test_rng, 300, 0);
 
     Pipeline pl;
     pl = pipeline_build(&cfg);
@@ -348,7 +351,7 @@ static int test_reassess_with_real_alleles(void) {
 
     /* Apply S5F mutations */
     S5FResult mresult;
-    s5f_mutate(&s5f, &seq, &rec, &mresult);
+    s5f_mutate(&s5f, &seq, &rec, &_test_rng, &mresult);
 
     /* Derive V allele call from bitmap */
     AlleleCallResult vr;
@@ -379,7 +382,7 @@ static int test_reassess_with_real_alleles(void) {
  * Test: Run N rearrangements to verify statistical robustness.
  */
 static int test_batch_rearrangement(void) {
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
 
     Pipeline pl;
     pl = pipeline_build(&cfg);
@@ -423,7 +426,7 @@ static int test_batch_rearrangement(void) {
  * Test: Batch rearrangement + S5F mutation.
  */
 static int test_batch_with_mutation(void) {
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
 
     Pipeline pl;
     pl = pipeline_build(&cfg);
@@ -444,7 +447,7 @@ static int test_batch_with_mutation(void) {
         }
 
         S5FResult result;
-        s5f_mutate(&s5f, &seq, &rec, &result);
+        s5f_mutate(&s5f, &seq, &rec, &_test_rng, &result);
         mutations_total += result.count;
         seq_count++;
         aseq_reset(&seq);
@@ -476,6 +479,11 @@ int main(void) {
     human_igh_imgt_load_config(&cfg);
     s5f_model_init(&s5f, 0.05, 0.15, false);
     human_igh_imgt_load_s5f(&s5f);
+
+    /* Attach test RNG to the manual SimConfig (the embedded loader
+     * doesn't go through gdc_populate_sim_config, so cfg.rng is
+     * NULL until we wire it here). Tests reseed via rng_seed. */
+    cfg.rng = &_test_rng;
 
     printf("-- Config Loading --\n");
     TEST(test_config_loads);

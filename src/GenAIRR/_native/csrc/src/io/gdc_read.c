@@ -109,7 +109,10 @@ static void read_allele_pool(Reader *r, AllelePool *pool) {
         r_bytes(r, a.seq, a.length);
         a.seq[a.length] = '\0';
 
-        a.anchor = (uint16_t)r_i16(r);
+        /* Preserve the signed sentinel: GDC writes -1 for anchorless
+         * V/J alleles. Pre-T0-7 this was cast to uint16_t, turning -1
+         * into 65535 and triggering a 65534-base J trim overflow. */
+        a.anchor = r_i16(r);
 
         allele_pool_add(pool, &a);
     }
@@ -387,45 +390,180 @@ void gdc_populate_sim_config(SimConfig *cfg, const GdcData *data) {
     for (int i = 0; i < data->c_alleles.count; i++)
         allele_pool_add(&cfg->c_alleles, &data->c_alleles.alleles[i]);
 
-    /* Use first available trim dist for each type (flat) */
-    for (int tt = 0; tt < 4; tt++) {
-        TrimDist *dst = NULL;
-        switch (tt) {
-            case GDC_TRIM_V3: dst = &cfg->v_trim_3; break;
-            case GDC_TRIM_D5: dst = &cfg->d_trim_5; break;
-            case GDC_TRIM_D3: dst = &cfg->d_trim_3; break;
-            case GDC_TRIM_J5: dst = &cfg->j_trim_5; break;
-        }
-        if (!dst) continue;
+    /* Build per-(family, gene) trim tables AND legacy single-global
+     * fallback. The legacy field stays populated from the first GDC
+     * entry so any code path that reads cfg->v_trim_3 directly still
+     * sees a valid distribution. The per-allele pointers (set below)
+     * override the legacy field for production simulations. */
+    NamedTrimDistTable *cfg_tables[4] = {
+        &cfg->v_trim_3_table, &cfg->d_trim_5_table,
+        &cfg->d_trim_3_table, &cfg->j_trim_5_table,
+    };
+    TrimDist *cfg_legacy[4] = {
+        &cfg->v_trim_3, &cfg->d_trim_5,
+        &cfg->d_trim_3, &cfg->j_trim_5,
+    };
+    static const int tt_idx[4] = {
+        GDC_TRIM_V3, GDC_TRIM_D5, GDC_TRIM_D3, GDC_TRIM_J5,
+    };
 
-        /* Merge all per-gene distributions into one weighted average.
-         * For now, just use the first one as a simple default. */
-        if (data->trim_dists[tt].count > 0) {
-            const GeneTrimDist *src = &data->trim_dists[tt].dists[0];
-            free(dst->probs);
-            dst->max_trim = src->max_trim;
-            dst->probs = calloc((size_t)(src->max_trim + 1), sizeof(double));
-            if (dst->probs) {
-                memcpy(dst->probs, src->probs,
-                       (size_t)(src->max_trim + 1) * sizeof(double));
+    for (int slot = 0; slot < 4; slot++) {
+        int tt = tt_idx[slot];
+        const TrimDistTable *src_table = &data->trim_dists[tt];
+        NamedTrimDistTable *dst_table = cfg_tables[slot];
+        TrimDist *legacy = cfg_legacy[slot];
+
+        /* Free any previously built table (idempotent populate). */
+        for (int i = 0; i < dst_table->count; i++) {
+            free(dst_table->entries[i].dist.probs);
+        }
+        free(dst_table->entries);
+        dst_table->entries = NULL;
+        dst_table->count = 0;
+
+        if (src_table->count == 0) continue;
+
+        /* Deep-copy each (family, gene, probs) entry into the table. */
+        dst_table->entries = calloc((size_t)src_table->count,
+                                    sizeof(NamedTrimDist));
+        if (!dst_table->entries) continue;
+        dst_table->count = src_table->count;
+
+        for (int i = 0; i < src_table->count; i++) {
+            const GeneTrimDist *src = &src_table->dists[i];
+            NamedTrimDist *dst = &dst_table->entries[i];
+            strncpy(dst->family, src->family_name,
+                    GENAIRR_MAX_ALLELE_NAME - 1);
+            dst->family[GENAIRR_MAX_ALLELE_NAME - 1] = '\0';
+            strncpy(dst->gene, src->gene_name,
+                    GENAIRR_MAX_ALLELE_NAME - 1);
+            dst->gene[GENAIRR_MAX_ALLELE_NAME - 1] = '\0';
+
+            int n_probs = src->max_trim + 1;
+            dst->dist.max_trim = src->max_trim;
+            dst->dist.probs = calloc((size_t)n_probs, sizeof(double));
+            if (dst->dist.probs) {
+                memcpy(dst->dist.probs, src->probs,
+                       (size_t)n_probs * sizeof(double));
+            }
+        }
+
+        /* Legacy fallback: keep populated from the first GDC entry, so
+         * code that reads cfg->v_trim_3 (etc.) directly still works. */
+        const GeneTrimDist *first = &src_table->dists[0];
+        free(legacy->probs);
+        legacy->max_trim = first->max_trim;
+        int n_legacy = first->max_trim + 1;
+        legacy->probs = calloc((size_t)n_legacy, sizeof(double));
+        if (legacy->probs) {
+            memcpy(legacy->probs, first->probs,
+                   (size_t)n_legacy * sizeof(double));
+        }
+    }
+
+    /* Wire each allele's trim_dist pointers to the matching (family,
+     * gene) entry. On miss, fall back to the first table entry — never
+     * NULL when the table is non-empty. This guarantees per-segment
+     * sampling consistency even for alleles unrepresented in training
+     * data. Empty tables leave pointers NULL → trim.c falls back to
+     * cfg->v_trim_3 etc. */
+    AllelePool *pools[3] = {
+        &cfg->v_alleles, &cfg->d_alleles, &cfg->j_alleles,
+    };
+    for (int p = 0; p < 3; p++) {
+        AllelePool *pool = pools[p];
+        for (int a = 0; a < pool->count; a++) {
+            Allele *al = &pool->alleles[a];
+            al->trim_dist_5 = NULL;
+            al->trim_dist_3 = NULL;
+
+            const NamedTrimDistTable *t5 = NULL, *t3 = NULL;
+            switch (al->segment_type) {
+                case SEG_V: t3 = &cfg->v_trim_3_table; break;
+                case SEG_D: t5 = &cfg->d_trim_5_table;
+                            t3 = &cfg->d_trim_3_table; break;
+                case SEG_J: t5 = &cfg->j_trim_5_table; break;
+                default:    break;
+            }
+
+            const NamedTrimDistTable *needs[2]   = { t5, t3 };
+            const TrimDist        **slot[2] = {
+                &al->trim_dist_5, &al->trim_dist_3,
+            };
+            for (int s = 0; s < 2; s++) {
+                if (!needs[s] || needs[s]->count == 0) continue;
+                const NamedTrimDist *match = NULL;
+                for (int i = 0; i < needs[s]->count; i++) {
+                    const NamedTrimDist *e = &needs[s]->entries[i];
+                    if (strcmp(e->family, al->family) == 0 &&
+                        strcmp(e->gene,   al->gene)   == 0) {
+                        match = e;
+                        break;
+                    }
+                }
+                if (!match) match = &needs[s]->entries[0];
+                *slot[s] = &match->dist;
             }
         }
     }
 
-    /* NP parameters: extract mean and max from distribution */
+    /* NP region distributions (TdT Markov model). Copy from GdcData
+     * into SimConfig so the SimConfig owns its own buffers and
+     * outlives the loader's GdcData if needed. Normalize first_base
+     * once at load time so the assemble sampler can avoid drift. */
+    cfg->n_np_regions = data->n_np_regions;
     for (int i = 0; i < data->n_np_regions && i < 2; i++) {
-        const NpParams *np = &data->np[i];
-        int *mean_ptr = (i == 0) ? &cfg->np1_length_mean : &cfg->np2_length_mean;
-        int *max_ptr  = (i == 0) ? &cfg->np1_length_max  : &cfg->np2_length_max;
+        const NpParams *src = &data->np[i];
+        NpDist *dst = &cfg->np[i];
 
-        *max_ptr = np->max_length;
+        /* Length distribution */
+        dst->max_length = src->max_length;
+        int n_len = src->max_length + 1;
+        free(dst->length_probs);
+        dst->length_probs = calloc((size_t)n_len, sizeof(double));
+        if (!dst->length_probs) continue;
+        memcpy(dst->length_probs, src->length_probs,
+               (size_t)n_len * sizeof(double));
 
-        /* Compute mean from distribution */
-        double weighted_sum = 0.0;
-        for (int l = 0; l <= np->max_length; l++) {
-            weighted_sum += (double)l * np->length_probs[l];
+        /* First-base distribution: copy and normalize */
+        double fb_sum = 0.0;
+        for (int b = 0; b < 4; b++) fb_sum += src->first_base[b];
+        if (fb_sum > 1e-12) {
+            for (int b = 0; b < 4; b++)
+                dst->first_base[b] = src->first_base[b] / fb_sum;
+        } else {
+            for (int b = 0; b < 4; b++) dst->first_base[b] = 0.25;
         }
-        *mean_ptr = (int)(weighted_sum + 0.5);
+
+        /* Markov transitions */
+        dst->n_positions = src->n_positions;
+        int n_trans = src->n_positions * 16;
+        free(dst->transitions);
+        dst->transitions = NULL;
+        if (n_trans > 0) {
+            dst->transitions = calloc((size_t)n_trans, sizeof(double));
+            if (dst->transitions) {
+                memcpy(dst->transitions, src->transitions,
+                       (size_t)n_trans * sizeof(double));
+            }
+        }
+    }
+
+    /* P-nucleotide length distribution. Same shared distribution
+     * is sampled independently at each eligible segment end. When
+     * the GDC carries no p_nuc data, length_probs stays NULL and
+     * the assemble step emits no P-nucs. */
+    free(cfg->p_nuc_dist.length_probs);
+    cfg->p_nuc_dist.length_probs = NULL;
+    cfg->p_nuc_dist.max_length = 0;
+    if (data->p_nuc_probs && data->p_nuc_max >= 0) {
+        int n_p = data->p_nuc_max + 1;
+        cfg->p_nuc_dist.length_probs = calloc((size_t)n_p, sizeof(double));
+        if (cfg->p_nuc_dist.length_probs) {
+            memcpy(cfg->p_nuc_dist.length_probs, data->p_nuc_probs,
+                   (size_t)n_p * sizeof(double));
+            cfg->p_nuc_dist.max_length = data->p_nuc_max;
+        }
     }
 }
 

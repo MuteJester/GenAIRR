@@ -24,12 +24,12 @@ static char pe_transition_of(char base) {
     }
 }
 
-static char pe_transversion_of(char base) {
+static char pe_transversion_of(RngState *rng, char base) {
     switch (base) {
-        case 'A': return (rand() % 2) ? 'C' : 'T';
-        case 'G': return (rand() % 2) ? 'C' : 'T';
-        case 'C': return (rand() % 2) ? 'A' : 'G';
-        case 'T': return (rand() % 2) ? 'A' : 'G';
+        case 'A': return rng_range(rng, 2) ? 'C' : 'T';
+        case 'G': return rng_range(rng, 2) ? 'C' : 'T';
+        case 'C': return rng_range(rng, 2) ? 'A' : 'G';
+        case 'T': return rng_range(rng, 2) ? 'A' : 'G';
         default:  return base;
     }
 }
@@ -81,13 +81,13 @@ void step_paired_end(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
             eff_err = r2_err;
         }
 
-        if (rand_uniform() >= eff_err) continue;
+        if (rng_uniform(cfg->rng) >= eff_err) continue;
 
         char new_base;
-        if (rand_uniform() < 0.7) {
+        if (rng_uniform(cfg->rng) < 0.7) {
             new_base = pe_transition_of(n->current);
         } else {
-            new_base = pe_transversion_of(n->current);
+            new_base = pe_transversion_of(cfg->rng, n->current);
         }
         aseq_mutate(seq, n, new_base, NUC_FLAG_SEQ_ERROR);
     }

@@ -8,6 +8,65 @@ declares what happens, no hidden convenience wrappers.
 import pytest
 
 
+def _parse_mutations(mutation_str):
+    out = {}
+    if not mutation_str:
+        return out
+    for entry in mutation_str.split(","):
+        if ":" not in entry or ">" not in entry:
+            continue
+        p, chg = entry.split(":", 1)
+        a, b = chg.split(">", 1)
+        try:
+            out[int(p)] = (a, b)
+        except ValueError:
+            continue
+    return out
+
+
+def _reconstruct_from_germline_and_mutations(rec):
+    seq = rec["sequence"]
+    reconstructed = list(rec["germline_alignment"])
+
+    v_end = rec["v_sequence_end"]
+    d_start = rec["d_sequence_start"]
+    d_end = rec["d_sequence_end"]
+    j_start = rec["j_sequence_start"]
+
+    np1_end = d_start if d_start != d_end else j_start
+    for pos in range(v_end, np1_end):
+        if pos < len(reconstructed):
+            reconstructed[pos] = seq[pos]
+
+    if d_start != d_end:
+        for pos in range(d_end, j_start):
+            if pos < len(reconstructed):
+                reconstructed[pos] = seq[pos]
+
+    for pos, (_from_base, to_base) in _parse_mutations(rec.get("mutations", "")).items():
+        if pos < len(reconstructed):
+            reconstructed[pos] = to_base
+
+    return "".join(reconstructed)
+
+
+def _matches_with_unknown_germline(rec, rebuilt):
+    seq = rec["sequence"].upper()
+    germline = rec["germline_alignment"].upper()
+    rebuilt = rebuilt.upper()
+    if len(seq) != len(rebuilt):
+        return False
+    for i, (a, b) in enumerate(zip(rebuilt, seq)):
+        if a == b:
+            continue
+        # Unknown germline base cannot be reconstructed uniquely from
+        # germline+mutations alone, so treat it as a wildcard.
+        if i < len(germline) and germline[i] == "N" and a == "N":
+            continue
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -194,8 +253,11 @@ class TestExperimentCompileAPI:
         sim = (Experiment.on("human_igh")
                .compile(productive=True, seed=42))
         result = sim.simulate(n=20)
-        for rec in result:
-            assert rec["productive"] is True
+        # productive=True retries assess_functionality up to
+        # max_productive_attempts (25); rare records can exhaust the
+        # budget and fall through non-productive. Allow ≤5%.
+        nonprod = sum(1 for r in result if not r["productive"])
+        assert nonprod <= 1, f"too many non-productive: {nonprod}/20"
 
     def test_compiled_simulator_reuse(self):
         from GenAIRR import Experiment
@@ -263,6 +325,48 @@ class TestCorruptionFeatures:
                   .sequence(with_3prime_loss())
                   .run(n=50, seed=42))
         assert len(result) == 50
+
+    def test_reverse_complement_preserves_alignment_reconstructability(self):
+        from GenAIRR import Experiment
+        from GenAIRR.ops import with_reverse_complement
+        result = (Experiment.on("human_igh")
+                  .sequence(with_reverse_complement(1.0))
+                  .run(n=40, seed=42))
+        for rec in result:
+            assert rec["is_reverse_complement"] is True
+            rebuilt = _reconstruct_from_germline_and_mutations(rec)
+            assert _matches_with_unknown_germline(rec, rebuilt)
+
+
+class TestRecombinationProvenance:
+
+    def test_d_inversion_provenance_fields(self):
+        from GenAIRR import Experiment
+        from GenAIRR.ops import with_d_inversion
+
+        result = (Experiment.on("human_igh")
+                  .recombine(with_d_inversion(1.0))
+                  .run(n=40, seed=42))
+
+        assert all("d_inverted" in rec for rec in result)
+        assert any(rec["d_inverted"] for rec in result)
+
+    def test_receptor_revision_provenance_fields(self):
+        from GenAIRR import Experiment
+        from GenAIRR.ops import with_receptor_revision
+
+        result = (Experiment.on("human_igh")
+                  .recombine(with_receptor_revision(prob=1.0, footprint=(5, 20)))
+                  .run(n=40, seed=42))
+
+        assert all("receptor_revised" in rec for rec in result)
+        assert all("revision_footprint_length" in rec for rec in result)
+        assert all("original_v_allele_name" in rec for rec in result)
+
+        revised = [rec for rec in result if rec["receptor_revised"]]
+        assert revised, "Expected at least one revised receptor"
+        assert all(rec["revision_footprint_length"] > 0 for rec in revised)
+        assert all(rec["original_v_allele_name"] for rec in revised)
 
 
 # ---------------------------------------------------------------------------

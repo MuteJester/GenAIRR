@@ -284,7 +284,7 @@ static void populate_uniform_model(S5FModel *model) {
  * we expect ~4 mutations (10% of 40).
  */
 static int test_s5f_basic_mutation(void) {
-    srand(42);
+    RngState _trng; rng_seed(&_trng, 42, 0);
 
     S5FModel model;
     s5f_model_init(&model, 0.10, 0.10, false);
@@ -296,7 +296,7 @@ static int test_s5f_basic_mutation(void) {
     SimRecord rec = {0};
     S5FResult result;
 
-    s5f_mutate(&model, &seq, &rec, &result);
+    s5f_mutate(&model, &seq, &rec, &_trng, &result);
 
     /* With 10% rate on 40bp, target = 4 mutations */
     if (result.count < 1 || result.count > 10) {
@@ -325,7 +325,7 @@ static int test_s5f_basic_mutation(void) {
  * If NP-awareness works, no mutations should occur on NP1 positions.
  */
 static int test_s5f_np_awareness(void) {
-    srand(123);
+    RngState _trng; rng_seed(&_trng, 123, 0);
 
     S5FModel model;
     s5f_model_init(&model, 0.10, 0.10, false);
@@ -337,7 +337,7 @@ static int test_s5f_np_awareness(void) {
     SimRecord rec = {0};
     S5FResult result;
 
-    s5f_mutate(&model, &seq, &rec, &result);
+    s5f_mutate(&model, &seq, &rec, &_trng, &result);
 
     /* Check that no mutation is at positions 20-24 (NP1 region) */
     for (int m = 0; m < result.count; m++) {
@@ -357,7 +357,7 @@ static int test_s5f_np_awareness(void) {
  * Test: S5F with zero mutation rate produces no mutations.
  */
 static int test_s5f_zero_rate(void) {
-    srand(99);
+    RngState _trng; rng_seed(&_trng, 99, 0);
 
     S5FModel model;
     s5f_model_init(&model, 0.0, 0.0, false);
@@ -369,7 +369,7 @@ static int test_s5f_zero_rate(void) {
     SimRecord rec = {0};
     S5FResult result;
 
-    s5f_mutate(&model, &seq, &rec, &result);
+    s5f_mutate(&model, &seq, &rec, &_trng, &result);
 
     if (result.count != 0) {
         fprintf(stderr, "Zero rate should give 0 mutations, got %d\n", result.count);
@@ -387,7 +387,7 @@ static int test_s5f_zero_rate(void) {
  * at mutated positions.
  */
 static int test_s5f_writes_to_aseq(void) {
-    srand(77);
+    RngState _trng; rng_seed(&_trng, 77, 0);
 
     S5FModel model;
     s5f_model_init(&model, 0.15, 0.15, false);
@@ -402,7 +402,7 @@ static int test_s5f_writes_to_aseq(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &result);
+    s5f_mutate(&model, &seq, &rec, &_trng, &result);
 
     char after[64];
     aseq_to_string(&seq, after, sizeof(after));
@@ -441,7 +441,7 @@ static int test_s5f_writes_to_aseq(void) {
  * Test: S5F mutation result records correct from/to bases.
  */
 static int test_s5f_mutation_records(void) {
-    srand(55);
+    RngState _trng; rng_seed(&_trng, 55, 0);
 
     S5FModel model;
     s5f_model_init(&model, 0.10, 0.10, false);
@@ -461,7 +461,7 @@ static int test_s5f_mutation_records(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &result);
+    s5f_mutate(&model, &seq, &rec, &_trng, &result);
 
     /* Verify from_base matches germline at that position */
     for (int m = 0; m < result.count; m++) {
@@ -491,7 +491,7 @@ static int test_s5f_mutation_records(void) {
  * even with high mutation rate.
  */
 static int test_s5f_zero_mutability(void) {
-    srand(200);
+    RngState _trng; rng_seed(&_trng, 200, 0);
 
     S5FModel model;
     s5f_model_init(&model, 0.20, 0.20, false);
@@ -502,7 +502,7 @@ static int test_s5f_zero_mutability(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &result);
+    s5f_mutate(&model, &seq, &rec, &_trng, &result);
 
     if (result.count != 0) {
         fprintf(stderr, "Zero mutability should give 0 mutations, got %d\n",
@@ -520,7 +520,7 @@ static int test_s5f_zero_mutability(void) {
  * All positions should be mutable.
  */
 static int test_s5f_v_only(void) {
-    srand(300);
+    RngState _trng; rng_seed(&_trng, 300, 0);
 
     S5FModel model;
     s5f_model_init(&model, 0.10, 0.10, false);
@@ -532,7 +532,7 @@ static int test_s5f_v_only(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &result);
+    s5f_mutate(&model, &seq, &rec, &_trng, &result);
 
     /* target = 10% of 20 = 2 mutations */
     if (result.count < 1 || result.count > 6) {
@@ -555,21 +555,21 @@ static int test_s5f_different_seeds(void) {
     populate_uniform_model(&model);
 
     /* Run with seed 1 */
-    srand(1);
+    RngState _trng; rng_seed(&_trng, 1, 0);
     ASeq seq1;
     build_test_seq(&seq1);
     SimRecord rec = {0};
     S5FResult r1;
-    s5f_mutate(&model, &seq1, &rec, &r1);
+    s5f_mutate(&model, &seq1, &rec, &_trng, &r1);
     char s1[64];
     aseq_to_string(&seq1, s1, sizeof(s1));
 
     /* Run with seed 2 */
-    srand(2);
+    rng_seed(&_trng, 2, 0);
     ASeq seq2;
     build_test_seq(&seq2);
     S5FResult r2;
-    s5f_mutate(&model, &seq2, &rec, &r2);
+    s5f_mutate(&model, &seq2, &rec, &_trng, &r2);
     char s2[64];
     aseq_to_string(&seq2, s2, sizeof(s2));
 
@@ -594,7 +594,7 @@ static int test_s5f_different_seeds(void) {
  * this mutation should be skipped.
  */
 static int test_s5f_productive_no_stops(void) {
-    srand(42);
+    RngState _trng; rng_seed(&_trng, 42, 0);
 
     S5FModel model;
     /* High rate to force many attempts */
@@ -606,7 +606,7 @@ static int test_s5f_productive_no_stops(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &result);
+    s5f_mutate(&model, &seq, &rec, &_trng, &result);
 
     /* Check that no stop codon exists in the result sequence */
     char mutated[64];

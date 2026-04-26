@@ -203,7 +203,13 @@ class TestSegmentBoundaryAccuracy:
     the V germline allele. Every non-mutated position must match."""
 
     def test_v_segment_matches_germline(self, mutated_records, all_configs):
-        """V segment of the sequence matches the V allele at non-mutated positions."""
+        """V segment of the sequence matches the V allele at non-mutated positions.
+
+        Uses `v_call_true` (the truly-sampled allele) rather than `v_call`
+        because the latter is god-aligner-derived and can drift to a
+        different allele under heavy SHM, breaking AIRR self-consistency
+        with the recorded `mutations` field (which is computed against
+        the truly-sampled allele's germline)."""
         for config_name in CONFIGS:
             v_alleles = all_configs[config_name]["v"]
             for i, rec in enumerate(mutated_records[config_name]):
@@ -211,7 +217,7 @@ class TestSegmentBoundaryAccuracy:
                 v_start = rec["v_sequence_start"]
                 v_end = rec["v_sequence_end"]
                 g_start = rec["v_germline_start"]
-                v_call = rec["v_call"].split(",")[0]
+                v_call = rec.get("v_call_true") or rec["v_call"].split(",")[0]
                 if v_call not in v_alleles or v_end <= v_start:
                     continue
                 allele_seq = v_alleles[v_call]
@@ -263,7 +269,12 @@ class TestSegmentBoundaryAccuracy:
                         f"for {j_call}")
 
     def test_d_segment_matches_germline(self, mutated_records, all_configs):
-        """D segment matches when present (heavy chains, TCR beta)."""
+        """D segment matches when present (heavy chains, TCR beta).
+
+        Uses d_call_true (truly-sampled allele) rather than d_call,
+        which is god-aligner-derived and can drift to a different
+        allele under heavy SHM (recorded mutations are computed
+        against the truly-sampled allele's germline)."""
         for config_name in CONFIGS:
             if not all_configs[config_name]["has_d"]:
                 continue
@@ -273,8 +284,10 @@ class TestSegmentBoundaryAccuracy:
                 d_end = rec["d_sequence_end"]
                 if d_start == d_end or not rec["d_call"]:
                     continue
-                # Use the first D allele call
-                d_call = rec["d_call"].split(",")[0]
+                # Prefer the truly-sampled allele (d_call_true) for the
+                # self-consistency check; fall back to the first listed
+                # d_call when d_call_true is absent (older snapshots).
+                d_call = rec.get("d_call_true") or rec["d_call"].split(",")[0]
                 if d_call == "Short-D" or d_call not in d_alleles:
                     continue
                 seq = rec["sequence"]
@@ -777,7 +790,10 @@ class TestGermlineAlignmentOracle:
             v_alleles = all_configs[config_name]["v"]
             for i, rec in enumerate(mutated_records[config_name]):
                 germ = rec["germline_alignment"]
-                v_call = rec["v_call"].split(",")[0]
+                # Use v_call_true (truly-sampled allele) rather than the
+                # god-aligner-derived v_call, which can drift away from
+                # the recorded mutations under heavy SHM.
+                v_call = rec.get("v_call_true") or rec["v_call"].split(",")[0]
                 if v_call not in v_alleles:
                     continue
                 allele_seq = v_alleles[v_call]

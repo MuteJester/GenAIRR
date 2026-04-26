@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <stdlib.h>
 
 #define TEST(name) \
     do { \
@@ -230,6 +231,9 @@ static int test_reverse_complement(void) {
     /* Verify head/tail swapped correctly */
     if (seq.head->current != 'C') return 1;
     if (seq.tail->current != 'T') return 1;
+    /* Germline rail must mirror current after RC for aligned serialization */
+    if (seq.head->germline != 'C') return 1;
+    if (seq.tail->germline != 'T') return 1;
 
     return 0;
 }
@@ -343,6 +347,36 @@ static int test_insert_preserves_structure(void) {
     return 0;
 }
 
+/* ── Test: insert_after returns NULL on pool exhaustion (T0-6) ── */
+
+/* When pool_used == GENAIRR_MAX_SEQ_LEN, no node can be allocated.
+ * aseq_insert_after must return NULL, leaving the sequence
+ * unchanged. Callers (insert_indels, long_read_errors) rely on this
+ * to avoid over-counting n_insertions. */
+static int test_insert_after_pool_exhausted(void) {
+    ASeq seq;
+    aseq_init(&seq);
+
+    /* Fill the pool to exactly the cap. We append a large germline
+     * segment at the limit. */
+    char *big = malloc(GENAIRR_MAX_SEQ_LEN);
+    if (!big) return 1;
+    for (int i = 0; i < GENAIRR_MAX_SEQ_LEN; i++) big[i] = 'A';
+    aseq_append_segment(&seq, big, GENAIRR_MAX_SEQ_LEN, SEG_V, 0, -1);
+    free(big);
+
+    if (seq.pool_used != GENAIRR_MAX_SEQ_LEN) return 1;
+    int len_before = seq.length;
+
+    /* Try to insert one more node — must fail. */
+    Nuc *inserted = aseq_insert_after(&seq, seq.head, 'C', SEG_V,
+                                       NUC_FLAG_INDEL_INS);
+    if (inserted != NULL) return 1;
+    if (seq.length != len_before) return 1;
+
+    return 0;
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -356,6 +390,7 @@ int main(void) {
     TEST(test_append_multiple_segments);
     TEST(test_anchor);
     TEST(test_insert_after);
+    TEST(test_insert_after_pool_exhausted);
     TEST(test_delete);
     TEST(test_delete_head);
     TEST(test_delete_tail);

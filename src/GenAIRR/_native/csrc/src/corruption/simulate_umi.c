@@ -17,7 +17,7 @@ void step_simulate_umi(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
     /* Generate random UMI and store in record */
     char umi[32];
-    rand_nucleotides(umi, umi_len);
+    rng_nucleotides(cfg->rng, umi, umi_len);
     strncpy(rec->umi_sequence, umi, sizeof(rec->umi_sequence) - 1);
     rec->umi_length = umi_len;
 

@@ -15,6 +15,7 @@
 /* ── Test framework ───────────────────────────────────────────── */
 
 static int tests_run = 0;
+static RngState _test_rng;
 static int tests_passed = 0;
 
 #define ASSERT(cond, msg) do { \
@@ -58,6 +59,7 @@ static void build_simple_seq(ASeq *seq, SimRecord *rec, SimConfig *cfg) {
     aseq_init(seq);
     sim_record_init(rec);
     sim_config_init(cfg, CHAIN_IGH);
+    cfg->rng = &_test_rng;
 
     /* Build a simple V-NP1-D-NP2-J sequence */
     static Allele v_al = { .name = "IGHV1-2*01", .gene = "IGHV1-2", .family = "IGHV1",
@@ -105,7 +107,7 @@ static int test_corrupt_5_prime_changes_length(void) {
     build_simple_seq(&seq, &rec, &cfg);
     int orig_len = aseq_length(&seq);
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_corrupt_5_prime(&cfg, &seq, &rec);
 
     ASSERT(rec.corruption_5_event >= 1 && rec.corruption_5_event <= 3,
@@ -126,7 +128,7 @@ static int test_corrupt_5_prime_remove_shrinks(void) {
         aseq_reset(&seq);
         sim_record_init(&rec);
         build_simple_seq(&seq, &rec, &cfg);
-        srand(seed);
+        rng_seed(&_test_rng, seed, 0);
         step_corrupt_5_prime(&cfg, &seq, &rec);
         if (rec.corruption_5_event == 1) {
             ASSERT(aseq_length(&seq) < orig_len, "Remove should shrink");
@@ -145,7 +147,7 @@ static int test_corrupt_3_prime_changes_length(void) {
     ASeq seq; SimRecord rec; SimConfig cfg;
     build_simple_seq(&seq, &rec, &cfg);
 
-    srand(123);
+    rng_seed(&_test_rng, 123, 0);
     step_corrupt_3_prime(&cfg, &seq, &rec);
 
     ASSERT(rec.corruption_3_event >= 1 && rec.corruption_3_event <= 3,
@@ -162,7 +164,7 @@ static int test_quality_errors_introduces_errors(void) {
     cfg.base_error_rate = 0.5;  /* Very high rate for testing */
     cfg.peak_error_rate = 0.8;
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_quality_errors(&cfg, &seq, &rec);
 
     /* Count sequencing errors */
@@ -181,7 +183,7 @@ static int test_quality_errors_preserves_germline(void) {
     cfg.base_error_rate = 0.5;
     cfg.peak_error_rate = 0.8;
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_quality_errors(&cfg, &seq, &rec);
 
     /* Germline bases should be preserved */
@@ -203,7 +205,7 @@ static int test_pcr_introduces_errors(void) {
     cfg.pcr_error_rate = 0.01;  /* High rate for testing */
     cfg.pcr_n_cycles = 50;
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_pcr_amplification(&cfg, &seq, &rec);
 
     int errors = 0;
@@ -224,7 +226,7 @@ static int test_umi_prepends_barcode(void) {
     int orig_len = aseq_length(&seq);
     cfg.umi_length = 12;
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_simulate_umi(&cfg, &seq, &rec);
 
     ASSERT(aseq_length(&seq) == orig_len + 12, "Should add 12 bases");
@@ -286,7 +288,7 @@ static int test_contaminant_replaces_sequence(void) {
     cfg.contamination_prob = 1.0;  /* Always contaminate */
     cfg.contaminant_type = 0;      /* random */
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_spike_contaminants(&cfg, &seq, &rec);
 
     ASSERT(rec.is_contaminant == true, "Contaminant flag set");
@@ -305,7 +307,7 @@ static int test_contaminant_phix(void) {
     cfg.contamination_prob = 1.0;
     cfg.contaminant_type = 1;  /* phiX */
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_spike_contaminants(&cfg, &seq, &rec);
 
     ASSERT(rec.is_contaminant == true, "Contaminant flag set");
@@ -323,7 +325,7 @@ static int test_insert_indels_modifies(void) {
     cfg.indel_prob = 0.3;  /* High rate */
     cfg.insertion_weight = 0.5;
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_insert_indels(&cfg, &seq, &rec);
 
     /* Should have changed length */
@@ -338,7 +340,7 @@ static int test_insert_indels_preserves_anchors(void) {
     cfg.indel_prob = 0.5;
     cfg.insertion_weight = 0.0;  /* All deletions */
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_insert_indels(&cfg, &seq, &rec);
 
     /* Anchors should still exist */
@@ -357,7 +359,7 @@ static int test_insert_ns_adds_ambiguous(void) {
     build_simple_seq(&seq, &rec, &cfg);
     cfg.n_prob = 0.5;  /* Very high */
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_insert_ns(&cfg, &seq, &rec);
 
     int n_count = 0;
@@ -377,7 +379,7 @@ static int test_paired_end_creates_gap(void) {
     int len = aseq_length(&seq);
     cfg.pe_read_length = 30;  /* Very short reads → gap in middle */
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_paired_end(&cfg, &seq, &rec);
 
     ASSERT(rec.pe_read_length == 30, "Read length recorded");
@@ -400,7 +402,7 @@ static int test_paired_end_no_gap_long_reads(void) {
     build_simple_seq(&seq, &rec, &cfg);
     cfg.pe_read_length = 500;  /* Reads longer than sequence */
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_paired_end(&cfg, &seq, &rec);
 
     ASSERT(rec.pe_gap_length == 0, "No gap with long reads");
@@ -417,6 +419,7 @@ static int test_long_read_errors_targets_homopolymers(void) {
     sim_record_init(&rec);
     SimConfig cfg;
     sim_config_init(&cfg, CHAIN_IGH);
+    cfg.rng = &_test_rng;
 
     /* Build sequence with homopolymer run: AAAA in V segment */
     static Allele v_al = { .name = "V1", .gene = "V1", .family = "V",
@@ -430,7 +433,7 @@ static int test_long_read_errors_targets_homopolymers(void) {
     cfg.min_run_length = 3;
     cfg.insertion_bias = 1.0;  /* All insertions */
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_long_read_errors(&cfg, &seq, &rec);
 
     /* Length may have changed due to insertion at AAAA run */
@@ -518,7 +521,7 @@ static int test_d_inversion_complements(void) {
     aseq_segment_to_string(&seq, SEG_D, orig_d, sizeof(orig_d));
     int d_len = (int)strlen(orig_d);
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_d_inversion(&cfg, &seq, &rec);
 
     /* Get new D bases */
@@ -561,7 +564,7 @@ static int test_receptor_revision_changes_v(void) {
     allele_pool_add(&cfg.v_alleles, &v2);
 
     const Allele *orig_v = rec.v_allele;
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_receptor_revision(&cfg, &seq, &rec);
 
     ASSERT(rec.receptor_revised == true, "Revision flag set");
@@ -593,7 +596,7 @@ static int test_selection_pressure_reverts_mutations(void) {
         }
     }
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_selection_pressure(&cfg, &seq, &rec);
 
     /* Count remaining mutations (some R-mutations should be reverted) */
@@ -617,7 +620,7 @@ static int test_uniform_mutate_applies(void) {
     cfg.min_mutation_rate = 0.1;
     cfg.max_mutation_rate = 0.2;
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_uniform_mutate(&cfg, &seq, &rec);
 
     int mutations = 0;
@@ -635,7 +638,7 @@ static int test_uniform_mutate_respects_np(void) {
     cfg.min_mutation_rate = 0.5;
     cfg.max_mutation_rate = 0.5;
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     step_uniform_mutate(&cfg, &seq, &rec);
 
     /* NP regions should NOT be mutated */
@@ -700,6 +703,7 @@ static int test_csr_no_c_allele(void) {
 static int test_pipeline_with_corruption_ops(void) {
     SimConfig cfg;
     sim_config_init(&cfg, CHAIN_IGH);
+    cfg.rng = &_test_rng;
 
     /* Enable several corruption features */
     cfg.features.quality_errors = true;
@@ -750,7 +754,7 @@ static int test_pipeline_with_corruption_ops(void) {
     aseq_init(&seq);
     SimRecord rec;
 
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
     pipeline_execute(&pl, &cfg, &seq, &rec, 0, NULL, NULL);
 
     ASSERT(aseq_length(&seq) > 0, "Sequence should be generated");

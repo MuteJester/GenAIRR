@@ -12,12 +12,13 @@ void sim_config_init(SimConfig *cfg, ChainType chain_type) {
 
     /* Sensible defaults */
     cfg->max_productive_attempts = 25;
-    cfg->np1_length_mean = 6;
-    cfg->np1_length_max  = 15;
-    cfg->np2_length_mean = 6;
-    cfg->np2_length_max  = 15;
     cfg->min_mutation_rate = 0.01;
     cfg->max_mutation_rate = 0.10;
+    /* NP regions: leave length_probs/transitions as NULL by default.
+     * The assemble step falls back to a uniform sampler in that case;
+     * GDC-loaded SimConfigs overwrite these with the empirical Markov
+     * tables in gdc_populate_sim_config. */
+    cfg->n_np_regions = 0;
 
     /* 5'/3' corruption: uniform range (base counts) */
     cfg->corrupt_5_remove_min = 1;
@@ -92,9 +93,42 @@ void sim_config_destroy(SimConfig *cfg) {
     allele_pool_destroy(&cfg->j_alleles);
     allele_pool_destroy(&cfg->c_alleles);
 
-    /* Free trim distributions */
+    /* Free trim distributions (legacy single-global) */
     if (cfg->v_trim_3.probs) { free(cfg->v_trim_3.probs); cfg->v_trim_3.probs = NULL; }
     if (cfg->d_trim_5.probs) { free(cfg->d_trim_5.probs); cfg->d_trim_5.probs = NULL; }
     if (cfg->d_trim_3.probs) { free(cfg->d_trim_3.probs); cfg->d_trim_3.probs = NULL; }
     if (cfg->j_trim_5.probs) { free(cfg->j_trim_5.probs); cfg->j_trim_5.probs = NULL; }
+
+    /* Free per-(family, gene) trim tables. Each entry's TrimDist owns
+     * its probs[] array. */
+    NamedTrimDistTable *tables[4] = {
+        &cfg->v_trim_3_table, &cfg->d_trim_5_table,
+        &cfg->d_trim_3_table, &cfg->j_trim_5_table,
+    };
+    for (int t = 0; t < 4; t++) {
+        for (int i = 0; i < tables[t]->count; i++) {
+            free(tables[t]->entries[i].dist.probs);
+        }
+        free(tables[t]->entries);
+        tables[t]->entries = NULL;
+        tables[t]->count = 0;
+    }
+
+    /* Free NP distributions */
+    for (int i = 0; i < 2; i++) {
+        if (cfg->np[i].length_probs) {
+            free(cfg->np[i].length_probs);
+            cfg->np[i].length_probs = NULL;
+        }
+        if (cfg->np[i].transitions) {
+            free(cfg->np[i].transitions);
+            cfg->np[i].transitions = NULL;
+        }
+    }
+
+    /* Free P-nucleotide length distribution */
+    if (cfg->p_nuc_dist.length_probs) {
+        free(cfg->p_nuc_dist.length_probs);
+        cfg->p_nuc_dist.length_probs = NULL;
+    }
 }

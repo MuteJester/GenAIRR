@@ -144,6 +144,7 @@ scoring trade-offs.
 | `germline_alignment` | str | Ungapped germline reference aligned to `sequence` (lowercase = germline, uppercase = mutated, `N` = non-templated) |
 | **V gene** | | |
 | `v_call` | str | V allele name |
+| `v_call_true` | str | Simulator ground-truth sampled V allele |
 | `v_sequence_start` | int | Start of the V segment in `sequence` (0-based) |
 | `v_sequence_end` | int | End of the V segment in `sequence` (exclusive) |
 | `v_germline_start` | int | Start position within the V germline allele |
@@ -152,6 +153,7 @@ scoring trade-offs.
 | `v_trim_3` | int | Bases trimmed from the 3' end of V |
 | **D gene** | | |
 | `d_call` | str | D allele name (empty for light chains / chains without D) |
+| `d_call_true` | str | Simulator ground-truth sampled D allele |
 | `d_sequence_start` | int | Start of the D segment in `sequence` |
 | `d_sequence_end` | int | End of the D segment in `sequence` |
 | `d_germline_start` | int | Start position within the D germline allele |
@@ -160,6 +162,7 @@ scoring trade-offs.
 | `d_trim_3` | int | Bases trimmed from the 3' end of D |
 | **J gene** | | |
 | `j_call` | str | J allele name |
+| `j_call_true` | str | Simulator ground-truth sampled J allele |
 | `j_sequence_start` | int | Start of the J segment in `sequence` |
 | `j_sequence_end` | int | End of the J segment in `sequence` |
 | `j_germline_start` | int | Start position within the J germline allele |
@@ -195,6 +198,10 @@ scoring trade-offs.
 | `sequencing_errors` | str | Comma-separated list of sequencing error positions and substitutions |
 | `is_reverse_complement` | bool | Whether the sequence was reverse-complemented |
 | `is_contaminant` | bool | Whether the sequence is a contaminant spike-in |
+| `d_inverted` | bool | Whether D inversion (reverse-complement D event) was applied |
+| `receptor_revised` | bool | Whether receptor revision was applied |
+| `revision_footprint_length` | int | Preserved old-V footprint length during receptor revision |
+| `original_v_allele_name` | str | V allele before receptor revision |
 
 All coordinates are 0-based. Gene segment boundaries account for trimming,
 N/P additions, and any 5'/3' corruption, so they point to the exact positions

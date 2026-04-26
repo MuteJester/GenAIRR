@@ -54,6 +54,16 @@ static inline bool nuc_is_germline_segment(const Nuc *n) {
            n->segment == SEG_J || n->segment == SEG_C;
 }
 
+/* True if the node is part of the receptor's coding region (V/D/J
+ * plus the NP segments between them). Used to scope the stop-codon
+ * count so adapter / UMI / contaminant stops do not break
+ * productivity post-corruption. */
+static inline bool nuc_is_coding_segment(const Nuc *n) {
+    return n->segment == SEG_V || n->segment == SEG_NP1 ||
+           n->segment == SEG_D || n->segment == SEG_NP2 ||
+           n->segment == SEG_J;
+}
+
 static inline bool nuc_is_anchor(const Nuc *n) {
     return (n->flags & NUC_FLAG_ANCHOR) != 0;
 }

@@ -533,7 +533,11 @@ def _compile_to_c(
         config: DataConfig object or string name (e.g. "human_igh").
         steps: Ordered list of Step descriptors.
         productive: If True, enforce productive sequences (retry loop).
-        seed: Random seed for reproducibility (None = time-based).
+        seed: Random seed for reproducibility. None falls back to
+            ``GenAIRR.set_seed()``'s global value if one was set;
+            otherwise the C engine auto-seeds from time + simulator
+            address. An explicit ``seed=0`` is passed through and
+            interpreted by the C engine as "auto-seed me".
 
     Returns:
         CompiledSimulator ready to call simulate().
@@ -541,6 +545,7 @@ def _compile_to_c(
     from .dataconfig.gdc_io import to_gdc_bytes
     from .dataconfig.enums import ChainType
     from ._native import CSimulator
+    from .seed import get_seed as _get_global_seed
 
     resolved = _resolve_config(config)
 
@@ -573,7 +578,12 @@ def _compile_to_c(
     for step in steps:
         step.configure(sim)
 
-    # Set seed
+    # Set seed. When the caller did not pass one, fall back to the
+    # global seed set via GenAIRR.set_seed(), if any. If both are
+    # None, leave it for the C engine to auto-seed from time +
+    # simulator address (see ensure_seeded in genairr_api.c).
+    if seed is None:
+        seed = _get_global_seed()
     if seed is not None:
         sim.set_seed(seed)
 

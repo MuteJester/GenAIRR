@@ -19,6 +19,11 @@
         total++; \
     } while (0)
 
+/* Test-local PCG32 RNG. Wired into every cfg before pipeline_execute
+ * so step functions have a valid cfg->rng. Reseeded per test via
+ * rng_seed() instead of the old srand(). */
+static RngState _test_rng;
+
 /* ── Helper: create allele with known sequence ─────────────────── */
 
 static Allele make_allele(const char *name, const char *seq,
@@ -429,10 +434,11 @@ static int test_trimming_creates_equivalence(void) {
  * ══════════════════════════════════════════════════════════════════ */
 
 static int test_integration_pipeline_corrections(void) {
-    srand(42);
+    rng_seed(&_test_rng, 42, 0);
 
     SimConfig cfg;
     sim_config_init(&cfg, CHAIN_IGH);
+    cfg.rng = &_test_rng;
 
     cfg.v_alleles = allele_pool_create(4);
     cfg.d_alleles = allele_pool_create(4);

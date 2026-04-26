@@ -233,6 +233,14 @@ class Experiment:
         """
         Compile and run the experiment in one call.
 
+        Materializes every simulated sequence as a Python dict in memory.
+        Each AIRR record carries ~40+ fields; expect rough overhead of
+        ~500–800 bytes per sequence in the returned ``list[dict]``, plus
+        a temporary doubling when calling :meth:`SimulationResult.to_dataframe`.
+        For large ``n`` (≳1M) prefer :meth:`run_to_file` (streams a TSV
+        directly to disk) or :meth:`compile` + ``stream()`` (row-by-row
+        generation). See also :meth:`CompiledSimulator.simulate_to_file`.
+
         Args:
             n: Number of sequences to simulate.
             seed: Random seed for reproducibility.
@@ -249,6 +257,38 @@ class Experiment:
         """
         sim = self.compile(seed=seed, productive=productive)
         return sim.simulate(n=n, progress=progress)
+
+    def run_to_file(self, n: int, output_path: str, *,
+                    seed: Optional[int] = None,
+                    productive: bool = False) -> int:
+        """
+        Compile and stream the simulation directly to an AIRR TSV file.
+
+        Bypasses Python materialization entirely — the C engine writes rows
+        as they are generated, so peak memory stays flat regardless of ``n``.
+        Use this for large workloads (millions of sequences) where the
+        in-memory ``list[dict]`` returned by :meth:`run` would exceed RAM.
+
+        Args:
+            n: Number of sequences to simulate.
+            output_path: Path to write the AIRR-format TSV file.
+            seed: Random seed for reproducibility.
+            productive: If True, enforce productive rearrangements.
+
+        Returns:
+            Number of sequences written.
+
+        Example::
+
+            exp.run_to_file(n=50_000_000, output_path="tcrb.tsv", seed=42)
+
+            # Read back chunked for filtering:
+            import pandas as pd
+            chunks = pd.read_csv("tcrb.tsv", sep="\\t", chunksize=1_000_000)
+            df = pd.concat(c[c['junction_length'] > 0] for c in chunks)
+        """
+        sim = self.compile(seed=seed, productive=productive)
+        return sim.simulate_to_file(n, output_path)
 
     # ==================================================================
     # Display

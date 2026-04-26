@@ -22,12 +22,12 @@ static char transition_of(char base) {
 }
 
 /* Random transversion (not self, not transition) */
-static char transversion_of(char base) {
+static char transversion_of(RngState *rng, char base) {
     switch (base) {
-        case 'A': return (rand() % 2) ? 'C' : 'T';
-        case 'G': return (rand() % 2) ? 'C' : 'T';
-        case 'C': return (rand() % 2) ? 'A' : 'G';
-        case 'T': return (rand() % 2) ? 'A' : 'G';
+        case 'A': return rng_range(rng, 2) ? 'C' : 'T';
+        case 'G': return rng_range(rng, 2) ? 'C' : 'T';
+        case 'C': return rng_range(rng, 2) ? 'A' : 'G';
+        case 'T': return rng_range(rng, 2) ? 'A' : 'G';
         default:  return base;
     }
 }
@@ -50,14 +50,14 @@ void step_quality_errors(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         if (n->current == 'N') continue;
 
         double rate = base_rate + ((double)pos / len) * (peak_rate - base_rate);
-        if (rand_uniform() >= rate) continue;
+        if (rng_uniform(cfg->rng) >= rate) continue;
 
         /* Apply error: transition or transversion */
         char new_base;
-        if (rand_uniform() < tw) {
+        if (rng_uniform(cfg->rng) < tw) {
             new_base = transition_of(n->current);
         } else {
-            new_base = transversion_of(n->current);
+            new_base = transversion_of(cfg->rng, n->current);
         }
 
         aseq_mutate(seq, n, new_base, NUC_FLAG_SEQ_ERROR);

@@ -12,11 +12,11 @@
 #include <math.h>
 #include <stdlib.h>
 
-static char random_other_base(char base) {
+static char random_other_base(RngState *rng, char base) {
     static const char bases[] = "ACGT";
     char alt;
     do {
-        alt = bases[rand() % 4];
+        alt = bases[rng_range(rng, 4)];
     } while (alt == base);
     return alt;
 }
@@ -35,9 +35,9 @@ void step_pcr_amplification(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     int error_count = 0;
     for (Nuc *n = seq->head; n; n = n->next) {
         if (n->current == 'N') continue;
-        if (rand_uniform() >= eff_rate) continue;
+        if (rng_uniform(cfg->rng) >= eff_rate) continue;
 
-        char new_base = random_other_base(n->current);
+        char new_base = random_other_base(cfg->rng, n->current);
         aseq_mutate(seq, n, new_base, NUC_FLAG_PCR_ERROR);
         error_count++;
     }

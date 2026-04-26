@@ -28,3 +28,35 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -x -q
+
+  # ── C tests under AddressSanitizer + UndefinedBehaviorSanitizer ──
+  # Runs the full C test suite with -fsanitize=address,undefined to
+  # catch use-after-free, buffer overflows, leaks, signed-overflow,
+  # null derefs, alignment errors, etc. Independent of the main test
+  # matrix — adds ~5-10x slowdown but invaluable for memory-safety
+  # confidence on the hand-rolled C engine.
+  sanitizers:
+    name: C tests under ASan + UBSan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build prereqs
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+
+      - name: Configure with sanitizers
+        working-directory: src/GenAIRR/_native/csrc
+        run: |
+          mkdir -p build_san && cd build_san
+          cmake .. -DGENAIRR_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        working-directory: src/GenAIRR/_native/csrc/build_san
+        run: cmake --build . -j
+
+      - name: Run C tests under ASan/UBSan
+        working-directory: src/GenAIRR/_native/csrc/build_san
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=0
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --output-on-failure

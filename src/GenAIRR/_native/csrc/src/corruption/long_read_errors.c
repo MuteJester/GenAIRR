@@ -68,12 +68,21 @@ void step_long_read_errors(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     for (int i = n_runs - 1; i >= 0; i--) {
         double p = error_rate * runs[i].length;
         if (p > 0.8) p = 0.8;
-        if (rand_uniform() >= p) continue;
+        if (rng_uniform(cfg->rng) >= p) continue;
 
-        if (rand_uniform() < ins_bias) {
-            /* Insertion: add one copy at end of run */
-            aseq_insert_after(seq, runs[i].end, runs[i].base,
-                              runs[i].end->segment, NUC_FLAG_INDEL_INS);
+        if (rng_uniform(cfg->rng) < ins_bias) {
+            /* Insertion: add one copy at end of run. aseq_insert_after
+             * returns NULL on pool exhaustion (>= GENAIRR_MAX_SEQ_LEN
+             * nodes already allocated). Break out — further insertions
+             * will also fail and we'd over-count `insertions`. */
+            if (aseq_insert_after(seq, runs[i].end, runs[i].base,
+                                  runs[i].end->segment,
+                                  NUC_FLAG_INDEL_INS) == NULL) {
+                TRACE("[long_read] pool exhausted; stopping insertions "
+                      "(pool_used=%d/%d)",
+                      seq->pool_used, GENAIRR_MAX_SEQ_LEN);
+                break;
+            }
             insertions++;
         } else {
             /* Deletion: remove last base of run */

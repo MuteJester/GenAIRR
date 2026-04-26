@@ -11,7 +11,8 @@
 
 void step_sample_v(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     (void)seq;
-    rec->v_allele = allele_pool_pick(&cfg->v_alleles, &cfg->v_restriction);
+    rec->v_allele = allele_pool_pick(&cfg->v_alleles, &cfg->v_restriction,
+                                     cfg->rng);
     TRACE("[sample_v] %s (len=%d, anchor=%d, pool=%d, locked=%s)",
           rec->v_allele ? rec->v_allele->name : "NULL",
           rec->v_allele ? rec->v_allele->length : 0,
@@ -23,7 +24,8 @@ void step_sample_v(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 void step_sample_d(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     (void)seq;
     if (cfg->d_alleles.count > 0) {
-        rec->d_allele = allele_pool_pick(&cfg->d_alleles, &cfg->d_restriction);
+        rec->d_allele = allele_pool_pick(&cfg->d_alleles, &cfg->d_restriction,
+                                         cfg->rng);
         TRACE("[sample_d] %s (len=%d, pool=%d, locked=%s)",
               rec->d_allele ? rec->d_allele->name : "NULL",
               rec->d_allele ? rec->d_allele->length : 0,
@@ -37,7 +39,8 @@ void step_sample_d(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
 void step_sample_j(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     (void)seq;
-    rec->j_allele = allele_pool_pick(&cfg->j_alleles, &cfg->j_restriction);
+    rec->j_allele = allele_pool_pick(&cfg->j_alleles, &cfg->j_restriction,
+                                     cfg->rng);
     TRACE("[sample_j] %s (len=%d, anchor=%d, pool=%d, locked=%s)",
           rec->j_allele ? rec->j_allele->name : "NULL",
           rec->j_allele ? rec->j_allele->length : 0,
@@ -49,7 +52,8 @@ void step_sample_j(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 void step_sample_c(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     (void)seq;
     if (cfg->c_alleles.count > 0) {
-        rec->c_allele = allele_pool_pick(&cfg->c_alleles, &cfg->c_restriction);
+        rec->c_allele = allele_pool_pick(&cfg->c_alleles, &cfg->c_restriction,
+                                         cfg->rng);
         TRACE("[sample_c] %s (pool=%d)",
               rec->c_allele ? rec->c_allele->name : "NULL",
               cfg->c_alleles.count);

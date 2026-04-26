@@ -7,6 +7,9 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # ── Build options ────────────────────────────────────────────────
 option(GENAIRR_BUILD_TESTS "Build C test executables" ON)
 option(GENAIRR_BUILD_BENCHMARKS "Build C benchmark executables" ON)
+option(GENAIRR_SANITIZE
+       "Build with AddressSanitizer + UndefinedBehaviorSanitizer (GCC/Clang)"
+       OFF)
 
 # ── Compiler warnings (GCC/Clang only) ──────────────────────────
 if(NOT MSVC)
@@ -17,6 +20,24 @@ else()
     add_compile_definitions(_USE_MATH_DEFINES)
     # Suppress warnings about POSIX function names (fdopen -> _fdopen etc.)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
+# ── Sanitizers (ASan + UBSan) ────────────────────────────────────
+# Set -DGENAIRR_SANITIZE=ON at configure time to build with
+# AddressSanitizer + UndefinedBehaviorSanitizer. Catches use-after-free,
+# heap/stack overflows, leaks, signed-overflow, alignment, null derefs.
+# Adds ~5-10x slowdown — intended for CI and local bug-finding, not
+# production. Only supported on GCC/Clang (sanitizer surface on MSVC
+# differs and isn't covered here).
+if(GENAIRR_SANITIZE AND NOT MSVC)
+    message(STATUS "GenAIRR: building with -fsanitize=address,undefined")
+    add_compile_options(
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -fno-sanitize-recover=all
+        -g
+    )
+    add_link_options(-fsanitize=address,undefined)
 endif()
 
 # ── Include paths ─────────────────────────────────────────────────
@@ -141,6 +162,10 @@ if(GENAIRR_BUILD_TESTS)
     add_executable(test_gdc tests/test_gdc.c)
     target_link_libraries(test_gdc genairr ${MATH_LIB})
     add_test(NAME test_gdc COMMAND test_gdc)
+
+    add_executable(test_rand_util tests/test_rand_util.c)
+    target_link_libraries(test_rand_util genairr ${MATH_LIB})
+    add_test(NAME test_rand_util COMMAND test_rand_util)
 endif()
 
 # ── Benchmarks ─────────────────────────────────────────────────

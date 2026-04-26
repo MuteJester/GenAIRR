@@ -14,6 +14,7 @@
 
 #include "genairr/airr.h"
 #include "genairr/codon.h"
+#include "genairr/functionality.h"
 #include "genairr/trace.h"
 #include <string.h>
 #include <stdio.h>
@@ -58,10 +59,14 @@ static int check_v_3prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     /* The trimmed V 3' bases: v_ref[v_len - trim_3 .. v_len) */
     const char *trimmed = v_ref + (v_len - trim_3);
 
-    /* Walk NP1 nodes and compare */
+    /* Walk NP1 nodes and compare. P-nucleotide nodes have a
+     * deterministic palindromic origin and are NOT aligner-ambiguous
+     * with V's trimmed tail, so we stop the walk if we hit one. */
     int match = 0;
     Nuc *np = seq->seg_first[SEG_NP1];
-    for (int i = 0; i < trim_3 && np && np->segment == SEG_NP1; i++, np = np->next) {
+    for (int i = 0; i < trim_3 && np && np->segment == SEG_NP1
+                 && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
+         i++, np = np->next) {
         if (trimmed[i] == np->current) {
             match++;
         } else {
@@ -79,6 +84,7 @@ static int check_v_3prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
  *
  * This replicates FixJPosition: walking the trimmed J reference
  * backwards and comparing to the NP bases that precede J.
+ * P-nucleotide nodes are skipped (see check_v_3prime_ambiguity).
  */
 static int check_j_5prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     if (!rec->j_allele || rec->j_trim_5 == 0) return 0;
@@ -93,7 +99,9 @@ static int check_j_5prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     /* The trimmed J 5' bases: j_ref[0 .. trim_5), compared backwards */
     int match = 0;
     Nuc *np = seq->seg_last[np_seg];
-    for (int i = trim_5 - 1; i >= 0 && np && np->segment == np_seg; i--, np = np->prev) {
+    for (int i = trim_5 - 1; i >= 0 && np && np->segment == np_seg
+                 && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
+         i--, np = np->prev) {
         if (j_ref[i] == np->current) {
             match++;
         } else {
@@ -112,10 +120,14 @@ static int check_d_5prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     const char *d_ref = rec->d_allele->seq;
     int trim_5 = rec->d_trim_5;
 
-    /* D's trimmed 5' bases: d_ref[0 .. trim_5), compared backwards against NP1 end */
+    /* D's trimmed 5' bases: d_ref[0 .. trim_5), compared backwards
+     * against NP1 end. P-nucs (e.g. a V 3' P-nuc upstream in NP1)
+     * are skipped — they do not represent aligner-ambiguous bases. */
     int match = 0;
     Nuc *np = seq->seg_last[SEG_NP1];
-    for (int i = trim_5 - 1; i >= 0 && np && np->segment == SEG_NP1; i--, np = np->prev) {
+    for (int i = trim_5 - 1; i >= 0 && np && np->segment == SEG_NP1
+                 && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
+         i--, np = np->prev) {
         if (d_ref[i] == np->current) {
             match++;
         } else {
@@ -138,7 +150,9 @@ static int check_d_3prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
 
     int match = 0;
     Nuc *np = seq->seg_first[SEG_NP2];
-    for (int i = 0; i < trim_3 && np && np->segment == SEG_NP2; i++, np = np->next) {
+    for (int i = 0; i < trim_3 && np && np->segment == SEG_NP2
+                 && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
+         i++, np = np->next) {
         if (trimmed[i] == np->current) {
             match++;
         } else {
@@ -800,7 +814,7 @@ static int append_annotation(char *buf, int pos, int cap,
     return pos;
 }
 
-static void collect_annotations(const ASeq *seq, AirrRecord *out) {
+static void collect_annotations(const ASeq *seq, const SimRecord *rec, AirrRecord *out) {
     int m_pos = 0, se_pos = 0, pcr_pos = 0;
     int n_mut = 0, n_se = 0, n_pcr = 0, n_ins = 0, n_ns = 0;
     int total_germline = 0;
@@ -839,6 +853,7 @@ static void collect_annotations(const ASeq *seq, AirrRecord *out) {
     out->n_sequencing_errors = n_se;
     out->n_pcr_errors        = n_pcr;
     out->n_insertions        = n_ins;
+    out->n_deletions         = rec ? rec->n_deletions : 0;
     out->n_ns                = n_ns;
     out->mutation_rate = total_germline > 0
                          ? (double)n_mut / total_germline : 0.0;
@@ -990,6 +1005,36 @@ static int collect_boundary_mutations(const char *seq_str, const char *germ,
     return extra;
 }
 
+/* ── Internal: recompute productivity from final sequence ─────────── */
+
+static void derive_final_productivity(const ASeq *seq, const SimRecord *rec,
+                                      AirrRecord *out) {
+    /* Clone + rebase so functionality_assess can operate on a mutable copy
+     * without altering caller-owned state. */
+    ASeq seq_copy = *seq;
+    aseq_rebase(&seq_copy, seq);
+
+    SimRecord rec_copy = *rec;
+
+    if (!seq_copy.codon_rail_valid) {
+        aseq_build_codon_rail(&seq_copy);
+    }
+
+    static FunctionalityValidator validator;
+    static bool initialized = false;
+    if (!initialized) {
+        validator = functionality_validator_default();
+        initialized = true;
+    }
+
+    functionality_assess(&validator, &seq_copy, &rec_copy);
+    out->productive  = rec_copy.productive;
+    out->stop_codon  = rec_copy.stop_codon;
+    out->vj_in_frame = rec_copy.vj_in_frame;
+    strncpy(out->note, rec_copy.note, sizeof(out->note) - 1);
+    out->note[sizeof(out->note) - 1] = '\0';
+}
+
 /* ═══════════════════════════════════════════════════════════════
  * airr_serialize — the main serialization function
  * ═══════════════════════════════════════════════════════════════ */
@@ -1068,7 +1113,7 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
                                               out->np2_region, AIRR_MAX_NP);
 
     /* ── 7. Collect mutations / errors ───────────────────────── */
-    collect_annotations(seq, out);
+    collect_annotations(seq, rec, out);
 
     /* ── 7b. Collect mutations from boundary-extended positions ── */
     /* NP bases absorbed into V/D/J by boundary extension may differ
@@ -1089,23 +1134,28 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
     }
 
     /* ── 8. Productivity flags ────────────────────────────── */
-    /* When the codon rail has been built (functionality_assess ran),
-     * derive productivity reactively from the ASeq.  Otherwise fall
-     * back to whatever the SimRecord already recorded.              */
+    /* Prefer final ASeq state; if codon rail was invalidated by a late
+     * operation (e.g. reverse-complement), recompute from a cloned copy
+     * rather than falling back to stale SimRecord fields. */
     if (seq->codon_rail_valid) {
         out->productive  = aseq_is_productive(seq);
         out->stop_codon  = seq->n_stop_codons > 0;
         out->vj_in_frame = seq->junction_in_frame;
+        strncpy(out->note, rec->note, sizeof(out->note) - 1);
+        out->note[sizeof(out->note) - 1] = '\0';
     } else {
-        out->productive  = rec->productive;
-        out->stop_codon  = rec->stop_codon;
-        out->vj_in_frame = rec->vj_in_frame;
+        derive_final_productivity(seq, rec, out);
     }
-    strncpy(out->note, rec->note, sizeof(out->note) - 1);
 
     /* ── 9. Sequence-level flags ─────────────────────────────── */
     out->is_reverse_complement = rec->is_reverse_complement;
     out->is_contaminant        = rec->is_contaminant;
+    out->d_inverted            = rec->d_inverted;
+    out->receptor_revised      = rec->receptor_revised;
+    out->revision_footprint_length = rec->revision_footprint_length;
+    strncpy(out->original_v_allele_name, rec->original_v_allele_name,
+            GENAIRR_MAX_ALLELE_NAME - 1);
+    out->original_v_allele_name[GENAIRR_MAX_ALLELE_NAME - 1] = '\0';
 
     /* ── 10. Allele calls (bitmap-based reactive derivation) ──── */
     bool has_d = rec->d_allele != NULL && aseq_has_segment(seq, SEG_D);
@@ -1164,6 +1214,26 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
         if (has_d && rec->d_allele)
             strncpy(out->d_call, rec->d_allele->name, AIRR_MAX_CALLS - 1);
     }
+
+    /* True allele names (ground truth). Always set from rec->X_allele
+     * regardless of correction set, so consumers can check AIRR
+     * self-consistency (seq + mutations must reconstruct the *true*
+     * germline) even when v_call drifts under god-aligner semantics. */
+    if (rec->v_allele) {
+        strncpy(out->v_call_true, rec->v_allele->name,
+                GENAIRR_MAX_ALLELE_NAME - 1);
+        out->v_call_true[GENAIRR_MAX_ALLELE_NAME - 1] = '\0';
+    }
+    if (rec->j_allele) {
+        strncpy(out->j_call_true, rec->j_allele->name,
+                GENAIRR_MAX_ALLELE_NAME - 1);
+        out->j_call_true[GENAIRR_MAX_ALLELE_NAME - 1] = '\0';
+    }
+    if (has_d && rec->d_allele) {
+        strncpy(out->d_call_true, rec->d_allele->name,
+                GENAIRR_MAX_ALLELE_NAME - 1);
+        out->d_call_true[GENAIRR_MAX_ALLELE_NAME - 1] = '\0';
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1173,6 +1243,8 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
 static const char *AIRR_COLUMNS[] = {
     "sequence", "germline_alignment",
     "v_call", "d_call", "j_call", "c_call",
+    "v_call_true", "d_call_true", "j_call_true",
+    "d_inverted", "receptor_revised", "revision_footprint_length", "original_v_allele_name",
     "v_sequence_start", "v_sequence_end",
     "v_germline_start", "v_germline_end",
     "d_sequence_start", "d_sequence_end",
@@ -1183,6 +1255,7 @@ static const char *AIRR_COLUMNS[] = {
     "v_trim_5", "v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5", "j_trim_3",
     "np1_region", "np1_length", "np2_region", "np2_length",
     "mutation_rate", "n_mutations", "mutations",
+    "n_insertions", "n_deletions",
     "n_sequencing_errors", "sequencing_errors",
     "n_pcr_errors", "pcr_errors",
     "productive", "stop_codon", "vj_in_frame", "note",
@@ -1204,6 +1277,8 @@ void airr_write_tsv_row(FILE *fp, const AirrRecord *r) {
     fprintf(fp,
         "%s\t%s\t"
         "%s\t%s\t%s\t%s\t"
+        "%s\t%s\t%s\t"
+        "%s\t%s\t%d\t%s\t"
         "%d\t%d\t%d\t%d\t"
         "%d\t%d\t%d\t%d\t"
         "%d\t%d\t%d\t%d\t"
@@ -1211,6 +1286,7 @@ void airr_write_tsv_row(FILE *fp, const AirrRecord *r) {
         "%d\t%d\t%d\t%d\t%d\t%d\t"
         "%s\t%d\t%s\t%d\t"
         "%.6f\t%d\t%s\t"
+        "%d\t%d\t"
         "%d\t%s\t"
         "%d\t%s\t"
         "%s\t%s\t%s\t%s\t"
@@ -1218,6 +1294,11 @@ void airr_write_tsv_row(FILE *fp, const AirrRecord *r) {
         "%d\n",
         r->sequence, r->germline_alignment,
         r->v_call, r->d_call, r->j_call, r->c_call,
+        r->v_call_true, r->d_call_true, r->j_call_true,
+        r->d_inverted ? "T" : "F",
+        r->receptor_revised ? "T" : "F",
+        r->revision_footprint_length,
+        r->original_v_allele_name,
         r->v_sequence_start, r->v_sequence_end,
         r->v_germline_start, r->v_germline_end,
         r->d_sequence_start, r->d_sequence_end,
@@ -1231,6 +1312,7 @@ void airr_write_tsv_row(FILE *fp, const AirrRecord *r) {
         r->np1_region, r->np1_length,
         r->np2_region, r->np2_length,
         r->mutation_rate, r->n_mutations, r->mutations,
+        r->n_insertions, r->n_deletions,
         r->n_sequencing_errors, r->sequencing_errors,
         r->n_pcr_errors, r->pcr_errors,
         r->productive ? "T" : "F",
@@ -1248,6 +1330,8 @@ int airr_snprintf_tsv_row(char *buf, int size, const AirrRecord *r) {
     int n = snprintf(buf, size,
         "%s\t%s\t"
         "%s\t%s\t%s\t%s\t"
+        "%s\t%s\t%s\t"
+        "%s\t%s\t%d\t%s\t"
         "%d\t%d\t%d\t%d\t"
         "%d\t%d\t%d\t%d\t"
         "%d\t%d\t%d\t%d\t"
@@ -1255,6 +1339,7 @@ int airr_snprintf_tsv_row(char *buf, int size, const AirrRecord *r) {
         "%d\t%d\t%d\t%d\t%d\t%d\t"
         "%s\t%d\t%s\t%d\t"
         "%.6f\t%d\t%s\t"
+        "%d\t%d\t"
         "%d\t%s\t"
         "%d\t%s\t"
         "%s\t%s\t%s\t%s\t"
@@ -1262,6 +1347,11 @@ int airr_snprintf_tsv_row(char *buf, int size, const AirrRecord *r) {
         "%d",
         r->sequence, r->germline_alignment,
         r->v_call, r->d_call, r->j_call, r->c_call,
+        r->v_call_true, r->d_call_true, r->j_call_true,
+        r->d_inverted ? "T" : "F",
+        r->receptor_revised ? "T" : "F",
+        r->revision_footprint_length,
+        r->original_v_allele_name,
         r->v_sequence_start, r->v_sequence_end,
         r->v_germline_start, r->v_germline_end,
         r->d_sequence_start, r->d_sequence_end,
@@ -1275,6 +1365,7 @@ int airr_snprintf_tsv_row(char *buf, int size, const AirrRecord *r) {
         r->np1_region, r->np1_length,
         r->np2_region, r->np2_length,
         r->mutation_rate, r->n_mutations, r->mutations,
+        r->n_insertions, r->n_deletions,
         r->n_sequencing_errors, r->sequencing_errors,
         r->n_pcr_errors, r->pcr_errors,
         r->productive ? "T" : "F",

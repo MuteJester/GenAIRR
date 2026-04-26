@@ -110,10 +110,15 @@ static int test_basic_serialize(void) {
     if (strcmp(airr.np2_region, "GCG") != 0) { fprintf(stderr, "FAIL: np2=%s\n", airr.np2_region); return 1; }
     if (airr.np2_length != 3) { fprintf(stderr, "FAIL: np2_len=%d\n", airr.np2_length); return 1; }
 
-    /* Productivity */
-    if (!airr.productive) { fprintf(stderr, "FAIL: productive=%d\n", airr.productive); return 1; }
-    if (!airr.vj_in_frame) { fprintf(stderr, "FAIL: vj_in_frame=%d\n", airr.vj_in_frame); return 1; }
-    if (airr.stop_codon) { fprintf(stderr, "FAIL: stop_codon=%d\n", airr.stop_codon); return 1; }
+    /* Productivity: airr_serialize derives productive/stop/in-frame from
+     * the codon rail (post-T0-4, V-anchored frame). The synthetic test
+     * setup is biologically inconsistent (V Cys anchor at germline pos
+     * 7 in "AAAAACCCCC" → not a Cys codon; J anchor at germline pos 2
+     * but j_trim_5=3 → anchor trimmed off). The serializer correctly
+     * reports productive=false for this. The test focuses on
+     * SERIALIZATION mechanics (sequence, germline, calls, NP, mutations);
+     * productivity-derivation correctness is covered by test_codon_rail
+     * (V-anchored frame tests) and test_simulation_integrity. */
 
     /* Mutations (boundary-extended regions that match don't count as mutations) */
     if (airr.n_mutations != 0) { fprintf(stderr, "FAIL: n_mut=%d rate=%f\n", airr.n_mutations, airr.mutation_rate); return 1; }
@@ -352,12 +357,8 @@ static int test_flags_propagation(void) {
     Allele j = make_allele("J1", "TTTTTT", 2, SEG_J);
     rec.v_allele = &v;
     rec.j_allele = &j;
-    rec.productive = false;
-    rec.stop_codon = true;
-    rec.vj_in_frame = false;
     rec.is_reverse_complement = true;
     rec.is_contaminant = false;
-    strncpy(rec.note, "Stop codon at pos 42", sizeof(rec.note) - 1);
 
     aseq_append_segment(&seq, "AAAAAA", 6, SEG_V, 0, 3);
     aseq_append_segment(&seq, "TTTTTT", 6, SEG_J, 0, 2);
@@ -366,12 +367,11 @@ static int test_flags_propagation(void) {
     SimConfig cfg = {0};
     airr_serialize(&seq, &rec, &cfg, NULL, &airr);
 
-    if (airr.productive) return 1;
-    if (!airr.stop_codon) return 1;
-    if (airr.vj_in_frame) return 1;
+    /* Test the flags that are still pass-through from rec → airr.
+     * `productive`, `stop_codon`, `vj_in_frame`, and `note` are now
+     * derived from the codon rail (post-T0-4), not copied from rec. */
     if (!airr.is_reverse_complement) return 1;
     if (airr.is_contaminant) return 1;
-    if (strcmp(airr.note, "Stop codon at pos 42") != 0) return 1;
 
     return 0;
 }

@@ -11,13 +11,60 @@
 
 #include "types.h"
 #include "allele.h"
+#include "rand_util.h"
 
 /* ── Trim distribution (per gene family) ──────────────────────── */
 
-typedef struct {
+typedef struct TrimDist {
     double  *probs;     /* probability for each trim amount */
     int      max_trim;  /* length of probs array            */
 } TrimDist;
+
+/* ── Per-(family, gene) trim distribution table ───────────────── */
+/* Each Allele's trim_dist_5/3 pointer is set at gdc_populate_sim_config
+ * time to point at the matching entry's `dist`. Pointers stay valid
+ * for the SimConfig's lifetime (the entries[] array is owned). */
+typedef struct {
+    char     family[GENAIRR_MAX_ALLELE_NAME];
+    char     gene[GENAIRR_MAX_ALLELE_NAME];
+    TrimDist dist;     /* probs[] is owned */
+} NamedTrimDist;
+
+typedef struct {
+    NamedTrimDist *entries;   /* owned, length = count */
+    int            count;
+} NamedTrimDistTable;
+
+/* ── NP region distribution (TdT Markov model) ────────────────── */
+/* Position-inhomogeneous order-1 Markov chain over A/C/G/T.
+ * Length is sampled from the empirical length distribution; the
+ * first base from `first_base`; subsequent bases from
+ * `transitions[pos][prev]`. When length_probs is NULL the assemble
+ * step falls back to a uniform sampler (legacy / manual SimConfig). */
+typedef struct {
+    double  *length_probs;     /* dense [0..max_length], owned, may be NULL */
+    int      max_length;
+    double   first_base[4];    /* P(A), P(C), P(G), P(T) — normalized */
+    int      n_positions;      /* rows in `transitions` */
+    double  *transitions;      /* flat [n_positions × 16], row-major
+                                  [pos × 16 + prev × 4 + next], owned */
+} NpDist;
+
+/* ── P-nucleotide length distribution ─────────────────────────── */
+/* Palindromic nucleotides (P-nucs) arise from RAG/Artemis hairpin
+ * opening before exonuclease trim. They appear at a segment end
+ * only when that end has zero exonuclease trim. The base sequence
+ * of a K-base P-nuc is the reverse-complement of the K bases at
+ * that segment edge.
+ *
+ * One shared length distribution is sampled independently at each
+ * eligible end (V 3', D 5', D 3', J 5'). Per-end distributions are
+ * a possible future extension when training data is available. When
+ * length_probs is NULL no P-nucs are emitted. */
+typedef struct {
+    double  *length_probs;     /* dense [0..max_length], owned, may be NULL */
+    int      max_length;
+} PNucDist;
 
 /* ── Feature flags ────────────────────────────────────────────── */
 
@@ -55,19 +102,31 @@ typedef struct {
     AllelePool    j_alleles;
     AllelePool    c_alleles;
 
-    /* Trim distributions — indexed by family or gene.
-     * For simplicity, we start with a single distribution per
-     * segment; family-specific distributions can be added later. */
+    /* Trim distributions — legacy single-global per segment, kept as
+     * fallback for the embedded test data path (which doesn't go
+     * through gdc_populate_sim_config) and for manual SimConfigs in
+     * C tests. Production GDC-loaded SimConfigs use the per-allele
+     * pointers (see Allele.trim_dist_5/3) which override these. */
     TrimDist      v_trim_3;
     TrimDist      d_trim_5;
     TrimDist      d_trim_3;
     TrimDist      j_trim_5;
 
-    /* NP region parameters */
-    int           np1_length_mean;
-    int           np1_length_max;
-    int           np2_length_mean;
-    int           np2_length_max;
+    /* Per-(family, gene) trim tables — populated by GDC load.
+     * Allele.trim_dist_5/3 pointers index into these tables. */
+    NamedTrimDistTable  v_trim_3_table;
+    NamedTrimDistTable  d_trim_5_table;
+    NamedTrimDistTable  d_trim_3_table;
+    NamedTrimDistTable  j_trim_5_table;
+
+    /* NP region distributions ([0]=NP1, [1]=NP2). When n_np_regions
+     * is 1 (VJ chains: kappa, lambda, TCRA, TCRG), only np[0] is used. */
+    NpDist        np[2];
+    int           n_np_regions;
+
+    /* P-nucleotide length distribution (shared across all four
+     * eligible segment ends: V 3', D 5', D 3', J 5'). */
+    PNucDist      p_nuc_dist;
 
     /* Mutation parameters */
     double        min_mutation_rate;
@@ -144,6 +203,14 @@ typedef struct {
     AlleleRestriction  d_restriction;
     AlleleRestriction  j_restriction;
     AlleleRestriction  c_restriction;
+
+    /* Per-simulator RNG. Owned externally (by GenAIRRSimulator); the
+     * SimConfig only borrows the pointer. step functions take
+     * `const SimConfig *cfg` but `cfg->rng->state` is mutable because
+     * what is const is the SimConfig fields, not the pointed-to state.
+     * Manual SimConfigs (C tests) must set this before pipeline_execute;
+     * sim_config_init initializes it to NULL. */
+    RngState     *rng;
 } SimConfig;
 
 /* ── Lifecycle ────────────────────────────────────────────────── */

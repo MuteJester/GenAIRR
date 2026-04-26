@@ -27,7 +27,7 @@ static const char PHIX_FRAGMENT[] =
     "GCGTTGAGGCTTGCGTTTATGGTACGCTGGACTTTGTGGGATACCCTCGCTTTCCTGCTCC";
 
 void step_spike_contaminants(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
-    if (rand_uniform() >= cfg->contamination_prob) return;
+    if (rng_uniform(cfg->rng) >= cfg->contamination_prob) return;
 
     TRACE("[contaminant] TRIGGERED — replacing sequence with contaminant (prob=%.4f)", cfg->contamination_prob);
 
@@ -46,12 +46,13 @@ void step_spike_contaminants(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     snprintf(rec->note, sizeof(rec->note), "contaminant");
 
     /* Generate contaminant sequence */
-    int cont_len = 300 + rand() % 200;  /* 300-500 bp */
+    int cont_len = 300 + (int)rng_range(cfg->rng, 200);  /* 300-500 bp */
 
     if (cfg->contaminant_type == 1) {
         /* phiX: random substring of the fragment */
         int phix_len = (int)strlen(PHIX_FRAGMENT);
-        int start = rand() % (phix_len > cont_len ? phix_len - cont_len : 1);
+        int start = (int)rng_range(cfg->rng,
+            (uint32_t)(phix_len > cont_len ? phix_len - cont_len : 1));
         if (start + cont_len > phix_len) cont_len = phix_len - start;
         strncpy(rec->contaminant_type, "phix", sizeof(rec->contaminant_type));
         aseq_append_segment(seq, PHIX_FRAGMENT + start, cont_len,
@@ -61,7 +62,7 @@ void step_spike_contaminants(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         /* Random nucleotides */
         char buf[512];
         if (cont_len > 511) cont_len = 511;
-        rand_nucleotides(buf, cont_len);
+        rng_nucleotides(cfg->rng, buf, cont_len);
         strncpy(rec->contaminant_type, "random", sizeof(rec->contaminant_type));
         aseq_append_segment(seq, buf, cont_len, SEG_ADAPTER, 0, -1);
         TRACE("[contaminant] type=random, length=%d", cont_len);

@@ -13,7 +13,6 @@
 #include <stdlib.h>
 
 void step_insert_indels(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
-    (void)rec;
     int len = aseq_length(seq);
     if (len < 20) return;
 
@@ -35,16 +34,26 @@ void step_insert_indels(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
             continue;
         }
 
-        if (rand_uniform() >= prob) {
+        if (rng_uniform(cfg->rng) >= prob) {
             n = next;
             continue;
         }
 
-        if (rand_uniform() < ins_weight) {
-            /* Insertion: add a random base after this node */
+        if (rng_uniform(cfg->rng) < ins_weight) {
+            /* Insertion: add a random base after this node. Pool may
+             * be exhausted on very long sequences (>= GENAIRR_MAX_SEQ_LEN
+             * nodes already allocated); aseq_insert_after returns NULL
+             * in that case. Break out — further insertions will also
+             * fail and we'd over-count rec->n_insertions. */
             static const char bases[] = "ACGT";
-            char base = bases[rand() % 4];
-            aseq_insert_after(seq, n, base, n->segment, NUC_FLAG_INDEL_INS);
+            char base = bases[rng_range(cfg->rng, 4)];
+            if (aseq_insert_after(seq, n, base, n->segment,
+                                  NUC_FLAG_INDEL_INS) == NULL) {
+                TRACE("[indels] pool exhausted at insertion; stopping "
+                      "(pool_used=%d/%d)",
+                      seq->pool_used, GENAIRR_MAX_SEQ_LEN);
+                break;
+            }
             insertions++;
         } else {
             /* Deletion: remove this node */
@@ -54,6 +63,9 @@ void step_insert_indels(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
         n = next;
     }
+
+    rec->n_insertions = insertions;
+    rec->n_deletions  = deletions;
 
     TRACE("[indels] applied %d insertions, %d deletions", insertions, deletions);
 }

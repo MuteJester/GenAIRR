@@ -11,7 +11,7 @@
 #include "genairr/trace.h"
 
 void step_reverse_complement(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
-    if (rand_uniform() >= cfg->rc_prob) return;
+    if (rng_uniform(cfg->rng) >= cfg->rc_prob) return;
 
     TRACE("[reverse_complement] applying reverse-complement (prob=%.2f, seq_len=%d)",
           cfg->rc_prob, aseq_length(seq));

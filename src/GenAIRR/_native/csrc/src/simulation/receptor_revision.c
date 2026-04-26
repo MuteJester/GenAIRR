@@ -16,18 +16,19 @@
 
 void step_receptor_revision(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     if (!rec->v_allele) return;
-    if (rand_uniform() >= cfg->revision_prob) return;
+    if (rng_uniform(cfg->rng) >= cfg->revision_prob) return;
     if (cfg->v_alleles.count < 2) return;
 
     /* Save original V allele name */
     strncpy(rec->original_v_allele_name, rec->v_allele->name,
             sizeof(rec->original_v_allele_name) - 1);
+    rec->original_v_allele_name[sizeof(rec->original_v_allele_name) - 1] = '\0';
 
     /* Pick a different V allele (different gene) */
     const Allele *new_v = NULL;
     int attempts = 0;
     while (attempts < 50) {
-        new_v = allele_pool_random(&cfg->v_alleles);
+        new_v = allele_pool_random(&cfg->v_alleles, cfg->rng);
         if (strcmp(new_v->gene, rec->v_allele->gene) != 0) break;
         new_v = NULL;
         attempts++;
@@ -37,7 +38,8 @@ void step_receptor_revision(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     /* Determine footprint length */
     int fp_min = cfg->footprint_min;
     int fp_max = cfg->footprint_max;
-    int fp_len = fp_min + rand() % (fp_max - fp_min + 1);
+    int fp_len = fp_min + (int)rng_range(cfg->rng,
+                                          (uint32_t)(fp_max - fp_min + 1));
 
     /* Count V segment length */
     int v_len = aseq_segment_length(seq, SEG_V);

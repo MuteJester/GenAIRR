@@ -60,7 +60,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    srand(42);
+    RngState bench_rng;
+    rng_seed(&bench_rng, 42, 0);
+    cfg.rng = &bench_rng;
 
     double t1 = now_sec();
 
@@ -85,7 +87,7 @@ int main(int argc, char **argv) {
 
         /* Mutate */
         S5FResult mres;
-        s5f_mutate(&s5f, &seq, &rec, &mres);
+        s5f_mutate(&s5f, &seq, &rec, &bench_rng, &mres);
 
         /* Serialize */
         airr_serialize(&seq, &rec, &cfg, &ctx, &records[success]);

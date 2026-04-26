@@ -18,7 +18,7 @@ void step_insert_ns(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
     for (Nuc *n = seq->head; n; n = n->next) {
         if (n->current == 'N') continue;
-        if (rand_uniform() >= prob) continue;
+        if (rng_uniform(cfg->rng) >= prob) continue;
 
         aseq_mutate(seq, n, 'N', NUC_FLAG_IS_N);
         count++;

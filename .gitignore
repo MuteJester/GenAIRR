@@ -15,8 +15,11 @@ __pycache__/
 # ── C build artifacts ────────────────────────────────────────
 src/GenAIRR/_native/csrc/build/
 src/GenAIRR/_native/csrc/build_profile/
+src/GenAIRR/_native/csrc/build_san/
 *.so
+*.so.*
 *.dylib
+*.dylib.*
 *.dll
 *.pyd
 *.o

@@ -208,6 +208,7 @@ def _get_airr_columns() -> list:
 _BOOL_FIELDS = {
     "productive", "stop_codon", "vj_in_frame",
     "is_reverse_complement", "is_contaminant",
+    "d_inverted", "receptor_revised",
 }
 
 _INT_FIELDS = {
@@ -220,7 +221,9 @@ _INT_FIELDS = {
     "junction_start", "junction_end", "junction_length",
     "v_trim_5", "v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5", "j_trim_3",
     "np1_length", "np2_length",
-    "n_mutations", "n_sequencing_errors", "n_pcr_errors",
+    "n_mutations", "n_insertions", "n_deletions",
+    "n_sequencing_errors", "n_pcr_errors",
+    "revision_footprint_length",
     "sequence_length",
 }
 

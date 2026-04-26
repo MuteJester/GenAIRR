@@ -312,9 +312,14 @@ static void test_populate_sim_config(void) {
     assert(cfg.v_trim_3.probs != NULL);
     assert(cfg.v_trim_3.max_trim == 10);
 
-    /* NP mean should be computed from distribution */
-    assert(cfg.np1_length_max == 20);
-    assert(cfg.np1_length_mean > 0);
+    /* NP region distributions should be copied from GdcData. The
+     * synthetic build_test_data() sets max_length=20 and uniform
+     * first_base = 0.25 each. */
+    assert(cfg.n_np_regions == 2);
+    assert(cfg.np[0].max_length == 20);
+    assert(cfg.np[0].length_probs != NULL);
+    assert(fabs(cfg.np[0].first_base[0] - 0.25) < 1e-9);
+    assert(fabs(cfg.np[0].first_base[3] - 0.25) < 1e-9);
 
     PASS("populate_sim_config");
 

@@ -129,7 +129,7 @@ void step_selection_pressure(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         RegionType region = classify_region(n->germline_pos);
         double accept = (region == REGION_CDR) ? cdr_accept : fwr_accept;
 
-        if (rand_uniform() < accept) { kept_r++; continue; }  /* accepted */
+        if (rng_uniform(cfg->rng) < accept) { kept_r++; continue; }  /* accepted */
 
         /* Revert: restore germline base */
         aseq_revert(seq, n);

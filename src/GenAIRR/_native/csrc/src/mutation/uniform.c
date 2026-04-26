@@ -29,7 +29,7 @@ void step_uniform_mutate(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
     /* Sample mutation rate */
     double rate = cfg->min_mutation_rate +
-                  rand_uniform() * (cfg->max_mutation_rate - cfg->min_mutation_rate);
+                  rng_uniform(cfg->rng) * (cfg->max_mutation_rate - cfg->min_mutation_rate);
 
     int target_mutations = (int)(rate * n_mutable + 0.5);
 
@@ -50,7 +50,7 @@ void step_uniform_mutate(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         if (remaining <= 0) break;
 
         double p = (double)(target_mutations - applied) / remaining;
-        if (rand_uniform() >= p) {
+        if (rng_uniform(cfg->rng) >= p) {
             /* Count this as a passed position even if not mutated */
             continue;
         }
@@ -58,7 +58,7 @@ void step_uniform_mutate(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         /* Mutate to a different base */
         char new_base;
         do {
-            new_base = bases[rand() % 4];
+            new_base = bases[rng_range(cfg->rng, 4)];
         } while (new_base == n->current);
 
         aseq_mutate(seq, n, new_base, NUC_FLAG_MUTATED);

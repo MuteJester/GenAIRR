@@ -17,7 +17,7 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     if (len < 10) return;
 
     /* Pick event type: 40% remove, 30% add, 30% remove+add */
-    double r = rand_uniform();
+    double r = rng_uniform(cfg->rng);
     int event;
     if (r < 0.4)      event = 1;  /* remove */
     else if (r < 0.7) event = 2;  /* add */
@@ -31,7 +31,7 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     if (event == 1 || event == 3) {
         int lo = cfg->corrupt_5_remove_min;
         int hi = cfg->corrupt_5_remove_max;
-        int amount = lo + (int)(rand_uniform() * (hi - lo + 1));
+        int amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
         if (amount > hi) amount = hi;
         if (amount >= len - 5) amount = len - 5;
         if (amount < 1) amount = 1;
@@ -46,7 +46,7 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         len = aseq_length(seq);
         int lo = cfg->corrupt_5_add_min;
         int hi = cfg->corrupt_5_add_max;
-        int amount = lo + (int)(rand_uniform() * (hi - lo + 1));
+        int amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
         if (amount > hi) amount = hi;
         if (amount > 50) amount = 50;
         if (amount < 1) amount = 1;
@@ -54,7 +54,7 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         char buf[50];
         for (int i = 0; i < amount; i++) {
             static const char bases[] = "ACGT";
-            buf[i] = bases[rand() % 4];
+            buf[i] = bases[rng_range(cfg->rng, 4)];
         }
         aseq_prepend_bases(seq, buf, amount, SEG_ADAPTER, 0);
         rec->corruption_5_add_amount = amount;

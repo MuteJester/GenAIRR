@@ -416,6 +416,147 @@ static void test_aseq_has_stop_codons(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+ * V-anchored reading frame (T0-4 regression)
+ *
+ * After 5' corruption (delete bases from head, prepend adapter at
+ * head, UMI prepend, etc.) the codon rail must continue to use V's
+ * reading frame, not seq->head's. The rail derives initial phase
+ * from V's first surviving node and its germline_pos.
+ * ═══════════════════════════════════════════════════════════════ */
+
+/* Build an assembled-style sequence with V (germline_pos 0..) and
+ * J (anchor at known V-frame phase 0) — the minimal shape the rail
+ * inspects. */
+static void build_v_then_j(ASeq *seq, const char *v_bases, int v_len,
+                           int v_anchor, const char *j_bases, int j_len,
+                           int j_anchor) {
+    aseq_init(seq);
+    aseq_append_segment(seq, v_bases, v_len, SEG_V, 0, v_anchor);
+    aseq_append_segment(seq, j_bases, j_len, SEG_J, 0, j_anchor);
+}
+
+/* Without head changes the V-anchored rail must match the legacy
+ * head-anchored rail: when V starts at index 0 with germline_pos 0,
+ * initial_phase = 0. */
+static void test_v_anchored_no_head_change(void) {
+    ASeq seq;
+    /* V len 9, anchor at 6 (codon head, %3==0).
+     * J len 6, anchor at 3 (codon head). Junction = anchor..end. */
+    build_v_then_j(&seq, "ATGTGTTGT", 9, 6, "TGGGGC", 6, 3);
+
+    aseq_build_codon_rail(&seq);
+
+    /* Phase 0 starts at head. */
+    assert(seq.head->frame_phase == 0);
+    /* V anchor (position 6) is at phase 0 (codon head). */
+    Nuc *va = aseq_find_anchor(&seq, SEG_V);
+    assert(va && va->frame_phase == 0);
+    /* J anchor (position 9+3=12) is at phase 0. */
+    Nuc *ja = aseq_find_anchor(&seq, SEG_J);
+    assert(ja && ja->frame_phase == 0);
+
+    aseq_reset(&seq);
+}
+
+/* Delete N bases (N % 3 != 0) from the head: the rebuilt rail must
+ * keep V_anchor at phase 0 (V's frame is intact, only the head
+ * changed). Pre-T0-4 the rail would re-anchor to the new head and
+ * V_anchor's phase would drift. */
+static void test_v_anchored_after_5prime_delete(void) {
+    ASeq seq;
+    build_v_then_j(&seq, "ATGTGTTGT", 9, 6, "TGGGGC", 6, 3);
+    aseq_build_codon_rail(&seq);
+    seq.v_anchor_node = aseq_find_anchor(&seq, SEG_V);
+    seq.j_anchor_node = aseq_find_anchor(&seq, SEG_J);
+
+    /* Delete 2 bases (≡ 2 mod 3) from the head. V's first surviving
+     * node now has germline_pos = 2; head's initial phase should
+     * be (2 - 0) % 3 = 2 so that V's first node lands on phase 2,
+     * and V[6] (the anchor) lands on phase (6-2) % 3 = 1... wait,
+     * we want V_anchor at phase 0. Walking from head (phase 2),
+     * positions 0,1,2,...: phases 2,0,1,2,0,1,2,0,1,...
+     *   V's first surviving node (was V[2]) at seq pos 0 → phase 2 ✓
+     *   V_anchor (was V[6]) at seq pos 4 → phase 0 ✓ */
+    aseq_delete_head_n(&seq, 2);
+
+    Nuc *va = aseq_find_anchor(&seq, SEG_V);
+    Nuc *ja = aseq_find_anchor(&seq, SEG_J);
+    assert(va && va->frame_phase == 0);
+    assert(ja && ja->frame_phase == 0);
+    assert(seq.junction_in_frame);
+
+    aseq_reset(&seq);
+}
+
+/* Prepend N adapter bases (N % 3 != 0): rebuilt rail keeps V_anchor
+ * at phase 0. */
+static void test_v_anchored_after_5prime_prepend(void) {
+    ASeq seq;
+    build_v_then_j(&seq, "ATGTGTTGT", 9, 6, "TGGGGC", 6, 3);
+    aseq_build_codon_rail(&seq);
+    seq.v_anchor_node = aseq_find_anchor(&seq, SEG_V);
+    seq.j_anchor_node = aseq_find_anchor(&seq, SEG_J);
+
+    /* Prepend 2 adapter bases. V_anchor's seq position becomes 6+2=8;
+     * head's initial phase must be such that V[0] (seq pos 2) lands
+     * on phase 0 → head phase = (0 - 2) % 3 = 1. V_anchor at seq
+     * pos 8 → phase (1 + 8) % 3 = 0. ✓ */
+    aseq_prepend_bases(&seq, "AC", 2, SEG_ADAPTER, 0);
+
+    Nuc *va = aseq_find_anchor(&seq, SEG_V);
+    Nuc *ja = aseq_find_anchor(&seq, SEG_J);
+    assert(va && va->frame_phase == 0);
+    assert(ja && ja->frame_phase == 0);
+    assert(seq.junction_in_frame);
+
+    aseq_reset(&seq);
+}
+
+/* Stop codons in the 5' adapter must NOT be counted toward
+ * n_stop_codons (they are sequencing artifacts, not biology). */
+static void test_stop_codon_in_adapter_ignored(void) {
+    ASeq seq;
+    /* V starts with ATG (start codon, no stops). Anchor at 6. */
+    build_v_then_j(&seq, "ATGGCAGCA", 9, 6, "TGGGGC", 6, 3);
+    aseq_build_codon_rail(&seq);
+    seq.v_anchor_node = aseq_find_anchor(&seq, SEG_V);
+    seq.j_anchor_node = aseq_find_anchor(&seq, SEG_J);
+
+    int stops_pre = seq.n_stop_codons;
+
+    /* Prepend 3 adapter bases that translate to a stop codon (TAA).
+     * Whatever frame the adapter ends up in, if a TAA-style codon
+     * lands on a phase-0 SEG_ADAPTER node it must NOT bump
+     * n_stop_codons. */
+    aseq_prepend_bases(&seq, "TAA", 3, SEG_ADAPTER, 0);
+
+    /* V's first node is now at seq pos 3, germline_pos 0 → phase 0.
+     * Head's initial phase = (0 - 3) % 3 = 0. So adapter[0..2]
+     * are at phases 0,1,2 — adapter[0] is a phase-0 codon head. */
+    int stops_post = seq.n_stop_codons;
+    assert(stops_post == stops_pre);  /* adapter stop ignored */
+
+    aseq_reset(&seq);
+}
+
+/* When V is entirely missing (no SEG_V nodes), the rail falls back
+ * to phase 0 from head and aseq_is_productive returns false because
+ * v_anchor_node is NULL. */
+static void test_no_v_falls_back_not_productive(void) {
+    ASeq seq;
+    aseq_init(&seq);
+    /* Pure NP and J — no V at all. */
+    aseq_append_segment(&seq, "TGGGGC", 6, SEG_J, 0, 3);
+    aseq_build_codon_rail(&seq);
+
+    /* No V → no anchor cached → not productive. */
+    assert(seq.v_anchor_node == NULL);
+    assert(!aseq_is_productive(&seq));
+
+    aseq_reset(&seq);
+}
+
+/* ═══════════════════════════════════════════════════════════════
  * Main
  * ═══════════════════════════════════════════════════════════════ */
 
@@ -459,6 +600,13 @@ int main(void) {
     printf("\nMulti-segment:\n");
     RUN_TEST(test_codon_rail_multi_segment);
     RUN_TEST(test_aseq_has_stop_codons);
+
+    printf("\nV-anchored frame (T0-4):\n");
+    RUN_TEST(test_v_anchored_no_head_change);
+    RUN_TEST(test_v_anchored_after_5prime_delete);
+    RUN_TEST(test_v_anchored_after_5prime_prepend);
+    RUN_TEST(test_stop_codon_in_adapter_ignored);
+    RUN_TEST(test_no_v_falls_back_not_productive);
 
     printf("\n%d/%d tests passed.\n", tests_passed, tests_total);
     return tests_passed == tests_total ? 0 : 1;

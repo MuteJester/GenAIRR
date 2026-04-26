@@ -6,6 +6,7 @@
  */
 
 #include "genairr/allele.h"
+#include "genairr/rand_util.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,23 +39,24 @@ void allele_pool_add(AllelePool *pool, const Allele *allele) {
     pool->count++;
 }
 
-const Allele *allele_pool_random(const AllelePool *pool) {
+const Allele *allele_pool_random(const AllelePool *pool, struct RngState *rng) {
     if (pool->count == 0) return NULL;
-    int idx = rand() % pool->count;
+    int idx = (int)rng_range(rng, (uint32_t)pool->count);
     return &pool->alleles[idx];
 }
 
 const Allele *allele_pool_pick(const AllelePool *pool,
-                                const AlleleRestriction *restriction) {
+                                const AlleleRestriction *restriction,
+                                struct RngState *rng) {
     if (pool->count == 0) return NULL;
 
     if (restriction && restriction->active && restriction->count > 0) {
-        int pick = rand() % restriction->count;
+        int pick = (int)rng_range(rng, (uint32_t)restriction->count);
         int idx = restriction->indices[pick];
         if (idx >= 0 && idx < pool->count) {
             return &pool->alleles[idx];
         }
     }
 
-    return allele_pool_random(pool);
+    return allele_pool_random(pool, rng);
 }

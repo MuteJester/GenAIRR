@@ -21,6 +21,9 @@
 #include "pipeline.h"
 #include <stdbool.h>
 
+/* Forward decl for the per-simulator RNG (defined in rand_util.h). */
+struct RngState;
+
 /* ── 5-mer integer encoding ──────────────────────────────────── */
 
 #define S5F_KMER_SPACE  3125   /* 5^5 */
@@ -167,6 +170,6 @@ typedef struct {
  * @param result Output: mutation details.
  */
 void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
-                 S5FResult *result);
+                 struct RngState *rng, S5FResult *result);
 
 #endif /* GENAIRR_S5F_H */

@@ -15,7 +15,7 @@
 
 void step_d_inversion(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     if (!rec->d_allele) return;
-    if (rand_uniform() >= cfg->d_inversion_prob) return;
+    if (rng_uniform(cfg->rng) >= cfg->d_inversion_prob) return;
 
     Nuc *first = seq->seg_first[SEG_D];
     Nuc *last  = seq->seg_last[SEG_D];

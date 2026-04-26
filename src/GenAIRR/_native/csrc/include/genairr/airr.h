@@ -87,11 +87,27 @@ typedef struct {
     char    germline_alignment[GENAIRR_MAX_SEQ_LEN];
     int     sequence_length;
 
-    /* ── Allele calls (comma-separated strings) ───────────────── */
+    /* ── Allele calls (comma-separated strings) ───────────────── *
+     * `v_call` / `d_call` / `j_call` are god-aligner-derived
+     * (allele(s) whose germline best matches the survived sequence
+     * — what an external aligner would report). Under heavy SHM
+     * these can drift away from the truly-sampled allele.
+     *
+     * `v_call_true` / etc. expose the simulator's ground truth:
+     * the name of the allele actually sampled at rearrangement.
+     * Use these for AIRR self-consistency checks (seq + mutations
+     * must reconstruct the *true* germline). */
     char    v_call[AIRR_MAX_CALLS];
     char    d_call[AIRR_MAX_CALLS];
     char    j_call[AIRR_MAX_CALLS];
     char    c_call[AIRR_MAX_CALLS];
+    char    v_call_true[GENAIRR_MAX_ALLELE_NAME];
+    char    d_call_true[GENAIRR_MAX_ALLELE_NAME];
+    char    j_call_true[GENAIRR_MAX_ALLELE_NAME];
+    bool    d_inverted;
+    bool    receptor_revised;
+    int     revision_footprint_length;
+    char    original_v_allele_name[GENAIRR_MAX_ALLELE_NAME];
 
     /* ── Segment positions (0-based, in assembled sequence) ───── */
     int     v_sequence_start;

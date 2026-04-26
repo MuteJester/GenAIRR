@@ -156,6 +156,7 @@ void aseq_retranslate_codon(ASeq *seq, Nuc *ch) {
     if (!ch || ch->frame_phase != 0) return;
 
     char old_aa = ch->amino_acid;
+    bool in_coding = nuc_is_coding_segment(ch);
 
     Nuc *n2 = ch->next;
     Nuc *n3 = n2 ? n2->next : NULL;
@@ -167,11 +168,14 @@ void aseq_retranslate_codon(ASeq *seq, Nuc *ch) {
         ch->amino_acid = '?';
     }
 
-    /* Update stop codon aggregate */
-    if (old_aa == '*' && ch->amino_acid != '*') {
-        seq->n_stop_codons--;
-    } else if (old_aa != '*' && ch->amino_acid == '*') {
-        seq->n_stop_codons++;
+    /* Update stop-codon aggregate only for receptor-coding codons.
+     * Stops in non-coding prefixes/suffixes must not affect productivity. */
+    if (in_coding) {
+        if (old_aa == '*' && ch->amino_acid != '*') {
+            seq->n_stop_codons--;
+        } else if (old_aa != '*' && ch->amino_acid == '*') {
+            seq->n_stop_codons++;
+        }
     }
 
     /* ── Update per-nucleotide productive flags ──────────────── */
@@ -204,8 +208,37 @@ void aseq_build_codon_rail(ASeq *seq) {
     seq->n_codons = 0;
     seq->n_stop_codons = 0;
 
-    /* Assign frame phases: 0, 1, 2, 0, 1, 2, ... */
-    int phase = 0;
+    /* ── Determine V's reading frame ──────────────────────────── *
+     * The reading frame is anchored to V, not to seq->head: any
+     * pre-V nodes (5' adapter, UMI, contaminant prefixes) precede
+     * V's coding frame and must be assigned phases that *respect*
+     * V's frame, not impose a new one. We find V's first surviving
+     * node with a valid germline_pos, take germline_pos % 3 as that
+     * node's required phase, and compute the head's initial phase
+     * by walking backward.
+     *
+     * If no V is present (e.g. V was entirely deleted by 5'
+     * corruption), fall back to phase 0 from head — productivity
+     * checks downstream will fail because v_anchor_node is NULL. */
+    Nuc *v_ref = NULL;
+    int  v_ref_seq_pos = 0;
+    int  seq_pos = 0;
+    for (Nuc *n = seq->head; n; n = n->next, seq_pos++) {
+        if (n->segment == SEG_V && n->germline_pos != 0xFFFF) {
+            v_ref = n;
+            v_ref_seq_pos = seq_pos;
+            break;
+        }
+    }
+
+    int initial_phase = 0;
+    if (v_ref) {
+        int target = v_ref->germline_pos % 3;
+        initial_phase = ((target - v_ref_seq_pos) % 3 + 3) % 3;
+    }
+
+    /* Assign frame phases starting from initial_phase. */
+    int phase = initial_phase;
     Nuc *last_codon_head = NULL;
 
     for (Nuc *n = seq->head; n; n = n->next) {
@@ -237,8 +270,14 @@ void aseq_build_codon_rail(ASeq *seq) {
                 /* Check for productivity violations */
                 bool violation = false;
                 if (n->amino_acid == '*') {
-                    seq->n_stop_codons++;
-                    violation = true;
+                    /* Only count stop codons in the receptor's coding
+                     * region. Stops in 5'/3' adapter, UMI, and other
+                     * non-coding bases are sequencing artifacts and do
+                     * not affect productivity. */
+                    if (nuc_is_coding_segment(n)) {
+                        seq->n_stop_codons++;
+                        violation = true;
+                    }
                 }
                 /* Anchor codon checks */
                 if (n->flags & NUC_FLAG_ANCHOR) {
@@ -309,7 +348,8 @@ static void codon_rail_propagate_from(ASeq *seq, Nuc *start) {
             last_codon_head = n;
             n->codon_next = NULL;
 
-            if (n->amino_acid == '*') seq->n_stop_codons++;
+            if (n->amino_acid == '*' && nuc_is_coding_segment(n))
+                seq->n_stop_codons++;
             seq->n_codons++;
         }
     }
@@ -334,8 +374,10 @@ static void codon_rail_propagate_from(ASeq *seq, Nuc *start) {
 
                 bool violation = false;
                 if (n->amino_acid == '*') {
-                    seq->n_stop_codons++;
-                    violation = true;
+                    if (nuc_is_coding_segment(n)) {
+                        seq->n_stop_codons++;
+                        violation = true;
+                    }
                 }
                 if (n->flags & NUC_FLAG_ANCHOR) {
                     if (n->segment == SEG_V && n->amino_acid != 'C')
@@ -726,6 +768,9 @@ void aseq_reverse_complement(ASeq *seq) {
 
         /* Complement the current base */
         cur->current = complement(cur->current);
+        if (cur->germline != '\0') {
+            cur->germline = complement(cur->germline);
+        }
 
         cur = tmp;  /* advance (was next, now prev) */
     }
@@ -813,18 +858,25 @@ static void aseq_update_junction_in_frame(ASeq *seq) {
     Nuc *v_anchor = seq->v_anchor_node;
     Nuc *j_anchor = seq->j_anchor_node;
 
-    if (!v_anchor || !j_anchor) {
+    if (!v_anchor || !j_anchor || !seq->codon_rail_valid) {
         seq->junction_in_frame = false;
         return;
     }
 
+    /* Phase-based frame check: V's reading frame is anchored on V's
+     * germline position (see aseq_build_codon_rail). Both anchors
+     * must sit on a codon head (frame_phase == 0) in V's frame, and
+     * the junction span must be a multiple of 3. This stays correct
+     * across head/tail mutations (5'/3' corruption, UMI prepend,
+     * adapter add) which only shift sequence positions but not
+     * V's biological reading frame. */
     int jstart = aseq_position_of(seq, v_anchor);
     int jend   = aseq_position_of(seq, j_anchor) + 3;
     int jlen   = jend - jstart;
 
-    seq->junction_in_frame = (jstart % 3 == 0) &&
-                             (jend   % 3 == 0) &&
-                             (jlen   % 3 == 0);
+    seq->junction_in_frame = (v_anchor->frame_phase == 0) &&
+                             (j_anchor->frame_phase == 0) &&
+                             (jlen % 3 == 0);
 }
 
 bool aseq_is_productive(const ASeq *seq) {

@@ -233,7 +233,10 @@ def write_c_files(config_name, dc, s5f_mutability, s5f_substitution, out_dir):
                 seg = segment_to_c(a["segment"])
                 f.write(f'    {{ "{name}", "{gene}", "{family}",\n')
                 f.write(f'      "{a["seq"]}",\n')
-                f.write(f'      {a["length"]}, {a["anchor"]}, {seg} }},\n')
+                # trim_dist_5 / trim_dist_3 = NULL → trim.c falls back to
+                # the legacy cfg->v_trim_3 etc. globals installed below.
+                f.write(f'      {a["length"]}, {a["anchor"]}, {seg},\n')
+                f.write(f'      NULL, NULL }},\n')
             f.write("};\n\n")
 
         write_alleles(c, v_alleles, "v_alleles")
@@ -358,9 +361,12 @@ def write_c_files(config_name, dc, s5f_mutability, s5f_substitution, out_dir):
             c.write(f"        memcpy(cfg->{field}.probs, {var}, {var}_len * sizeof(double));\n")
             c.write(f"    }}\n")
 
-        # NP parameters
-        c.write(f"\n    cfg->np1_length_max = {np1_max};\n")
-        c.write(f"    cfg->np2_length_max = {np2_max};\n")
+        # NP parameters: cfg->np[i] is zero-initialized, so the
+        # assemble step falls back to its uniform sampler. Full
+        # empirical Markov data is only available via GDC.
+        # (np1_length_probs / np2_length_probs static arrays are
+        # emitted above for forward compatibility but are unused
+        # until this generator wires them into cfg->np[i].)
 
         c.write("}\n\n")
 
