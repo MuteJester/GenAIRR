@@ -24,21 +24,24 @@ void step_corrupt_3_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     TRACE("[corrupt_3'] event=%s, seq_len=%d",
           event == 1 ? "remove" : event == 2 ? "add" : "remove+add", len);
 
-    /* Remove from 3' end */
+    /* Remove from 3' end. Respects min=max=0 as "no-op" — see
+     * corrupt_5_prime.c for the same fix rationale (T1-3). */
     if (event == 1 || event == 3) {
         int lo = cfg->corrupt_3_remove_min;
         int hi = cfg->corrupt_3_remove_max;
         int amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
         if (amount > hi) amount = hi;
         if (amount >= len - 5) amount = len - 5;
-        if (amount < 1) amount = 1;
+        if (amount < 0) amount = 0;
 
-        aseq_delete_tail_n(seq, amount);
+        if (amount > 0) {
+            aseq_delete_tail_n(seq, amount);
+        }
         rec->corruption_3_remove_amount = amount;
         TRACE("[corrupt_3'] removed %d bases from 3' end", amount);
     }
 
-    /* Add random bases at 3' end */
+    /* Add random bases at 3' end. */
     if (event == 2 || event == 3) {
         len = aseq_length(seq);
         int lo = cfg->corrupt_3_add_min;
@@ -46,14 +49,16 @@ void step_corrupt_3_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         int amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
         if (amount > hi) amount = hi;
         if (amount > 50) amount = 50;
-        if (amount < 1) amount = 1;
+        if (amount < 0) amount = 0;
 
-        char buf[50];
-        for (int i = 0; i < amount; i++) {
-            static const char bases[] = "ACGT";
-            buf[i] = bases[rng_range(cfg->rng, 4)];
+        if (amount > 0) {
+            char buf[50];
+            for (int i = 0; i < amount; i++) {
+                static const char bases[] = "ACGT";
+                buf[i] = bases[rng_range(cfg->rng, 4)];
+            }
+            aseq_append_bases(seq, buf, amount, SEG_ADAPTER, 0);
         }
-        aseq_append_bases(seq, buf, amount, SEG_ADAPTER, 0);
         rec->corruption_3_add_amount = amount;
         TRACE("[corrupt_3'] added %d random bases at 3' end", amount);
     }

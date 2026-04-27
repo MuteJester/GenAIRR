@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.14)
-project(genairr-c VERSION 0.1.0 LANGUAGES C)
+# Keep this VERSION in sync with `GENAIRR_C_VERSION_STRING` in
+# include/genairr/genairr.h and the Python package version in
+# setup.py. _load_lib() in src/GenAIRR/_native/__init__.py asserts
+# the C library version matches Python at import time (T1-12).
+project(genairr-c VERSION 1.0.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -79,17 +83,18 @@ set(LIB_SOURCES
     src/core/functionality.c
     src/io/gdc_write.c
     src/io/gdc_read.c
+    src/api/genairr_api.c
 )
 
 add_library(genairr STATIC ${LIB_SOURCES})
 target_include_directories(genairr PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
 # ── Shared library: libgenairr.so / .dylib / .dll (Python bindings) ─
-set(API_SOURCES
-    src/api/genairr_api.c
-)
+# Note: genairr_api.c is already in LIB_SOURCES (so test executables
+# can call the API). The shared lib reuses the same source list — no
+# duplicate symbols since each library is built independently.
 
-add_library(genairr_shared SHARED ${LIB_SOURCES} ${API_SOURCES})
+add_library(genairr_shared SHARED ${LIB_SOURCES})
 set_target_properties(genairr_shared PROPERTIES
     OUTPUT_NAME genairr
     POSITION_INDEPENDENT_CODE ON

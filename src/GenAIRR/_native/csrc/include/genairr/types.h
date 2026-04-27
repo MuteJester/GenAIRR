@@ -38,7 +38,34 @@ typedef enum {
     NUC_FLAG_IS_N         = 1 << 5,   /* corrupted to ambiguous N       */
     NUC_FLAG_ANCHOR       = 1 << 6,   /* V-cys or J-trp/gly anchor     */
     NUC_FLAG_INDEL_INS    = 1 << 7,   /* inserted by indel operation    */
+    NUC_FLAG_JUNCTION     = 1 << 8,   /* part of the junction region    */
 } NucFlags;
+
+/* ── Productivity filter mode ─────────────────────────────────── */
+
+/**
+ * Filter mode for which V(D)J rearrangements appear in the output.
+ *
+ *   PRODUCTIVITY_MIXED               (= 0, default after memset)
+ *       No filtering. Pure V(D)J recombination output —
+ *       biologically faithful. ~22.8% productive on human IGH
+ *       (T1-15: 33% in-frame × ~68% stop-free).
+ *   PRODUCTIVITY_PRODUCTIVE_ONLY     (= 1)
+ *       Retry rearrangement (up to max_productive_attempts) until
+ *       rec.productive == true. T2-16 caveat: SHM runs after the
+ *       retry boundary and may flip individual records.
+ *   PRODUCTIVITY_NON_PRODUCTIVE_ONLY (= 2)
+ *       Symmetric — retry until rec.productive == false. Useful
+ *       for negative training data and out-of-frame statistics.
+ *
+ * Mirrors GenAIRR.Productivity in Python; integer values stay
+ * stable across the ABI for safe ctypes passthrough.
+ */
+typedef enum {
+    PRODUCTIVITY_MIXED               = 0,
+    PRODUCTIVITY_PRODUCTIVE_ONLY     = 1,
+    PRODUCTIVITY_NON_PRODUCTIVE_ONLY = 2,
+} ProductivityMode;
 
 /* ── Chain type ───────────────────────────────────────────────── */
 

@@ -244,6 +244,7 @@ static int test_junction_from_anchors(void) {
     aseq_append_segment(&seq, "AAAAACCCCC", 10, SEG_V, 0, 4);
     aseq_append_np(&seq, "AT", 2, SEG_NP1, NUC_FLAG_N_NUCLEOTIDE);
     aseq_append_segment(&seq, "GGGTTTTTT", 9, SEG_J, 0, 2);
+    aseq_mark_junction(&seq);   /* tests build seq directly; mark like step_assemble does */
 
     AirrPositions pos;
     airr_derive_positions(&seq, &rec, &pos);
@@ -286,6 +287,7 @@ static int test_positions_after_indel(void) {
     aseq_append_segment(&seq, "AAAAAA", 6, SEG_V, 0, 3);
     aseq_append_np(&seq, "CC", 2, SEG_NP1, NUC_FLAG_N_NUCLEOTIDE);
     aseq_append_segment(&seq, "TTTTTT", 6, SEG_J, 0, 2);
+    aseq_mark_junction(&seq);
 
     /* Insert an indel in V segment — this would break Python's position tracking */
     Nuc *v_third = seq.head->next->next;

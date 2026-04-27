@@ -140,7 +140,10 @@ def narrate(experiment, *, seed: int = 42, color: bool = True) -> str:
     Example::
 
         from GenAIRR import Experiment, narrate
-        exp = Experiment.on("human_igh").somatic_hypermutation(min_rate=0.02, max_rate=0.08).using_s5f()
+        from GenAIRR.ops import rate, model
+
+        exp = (Experiment.on("human_igh")
+               .mutate(rate(0.02, 0.08), model("s5f")))
         print(narrate(exp, seed=42))
     """
     # Compile a one-shot simulator from the Experiment

@@ -1,17 +1,22 @@
 """
-Simulation step descriptors — lightweight parameter holders.
+Simulation step descriptors — internal IR for the clause→step compiler.
 
 Each step maps directly to a C pipeline feature flag and its
-associated parameters. Steps are composed via the Experiment DSL.
+associated parameters. **Steps are not the user API**: pass clauses
+from :mod:`GenAIRR.ops` to the Experiment phase methods (``.mutate``,
+``.sequence``, ``.observe``, etc.) and the compiler in
+``protocol._clauses_to_steps`` produces the matching Step descriptors
+internally.
 
 Example::
 
-    from GenAIRR import Experiment
+    from GenAIRR import Experiment, Productivity
+    from GenAIRR.ops import rate, model
 
     result = (
         Experiment.on("human_igh")
-        .somatic_hypermutation(min_rate=0.01, max_rate=0.05)
-        .run(n=1000, seed=42, productive=True)
+        .mutate(rate(0.01, 0.05), model("s5f"))
+        .run(n=1000, seed=42, productivity=Productivity.PRODUCTIVE_ONLY)
     )
 """
 
@@ -116,10 +121,20 @@ class SimulateCSR(Step):
 
 @dataclass
 class SelectionPressure(Step):
-    """Antigen-driven selection pressure after SHM."""
+    """Antigen-driven selection pressure after SHM.
+
+    Walks every R-mutation in the coding region (V/NP1/D/NP2/J) and
+    accepts/reverts each based on its region:
+      - Anchor codon (V Cys, J W/F): kept with anchor_r_acceptance
+        (default 0 — anchor disruption breaks the V/J fold).
+      - CDR (CDR1/CDR2/CDR3 incl. NP1/D/NP2): kept with cdr_r_acceptance.
+      - FWR (FR1/FR2/FR3/FR4): kept with fwr_r_acceptance.
+    Anchorless V or J alleles are skipped on that segment.
+    """
     strength: float = 0.5
     cdr_r_acceptance: float = 0.85
     fwr_r_acceptance: float = 0.40
+    anchor_r_acceptance: float = 0.0
 
     _feature: str = field(default="selection_pressure", init=False, repr=False)
     _category: str = field(default="simulation", init=False, repr=False)
@@ -129,6 +144,7 @@ class SelectionPressure(Step):
         sim.set_param("selection_strength", self.strength)
         sim.set_param("cdr_r_acceptance", self.cdr_r_acceptance)
         sim.set_param("fwr_r_acceptance", self.fwr_r_acceptance)
+        sim.set_param("anchor_r_acceptance", self.anchor_r_acceptance)
 
 
 @dataclass

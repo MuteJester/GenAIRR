@@ -93,11 +93,16 @@ static int init_from_gdc(GenAIRRSimulator *sim) {
 static void compile(GenAIRRSimulator *sim) {
     if (sim->compiled) return;
 
-    /* Sync S5F params with SimConfig mutation rates */
+    /* Sync S5F params with SimConfig mutation rates. The S5F engine's
+     * `productive` flag means "avoid creating stop codons during SHM"
+     * — only relevant when we've already retried to keep the
+     * rearrangement productive. NON_PRODUCTIVE_ONLY and MIXED don't
+     * impose any post-SHM constraint. */
     if (sim->s5f_loaded && sim->cfg.features.mutate) {
         sim->s5f.min_mutation_rate = sim->cfg.min_mutation_rate;
         sim->s5f.max_mutation_rate = sim->cfg.max_mutation_rate;
-        sim->s5f.productive = sim->cfg.features.productive;
+        sim->s5f.productive =
+            (sim->cfg.features.productivity == PRODUCTIVITY_PRODUCTIVE_ONLY);
     }
 
     sim->pipeline = pipeline_build(&sim->cfg);
@@ -153,8 +158,19 @@ GenAIRRSimulator *genairr_create_from_memory(const void *gdc_bytes,
         GENAIRR_UNLINK(tmppath);
         return NULL;
     }
-    fwrite(gdc_bytes, 1, gdc_len, fp);
-    fclose(fp);
+
+    /* Write the GDC bytes. Both fwrite (short write on disk-full /
+     * I/O error) and fclose (buffered-data flush failure) must be
+     * checked — silently writing a truncated file would make
+     * genairr_create read corrupted data, and the caller would see
+     * NULL with no clue why. fclose runs unconditionally (we still
+     * own the descriptor) and its return is captured separately. */
+    size_t written  = fwrite(gdc_bytes, 1, (size_t)gdc_len, fp);
+    int    closeerr = fclose(fp);
+    if (written != (size_t)gdc_len || closeerr != 0) {
+        GENAIRR_UNLINK(tmppath);
+        return NULL;
+    }
 
     GenAIRRSimulator *sim = genairr_create(tmppath);
     GENAIRR_UNLINK(tmppath);
@@ -184,7 +200,13 @@ int genairr_set_feature(GenAIRRSimulator *sim,
     SimFeatures *f = &sim->cfg.features;
     bool val = (enabled != 0);
 
-    if      (strcmp(name, "productive") == 0)         f->productive = val;
+    if      (strcmp(name, "productive") == 0)
+        /* Back-compat: legacy bool form maps to the enum. True →
+         * PRODUCTIVE_ONLY, False → MIXED. Callers that want
+         * NON_PRODUCTIVE_ONLY must use genairr_set_param_i32
+         * ("productivity_mode", PRODUCTIVITY_NON_PRODUCTIVE_ONLY). */
+        f->productivity = val ? PRODUCTIVITY_PRODUCTIVE_ONLY
+                              : PRODUCTIVITY_MIXED;
     else if (strcmp(name, "mutate") == 0)             f->mutate = val;
     else if (strcmp(name, "selection_pressure") == 0) f->selection_pressure = val;
     else if (strcmp(name, "csr") == 0)                f->csr = val;
@@ -221,6 +243,7 @@ int genairr_set_param_f64(GenAIRRSimulator *sim,
     else if (strcmp(name, "selection_strength") == 0)   c->selection_strength = value;
     else if (strcmp(name, "cdr_r_acceptance") == 0)     c->cdr_r_acceptance = value;
     else if (strcmp(name, "fwr_r_acceptance") == 0)     c->fwr_r_acceptance = value;
+    else if (strcmp(name, "anchor_r_acceptance") == 0)  c->anchor_r_acceptance = value;
     else if (strcmp(name, "d_inversion_prob") == 0)     c->d_inversion_prob = value;
     else if (strcmp(name, "revision_prob") == 0)        c->revision_prob = value;
     else if (strcmp(name, "base_error_rate") == 0)      c->base_error_rate = value;
@@ -254,6 +277,18 @@ int genairr_set_param_i32(GenAIRRSimulator *sim,
     else if (strcmp(name, "min_run_length") == 0)          c->min_run_length = value;
     else if (strcmp(name, "primer_mask_length") == 0)      c->primer_mask_length = value;
     else if (strcmp(name, "max_productive_attempts") == 0) c->max_productive_attempts = value;
+    else if (strcmp(name, "productivity_mode") == 0) {
+        /* Validate against the enum range; out-of-range values fall
+         * back to MIXED (a benign default) rather than reinterpret-
+         * casting an arbitrary integer to ProductivityMode. */
+        if (value == PRODUCTIVITY_PRODUCTIVE_ONLY ||
+            value == PRODUCTIVITY_NON_PRODUCTIVE_ONLY ||
+            value == PRODUCTIVITY_MIXED) {
+            c->features.productivity = (ProductivityMode)value;
+        } else {
+            return -1;
+        }
+    }
     else if (strcmp(name, "contaminant_type") == 0)        c->contaminant_type = value;
     else if (strcmp(name, "corrupt_5_remove_min") == 0)   c->corrupt_5_remove_min = value;
     else if (strcmp(name, "corrupt_5_remove_max") == 0)   c->corrupt_5_remove_max = value;
@@ -373,10 +408,12 @@ int genairr_simulate(GenAIRRSimulator *sim, int n,
     double base_max = sim->s5f.max_mutation_rate;
 
     for (int i = 0; i < n; i++) {
-        pipeline_execute(&sim->pipeline, &sim->cfg, &seq, &rec,
-                         0, NULL, NULL);
+        /* Execute biological assembly/simulation steps first
+         * (everything before mutation-dependent phases). */
+        pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
+                                      0, NULL, NULL);
 
-        /* S5F mutation (runs after pipeline, before AIRR serialization) */
+        /* S5F mutation (runs between pre- and post-mutation stages). */
         if (use_s5f) {
             if (use_csr) {
                 /* Adjust rates per isotype, then restore */
@@ -391,6 +428,10 @@ int genairr_simulate(GenAIRRSimulator *sim, int n,
                 sim->s5f.max_mutation_rate = base_max;
             }
         }
+
+        /* Execute post-mutation stages (selection + corruption). */
+        pipeline_execute_post_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
+                                       0, NULL, NULL);
 
         airr_serialize(&seq, &rec, &sim->cfg, &sim->corr, &airr);
         airr_write_tsv_row(fp, &airr);
@@ -427,8 +468,8 @@ int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
     double base_max = sim->s5f.max_mutation_rate;
 
     for (int i = 0; i < n; i++) {
-        pipeline_execute(&sim->pipeline, &sim->cfg, &seq, &rec,
-                         0, NULL, NULL);
+        pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
+                                      0, NULL, NULL);
 
         if (use_s5f) {
             if (use_csr) {
@@ -443,6 +484,9 @@ int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
                 sim->s5f.max_mutation_rate = base_max;
             }
         }
+
+        pipeline_execute_post_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
+                                       0, NULL, NULL);
 
         airr_serialize(&seq, &rec, &sim->cfg, &sim->corr, &airr);
         airr_write_tsv_row(fp, &airr);
@@ -504,14 +548,17 @@ int genairr_simulate_one(GenAIRRSimulator *sim,
     /* Reset snapshot state */
     sim->n_snapshots = 0;
 
-    TRACE("[begin] simulate_one: chain=%d, s5f=%s, csr=%s, productive=%s",
+    static const char *const PROD_NAMES[] = {
+        "mixed", "productive_only", "non_productive_only"
+    };
+    TRACE("[begin] simulate_one: chain=%d, s5f=%s, csr=%s, productivity=%s",
           sim->cfg.chain_type,
           use_s5f ? "yes" : "no",
           use_csr ? "yes" : "no",
-          sim->cfg.features.productive ? "yes" : "no");
+          PROD_NAMES[(int)sim->cfg.features.productivity]);
 
-    pipeline_execute(&sim->pipeline, &sim->cfg, &seq, &rec,
-                     sim->hook_mask, sim->snapshots, &sim->n_snapshots);
+    pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
+                                  sim->hook_mask, sim->snapshots, &sim->n_snapshots);
 
     if (use_s5f) {
         double base_min = sim->s5f.min_mutation_rate;
@@ -532,11 +579,14 @@ int genairr_simulate_one(GenAIRRSimulator *sim,
         }
     }
 
-    /* Post-mutation hook (S5F runs outside pipeline) */
+    /* Post-mutation hook (S5F runs outside pipeline). */
     if (sim->hook_mask & (1u << HOOK_POST_MUTATION)) {
         take_snapshot(sim->snapshots, &sim->n_snapshots,
                       HOOK_POST_MUTATION, &seq, &rec);
     }
+
+    pipeline_execute_post_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
+                                   sim->hook_mask, sim->snapshots, &sim->n_snapshots);
 
     TRACE("[serialize] begin AIRR serialization");
     airr_serialize(&seq, &rec, &sim->cfg, &sim->corr, &airr);

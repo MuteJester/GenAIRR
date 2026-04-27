@@ -95,6 +95,7 @@ Pipeline pipeline_build(const SimConfig *cfg) {
     Pipeline p;
     memset(&p, 0, sizeof(p));
     p.retry_boundary = -1;
+    p.post_mutation_start = 0;
     /* Initialize all hook_ids to -1 (no hook) */
     for (int j = 0; j < GENAIRR_MAX_PIPELINE; j++)
         p.hook_ids[j] = -1;
@@ -116,7 +117,10 @@ Pipeline pipeline_build(const SimConfig *cfg) {
     add_step(&p, &i, step_assemble, HOOK_POST_ASSEMBLY);
     add_step(&p, &i, step_assess_functionality, HOOK_POST_FUNCTIONALITY);
 
-    if (cfg->features.productive) {
+    /* PRODUCTIVITY_MIXED disables retry (single rearrangement attempt).
+     * PRODUCTIVE_ONLY / NON_PRODUCTIVE_ONLY both retry, with the
+     * direction selected at execution time in pipeline_execute_pre_mutation. */
+    if (cfg->features.productivity != PRODUCTIVITY_MIXED) {
         p.retry_boundary = i - 1;
     }
 
@@ -131,12 +135,14 @@ Pipeline pipeline_build(const SimConfig *cfg) {
     }
 
     /* ── Phase 3: Mutation ───────────────────────────────────── */
-    /* S5F mutation is handled externally (s5f_mutate() called by
-     * the user after pipeline_execute). For uniform mutation, we
-     * register the step directly. Mutate feature flag is checked
-     * externally — uniform_mutate uses the same min/max rates. */
+    /* S5F mutation is handled externally by the API, which executes
+     * pre-mutation steps, applies S5F, then executes post-mutation
+     * steps. For uniform mutation, we register the step directly.
+     * Mutate feature flag is checked externally — uniform_mutate
+     * uses the same min/max rates. */
 
     /* ── Phase 4: Post-mutation simulation ───────────────────── */
+    p.post_mutation_start = i;
 
     if (cfg->features.selection_pressure) {
         add_step(&p, &i, step_selection_pressure, HOOK_POST_SELECTION);
@@ -252,28 +258,46 @@ static inline void check_hook(const Pipeline *p, int step_idx,
     }
 }
 
-void pipeline_execute(const Pipeline *p, const SimConfig *cfg,
-                      ASeq *seq, SimRecord *rec,
-                      uint32_t hook_mask, Snapshot *snaps, int *n_snap) {
+static inline void run_step_range(const Pipeline *p, const SimConfig *cfg,
+                                  ASeq *seq, SimRecord *rec,
+                                  int start, int end,
+                                  uint32_t hook_mask,
+                                  Snapshot *snaps, int *n_snap) {
+    for (int i = start; i < end; i++) {
+        p->steps[i](cfg, seq, rec);
+        check_hook(p, i, seq, rec, hook_mask, snaps, n_snap);
+    }
+}
+
+void pipeline_execute_pre_mutation(const Pipeline *p, const SimConfig *cfg,
+                                   ASeq *seq, SimRecord *rec,
+                                   uint32_t hook_mask, Snapshot *snaps, int *n_snap) {
+    int pre_end = p->post_mutation_start;
+    if (pre_end < 0) pre_end = 0;
+    if (pre_end > p->n_steps) pre_end = p->n_steps;
+
     aseq_reset(seq);
     sim_record_init(rec);
 
-    if (p->retry_boundary < 0) {
+    if (p->retry_boundary < 0 || pre_end == 0) {
         /* Non-productive: straight run */
-        TRACE("[pipeline] mode=non-productive, steps=%d", p->n_steps);
-        for (int i = 0; i < p->n_steps; i++) {
-            p->steps[i](cfg, seq, rec);
-            check_hook(p, i, seq, rec, hook_mask, snaps, n_snap);
-        }
+        TRACE("[pipeline] mode=non-productive, pre-mutation steps=%d", pre_end);
+        run_step_range(p, cfg, seq, rec, 0, pre_end, hook_mask, snaps, n_snap);
         return;
     }
 
-    /* Productive mode: retry rearrangement phase */
+    /* Filtered mode: retry rearrangement phase until the configured
+     * direction matches. PRODUCTIVE_ONLY succeeds on rec->productive,
+     * NON_PRODUCTIVE_ONLY succeeds on !rec->productive. */
     int max_attempts = cfg->max_productive_attempts;
     if (max_attempts <= 0) max_attempts = 25;
 
-    TRACE("[pipeline] mode=productive, max_attempts=%d, steps=%d",
-          max_attempts, p->n_steps);
+    bool want_productive =
+        (cfg->features.productivity == PRODUCTIVITY_PRODUCTIVE_ONLY);
+
+    TRACE("[pipeline] mode=%s, max_attempts=%d, pre-mutation steps=%d",
+          want_productive ? "productive_only" : "non_productive_only",
+          max_attempts, pre_end);
 
     int attempt;
     for (attempt = 0; attempt < max_attempts; attempt++) {
@@ -287,12 +311,15 @@ void pipeline_execute(const Pipeline *p, const SimConfig *cfg,
             /* Only check hooks on final successful attempt */
         }
 
-        if (rec->productive) {
-            TRACE("[pipeline] productive on attempt %d", attempt + 1);
+        bool target_hit = want_productive ? rec->productive : !rec->productive;
+        if (target_hit) {
+            TRACE("[pipeline] target hit on attempt %d (productive=%s)",
+                  attempt + 1, rec->productive ? "yes" : "no");
             break;
         } else {
-            TRACE("[pipeline] non-productive (reason: %s), retrying...",
-                  rec->note[0] ? rec->note : "unknown");
+            TRACE("[pipeline] target miss (productive=%s, reason: %s), retrying...",
+                  rec->productive ? "yes" : "no",
+                  rec->note[0] ? rec->note : "ok");
         }
     }
 
@@ -303,11 +330,28 @@ void pipeline_execute(const Pipeline *p, const SimConfig *cfg,
         }
     }
 
-    /* Run remaining steps once */
-    for (int i = p->retry_boundary + 1; i < p->n_steps; i++) {
-        p->steps[i](cfg, seq, rec);
-        check_hook(p, i, seq, rec, hook_mask, snaps, n_snap);
-    }
+    /* Run remaining pre-mutation steps once */
+    run_step_range(p, cfg, seq, rec,
+                   p->retry_boundary + 1, pre_end,
+                   hook_mask, snaps, n_snap);
+}
+
+void pipeline_execute_post_mutation(const Pipeline *p, const SimConfig *cfg,
+                                    ASeq *seq, SimRecord *rec,
+                                    uint32_t hook_mask, Snapshot *snaps, int *n_snap) {
+    int start = p->post_mutation_start;
+    if (start < 0) start = 0;
+    if (start > p->n_steps) start = p->n_steps;
+
+    TRACE("[pipeline] post-mutation steps=%d", p->n_steps - start);
+    run_step_range(p, cfg, seq, rec, start, p->n_steps, hook_mask, snaps, n_snap);
+}
+
+void pipeline_execute(const Pipeline *p, const SimConfig *cfg,
+                      ASeq *seq, SimRecord *rec,
+                      uint32_t hook_mask, Snapshot *snaps, int *n_snap) {
+    pipeline_execute_pre_mutation(p, cfg, seq, rec, hook_mask, snaps, n_snap);
+    pipeline_execute_post_mutation(p, cfg, seq, rec, hook_mask, snaps, n_snap);
 }
 
 /* ── SimRecord ────────────────────────────────────────────────── */

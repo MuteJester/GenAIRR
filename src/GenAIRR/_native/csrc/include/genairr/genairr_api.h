@@ -75,6 +75,7 @@ GENAIRR_EXPORT int genairr_set_feature(GenAIRRSimulator *sim,
  *
  *   "min_mutation_rate", "max_mutation_rate",
  *   "selection_strength", "cdr_r_acceptance", "fwr_r_acceptance",
+ *   "anchor_r_acceptance",
  *   "d_inversion_prob", "revision_prob",
  *   "base_error_rate", "peak_error_rate", "transition_weight",
  *   "pcr_error_rate", "contamination_prob",

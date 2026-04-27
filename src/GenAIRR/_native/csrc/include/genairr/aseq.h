@@ -314,6 +314,19 @@ int   aseq_position_of(const ASeq *seq, const Nuc *node);
  */
 Nuc  *aseq_find_anchor(const ASeq *seq, Segment seg);
 
+/**
+ * Tag every node in the junction span [V Cys, J W/F + 3) with
+ * NUC_FLAG_JUNCTION. Returns the junction length on success, or 0
+ * when V or J anchors are missing or the W/F codon does not fully
+ * fit (no flag changes are made in that case).
+ *
+ * Called at end-of-assembly so the junction can be tracked by node
+ * flags through the rest of the pipeline (mutations preserve flags;
+ * corruption deletes nodes; indels auto-inherit). AIRR derive then
+ * scans for first/last junction-flagged node to report the live span.
+ */
+int   aseq_mark_junction(ASeq *seq);
+
 /* ── Serialization ────────────────────────────────────────────── */
 
 /**

@@ -311,6 +311,13 @@ void step_assemble(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     rec->np1_length = aseq_segment_length(seq, SEG_NP1);
     rec->np2_length = has_d ? aseq_segment_length(seq, SEG_NP2) : 0;
 
+    /* ── Junction marking ─────────────────────────────────────── */
+    /* Tag every node in [V Cys, J W/F + 3) with NUC_FLAG_JUNCTION so
+     * the junction can be tracked through the rest of the pipeline by
+     * node flags rather than re-derived after each step. Capture the
+     * original length so airr_serialize can detect truncation. */
+    rec->original_junction_length = aseq_mark_junction(seq);
+
     TRACE("[assemble] total: %dbp = V(%d) + NP1(%d, P=%d) + D(%d) "
           "+ NP2(%d, P=%d) + J(%d)",
           seq->length,

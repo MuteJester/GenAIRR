@@ -134,7 +134,7 @@ class TestBasicSimulation:
 
     def test_unmutated_rearrangement_only(self):
         from GenAIRR import Experiment
-        # No .somatic_hypermutation() → no mutations
+        # No .mutate(...) → no SHM, expect zero mutations
         result = Experiment.on("human_igh").run(n=10, seed=42)
         for rec in result:
             assert rec["mutation_rate"] == 0.0
@@ -336,6 +336,62 @@ class TestCorruptionFeatures:
             assert rec["is_reverse_complement"] is True
             rebuilt = _reconstruct_from_germline_and_mutations(rec)
             assert _matches_with_unknown_germline(rec, rebuilt)
+
+    def test_mutation_order_invariant_under_reverse_complement(self):
+        from GenAIRR import Experiment
+        from GenAIRR.ops import rate, with_reverse_complement
+        from GenAIRR.utilities.misc import reverse_complement
+
+        for seed in range(1, 11):
+            base = (Experiment.on("human_igh")
+                    .mutate(rate(0.03, 0.03))
+                    .run(n=1, seed=seed))[0]
+
+            rc = (Experiment.on("human_igh")
+                  .mutate(rate(0.03, 0.03))
+                  .sequence(with_reverse_complement(1.0))
+                  .run(n=1, seed=seed))[0]
+
+            assert rc["is_reverse_complement"] is True
+            assert rc["n_mutations"] == base["n_mutations"]
+            assert rc["sequence"].upper() == reverse_complement(base["sequence"]).upper()
+
+    def test_reverse_complement_preserves_biological_derivations(self):
+        from GenAIRR import Experiment
+        from GenAIRR.ops import rate, with_reverse_complement
+        from GenAIRR.utilities.misc import reverse_complement
+
+        for seed in range(1, 21):
+            base = (Experiment.on("human_igh")
+                    .mutate(rate(0.03, 0.03))
+                    .run(n=1, seed=seed))[0]
+
+            rc = (Experiment.on("human_igh")
+                  .mutate(rate(0.03, 0.03))
+                  .sequence(with_reverse_complement(1.0))
+                  .run(n=1, seed=seed))[0]
+
+            assert rc["is_reverse_complement"] is True
+            assert rc["sequence"].upper() == reverse_complement(base["sequence"]).upper()
+
+            # RC is a read-orientation transform; biological derivations
+            # should match the non-RC run for the same seed.
+            assert rc["v_call"] == base["v_call"]
+            assert rc["d_call"] == base["d_call"]
+            assert rc["j_call"] == base["j_call"]
+            assert rc["productive"] == base["productive"]
+            assert rc["stop_codon"] == base["stop_codon"]
+
+            # Junction coordinates stay valid in read orientation and map
+            # to mirrored coordinates of the baseline sequence.
+            seq_len = len(rc["sequence"])
+            assert rc["junction_start"] <= rc["junction_end"]
+            assert rc["junction_length"] == rc["junction_end"] - rc["junction_start"]
+            assert rc["junction_nt"] == rc["sequence"][rc["junction_start"]:rc["junction_end"]]
+            assert (rc["junction_start"], rc["junction_end"]) == (
+                seq_len - base["junction_end"],
+                seq_len - base["junction_start"],
+            )
 
 
 class TestRecombinationProvenance:

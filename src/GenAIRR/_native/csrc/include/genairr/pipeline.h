@@ -33,6 +33,7 @@ typedef struct {
     int       hook_ids[GENAIRR_MAX_PIPELINE];  /* HookPoint or -1 */
     int       n_steps;
     int       retry_boundary;    /* index of assess_functionality, or -1 */
+    int       post_mutation_start; /* first step that must run after SHM */
 } Pipeline;
 
 /**
@@ -75,6 +76,13 @@ struct SimRecord {
     bool productive;
     bool stop_codon;
     bool vj_in_frame;
+
+    /* Junction span captured at the end of assembly. Used at AIRR
+     * serialization time to detect partial-junction states caused by
+     * corruption (3' trim past the W/F codon, 5' trim past the V Cys,
+     * indels inside the junction). The current per-record junction
+     * length is derived live from the NUC_FLAG_JUNCTION node count. */
+    int  original_junction_length;
 
     /* Sequence-level flags */
     bool is_reverse_complement;
@@ -149,6 +157,26 @@ typedef struct {
 void  pipeline_execute(const Pipeline *p, const SimConfig *cfg,
                        ASeq *seq, SimRecord *rec,
                        uint32_t hook_mask, Snapshot *snaps, int *n_snap);
+
+/**
+ * Execute only the pre-mutation portion of the pipeline.
+ *
+ * Runs steps [0, post_mutation_start), including productive retry logic.
+ * Intended for engines where mutation is applied externally (e.g. S5F).
+ */
+void  pipeline_execute_pre_mutation(const Pipeline *p, const SimConfig *cfg,
+                                    ASeq *seq, SimRecord *rec,
+                                    uint32_t hook_mask, Snapshot *snaps, int *n_snap);
+
+/**
+ * Execute only the post-mutation portion of the pipeline.
+ *
+ * Runs steps [post_mutation_start, n_steps) once, without reset/retry.
+ * Call this after external mutation has been applied.
+ */
+void  pipeline_execute_post_mutation(const Pipeline *p, const SimConfig *cfg,
+                                     ASeq *seq, SimRecord *rec,
+                                     uint32_t hook_mask, Snapshot *snaps, int *n_snap);
 
 /* ── Snapshot helpers ────────────────────────────────────────── */
 

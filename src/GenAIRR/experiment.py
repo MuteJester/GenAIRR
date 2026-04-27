@@ -27,6 +27,37 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, Union
 
+from .dataconfig.enums import Productivity
+
+
+def _resolve_productivity(productivity: Optional[Productivity],
+                          productive: Optional[bool]) -> Productivity:
+    """Resolve the (productivity, productive) param pair into a single
+    Productivity enum value.
+
+    - productive=True  → Productivity.PRODUCTIVE_ONLY  (back-compat)
+    - productive=False → Productivity.PRODUCTIVE_MIXED (back-compat)
+    - productivity=Productivity.X → X (new canonical form)
+    - Both passed   → ValueError (caller picks one)
+    - Neither       → Productivity.PRODUCTIVE_MIXED (default)
+    """
+    if productivity is not None and productive is not None:
+        raise ValueError(
+            "Pass either 'productivity' (Productivity enum) or 'productive' "
+            "(bool, deprecated), not both."
+        )
+    if productive is not None:
+        return Productivity.PRODUCTIVE_ONLY if productive \
+                                            else Productivity.PRODUCTIVE_MIXED
+    if productivity is None:
+        return Productivity.PRODUCTIVE_MIXED
+    if not isinstance(productivity, Productivity):
+        raise TypeError(
+            f"'productivity' must be a Productivity enum value, "
+            f"got {type(productivity).__name__}"
+        )
+    return productivity
+
 
 # ---------------------------------------------------------------------------
 # Experiment
@@ -83,13 +114,27 @@ class Experiment:
     @staticmethod
     def _validate_phase_clauses(phase_name: str, base_type: type,
                                 clauses: tuple) -> None:
-        """Check every clause is an instance of the expected base type."""
+        """Check every clause is an instance of the expected base type.
+
+        A common mistake is passing internal Step descriptors (e.g.,
+        ``Mutate``, ``Corrupt5Prime``) — these are an internal IR
+        produced by the clause→step compiler, not the user API. The
+        error message redirects users to ``GenAIRR.ops``.
+        """
         for c in clauses:
-            if not isinstance(c, base_type):
-                raise TypeError(
-                    f".{phase_name}() expects {base_type.__name__} objects, "
-                    f"got {type(c).__name__}: {c!r}"
-                )
+            if isinstance(c, base_type):
+                continue
+            # Detect the Step-misuse trap and give a focused hint.
+            from .steps import Step as _Step
+            hint = ""
+            if isinstance(c, _Step):
+                hint = (" (Step classes are an internal IR — pass clauses "
+                        "from GenAIRR.ops, e.g. rate(...), model('s5f'), "
+                        "with_indels(), instead.)")
+            raise TypeError(
+                f".{phase_name}() expects {base_type.__name__} objects, "
+                f"got {type(c).__name__}: {c!r}{hint}"
+            )
 
     # ==================================================================
     # Phase methods
@@ -202,7 +247,8 @@ class Experiment:
         )
 
     def compile(self, *, seed: Optional[int] = None,
-                productive: bool = False) -> Any:
+                productivity: Optional[Productivity] = None,
+                productive: Optional[bool] = None) -> Any:
         """
         Compile this experiment into a C-backed simulator.
 
@@ -211,24 +257,33 @@ class Experiment:
 
         Args:
             seed: Random seed for reproducibility.
-            productive: If True, enforce productive rearrangements.
+            productivity: Productivity filter (Productivity enum).
+                ``PRODUCTIVE_ONLY``, ``NON_PRODUCTIVE_ONLY``, or
+                ``PRODUCTIVE_MIXED`` (default — no filtering).
+            productive: Deprecated bool alias for backward compatibility.
+                ``True`` maps to ``Productivity.PRODUCTIVE_ONLY``;
+                ``False`` maps to ``Productivity.PRODUCTIVE_MIXED``.
+                Cannot be combined with ``productivity``.
 
         Example::
 
-            sim = exp.compile(seed=42, productive=True)
+            from GenAIRR import Productivity
+            sim = exp.compile(seed=42, productivity=Productivity.PRODUCTIVE_ONLY)
             result = sim.simulate(n=1000)
         """
         from .protocol import _compile_to_c
+        mode = _resolve_productivity(productivity, productive)
         steps = self._build_steps()
         return _compile_to_c(
             config=self._config,
             steps=steps,
-            productive=productive,
+            productivity=mode,
             seed=seed,
         )
 
     def run(self, n: int = 1, *, seed: Optional[int] = None,
-            productive: bool = False,
+            productivity: Optional[Productivity] = None,
+            productive: Optional[bool] = None,
             progress: bool = False) -> Any:
         """
         Compile and run the experiment in one call.
@@ -244,7 +299,8 @@ class Experiment:
         Args:
             n: Number of sequences to simulate.
             seed: Random seed for reproducibility.
-            productive: If True, enforce productive rearrangements.
+            productivity: Productivity filter (see :meth:`compile`).
+            productive: Deprecated bool alias (see :meth:`compile`).
             progress: If True, show a progress bar (requires tqdm).
 
         Returns:
@@ -252,15 +308,19 @@ class Experiment:
 
         Example::
 
-            result = exp.run(n=1000, seed=42, productive=True)
+            from GenAIRR import Productivity
+            result = exp.run(n=1000, seed=42,
+                             productivity=Productivity.PRODUCTIVE_ONLY)
             df = result.to_dataframe()
         """
-        sim = self.compile(seed=seed, productive=productive)
+        sim = self.compile(seed=seed, productivity=productivity,
+                            productive=productive)
         return sim.simulate(n=n, progress=progress)
 
     def run_to_file(self, n: int, output_path: str, *,
                     seed: Optional[int] = None,
-                    productive: bool = False) -> int:
+                    productivity: Optional[Productivity] = None,
+                    productive: Optional[bool] = None) -> int:
         """
         Compile and stream the simulation directly to an AIRR TSV file.
 
@@ -287,7 +347,8 @@ class Experiment:
             chunks = pd.read_csv("tcrb.tsv", sep="\\t", chunksize=1_000_000)
             df = pd.concat(c[c['junction_length'] > 0] for c in chunks)
         """
-        sim = self.compile(seed=seed, productive=productive)
+        sim = self.compile(seed=seed, productivity=productivity,
+                            productive=productive)
         return sim.simulate_to_file(n, output_path)
 
     # ==================================================================

@@ -16,6 +16,7 @@
 #include "genairr/codon.h"
 #include "genairr/functionality.h"
 #include "genairr/trace.h"
+#include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -162,6 +163,15 @@ static int check_d_3prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     return match;
 }
 
+/* ── Internal: find first/last valid germline pos ──────────────── */
+
+static uint16_t find_valid_germline_pos(const Nuc *start, Segment seg, bool forward) {
+    for (const Nuc *n = start; n && n->segment == seg; n = forward ? n->next : n->prev) {
+        if (n->germline_pos != 0xFFFF) return n->germline_pos;
+    }
+    return 0;
+}
+
 /* ── Main derivation function ─────────────────────────────────── */
 
 void airr_derive_positions(const ASeq *seq, const SimRecord *rec,
@@ -176,8 +186,8 @@ void airr_derive_positions(const ASeq *seq, const SimRecord *rec,
     if (seq->seg_first[SEG_V]) {
         out->v_sequence_start = position_of_seg_boundary(seq, seq->seg_first[SEG_V]);
         out->v_sequence_end   = position_of_seg_boundary(seq, seq->seg_last[SEG_V]) + 1;
-        uint16_t vg0 = seq->seg_first[SEG_V]->germline_pos;
-        uint16_t vg1 = seq->seg_last[SEG_V]->germline_pos;
+        uint16_t vg0 = find_valid_germline_pos(seq->seg_first[SEG_V], SEG_V, true);
+        uint16_t vg1 = find_valid_germline_pos(seq->seg_last[SEG_V], SEG_V, false);
         out->v_germline_start = vg0 < vg1 ? vg0 : vg1;
         out->v_germline_end   = (vg0 > vg1 ? vg0 : vg1) + 1;
     }
@@ -186,8 +196,8 @@ void airr_derive_positions(const ASeq *seq, const SimRecord *rec,
     if (has_d) {
         out->d_sequence_start = position_of_seg_boundary(seq, seq->seg_first[SEG_D]);
         out->d_sequence_end   = position_of_seg_boundary(seq, seq->seg_last[SEG_D]) + 1;
-        uint16_t dg0 = seq->seg_first[SEG_D]->germline_pos;
-        uint16_t dg1 = seq->seg_last[SEG_D]->germline_pos;
+        uint16_t dg0 = find_valid_germline_pos(seq->seg_first[SEG_D], SEG_D, true);
+        uint16_t dg1 = find_valid_germline_pos(seq->seg_last[SEG_D], SEG_D, false);
         out->d_germline_start = dg0 < dg1 ? dg0 : dg1;
         out->d_germline_end   = (dg0 > dg1 ? dg0 : dg1) + 1;
     }
@@ -196,8 +206,8 @@ void airr_derive_positions(const ASeq *seq, const SimRecord *rec,
     if (seq->seg_first[SEG_J]) {
         out->j_sequence_start = position_of_seg_boundary(seq, seq->seg_first[SEG_J]);
         out->j_sequence_end   = position_of_seg_boundary(seq, seq->seg_last[SEG_J]) + 1;
-        uint16_t jg0 = seq->seg_first[SEG_J]->germline_pos;
-        uint16_t jg1 = seq->seg_last[SEG_J]->germline_pos;
+        uint16_t jg0 = find_valid_germline_pos(seq->seg_first[SEG_J], SEG_J, true);
+        uint16_t jg1 = find_valid_germline_pos(seq->seg_last[SEG_J], SEG_J, false);
         out->j_germline_start = jg0 < jg1 ? jg0 : jg1;
         out->j_germline_end   = (jg0 > jg1 ? jg0 : jg1) + 1;
     }
@@ -222,6 +232,19 @@ void airr_derive_positions(const ASeq *seq, const SimRecord *rec,
     out->j_germline_start -= j_ambig;
     out->j_trim_5_adjusted = rec->j_trim_5 - j_ambig;
 
+    /* T1-4: when D is missing from the live sequence (e.g., fully wiped
+     * by indels, or VJ chain), `has_d` is false and the D-specific
+     * adjustments below are skipped. Initialize d_trim_*_adjusted to
+     * the simulator's pre-indel trims here so `d{5,3}_ambig` in
+     * patch_boundary_extensions / collect_boundary_mutations come out
+     * to 0 (rec->d_trim_X - rec->d_trim_X). Without this, the memset
+     * default of 0 makes d_ambig = rec->d_trim_X, which then falsely
+     * patches V's region with D's germline at sequence position 0
+     * (= memset default of d_sequence_start) and emits spurious
+     * boundary-mutation entries. */
+    out->d_trim_5_adjusted = rec->d_trim_5;
+    out->d_trim_3_adjusted = rec->d_trim_3;
+
     if (has_d) {
         int d5_ambig = check_d_5prime_ambiguity(rec, seq);
         out->d_sequence_start -= d5_ambig;
@@ -243,21 +266,35 @@ void airr_derive_positions(const ASeq *seq, const SimRecord *rec,
     }
 
     /* ── Junction ────────────────────────────────────────────── */
-    /* IMGT convention: junction runs from conserved C (V anchor) to the
-     * end of the conserved W/F codon (J anchor + 3 bases).
-     * Must match functionality.c which uses junction_end = j_anchor_pos + 3. */
-    Nuc *v_anchor = aseq_find_anchor(seq, SEG_V);
-    Nuc *j_anchor = aseq_find_anchor(seq, SEG_J);
-    if (v_anchor && j_anchor) {
-        int seq_len = aseq_length(seq);
-        out->junction_start = position_of_seg_boundary(seq, v_anchor);
-        out->junction_end   = position_of_seg_boundary(seq, j_anchor) + 3;
-        /* Cap to sequence length: 3' corruption can remove bases after
-         * the J anchor, making junction_end exceed the actual length. */
-        if (out->junction_end > seq_len)
-            out->junction_end = seq_len;
-        out->junction_length = out->junction_end - out->junction_start;
-        TRACE("[airr] junction: [%d:%d] (%dbp)", out->junction_start, out->junction_end, out->junction_length);
+    /* The junction is tracked through the pipeline by NUC_FLAG_JUNCTION
+     * tags placed at end-of-assembly. Mutations preserve the flag;
+     * 5'/3' corruption deletes nodes (and their flags) so the span
+     * shrinks naturally; indels inside the junction auto-inherit the
+     * flag from neighbors via aseq_insert_after/before. RC reverses
+     * the list but flags travel with their nodes — first/last scan
+     * still produces correct read-orientation coordinates.
+     *
+     * If no junction-flagged nodes survive (spike contaminant, total
+     * removal), all junction fields are zero — explicit "missing"
+     * signal. */
+    {
+        int pos = 0, first_pos = -1, last_pos = -1;
+        for (Nuc *n = seq->head; n; n = n->next) {
+            if (n->flags & NUC_FLAG_JUNCTION) {
+                if (first_pos < 0) first_pos = pos;
+                last_pos = pos;
+            }
+            pos++;
+        }
+        if (first_pos >= 0) {
+            out->junction_start  = first_pos;
+            out->junction_end    = last_pos + 1;
+            out->junction_length = out->junction_end - out->junction_start;
+            TRACE("[airr] junction: [%d:%d] (%dbp)",
+                  out->junction_start, out->junction_end, out->junction_length);
+        } else {
+            out->junction_start = out->junction_end = out->junction_length = 0;
+        }
     }
 }
 
@@ -1035,6 +1072,45 @@ static void derive_final_productivity(const ASeq *seq, const SimRecord *rec,
     out->note[sizeof(out->note) - 1] = '\0';
 }
 
+/* ── Internal: orientation-normalized analysis view ───────────────── */
+
+static const ASeq *analysis_view_for_derivation(const ASeq *seq,
+                                                const SimRecord *rec,
+                                                ASeq *scratch) {
+    if (!rec->is_reverse_complement) {
+        return seq;
+    }
+
+    /* Derive productivity and allele calls on the biological (sense)
+     * orientation so RC output preserves the same biological truth. */
+    *scratch = *seq;
+    aseq_rebase(scratch, seq);
+    aseq_reverse_complement(scratch);
+    return scratch;
+}
+
+/* ── Internal: map sense coordinates to RC read coordinates ───────── */
+
+static inline void map_interval_to_rc(int seq_len, int *start, int *end) {
+    if (*end <= *start) {
+        *start = 0;
+        *end = 0;
+        return;
+    }
+    int s = *start;
+    int e = *end;
+    *start = seq_len - e;
+    *end   = seq_len - s;
+}
+
+static void map_positions_to_rc_coords(int seq_len, AirrPositions *pos) {
+    map_interval_to_rc(seq_len, &pos->v_sequence_start, &pos->v_sequence_end);
+    map_interval_to_rc(seq_len, &pos->d_sequence_start, &pos->d_sequence_end);
+    map_interval_to_rc(seq_len, &pos->j_sequence_start, &pos->j_sequence_end);
+    map_interval_to_rc(seq_len, &pos->junction_start, &pos->junction_end);
+    pos->junction_length = pos->junction_end - pos->junction_start;
+}
+
 /* ═══════════════════════════════════════════════════════════════
  * airr_serialize — the main serialization function
  * ═══════════════════════════════════════════════════════════════ */
@@ -1043,6 +1119,10 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
                      const SimConfig *cfg, const AlleleCorrectionSet *corr,
                      AirrRecord *out) {
     memset(out, 0, sizeof(*out));
+
+    ASeq analysis_seq_scratch;
+    const ASeq *analysis_seq = analysis_view_for_derivation(
+        seq, rec, &analysis_seq_scratch);
 
     /* ── 1. Extract flat sequence ────────────────────────────── */
     out->sequence_length = aseq_to_string(seq, out->sequence,
@@ -1054,7 +1134,14 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
 
     /* ── 3. Derive positions (FixV/D/JPosition) ─────────────── */
     AirrPositions pos;
-    airr_derive_positions(seq, rec, &pos);
+    SimRecord rec_for_pos = *rec;
+    if (rec->is_reverse_complement) {
+        rec_for_pos.is_reverse_complement = false;
+    }
+    airr_derive_positions(analysis_seq, &rec_for_pos, &pos);
+    if (rec->is_reverse_complement) {
+        map_positions_to_rc_coords(out->sequence_length, &pos);
+    }
 
     /* ── 3b. Patch germline alignment for boundary extension ── */
     /* NP bases claimed by V/D/J via boundary ambiguity should show
@@ -1082,12 +1169,21 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
     out->junction_length = pos.junction_length;
 
     /* ── 4. Extract junction nucleotides and translate ────────── */
+    /* The junction is whatever the surviving NUC_FLAG_JUNCTION nodes
+     * spell — ground truth as of this point in the pipeline. We
+     * translate complete codons only; partial trailing bases are
+     * dropped from junction_aa but remain in junction_nt so callers
+     * can see the partial codon. The note (set in step 8 below) is
+     * augmented with a "junction partial" marker if the live span
+     * differs from rec->original_junction_length so consumers can
+     * distinguish "anchor disrupted" from "junction physically
+     * truncated by corruption/indels". */
     if (pos.junction_length > 0 && pos.junction_length < AIRR_MAX_JUNCTION) {
         memcpy(out->junction_nt, out->sequence + pos.junction_start,
                pos.junction_length);
         out->junction_nt[pos.junction_length] = '\0';
 
-        /* Translate junction to amino acids */
+        /* Translate complete codons only. */
         int aa_len = 0;
         for (int i = 0; i + 2 < pos.junction_length; i += 3) {
             out->junction_aa[aa_len++] = translate_codon(
@@ -1137,14 +1233,39 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
     /* Prefer final ASeq state; if codon rail was invalidated by a late
      * operation (e.g. reverse-complement), recompute from a cloned copy
      * rather than falling back to stale SimRecord fields. */
-    if (seq->codon_rail_valid) {
-        out->productive  = aseq_is_productive(seq);
-        out->stop_codon  = seq->n_stop_codons > 0;
-        out->vj_in_frame = seq->junction_in_frame;
+    if (analysis_seq->codon_rail_valid) {
+        out->productive  = aseq_is_productive(analysis_seq);
+        out->stop_codon  = analysis_seq->n_stop_codons > 0;
+        out->vj_in_frame = analysis_seq->junction_in_frame;
         strncpy(out->note, rec->note, sizeof(out->note) - 1);
         out->note[sizeof(out->note) - 1] = '\0';
     } else {
-        derive_final_productivity(seq, rec, out);
+        derive_final_productivity(analysis_seq, rec, out);
+    }
+
+    /* ── 8b. Junction truncation marker ──────────────────────── */
+    /* If the live junction span differs from what was set at assembly
+     * time, append an explicit marker so consumers can distinguish
+     * "anchors mutated but region intact" from "region physically
+     * shortened by corruption/indels". */
+    if (rec->original_junction_length > 0 &&
+        out->junction_length != rec->original_junction_length) {
+        char marker[64];
+        if (out->junction_length == 0) {
+            snprintf(marker, sizeof(marker), "junction fully removed");
+        } else {
+            snprintf(marker, sizeof(marker), "junction partial: %d/%d nt",
+                     out->junction_length, rec->original_junction_length);
+        }
+        if (out->note[0]) {
+            size_t cur = strlen(out->note);
+            if (cur + 2 + strlen(marker) < sizeof(out->note)) {
+                strncat(out->note, "; ", sizeof(out->note) - cur - 1);
+                strncat(out->note, marker, sizeof(out->note) - cur - 3);
+            }
+        } else {
+            snprintf(out->note, sizeof(out->note), "%s", marker);
+        }
     }
 
     /* ── 9. Sequence-level flags ─────────────────────────────── */
@@ -1158,7 +1279,7 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
     out->original_v_allele_name[GENAIRR_MAX_ALLELE_NAME - 1] = '\0';
 
     /* ── 10. Allele calls (bitmap-based reactive derivation) ──── */
-    bool has_d = rec->d_allele != NULL && aseq_has_segment(seq, SEG_D);
+    bool has_d = rec->d_allele != NULL && aseq_has_segment(analysis_seq, SEG_D);
 
     /* C allele: no correction needed (constant region, single call) */
     if (rec->c_allele)
@@ -1170,7 +1291,7 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
             int true_idx = allele_pool_find_index(&cfg->v_alleles,
                                                     rec->v_allele->name);
             AlleleCallResult vr;
-            allele_call_derive(&corr->v_bitmap, seq, SEG_V, &vr, rec);
+            allele_call_derive(&corr->v_bitmap, analysis_seq, SEG_V, &vr, rec);
             allele_call_format(&vr, &cfg->v_alleles, true_idx,
                                 out->v_call, AIRR_MAX_CALLS);
         } else if (rec->v_allele) {
@@ -1182,7 +1303,7 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
             int true_idx = allele_pool_find_index(&cfg->j_alleles,
                                                     rec->j_allele->name);
             AlleleCallResult jr;
-            allele_call_derive(&corr->j_bitmap, seq, SEG_J, &jr, rec);
+            allele_call_derive(&corr->j_bitmap, analysis_seq, SEG_J, &jr, rec);
             allele_call_format(&jr, &cfg->j_alleles, true_idx,
                                 out->j_call, AIRR_MAX_CALLS);
         } else if (rec->j_allele) {
@@ -1192,7 +1313,7 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
         /* ── D call: derive from bitmap + short-D check ──────── */
         if (has_d && rec->d_allele && corr->d_bitmap.n_alleles > 0) {
             AlleleCallResult dr;
-            allele_call_derive(&corr->d_bitmap, seq, SEG_D, &dr, rec);
+            allele_call_derive(&corr->d_bitmap, analysis_seq, SEG_D, &dr, rec);
 
             if (allele_call_is_short_d(&dr, &corr->d_bitmap)) {
                 strncpy(out->d_call, "Short-D", AIRR_MAX_CALLS - 1);
@@ -1273,111 +1394,184 @@ int airr_write_tsv_header(FILE *fp) {
     return (int)AIRR_N_COLUMNS;
 }
 
+/* ── TSV writer abstraction (T1-11) ─────────────────────────────
+ *
+ * Both airr_write_tsv_row and airr_snprintf_tsv_row used to be a
+ * single 50-arg fprintf/snprintf with no escaping. A tab or newline
+ * embedded in any string field (note, allele names, etc.) would
+ * silently shift the column count and corrupt downstream parsing.
+ *
+ * We now go field-by-field through a tiny TsvWriter abstraction
+ * that targets either a FILE* or an in-memory buffer. Every string
+ * field is sanitized inline (\t / \n / \r → space) so the column
+ * count is always exactly N_COLUMNS and rows never split.
+ * ────────────────────────────────────────────────────────────── */
+
+typedef struct {
+    /* Exactly one of fp / buf is set. */
+    FILE *fp;
+    char *buf;
+    int   buf_size;
+    int   buf_pos;
+    int   error;        /* 0 ok, -1 truncated/io failure (sticky) */
+} TsvWriter;
+
+static void tw_putc(TsvWriter *w, char c) {
+    if (w->error) return;
+    if (w->fp) {
+        if (fputc((unsigned char)c, w->fp) == EOF) w->error = -1;
+    } else if (w->buf_pos < w->buf_size - 1) {
+        w->buf[w->buf_pos++] = c;
+    } else {
+        w->error = -1;   /* leave room for NUL terminator */
+    }
+}
+
+/* Write a string with TSV-hostile chars sanitized to space. */
+static void tw_puts_safe(TsvWriter *w, const char *s) {
+    if (!s) return;
+    for (; *s && !w->error; s++) {
+        char c = *s;
+        if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+        tw_putc(w, c);
+    }
+}
+
+/* printf into the writer (no sanitization — used only for numeric
+ * fields whose format strings produce TSV-safe characters). */
+static void tw_printf(TsvWriter *w, const char *fmt, ...) {
+    if (w->error) return;
+    va_list ap;
+    va_start(ap, fmt);
+    if (w->fp) {
+        if (vfprintf(w->fp, fmt, ap) < 0) w->error = -1;
+    } else {
+        int remaining = w->buf_size - w->buf_pos;
+        if (remaining <= 1) {
+            w->error = -1;
+        } else {
+            int n = vsnprintf(w->buf + w->buf_pos, (size_t)remaining, fmt, ap);
+            if (n < 0 || n >= remaining) w->error = -1;
+            else w->buf_pos += n;
+        }
+    }
+    va_end(ap);
+}
+
+/* Per-field emitters. Each emits the value, then the separator. The
+ * separator for the LAST field is omitted by passing 0; the caller
+ * appends \n (file mode) or NUL (buffer mode) afterwards. */
+static void tw_field_str(TsvWriter *w, const char *s, char sep) {
+    tw_puts_safe(w, s);
+    if (sep) tw_putc(w, sep);
+}
+static void tw_field_bool(TsvWriter *w, bool v, char sep) {
+    tw_putc(w, v ? 'T' : 'F');
+    if (sep) tw_putc(w, sep);
+}
+static void tw_field_int(TsvWriter *w, int v, char sep) {
+    tw_printf(w, "%d", v);
+    if (sep) tw_putc(w, sep);
+}
+static void tw_field_double(TsvWriter *w, double v, char sep) {
+    tw_printf(w, "%.6f", v);
+    if (sep) tw_putc(w, sep);
+}
+
+/* Emit all 56 columns in canonical AIRR order. The order MUST match
+ * AIRR_COLUMNS[] — keep this block and the header column list in
+ * lockstep. */
+static void airr_emit_row_inner(TsvWriter *w, const AirrRecord *r) {
+    const char SEP = '\t';
+
+    tw_field_str(w, r->sequence, SEP);
+    tw_field_str(w, r->germline_alignment, SEP);
+
+    tw_field_str(w, r->v_call, SEP);
+    tw_field_str(w, r->d_call, SEP);
+    tw_field_str(w, r->j_call, SEP);
+    tw_field_str(w, r->c_call, SEP);
+
+    tw_field_str(w, r->v_call_true, SEP);
+    tw_field_str(w, r->d_call_true, SEP);
+    tw_field_str(w, r->j_call_true, SEP);
+
+    tw_field_bool(w, r->d_inverted, SEP);
+    tw_field_bool(w, r->receptor_revised, SEP);
+    tw_field_int (w, r->revision_footprint_length, SEP);
+    tw_field_str (w, r->original_v_allele_name, SEP);
+
+    tw_field_int(w, r->v_sequence_start, SEP);
+    tw_field_int(w, r->v_sequence_end,   SEP);
+    tw_field_int(w, r->v_germline_start, SEP);
+    tw_field_int(w, r->v_germline_end,   SEP);
+
+    tw_field_int(w, r->d_sequence_start, SEP);
+    tw_field_int(w, r->d_sequence_end,   SEP);
+    tw_field_int(w, r->d_germline_start, SEP);
+    tw_field_int(w, r->d_germline_end,   SEP);
+
+    tw_field_int(w, r->j_sequence_start, SEP);
+    tw_field_int(w, r->j_sequence_end,   SEP);
+    tw_field_int(w, r->j_germline_start, SEP);
+    tw_field_int(w, r->j_germline_end,   SEP);
+
+    tw_field_int(w, r->junction_start, SEP);
+    tw_field_int(w, r->junction_end,   SEP);
+    tw_field_str(w, r->junction_nt,    SEP);
+    tw_field_str(w, r->junction_aa,    SEP);
+    tw_field_int(w, r->junction_length, SEP);
+
+    tw_field_int(w, r->v_trim_5, SEP);
+    tw_field_int(w, r->v_trim_3, SEP);
+    tw_field_int(w, r->d_trim_5, SEP);
+    tw_field_int(w, r->d_trim_3, SEP);
+    tw_field_int(w, r->j_trim_5, SEP);
+    tw_field_int(w, r->j_trim_3, SEP);
+
+    tw_field_str(w, r->np1_region, SEP);
+    tw_field_int(w, r->np1_length, SEP);
+    tw_field_str(w, r->np2_region, SEP);
+    tw_field_int(w, r->np2_length, SEP);
+
+    tw_field_double(w, r->mutation_rate, SEP);
+    tw_field_int   (w, r->n_mutations,   SEP);
+    tw_field_str   (w, r->mutations,     SEP);
+
+    tw_field_int(w, r->n_insertions, SEP);
+    tw_field_int(w, r->n_deletions,  SEP);
+
+    tw_field_int(w, r->n_sequencing_errors, SEP);
+    tw_field_str(w, r->sequencing_errors,   SEP);
+    tw_field_int(w, r->n_pcr_errors,        SEP);
+    tw_field_str(w, r->pcr_errors,          SEP);
+
+    tw_field_bool(w, r->productive,   SEP);
+    tw_field_bool(w, r->stop_codon,   SEP);
+    tw_field_bool(w, r->vj_in_frame,  SEP);
+    tw_field_str (w, r->note,         SEP);
+
+    tw_field_bool(w, r->is_reverse_complement, SEP);
+    tw_field_bool(w, r->is_contaminant,        SEP);
+
+    /* Final field — no trailing tab; caller appends \n or NUL. */
+    tw_field_int(w, r->sequence_length, 0);
+}
+
 void airr_write_tsv_row(FILE *fp, const AirrRecord *r) {
-    fprintf(fp,
-        "%s\t%s\t"
-        "%s\t%s\t%s\t%s\t"
-        "%s\t%s\t%s\t"
-        "%s\t%s\t%d\t%s\t"
-        "%d\t%d\t%d\t%d\t"
-        "%d\t%d\t%d\t%d\t"
-        "%d\t%d\t%d\t%d\t"
-        "%d\t%d\t%s\t%s\t%d\t"
-        "%d\t%d\t%d\t%d\t%d\t%d\t"
-        "%s\t%d\t%s\t%d\t"
-        "%.6f\t%d\t%s\t"
-        "%d\t%d\t"
-        "%d\t%s\t"
-        "%d\t%s\t"
-        "%s\t%s\t%s\t%s\t"
-        "%s\t%s\t"
-        "%d\n",
-        r->sequence, r->germline_alignment,
-        r->v_call, r->d_call, r->j_call, r->c_call,
-        r->v_call_true, r->d_call_true, r->j_call_true,
-        r->d_inverted ? "T" : "F",
-        r->receptor_revised ? "T" : "F",
-        r->revision_footprint_length,
-        r->original_v_allele_name,
-        r->v_sequence_start, r->v_sequence_end,
-        r->v_germline_start, r->v_germline_end,
-        r->d_sequence_start, r->d_sequence_end,
-        r->d_germline_start, r->d_germline_end,
-        r->j_sequence_start, r->j_sequence_end,
-        r->j_germline_start, r->j_germline_end,
-        r->junction_start, r->junction_end,
-        r->junction_nt, r->junction_aa, r->junction_length,
-        r->v_trim_5, r->v_trim_3, r->d_trim_5, r->d_trim_3,
-        r->j_trim_5, r->j_trim_3,
-        r->np1_region, r->np1_length,
-        r->np2_region, r->np2_length,
-        r->mutation_rate, r->n_mutations, r->mutations,
-        r->n_insertions, r->n_deletions,
-        r->n_sequencing_errors, r->sequencing_errors,
-        r->n_pcr_errors, r->pcr_errors,
-        r->productive ? "T" : "F",
-        r->stop_codon ? "T" : "F",
-        r->vj_in_frame ? "T" : "F",
-        r->note,
-        r->is_reverse_complement ? "T" : "F",
-        r->is_contaminant ? "T" : "F",
-        r->sequence_length);
+    TsvWriter w = { .fp = fp, .buf = NULL, .buf_size = 0, .buf_pos = 0, .error = 0 };
+    airr_emit_row_inner(&w, r);
+    if (!w.error) fputc('\n', fp);
 }
 
 int airr_snprintf_tsv_row(char *buf, int size, const AirrRecord *r) {
     if (!buf || size <= 0 || !r) return -1;
-
-    int n = snprintf(buf, size,
-        "%s\t%s\t"
-        "%s\t%s\t%s\t%s\t"
-        "%s\t%s\t%s\t"
-        "%s\t%s\t%d\t%s\t"
-        "%d\t%d\t%d\t%d\t"
-        "%d\t%d\t%d\t%d\t"
-        "%d\t%d\t%d\t%d\t"
-        "%d\t%d\t%s\t%s\t%d\t"
-        "%d\t%d\t%d\t%d\t%d\t%d\t"
-        "%s\t%d\t%s\t%d\t"
-        "%.6f\t%d\t%s\t"
-        "%d\t%d\t"
-        "%d\t%s\t"
-        "%d\t%s\t"
-        "%s\t%s\t%s\t%s\t"
-        "%s\t%s\t"
-        "%d",
-        r->sequence, r->germline_alignment,
-        r->v_call, r->d_call, r->j_call, r->c_call,
-        r->v_call_true, r->d_call_true, r->j_call_true,
-        r->d_inverted ? "T" : "F",
-        r->receptor_revised ? "T" : "F",
-        r->revision_footprint_length,
-        r->original_v_allele_name,
-        r->v_sequence_start, r->v_sequence_end,
-        r->v_germline_start, r->v_germline_end,
-        r->d_sequence_start, r->d_sequence_end,
-        r->d_germline_start, r->d_germline_end,
-        r->j_sequence_start, r->j_sequence_end,
-        r->j_germline_start, r->j_germline_end,
-        r->junction_start, r->junction_end,
-        r->junction_nt, r->junction_aa, r->junction_length,
-        r->v_trim_5, r->v_trim_3, r->d_trim_5, r->d_trim_3,
-        r->j_trim_5, r->j_trim_3,
-        r->np1_region, r->np1_length,
-        r->np2_region, r->np2_length,
-        r->mutation_rate, r->n_mutations, r->mutations,
-        r->n_insertions, r->n_deletions,
-        r->n_sequencing_errors, r->sequencing_errors,
-        r->n_pcr_errors, r->pcr_errors,
-        r->productive ? "T" : "F",
-        r->stop_codon ? "T" : "F",
-        r->vj_in_frame ? "T" : "F",
-        r->note,
-        r->is_reverse_complement ? "T" : "F",
-        r->is_contaminant ? "T" : "F",
-        r->sequence_length);
-
-    if (n < 0 || n >= size) return -1;  /* truncated or error */
-    return n;
+    TsvWriter w = { .fp = NULL, .buf = buf, .buf_size = size, .buf_pos = 0, .error = 0 };
+    airr_emit_row_inner(&w, r);
+    if (w.error) return -1;
+    /* NUL-terminate; buf_pos points one past the last written byte. */
+    buf[w.buf_pos] = '\0';
+    return w.buf_pos;
 }
 
 int airr_snprintf_tsv_header(char *buf, int size) {

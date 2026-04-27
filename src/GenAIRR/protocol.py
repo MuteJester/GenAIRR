@@ -260,6 +260,7 @@ def _clauses_to_steps(
                 strength=selection_clause.strength,
                 cdr_r_acceptance=selection_clause.cdr_r_acceptance,
                 fwr_r_acceptance=selection_clause.fwr_r_acceptance,
+                anchor_r_acceptance=selection_clause.anchor_r_acceptance,
             ))
 
     # ── Prepare ────────────────────────────────────────────────
@@ -384,15 +385,69 @@ class CompiledSimulator:
     A compiled simulation backed by the C engine.
 
     Created by :meth:`Experiment.compile`. Holds a CSimulator handle
-    and provides ``simulate()`` and ``simulate_to_file()`` methods.
+    and provides ``simulate()``, ``simulate_to_file()``, ``stream()``,
+    and ``set_seed()`` methods.
+
+    **RNG semantics (streaming).** The simulator owns a single PCG32
+    stream that persists across ``simulate()`` calls. The seed is
+    applied once — on the first simulation call — and successive calls
+    advance the same stream:
+
+    .. code-block:: python
+
+        sim = exp.compile(seed=42)
+        a = sim.simulate(10)        # records 0..9   from seed 42
+        b = sim.simulate(10)        # records 10..19 from seed 42 (NOT 0..9 again)
+
+        # Equivalent two-batch concatenation invariant:
+        sim2 = exp.compile(seed=42)
+        c = sim2.simulate(20)       # records 0..19 from seed 42
+        # → a + b and c contain the same records in the same order.
+
+    To reset the stream mid-life, call :meth:`set_seed`:
+
+    .. code-block:: python
+
+        sim.set_seed(42); a = sim.simulate(10)
+        sim.set_seed(42); b = sim.simulate(10)
+        # → a and b are byte-identical.
+
+    Auto-seed: ``compile(seed=0)`` (or no ``seed=``) lets the C engine
+    pick a seed from wall time XOR the simulator address, so two
+    concurrent simulators in the same process get distinct streams.
     """
 
     def __init__(self, c_sim):
         self._sim = c_sim
 
+    def set_seed(self, seed: int) -> None:
+        """
+        Reset the RNG stream to a new seed.
+
+        The next call to :meth:`simulate` (or :meth:`simulate_to_file`,
+        :meth:`stream`) will re-seed the stream and start fresh. Use
+        this to reproduce a deterministic batch after the simulator has
+        already been used:
+
+        .. code-block:: python
+
+            sim.set_seed(42); a = sim.simulate(10)
+            sim.set_seed(42); b = sim.simulate(10)
+            assert a == b
+
+        Args:
+            seed: Non-negative 64-bit integer. Pass 0 for the engine's
+                "auto-seed from time + simulator address" mode.
+        """
+        self._sim.set_seed(seed)
+
     def simulate(self, n: int = 1, *, progress: bool = False) -> Any:
         """
         Run N simulations and return a SimulationResult.
+
+        The RNG stream advances from where the previous ``simulate()``
+        call left off. To reset, call :meth:`set_seed` between batches.
+        See the class docstring for the full streaming semantics.
 
         Args:
             n: Number of sequences to generate.
@@ -521,7 +576,7 @@ def _compile_to_c(
     config: Union[str, Any],
     steps: list[Step],
     *,
-    productive: bool = False,
+    productivity: Optional[Any] = None,
     seed: Optional[int] = None,
 ) -> CompiledSimulator:
     """
@@ -532,7 +587,8 @@ def _compile_to_c(
     Args:
         config: DataConfig object or string name (e.g. "human_igh").
         steps: Ordered list of Step descriptors.
-        productive: If True, enforce productive sequences (retry loop).
+        productivity: Productivity enum filter mode. None defaults to
+            Productivity.PRODUCTIVE_MIXED (no filtering).
         seed: Random seed for reproducibility. None falls back to
             ``GenAIRR.set_seed()``'s global value if one was set;
             otherwise the C engine auto-seeds from time + simulator
@@ -543,9 +599,12 @@ def _compile_to_c(
         CompiledSimulator ready to call simulate().
     """
     from .dataconfig.gdc_io import to_gdc_bytes
-    from .dataconfig.enums import ChainType
+    from .dataconfig.enums import ChainType, Productivity
     from ._native import CSimulator
     from .seed import get_seed as _get_global_seed
+
+    if productivity is None:
+        productivity = Productivity.PRODUCTIVE_MIXED
 
     resolved = _resolve_config(config)
 
@@ -570,9 +629,12 @@ def _compile_to_c(
     # Create C simulator from in-memory GDC
     sim = CSimulator(gdc_bytes=gdc_bytes)
 
-    # Apply productive mode
-    if productive:
-        sim.set_feature("productive", True)
+    # Apply productivity mode (PRODUCTIVE_MIXED is the implicit default
+    # — leaves cfg.features.productivity at PRODUCTIVITY_MIXED == 0).
+    if productivity == Productivity.PRODUCTIVE_ONLY:
+        sim.set_param("productivity_mode", 1)  # PRODUCTIVITY_PRODUCTIVE_ONLY
+    elif productivity == Productivity.NON_PRODUCTIVE_ONLY:
+        sim.set_param("productivity_mode", 2)  # PRODUCTIVITY_NON_PRODUCTIVE_ONLY
 
     # Apply all steps
     for step in steps:

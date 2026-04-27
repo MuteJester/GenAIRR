@@ -2,6 +2,33 @@ from enum import Enum,auto
 
 from enum import Enum
 
+
+class Productivity(Enum):
+    """Filter mode for which V(D)J rearrangements appear in the output.
+
+    PRODUCTIVE_ONLY:
+        The simulator retries the rearrangement phase (up to
+        ``max_productive_attempts``, default 25) until ``rec.productive``
+        is true. Every returned record has ``productive == True`` after
+        recombination. **Caveat (T2-16):** SHM is applied AFTER the retry
+        boundary, so heavy mutation rates can flip individual records to
+        ``productive=False`` in the final AIRR output.
+
+    NON_PRODUCTIVE_ONLY:
+        Symmetric to PRODUCTIVE_ONLY — retries until ``rec.productive``
+        is false. Useful for studying out-of-frame statistics, training
+        an aligner on negative examples, or tuning productive filters.
+
+    PRODUCTIVE_MIXED (default):
+        No filtering — emits whatever recombination produces. Pure V(D)J
+        biology yields ~22.8% productive on human IGH (T1-15), matching
+        theoretical 33% in-frame × ~68% stop-free rates.
+    """
+    PRODUCTIVE_ONLY     = "productive_only"
+    NON_PRODUCTIVE_ONLY = "non_productive_only"
+    PRODUCTIVE_MIXED    = "mixed"
+
+
 class ChainType(Enum):
     BCR_HEAVY = "BCR_HEAVY"
     BCR_LIGHT_KAPPA = "BCR_LIGHT_KAPPA"

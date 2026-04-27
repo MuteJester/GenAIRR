@@ -27,21 +27,27 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     TRACE("[corrupt_5'] event=%s, seq_len=%d",
           event == 1 ? "remove" : event == 2 ? "add" : "remove+add", len);
 
-    /* Remove from 5' end */
+    /* Remove from 5' end. Respects min=max=0 as "no-op" — the rolled
+     * event is still recorded so AIRR output stays consistent, but no
+     * bases are removed. (Bug T1-3: a previous floor at 1 forced every
+     * remove event to delete at least one base, defeating the intent
+     * of min=max=0 to disable the branch.) */
     if (event == 1 || event == 3) {
         int lo = cfg->corrupt_5_remove_min;
         int hi = cfg->corrupt_5_remove_max;
         int amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
         if (amount > hi) amount = hi;
         if (amount >= len - 5) amount = len - 5;
-        if (amount < 1) amount = 1;
+        if (amount < 0) amount = 0;
 
-        aseq_delete_head_n(seq, amount);
+        if (amount > 0) {
+            aseq_delete_head_n(seq, amount);
+        }
         rec->corruption_5_remove_amount = amount;
         TRACE("[corrupt_5'] removed %d bases from 5' end", amount);
     }
 
-    /* Add random bases at 5' end */
+    /* Add random bases at 5' end. Same min=max=0 semantics as remove. */
     if (event == 2 || event == 3) {
         len = aseq_length(seq);
         int lo = cfg->corrupt_5_add_min;
@@ -49,14 +55,16 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         int amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
         if (amount > hi) amount = hi;
         if (amount > 50) amount = 50;
-        if (amount < 1) amount = 1;
+        if (amount < 0) amount = 0;
 
-        char buf[50];
-        for (int i = 0; i < amount; i++) {
-            static const char bases[] = "ACGT";
-            buf[i] = bases[rng_range(cfg->rng, 4)];
+        if (amount > 0) {
+            char buf[50];
+            for (int i = 0; i < amount; i++) {
+                static const char bases[] = "ACGT";
+                buf[i] = bases[rng_range(cfg->rng, 4)];
+            }
+            aseq_prepend_bases(seq, buf, amount, SEG_ADAPTER, 0);
         }
-        aseq_prepend_bases(seq, buf, amount, SEG_ADAPTER, 0);
         rec->corruption_5_add_amount = amount;
         TRACE("[corrupt_5'] added %d random bases at 5' end", amount);
     }

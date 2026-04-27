@@ -131,6 +131,7 @@ class AntigenSelectionClause(MutateClause):
     strength: float = 0.5
     cdr_r_acceptance: float = 0.85
     fwr_r_acceptance: float = 0.40
+    anchor_r_acceptance: float = 0.0
 
     def __label__(self) -> str:
         return f"Antigen selection (strength={self.strength})"
@@ -389,24 +390,33 @@ def with_antigen_selection(
     strength: float = 0.5,
     cdr_r_acceptance: float = 0.85,
     fwr_r_acceptance: float = 0.40,
+    anchor_r_acceptance: float = 0.0,
 ) -> AntigenSelectionClause:
     """Simulate antigen-driven selection pressure.
 
     Models germinal center selection by accepting or rejecting
-    replacement mutations based on IMGT region (CDR vs FWR).
+    replacement mutations based on IMGT region. Walks every R-mutation
+    in the coding region (V/NP1/D/NP2/J).
 
     Args:
-        strength: Overall selection intensity (0–1).
-        cdr_r_acceptance: Acceptance rate for CDR replacement mutations.
-        fwr_r_acceptance: Acceptance rate for FWR replacement mutations.
+        strength: Overall selection intensity (0–1). 0 disables selection.
+        cdr_r_acceptance: Acceptance rate for CDR replacement mutations
+            (CDR1/CDR2/CDR3, including NP1/D/NP2).
+        fwr_r_acceptance: Acceptance rate for FWR replacement mutations
+            (FR1/FR2/FR3/FR4).
+        anchor_r_acceptance: Acceptance rate for V Cys / J W or F anchor
+            codon R-mutations. Defaults to 0 — anchor disruption breaks
+            the V/J domain fold and is purged in real germinal centers.
     """
     _check_probability(strength, "strength")
     _check_probability(cdr_r_acceptance, "cdr_r_acceptance")
     _check_probability(fwr_r_acceptance, "fwr_r_acceptance")
+    _check_probability(anchor_r_acceptance, "anchor_r_acceptance")
     return AntigenSelectionClause(
         strength=strength,
         cdr_r_acceptance=cdr_r_acceptance,
         fwr_r_acceptance=fwr_r_acceptance,
+        anchor_r_acceptance=anchor_r_acceptance,
     )
 
 

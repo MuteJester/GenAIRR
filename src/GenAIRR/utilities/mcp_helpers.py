@@ -238,18 +238,31 @@ def validate_record(rec: Dict[str, Any]) -> Dict[str, Any]:
     je = rec.get("j_sequence_end", 0)
     has_d = ds != de
     has_j = js != je  # J can be absent if 3' corruption removed it
+    is_rc = rec.get("is_reverse_complement", False)
     order_ok = vs <= ve
-    if has_d and has_j:
-        order_ok = order_ok and ve <= ds and ds <= de and de <= js and js <= je
-    elif has_d:
-        order_ok = order_ok and ve <= ds and ds <= de
-    elif has_j:
-        order_ok = order_ok and ve <= js and js <= je
+    if not is_rc:
+        if has_d and has_j:
+            order_ok = order_ok and ve <= ds and ds <= de and de <= js and js <= je
+        elif has_d:
+            order_ok = order_ok and ve <= ds and ds <= de
+        elif has_j:
+            order_ok = order_ok and ve <= js and js <= je
+    else:
+        # In RC read orientation, segment order is mirrored.
+        if has_d and has_j:
+            order_ok = order_ok and js <= je and je <= ds and ds <= de and de <= vs
+        elif has_d:
+            order_ok = order_ok and ds <= de and de <= vs
+        elif has_j:
+            order_ok = order_ok and js <= je and je <= vs
     # If neither D nor J present, only V ordering matters
     checks.append({
         "name": "segment_ordering",
         "passed": order_ok,
-        "detail": f"V=[{vs},{ve}] D=[{ds},{de}] J=[{js},{je}]" if not order_ok else "ok",
+        "detail": (
+            f"V=[{vs},{ve}] D=[{ds},{de}] J=[{js},{je}] rc={is_rc}"
+            if not order_ok else "ok"
+        ),
     })
 
     # 4. junction_bounds

@@ -239,6 +239,8 @@ static int test_junction_extraction(void) {
     aseq_append_segment(&seq, "AAAAACCCCC", 10, SEG_V, 0, 4);
     aseq_append_np(&seq, "AT", 2, SEG_NP1, NUC_FLAG_N_NUCLEOTIDE);
     aseq_append_segment(&seq, "GGGTTTTTT", 9, SEG_J, 0, 2);
+    aseq_mark_junction(&seq);
+    rec.original_junction_length = 13;
 
     AirrRecord airr;
     SimConfig cfg = {0};
@@ -582,7 +584,159 @@ static int test_tsv_output(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
- * Test 11: germline alignment has correct NP handling
+ * T1-11: TSV output sanitizes embedded tab/newline/CR characters
+ *
+ * Pre-fix, both writers passed string fields verbatim to %s\t.
+ * A tab in `note` (or any other string field) would silently shift
+ * the column count and corrupt downstream csv.DictReader / pandas
+ * parsing. The fix sanitizes all string fields inline (\t/\n/\r
+ * → space) so the column count is always exactly N_COLUMNS.
+ * ═══════════════════════════════════════════════════════════════ */
+
+/* Helper: build a minimal valid AirrRecord and snprintf a row, then
+ * verify the column-count and absence-of-stray-newlines invariants.
+ * Returns the number of tab separators in the produced row. */
+static int t1_11_count_tabs_in_row(const AirrRecord *r, char *out_row,
+                                    int out_size) {
+    int n = airr_snprintf_tsv_row(out_row, out_size, r);
+    if (n <= 0) return -1;
+    int tabs = 0;
+    for (int i = 0; i < n; i++) {
+        if (out_row[i] == '\t') tabs++;
+        if (out_row[i] == '\n') return -2;   /* never embed \n */
+        if (out_row[i] == '\r') return -3;
+    }
+    return tabs;
+}
+
+static int test_t1_11_tab_in_note_does_not_split_columns(void) {
+    AirrRecord r = {0};
+    /* Hostile note: tabs and newlines that would shift column count. */
+    snprintf(r.note, sizeof(r.note),
+             "rule failed.\thidden\tcolumns\nand a fake row\n42:G>A");
+    /* Minimal required string fields. */
+    strcpy(r.sequence, "ACGT");
+    strcpy(r.germline_alignment, "ACGT");
+    strcpy(r.v_call,        "IGHV1*01");
+    strcpy(r.d_call,        "IGHD1*01");
+    strcpy(r.j_call,        "IGHJ1*01");
+    strcpy(r.c_call,        "");
+    strcpy(r.v_call_true,   "IGHV1*01");
+    strcpy(r.d_call_true,   "IGHD1*01");
+    strcpy(r.j_call_true,   "IGHJ1*01");
+    strcpy(r.original_v_allele_name, "IGHV1*01");
+    strcpy(r.junction_nt,   "ACGT");
+    strcpy(r.junction_aa,   "X");
+    strcpy(r.np1_region,    "AC");
+    strcpy(r.np2_region,    "GT");
+
+    char row[8192];
+    int tabs = t1_11_count_tabs_in_row(&r, row, sizeof(row));
+    if (tabs == -2) {
+        fprintf(stderr, "Embedded \\n leaked through into TSV row\n");
+        return 1;
+    }
+    if (tabs == -3) {
+        fprintf(stderr, "Embedded \\r leaked through into TSV row\n");
+        return 1;
+    }
+    /* 56 columns → exactly 55 tab separators. */
+    if (tabs != 55) {
+        fprintf(stderr,
+                "Expected 55 tabs (56 columns), got %d. Note-field "
+                "tabs leaked into the column structure.\n", tabs);
+        return 1;
+    }
+    /* Sanitization placeholders should be visible. */
+    if (strstr(row, "rule failed. hidden columns and a fake row 42:G>A") == NULL) {
+        fprintf(stderr,
+                "Expected sanitized note (tabs/newlines → spaces); "
+                "got row: %.200s\n", row);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_t1_11_tab_in_allele_name_handled(void) {
+    AirrRecord r = {0};
+    /* A maliciously crafted GDC could embed a tab in an allele name.
+     * The TSV writer must absorb it. */
+    snprintf(r.v_call, sizeof(r.v_call), "IGHV1\tBOGUS*01");
+    /* Other required strings */
+    strcpy(r.sequence, "ACGT");
+    strcpy(r.germline_alignment, "ACGT");
+    strcpy(r.d_call, "");
+    strcpy(r.j_call, "IGHJ1*01");
+    strcpy(r.c_call, "");
+    strcpy(r.v_call_true, "IGHV1*01");
+    strcpy(r.d_call_true, "");
+    strcpy(r.j_call_true, "IGHJ1*01");
+
+    char row[8192];
+    int tabs = t1_11_count_tabs_in_row(&r, row, sizeof(row));
+    if (tabs != 55) {
+        fprintf(stderr,
+                "Expected 55 tabs after v_call sanitization, got %d\n", tabs);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_t1_11_normal_record_unchanged(void) {
+    /* Regression: a record with no hostile chars produces a row
+     * indistinguishable (modulo whitespace) from the legacy fprintf
+     * output. We just assert column count and presence of expected
+     * sequence prefix — byte-for-byte format equality is checked
+     * implicitly by every other test that round-trips through TSV. */
+    ASeq seq; SimRecord rec;
+    aseq_init(&seq); sim_record_init(&rec);
+    Allele v = make_allele("V1", "AAAAAA", 3, SEG_V);
+    Allele j = make_allele("J1", "TTTTTT", 2, SEG_J);
+    rec.v_allele = &v; rec.j_allele = &j; rec.productive = true;
+
+    aseq_append_segment(&seq, "AAAAAA", 6, SEG_V, 0, 3);
+    aseq_append_np(&seq, "CC", 2, SEG_NP1, NUC_FLAG_N_NUCLEOTIDE);
+    aseq_append_segment(&seq, "TTTTTT", 6, SEG_J, 0, 2);
+
+    AirrRecord airr;
+    SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+
+    char row[8192];
+    int tabs = t1_11_count_tabs_in_row(&airr, row, sizeof(row));
+    if (tabs != 55) {
+        fprintf(stderr,
+                "Normal record: expected 55 tabs, got %d (regression)\n", tabs);
+        aseq_reset(&seq);
+        return 1;
+    }
+    if (strncmp(row, "AAAAAACCTTTTTT", 14) != 0) {
+        fprintf(stderr, "Normal record row doesn't start with sequence\n");
+        aseq_reset(&seq);
+        return 1;
+    }
+    aseq_reset(&seq);
+    return 0;
+}
+
+static int test_t1_11_buffer_truncation_returns_minus1(void) {
+    /* If the snprintf buffer is too small, the writer must signal
+     * failure (-1) rather than emit a partial row. */
+    AirrRecord r = {0};
+    strcpy(r.sequence, "ACGTACGT");
+    strcpy(r.germline_alignment, "ACGTACGT");
+    char tiny[16];   /* far too small for 56 columns */
+    int n = airr_snprintf_tsv_row(tiny, sizeof(tiny), &r);
+    if (n != -1) {
+        fprintf(stderr,
+                "Tiny buffer: expected -1 (truncated), got %d\n", n);
+        return 1;
+    }
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * Test 11 (legacy): germline alignment has correct NP handling
  * ═══════════════════════════════════════════════════════════════ */
 
 static int test_germline_alignment(void) {
@@ -719,6 +873,323 @@ static int test_c_allele_call(void) {
     return 0;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ * T1-2: junction tracked as a node-flagged region.
+ *
+ * Build a small VDJ-like sequence, mark the junction at "assembly",
+ * then exercise: anchor mutation (region intact), 3' tail trim past
+ * W/F (partial), 5' head trim past V Cys (partial), indel inside,
+ * contaminant wipe (fully removed).
+ * ═══════════════════════════════════════════════════════════════ */
+
+/* Helper: build a V-NP1-J sequence with V anchor at germline_pos=4,
+ * J anchor at germline_pos=2. Mark junction. */
+static void build_jn_seq(ASeq *seq, SimRecord *rec) {
+    aseq_init(seq);
+    sim_record_init(rec);
+    static Allele v, j;
+    v = make_allele("V1", "AAAAACCCCC", 4, SEG_V);
+    j = make_allele("J1", "GGGTTTTTT",  2, SEG_J);
+    rec->v_allele = &v;
+    rec->j_allele = &j;
+    aseq_append_segment(seq, "AAAAACCCCC", 10, SEG_V, 0, 4);
+    aseq_append_np(seq, "AT", 2, SEG_NP1, NUC_FLAG_N_NUCLEOTIDE);
+    aseq_append_segment(seq, "GGGTTTTTT", 9, SEG_J, 0, 2);
+    rec->original_junction_length = aseq_mark_junction(seq);
+}
+
+static int junction_node_count(const ASeq *seq) {
+    int c = 0;
+    for (Nuc *n = seq->head; n; n = n->next)
+        if (n->flags & NUC_FLAG_JUNCTION) c++;
+    return c;
+}
+
+/* T1-2 case 1: normal — full junction emitted, original == live. */
+static int test_junction_full_emitted(void) {
+    ASeq seq; SimRecord rec;
+    build_jn_seq(&seq, &rec);
+    if (rec.original_junction_length != 13) {
+        fprintf(stderr, "Expected original=13, got %d\n",
+                rec.original_junction_length);
+        return 1;
+    }
+    if (junction_node_count(&seq) != 13) return 1;
+
+    AirrRecord airr; SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+    if (airr.junction_length != 13) return 1;
+    if (strncmp(airr.junction_nt, "ACCCCCATGGGTT", 13) != 0) return 1;
+    /* No truncation note */
+    if (strstr(airr.note, "junction") != NULL) {
+        fprintf(stderr, "Unexpected note: %s\n", airr.note);
+        return 1;
+    }
+    return 0;
+}
+
+/* T1-2 case 2: anchor base mutated (Cys->Ser at V anchor). Region
+ * fully intact — coordinates and content emitted normally. */
+static int test_junction_anchor_mutated_kept(void) {
+    ASeq seq; SimRecord rec;
+    build_jn_seq(&seq, &rec);
+
+    /* Change V-anchor base to a different base. Node + flag intact. */
+    Nuc *va = aseq_find_anchor(&seq, SEG_V);
+    if (!va) return 1;
+    char before = va->current;
+    aseq_mutate(&seq, va, (before == 'C') ? 'A' : 'C', NUC_FLAG_MUTATED);
+
+    AirrRecord airr; SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+
+    if (airr.junction_length != 13) {
+        fprintf(stderr, "Anchor-mutated junction should still be full, got %d\n",
+                airr.junction_length);
+        return 1;
+    }
+    /* No truncation marker */
+    if (strstr(airr.note, "junction partial") != NULL ||
+        strstr(airr.note, "junction fully") != NULL) {
+        fprintf(stderr, "Unexpected truncation note: %s\n", airr.note);
+        return 1;
+    }
+    return 0;
+}
+
+/* T1-2 case 3: 3' trim removes 1 base of W/F codon. Junction shrinks
+ * by 1 nt; truncation note appended. */
+static int test_junction_3prime_partial_wf(void) {
+    ASeq seq; SimRecord rec;
+    build_jn_seq(&seq, &rec);
+
+    /* Delete the LAST junction-flagged node (third base of W/F). */
+    Nuc *last_jn = NULL;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->flags & NUC_FLAG_JUNCTION) last_jn = n;
+    }
+    if (!last_jn) return 1;
+    aseq_delete(&seq, last_jn);
+
+    AirrRecord airr; SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+
+    if (airr.junction_length != 12) {
+        fprintf(stderr, "Expected junction_length=12 after 1-base trim, got %d\n",
+                airr.junction_length);
+        return 1;
+    }
+    if (strstr(airr.note, "junction partial: 12/13 nt") == NULL) {
+        fprintf(stderr, "Expected truncation note, got: %s\n", airr.note);
+        return 1;
+    }
+    return 0;
+}
+
+/* T1-2 case 4: 5' trim removes the V anchor (junction shrinks at start). */
+static int test_junction_5prime_past_v_anchor(void) {
+    ASeq seq; SimRecord rec;
+    build_jn_seq(&seq, &rec);
+    int orig = rec.original_junction_length;
+
+    /* Delete the V anchor node. The first surviving junction-flagged
+     * node is the next one. */
+    Nuc *va = aseq_find_anchor(&seq, SEG_V);
+    if (!va) return 1;
+    aseq_delete(&seq, va);
+
+    AirrRecord airr; SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+
+    if (airr.junction_length != orig - 1) {
+        fprintf(stderr, "Expected junction_length=%d, got %d\n",
+                orig - 1, airr.junction_length);
+        return 1;
+    }
+    if (strstr(airr.note, "junction partial") == NULL) {
+        fprintf(stderr, "Expected partial note, got: %s\n", airr.note);
+        return 1;
+    }
+    return 0;
+}
+
+/* T1-2 case 5: indel inserts inside junction → flag inherited, span
+ * grows by 1. */
+static int test_junction_indel_inside_grows(void) {
+    ASeq seq; SimRecord rec;
+    build_jn_seq(&seq, &rec);
+    int orig = rec.original_junction_length;
+
+    /* Find a junction-flagged node mid-span (skip first to ensure both
+     * neighbors have JUNCTION flag). */
+    Nuc *target = NULL;
+    int seen = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->flags & NUC_FLAG_JUNCTION) {
+            seen++;
+            if (seen == 5) { target = n; break; }
+        }
+    }
+    if (!target) return 1;
+
+    /* Insert after target — both target and target->next are junction. */
+    Nuc *new_node = aseq_insert_after(&seq, target, 'X', SEG_NP1,
+                                       NUC_FLAG_INDEL_INS);
+    if (!new_node) return 1;
+    if (!(new_node->flags & NUC_FLAG_JUNCTION)) {
+        fprintf(stderr, "Inserted indel did not inherit JUNCTION flag\n");
+        return 1;
+    }
+
+    AirrRecord airr; SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+
+    if (airr.junction_length != orig + 1) {
+        fprintf(stderr, "Expected junction_length=%d after indel, got %d\n",
+                orig + 1, airr.junction_length);
+        return 1;
+    }
+    /* Note signals divergence from original */
+    if (strstr(airr.note, "junction partial") == NULL) {
+        fprintf(stderr, "Expected partial note (live != original), got: %s\n",
+                airr.note);
+        return 1;
+    }
+    return 0;
+}
+
+/* T1-2 case 6: insert OUTSIDE junction does NOT inherit the flag. */
+static int test_junction_insert_outside_no_inherit(void) {
+    ASeq seq; SimRecord rec;
+    build_jn_seq(&seq, &rec);
+
+    /* Insert before head (first V base, before V anchor → outside junction). */
+    Nuc *first = seq.head;
+    if (first->flags & NUC_FLAG_JUNCTION) return 1;  /* sanity */
+    Nuc *new_node = aseq_insert_before(&seq, first, 'N', SEG_V,
+                                        NUC_FLAG_INDEL_INS);
+    if (!new_node) return 1;
+    if (new_node->flags & NUC_FLAG_JUNCTION) {
+        fprintf(stderr, "Outside-junction insert wrongly inherited JUNCTION\n");
+        return 1;
+    }
+    return 0;
+}
+
+/* T1-2 case 7: every junction-flagged node deleted → fully removed. */
+static int test_junction_all_removed(void) {
+    ASeq seq; SimRecord rec;
+    build_jn_seq(&seq, &rec);
+
+    /* Delete every junction-flagged node. */
+    Nuc *n = seq.head;
+    while (n) {
+        Nuc *next = n->next;
+        if (n->flags & NUC_FLAG_JUNCTION) aseq_delete(&seq, n);
+        n = next;
+    }
+
+    AirrRecord airr; SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+
+    if (airr.junction_length != 0) return 1;
+    if (airr.junction_start != 0 || airr.junction_end != 0) return 1;
+    if (airr.junction_nt[0] != '\0') return 1;
+    if (airr.junction_aa[0] != '\0') return 1;
+    if (strstr(airr.note, "junction fully removed") == NULL) {
+        fprintf(stderr, "Expected 'junction fully removed', got: %s\n", airr.note);
+        return 1;
+    }
+    return 0;
+}
+
+/* T1-2 case 8: no anchors → no junction marked, original=0, no
+ * spurious truncation note. */
+static int test_junction_no_anchors(void) {
+    ASeq seq; SimRecord rec;
+    aseq_init(&seq); sim_record_init(&rec);
+    static Allele v, j;
+    v = make_allele("V1", "AAAAA", -1, SEG_V);     /* anchorless */
+    j = make_allele("J1", "TTTTT", -1, SEG_J);
+    rec.v_allele = &v;
+    rec.j_allele = &j;
+    aseq_append_segment(&seq, "AAAAA", 5, SEG_V, 0, -1);
+    aseq_append_segment(&seq, "TTTTT", 5, SEG_J, 0, -1);
+    rec.original_junction_length = aseq_mark_junction(&seq);
+
+    if (rec.original_junction_length != 0) return 1;
+
+    AirrRecord airr; SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+
+    if (airr.junction_length != 0) return 1;
+    /* No truncation note (we never had a junction to truncate). */
+    if (strstr(airr.note, "junction partial") != NULL ||
+        strstr(airr.note, "junction fully") != NULL) {
+        return 1;
+    }
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * T1-4: when D is missing from the live sequence (e.g., fully
+ * deleted by indels) but rec->d_allele is non-NULL with non-zero
+ * d_trim_5/3, the D-side adjustments in airr_derive_positions used
+ * to be skipped, leaving d_trim_*_adjusted at memset 0. That made
+ * d{5,3}_ambig in patch_boundary_extensions / collect_boundary_
+ * mutations equal rec->d_trim_X (full trim), and the patch/scan
+ * fired at d_sequence_start = 0 (memset default), corrupting V's
+ * region with D's germline and emitting spurious mutation entries.
+ *
+ * The fix: initialize d_trim_*_adjusted to rec->d_trim_X
+ * unconditionally, before the has_d block.
+ * ═══════════════════════════════════════════════════════════════ */
+
+static int test_t1_4_no_spurious_mut_when_d_missing(void) {
+    ASeq seq; SimRecord rec;
+    aseq_init(&seq); sim_record_init(&rec);
+
+    static Allele v, d, j;
+    v = make_allele("V1", "ACGTACGTACGTACGTACGTACGTACGTAC", 4, SEG_V);  /* 30bp */
+    d = make_allele("D1", "GGGCCCAAATTTGGG",                  0, SEG_D);  /* 15bp */
+    j = make_allele("J1", "TTTAAATTT",                        2, SEG_J);  /* 9bp */
+    rec.v_allele = &v;
+    rec.d_allele = &d;
+    rec.j_allele = &j;
+    /* Critical: simulator-side trims are non-zero, but D will be
+     * absent from the live sequence (we don't append it). This is
+     * the post-indel-D-wipeout scenario. */
+    rec.v_trim_3 = 0;
+    rec.d_trim_5 = 5;     /* would normally extend into NP1 */
+    rec.d_trim_3 = 3;
+    rec.j_trim_5 = 0;
+
+    /* Build sequence with V, NP1, NP2, J — NO D. */
+    aseq_append_segment(&seq, v.seq, v.length, SEG_V, 0, 4);
+    aseq_append_np(&seq, "ATGC", 4, SEG_NP1, NUC_FLAG_N_NUCLEOTIDE);
+    aseq_append_np(&seq, "TGCA", 4, SEG_NP2, NUC_FLAG_N_NUCLEOTIDE);
+    aseq_append_segment(&seq, j.seq, j.length, SEG_J, 0, 2);
+    aseq_mark_junction(&seq);
+
+    AirrRecord airr; SimConfig cfg = {0};
+    airr_serialize(&seq, &rec, &cfg, NULL, &airr);
+
+    /* No SHM, no quality errors, no PCR errors → 0 mutations. */
+    if (airr.n_mutations != 0) {
+        fprintf(stderr,
+                "Expected n_mutations=0 with D missing, got %d. "
+                "Mutations field: %s\n",
+                airr.n_mutations, airr.mutations);
+        return 1;
+    }
+    if (airr.mutations[0] != '\0') {
+        fprintf(stderr, "Expected empty mutations string, got: %s\n",
+                airr.mutations);
+        return 1;
+    }
+    return 0;
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -737,9 +1208,26 @@ int main(void) {
     TEST(test_correction_context_lifecycle);
     TEST(test_serialize_with_corrections);
     TEST(test_tsv_output);
+    TEST(test_t1_11_tab_in_note_does_not_split_columns);
+    TEST(test_t1_11_tab_in_allele_name_handled);
+    TEST(test_t1_11_normal_record_unchanged);
+    TEST(test_t1_11_buffer_truncation_returns_minus1);
     TEST(test_germline_alignment);
     TEST(test_short_d_in_serialize);
     TEST(test_c_allele_call);
+
+    printf("\n--- T1-2 junction-as-tracked-region ---\n");
+    TEST(test_junction_full_emitted);
+    TEST(test_junction_anchor_mutated_kept);
+    TEST(test_junction_3prime_partial_wf);
+    TEST(test_junction_5prime_past_v_anchor);
+    TEST(test_junction_indel_inside_grows);
+    TEST(test_junction_insert_outside_no_inherit);
+    TEST(test_junction_all_removed);
+    TEST(test_junction_no_anchors);
+
+    printf("\n--- T1-4 boundary mutations with missing D ---\n");
+    TEST(test_t1_4_no_spurious_mut_when_d_missing);
 
     printf("\n%d/%d tests passed.\n", total - failures, total);
     return failures > 0 ? 1 : 0;

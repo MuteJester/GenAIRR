@@ -69,7 +69,11 @@ typedef struct {
 /* ── Feature flags ────────────────────────────────────────────── */
 
 typedef struct {
-    bool  productive;
+    /* Productivity filter mode. Zero-initialized (memset) defaults to
+     * PRODUCTIVITY_MIXED (no filtering). The legacy bool field name is
+     * gone — use `productivity` everywhere; back-compat is provided at
+     * the API boundary (genairr_set_feature("productive", val)). */
+    ProductivityMode productivity;
     bool  mutate;
     bool  selection_pressure;
     bool  csr;
@@ -175,6 +179,7 @@ typedef struct {
     double        selection_strength;
     double        cdr_r_acceptance;
     double        fwr_r_acceptance;
+    double        anchor_r_acceptance;   /* V-Cys / J-W or F anchor codon */
 
     /* D inversion probability */
     double        d_inversion_prob;

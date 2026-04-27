@@ -323,3 +323,77 @@ class TestCrossPhaseRejection:
     def test_observe_rejects_non_observe(self, wrong_clause):
         with pytest.raises(TypeError):
             _exp().observe(wrong_clause)
+
+
+# =====================================================================
+# T1-9: Step classes are not exported at the top level
+# =====================================================================
+
+
+class TestStepNotTopLevelExport:
+    """Internal Step classes (Mutate, Rearrange, Corrupt5Prime, etc.)
+    must NOT be importable from the top-level GenAIRR package.
+
+    They were trap-bait — tab-completion surfaced them next to
+    Experiment, but passing them to phase methods raised TypeError
+    because the phases only accept *Clause from GenAIRR.ops."""
+
+    def test_mutate_not_at_top_level(self):
+        import GenAIRR
+        assert not hasattr(GenAIRR, "Mutate"), \
+            "GenAIRR.Mutate is internal — should not be top-level"
+
+    def test_rearrange_not_at_top_level(self):
+        import GenAIRR
+        assert not hasattr(GenAIRR, "Rearrange")
+
+    def test_step_base_not_at_top_level(self):
+        import GenAIRR
+        assert not hasattr(GenAIRR, "Step")
+
+    def test_all_internal_steps_not_at_top_level(self):
+        """No Step subclass leaked into the top-level namespace."""
+        import GenAIRR
+        leaked = []
+        for name in [
+            "Step", "Rearrange", "Mutate", "SimulateCSR", "SelectionPressure",
+            "SimulateDGeneInversion", "SimulateReceptorRevision",
+            "Corrupt5Prime", "Corrupt3Prime", "CorruptQuality",
+            "SimulatePairedEnd", "PCRAmplification", "SimulateUMI",
+            "PrimerMask", "ReverseComplement", "SpikeContaminants",
+            "SkewBaseComposition", "InsertIndels", "InsertNs",
+        ]:
+            if hasattr(GenAIRR, name):
+                leaked.append(name)
+        assert not leaked, f"top-level Step exports leaked: {leaked}"
+
+    def test_subpackage_access_still_works(self):
+        """Power users / tests can still import via GenAIRR.steps.*"""
+        from GenAIRR.steps import (
+            Step, Rearrange, Mutate, Corrupt5Prime, InsertIndels
+        )
+        # And they can be instantiated
+        assert Mutate(min_rate=0.01, max_rate=0.05) is not None
+        assert Step is not None
+
+    def test_passing_step_to_phase_gives_redirect_hint(self):
+        """When a user does mistakenly pass a Step (via the subpackage
+        import) to a phase, the TypeError must redirect them to
+        GenAIRR.ops — that's the audit's signposting requirement."""
+        from GenAIRR.steps import Mutate as _MutateStep
+        with pytest.raises(TypeError) as excinfo:
+            _exp().mutate(_MutateStep(min_rate=0.01, max_rate=0.05))
+        msg = str(excinfo.value)
+        assert "Step" in msg, f"hint missing Step keyword: {msg}"
+        assert "GenAIRR.ops" in msg, f"hint missing GenAIRR.ops redirect: {msg}"
+        assert "rate" in msg, f"hint missing example clause name: {msg}"
+
+    def test_normal_clause_error_is_unchanged(self):
+        """Passing a wrong-CLASS clause (not a Step) still gets the
+        plain TypeError — no Step hint."""
+        with pytest.raises(TypeError) as excinfo:
+            _exp().mutate(with_umi(12))   # Prepare-clause into mutate
+        msg = str(excinfo.value)
+        assert "MutateClause" in msg
+        assert "Step" not in msg, \
+            f"wrong-class clause should not get Step hint: {msg}"

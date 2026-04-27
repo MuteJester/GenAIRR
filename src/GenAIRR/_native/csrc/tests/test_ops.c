@@ -156,6 +156,115 @@ static int test_corrupt_3_prime_changes_length(void) {
     return 1;
 }
 
+/* ── T1-3: min=max=0 must disable the branch ─────────────────── */
+
+/* When corrupt_5_remove_min=max=0, the remove branch (when rolled)
+ * must produce amount=0 and leave sequence length unchanged. Same for
+ * the add branch. Sweep many seeds to hit both event flavours. */
+static int test_t1_3_corrupt_5_min_max_zero_disables(void) {
+    int saw_remove_event = 0, saw_add_event = 0;
+    for (int seed = 0; seed < 200; seed++) {
+        ASeq seq; SimRecord rec; SimConfig cfg;
+        build_simple_seq(&seq, &rec, &cfg);
+        cfg.corrupt_5_remove_min = 0;
+        cfg.corrupt_5_remove_max = 0;
+        cfg.corrupt_5_add_min    = 0;
+        cfg.corrupt_5_add_max    = 0;
+
+        int len_before = aseq_length(&seq);
+        rng_seed(&_test_rng, (uint64_t)seed, 0);
+        step_corrupt_5_prime(&cfg, &seq, &rec);
+        int len_after = aseq_length(&seq);
+
+        ASSERT(len_after == len_before,
+               "min=max=0 must not change seq length");
+
+        if (rec.corruption_5_event == 1 || rec.corruption_5_event == 3) {
+            saw_remove_event = 1;
+            ASSERT(rec.corruption_5_remove_amount == 0,
+                   "remove amount must be 0 when min=max=0");
+        }
+        if (rec.corruption_5_event == 2 || rec.corruption_5_event == 3) {
+            saw_add_event = 1;
+            ASSERT(rec.corruption_5_add_amount == 0,
+                   "add amount must be 0 when min=max=0");
+        }
+        sim_config_destroy(&cfg);
+    }
+    ASSERT(saw_remove_event && saw_add_event,
+           "200-seed sweep should hit both remove and add events");
+    return 1;
+}
+
+static int test_t1_3_corrupt_3_min_max_zero_disables(void) {
+    int saw_remove_event = 0, saw_add_event = 0;
+    for (int seed = 0; seed < 200; seed++) {
+        ASeq seq; SimRecord rec; SimConfig cfg;
+        build_simple_seq(&seq, &rec, &cfg);
+        cfg.corrupt_3_remove_min = 0;
+        cfg.corrupt_3_remove_max = 0;
+        cfg.corrupt_3_add_min    = 0;
+        cfg.corrupt_3_add_max    = 0;
+
+        int len_before = aseq_length(&seq);
+        rng_seed(&_test_rng, (uint64_t)seed, 0);
+        step_corrupt_3_prime(&cfg, &seq, &rec);
+        int len_after = aseq_length(&seq);
+
+        ASSERT(len_after == len_before,
+               "min=max=0 must not change seq length");
+
+        if (rec.corruption_3_event == 1 || rec.corruption_3_event == 3) {
+            saw_remove_event = 1;
+            ASSERT(rec.corruption_3_remove_amount == 0,
+                   "remove amount must be 0 when min=max=0");
+        }
+        if (rec.corruption_3_event == 2 || rec.corruption_3_event == 3) {
+            saw_add_event = 1;
+            ASSERT(rec.corruption_3_add_amount == 0,
+                   "add amount must be 0 when min=max=0");
+        }
+        sim_config_destroy(&cfg);
+    }
+    ASSERT(saw_remove_event && saw_add_event,
+           "200-seed sweep should hit both remove and add events");
+    return 1;
+}
+
+/* min=0,max=N>0 must produce amounts that include 0 in the empirical
+ * distribution (i.e., the floor is not silently re-introducing 1).
+ * With min=0, max=2 the sample space is {0, 1, 2}; we expect each to
+ * appear at >5% over a 500-seed sweep. */
+static int test_t1_3_corrupt_5_lower_tail_visible(void) {
+    int counts[4] = {0};   /* index by amount, 0..3 */
+    int n_remove = 0;
+    for (int seed = 0; seed < 500; seed++) {
+        ASeq seq; SimRecord rec; SimConfig cfg;
+        build_simple_seq(&seq, &rec, &cfg);
+        cfg.corrupt_5_remove_min = 0;
+        cfg.corrupt_5_remove_max = 2;
+        cfg.corrupt_5_add_min    = 0;
+        cfg.corrupt_5_add_max    = 0;
+
+        rng_seed(&_test_rng, (uint64_t)seed, 0);
+        step_corrupt_5_prime(&cfg, &seq, &rec);
+
+        if (rec.corruption_5_event == 1 || rec.corruption_5_event == 3) {
+            int a = rec.corruption_5_remove_amount;
+            if (a >= 0 && a <= 3) counts[a]++;
+            n_remove++;
+        }
+        sim_config_destroy(&cfg);
+    }
+    ASSERT(n_remove > 100, "Need a usable remove-event sample");
+    /* Each of {0, 1, 2} should appear at >5% of remove events. */
+    ASSERT(counts[0] > n_remove / 20, "amount=0 must be reachable");
+    ASSERT(counts[1] > n_remove / 20, "amount=1 must be reachable");
+    ASSERT(counts[2] > n_remove / 20, "amount=2 must be reachable");
+    ASSERT(counts[3] == 0, "amount > max must never appear");
+    return 1;
+}
+
 /* ── Quality Errors ──────────────────────────────────────────── */
 
 static int test_quality_errors_introduces_errors(void) {
@@ -582,9 +691,10 @@ static int test_receptor_revision_changes_v(void) {
 static int test_selection_pressure_reverts_mutations(void) {
     ASeq seq; SimRecord rec; SimConfig cfg;
     build_simple_seq(&seq, &rec, &cfg);
-    cfg.selection_strength = 1.0;    /* Maximum pressure */
-    cfg.cdr_r_acceptance = 0.0;      /* Reject all CDR R-mutations */
-    cfg.fwr_r_acceptance = 0.0;      /* Reject all FWR R-mutations */
+    cfg.selection_strength    = 1.0;
+    cfg.cdr_r_acceptance      = 0.0;
+    cfg.fwr_r_acceptance      = 0.0;
+    cfg.anchor_r_acceptance   = 0.0;
 
     /* Mutate several V-segment bases */
     int mutated = 0;
@@ -608,6 +718,341 @@ static int test_selection_pressure_reverts_mutations(void) {
     /* With 100% strength and 0% acceptance, all R-mutations should be reverted.
      * Some may be S (silent) and kept. */
     ASSERT(remaining < mutated, "Some mutations should be reverted");
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
+/**
+ * Selection now walks all coding segments (V/NP1/D/NP2/J), not just V.
+ * Insert R-mutations into D and J and verify they are reverted under
+ * 100% strength + 0 acceptance.
+ */
+static int test_selection_walks_dj_segments(void) {
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+    cfg.selection_strength    = 1.0;
+    cfg.cdr_r_acceptance      = 0.0;
+    cfg.fwr_r_acceptance      = 0.0;
+    cfg.anchor_r_acceptance   = 0.0;
+
+    aseq_build_codon_rail(&seq);
+
+    /* Find a coding-segment node in D (mid-segment) and a J-FR4 node
+     * (just past J anchor + 3) and force replacement mutations. */
+    Nuc *d_node = NULL, *j_fr4 = NULL;
+    int j_anchor = rec.j_allele->anchor;   /* 8 */
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->segment == SEG_D && d_node == NULL) d_node = n;
+        if (n->segment == SEG_J && n->germline_pos >= (uint16_t)(j_anchor + 3)
+            && j_fr4 == NULL) {
+            j_fr4 = n;
+            break;
+        }
+    }
+    ASSERT(d_node && j_fr4, "Need D and J-FR4 nodes for the test");
+
+    /* Force R-mutations: pick a base whose codon translation differs.
+     * For simplicity, mutate to N's complement so we virtually always
+     * change the codon. We cannot guarantee R without inspecting the
+     * codon, so loop several nodes per segment and at least one will
+     * land R. Instead: tag MANY nodes and assert revert count > 0. */
+    int d_mutated = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->segment != SEG_D) continue;
+        if (n->germline == '\0') continue;
+        char nb = (n->current == 'A') ? 'C' : 'A';
+        aseq_mutate(&seq, n, nb, NUC_FLAG_MUTATED);
+        d_mutated++;
+    }
+    int j_mutated = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->segment != SEG_J) continue;
+        if (n->germline_pos < (uint16_t)(j_anchor + 3)) continue;  /* skip CDR3 */
+        if (n->germline == '\0') continue;
+        char nb = (n->current == 'A') ? 'C' : 'A';
+        aseq_mutate(&seq, n, nb, NUC_FLAG_MUTATED);
+        j_mutated++;
+    }
+    ASSERT(d_mutated > 0 && j_mutated > 0, "Should have mutations to revert in D and J");
+
+    rng_seed(&_test_rng, 7, 0);
+    step_selection_pressure(&cfg, &seq, &rec);
+
+    int d_remain = 0, j_remain = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (!(n->flags & NUC_FLAG_MUTATED)) continue;
+        if (n->segment == SEG_D) d_remain++;
+        else if (n->segment == SEG_J && n->germline_pos >= (uint16_t)(j_anchor + 3))
+            j_remain++;
+    }
+    /* At 0 acceptance, only S-mutations survive. Most randomly chosen
+     * substitutions in a coding context are R, so revert count must
+     * dominate. */
+    ASSERT(d_remain < d_mutated, "D R-mutations should mostly revert");
+    ASSERT(j_remain < j_mutated, "J FR4 R-mutations should mostly revert");
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
+/**
+ * Anchor-codon protection: V Cys codon and J W/F codon should be
+ * fiercely protected (anchor_r_acceptance default = 0). Force an
+ * R-mutation into the anchor codon and verify it is reverted across
+ * many seeds.
+ */
+static int test_selection_protects_anchor_codon(void) {
+    int reverted = 0, total = 0;
+    int v_anchor_pos = -1;
+
+    for (int seed = 1; seed <= 64; seed++) {
+        ASeq seq; SimRecord rec; SimConfig cfg;
+        build_simple_seq(&seq, &rec, &cfg);
+        cfg.selection_strength    = 1.0;
+        cfg.cdr_r_acceptance      = 1.0;   /* keep ordinary CDR mutations */
+        cfg.fwr_r_acceptance      = 1.0;   /* keep ordinary FWR mutations */
+        cfg.anchor_r_acceptance   = 0.0;   /* but reject anchor-disrupting R */
+
+        aseq_build_codon_rail(&seq);
+
+        /* Find the V anchor node and force an R-mutation on it. The
+         * V allele is "...ATGCATGC..." repeated; mutating any base in
+         * the anchor codon to a different base will change Cys (TGC)
+         * to something else. */
+        Nuc *anchor = aseq_find_anchor(&seq, SEG_V);
+        if (!anchor) { sim_config_destroy(&cfg); continue; }
+        v_anchor_pos = anchor->germline_pos;
+
+        /* Force an R-mutation: change the anchor base to a base that
+         * definitely changes the amino acid. Mutate anchor's base. */
+        char nb = (anchor->current == 'A') ? 'C' :
+                  (anchor->current == 'C') ? 'A' :
+                  (anchor->current == 'G') ? 'T' : 'G';
+        aseq_mutate(&seq, anchor, nb, NUC_FLAG_MUTATED);
+
+        rng_seed(&_test_rng, (uint64_t)seed, 0);
+        step_selection_pressure(&cfg, &seq, &rec);
+
+        total++;
+        /* The anchor R-mutation should always be reverted (acceptance=0). */
+        if (!(anchor->flags & NUC_FLAG_MUTATED)) reverted++;
+        sim_config_destroy(&cfg);
+    }
+    ASSERT(v_anchor_pos > 0, "Test fixture should expose V anchor");
+    ASSERT(total >= 60, "Should have run on most seeds");
+    ASSERT(reverted == total,
+           "Anchor R-mutations must always revert at anchor_r_acceptance=0");
+    return 1;
+}
+
+/**
+ * Anchorless V allele: when V has anchor <= 0, V-segment mutations
+ * are SKIPPED (not classified as FR/CDR via the static table — that
+ * would mis-classify CDR3). NP1/D/NP2/J are still selected as usual.
+ */
+static int test_selection_skips_anchorless_v(void) {
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+
+    /* Override V allele to be anchorless. We must keep the original
+     * pointer alive — copy into a fresh static so rec->v_allele
+     * doesn't dangle when the build_simple_seq's static is reused
+     * later. Also clear FLAG_ANCHOR on the sequence: a real
+     * anchorless V allele would never have had FLAG_ANCHOR set during
+     * append, but our test fixture pre-tagged it. */
+    static Allele anchorless_v = { 0 };
+    memcpy(&anchorless_v, rec.v_allele, sizeof(Allele));
+    anchorless_v.anchor = -1;
+    rec.v_allele = &anchorless_v;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->segment == SEG_V) n->flags &= (uint16_t)~NUC_FLAG_ANCHOR;
+    }
+
+    cfg.selection_strength    = 1.0;
+    cfg.cdr_r_acceptance      = 0.0;
+    cfg.fwr_r_acceptance      = 0.0;
+    cfg.anchor_r_acceptance   = 0.0;
+
+    aseq_build_codon_rail(&seq);
+
+    /* Mutate every coding-segment node we can */
+    int v_mut = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->segment != SEG_V) continue;
+        if (n->germline == '\0') continue;
+        char nb = (n->current == 'A') ? 'C' : 'A';
+        aseq_mutate(&seq, n, nb, NUC_FLAG_MUTATED);
+        v_mut++;
+    }
+    ASSERT(v_mut > 0, "Should have mutated V nodes");
+
+    rng_seed(&_test_rng, 13, 0);
+    step_selection_pressure(&cfg, &seq, &rec);
+
+    int v_remain = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->segment == SEG_V && (n->flags & NUC_FLAG_MUTATED)) v_remain++;
+    }
+    /* Anchorless V is skipped → no V mutations should be reverted,
+     * regardless of how many were R. */
+    ASSERT(v_remain == v_mut,
+           "Anchorless V mutations must NOT be reverted (segment skipped)");
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
+/**
+ * Order stability: when two mutations land in the same codon, the
+ * outcome is independent of evaluation order modulo the random draws
+ * (each is evaluated against the current germline-substituted codon).
+ * We don't require equality; we require that across many seeds the
+ * acceptance rate matches the configured CDR rate within MC noise.
+ */
+static int test_selection_acceptance_rate_calibration(void) {
+    int total_r = 0, kept_r = 0;
+    const double target = 0.50;       /* effective CDR acceptance */
+
+    for (int seed = 1; seed <= 200; seed++) {
+        ASeq seq; SimRecord rec; SimConfig cfg;
+        build_simple_seq(&seq, &rec, &cfg);
+        cfg.selection_strength    = 1.0;
+        cfg.cdr_r_acceptance      = target;
+        cfg.fwr_r_acceptance      = target;
+        cfg.anchor_r_acceptance   = target;
+
+        aseq_build_codon_rail(&seq);
+
+        /* Mutate a single codon-aligned non-anchor node deterministically. */
+        Nuc *n = seq.head;
+        while (n && (n->segment != SEG_V || n->germline == '\0' ||
+                     (n->flags & NUC_FLAG_ANCHOR) || n->frame_phase != 0)) {
+            n = n->next;
+        }
+        if (!n) { sim_config_destroy(&cfg); continue; }
+        char nb = (n->current == 'A') ? 'C' :
+                  (n->current == 'C') ? 'G' :
+                  (n->current == 'G') ? 'T' : 'A';
+        aseq_mutate(&seq, n, nb, NUC_FLAG_MUTATED);
+
+        /* Skip if it ended up silent (acceptance is 100% for S). */
+        char b1 = n->germline, b2 = n->next ? n->next->current : 'A';
+        char b3 = (n->next && n->next->next) ? n->next->next->current : 'A';
+        char aa_g = "FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG"[
+            ((b1=='T'||b1=='t')?0:(b1=='C'||b1=='c')?1:(b1=='A'||b1=='a')?2:3)*16 +
+            ((b2=='T'||b2=='t')?0:(b2=='C'||b2=='c')?1:(b2=='A'||b2=='a')?2:3)*4 +
+            ((b3=='T'||b3=='t')?0:(b3=='C'||b3=='c')?1:(b3=='A'||b3=='a')?2:3)
+        ];
+        char b1c = n->current;
+        char aa_c = "FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG"[
+            ((b1c=='T'||b1c=='t')?0:(b1c=='C'||b1c=='c')?1:(b1c=='A'||b1c=='a')?2:3)*16 +
+            ((b2=='T'||b2=='t')?0:(b2=='C'||b2=='c')?1:(b2=='A'||b2=='a')?2:3)*4 +
+            ((b3=='T'||b3=='t')?0:(b3=='C'||b3=='c')?1:(b3=='A'||b3=='a')?2:3)
+        ];
+        if (aa_g == aa_c) { sim_config_destroy(&cfg); continue; }
+
+        total_r++;
+
+        rng_seed(&_test_rng, (uint64_t)seed, 0);
+        step_selection_pressure(&cfg, &seq, &rec);
+
+        if (n->flags & NUC_FLAG_MUTATED) kept_r++;
+        sim_config_destroy(&cfg);
+    }
+    ASSERT(total_r > 50, "Need a usable R-mutation sample");
+    double observed = (double)kept_r / (double)total_r;
+    /* MC band: 200 trials, target 0.5 → SE ~0.035 → ±0.10 is safe */
+    ASSERT(observed > 0.40 && observed < 0.60,
+           "Empirical R-acceptance should match target within MC noise");
+    return 1;
+}
+
+/**
+ * Codon-spanning V→NP1 boundary: the last 1-2 nucleotides of V and
+ * the first base(s) of NP1 form a single codon. Selection must
+ * correctly classify R/S using the codon-rail head, even though the
+ * codon spans a segment boundary.
+ *
+ * We force a mutation on the last V base before the V-anchor stretch,
+ * verify the rail places it in a codon whose head may be in V (and
+ * its 2nd/3rd bases in NP1 in some configurations). The test
+ * primarily asserts no crash and that the mutation classification
+ * uses the codon rail (not just `germline_pos % 3`).
+ */
+static int test_selection_codon_spanning_boundary(void) {
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+    cfg.selection_strength    = 1.0;
+    cfg.cdr_r_acceptance      = 0.0;
+    cfg.fwr_r_acceptance      = 0.0;
+    cfg.anchor_r_acceptance   = 0.0;
+
+    aseq_build_codon_rail(&seq);
+
+    /* Find the last V node (germline boundary) and the first NP1 node. */
+    Nuc *last_v = NULL, *first_np1 = NULL;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->segment == SEG_V) last_v = n;
+        if (n->segment == SEG_NP1 && first_np1 == NULL) first_np1 = n;
+    }
+    ASSERT(last_v && first_np1, "Need both V tail and NP1 head");
+
+    /* Force a mutation at last V base (likely codon-spanning into NP1). */
+    char nb = (last_v->current == 'A') ? 'T' : 'A';
+    aseq_mutate(&seq, last_v, nb, NUC_FLAG_MUTATED);
+
+    /* Force a mutation at first NP1 base (may also be codon-spanning). */
+    char nb2 = (first_np1->current == 'A') ? 'T' : 'A';
+    aseq_mutate(&seq, first_np1, nb2, NUC_FLAG_MUTATED);
+
+    rng_seed(&_test_rng, 11, 0);
+    step_selection_pressure(&cfg, &seq, &rec);
+
+    /* No crash, codon rail still valid, no out-of-bounds. */
+    ASSERT(seq.codon_rail_valid, "Codon rail should remain valid");
+    /* Last V mutation: V is selected (with anchor). At 0 acceptance,
+     * if classified as R, it must revert. Either it reverted, or it
+     * was silent (kept). Both are valid. We assert the mutation
+     * either carries the MUTATED flag with germline preserved or was
+     * reverted to germline. */
+    ASSERT(last_v->germline != '\0', "Last V node must have germline");
+    if (!(last_v->flags & NUC_FLAG_MUTATED)) {
+        ASSERT(last_v->current == last_v->germline,
+               "If reverted, current must match germline");
+    }
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
+/**
+ * Selection strength=0 is a no-op: no mutations should be reverted.
+ */
+static int test_selection_strength_zero_noop(void) {
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+    cfg.selection_strength    = 0.0;   /* disabled */
+    cfg.cdr_r_acceptance      = 0.0;
+    cfg.fwr_r_acceptance      = 0.0;
+    cfg.anchor_r_acceptance   = 0.0;
+
+    aseq_build_codon_rail(&seq);
+
+    int mutated = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (!nuc_is_coding_segment(n) || n->germline == '\0') continue;
+        if (mutated >= 30) break;
+        char nb = (n->current == 'A') ? 'C' : 'A';
+        aseq_mutate(&seq, n, nb, NUC_FLAG_MUTATED);
+        mutated++;
+    }
+
+    rng_seed(&_test_rng, 99, 0);
+    step_selection_pressure(&cfg, &seq, &rec);
+
+    int remaining = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->flags & NUC_FLAG_MUTATED) remaining++;
+    }
+    ASSERT(remaining == mutated,
+           "strength=0 must not revert anything");
     sim_config_destroy(&cfg);
     return 1;
 }
@@ -776,6 +1221,9 @@ int main(void) {
     RUN(test_corrupt_5_prime_changes_length);
     RUN(test_corrupt_5_prime_remove_shrinks);
     RUN(test_corrupt_3_prime_changes_length);
+    RUN(test_t1_3_corrupt_5_min_max_zero_disables);
+    RUN(test_t1_3_corrupt_3_min_max_zero_disables);
+    RUN(test_t1_3_corrupt_5_lower_tail_visible);
     RUN(test_quality_errors_introduces_errors);
     RUN(test_quality_errors_preserves_germline);
     RUN(test_pcr_introduces_errors);
@@ -799,6 +1247,12 @@ int main(void) {
     RUN(test_d_inversion_probability);
     RUN(test_receptor_revision_changes_v);
     RUN(test_selection_pressure_reverts_mutations);
+    RUN(test_selection_walks_dj_segments);
+    RUN(test_selection_protects_anchor_codon);
+    RUN(test_selection_skips_anchorless_v);
+    RUN(test_selection_acceptance_rate_calibration);
+    RUN(test_selection_codon_spanning_boundary);
+    RUN(test_selection_strength_zero_noop);
 
     printf("\nMutation:\n");
     RUN(test_uniform_mutate_applies);

@@ -4,6 +4,7 @@
 
 #include "genairr/gdc_io.h"
 #include "genairr/gdc_format.h"
+#include "genairr/genairr_api.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -429,6 +430,70 @@ static void test_file_size_reasonable(void) {
     remove(TEST_FILE);
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ * T1-5: genairr_create_from_memory must reject bad inputs and
+ * succeed on valid GDC bytes. Pre-fix it ignored fwrite/fclose
+ * returns; on disk-full the temp file would be silently truncated
+ * and genairr_create would read corrupted data.
+ *
+ * We can't portably inject an fwrite failure from a unit test, so
+ * these tests cover (a) the happy path (regression: the fix didn't
+ * break valid input) and (b) explicit invalid-input rejection paths.
+ * ═══════════════════════════════════════════════════════════════ */
+
+static void test_create_from_memory_happy_path(void) {
+    /* Build a minimal valid GDC, save it, slurp the bytes back, then
+     * call genairr_create_from_memory. */
+    GdcData orig = build_test_data();
+    int rc = gdc_save(TEST_FILE, &orig);
+    assert(rc == 0);
+
+    FILE *fp = fopen(TEST_FILE, "rb");
+    assert(fp != NULL);
+    fseek(fp, 0, SEEK_END);
+    long size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    assert(size > 0);
+
+    void *bytes = malloc((size_t)size);
+    assert(bytes);
+    size_t got = fread(bytes, 1, (size_t)size, fp);
+    assert(got == (size_t)size);
+    fclose(fp);
+
+    GenAIRRSimulator *sim = genairr_create_from_memory(bytes, (int)size);
+    assert(sim != NULL);
+    genairr_destroy(sim);
+
+    free(bytes);
+    gdc_data_destroy(&orig);
+    remove(TEST_FILE);
+    PASS("genairr_create_from_memory: happy path returns non-NULL");
+}
+
+static void test_create_from_memory_invalid_inputs(void) {
+    /* NULL gdc_bytes → NULL */
+    GenAIRRSimulator *sim = genairr_create_from_memory(NULL, 100);
+    assert(sim == NULL);
+
+    /* gdc_len <= 0 → NULL */
+    char buf[16] = {0};
+    sim = genairr_create_from_memory(buf, 0);
+    assert(sim == NULL);
+    sim = genairr_create_from_memory(buf, -1);
+    assert(sim == NULL);
+
+    /* Garbage bytes (valid pointer, non-zero length, but not GDC) → NULL.
+     * gdc_load's magic check rejects this; the fix is not what makes
+     * this case work, but we keep it as a regression. */
+    char garbage[64];
+    memset(garbage, 'x', sizeof(garbage));
+    sim = genairr_create_from_memory(garbage, (int)sizeof(garbage));
+    assert(sim == NULL);
+
+    PASS("genairr_create_from_memory: invalid inputs return NULL");
+}
+
 /* ── Main ──────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -440,6 +505,8 @@ int main(void) {
     test_populate_s5f_model();
     test_empty_sections();
     test_file_size_reasonable();
+    test_create_from_memory_happy_path();
+    test_create_from_memory_invalid_inputs();
 
     printf("\nAll GDC tests passed.\n");
     return 0;

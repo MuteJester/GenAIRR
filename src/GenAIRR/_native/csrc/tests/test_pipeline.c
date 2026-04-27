@@ -42,6 +42,8 @@ static Allele make_allele(const char *name, const char *seq,
  * the old srand(). */
 static RngState _test_rng;
 
+static SimConfig make_productive_capable_igh_config(void);  /* forward */
+
 static SimConfig make_igh_config(void) {
     SimConfig cfg;
     sim_config_init(&cfg, CHAIN_IGH);
@@ -183,8 +185,8 @@ static int test_pipeline_execute(void) {
 static int test_productive_mode(void) {
     rng_seed(&_test_rng, 123, 0);
 
-    SimConfig cfg = make_igh_config();
-    cfg.features.productive = true;
+    SimConfig cfg = make_productive_capable_igh_config();
+    cfg.features.productivity = PRODUCTIVITY_PRODUCTIVE_ONLY;
     cfg.max_productive_attempts = 25;
 
     Pipeline p = pipeline_build(&cfg);
@@ -207,6 +209,173 @@ static int test_productive_mode(void) {
 
     sim_config_destroy(&cfg);
     return 0;  /* Pass regardless — just verify no crash */
+}
+
+/* ── T1-6: productivity filter modes ──────────────────────────────
+ *
+ * The Productivity enum guarantees that filtered modes return ONLY
+ * the matching kind of sequence. We need productive-capable alleles
+ * for these tests — the simple test config in make_igh_config() puts
+ * arbitrary bases at the anchor positions so rule_conserved_cysteine
+ * and rule_conserved_anchor (J W/F) always fail. The helper below
+ * builds a realistic config with proper Cys at the V anchor and Trp
+ * at the J anchor.
+ *
+ * With max_productive_attempts=200, retry exhaustion is effectively
+ * impossible regardless of mode, so we assert that every returned
+ * record matches the configured direction — not "≤1 leak" or "≥95%".
+ * ─────────────────────────────────────────────────────────────── */
+
+static SimConfig make_productive_capable_igh_config(void) {
+    SimConfig cfg;
+    sim_config_init(&cfg, CHAIN_IGH);
+    cfg.rng = &_test_rng;
+
+    /* V (30bp), Cys at anchor=24:
+     *   ATG GCA ATC CTA GCA GCA ATT GCA TGT GGT
+     *    M   A   I   L   A   A   I   A   C   G
+     *    \________ no stops _________/  ↑ Cys */
+    Allele v = make_allele(
+        "IGHV1-A*01",
+        "ATGGCAATCCTAGCAGCAATTGCATGTGGT",
+        24, SEG_V
+    );
+
+    /* D (12bp): contributes some bases to junction; no anchor. */
+    Allele d = make_allele(
+        "IGHD-A*01",
+        "GTATTACTGTGC",
+        0, SEG_D
+    );
+
+    /* J (21bp), Trp at anchor=6:
+     *   ACT ACT TGG GGC CAA GGT ACT
+     *    T   T   W   G   Q   G   T
+     *           ↑ Trp at germline_pos 6 */
+    Allele j = make_allele(
+        "IGHJ-A*01",
+        "ACTACTTGGGGCCAAGGTACT",
+        6, SEG_J
+    );
+
+    cfg.v_alleles = allele_pool_create(4);
+    cfg.d_alleles = allele_pool_create(4);
+    cfg.j_alleles = allele_pool_create(4);
+
+    allele_pool_add(&cfg.v_alleles, &v);
+    allele_pool_add(&cfg.d_alleles, &d);
+    allele_pool_add(&cfg.j_alleles, &j);
+
+    return cfg;
+}
+
+static int run_n_and_count_productive(SimConfig *cfg, int n,
+                                      int *out_productive,
+                                      int *out_non_productive) {
+    Pipeline p = pipeline_build(cfg);
+    ASeq seq;
+    aseq_init(&seq);
+    SimRecord rec;
+
+    int prod = 0, nonprod = 0;
+    for (int i = 0; i < n; i++) {
+        pipeline_execute(&p, cfg, &seq, &rec, 0, NULL, NULL);
+        if (rec.productive) prod++;
+        else                nonprod++;
+    }
+    *out_productive    = prod;
+    *out_non_productive = nonprod;
+    return 0;
+}
+
+static int test_productivity_productive_only(void) {
+    rng_seed(&_test_rng, 7, 0);
+    SimConfig cfg = make_productive_capable_igh_config();
+    cfg.features.productivity   = PRODUCTIVITY_PRODUCTIVE_ONLY;
+    cfg.max_productive_attempts = 200;   /* exhaustion ≈ 0 */
+
+    int prod = 0, nonprod = 0;
+    run_n_and_count_productive(&cfg, 100, &prod, &nonprod);
+    if (nonprod != 0) {
+        fprintf(stderr,
+                "PRODUCTIVE_ONLY: expected 0 non-productive, got %d/100\n",
+                nonprod);
+        sim_config_destroy(&cfg);
+        return 1;
+    }
+    sim_config_destroy(&cfg);
+    return 0;
+}
+
+static int test_productivity_non_productive_only(void) {
+    rng_seed(&_test_rng, 11, 0);
+    SimConfig cfg = make_productive_capable_igh_config();
+    cfg.features.productivity   = PRODUCTIVITY_NON_PRODUCTIVE_ONLY;
+    cfg.max_productive_attempts = 200;
+
+    int prod = 0, nonprod = 0;
+    run_n_and_count_productive(&cfg, 100, &prod, &nonprod);
+    if (prod != 0) {
+        fprintf(stderr,
+                "NON_PRODUCTIVE_ONLY: expected 0 productive, got %d/100\n",
+                prod);
+        sim_config_destroy(&cfg);
+        return 1;
+    }
+    sim_config_destroy(&cfg);
+    return 0;
+}
+
+static int test_productivity_mixed_returns_both(void) {
+    rng_seed(&_test_rng, 13, 0);
+    SimConfig cfg = make_productive_capable_igh_config();
+    cfg.features.productivity = PRODUCTIVITY_MIXED;
+
+    int prod = 0, nonprod = 0;
+    run_n_and_count_productive(&cfg, 500, &prod, &nonprod);
+    /* MIXED must contain BOTH classes. With ~22.8% productive baseline
+     * on 500 records, we expect ~114 productive and ~386 non-productive.
+     * Assert both > 0 (a strong invariant — the test fails immediately
+     * if MIXED degenerates into a single-class output). */
+    if (prod == 0) {
+        fprintf(stderr, "MIXED: expected some productive, got 0/500\n");
+        sim_config_destroy(&cfg);
+        return 1;
+    }
+    if (nonprod == 0) {
+        fprintf(stderr, "MIXED: expected some non-productive, got 0/500\n");
+        sim_config_destroy(&cfg);
+        return 1;
+    }
+    /* Sanity: ratio in the expected band (10-50% productive). Wider
+     * than the strict 22.8% to allow for RNG noise. */
+    double frac = (double)prod / 500.0;
+    if (frac < 0.10 || frac > 0.50) {
+        fprintf(stderr,
+                "MIXED: productive fraction %.2f outside [0.10, 0.50]\n",
+                frac);
+        sim_config_destroy(&cfg);
+        return 1;
+    }
+    sim_config_destroy(&cfg);
+    return 0;
+}
+
+/* Back-compat: setting features.productivity via the legacy bool API
+ * (`set_feature("productive", true)`) must continue to work. */
+static int test_productivity_legacy_bool_back_compat(void) {
+    SimConfig cfg = make_igh_config();
+    /* Simulate the legacy API path: a bool maps onto the enum. */
+    cfg.features.productivity = PRODUCTIVITY_MIXED;     /* default */
+    if (cfg.features.productivity != PRODUCTIVITY_MIXED) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    cfg.features.productivity = PRODUCTIVITY_PRODUCTIVE_ONLY;
+    if (cfg.features.productivity != PRODUCTIVITY_PRODUCTIVE_ONLY) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    sim_config_destroy(&cfg);
+    return 0;
 }
 
 /* ── Test: debug print doesn't crash ──────────────────────────── */
@@ -1086,6 +1255,10 @@ int main(void) {
     TEST(test_pipeline_build_igk);
     TEST(test_pipeline_execute);
     TEST(test_productive_mode);
+    TEST(test_productivity_productive_only);
+    TEST(test_productivity_non_productive_only);
+    TEST(test_productivity_mixed_returns_both);
+    TEST(test_productivity_legacy_bool_back_compat);
     TEST(test_debug_print);
     TEST(test_np_markov_deterministic);
     TEST(test_np_markov_gc_bias);

@@ -207,6 +207,27 @@ class TestMutationConstraints:
                 f"Seq {i}: {r['n_mutations']} mutations without SHM enabled"
             assert r["mutation_rate"] == 0.0
 
+    def test_t1_4_no_spurious_boundary_mutations_with_indels(self):
+        """T1-4: heavy indels can fully wipe D from the sequence; that
+        used to leave d_trim_*_adjusted at memset 0, making
+        collect_boundary_mutations scan V's start as if it were D's
+        boundary extension and emit spurious mutation entries.
+
+        With no SHM and no quality/PCR errors, n_mutations must remain
+        0 regardless of how aggressive the indels are."""
+        from GenAIRR.ops import with_indels
+        result = (Experiment.on("human_igh")
+                  .observe(with_indels(prob=0.15))
+                  .run(n=2000, seed=123, productive=False))
+        records = list(result)
+        spurious = [r for r in records if r["n_mutations"] > 0]
+        assert not spurious, (
+            f"{len(spurious)} records have n_mutations > 0 with no SHM. "
+            f"First few: "
+            + "; ".join(f"row{i} n={r['n_mutations']} muts={r['mutations'][:60]}"
+                         for i, r in enumerate(spurious[:3]))
+        )
+
 
 # =============================================================================
 # 4. Productive Sequence Biological Invariants

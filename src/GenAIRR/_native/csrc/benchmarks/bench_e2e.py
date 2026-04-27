@@ -29,8 +29,9 @@ def main():
 
     # Phase 1: Setup
     t0 = time.perf_counter()
+    from GenAIRR.ops import rate, model
     sim = (Experiment.on("human_igh")
-           .somatic_hypermutation(min_rate=0.05, max_rate=0.15)
+           .mutate(rate(0.05, 0.15), model("s5f"))
            .compile(seed=42))
     t_setup = time.perf_counter() - t0
     print(f"Phase 1 — Compile:          {t_setup*1000:8.3f} ms")

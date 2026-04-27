@@ -430,7 +430,8 @@ static void test_assess_productive(void) {
 }
 
 static void test_assess_stop_codon_is_fatal(void) {
-    /* Stop codon → productive=false, stop_codon=true, vj_in_frame=false */
+    /* Stop codon, junction in-frame: productive=false, stop_codon=true,
+     * vj_in_frame=TRUE (AIRR spec — vj_in_frame is geometric-only). */
     ASeq seq;
     /* TAA at pos 0-2 = stop codon */
     build_test_seq(&seq,
@@ -446,7 +447,7 @@ static void test_assess_stop_codon_is_fatal(void) {
 
     assert(!rec.productive);
     assert(rec.stop_codon);
-    assert(!rec.vj_in_frame);  /* stop codon contributes to vj_in_frame */
+    assert(rec.vj_in_frame);   /* in-frame; stop codon does NOT flip vj_in_frame */
 
     aseq_reset(&seq);
 }
@@ -560,6 +561,111 @@ static void test_assess_vdj_productive(void) {
     assert(rec.vj_in_frame);
 
     aseq_reset(&seq);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * T1-15 verification matrix — vj_in_frame and productive must be
+ * orthogonal axes per AIRR spec.
+ * ═══════════════════════════════════════════════════════════════ */
+
+/* Cell A: in-frame, no stop → vj_in_frame=T, productive=T */
+static void test_t1_15_in_frame_no_stop(void) {
+    ASeq seq;
+    build_test_seq(&seq,
+                   "ATGATGTGT", 9, 6,    /* V anchor TGT=Cys */
+                   "GGG", 3,
+                   "CCCTGG", 6, 3);      /* J anchor TGG=W */
+
+    SimRecord rec; sim_record_init(&rec);
+    FunctionalityValidator v = functionality_validator_default();
+    functionality_assess(&v, &seq, &rec);
+
+    assert(rec.vj_in_frame);
+    assert(rec.productive);
+    assert(!rec.stop_codon);
+    aseq_reset(&seq);
+}
+
+/* Cell B: in-frame, has stop → vj_in_frame=T, productive=F */
+static void test_t1_15_in_frame_with_stop(void) {
+    ASeq seq;
+    /* TAA stop codon in V */
+    build_test_seq(&seq,
+                   "TAATGTTGT", 9, 6,    /* V begins with TAA stop */
+                   "GGG", 3,
+                   "CCCTGG", 6, 3);
+
+    SimRecord rec; sim_record_init(&rec);
+    FunctionalityValidator v = functionality_validator_default();
+    functionality_assess(&v, &seq, &rec);
+
+    assert(rec.vj_in_frame);    /* AIRR: frame is independent of stops */
+    assert(!rec.productive);    /* stop ⇒ not productive */
+    assert(rec.stop_codon);
+    aseq_reset(&seq);
+}
+
+/* Cell C: out-of-frame, no stop → vj_in_frame=F, productive=F */
+static void test_t1_15_out_of_frame_no_stop(void) {
+    ASeq seq;
+    build_test_seq(&seq,
+                   "ATGATGTGT", 9, 6,
+                   "GGGG", 4,           /* 4bp NP1 breaks frame */
+                   "CCCTGG", 6, 3);
+
+    SimRecord rec; sim_record_init(&rec);
+    FunctionalityValidator v = functionality_validator_default();
+    functionality_assess(&v, &seq, &rec);
+
+    assert(!rec.vj_in_frame);
+    assert(!rec.productive);
+    assert(!rec.stop_codon);
+    aseq_reset(&seq);
+}
+
+/* Cell D: out-of-frame, has stop → vj_in_frame=F, productive=F */
+static void test_t1_15_out_of_frame_with_stop(void) {
+    ASeq seq;
+    /* TAA stop AND 4bp NP1 → both fail */
+    build_test_seq(&seq,
+                   "TAATGTTGT", 9, 6,
+                   "GGGG", 4,
+                   "CCCTGG", 6, 3);
+
+    SimRecord rec; sim_record_init(&rec);
+    FunctionalityValidator v = functionality_validator_default();
+    functionality_assess(&v, &seq, &rec);
+
+    /* Critical: even though Stop Codon is fatal and breaks the loop,
+     * Frame Alignment ran first (rule[0]) and set vj_in_frame=false. */
+    assert(!rec.vj_in_frame);
+    assert(!rec.productive);
+    assert(rec.stop_codon);
+    aseq_reset(&seq);
+}
+
+/* Implication holds: productive=T ⇒ vj_in_frame=T (run on a sweep). */
+static void test_t1_15_productive_implies_vj_in_frame(void) {
+    /* Two scenarios where productive=true; vj_in_frame must also be true. */
+    {
+        ASeq seq;
+        build_test_seq(&seq, "ATGATGTGT", 9, 6, "GGG", 3, "CCCTGG", 6, 3);
+        SimRecord rec; sim_record_init(&rec);
+        FunctionalityValidator v = functionality_validator_default();
+        functionality_assess(&v, &seq, &rec);
+        if (rec.productive) assert(rec.vj_in_frame);
+        aseq_reset(&seq);
+    }
+    {
+        ASeq seq;
+        build_test_seq_vdj(&seq, "ATGATGTGT", 9, 6, "GGG", 3,
+                           "ATGATG", 6, "GGG", 3, "CCCTGG", 6, 3);
+        SimRecord rec; sim_record_init(&rec);
+        FunctionalityValidator v = functionality_validator_default();
+        functionality_assess(&v, &seq, &rec);
+        if (rec.productive) assert(rec.vj_in_frame);
+        aseq_reset(&seq);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -787,6 +893,11 @@ int main(void) {
     RUN_TEST(test_assess_missing_anchor_wf);
     RUN_TEST(test_assess_missing_anchors);
     RUN_TEST(test_assess_vdj_productive);
+    RUN_TEST(test_t1_15_in_frame_no_stop);
+    RUN_TEST(test_t1_15_in_frame_with_stop);
+    RUN_TEST(test_t1_15_out_of_frame_no_stop);
+    RUN_TEST(test_t1_15_out_of_frame_with_stop);
+    RUN_TEST(test_t1_15_productive_implies_vj_in_frame);
 
     printf("\nCodon Rail Integration:\n");
     RUN_TEST(test_codon_rail_stop_codon_fast_path);

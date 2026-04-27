@@ -64,7 +64,11 @@ static void func_context_init(FuncContext *ctx, const ASeq *seq) {
  *
  * When codon rail is valid, uses the cached n_stop_codons for O(1).
  *
- * Fatal: yes.  Contributes to vj_in_frame: yes.
+ * Fatal: yes.  Contributes to vj_in_frame: no.
+ *
+ * Per the AIRR Rearrangement Schema, vj_in_frame is a pure geometric
+ * frame check; stop codons are a translation issue and do not affect
+ * vj_in_frame. They DO affect productive (which requires both).
  * ═══════════════════════════════════════════════════════════════ */
 
 FuncRuleResult rule_stop_codon(FuncContext *ctx) {
@@ -241,18 +245,31 @@ FunctionalityValidator functionality_validator_default(void) {
     FunctionalityValidator v;
     v.n_rules = 5;
 
+    /* Rule order matters. Per the AIRR Rearrangement Schema, vj_in_frame
+     * and productive are orthogonal axes:
+     *   vj_in_frame = "V and J segment alignments are in-frame" (geometry)
+     *   productive  = "vj_in_frame AND no stop codons in V(D)J"
+     *
+     * The Stop Codon rule is fatal — when it fails the validator breaks
+     * out of the loop. So the only rule that *contributes to vj_in_frame*
+     * (Frame Alignment) must run first, otherwise an out-of-frame +
+     * stop-codon sequence would early-break in Stop Codon and never
+     * update vj_in_frame, leaving it at its initial true value. By
+     * placing the non-fatal Frame Alignment first we guarantee
+     * vj_in_frame reflects the geometric check regardless of whether
+     * the loop later breaks on Stop Codon. */
     v.rules[0] = (FuncRule){
-        .name = "Stop Codon Check",
-        .check = rule_stop_codon,
-        .is_fatal = true,
-        .contributes_to_vj_in_frame = true,
-        .requires_translation = false,
-    };
-    v.rules[1] = (FuncRule){
         .name = "Frame Alignment Check",
         .check = rule_frame_alignment,
         .is_fatal = false,
         .contributes_to_vj_in_frame = true,
+        .requires_translation = false,
+    };
+    v.rules[1] = (FuncRule){
+        .name = "Stop Codon Check",
+        .check = rule_stop_codon,
+        .is_fatal = true,
+        .contributes_to_vj_in_frame = false,   /* AIRR: stops are translation, not frame */
         .requires_translation = false,
     };
     v.rules[2] = (FuncRule){

@@ -1,17 +1,41 @@
 /**
  * selection_pressure.c — Antigen-driven selection after SHM.
  *
- * Classifies each mutation as R (replacement) or S (silent) via codon
- * translation. Silent mutations are always kept. R mutations are
- * accepted with region-dependent probability:
- *   - CDR regions: higher acceptance (default 0.85)
- *   - FWR regions: lower acceptance (default 0.40)
+ * For every mutated nucleotide in the *coding* segments (V/NP1/D/NP2/J),
+ * classify the mutation as:
  *
- * Reverted R mutations restore the original germline base.
- * Effective acceptance = 1.0 - strength * (1.0 - base_acceptance).
+ *   - Silent (S): always kept.
+ *   - Replacement (R) in the V/J anchor codon: kept with
+ *     `anchor_r_acceptance` (default 0.0). The conserved Cys (V) and
+ *     W/F (J) anchors are structural: disrupting them breaks the V/J
+ *     domain fold, so anchor R-mutations are nearly always purged.
+ *   - Replacement (R) in a CDR position: kept with `cdr_r_acceptance`.
+ *   - Replacement (R) in a FWR position: kept with `fwr_r_acceptance`.
  *
- * IMGT boundaries (ungapped): FR1=0:78, CDR1=78:114, FR2=114:165,
- * CDR2=165:195, FR3=195:312. Positions ≥312 are CDR3/FR4.
+ * Effective acceptance = 1.0 − strength × (1.0 − base_acceptance), so
+ * `selection_strength == 0` is a no-op and `1.0` is the configured
+ * floor.
+ *
+ * Region classification (anchor-aware):
+ *   - V segment: positions before the V anchor (Cys, IMGT pos 104 →
+ *     ungapped ≈ 285) use the IMGT-gapped boundaries 78/114/165/195
+ *     (FR1/CDR1/FR2/CDR2/FR3). Positions ≥ V anchor are CDR3.
+ *   - NP1 / D / NP2: always CDR3.
+ *   - J segment: positions strictly before (J-anchor + 3) are CDR3
+ *     (the W/F codon is the last CDR3 codon); positions from
+ *     (J-anchor + 3) onward are FR4.
+ *
+ * Anchorless V or J alleles (anchor ≤ 0): selection on that segment is
+ * skipped to avoid mis-classifying CDR3 vs FR. NP1/D/NP2 continue to
+ * be selected as CDR3. This matches the 34/106 builtin configs that
+ * have anchorless V alleles and TCRB's anchorless J alleles.
+ *
+ * R/S classification uses the codon rail when available (O(1) codon
+ * head lookup, codon spans segment boundaries cleanly). Falls back to
+ * `germline_pos % 3` only when rail is unavailable (manual SimConfigs
+ * in C tests). NP-inserted nodes (germline == '\0') count as
+ * replacement by definition: they have no germline amino-acid to
+ * compare against, and reverting them would require deletion.
  */
 
 #include "genairr/pipeline.h"
@@ -19,18 +43,24 @@
 #include "genairr/trace.h"
 #include <stdlib.h>
 
-/* ── IMGT boundaries ─────────────────────────────────────────────── */
+/* ── IMGT-gapped boundaries for V (ungapped germline_pos) ─────────
+ * These are the canonical V-segment IMGT region boundaries used
+ * throughout GenAIRR. They are gapped boundaries applied to ungapped
+ * positions, which works for the canonical alleles in IMGT but can
+ * drift slightly for alleles with insertions/deletions vs IMGT
+ * reference. Per-allele boundary tables are tracked as a follow-up
+ * ticket. */
+#define V_FR1_END   78
+#define V_CDR1_END  114
+#define V_FR2_END   165
+#define V_CDR2_END  195
 
-typedef enum { REGION_FWR, REGION_CDR } RegionType;
-
-static RegionType classify_region(uint16_t germ_pos) {
-    if (germ_pos < 78)  return REGION_FWR;  /* FR1 */
-    if (germ_pos < 114) return REGION_CDR;  /* CDR1 */
-    if (germ_pos < 165) return REGION_FWR;  /* FR2 */
-    if (germ_pos < 195) return REGION_CDR;  /* CDR2 */
-    if (germ_pos < 312) return REGION_FWR;  /* FR3 */
-    return REGION_CDR;                       /* CDR3/FR4 */
-}
+typedef enum {
+    REGION_FWR     = 0,
+    REGION_CDR     = 1,
+    REGION_ANCHOR  = 2,   /* V Cys / J W or F anchor codon */
+    REGION_SKIP    = 3,   /* anchorless allele — segment is unselected */
+} RegionType;
 
 /* ── Codon translation (compact) ────────────────────────────────── */
 
@@ -57,43 +87,107 @@ static char translate3(char b1, char b2, char b3) {
     return CODON_TABLE[i1 * 16 + i2 * 4 + i3];
 }
 
-/* ── Check if mutation is R or S ────────────────────────────────── */
+/* ── Region classification ───────────────────────────────────── */
 
-/**
- * A mutation is "silent" (S) if the amino acid doesn't change.
- * We need the codon context — find the reading-frame codon that
- * contains this position. Since we need the V-anchor for the
- * reading frame, we check codon in the V-anchor frame.
- */
-static bool is_replacement(Nuc *node) {
-    /* Find codon boundaries by walking back to a position divisible by 3
-     * relative to the V reading frame. We approximate by using the
-     * germline position if available. */
-    if (node->germline == '\0') return true;  /* NP mutation = replacement */
-
-    /* Collect 3-base codon around this node (approximate: current + neighbors) */
-    Nuc *n0 = node;
-    Nuc *n1 = node->next;
-    Nuc *n2 = n1 ? n1->next : NULL;
-
-    /* Try to align to codon boundary using germline_pos % 3 */
-    int offset = node->germline_pos % 3;
-    if (offset == 1 && node->prev) {
-        n0 = node->prev;
-        n1 = node;
-        n2 = node->next;
-    } else if (offset == 2 && node->prev && node->prev->prev) {
-        n0 = node->prev->prev;
-        n1 = node->prev;
-        n2 = node;
+static RegionType classify_node_region(const Nuc *n,
+                                       const SimRecord *rec,
+                                       Nuc *codon_head) {
+    /* Anchor-codon protection: any node whose codon contains the V or
+     * J anchor flag is treated as REGION_ANCHOR. The anchor flag is
+     * set on the head of the V Cys / J W/F codon by the assemble step. */
+    if (codon_head && (codon_head->flags & NUC_FLAG_ANCHOR)) {
+        return REGION_ANCHOR;
+    }
+    /* Some legacy paths set FLAG_ANCHOR on the node itself rather than
+     * the codon head; cover that case too. */
+    if (n->flags & NUC_FLAG_ANCHOR) {
+        return REGION_ANCHOR;
     }
 
-    if (!n0 || !n1 || !n2) return true;
+    switch (n->segment) {
+        case SEG_V: {
+            int va = (rec && rec->v_allele) ? rec->v_allele->anchor : 0;
+            if (va <= 0) return REGION_SKIP;   /* anchorless V */
+            if (n->germline_pos >= (uint16_t)va) return REGION_CDR;  /* CDR3 */
+            if (n->germline_pos < V_FR1_END)  return REGION_FWR;
+            if (n->germline_pos < V_CDR1_END) return REGION_CDR;
+            if (n->germline_pos < V_FR2_END)  return REGION_FWR;
+            if (n->germline_pos < V_CDR2_END) return REGION_CDR;
+            return REGION_FWR;                 /* FR3 (up to V anchor) */
+        }
+        case SEG_NP1:
+        case SEG_D:
+        case SEG_NP2:
+            return REGION_CDR;                 /* always CDR3 */
+        case SEG_J: {
+            int ja = (rec && rec->j_allele) ? rec->j_allele->anchor : 0;
+            if (ja <= 0) return REGION_SKIP;   /* anchorless J */
+            /* CDR3 ends at the W/F codon end (anchor + 3, exclusive). */
+            if (n->germline_pos < (uint16_t)(ja + 3)) return REGION_CDR;
+            return REGION_FWR;                 /* FR4 */
+        }
+        default:
+            return REGION_SKIP;                /* C / UMI / adapter */
+    }
+}
+
+/* ── R/S classification via codon rail ──────────────────────────── */
+
+/**
+ * True if reverting `node->current` to `node->germline` changes the
+ * codon's translated amino-acid (replacement). NP-inserted nodes have
+ * germline == '\0' and are always counted as replacement.
+ *
+ * Uses the codon rail when valid: walks 3 nodes from the codon head.
+ * The codon may span a segment boundary (e.g. last 1-2 bases of V
+ * combine with first base of NP1 to form the V/CDR3 transition codon)
+ * — the rail handles this transparently because frame_phase is global
+ * across the linked list.
+ *
+ * Falls back to `germline_pos % 3` when the rail is invalid (manual
+ * SimConfig path in C tests). The fallback assumes the node sits in
+ * a same-segment same-allele neighborhood and is not codon-spanning
+ * across a segment boundary; this is acceptable for the test path.
+ */
+static bool is_replacement(const ASeq *seq, Nuc *node) {
+    if (node->germline == '\0') return true;   /* NP / inserted */
+
+    Nuc *n0 = NULL, *n1 = NULL, *n2 = NULL;
+
+    if (seq->codon_rail_valid) {
+        Nuc *head = nuc_codon_head_of(node);
+        if (!head) return true;                 /* fragmentary codon at edge */
+        n0 = head;
+        n1 = head->next;
+        n2 = n1 ? n1->next : NULL;
+        if (!n1 || !n2) return true;            /* incomplete tail codon */
+    } else {
+        /* Fallback: align via germline_pos %% 3 (single-segment heuristic). */
+        int offset = node->germline_pos % 3;
+        if (offset == 0) {
+            n0 = node;
+            n1 = node->next;
+            n2 = n1 ? n1->next : NULL;
+        } else if (offset == 1 && node->prev) {
+            n0 = node->prev;
+            n1 = node;
+            n2 = node->next;
+        } else if (offset == 2 && node->prev && node->prev->prev) {
+            n0 = node->prev->prev;
+            n1 = node->prev;
+            n2 = node;
+        }
+        if (!n0 || !n1 || !n2) return true;
+    }
 
     /* Translate with current bases */
     char aa_current = translate3(n0->current, n1->current, n2->current);
 
-    /* Translate with germline bases (only the mutated one reverted) */
+    /* Translate with this node's germline base substituted in. Each
+     * mutation is evaluated independently against the current codon
+     * state; if two mutations land in the same codon and both arrive
+     * here, each is judged "would reverting *me* alone change the
+     * amino acid?". Order-stability is verified by the MC test. */
     char c0 = n0->current, c1 = n1->current, c2 = n2->current;
     if (n0 == node) c0 = node->germline;
     if (n1 == node) c1 = node->germline;
@@ -106,37 +200,48 @@ static bool is_replacement(Nuc *node) {
 /* ── Main step ──────────────────────────────────────────────────── */
 
 void step_selection_pressure(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
-    (void)rec;
     double strength = cfg->selection_strength;
     if (strength <= 0.0) return;
 
-    double cdr_accept = 1.0 - strength * (1.0 - cfg->cdr_r_acceptance);
-    double fwr_accept = 1.0 - strength * (1.0 - cfg->fwr_r_acceptance);
+    double cdr_accept    = 1.0 - strength * (1.0 - cfg->cdr_r_acceptance);
+    double fwr_accept    = 1.0 - strength * (1.0 - cfg->fwr_r_acceptance);
+    double anchor_accept = 1.0 - strength * (1.0 - cfg->anchor_r_acceptance);
 
-    TRACE("[selection] strength=%.2f, CDR_R_accept=%.2f, FWR_R_accept=%.2f",
-          strength, cdr_accept, fwr_accept);
+    TRACE("[selection] strength=%.2f, CDR_R=%.2f, FWR_R=%.2f, ANCHOR_R=%.2f",
+          strength, cdr_accept, fwr_accept, anchor_accept);
 
-    int reverted_cdr = 0, reverted_fwr = 0, kept_r = 0, kept_s = 0;
+    int reverted_cdr = 0, reverted_fwr = 0, reverted_anchor = 0;
+    int kept_r = 0, kept_s = 0, skipped_seg = 0;
 
-    /* Walk all V-segment nodes with mutations */
-    for (Nuc *n = seq->seg_first[SEG_V]; n && n->segment == SEG_V; n = n->next) {
+    /* Walk the entire sequence; only act on coding-segment mutations. */
+    for (Nuc *n = seq->head; n; n = n->next) {
         if (!(n->flags & NUC_FLAG_MUTATED)) continue;
+        if (!nuc_is_coding_segment(n))      continue;
 
-        /* Silent mutations always kept */
-        if (!is_replacement(n)) { kept_s++; continue; }
+        /* Silent mutations always kept. */
+        if (!is_replacement(seq, n)) { kept_s++; continue; }
 
-        /* Determine acceptance probability based on region */
-        RegionType region = classify_region(n->germline_pos);
-        double accept = (region == REGION_CDR) ? cdr_accept : fwr_accept;
+        Nuc *head = seq->codon_rail_valid ? nuc_codon_head_of(n) : NULL;
+        RegionType region = classify_node_region(n, rec, head);
 
-        if (rng_uniform(cfg->rng) < accept) { kept_r++; continue; }  /* accepted */
+        if (region == REGION_SKIP) { skipped_seg++; continue; }
 
-        /* Revert: restore germline base */
+        double accept;
+        switch (region) {
+            case REGION_ANCHOR: accept = anchor_accept; break;
+            case REGION_CDR:    accept = cdr_accept;    break;
+            case REGION_FWR:
+            default:            accept = fwr_accept;    break;
+        }
+
+        if (rng_uniform(cfg->rng) < accept) { kept_r++; continue; }
+
         aseq_revert(seq, n);
-        if (region == REGION_CDR) reverted_cdr++;
-        else reverted_fwr++;
+        if      (region == REGION_ANCHOR) reverted_anchor++;
+        else if (region == REGION_CDR)    reverted_cdr++;
+        else                              reverted_fwr++;
     }
 
-    TRACE("[selection] kept %d silent + %d replacement, reverted %d FWR + %d CDR replacements",
-          kept_s, kept_r, reverted_fwr, reverted_cdr);
+    TRACE("[selection] kept %d S + %d R, reverted %d FWR + %d CDR + %d ANCHOR, skipped %d unselectable",
+          kept_s, kept_r, reverted_fwr, reverted_cdr, reverted_anchor, skipped_seg);
 }

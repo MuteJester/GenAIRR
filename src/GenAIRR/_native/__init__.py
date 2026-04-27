@@ -174,8 +174,38 @@ def _load_lib() -> ctypes.CDLL:
     ]
     lib.genairr_dump_snapshot_codon_rail.restype = ctypes.c_int
 
+    # ── ABI version sanity check (T1-12) ────────────────────────
+    # The Python package and the loaded C library must report the
+    # same version string. A mismatch typically means a stale
+    # `libgenairr.so` was found on the search path (e.g. an old
+    # editable install left behind, or a system-wide build of a
+    # different version). Loading a mismatched binary yields silent
+    # ABI corruption — fail loudly at import instead.
+    _check_abi_version(lib)
+
     _LIB = lib
     return lib
+
+
+def _check_abi_version(lib: ctypes.CDLL) -> None:
+    """Assert that the loaded C library version matches Python's.
+
+    Reads __version__ from the parent GenAIRR package (already
+    populated by importlib.metadata at package import time) and
+    compares it to the C library's genairr_version() return value.
+    """
+    try:
+        from GenAIRR import __version__ as _py_version
+    except ImportError:
+        return  # parent package not initialized — skip check
+    c_version = lib.genairr_version().decode("ascii", errors="replace")
+    if c_version != _py_version:
+        raise RuntimeError(
+            f"GenAIRR C library version mismatch: loaded "
+            f"libgenairr reports {c_version!r}, but Python package "
+            f"is {_py_version!r}. Reinstall to resolve: "
+            f"`pip install --force-reinstall --no-cache-dir GenAIRR`."
+        )
 
 
 def get_version() -> str:

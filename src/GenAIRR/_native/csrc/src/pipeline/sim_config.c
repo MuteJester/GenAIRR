@@ -59,10 +59,13 @@ void sim_config_init(SimConfig *cfg, ChainType chain_type) {
     /* Trim to length */
     cfg->max_sequence_length = 0;     /* 0 = no trimming */
 
-    /* Selection pressure */
-    cfg->selection_strength = 0.5;
-    cfg->cdr_r_acceptance   = 0.85;
-    cfg->fwr_r_acceptance   = 0.40;
+    /* Selection pressure. The anchor (V Cys, J W/F) codon is a conserved
+     * structural residue — disrupting it breaks the V/J domain fold, so
+     * R-mutations in the anchor codon are nearly always reverted. */
+    cfg->selection_strength   = 0.5;
+    cfg->cdr_r_acceptance     = 0.85;
+    cfg->fwr_r_acceptance     = 0.40;
+    cfg->anchor_r_acceptance  = 0.0;
 
     /* D inversion */
     cfg->d_inversion_prob = 0.02;

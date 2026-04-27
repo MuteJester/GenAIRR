@@ -18,16 +18,11 @@ from .experiment import Experiment
 # SimulationStream — streaming interface returned by CompiledSimulator.stream()
 from .protocol import CompiledSimulator, SimulationStream
 
-# Step descriptors (compose these into Experiments)
-from .steps import (
-    Step,
-    Rearrange, Mutate, SimulateCSR, SelectionPressure,
-    SimulateDGeneInversion, SimulateReceptorRevision,
-    Corrupt5Prime, Corrupt3Prime, CorruptQuality, SimulatePairedEnd,
-    PCRAmplification, SimulateUMI, PrimerMask,
-    ReverseComplement, SpikeContaminants, SkewBaseComposition,
-    InsertIndels, InsertNs,
-)
+# Step descriptors are an internal IR layer produced by the clause →
+# step compiler in protocol.py. They are NOT the user API — pass
+# clauses from `GenAIRR.ops` (e.g. `rate(...)`, `model('s5f')`,
+# `with_indels()`) to the phase methods (`.mutate(...)`, etc.).
+# Advanced/internal users can still import from `GenAIRR.steps.*`.
 
 # Seed management for reproducibility
 from .seed import set_seed, get_seed, reset_seed
@@ -46,6 +41,7 @@ from .data import list_configs
 
 # DataConfig and metadata
 from .dataconfig import DataConfig, DataConfigError, ConfigInfo, ChainType, Species
+from .dataconfig.enums import Productivity
 
 # Batch result wrapper + narration
 from .result import SimulationResult, narrate, narrate_from_record
@@ -65,26 +61,9 @@ __all__ = [
     "SimulationResult",
     "narrate",
     "narrate_from_record",
-    # Steps
-    "Step",
-    "Rearrange",
-    "Mutate",
-    "SimulateCSR",
-    "SelectionPressure",
-    "SimulateDGeneInversion",
-    "SimulateReceptorRevision",
-    "Corrupt5Prime",
-    "Corrupt3Prime",
-    "CorruptQuality",
-    "SimulatePairedEnd",
-    "PCRAmplification",
-    "SimulateUMI",
-    "PrimerMask",
-    "ReverseComplement",
-    "SpikeContaminants",
-    "SkewBaseComposition",
-    "InsertIndels",
-    "InsertNs",
+    # Step classes are intentionally NOT exported at the top level —
+    # they're an internal IR. Use `GenAIRR.ops` clauses instead, or
+    # `from GenAIRR.steps import ...` for advanced/internal use.
     # Seed management
     "set_seed",
     "get_seed",
@@ -104,4 +83,5 @@ __all__ = [
     "ConfigInfo",
     "ChainType",
     "Species",
+    "Productivity",
 ]

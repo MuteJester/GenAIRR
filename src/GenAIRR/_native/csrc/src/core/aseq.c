@@ -419,6 +419,15 @@ Nuc *aseq_insert_after(ASeq *seq, Nuc *pos, char base,
     n->germline_pos = 0xFFFF;
     n->flags       = flags;
 
+    /* Auto-inherit JUNCTION flag when inserting between two junction
+     * nodes. This keeps the junction span contiguous through indels
+     * inside the junction. The flag does NOT propagate when only one
+     * neighbor is a junction node (boundary insert). */
+    if ((pos->flags & NUC_FLAG_JUNCTION) &&
+        pos->next && (pos->next->flags & NUC_FLAG_JUNCTION)) {
+        n->flags |= (uint16_t)NUC_FLAG_JUNCTION;
+    }
+
     /* Splice into doubly-linked list */
     n->prev = pos;
     n->next = pos->next;
@@ -465,6 +474,13 @@ Nuc *aseq_insert_before(ASeq *seq, Nuc *pos, char base,
     n->segment     = segment;
     n->germline_pos = 0xFFFF;
     n->flags       = flags;
+
+    /* Auto-inherit JUNCTION flag for insert-into-junction (see
+     * aseq_insert_after for rationale). */
+    if ((pos->flags & NUC_FLAG_JUNCTION) &&
+        pos->prev && (pos->prev->flags & NUC_FLAG_JUNCTION)) {
+        n->flags |= (uint16_t)NUC_FLAG_JUNCTION;
+    }
 
     /* Splice */
     n->next = pos;
@@ -819,6 +835,34 @@ Nuc *aseq_find_anchor(const ASeq *seq, Segment seg) {
         if (n->flags & NUC_FLAG_ANCHOR) return n;
     }
     return NULL;
+}
+
+int aseq_mark_junction(ASeq *seq) {
+    Nuc *v_anchor = aseq_find_anchor(seq, SEG_V);
+    Nuc *j_anchor = aseq_find_anchor(seq, SEG_J);
+    if (!v_anchor || !j_anchor) return 0;
+
+    /* End sentinel = J anchor + 2 nodes (third base of W/F codon). */
+    Nuc *jn_end = j_anchor->next;
+    if (jn_end) jn_end = jn_end->next;
+    if (!jn_end) return 0;          /* W/F codon doesn't fit */
+
+    /* Scan first to confirm jn_end is reachable from v_anchor going
+     * forward — guards against pathological inputs (J anchor before V
+     * anchor in the list, etc.). Tag only on success. */
+    bool reachable = false;
+    int  count = 0;
+    for (Nuc *n = v_anchor; n; n = n->next) {
+        count++;
+        if (n == jn_end) { reachable = true; break; }
+    }
+    if (!reachable) return 0;
+
+    for (Nuc *n = v_anchor; n; n = n->next) {
+        n->flags |= (uint16_t)NUC_FLAG_JUNCTION;
+        if (n == jn_end) break;
+    }
+    return count;
 }
 
 /* ── Serialization ────────────────────────────────────────────── */

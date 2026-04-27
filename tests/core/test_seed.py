@@ -202,3 +202,94 @@ class TestGlobalSeedFallback:
         set_seed(42)
         r3 = Experiment.on("human_igh").run(n=5)
         assert [r["sequence"] for r in r1] == [r["sequence"] for r in r3]
+
+
+# ============================================================
+# T1-8: streaming RNG semantics + CompiledSimulator.set_seed
+# ============================================================
+
+class TestCompiledSimulatorSetSeed:
+    """T1-8: CompiledSimulator owns a single PCG32 stream that
+    persists across simulate() calls. set_seed() resets the stream."""
+
+    def test_set_seed_method_exists(self):
+        """The high-level CompiledSimulator wrapper must expose
+        set_seed (not just CSimulator). Pre-T1-8 users had to reach
+        into sim._sim.set_seed which is private."""
+        sim = Experiment.on("human_igh").compile(seed=42)
+        assert hasattr(sim, "set_seed"), \
+            "CompiledSimulator.set_seed missing — users would have to reach into _sim"
+        assert callable(sim.set_seed)
+
+    def test_set_seed_resets_stream_deterministically(self):
+        """sim.set_seed(42); sim.simulate(N) is byte-identical across
+        calls with the same N. This is the explicit reset path."""
+        sim = Experiment.on("human_igh").compile(seed=42)
+
+        sim.set_seed(42)
+        a = list(sim.simulate(10))
+        sim.set_seed(42)
+        b = list(sim.simulate(10))
+
+        assert [r["sequence"] for r in a] == [r["sequence"] for r in b], \
+            "set_seed(42) must reset the stream to a deterministic state"
+
+    def test_streaming_invariant_two_batches_equal_one_batch(self):
+        """Streaming invariant: simulate(N + M) from a fresh seed is
+        the same as simulate(N) followed by simulate(M) from the same
+        fresh seed. This is the core promise of the streaming RNG."""
+        sim1 = Experiment.on("human_igh").compile(seed=999)
+        twenty = list(sim1.simulate(20))
+
+        sim2 = Experiment.on("human_igh").compile(seed=999)
+        first_ten  = list(sim2.simulate(10))
+        second_ten = list(sim2.simulate(10))
+
+        assert [r["sequence"] for r in twenty] == \
+               [r["sequence"] for r in first_ten + second_ten], \
+            "simulate(20) must equal simulate(10) + simulate(10) on same seed"
+
+    def test_simulate_does_not_silently_reseed(self):
+        """Calling simulate() multiple times advances the stream — it
+        does NOT silently re-seed. Two back-to-back simulate(10) calls
+        on the same simulator must produce DIFFERENT records."""
+        sim = Experiment.on("human_igh").compile(seed=42)
+        a = list(sim.simulate(10))
+        b = list(sim.simulate(10))
+
+        # Sequences are 250+ bp; collisions on random V(D)J output
+        # are vanishingly unlikely — if equal, the RNG re-seeded.
+        a_seqs = [r["sequence"] for r in a]
+        b_seqs = [r["sequence"] for r in b]
+        assert a_seqs != b_seqs, \
+            "back-to-back simulate(10) returned identical records — " \
+            "stream is silently re-seeding (regression)"
+
+    def test_set_seed_zero_is_auto_seed(self):
+        """seed=0 is the engine's magic 'auto-seed from time + sim
+        address' value. Two consecutive set_seed(0) calls on the same
+        simulator are NOT guaranteed deterministic relative to each
+        other (auto-seed property), but they produce VALID output."""
+        sim = Experiment.on("human_igh").compile(seed=42)
+        sim.set_seed(0)
+        a = list(sim.simulate(5))
+        # Must not crash, must produce 5 records
+        assert len(a) == 5
+        for r in a:
+            assert "sequence" in r and len(r["sequence"]) > 0
+
+    def test_set_seed_after_simulate_resets_mid_life(self):
+        """set_seed mid-life must reset the stream — even after
+        simulate() has already advanced it."""
+        sim = Experiment.on("human_igh").compile(seed=42)
+        sim.simulate(10)             # advance stream past initial seed
+        sim.set_seed(42)             # reset
+        a = list(sim.simulate(10))   # records 0..9 from seed 42
+
+        # Compare against a fresh simulator with the same seed
+        fresh = Experiment.on("human_igh").compile(seed=42)
+        b = list(fresh.simulate(10))
+
+        assert [r["sequence"] for r in a] == [r["sequence"] for r in b], \
+            "set_seed mid-life should produce the same output as a " \
+            "freshly compiled simulator with the same seed"
