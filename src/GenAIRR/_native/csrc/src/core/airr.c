@@ -1386,11 +1386,14 @@ static const char *AIRR_COLUMNS[] = {
 #define AIRR_N_COLUMNS (sizeof(AIRR_COLUMNS) / sizeof(AIRR_COLUMNS[0]))
 
 int airr_write_tsv_header(FILE *fp) {
+    /* T2-6: surface write failures (e.g. disk full, broken pipe) so
+     * callers don't silently produce a partial/garbage TSV. Returns
+     * AIRR_N_COLUMNS on full success, -1 on any I/O failure. */
     for (int i = 0; i < (int)AIRR_N_COLUMNS; i++) {
-        if (i > 0) fputc('\t', fp);
-        fputs(AIRR_COLUMNS[i], fp);
+        if (i > 0 && fputc('\t', fp) == EOF) return -1;
+        if (fputs(AIRR_COLUMNS[i], fp) == EOF) return -1;
     }
-    fputc('\n', fp);
+    if (fputc('\n', fp) == EOF) return -1;
     return (int)AIRR_N_COLUMNS;
 }
 
@@ -1558,10 +1561,15 @@ static void airr_emit_row_inner(TsvWriter *w, const AirrRecord *r) {
     tw_field_int(w, r->sequence_length, 0);
 }
 
-void airr_write_tsv_row(FILE *fp, const AirrRecord *r) {
+int airr_write_tsv_row(FILE *fp, const AirrRecord *r) {
+    /* T2-6: TsvWriter already tracks per-field write failures via the
+     * sticky w.error flag — surface that to the caller. The trailing
+     * newline must also be checked, since stdio block buffering can
+     * make the final byte of a row the one that trips ENOSPC. */
     TsvWriter w = { .fp = fp, .buf = NULL, .buf_size = 0, .buf_pos = 0, .error = 0 };
     airr_emit_row_inner(&w, r);
-    if (!w.error) fputc('\n', fp);
+    if (!w.error && fputc('\n', fp) == EOF) w.error = -1;
+    return w.error ? -1 : 0;
 }
 
 int airr_snprintf_tsv_row(char *buf, int size, const AirrRecord *r) {

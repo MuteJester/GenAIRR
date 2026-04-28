@@ -46,6 +46,7 @@ endif()
 
 # ── Include paths ─────────────────────────────────────────────────
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/vendor/cjson)
 
 # ── Library: libgenairr ───────────────────────────────────────────
 set(LIB_SOURCES
@@ -84,6 +85,26 @@ set(LIB_SOURCES
     src/io/gdc_write.c
     src/io/gdc_read.c
     src/api/genairr_api.c
+    # Anchor resolution subsystem (T2-8)
+    src/anchor/codon.c
+    src/anchor/result.c
+    src/anchor/strategy_explicit.c
+    src/anchor/strategy_imgt_gapped.c
+    src/anchor/strategy_motif_v.c
+    src/anchor/strategy_motif_j.c
+    src/anchor/resolver.c
+    # Reference loaders (T2-8)
+    src/ref/locus_infer.c
+    src/ref/build_report.c
+    src/ref/loader_base.c
+    src/ref/loader_imgt.c
+    src/ref/loader_plain.c
+    src/ref/loader_airrc.c
+    src/ref/loader_ogrdb.c
+    src/ref/loader_igblast.c
+    src/ref/loader_auto.c
+    # Vendored cJSON for AIRR-C / OGRDB JSON loaders
+    vendor/cjson/cJSON.c
 )
 
 add_library(genairr STATIC ${LIB_SOURCES})
@@ -171,6 +192,19 @@ if(GENAIRR_BUILD_TESTS)
     add_executable(test_rand_util tests/test_rand_util.c)
     target_link_libraries(test_rand_util genairr ${MATH_LIB})
     add_test(NAME test_rand_util COMMAND test_rand_util)
+
+    # Anchor resolution subsystem tests (T2-8)
+    add_executable(test_anchor tests/test_anchor.c)
+    target_link_libraries(test_anchor genairr ${MATH_LIB})
+    add_test(NAME test_anchor COMMAND test_anchor)
+
+    add_executable(test_ref_loader tests/test_ref_loader.c)
+    target_link_libraries(test_ref_loader genairr ${MATH_LIB})
+    add_test(NAME test_ref_loader COMMAND test_ref_loader)
+
+    add_executable(test_ref_loaders_phase2 tests/test_ref_loaders_phase2.c)
+    target_link_libraries(test_ref_loaders_phase2 genairr ${MATH_LIB})
+    add_test(NAME test_ref_loaders_phase2 COMMAND test_ref_loaders_phase2)
 endif()
 
 # ── Benchmarks ─────────────────────────────────────────────────

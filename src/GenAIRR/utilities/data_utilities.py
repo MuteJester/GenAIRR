@@ -4,44 +4,72 @@ import re
 from collections import defaultdict
 from ..alleles.allele import VAllele, JAllele, DAllele, CAllele
 from ..utilities import parse_fasta
+from .._native._anchor import (
+    LoadedAlleleRecord, Locus, Segment, FunctionalStatus,
+    AnchorConfidence, resolve_anchor,
+)
 
 logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────
-# Default anchor finders (standard IMGT conventions)
+# Default anchor finders (T2-8: thin wrappers over C resolver)
 # ─────────────────────────────────────────────────────────────
+#
+# The legacy `default_v_anchor_finder(gapped, ungapped)` and
+# `default_j_anchor_finder(ungapped)` callables remain on the public
+# surface for back-compat. Each one is now a thin shim that builds a
+# minimal LoadedAlleleRecord and delegates to the C-side AnchorResolver
+# (alleles/anchor.h). The single source of truth lives in
+# csrc/src/anchor/ — these functions are kept only because external
+# callers (and `RandomDataConfigBuilder.make`'s `v_anchor_finder` /
+# `j_anchor_finder` hook arguments) historically expected them.
+#
+# Two semantic differences from the pre-T2-8 versions:
+#   1. Trp anchor V genes (TGG at IMGT-104) are now ACCEPTED rather
+#      than rejected. Biologically correct — see anchor_subsystem_plan
+#      Finding B1.
+#   2. Anchors landing on a stop codon (pseudogene-like sequences) are
+#      explicitly rejected with a structured reason.
 
 def default_v_anchor_finder(gapped_seq, ungapped_seq):
     """Return the V anchor position (int), or None if not found.
 
-    Checks IMGT position 104 (gapped nucleotide 309-312) for a Cysteine
-    codon (TGT/TGC). This is the conserved Cys at the start of CDR3 in
-    all standard mammalian BCR and TCR V genes.
+    Delegates to the C-side resolver via the IMGT-gapped strategy:
+    derives ungapped position by gap-counting from gapped position 309
+    (IMGT amino-acid 104), then validates the codon is Cys (TGT/TGC)
+    or Trp (TGG). Both motif-fallback and explicit-anchor strategies
+    are also tried, in priority order.
     """
-    cys = gapped_seq[309:312]
-    if cys not in ("tgt", "tgc"):
-        return None
-    cys_wider = gapped_seq[306:315]
-    pos = ungapped_seq.rfind(cys_wider)
-    if pos == -1:
-        return None
-    return pos + 3
+    rec = LoadedAlleleRecord(
+        name="?", aliases=(), segment=Segment.V, locus=Locus.UNKNOWN,
+        species=None, sequence=ungapped_seq, gapped_sequence=gapped_seq,
+        gap_convention_imgt=True,
+        functional_status=FunctionalStatus.UNKNOWN,
+        explicit_anchor=-1, source="legacy_wrapper",
+    )
+    res = resolve_anchor(rec, segment=Segment.V, locus=Locus.UNKNOWN)
+    return res.position if res.confidence != AnchorConfidence.REJECTED else None
 
 
 def default_j_anchor_finder(ungapped_seq):
     """Return the J anchor position (int), or None if not found.
 
-    Searches for the conserved Phe/Trp-Gly-X-Gly motif across all three
-    reading frames.  This motif marks the end of CDR3 in standard
-    mammalian BCR and TCR J genes.
+    Delegates to the C-side resolver. With no locus hint passed,
+    accepts both Trp (TGG) and Phe (TT[CT]) at the conserved position
+    118 — the motif scan is locus-blind here for back-compat. Newer
+    code should call ``resolve_anchor`` directly with a `locus`
+    argument to get canonical-vs-alternative confidence labelling.
     """
-    motif = re.compile(r'(ttt|ttc|tgg)(ggt|ggc|gga|ggg)[a-z]{3}(ggt|ggc|gga|ggg)')
-    for frame in range(3):
-        match = motif.search(ungapped_seq[frame:])
-        if match and match.span()[0] % 3 == 0:
-            return match.span()[0] + frame
-    return None
+    rec = LoadedAlleleRecord(
+        name="?", aliases=(), segment=Segment.J, locus=Locus.UNKNOWN,
+        species=None, sequence=ungapped_seq, gapped_sequence=None,
+        gap_convention_imgt=False,
+        functional_status=FunctionalStatus.UNKNOWN,
+        explicit_anchor=-1, source="legacy_wrapper",
+    )
+    res = resolve_anchor(rec, segment=Segment.J, locus=Locus.UNKNOWN)
+    return res.position if res.confidence != AnchorConfidence.REJECTED else None
 
 
 # ─────────────────────────────────────────────────────────────

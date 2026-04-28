@@ -27,17 +27,28 @@ from .protocol import CompiledSimulator, SimulationStream
 # Seed management for reproducibility
 from .seed import set_seed, get_seed, reset_seed
 
-# Data configs (lazy-loaded) — most commonly used configs.
-# All 100+ configs are accessible via GenAIRR.data or Experiment.on("config_name").
-# Use GenAIRR.data.list_configs() to see all available configs.
-from .data import (
-    HUMAN_IGH_OGRDB,
-    HUMAN_IGH_EXTENDED,
-    HUMAN_IGK_OGRDB,
-    HUMAN_IGL_OGRDB,
-    HUMAN_TCRB_IMGT,
-)
+# Data configs are lazy-loaded — accessing e.g. ``GenAIRR.HUMAN_IGH_OGRDB``
+# routes through ``__getattr__`` below, which defers to ``GenAIRR.data``.
+# This keeps ``import GenAIRR`` cheap and avoids triggering pickle loads
+# (and their integrity checks) at package-init time. All 100+ configs
+# are also accessible via ``GenAIRR.data`` or ``Experiment.on("name")``.
 from .data import list_configs
+
+_LAZY_DATA_CONFIGS = frozenset({
+    "HUMAN_IGH_OGRDB",
+    "HUMAN_IGH_EXTENDED",
+    "HUMAN_IGK_OGRDB",
+    "HUMAN_IGL_OGRDB",
+    "HUMAN_TCRB_IMGT",
+})
+
+
+def __getattr__(name):
+    if name in _LAZY_DATA_CONFIGS:
+        from . import data as _data
+        return getattr(_data, name)
+    raise AttributeError(
+        f"module 'GenAIRR' has no attribute {name!r}")
 
 # DataConfig and metadata
 from .dataconfig import DataConfig, DataConfigError, ConfigInfo, ChainType, Species

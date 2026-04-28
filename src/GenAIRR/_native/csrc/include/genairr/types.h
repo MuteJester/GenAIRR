@@ -39,6 +39,7 @@ typedef enum {
     NUC_FLAG_ANCHOR       = 1 << 6,   /* V-cys or J-trp/gly anchor     */
     NUC_FLAG_INDEL_INS    = 1 << 7,   /* inserted by indel operation    */
     NUC_FLAG_JUNCTION     = 1 << 8,   /* part of the junction region    */
+    NUC_FLAG_INVERTED     = 1 << 9,   /* T2-13: D-segment inversion     */
 } NucFlags;
 
 /* ── Productivity filter mode ─────────────────────────────────── */

@@ -133,6 +133,23 @@ GENAIRR_EXPORT void genairr_clear_locks(GenAIRRSimulator *sim, const char *segme
  */
 GENAIRR_EXPORT void genairr_set_seed(GenAIRRSimulator *sim, uint64_t seed);
 
+/* ── Mutation model selection ───────────────────────────────── */
+
+/**
+ * Select the somatic-hypermutation kernel.
+ *
+ * @param sim   The simulator handle.
+ * @param name  ``"s5f"`` (context-dependent, default) or ``"uniform"``
+ *              (position-independent — no per-config tables needed).
+ * @return 0 on success, -1 on bad name or NULL handle.
+ *
+ * The choice only matters when the ``"mutate"`` feature is enabled.
+ * Uniform mutation reads ``min_mutation_rate`` / ``max_mutation_rate``
+ * from the SimConfig and applies an even-probability substitution.
+ */
+GENAIRR_EXPORT int genairr_set_mutation_model(GenAIRRSimulator *sim,
+                                              const char *name);
+
 /* ── Simulate ────────────────────────────────────────────────── */
 
 /**

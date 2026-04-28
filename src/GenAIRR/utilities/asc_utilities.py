@@ -273,14 +273,44 @@ def asc_dict(allele_cluster_table, germline_set):
         """
         germline_set_asc = defaultdict(list)
 
+        # T2-8: previously this passed no anchor_override, so VAllele's
+        # legacy `_find_anchor` (the buggy `rfind+3` heuristic) was the
+        # only anchor source for ASC-built configs — which silently
+        # returned 2 on rfind miss. Now we resolve via the C-side
+        # AnchorResolver and pass an explicit, validated anchor.
+        from .._native._anchor import (
+            LoadedAlleleRecord, Locus, Segment, FunctionalStatus,
+            AnchorConfidence, resolve_anchor, locus_from_gene_name,
+        )
+
         for row in allele_cluster_table:
             allele = row['Allele']
             new_allele = row['new_allele']
-            # get asc
             asc = new_allele.split("*")[0]
             seq = germline_set[allele]
-            ungapped_length = len(seq.replace(".",""))
-            germline_set_asc[asc].append(VAllele(new_allele, seq, ungapped_length))
+            ungapped = seq.replace(".", "")
+            ungapped_length = len(ungapped)
+
+            rec = LoadedAlleleRecord(
+                name=new_allele, aliases=(),
+                segment=Segment.V,
+                locus=locus_from_gene_name(new_allele),
+                species=None,
+                sequence=ungapped, gapped_sequence=seq,
+                gap_convention_imgt=True,
+                functional_status=FunctionalStatus.UNKNOWN,
+                explicit_anchor=-1,
+                source="asc_dict",
+            )
+            result = resolve_anchor(rec, segment=Segment.V, locus=rec.locus)
+            anchor = (result.position
+                      if result.confidence != AnchorConfidence.REJECTED
+                      else 0)  # 0 sentinel preserves legacy "anchorless" behavior
+
+            germline_set_asc[asc].append(
+                VAllele(new_allele, seq, ungapped_length,
+                        anchor_override=anchor)
+            )
 
         return germline_set_asc
 

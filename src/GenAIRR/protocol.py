@@ -131,6 +131,80 @@ def _chain_has_d_segment(chain_type) -> bool:
     )
 
 
+def _validate_using_alleles(merged_locks: dict, resolved_config) -> None:
+    """T2-3: validate allele names in ``using()`` against the config's
+    allele pools and raise a single ``ValueError`` with did-you-mean
+    suggestions for every bad name.
+
+    Surfaces typos at compile time with a clear message instead of the
+    opaque C-level "allele not found in pool" stack trace from
+    :meth:`CSimulator.lock_allele`.
+
+    No-op when ``resolved_config`` is ``None`` (e.g. tests that lower
+    clauses without a config).
+    """
+    if resolved_config is None or not merged_locks:
+        return
+
+    import difflib
+
+    segment_attr = {"v": "v_alleles", "d": "d_alleles",
+                    "j": "j_alleles", "c": "c_alleles"}
+    errors: list[str] = []
+
+    for segment, names in merged_locks.items():
+        attr = segment_attr.get(segment)
+        if attr is None:
+            continue  # unknown segment — defer to C-side error
+        pool = getattr(resolved_config, attr, None)
+        if not pool:
+            # Pool is None or empty; the C-side will report a clearer
+            # error (e.g. "no D alleles for light chain"). Skip here.
+            continue
+        valid = {a.name for alleles in pool.values() for a in alleles}
+        for name in names:
+            if name in valid:
+                continue
+            suggestions = difflib.get_close_matches(
+                name, valid, n=3, cutoff=0.6)
+            seg_upper = segment.upper()
+            if suggestions:
+                errors.append(
+                    f"Unknown {seg_upper} allele {name!r}. "
+                    f"Did you mean: {', '.join(suggestions)}?")
+            else:
+                errors.append(
+                    f"Unknown {seg_upper} allele {name!r}. "
+                    f"No close matches in this config "
+                    f"({len(valid)} {seg_upper} alleles available; "
+                    f"use GenAIRR.data.<config>.{attr} to inspect).")
+
+    if errors:
+        raise ValueError(
+            "using() clause references unknown allele(s):\n  - "
+            + "\n  - ".join(errors))
+
+
+def _set_or_warn(current, new_clause, op_name: str):
+    """Assign a clause to a slot, warning on overwrite (T2-2).
+
+    The DSL's last-write-wins is preserved for back-compat, but a
+    duplicate within the same phase is almost always a typo (e.g.
+    ``.mutate(rate(0.01,0.05), rate(0.10,0.20))``) — surface it via a
+    ``UserWarning`` so users notice the dropped clause. To silence,
+    remove the duplicate or filter ``UserWarning``.
+    """
+    if current is not None:
+        warnings.warn(
+            f"{op_name}() specified more than once in the same phase; "
+            f"keeping last (last-write-wins). Remove the duplicate clause "
+            f"to silence this warning.",
+            UserWarning,
+            stacklevel=5,
+        )
+    return new_clause
+
+
 def _clauses_to_steps(
     recombine_clauses: list,
     mutate_clauses: list,
@@ -201,6 +275,10 @@ def _clauses_to_steps(
             has_receptor_revision = c
 
     if merged_locks:
+        # T2-3: validate allele names before constructing the step so
+        # typos surface at compile time with did-you-mean suggestions
+        # instead of as an opaque C-side "not found in pool" error.
+        _validate_using_alleles(merged_locks, resolved_config)
         steps.append(LockAlleles(locks=merged_locks))
 
     if has_d_inversion is not None:
@@ -223,37 +301,40 @@ def _clauses_to_steps(
     # ── Mutate ─────────────────────────────────────────────────
 
     if mutate_clauses:
-        # Last-write-wins for each clause type
-        model_name = "s5f"
-        min_rate, max_rate = 0.01, 0.05
-        has_csr = False
+        # Last-write-wins per clause type, with a UserWarning on duplicates
+        # (T2-2) so accidental over-specification doesn't drop silently.
+        model_clause = None
+        rate_clause = None
+        isotype_clause = None
         selection_clause = None
 
         for c in mutate_clauses:
             if isinstance(c, ModelClause):
-                model_name = c.name
+                model_clause = _set_or_warn(model_clause, c, "model")
             elif isinstance(c, RateClause):
-                min_rate, max_rate = c.min_rate, c.max_rate
+                rate_clause = _set_or_warn(rate_clause, c, "rate")
             elif isinstance(c, IsotypeRatesClause):
-                has_csr = True
+                isotype_clause = _set_or_warn(
+                    isotype_clause, c, "with_isotype_rates")
             elif isinstance(c, AntigenSelectionClause):
-                selection_clause = c
+                selection_clause = _set_or_warn(
+                    selection_clause, c, "with_antigen_selection")
 
-        # Warn about uniform model
-        if model_name == "uniform":
-            warnings.warn(
-                'model("uniform") requested, but the C backend currently uses '
-                "S5F motif data from the DataConfig for all mutation. True "
-                "position-independent mutation will be implemented in a future "
-                "release. Sequences will be generated using S5F mutation patterns.",
-                RuntimeWarning,
-                stacklevel=4,
-            )
-
-        if has_csr:
-            steps.append(SimulateCSR(min_rate=min_rate, max_rate=max_rate))
+        model_name = model_clause.name if model_clause is not None else "s5f"
+        if rate_clause is not None:
+            min_rate, max_rate = rate_clause.min_rate, rate_clause.max_rate
         else:
-            steps.append(Mutate(min_rate=min_rate, max_rate=max_rate))
+            min_rate, max_rate = 0.01, 0.05
+        has_csr = isotype_clause is not None
+
+        # T2-4: ``model_name`` is now passed through to the C kernel
+        # (s5f or uniform) — no silent S5F fallback for "uniform".
+        if has_csr:
+            steps.append(SimulateCSR(
+                min_rate=min_rate, max_rate=max_rate, model=model_name))
+        else:
+            steps.append(Mutate(
+                min_rate=min_rate, max_rate=max_rate, model=model_name))
 
         if selection_clause is not None:
             steps.append(SelectionPressure(
@@ -265,18 +346,19 @@ def _clauses_to_steps(
 
     # ── Prepare ────────────────────────────────────────────────
 
-    # Last-write-wins per clause type
+    # Last-write-wins per clause type with duplicate-warning (T2-2).
     primer_mask_clause = None
     umi_clause = None
     pcr_clause = None
 
     for c in prepare_clauses:
         if isinstance(c, PrimerMaskClause):
-            primer_mask_clause = c
+            primer_mask_clause = _set_or_warn(
+                primer_mask_clause, c, "with_primer_mask")
         elif isinstance(c, UMIClause):
-            umi_clause = c
+            umi_clause = _set_or_warn(umi_clause, c, "with_umi")
         elif isinstance(c, PCRClause):
-            pcr_clause = c
+            pcr_clause = _set_or_warn(pcr_clause, c, "with_pcr")
 
     if primer_mask_clause is not None:
         steps.append(PrimerMask(mask_length=primer_mask_clause.length))
@@ -290,7 +372,7 @@ def _clauses_to_steps(
 
     # ── Sequence ───────────────────────────────────────────────
 
-    # Last-write-wins per clause type
+    # Last-write-wins per clause type with duplicate-warning (T2-2).
     paired_end_clause = None
     long_read_clause = None
     five_prime_clause = None
@@ -300,17 +382,20 @@ def _clauses_to_steps(
 
     for c in sequence_clauses:
         if isinstance(c, PairedEndClause):
-            paired_end_clause = c
+            paired_end_clause = _set_or_warn(paired_end_clause, c, "paired_end")
         elif isinstance(c, LongReadClause):
-            long_read_clause = c
+            long_read_clause = _set_or_warn(long_read_clause, c, "long_read")
         elif isinstance(c, FivePrimeLossClause):
-            five_prime_clause = c
+            five_prime_clause = _set_or_warn(
+                five_prime_clause, c, "with_5prime_loss")
         elif isinstance(c, ThreePrimeLossClause):
-            three_prime_clause = c
+            three_prime_clause = _set_or_warn(
+                three_prime_clause, c, "with_3prime_loss")
         elif isinstance(c, QualityProfileClause):
-            quality_clause = c
+            quality_clause = _set_or_warn(
+                quality_clause, c, "with_quality_profile")
         elif isinstance(c, ReverseComplementClause):
-            rc_clause = c
+            rc_clause = _set_or_warn(rc_clause, c, "with_reverse_complement")
 
     # Warn about technology conflict
     if paired_end_clause is not None and long_read_clause is not None:
@@ -353,17 +438,19 @@ def _clauses_to_steps(
 
     # ── Observe ────────────────────────────────────────────────
 
+    # Last-write-wins per clause type with duplicate-warning (T2-2).
     contaminants_clause = None
     indels_clause = None
     ns_clause = None
 
     for c in observe_clauses:
         if isinstance(c, ContaminantsClause):
-            contaminants_clause = c
+            contaminants_clause = _set_or_warn(
+                contaminants_clause, c, "with_contaminants")
         elif isinstance(c, IndelsClause):
-            indels_clause = c
+            indels_clause = _set_or_warn(indels_clause, c, "with_indels")
         elif isinstance(c, NsClause):
-            ns_clause = c
+            ns_clause = _set_or_warn(ns_clause, c, "with_ns")
 
     if contaminants_clause is not None:
         steps.append(SpikeContaminants(
@@ -439,6 +526,8 @@ class CompiledSimulator:
             seed: Non-negative 64-bit integer. Pass 0 for the engine's
                 "auto-seed from time + simulator address" mode.
         """
+        if self._sim is None:
+            raise RuntimeError("CompiledSimulator is closed")
         self._sim.set_seed(seed)
 
     def simulate(self, n: int = 1, *, progress: bool = False) -> Any:
@@ -457,6 +546,9 @@ class CompiledSimulator:
             SimulationResult with AIRR-format dicts.
         """
         from .result import SimulationResult
+
+        if self._sim is None:
+            raise RuntimeError("CompiledSimulator is closed")
 
         if progress:
             try:
@@ -479,6 +571,8 @@ class CompiledSimulator:
 
     def simulate_to_file(self, n: int, output_path: str) -> int:
         """Write AIRR TSV directly to a file (no Python parsing)."""
+        if self._sim is None:
+            raise RuntimeError("CompiledSimulator is closed")
         return self._sim.simulate_to_file(n, output_path)
 
     def stream(self) -> SimulationStream:
@@ -506,14 +600,51 @@ class CompiledSimulator:
         Returns:
             SimulationStream wrapping the C simulator.
         """
+        if self._sim is None:
+            raise RuntimeError("CompiledSimulator is closed")
         return SimulationStream(self._sim)
 
     def __iter__(self):
         """Iterate over simulated sequences (infinite stream)."""
+        if self._sim is None:
+            raise RuntimeError("CompiledSimulator is closed")
         return iter(SimulationStream(self._sim))
 
+    # ── Lifecycle (T2-5) ──────────────────────────────────────────
+
+    def close(self) -> None:
+        """Release the underlying C simulator handle.
+
+        Idempotent — safe to call multiple times. After ``close()``,
+        :meth:`simulate`, :meth:`stream`, and iteration raise
+        ``RuntimeError``. Use this in long-running scripts that build
+        many compiled simulators (parameter sweeps, batch jobs) so
+        C-side memory is freed deterministically rather than waiting
+        on the Python GC.
+
+        Most users should prefer the context-manager form::
+
+            with Experiment.on("human_igh").compile(seed=42) as sim:
+                results = sim.simulate(1000)
+            # sim is closed here, even if simulate() raised.
+        """
+        if self._sim is not None:
+            self._sim.close()
+            self._sim = None
+
+    @property
+    def closed(self) -> bool:
+        return self._sim is None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False  # don't suppress exceptions
+
     def __repr__(self):
-        return "CompiledSimulator()"
+        return "CompiledSimulator(closed)" if self.closed else "CompiledSimulator()"
 
 
 class SimulationStream:

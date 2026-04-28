@@ -317,6 +317,91 @@ class TestFullPipelineIntegrity:
 
 
 # =============================================================================
+# T2-10. No-D-segment invariants for light/alpha/gamma chains
+# =============================================================================
+#
+# IGK, IGL, TRA, TRG don't recombine a D segment. The simulator should
+# emit records where every D-related field is empty/zero AND there's
+# only one NP region (np2_length must be 0 — there's nothing for an
+# NP2 to sit between when D is absent).
+#
+# Pre-T2-10 the integrity suite tested IGK/IGL only via the generic
+# `assert_coordinate_integrity` helper, which DIDN'T assert D-emptiness;
+# TRA and TRG had no integrity coverage at all. This class fills both
+# gaps with a parametrized helper.
+
+
+_NO_D_CHAINS = [
+    ("human_igk", "kappa"),
+    ("human_igl", "lambda"),
+    ("human_tcra", "TCR-alpha"),
+    ("human_tcrg", "TCR-gamma"),
+]
+
+
+@pytest.mark.parametrize("chain,label", _NO_D_CHAINS)
+class TestNoDSegmentInvariants:
+    """T2-10: every D-related field on a light-chain record must be
+    the zero/empty equivalent; np2_length must be 0 because there's
+    no D to sit between two NP regions."""
+
+    @pytest.fixture
+    def records(self, chain):
+        return Experiment.on(chain).run(n=N_SEQUENCES, seed=42)
+
+    def test_d_call_empty(self, records, chain, label):
+        for i, r in enumerate(records):
+            assert r["d_call"] == "" or r["d_call"] is None, (
+                f"{label} seq {i}: d_call={r['d_call']!r}, expected empty "
+                f"({chain} chain has no D segment)")
+
+    def test_d_sequence_coords_zero(self, records, chain, label):
+        for i, r in enumerate(records):
+            assert r["d_sequence_start"] == 0, \
+                f"{label} seq {i}: d_sequence_start={r['d_sequence_start']}"
+            assert r["d_sequence_end"] == 0, \
+                f"{label} seq {i}: d_sequence_end={r['d_sequence_end']}"
+            # Length-zero D in coordinate space is the canonical
+            # "no D" representation.
+            assert r["d_sequence_end"] - r["d_sequence_start"] == 0, \
+                f"{label} seq {i}: D coordinates non-zero-length"
+
+    def test_d_germline_coords_zero(self, records, chain, label):
+        for i, r in enumerate(records):
+            assert r["d_germline_start"] == 0, \
+                f"{label} seq {i}: d_germline_start={r['d_germline_start']}"
+            assert r["d_germline_end"] == 0, \
+                f"{label} seq {i}: d_germline_end={r['d_germline_end']}"
+
+    def test_d_trim_zero(self, records, chain, label):
+        for i, r in enumerate(records):
+            assert r["d_trim_5"] == 0, \
+                f"{label} seq {i}: d_trim_5={r['d_trim_5']}"
+            assert r["d_trim_3"] == 0, \
+                f"{label} seq {i}: d_trim_3={r['d_trim_3']}"
+
+    def test_np2_length_zero(self, records, chain, label):
+        """No D → no second NP region. np1_length carries the full V→J
+        non-templated insertion; np2_length must be 0."""
+        for i, r in enumerate(records):
+            assert r["np2_length"] == 0, \
+                f"{label} seq {i}: np2_length={r['np2_length']} but " \
+                f"chain has no D segment"
+
+    def test_v_directly_abuts_j_via_np1(self, records, chain, label):
+        """Stronger invariant: the gap between V and J is exactly
+        np1_length nucleotides — no D, no np2."""
+        for i, r in enumerate(records):
+            v_end = r["v_sequence_end"]
+            j_start = r["j_sequence_start"]
+            np1 = r["np1_length"]
+            gap = j_start - v_end
+            assert gap == np1, (
+                f"{label} seq {i}: V-J gap ({gap}) != np1_length ({np1}); "
+                f"a chain without D should have V→NP1→J only")
+
+
+# =============================================================================
 # 6. AIRR Dict Field Completeness
 # =============================================================================
 

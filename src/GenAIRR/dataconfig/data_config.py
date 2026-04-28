@@ -4,10 +4,17 @@ from typing import Optional, Dict, List, Any
 from GenAIRR.dataconfig.config_info import ConfigInfo
 from GenAIRR.dataconfig.enums import ChainType
 import copy
+import hashlib
+import pickle
 from GenAIRR.alleles.allele import Allele
 
 
 DEFAULT_P_NUCLEOTIDE_LENGTH_PROBS = {0: 0.50, 1: 0.25, 2: 0.15, 3: 0.07, 4: 0.03}
+
+# Bump on any breaking change to DataConfig fields. Old pickles without
+# this version (or with an older one) refuse to load and prompt the user
+# to re-migrate. See _check_schema() / verify_integrity() below.
+SCHEMA_VERSION = 1
 
 
 class DataConfigError(Exception):
@@ -53,13 +60,101 @@ class DataConfig:
     # When None, no D-J family pairing constraint is applied.
     dj_pairing_map: Optional[Dict[str, list]] = None
 
+    # Schema version + integrity checksum (T2-1). Populated by the migration
+    # script for all builtins; pickles without these fields fail load-time
+    # verification with a clear migration hint. schema_sha256 is sha256 over
+    # pickle.dumps(self, protocol=4) with schema_sha256 set to "" — see
+    # compute_checksum() below.
+    schema_version: int = SCHEMA_VERSION
+    schema_sha256: str = ""
+
+    # Build-time provenance (T2-8 closure step 3). Populated by
+    # `RandomDataConfigBuilder.make_from_reference` with a BuildReport
+    # describing per-allele anchor resolution outcomes, rejected
+    # alleles + reasons, and bucket counts. ``None`` for legacy
+    # builtins built before this field existed.
+    build_report: Optional[Any] = None
+
     def __getattr__(self, name):
-        # Backward compat for pickled DataConfigs missing new fields
+        # Backward-compat shim for pickled DataConfigs missing post-v1
+        # fields. Note: schema_version / schema_sha256 fall through to
+        # the dataclass class-level defaults (SCHEMA_VERSION and "")
+        # when the instance __dict__ doesn't have them, so they don't
+        # need entries here — verify_integrity() then sees version=1
+        # but checksum="", which trips the missing-checksum branch and
+        # produces a clean migration error.
         if name == 'p_nucleotide_length_probs':
             return dict(DEFAULT_P_NUCLEOTIDE_LENGTH_PROBS)
         if name == 'dj_pairing_map':
             return None
+        if name == 'build_report':
+            return None
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def compute_checksum(self) -> str:
+        """Compute the canonical sha256 of this DataConfig's contents.
+
+        The hash is taken over ``pickle.dumps(self, protocol=4)`` with
+        ``schema_sha256`` temporarily zeroed (so the field cannot
+        include itself in its own hash) and ``build_report`` removed
+        from ``__dict__`` entirely (so diagnostic provenance — which
+        has no semantic effect on simulation — doesn't invalidate
+        the integrity check, AND legacy pickles built before
+        ``build_report`` existed continue to verify against their
+        original stored checksums).
+        """
+        saved_sha = self.schema_sha256
+        # KEY-LEVEL pop: legacy pickles don't have 'build_report' in
+        # __dict__ at all. Setting self.build_report = None would
+        # ADD the key, changing the pickled bytes. Removing it from
+        # __dict__ instead keeps the wire shape identical for both
+        # legacy and new pickles.
+        had_report = 'build_report' in self.__dict__
+        saved_report = self.__dict__.get('build_report')
+
+        self.schema_sha256 = ""
+        if had_report:
+            del self.__dict__['build_report']
+        try:
+            blob = pickle.dumps(self, protocol=4)
+            return hashlib.sha256(blob).hexdigest()
+        finally:
+            self.schema_sha256 = saved_sha
+            if had_report:
+                self.__dict__['build_report'] = saved_report
+
+    def verify_integrity(self) -> None:
+        """Validate schema_version and schema_sha256.
+
+        Raises ``DataConfigError`` if the pickle predates the current
+        schema version or if its stored checksum does not match the
+        recomputed checksum (corrupted/tampered file).
+        """
+        version = getattr(self, "schema_version", 0)
+        if version != SCHEMA_VERSION:
+            raise DataConfigError(
+                f"DataConfig '{self.name or 'Unnamed'}' has schema_version="
+                f"{version}, but the current code expects "
+                f"{SCHEMA_VERSION}. Re-migrate this pickle (see "
+                f".private/scripts/migrate_pkl_to_v1.py) or rebuild it "
+                f"from the IMGT source via dataconfig builders."
+            )
+        stored = getattr(self, "schema_sha256", "") or ""
+        if not stored:
+            raise DataConfigError(
+                f"DataConfig '{self.name or 'Unnamed'}' is missing "
+                f"schema_sha256. Re-migrate this pickle to populate the "
+                f"checksum field."
+            )
+        actual = self.compute_checksum()
+        if actual != stored:
+            raise DataConfigError(
+                f"DataConfig '{self.name or 'Unnamed'}' checksum mismatch: "
+                f"stored={stored[:16]}…, actual={actual[:16]}…. "
+                f"The pickle has been modified or corrupted since it was "
+                f"saved. Reinstall GenAIRR or rebuild this config from "
+                f"its IMGT source."
+            )
 
     def validate(self):
         """

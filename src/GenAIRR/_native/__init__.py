@@ -39,26 +39,40 @@ else:
 
 
 def _find_library() -> str:
-    """Find the GenAIRR shared library for the current platform."""
+    """Find the GenAIRR shared library for the current platform.
+
+    Search order (T2-7):
+
+    1. ``GENAIRR_LIB_PATH`` env var, if set — explicit escape hatch
+       for dev/CI builds that want to point at a specific ``.so``.
+    2. ``src/GenAIRR/_native/<libname>`` — the location ``setup.py``'s
+       ``CMakeBuild`` populates during ``pip install`` (and the only
+       location wheels ship). Single source of truth for production.
+    3. System paths (``/usr/local/lib``, ``/usr/lib``) on Unix.
+
+    The ``csrc/build/`` paths used to be searched here too, but that
+    silently shadowed the installed ``.so`` whenever a contributor
+    ran ``cmake --build csrc/build`` without re-running
+    ``pip install -e .`` to copy the result into ``_native/``. The
+    canonical dev rebuild is now ``make build`` (or
+    ``pip install -e . --no-build-isolation``); pointing at a raw
+    cmake build tree requires ``GENAIRR_LIB_PATH``.
+    """
     candidates = []
+
+    # 1. Explicit override.
+    env_path = os.environ.get("GENAIRR_LIB_PATH")
+    if env_path:
+        candidates.append(Path(env_path))
 
     here = Path(__file__).parent  # src/GenAIRR/_native/
 
-    # 1. Next to this file (bundled in wheel or editable install)
+    # 2. The location setup.py's CMakeBuild copies into. This is what
+    #    wheels ship, what editable installs end up with, and the
+    #    single deterministic location for the resolved binary.
     candidates.append(here / _LIB_NAME)
 
-    # 2. Co-located C source build directory (development mode)
-    candidates.append(here / "csrc" / "build" / _LIB_NAME)
-
-    # 3. MSVC multi-config build directories (Debug/Release subdirs)
-    if sys.platform == "win32":
-        candidates.append(here / "csrc" / "build" / "Release" / _LIB_NAME)
-        candidates.append(here / "csrc" / "build" / "Debug" / _LIB_NAME)
-        # 3b. Setuptools may place the DLL alongside the package root
-        candidates.append(here.parent / _LIB_NAME)  # src/GenAIRR/
-        candidates.append(here.parent.parent / _LIB_NAME)  # src/
-
-    # 4. System paths (Unix only)
+    # 3. System paths (Unix only) — for distro-packaged installs.
     if sys.platform != "win32":
         candidates.append(Path("/usr/local/lib") / _LIB_NAME)
         candidates.append(Path("/usr/lib") / _LIB_NAME)
@@ -69,12 +83,16 @@ def _find_library() -> str:
 
     searched = "\n".join(f"  - {p}" for p in candidates)
     raise ImportError(
-        f"Cannot find {_LIB_NAME}. Searched:\n{searched}\n"
-        "Install with:\n"
-        "  pip install -e .      (builds C backend automatically)\n"
-        "Or build manually:\n"
-        "  cd src/GenAIRR/_native/csrc && mkdir -p build && cd build\n"
-        "  cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build ."
+        f"Cannot find {_LIB_NAME}. Searched:\n{searched}\n\n"
+        "To install GenAIRR with a freshly-built C backend, run:\n"
+        "    pip install -e .         (editable / dev mode)\n"
+        "    pip install GenAIRR      (release wheel from PyPI)\n\n"
+        "Or, for ad-hoc dev builds, set GENAIRR_LIB_PATH to the\n"
+        "absolute path of an already-built shared library:\n"
+        f"    export GENAIRR_LIB_PATH=/path/to/{_LIB_NAME}\n\n"
+        "If you ran `cmake --build csrc/build` directly, that build\n"
+        "no longer auto-shadows the installed library — re-run\n"
+        "`pip install -e .` (or `make build`) to refresh it."
     )
 
 
@@ -113,6 +131,10 @@ def _load_lib() -> ctypes.CDLL:
     # ── genairr_set_seed ──
     lib.genairr_set_seed.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
     lib.genairr_set_seed.restype = None
+
+    # ── genairr_set_mutation_model (T2-4) ──
+    lib.genairr_set_mutation_model.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.genairr_set_mutation_model.restype = ctypes.c_int
 
     # ── genairr_simulate ──
     lib.genairr_simulate.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p]
@@ -318,13 +340,47 @@ class CSimulator:
             )
 
     def __del__(self):
-        self.destroy()
+        # T2-5: best-effort cleanup at GC time. During interpreter
+        # shutdown, ctypes function pointers and even ``self._lib``
+        # itself may be torn down before this runs — any error here is
+        # un-actionable (the process is exiting), so swallow it.
+        # Callers that want loud errors should call ``close()`` or use
+        # the context-manager protocol explicitly.
+        try:
+            self.close()
+        except Exception:
+            pass
 
-    def destroy(self):
-        """Free the C simulator handle."""
-        if hasattr(self, '_handle') and self._handle:
-            self._lib.genairr_destroy(self._handle)
-            self._handle = None
+    def close(self) -> None:
+        """Free the C simulator handle. Idempotent.
+
+        After ``close()``, the handle is invalidated; further calls to
+        ``simulate()`` will raise ``RuntimeError``. Other methods
+        forward to a NULL handle, which the C side rejects cleanly.
+        """
+        # Use getattr so a partially-constructed instance (where
+        # ``__init__`` raised before assigning ``_handle`` / ``_lib``)
+        # doesn't trip an AttributeError during cleanup.
+        handle = getattr(self, '_handle', None)
+        lib = getattr(self, '_lib', None)
+        if handle and lib is not None:
+            lib.genairr_destroy(handle)
+        self._handle = None
+
+    # Back-compat alias — older code paths and tests call ``destroy()``.
+    destroy = close
+
+    @property
+    def closed(self) -> bool:
+        """True if the C handle has been released."""
+        return getattr(self, '_handle', None) is None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False  # don't suppress exceptions
 
     def set_feature(self, name: str, enabled: bool) -> None:
         """Enable or disable a named feature."""
@@ -353,6 +409,23 @@ class CSimulator:
     def set_seed(self, seed: int) -> None:
         """Set the random seed (0 = time-based)."""
         self._lib.genairr_set_seed(self._handle, seed)
+
+    def set_mutation_model(self, name: str) -> None:
+        """Select the SHM kernel: ``"s5f"`` (default) or ``"uniform"``.
+
+        T2-4: switches the in-C dispatch between context-dependent
+        (S5F motif) and position-independent (uniform) mutation. The
+        per-sequence rate range still comes from
+        ``min_mutation_rate``/``max_mutation_rate``.
+        """
+        rc = self._lib.genairr_set_mutation_model(
+            self._handle, name.encode("ascii")
+        )
+        if rc != 0:
+            raise ValueError(
+                f"Unknown mutation model {name!r}. "
+                f"Choose from: 's5f', 'uniform'."
+            )
 
     def lock_allele(self, segment: str, name: str) -> None:
         """Lock sampling of a segment to a specific allele by name.
@@ -384,6 +457,10 @@ class CSimulator:
 
         Returns:
             List of dicts, one per simulated sequence. Keys match AIRR fields.
+
+        Raises:
+            RuntimeError: If the C engine reports an I/O failure on the
+                temp file (e.g. /tmp full) — partial output discarded.
         """
         if not self._handle:
             raise RuntimeError("Simulator has been destroyed")
@@ -398,8 +475,22 @@ class CSimulator:
             rc = self._lib.genairr_simulate(
                 self._handle, n, tmp_path.encode()
             )
+            # T2-6: rc < 0 = total failure (header or fflush); 0 ≤ rc < n
+            # = partial write (disk full mid-batch). Both are bugs the
+            # caller almost certainly does not want to silently absorb.
             if rc < 0:
-                raise RuntimeError("C simulation failed")
+                raise RuntimeError(
+                    f"C simulation failed writing to temp file "
+                    f"{tmp_path!r} (check available space on the temp "
+                    f"filesystem)"
+                )
+            if rc != n:
+                raise RuntimeError(
+                    f"Partial simulation: wrote {rc} of {n} sequences "
+                    f"to temp file {tmp_path!r} before an I/O failure "
+                    f"(likely disk full). Free space on the temp "
+                    f"filesystem and retry."
+                )
 
             # Parse TSV output
             with open(tmp_path, 'r') as f:
@@ -567,7 +658,15 @@ class CSimulator:
         parsing overhead.
 
         Returns:
-            Number of sequences written.
+            Number of sequences written. Always equals ``n`` on
+            success.
+
+        Raises:
+            RuntimeError: If the C engine cannot open the output path,
+                or if a write fails before completing all ``n`` rows
+                (e.g. disk full, broken pipe). Detected via T2-6
+                short-return semantics — the partial file on disk is
+                left in place for inspection.
         """
         if not self._handle:
             raise RuntimeError("Simulator has been destroyed")
@@ -575,6 +674,20 @@ class CSimulator:
         rc = self._lib.genairr_simulate(
             self._handle, n, output_path.encode()
         )
+        # T2-6: surface partial-write failures the C engine now
+        # reports via a short return (rc < n) rather than the
+        # legacy "always n on success" behavior.
         if rc < 0:
-            raise RuntimeError("C simulation failed")
+            raise RuntimeError(
+                f"C simulation failed writing to {output_path!r} "
+                f"(could not open file, or header write failed; "
+                f"check path, permissions, and free space)"
+            )
+        if rc != n:
+            raise RuntimeError(
+                f"Partial write to {output_path!r}: wrote {rc} of "
+                f"{n} sequences before an I/O failure (likely disk "
+                f"full). The file contains the {rc} successful rows "
+                f"plus possibly a truncated row {rc + 1}."
+            )
         return rc

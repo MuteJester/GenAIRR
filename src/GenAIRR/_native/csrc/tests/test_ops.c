@@ -480,6 +480,62 @@ static int test_insert_ns_adds_ambiguous(void) {
     return 1;
 }
 
+/* T2-12: count how many of the 6 anchor-codon nts (3 V + 3 J) got
+ * an N. The first nt of each anchor codon carries NUC_FLAG_ANCHOR;
+ * walk the linked list to also catch nts +1 and +2 of each codon. */
+static int count_ns_in_anchor_codons(const ASeq *seq) {
+    int hits = 0;
+    int residual = 0;
+    for (Nuc *n = seq->head; n; n = n->next) {
+        bool in_anchor = false;
+        if (n->flags & NUC_FLAG_ANCHOR) { in_anchor = true; residual = 2; }
+        else if (residual > 0) { in_anchor = true; residual--; }
+        if (in_anchor && (n->flags & NUC_FLAG_IS_N)) hits++;
+    }
+    return hits;
+}
+
+static int test_insert_ns_protects_anchors_under_productive_only(void) {
+    /* T2-12: with PRODUCTIVITY_PRODUCTIVE_ONLY and a near-certain N
+     * rate, the 6 anchor-codon nts (3 V + 3 J) must NEVER be flipped
+     * to N — that's the whole point of the protection. */
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+    cfg.n_prob = 0.99;
+    cfg.features.productivity = PRODUCTIVITY_PRODUCTIVE_ONLY;
+
+    rng_seed(&_test_rng, 42, 0);
+    step_insert_ns(&cfg, &seq, &rec);
+
+    int hits = count_ns_in_anchor_codons(&seq);
+    ASSERT(hits == 0,
+           "PRODUCTIVITY_PRODUCTIVE_ONLY must protect anchor codons");
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
+static int test_insert_ns_does_not_protect_under_mixed(void) {
+    /* T2-12: under PRODUCTIVITY_MIXED the loader uses the full noise
+     * model — anchors are NOT protected. With prob=0.99 across 6
+     * anchor nts, the probability of ZERO hits is 0.01^6 ≈ 1e-12,
+     * effectively impossible. Asserting hits > 0 confirms the
+     * protection is conditional on PRODUCTIVE_ONLY (and isn't
+     * leaking into MIXED). */
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+    cfg.n_prob = 0.99;
+    cfg.features.productivity = PRODUCTIVITY_MIXED;
+
+    rng_seed(&_test_rng, 42, 0);
+    step_insert_ns(&cfg, &seq, &rec);
+
+    int hits = count_ns_in_anchor_codons(&seq);
+    ASSERT(hits > 0,
+           "PRODUCTIVITY_MIXED should NOT protect anchors");
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
 /* ── Paired End ──────────────────────────────────────────────── */
 
 static int test_paired_end_creates_gap(void) {
@@ -652,6 +708,88 @@ static int test_d_inversion_probability(void) {
 
     step_d_inversion(&cfg, &seq, &rec);
     ASSERT(rec.d_inverted == false, "Should not invert with prob=0");
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
+static int test_d_inversion_sets_per_node_flag(void) {
+    /* T2-13: inverted bases must carry NUC_FLAG_INVERTED for forensic
+     * / introspection tools that need per-position event provenance.
+     * The record-level rec->d_inverted flag is necessary but not
+     * sufficient — downstream code that walks the linked list shouldn't
+     * have to re-derive segment boundaries to identify inverted bases. */
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+    cfg.d_inversion_prob = 1.0;
+
+    rng_seed(&_test_rng, 42, 0);
+    step_d_inversion(&cfg, &seq, &rec);
+
+    int d_len_observed = 0;
+    int d_with_flag = 0;
+    int non_d_with_flag = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        bool flagged = (n->flags & NUC_FLAG_INVERTED) != 0;
+        if (n->segment == SEG_D) {
+            d_len_observed++;
+            if (flagged) d_with_flag++;
+        } else if (flagged) {
+            non_d_with_flag++;
+        }
+    }
+    ASSERT(d_len_observed > 0, "test must have a D segment");
+    ASSERT(d_with_flag == d_len_observed,
+           "every inverted D node must carry NUC_FLAG_INVERTED");
+    ASSERT(non_d_with_flag == 0,
+           "NUC_FLAG_INVERTED must not leak into V/D-NP/J nodes");
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
+static int test_d_inversion_germline_tracks_rearranged_template(void) {
+    /* T2-13 (audit-resolution): per AIRR Rearrangement Schema, the
+     * germline_alignment column must equal the post-rearrangement
+     * template at each position. So `n->germline` for an inverted-D
+     * node must equal the inverted base (the same value as
+     * `n->current` immediately after inversion, before SHM runs).
+     * If we ever revert to "germline stays canonical," AIRR mutation
+     * calling against inverted D becomes biologically incorrect
+     * (every base looks like an SHM). */
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+    cfg.d_inversion_prob = 1.0;
+
+    rng_seed(&_test_rng, 42, 0);
+    step_d_inversion(&cfg, &seq, &rec);
+
+    int mismatches = 0;
+    for (Nuc *n = seq.head; n; n = n->next) {
+        if (n->segment != SEG_D) continue;
+        if (n->germline != n->current) mismatches++;
+    }
+    ASSERT(mismatches == 0,
+           "n->germline must equal n->current immediately after inversion "
+           "(germline_alignment is the post-rearrangement template)");
+    sim_config_destroy(&cfg);
+    return 1;
+}
+
+static int test_d_inversion_no_flag_when_unfired(void) {
+    /* Sanity: with prob=0 no inversion happens, so no NUC_FLAG_INVERTED
+     * is set anywhere. Catches regressions where the flag would be
+     * applied on a code path that runs even when the random check
+     * rejects. */
+    ASeq seq; SimRecord rec; SimConfig cfg;
+    build_simple_seq(&seq, &rec, &cfg);
+    cfg.d_inversion_prob = 0.0;
+
+    rng_seed(&_test_rng, 42, 0);
+    step_d_inversion(&cfg, &seq, &rec);
+
+    for (Nuc *n = seq.head; n; n = n->next) {
+        ASSERT(!(n->flags & NUC_FLAG_INVERTED),
+               "NUC_FLAG_INVERTED must not be set when prob=0");
+    }
     sim_config_destroy(&cfg);
     return 1;
 }
@@ -1235,6 +1373,8 @@ int main(void) {
     RUN(test_insert_indels_modifies);
     RUN(test_insert_indels_preserves_anchors);
     RUN(test_insert_ns_adds_ambiguous);
+    RUN(test_insert_ns_protects_anchors_under_productive_only);  /* T2-12 */
+    RUN(test_insert_ns_does_not_protect_under_mixed);            /* T2-12 */
     RUN(test_paired_end_creates_gap);
     RUN(test_paired_end_no_gap_long_reads);
     RUN(test_long_read_errors_targets_homopolymers);
@@ -1245,6 +1385,9 @@ int main(void) {
     printf("\nSimulation ops:\n");
     RUN(test_d_inversion_complements);
     RUN(test_d_inversion_probability);
+    RUN(test_d_inversion_sets_per_node_flag);              /* T2-13 */
+    RUN(test_d_inversion_germline_tracks_rearranged_template); /* T2-13 */
+    RUN(test_d_inversion_no_flag_when_unfired);            /* T2-13 */
     RUN(test_receptor_revision_changes_v);
     RUN(test_selection_pressure_reverts_mutations);
     RUN(test_selection_walks_dj_segments);

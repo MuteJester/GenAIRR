@@ -222,13 +222,21 @@ class TestRunMultiSpecies:
 
 class TestCompileTimeWarnings:
 
-    def test_uniform_model_warns_at_compile(self):
-        with pytest.warns(RuntimeWarning, match="uniform"):
+    def test_uniform_model_compiles_without_warning(self):
+        """T2-4: model("uniform") is now wired to the C uniform kernel.
+        Previously this emitted a RuntimeWarning while silently running
+        S5F; now it compiles cleanly and runs the real kernel."""
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
             (
                 Experiment.on("human_igh")
                 .mutate(rate(0.01, 0.05), model("uniform"))
                 .compile(seed=42)
             )
+        runtime = [x for x in w if issubclass(x.category, RuntimeWarning)]
+        assert runtime == [], \
+            f"Unexpected RuntimeWarning(s): {[str(x.message) for x in runtime]}"
 
     def test_d_inversion_on_kappa_warns(self):
         with pytest.warns(UserWarning, match="no effect"):

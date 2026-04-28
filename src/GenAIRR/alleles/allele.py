@@ -2,11 +2,13 @@
 Note:
     Adapted from https://github.com/Cowanlab/airrship
 """
-import re
+import logging
 import random
 from abc import ABC, abstractmethod
 from ..utilities import weighted_choice_zero_break
 from enum import Enum, auto
+
+logger = logging.getLogger(__name__)
 
 
 class AlleleTypes(Enum):
@@ -39,7 +41,34 @@ class Allele(ABC):
             family (str): The gene family derived from the allele name.
             gene (str): The gene name derived from the allele name.
             anchor (int): The anchor position within the sequence, specific to allele type.
+            anchor_meta (Optional[AnchorResult]): T2-8 — provenance of the
+                resolved anchor (codon, residue, confidence, method,
+                rejection reason). ``None`` for legacy pickles built
+                before T2-8 and for alleles whose anchor was supplied
+                via ``anchor_override`` (no resolution attempt).
+            functional_status (Optional[FunctionalStatus]): IMGT
+                F/ORF/P classification preserved from the loader.
+                ``None`` on legacy pickles.
+            locus (Optional[Locus]): Locus carried through from the
+                loader (e.g. AIRR-C JSON's ``locus`` field).
+            aliases (tuple[str, ...]): Alternative names for the
+                allele (OGRDB paralog graph). Empty tuple by default.
+            species (Optional[str]): Species label from the loader.
+            source (Optional[str]): Which loader produced this record
+                (``"imgt-vquest"``, ``"airrc-germline-set"``,
+                ``"ogrdb"``, ``"igblast-bundle"``, ``"plain-fasta"``).
         """
+
+    # Class-level defaults — set as instance attributes by __init__
+    # on newly-constructed Allele subclasses. Provide graceful
+    # fallback for pickled instances built before each field was
+    # added (pickles bypass __init__).
+    anchor_meta = None
+    functional_status = None
+    locus = None
+    aliases = ()
+    species = None
+    source = None
 
     def __init__(self, name, gapped_sequence, length, *, anchor_override=None):
         """Initializes an Allele instance.
@@ -48,9 +77,10 @@ class Allele(ABC):
                 name (str): The name of the allele.
                 gapped_sequence (str): The gapped nucleotide sequence.
                 length (int): The length of the gapped sequence.
-                anchor_override (int, optional): If provided, overrides the
-                    anchor position computed by ``_find_anchor()``. Useful for
-                    non-standard species whose anchors differ from the defaults.
+                anchor_override (int, optional): If provided, sets the
+                    anchor directly and SKIPS ``_find_anchor()``. Useful
+                    for non-standard species or when the anchor was
+                    pre-computed by a validating loader (T2-8).
         """
         self.name = name
         self.length = int(length)
@@ -60,9 +90,18 @@ class Allele(ABC):
         self.family = self.name.split("-")[0] if "-" in self.name else self.name.split("*")[0]
         self.gene = self.name.split("*")[0]
         self.anchor = None
-        self._find_anchor()
+        # T2-8: provenance metadata populated by `_find_anchor` when it
+        # runs. None when anchor was supplied via override (the caller
+        # vouched for the value with no resolution attempt).
+        self.anchor_meta = None
+        # T2-8: only run the heuristic resolver if no override was
+        # given. The previous code ran `_find_anchor` unconditionally
+        # then overwrote — wasted work and a correctness hazard if the
+        # resolver had side-effects.
         if anchor_override is not None:
             self.anchor = anchor_override
+        else:
+            self._find_anchor()
 
     @abstractmethod
     def _find_anchor(self):
@@ -127,12 +166,41 @@ class VAllele(Allele):
     type = AlleleTypes.V
 
     def _find_anchor(self):
-        """Finds the anchor position within a V allele sequence.
+        """Resolve the V anchor via the C resolver (T2-8).
 
-            The anchor is identified based on the presence of a specific motif within the gapped sequence.
+        Replaces the legacy ``rfind(gapped[306:315]) + 3`` heuristic
+        with the structured C-side ``AnchorResolver``: tries explicit
+        coordinate, IMGT-gapped derivation (deterministic gap counting,
+        validates the codon is Cys/Trp), and motif fallback in priority
+        order. On rejection ``self.anchor`` stays ``None``;
+        ``self.anchor_meta`` carries the rejection reason for diagnostics.
         """
-        cys_wider = self.gapped_seq[306:315]
-        self.anchor = self.ungapped_seq.rfind(cys_wider) + 3
+        # Lazy import to avoid a circular when this module is itself
+        # imported during the C-bindings setup.
+        from .._native._anchor import (
+            LoadedAlleleRecord, Locus, Segment, FunctionalStatus,
+            AnchorConfidence, resolve_anchor, locus_from_gene_name,
+        )
+        rec = LoadedAlleleRecord(
+            name=self.name, aliases=(),
+            segment=Segment.V,
+            locus=locus_from_gene_name(self.name),
+            species=None,
+            sequence=self.ungapped_seq,
+            gapped_sequence=self.gapped_seq,
+            gap_convention_imgt=True,
+            functional_status=FunctionalStatus.UNKNOWN,
+            explicit_anchor=-1,
+            source="legacy_VAllele",
+        )
+        result = resolve_anchor(rec, segment=Segment.V, locus=rec.locus)
+        self.anchor_meta = result
+        if result.confidence != AnchorConfidence.REJECTED:
+            self.anchor = result.position
+        else:
+            # Stay None; legacy callers can still inspect anchor_meta
+            # for the rejection reason if needed.
+            self.anchor = None
 
     def _get_trim_length(self, trim_dicts):
         """Determines the trim lengths for the V allele's sequence based on provided trimming dictionaries.
@@ -264,28 +332,43 @@ class JAllele(Allele):
     type = AlleleTypes.J
 
     def _find_anchor(self):
-        """Finds the anchor position within a J allele sequence.
+        """Resolve the J anchor via the C resolver (T2-8).
 
-            The anchor is identified based on a specific motif within the ungapped sequence,
-            which is characteristic of J alleles.
-
-            The motif is defined by a regular expression that searches for specific nucleotide patterns.
+        Replaces the legacy in-Python regex scan that picked the LAST
+        in-frame motif match with a single call to the locus-aware C
+        resolver, which picks the FIRST in-frame match (5'-most — CDR3
+        ends at the first conserved residue from the 5' end of J,
+        which is the biologically correct rule). Locus is inferred
+        from the allele name so canonical-vs-alternative confidence
+        is set correctly (Trp expected for IGH/TRB/TRD; Phe for
+        IGK/IGL/TRA/TRG).
         """
-        # motif = re.compile('(ttt|ttc|tgg)(ggt|ggc|gga|ggg)[a-z]{3}(ggt|ggc|gga|ggg)')
-        # match = motif.search(self.ungapped_seq)
-        # self.anchor = match.span()[0] if match else None
-        ### ---------------------------------------------------------------------- ###
-        ### testing the influence of including the correct frame for the J anchor. ###
-        ### same concept but we will look for the motif based on the frame. Span%3 ###
+        from .._native._anchor import (
+            LoadedAlleleRecord, Locus, Segment, FunctionalStatus,
+            AnchorConfidence, resolve_anchor, locus_from_gene_name,
+        )
         self.anchor = None
         self.frame = None
-        for frame in range(3):
-            motif = re.compile('(ttt|ttc|tgg)(ggt|ggc|gga|ggg)[a-z]{3}(ggt|ggc|gga|ggg)')
-            match = motif.search(self.ungapped_seq[frame:])
-            if match:
-                if match.span()[0] % 3 == 0:
-                    self.anchor = match.span()[0] + frame # correct for the end of the cdr3
-                    self.frame = frame # retain the frame of the J
+        rec = LoadedAlleleRecord(
+            name=self.name, aliases=(),
+            segment=Segment.J,
+            locus=locus_from_gene_name(self.name),
+            species=None,
+            sequence=self.ungapped_seq,
+            gapped_sequence=None,
+            gap_convention_imgt=False,
+            functional_status=FunctionalStatus.UNKNOWN,
+            explicit_anchor=-1,
+            source="legacy_JAllele",
+        )
+        result = resolve_anchor(rec, segment=Segment.J, locus=rec.locus)
+        self.anchor_meta = result
+        if result.confidence != AnchorConfidence.REJECTED:
+            self.anchor = result.position
+            # Frame = position % 3 since the motif is at codon
+            # boundaries within the chosen frame. Preserved for
+            # back-compat with callers that read JAllele.frame.
+            self.frame = result.position % 3
 
 
     def _get_trim_length(self, trim_dicts):

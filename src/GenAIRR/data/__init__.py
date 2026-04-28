@@ -185,6 +185,16 @@ def __getattr__(name: str):
     except Exception as e:
         raise ImportError(f"Could not load data config '{name}': {e}") from e
 
+    # T2-1: refuse to ship a stale-schema or tampered builtin. A mismatch
+    # here means the wheel itself is broken (someone shipped without
+    # running the migration) or the file was modified post-install.
+    try:
+        data_config.verify_integrity()
+    except Exception as e:
+        raise ImportError(
+            f"Builtin DataConfig '{name}' failed integrity check: {e}"
+        ) from e
+
     # Cache the loaded data
     _CACHE[name] = data_config
     globals()[name] = data_config  # Make it a real module attribute

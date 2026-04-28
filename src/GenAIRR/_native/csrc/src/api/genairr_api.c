@@ -8,6 +8,7 @@
 #include "genairr/genairr_api.h"
 #include "genairr/genairr.h"
 #include "genairr/gdc_io.h"
+#include "genairr/gdc_format.h"
 #include "genairr/sim_config.h"
 #include "genairr/pipeline.h"
 #include "genairr/airr.h"
@@ -15,6 +16,9 @@
 #include "genairr/allele_bitmap.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
+
+/* Position-independent mutation kernel (T2-4). Wired in below. */
+extern void step_uniform_mutate(const SimConfig *cfg, ASeq *seq, SimRecord *rec);
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,6 +45,10 @@ struct GenAIRRSimulator {
     SimConfig     cfg;
     S5FModel      s5f;
     bool          s5f_loaded;     /* true if GDC had S5F data */
+    /* T2-4: which mutation kernel to invoke when features.mutate is on.
+     * Defaults to GDC_MUTMODEL_S5F for back-compat with existing
+     * callers; switched via genairr_set_mutation_model. */
+    int           mutation_model;
     bool          compiled;       /* true after first simulate() */
     bool          seeded;         /* true after RNG seeded (for streaming) */
     Pipeline      pipeline;
@@ -81,11 +89,17 @@ static int init_from_gdc(GenAIRRSimulator *sim) {
     gdc_populate_sim_config(&sim->cfg, &sim->gdc);
 
     /* Load S5F if present */
-    if (sim->gdc.mutation_model_type == 1) { /* GDC_MUTMODEL_S5F */
+    if (sim->gdc.mutation_model_type == GDC_MUTMODEL_S5F) {
         s5f_model_init(&sim->s5f, 0.01, 0.05, false);
         gdc_populate_s5f_model(&sim->s5f, &sim->gdc);
         sim->s5f_loaded = true;
     }
+
+    /* T2-4: default to S5F regardless of GDC contents. The Python
+     * compiler may override via genairr_set_mutation_model("uniform"),
+     * which doesn't need any GDC table — uniform_mutate reads only
+     * cfg->{min,max}_mutation_rate. */
+    sim->mutation_model = GDC_MUTMODEL_S5F;
 
     return 0;
 }
@@ -372,9 +386,76 @@ void genairr_set_seed(GenAIRRSimulator *sim, uint64_t seed) {
     sim->seeded = false;  /* re-seed on next simulate_one() */
 }
 
+/* ── Mutation model selection (T2-4) ────────────────────────────
+ * Switch between S5F (context-dependent, default) and uniform
+ * (position-independent). Uniform requires no per-config tables —
+ * it reads cfg->{min,max}_mutation_rate directly. Selecting
+ * "uniform" on a config that lacks S5F data is therefore valid;
+ * selecting "s5f" on such a config silently no-ops in simulate
+ * because s5f_loaded is false. */
+
+int genairr_set_mutation_model(GenAIRRSimulator *sim, const char *name) {
+    if (!sim || !name) return -1;
+    if      (strcmp(name, "s5f") == 0)     sim->mutation_model = GDC_MUTMODEL_S5F;
+    else if (strcmp(name, "uniform") == 0) sim->mutation_model = GDC_MUTMODEL_UNIFORM;
+    else return -1;
+    sim->compiled = false;
+    return 0;
+}
+
 /* ── Simulate ────────────────────────────────────────────────── */
 
 static void ensure_seeded(GenAIRRSimulator *sim);
+
+/* T2-4: run the configured mutation kernel for one sequence.
+ *
+ * Centralises the S5F-vs-uniform dispatch (and CSR rate adjustment)
+ * so each of the three simulate entry points stays small. CSR rate
+ * adjustment applies regardless of model: under S5F it tunes
+ * sim->s5f's per-call rates; under uniform it tunes cfg's rates that
+ * step_uniform_mutate reads directly. */
+static void run_mutation(GenAIRRSimulator *sim, ASeq *seq, SimRecord *rec,
+                         S5FResult *s5f_result) {
+    if (!sim->cfg.features.mutate) return;
+
+    const bool use_csr = sim->cfg.features.csr;
+
+    if (sim->mutation_model == GDC_MUTMODEL_UNIFORM) {
+        /* Uniform reads cfg->{min,max}_mutation_rate; CSR adjusts
+         * those temporarily for one call, then restores. */
+        if (use_csr) {
+            double base_min = sim->cfg.min_mutation_rate;
+            double base_max = sim->cfg.max_mutation_rate;
+            double min_r = base_min, max_r = base_max;
+            csr_adjust_rates(rec, &min_r, &max_r);
+            sim->cfg.min_mutation_rate = min_r;
+            sim->cfg.max_mutation_rate = max_r;
+            step_uniform_mutate(&sim->cfg, seq, rec);
+            sim->cfg.min_mutation_rate = base_min;
+            sim->cfg.max_mutation_rate = base_max;
+        } else {
+            step_uniform_mutate(&sim->cfg, seq, rec);
+        }
+        return;
+    }
+
+    /* Default: S5F. No-op when GDC carried no S5F tables. */
+    if (!sim->s5f_loaded) return;
+
+    if (use_csr) {
+        double base_min = sim->s5f.min_mutation_rate;
+        double base_max = sim->s5f.max_mutation_rate;
+        double min_r = base_min, max_r = base_max;
+        csr_adjust_rates(rec, &min_r, &max_r);
+        sim->s5f.min_mutation_rate = min_r;
+        sim->s5f.max_mutation_rate = max_r;
+        s5f_mutate(&sim->s5f, seq, rec, &sim->rng_state, s5f_result);
+        sim->s5f.min_mutation_rate = base_min;
+        sim->s5f.max_mutation_rate = base_max;
+    } else {
+        s5f_mutate(&sim->s5f, seq, rec, &sim->rng_state, s5f_result);
+    }
+}
 
 int genairr_simulate(GenAIRRSimulator *sim, int n,
                       const char *output_path) {
@@ -389,8 +470,13 @@ int genairr_simulate(GenAIRRSimulator *sim, int n,
     /* Seed RNG (once only — avoid re-seeding on batched calls) */
     ensure_seeded(sim);
 
-    /* Write header */
-    airr_write_tsv_header(fp);
+    /* T2-6: header write can fail (disk full, broken pipe, …).
+     * Without this check, callers got a half-empty file and a "rc==n"
+     * success return. Bail early — the file is already garbage. */
+    if (airr_write_tsv_header(fp) < 0) {
+        fclose(fp);
+        return -1;
+    }
 
     /* Simulate */
     ASeq seq;
@@ -400,45 +486,36 @@ int genairr_simulate(GenAIRRSimulator *sim, int n,
     AirrRecord airr;
     S5FResult s5f_result;
 
-    bool use_s5f = sim->s5f_loaded && sim->cfg.features.mutate;
-    bool use_csr = use_s5f && sim->cfg.features.csr;
-
-    /* Save base mutation rates (CSR overrides per-sequence) */
-    double base_min = sim->s5f.min_mutation_rate;
-    double base_max = sim->s5f.max_mutation_rate;
-
+    /* T2-6: count rows actually committed. A short return (written < n)
+     * tells the caller "I/O failed at row 'written' — file is partial." */
+    int written = 0;
     for (int i = 0; i < n; i++) {
         /* Execute biological assembly/simulation steps first
          * (everything before mutation-dependent phases). */
         pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
                                       0, NULL, NULL);
 
-        /* S5F mutation (runs between pre- and post-mutation stages). */
-        if (use_s5f) {
-            if (use_csr) {
-                /* Adjust rates per isotype, then restore */
-                double min_r = base_min, max_r = base_max;
-                csr_adjust_rates(&rec, &min_r, &max_r);
-                sim->s5f.min_mutation_rate = min_r;
-                sim->s5f.max_mutation_rate = max_r;
-            }
-            s5f_mutate(&sim->s5f, &seq, &rec, &sim->rng_state, &s5f_result);
-            if (use_csr) {
-                sim->s5f.min_mutation_rate = base_min;
-                sim->s5f.max_mutation_rate = base_max;
-            }
-        }
+        /* Mutation phase (S5F or uniform — see run_mutation). */
+        run_mutation(sim, &seq, &rec, &s5f_result);
 
         /* Execute post-mutation stages (selection + corruption). */
         pipeline_execute_post_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
                                        0, NULL, NULL);
 
         airr_serialize(&seq, &rec, &sim->cfg, &sim->corr, &airr);
-        airr_write_tsv_row(fp, &airr);
+        if (airr_write_tsv_row(fp, &airr) < 0) break;
+        written++;
     }
 
+    /* T2-6: stdio uses block buffering by default — the last few rows
+     * often live in the buffer until fclose flushes them. Force-flush
+     * here so we can detect failures separately from the close. */
+    if (fflush(fp) != 0) {
+        fclose(fp);
+        return -1;
+    }
     fclose(fp);
-    return n;
+    return written;
 }
 
 int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
@@ -452,7 +529,11 @@ int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
     /* Seed RNG (once only — avoid re-seeding on batched calls) */
     ensure_seeded(sim);
 
-    airr_write_tsv_header(fp);
+    /* T2-6: same partial-write hardening as genairr_simulate. */
+    if (airr_write_tsv_header(fp) < 0) {
+        fflush(fp);
+        return -1;
+    }
 
     ASeq seq;
     aseq_init(&seq);
@@ -461,40 +542,25 @@ int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
     AirrRecord airr;
     S5FResult s5f_result;
 
-    bool use_s5f = sim->s5f_loaded && sim->cfg.features.mutate;
-    bool use_csr = use_s5f && sim->cfg.features.csr;
-
-    double base_min = sim->s5f.min_mutation_rate;
-    double base_max = sim->s5f.max_mutation_rate;
-
+    int written = 0;
     for (int i = 0; i < n; i++) {
         pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
                                       0, NULL, NULL);
 
-        if (use_s5f) {
-            if (use_csr) {
-                double min_r = base_min, max_r = base_max;
-                csr_adjust_rates(&rec, &min_r, &max_r);
-                sim->s5f.min_mutation_rate = min_r;
-                sim->s5f.max_mutation_rate = max_r;
-            }
-            s5f_mutate(&sim->s5f, &seq, &rec, &sim->rng_state, &s5f_result);
-            if (use_csr) {
-                sim->s5f.min_mutation_rate = base_min;
-                sim->s5f.max_mutation_rate = base_max;
-            }
-        }
+        run_mutation(sim, &seq, &rec, &s5f_result);
 
         pipeline_execute_post_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
                                        0, NULL, NULL);
 
         airr_serialize(&seq, &rec, &sim->cfg, &sim->corr, &airr);
-        airr_write_tsv_row(fp, &airr);
+        if (airr_write_tsv_row(fp, &airr) < 0) break;
+        written++;
     }
 
-    /* Don't fclose — caller owns the fd */
-    fflush(fp);
-    return n;
+    /* Don't fclose — caller owns the fd. fflush surfaces buffered
+     * write failures the loop couldn't see. */
+    if (fflush(fp) != 0) return -1;
+    return written;
 }
 
 /* ── Streaming (single-sequence) ─────────────────────────────── */
@@ -542,8 +608,9 @@ int genairr_simulate_one(GenAIRRSimulator *sim,
     AirrRecord airr;
     S5FResult s5f_result;
 
-    bool use_s5f = sim->s5f_loaded && sim->cfg.features.mutate;
-    bool use_csr = use_s5f && sim->cfg.features.csr;
+    const bool will_mutate = sim->cfg.features.mutate
+        && (sim->mutation_model == GDC_MUTMODEL_UNIFORM || sim->s5f_loaded);
+    const bool use_csr = will_mutate && sim->cfg.features.csr;
 
     /* Reset snapshot state */
     sim->n_snapshots = 0;
@@ -551,35 +618,21 @@ int genairr_simulate_one(GenAIRRSimulator *sim,
     static const char *const PROD_NAMES[] = {
         "mixed", "productive_only", "non_productive_only"
     };
-    TRACE("[begin] simulate_one: chain=%d, s5f=%s, csr=%s, productivity=%s",
+    const char *model_name =
+        sim->mutation_model == GDC_MUTMODEL_UNIFORM ? "uniform" : "s5f";
+    TRACE("[begin] simulate_one: chain=%d, mutate=%s, model=%s, csr=%s, productivity=%s",
           sim->cfg.chain_type,
-          use_s5f ? "yes" : "no",
+          will_mutate ? "yes" : "no",
+          model_name,
           use_csr ? "yes" : "no",
           PROD_NAMES[(int)sim->cfg.features.productivity]);
 
     pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
                                   sim->hook_mask, sim->snapshots, &sim->n_snapshots);
 
-    if (use_s5f) {
-        double base_min = sim->s5f.min_mutation_rate;
-        double base_max = sim->s5f.max_mutation_rate;
-        if (use_csr) {
-            double min_r = base_min, max_r = base_max;
-            TRACE("[csr] isotype=%s, base_rates=[%.4f, %.4f]",
-                  rec.c_allele ? rec.c_allele->name : "none", base_min, base_max);
-            csr_adjust_rates(&rec, &min_r, &max_r);
-            sim->s5f.min_mutation_rate = min_r;
-            sim->s5f.max_mutation_rate = max_r;
-            TRACE("[csr] adjusted_rates=[%.4f, %.4f]", min_r, max_r);
-        }
-        s5f_mutate(&sim->s5f, &seq, &rec, &sim->rng_state, &s5f_result);
-        if (use_csr) {
-            sim->s5f.min_mutation_rate = base_min;
-            sim->s5f.max_mutation_rate = base_max;
-        }
-    }
+    run_mutation(sim, &seq, &rec, &s5f_result);
 
-    /* Post-mutation hook (S5F runs outside pipeline). */
+    /* Post-mutation hook (mutation runs outside pipeline). */
     if (sim->hook_mask & (1u << HOOK_POST_MUTATION)) {
         take_snapshot(sim->snapshots, &sim->n_snapshots,
                       HOOK_POST_MUTATION, &seq, &rec);
@@ -702,6 +755,7 @@ static int aseq_to_json(const ASeq *seq, char *buf, int bufsize) {
         FLAG(NUC_FLAG_IS_N,         "is_n");
         FLAG(NUC_FLAG_ANCHOR,       "anchor");
         FLAG(NUC_FLAG_INDEL_INS,    "indel_ins");
+        FLAG(NUC_FLAG_INVERTED,     "inverted");    /* T2-13 */
 
         #undef FLAG
 

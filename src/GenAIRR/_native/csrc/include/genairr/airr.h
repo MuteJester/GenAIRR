@@ -197,14 +197,16 @@ void  airr_serialize(const ASeq *seq, const SimRecord *rec,
 
 /**
  * Write a TSV header line to a file.
- * Returns the number of columns written.
+ * Returns the number of columns written, or -1 on any write failure
+ * (e.g. disk full, broken pipe). T2-6.
  */
 int  airr_write_tsv_header(FILE *fp);
 
 /**
  * Write one AirrRecord as a TSV row to a file.
+ * Returns 0 on success, -1 on any write failure. T2-6.
  */
-void  airr_write_tsv_row(FILE *fp, const AirrRecord *rec);
+int   airr_write_tsv_row(FILE *fp, const AirrRecord *rec);
 
 /**
  * Write one AirrRecord as a TSV row to a buffer (no header, no newline).

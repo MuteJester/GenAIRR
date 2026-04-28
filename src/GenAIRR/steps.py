@@ -88,24 +88,31 @@ class LockAlleles(Step):
 
 @dataclass
 class Mutate(Step):
-    """Somatic hypermutation (S5F context-dependent model)."""
+    """Somatic hypermutation. ``model`` selects the kernel —
+    ``"s5f"`` (default, context-dependent) or ``"uniform"`` (T2-4,
+    position-independent)."""
     min_rate: float = 0.01
     max_rate: float = 0.05
+    model: str = "s5f"
 
     _feature: str = field(default="mutate", init=False, repr=False)
     _category: str = field(default="mutation", init=False, repr=False)
 
     def configure(self, sim) -> None:
         sim.set_feature("mutate", True)
+        sim.set_mutation_model(self.model)
         sim.set_param("min_mutation_rate", self.min_rate)
         sim.set_param("max_mutation_rate", self.max_rate)
 
 
 @dataclass
 class SimulateCSR(Step):
-    """Class-switch recombination — isotype-aware mutation rates."""
+    """Class-switch recombination — isotype-aware mutation rates.
+    Honors ``model`` (s5f or uniform) the same way ``Mutate`` does;
+    CSR rate adjustment applies in either kernel."""
     min_rate: float = 0.01
     max_rate: float = 0.05
+    model: str = "s5f"
 
     _feature: str = field(default="csr", init=False, repr=False)
     _category: str = field(default="mutation", init=False, repr=False)
@@ -113,6 +120,7 @@ class SimulateCSR(Step):
     def configure(self, sim) -> None:
         sim.set_feature("mutate", True)
         sim.set_feature("csr", True)
+        sim.set_mutation_model(self.model)
         sim.set_param("min_mutation_rate", self.min_rate)
         sim.set_param("max_mutation_rate", self.max_rate)
 
