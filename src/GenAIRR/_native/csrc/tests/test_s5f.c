@@ -151,10 +151,12 @@ static int test_base_encoding(void) {
     if (s5f_base_to_int('T') != 3) return 1;
     if (s5f_base_to_int('N') != 4) return 1;
 
-    if (s5f_int_to_base(0) != 'A') return 1;
-    if (s5f_int_to_base(1) != 'C') return 1;
-    if (s5f_int_to_base(2) != 'G') return 1;
-    if (s5f_int_to_base(3) != 'T') return 1;
+    /* s5f_int_to_base emits lowercase A/C/G/T (engine-wide convention),
+     * uppercase 'N' (AIRR germline_alignment placeholder). */
+    if (s5f_int_to_base(0) != 'a') return 1;
+    if (s5f_int_to_base(1) != 'c') return 1;
+    if (s5f_int_to_base(2) != 'g') return 1;
+    if (s5f_int_to_base(3) != 't') return 1;
     if (s5f_int_to_base(4) != 'N') return 1;
 
     return 0;
@@ -221,9 +223,10 @@ static int test_substitution_cumulative(void) {
 
     const S5FSubstitution *sub = &model.substitution[key];
     if (sub->count != 3) return 1;
-    if (sub->bases[0] != 'C') return 1;
-    if (sub->bases[1] != 'G') return 1;
-    if (sub->bases[2] != 'T') return 1;
+    /* s5f_set_substitution lowercases bases at load time. */
+    if (sub->bases[0] != 'c') return 1;
+    if (sub->bases[1] != 'g') return 1;
+    if (sub->bases[2] != 't') return 1;
 
     /* Cumulative: 0.3, 0.8, 1.0 */
     if (fabs(sub->cumulative[0] - 0.3) > 1e-9) return 1;

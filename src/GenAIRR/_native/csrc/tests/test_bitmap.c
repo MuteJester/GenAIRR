@@ -94,7 +94,7 @@ static int test_derive_identical_alleles(void) {
     aseq_append_segment(&seq, a1.seq, a1.length, SEG_V, 0, a1.anchor);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     ASSERT(result.count == 2, "Both alleles should tie");
     ASSERT(result.best_score == 12, "All 12 positions match");
@@ -128,7 +128,7 @@ static int test_derive_snp_difference(void) {
     aseq_append_segment(&seq, a1.seq, a1.length, SEG_V, 0, a1.anchor);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     /* Allele 0 should score 12 (all match), allele 1 scores 11 (pos 3 differs) */
     ASSERT(result.count == 1, "Only allele 0 should win");
@@ -165,7 +165,7 @@ static int test_derive_trimming_creates_equivalence(void) {
     aseq_append_segment(&seq, a1.seq, 10, SEG_V, 0, a1.anchor);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     /* Both alleles should match on the retained 10 positions */
     ASSERT(result.count == 2, "Both alleles should tie after trim");
@@ -204,7 +204,7 @@ static int test_derive_mutations_change_call(void) {
     aseq_mutate(&seq, seq.head, 'T', NUC_FLAG_MUTATED);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     /* God-aligner: current[0] = T, which matches allele 2 at pos 0.
      * Allele 2 scores 12 (all positions match), allele 1 scores 11.
@@ -244,7 +244,7 @@ static int test_derive_mutation_creates_tie(void) {
     aseq_mutate(&seq, seq.head, 'G', NUC_FLAG_MUTATED);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     /* God-aligner: current[0] = G, matches neither allele at pos 0.
      * Both alleles now score 11 (positions 1-11 are identical).
@@ -277,7 +277,7 @@ static int test_derive_skips_np_nodes(void) {
     aseq_append_np(&seq, "AAAA", 4, SEG_NP1, NUC_FLAG_N_NUCLEOTIDE);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     ASSERT(result.total_positions == 4, "Only 4 V positions counted");
     ASSERT(result.count == 1, "One allele matches");
@@ -312,14 +312,14 @@ static int test_derive_deletion_removes_vote(void) {
 
     /* Before deletion: allele 0 wins with 8, allele 1 has 7 */
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
     ASSERT(result.count == 1, "Before deletion: allele 0 wins");
     ASSERT(result.indices[0] == 0, "Allele 0 is the best");
 
     /* Delete the head node (pos 0, base A) — the distinguishing position */
     aseq_delete(&seq, seq.head);
 
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     /* Now both alleles match on positions 1-7 (7 positions each) */
     ASSERT(result.count == 2, "After deleting distinguishing position, both tie");
@@ -353,7 +353,7 @@ static int test_short_d_detection(void) {
     aseq_append_segment(&seq, "AT", 2, SEG_D, 5, -1);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_D, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_D, &result, NULL, NULL);
 
     ASSERT(allele_call_is_short_d(&result, &bm),
            "2-base D should be Short-D");
@@ -362,7 +362,7 @@ static int test_short_d_detection(void) {
     aseq_reset(&seq);
     aseq_append_segment(&seq, d1.seq, d1.length, SEG_D, 0, -1);
 
-    allele_call_derive(&bm, &seq, SEG_D, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_D, &result, NULL, NULL);
 
     ASSERT(!allele_call_is_short_d(&result, &bm),
            "Full-length D should NOT be Short-D");
@@ -477,7 +477,7 @@ static int test_realistic_v_trimming(void) {
     aseq_append_segment(&seq, a1.seq, 97, SEG_V, 0, a1.anchor);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     /* a1 and a2 differ at pos 98 (trimmed) → both score 97
      * a3 differs at pos 95 (A vs T) and pos 96 (A vs G) → scores 95
@@ -526,7 +526,7 @@ static int test_mutation_and_trim_combined(void) {
     aseq_mutate(&seq, n, 'G', NUC_FLAG_MUTATED);
 
     AlleleCallResult result;
-    allele_call_derive(&bm, &seq, SEG_V, &result, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &result, NULL, NULL);
 
     /* Retained positions: 3,4,5,6,7 (5 positions)
      * Differing position 2 is trimmed → both alleles match on retained.

@@ -345,7 +345,9 @@ static void test_populate_s5f_model(void) {
 
     assert(fabs(model.mutability[0] - 0.005) < 1e-10);
     assert(model.substitution[0].count == 3);
-    assert(model.substitution[0].bases[0] == 'C');
+    /* s5f_set_substitution lowercases bases at load time so emitted
+     * mutations stay case-consistent with V/D/J reference. */
+    assert(model.substitution[0].bases[0] == 'c');
 
     /* Key 140 */
     assert(fabs(model.mutability[140] - 0.0023) < 1e-10);

@@ -9,15 +9,20 @@
 #include "genairr/pipeline.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
+#include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 
 static char random_other_base(RngState *rng, char base) {
-    static const char bases[] = "ACGT";
+    /* Lowercase to keep case consistent with V/D/J reference and NP
+     * regions; the loop below uses a case-insensitive compare so it
+     * still rejects "same letter" regardless of caller's case. */
+    static const char bases[] = "acgt";
+    char base_lo = (char)tolower((unsigned char)base);
     char alt;
     do {
         alt = bases[rng_range(rng, 4)];
-    } while (alt == base);
+    } while (alt == base_lo);
     return alt;
 }
 

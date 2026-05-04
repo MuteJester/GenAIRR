@@ -40,7 +40,11 @@ static inline int s5f_base_to_int(char c) {
 }
 
 static inline char s5f_int_to_base(int i) {
-    static const char bases[] = "ACGTN";
+    /* Lowercase A/C/G/T to keep S5F-emitted bases consistent with
+     * V/D/J reference and NP-region case throughout the engine.
+     * 'N' stays uppercase: it is the IUPAC ambiguity marker and the
+     * AIRR germline_alignment convention is uppercase 'N'. */
+    static const char bases[] = "acgtN";
     return (i >= 0 && i < 5) ? bases[i] : 'N';
 }
 

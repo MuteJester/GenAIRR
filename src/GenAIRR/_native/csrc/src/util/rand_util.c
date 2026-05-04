@@ -117,7 +117,9 @@ double rng_beta(RngState *r, double alpha, double beta) {
 /* ── Random nucleotide string ────────────────────────────────── */
 
 void rng_nucleotides(RngState *r, char *buf, int len) {
-    static const char bases[] = "ACGT";
+    /* Lowercase to match V/D/J reference and NP-region case in the
+     * rest of the engine (AIRR convention is lowercase output). */
+    static const char bases[] = "acgt";
     for (int i = 0; i < len; i++) {
         buf[i] = bases[rng_range(r, 4)];
     }

@@ -104,11 +104,17 @@ static int test_basic_serialize(void) {
     if (strcmp(airr.d_call, "IGHD3-3*01") != 0) { fprintf(stderr, "FAIL: d_call=%s\n", airr.d_call); return 1; }
     if (strcmp(airr.j_call, "IGHJ4*02") != 0) { fprintf(stderr, "FAIL: j_call=%s\n", airr.j_call); return 1; }
 
-    /* NP regions */
+    /* NP regions are derived from POST-EXTENSION boundaries (not from
+     * the original SEG_NP1/NP2 node tags). For NP2: D 3' extension
+     * claims the first 'G' of "GCG" as D, J 5' extension claims the
+     * last 'G' as J — only the middle 'C' remains as NP2 in the AIRR
+     * record. For NP1, neither V nor D extends into it (V's trimmed
+     * tail "CC" doesn't match NP1's 'A', and D's trimmed head "GG"
+     * doesn't match NP1's 'A' either) — so NP1 stays the full "ATA". */
     if (strcmp(airr.np1_region, "ATA") != 0) { fprintf(stderr, "FAIL: np1=%s\n", airr.np1_region); return 1; }
     if (airr.np1_length != 3) { fprintf(stderr, "FAIL: np1_len=%d\n", airr.np1_length); return 1; }
-    if (strcmp(airr.np2_region, "GCG") != 0) { fprintf(stderr, "FAIL: np2=%s\n", airr.np2_region); return 1; }
-    if (airr.np2_length != 3) { fprintf(stderr, "FAIL: np2_len=%d\n", airr.np2_length); return 1; }
+    if (strcmp(airr.np2_region, "C") != 0) { fprintf(stderr, "FAIL: np2=%s\n", airr.np2_region); return 1; }
+    if (airr.np2_length != 1) { fprintf(stderr, "FAIL: np2_len=%d\n", airr.np2_length); return 1; }
 
     /* Productivity: airr_serialize derives productive/stop/in-frame from
      * the codon rail (post-T0-4, V-anchored frame). The synthetic test

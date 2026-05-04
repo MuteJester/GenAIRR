@@ -39,6 +39,17 @@ static int position_of_seg_boundary(const ASeq *seq, const Nuc *node) {
     return -1;
 }
 
+/* Case-insensitive nucleotide equality. The boundary-ambiguity checks
+ * compare bytes from the V/D/J reference (typically stored lowercase by
+ * IMGT/AIRR loaders) against ASeq nodes (NP-region nodes are appended
+ * uppercase; germline-segment nodes carry their reference's case). A
+ * raw byte compare therefore silently rejects matches whose case
+ * happens to differ — the symptom is boundary extension never
+ * triggering even when the bases biologically agree. */
+static inline bool bases_equal_ci(char a, char b) {
+    return (char)tolower((unsigned char)a) == (char)tolower((unsigned char)b);
+}
+
 /* ── Internal: check V 3' boundary ambiguity ──────────────────── */
 
 /**
@@ -68,7 +79,7 @@ static int check_v_3prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     for (int i = 0; i < trim_3 && np && np->segment == SEG_NP1
                  && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
          i++, np = np->next) {
-        if (trimmed[i] == np->current) {
+        if (bases_equal_ci(trimmed[i], np->current)) {
             match++;
         } else {
             break;
@@ -103,7 +114,7 @@ static int check_j_5prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     for (int i = trim_5 - 1; i >= 0 && np && np->segment == np_seg
                  && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
          i--, np = np->prev) {
-        if (j_ref[i] == np->current) {
+        if (bases_equal_ci(j_ref[i], np->current)) {
             match++;
         } else {
             break;
@@ -129,7 +140,7 @@ static int check_d_5prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     for (int i = trim_5 - 1; i >= 0 && np && np->segment == SEG_NP1
                  && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
          i--, np = np->prev) {
-        if (d_ref[i] == np->current) {
+        if (bases_equal_ci(d_ref[i], np->current)) {
             match++;
         } else {
             break;
@@ -154,7 +165,7 @@ static int check_d_3prime_ambiguity(const SimRecord *rec, const ASeq *seq) {
     for (int i = 0; i < trim_3 && np && np->segment == SEG_NP2
                  && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
          i++, np = np->next) {
-        if (trimmed[i] == np->current) {
+        if (bases_equal_ci(trimmed[i], np->current)) {
             match++;
         } else {
             break;
@@ -222,15 +233,28 @@ void airr_derive_positions(const ASeq *seq, const SimRecord *rec,
           out->d_sequence_start, out->d_sequence_end, out->d_germline_start, out->d_germline_end,
           out->j_sequence_start, out->j_sequence_end, out->j_germline_start, out->j_germline_end);
 
+    /* Boundary extensions claim adjacent NP bases as V/D/J. When two
+     * extensions reach into the same NP region from opposite sides
+     * (V 3' & D 5' in NP1; D 3' & J 5' in NP2; V 3' & J 5' in NP1
+     * for VJ chains), their independent walks can overlap — claiming
+     * the same physical base for two segments and producing a
+     * negative gap. The order below applies V→D→J and caps each
+     * subsequent extension so the post-adjustment coordinates stay
+     * non-overlapping. V gets first claim because it's the genomically
+     * 5'-most segment; that matches IgBLAST/partis convention. */
+
     int v_ambig = check_v_3prime_ambiguity(rec, seq);
+    {
+        int next_start = has_d ? out->d_sequence_start
+                                : out->j_sequence_start;
+        int max_ambig = next_start - out->v_sequence_end;
+        if (v_ambig > max_ambig) v_ambig = max_ambig;
+        if (v_ambig < 0) v_ambig = 0;
+    }
     out->v_sequence_end   += v_ambig;
     out->v_germline_end   += v_ambig;
     out->v_trim_3_adjusted = rec->v_trim_3 - v_ambig;
-
-    int j_ambig = check_j_5prime_ambiguity(rec, seq);
-    out->j_sequence_start -= j_ambig;
-    out->j_germline_start -= j_ambig;
-    out->j_trim_5_adjusted = rec->j_trim_5 - j_ambig;
+    out->extensions.v_3prime = v_ambig;
 
     /* T1-4: when D is missing from the live sequence (e.g., fully wiped
      * by indels, or VJ chain), `has_d` is false and the D-specific
@@ -246,20 +270,56 @@ void airr_derive_positions(const ASeq *seq, const SimRecord *rec,
     out->d_trim_3_adjusted = rec->d_trim_3;
 
     if (has_d) {
-        int d5_ambig = check_d_5prime_ambiguity(rec, seq);
+        /* For inverted D the canonical reference is in the wrong
+         * orientation for the rearranged template — boundary extension
+         * would need to walk against revcomp(canonical), with the
+         * trim_5/trim_3 roles SWAPPED (canonical 3' trim becomes the
+         * rearranged 5' extension source, and vice versa) and every
+         * patched germline base complemented. That's a full second
+         * code path; until it's implemented we conservatively skip
+         * extension on inverted D. The displayed germline_alignment
+         * over D then equals revcomp(canonical[d_germline_start..end])
+         * exactly — the AIRR-spec invariant `germline_alignment ==
+         * sequence_alignment over D when no SHM` continues to hold. */
+        int d5_ambig = rec->d_inverted ? 0 : check_d_5prime_ambiguity(rec, seq);
+        {
+            int max_ambig = out->d_sequence_start - out->v_sequence_end;
+            if (d5_ambig > max_ambig) d5_ambig = max_ambig;
+            if (d5_ambig < 0) d5_ambig = 0;
+        }
         out->d_sequence_start -= d5_ambig;
         out->d_germline_start -= d5_ambig;
         out->d_trim_5_adjusted = rec->d_trim_5 - d5_ambig;
+        out->extensions.d_5prime = d5_ambig;
 
-        int d3_ambig = check_d_3prime_ambiguity(rec, seq);
+        int d3_ambig = rec->d_inverted ? 0 : check_d_3prime_ambiguity(rec, seq);
+        {
+            int max_ambig = out->j_sequence_start - out->d_sequence_end;
+            if (d3_ambig > max_ambig) d3_ambig = max_ambig;
+            if (d3_ambig < 0) d3_ambig = 0;
+        }
         out->d_sequence_end   += d3_ambig;
         out->d_germline_end   += d3_ambig;
         out->d_trim_3_adjusted = rec->d_trim_3 - d3_ambig;
+        out->extensions.d_3prime = d3_ambig;
 
         if (d5_ambig || d3_ambig) {
             TRACE("[airr] D boundary ambiguity: 5'=%d, 3'=%d", d5_ambig, d3_ambig);
         }
     }
+
+    int j_ambig = check_j_5prime_ambiguity(rec, seq);
+    {
+        int prev_end = has_d ? out->d_sequence_end
+                              : out->v_sequence_end;
+        int max_ambig = out->j_sequence_start - prev_end;
+        if (j_ambig > max_ambig) j_ambig = max_ambig;
+        if (j_ambig < 0) j_ambig = 0;
+    }
+    out->j_sequence_start -= j_ambig;
+    out->j_germline_start -= j_ambig;
+    out->j_trim_5_adjusted = rec->j_trim_5 - j_ambig;
+    out->extensions.j_5prime = j_ambig;
 
     if (v_ambig || j_ambig) {
         TRACE("[airr] boundary ambiguity: V_3'=%d bases, J_5'=%d bases", v_ambig, j_ambig);
@@ -923,17 +983,35 @@ static void build_germline_alignment(const ASeq *seq, char *buf, int maxlen) {
 static void patch_boundary_extensions(const SimRecord *rec,
                                        const AirrPositions *pos,
                                        char *germ, int germ_len) {
+    bool rc = rec->is_reverse_complement;
+
+    /* In RC mode the boundary-extended bases live at the OPPOSITE end
+     * of each segment's interval (see collect_boundary_mutations notes
+     * for the start-position swap), and the displayed germline base
+     * must be the COMPLEMENT of the canonical reference — every other
+     * position in `germ` was complemented by aseq_reverse_complement(),
+     * so a non-complemented patch would silently inject a forward-
+     * orientation base mid-RC-sequence. */
+
     /* V 3' extension: NP1 bases claimed as V */
     int v_ambig = rec->v_trim_3 - pos->v_trim_3_adjusted;
     if (v_ambig > 0 && rec->v_allele) {
         int v_len = rec->v_allele->length;
-        int patch_start = pos->v_sequence_end - v_ambig;
+        int patch_start = rc ? pos->v_sequence_start
+                              : pos->v_sequence_end - v_ambig;
         int allele_offset = v_len - rec->v_trim_3;
         if (patch_start >= 0 && allele_offset >= 0) {
             for (int i = 0; i < v_ambig; i++) {
                 if (patch_start + i >= germ_len) break;
                 if (allele_offset + i >= v_len) break;
-                germ[patch_start + i] = rec->v_allele->seq[allele_offset + i];
+                /* In RC the V 3' extension at offset i lives at
+                 * v_sequence_start + (v_ambig - 1 - i): the run is
+                 * still canonical->NP outward from the unextended end,
+                 * but the RC mapping reverses element order. */
+                int allele_idx = rc ? allele_offset + (v_ambig - 1 - i)
+                                    : allele_offset + i;
+                char b = rec->v_allele->seq[allele_idx];
+                germ[patch_start + i] = rc ? complement(b) : b;
             }
         }
     }
@@ -941,14 +1019,18 @@ static void patch_boundary_extensions(const SimRecord *rec,
     /* J 5' extension: NP bases claimed as J */
     int j_ambig = rec->j_trim_5 - pos->j_trim_5_adjusted;
     if (j_ambig > 0 && rec->j_allele) {
-        int patch_start = pos->j_sequence_start;
+        int patch_start = rc ? pos->j_sequence_end - j_ambig
+                              : pos->j_sequence_start;
         int allele_offset = rec->j_trim_5 - j_ambig;
         int j_len = rec->j_allele->length;
         if (patch_start >= 0 && allele_offset >= 0) {
             for (int i = 0; i < j_ambig; i++) {
                 if (patch_start + i >= germ_len) break;
                 if (allele_offset + i >= j_len) break;
-                germ[patch_start + i] = rec->j_allele->seq[allele_offset + i];
+                int allele_idx = rc ? allele_offset + (j_ambig - 1 - i)
+                                    : allele_offset + i;
+                char b = rec->j_allele->seq[allele_idx];
+                germ[patch_start + i] = rc ? complement(b) : b;
             }
         }
     }
@@ -956,14 +1038,18 @@ static void patch_boundary_extensions(const SimRecord *rec,
     /* D 5' extension: NP1 bases claimed as D */
     int d5_ambig = rec->d_trim_5 - pos->d_trim_5_adjusted;
     if (d5_ambig > 0 && rec->d_allele) {
-        int patch_start = pos->d_sequence_start;
+        int patch_start = rc ? pos->d_sequence_end - d5_ambig
+                              : pos->d_sequence_start;
         int allele_offset = rec->d_trim_5 - d5_ambig;
         int d_len = rec->d_allele->length;
         if (patch_start >= 0 && allele_offset >= 0) {
             for (int i = 0; i < d5_ambig; i++) {
                 if (patch_start + i >= germ_len) break;
                 if (allele_offset + i >= d_len) break;
-                germ[patch_start + i] = rec->d_allele->seq[allele_offset + i];
+                int allele_idx = rc ? allele_offset + (d5_ambig - 1 - i)
+                                    : allele_offset + i;
+                char b = rec->d_allele->seq[allele_idx];
+                germ[patch_start + i] = rc ? complement(b) : b;
             }
         }
     }
@@ -972,13 +1058,17 @@ static void patch_boundary_extensions(const SimRecord *rec,
     int d3_ambig = rec->d_trim_3 - pos->d_trim_3_adjusted;
     if (d3_ambig > 0 && rec->d_allele) {
         int d_len = rec->d_allele->length;
-        int patch_start = pos->d_sequence_end - d3_ambig;
+        int patch_start = rc ? pos->d_sequence_start
+                              : pos->d_sequence_end - d3_ambig;
         int allele_offset = d_len - rec->d_trim_3;
         if (patch_start >= 0 && allele_offset >= 0) {
             for (int i = 0; i < d3_ambig; i++) {
                 if (patch_start + i >= germ_len) break;
                 if (allele_offset + i >= d_len) break;
-                germ[patch_start + i] = rec->d_allele->seq[allele_offset + i];
+                int allele_idx = rc ? allele_offset + (d3_ambig - 1 - i)
+                                    : allele_offset + i;
+                char b = rec->d_allele->seq[allele_idx];
+                germ[patch_start + i] = rc ? complement(b) : b;
             }
         }
     }
@@ -1001,6 +1091,7 @@ static int collect_boundary_mutations(const char *seq_str, const char *germ,
                                        char *mutations_buf, int mut_pos,
                                        int bufsize) {
     int extra = 0;
+    bool rc = rec->is_reverse_complement;
 
     /* Helper macro to scan one extended region.
      * Guards against out-of-bounds access: after indels or corruption,
@@ -1022,21 +1113,39 @@ static int collect_boundary_mutations(const char *seq_str, const char *germ,
             }                                                               \
         }
 
+    /* In forward orientation, V's 3' extension lives at the right edge
+     * of V's range — i.e. at [v_sequence_end - v_ambig, v_sequence_end).
+     * After map_positions_to_rc_coords() the interval's start/end are
+     * swapped (start = seq_len - old_end, end = seq_len - old_start),
+     * so the V 3' extension now sits at the LEFT edge of V's RC range:
+     * [v_sequence_start, v_sequence_start + v_ambig). The same logic
+     * mirrors J 5', D 5', D 3'. Without this swap the scan checks the
+     * unextended end of each segment in RC mode and emits a phantom
+     * boundary mutation per extension. */
+
     /* V 3' extension */
     int v_ambig = rec->v_trim_3 - pos->v_trim_3_adjusted;
-    SCAN_EXTENSION(v_ambig, pos->v_sequence_end - v_ambig);
+    SCAN_EXTENSION(v_ambig,
+                   rc ? pos->v_sequence_start
+                      : pos->v_sequence_end - v_ambig);
 
     /* J 5' extension */
     int j_ambig = rec->j_trim_5 - pos->j_trim_5_adjusted;
-    SCAN_EXTENSION(j_ambig, pos->j_sequence_start);
+    SCAN_EXTENSION(j_ambig,
+                   rc ? pos->j_sequence_end - j_ambig
+                      : pos->j_sequence_start);
 
     /* D 5' extension */
     int d5_ambig = rec->d_trim_5 - pos->d_trim_5_adjusted;
-    SCAN_EXTENSION(d5_ambig, pos->d_sequence_start);
+    SCAN_EXTENSION(d5_ambig,
+                   rc ? pos->d_sequence_end - d5_ambig
+                      : pos->d_sequence_start);
 
     /* D 3' extension */
     int d3_ambig = rec->d_trim_3 - pos->d_trim_3_adjusted;
-    SCAN_EXTENSION(d3_ambig, pos->d_sequence_end - d3_ambig);
+    SCAN_EXTENSION(d3_ambig,
+                   rc ? pos->d_sequence_start
+                      : pos->d_sequence_end - d3_ambig);
 
     #undef SCAN_EXTENSION
     return extra;
@@ -1202,11 +1311,52 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
     out->j_trim_5 = pos.j_trim_5_adjusted;
     out->j_trim_3 = rec->j_trim_3;
 
-    /* ── 6. NP regions ───────────────────────────────────────── */
-    out->np1_length = aseq_segment_to_string(seq, SEG_NP1,
-                                              out->np1_region, AIRR_MAX_NP);
-    out->np2_length = aseq_segment_to_string(seq, SEG_NP2,
-                                              out->np2_region, AIRR_MAX_NP);
+    /* ── 6. NP regions ───────────────────────────────────────── *
+     *
+     * AIRR semantics: np1_region is the bases BETWEEN V and the next
+     * downstream segment (D for VDJ chains, J for VJ chains); np2_region
+     * is the bases between D and J (empty for VJ chains).
+     *
+     * We derive them from the post-extension AIRR coordinates rather
+     * than from SEG_NP1/NP2-tagged nodes. Boundary extension claims
+     * NP nodes as V/D/J without retagging them — so reading SEG_NP1
+     * directly would over-report NP1 size by the extension count, and
+     * the AIRR-spec invariant "v_sequence_end + np1_length ==
+     * d_sequence_start (or j_sequence_start)" would silently break.
+     * Sourcing from AIRR coordinates keeps the four AIRR fields
+     * (v_sequence_end / np1_region / d_sequence_start) self-consistent.
+     */
+    {
+        bool np_has_d = rec->d_allele != NULL
+                        && pos.d_sequence_end > pos.d_sequence_start;
+        int np1_start = pos.v_sequence_end;
+        int np1_end   = np_has_d ? pos.d_sequence_start
+                                  : pos.j_sequence_start;
+        if (np1_end < np1_start) np1_end = np1_start;
+        if (np1_end > out->sequence_length) np1_end = out->sequence_length;
+        int np1_len = np1_end - np1_start;
+        if (np1_len >= AIRR_MAX_NP) np1_len = AIRR_MAX_NP - 1;
+        for (int i = 0; i < np1_len; i++) {
+            out->np1_region[i] = out->sequence[np1_start + i];
+        }
+        out->np1_region[np1_len] = '\0';
+        out->np1_length = np1_len;
+
+        int np2_len = 0;
+        if (np_has_d) {
+            int np2_start = pos.d_sequence_end;
+            int np2_end   = pos.j_sequence_start;
+            if (np2_end < np2_start) np2_end = np2_start;
+            if (np2_end > out->sequence_length) np2_end = out->sequence_length;
+            np2_len = np2_end - np2_start;
+            if (np2_len >= AIRR_MAX_NP) np2_len = AIRR_MAX_NP - 1;
+            for (int i = 0; i < np2_len; i++) {
+                out->np2_region[i] = out->sequence[np2_start + i];
+            }
+        }
+        out->np2_region[np2_len] = '\0';
+        out->np2_length = np2_len;
+    }
 
     /* ── 7. Collect mutations / errors ───────────────────────── */
     collect_annotations(seq, rec, out);
@@ -1291,7 +1441,8 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
             int true_idx = allele_pool_find_index(&cfg->v_alleles,
                                                     rec->v_allele->name);
             AlleleCallResult vr;
-            allele_call_derive(&corr->v_bitmap, analysis_seq, SEG_V, &vr, rec);
+            allele_call_derive(&corr->v_bitmap, analysis_seq, SEG_V, &vr,
+                                rec, &pos.extensions);
             allele_call_format(&vr, &cfg->v_alleles, true_idx,
                                 out->v_call, AIRR_MAX_CALLS);
         } else if (rec->v_allele) {
@@ -1303,7 +1454,8 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
             int true_idx = allele_pool_find_index(&cfg->j_alleles,
                                                     rec->j_allele->name);
             AlleleCallResult jr;
-            allele_call_derive(&corr->j_bitmap, analysis_seq, SEG_J, &jr, rec);
+            allele_call_derive(&corr->j_bitmap, analysis_seq, SEG_J, &jr,
+                                rec, &pos.extensions);
             allele_call_format(&jr, &cfg->j_alleles, true_idx,
                                 out->j_call, AIRR_MAX_CALLS);
         } else if (rec->j_allele) {
@@ -1313,7 +1465,8 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
         /* ── D call: derive from bitmap + short-D check ──────── */
         if (has_d && rec->d_allele && corr->d_bitmap.n_alleles > 0) {
             AlleleCallResult dr;
-            allele_call_derive(&corr->d_bitmap, analysis_seq, SEG_D, &dr, rec);
+            allele_call_derive(&corr->d_bitmap, analysis_seq, SEG_D, &dr,
+                                rec, &pos.extensions);
 
             if (allele_call_is_short_d(&dr, &corr->d_bitmap)) {
                 strncpy(out->d_call, "Short-D", AIRR_MAX_CALLS - 1);

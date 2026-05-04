@@ -45,7 +45,7 @@ void step_insert_indels(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
              * nodes already allocated); aseq_insert_after returns NULL
              * in that case. Break out — further insertions will also
              * fail and we'd over-count rec->n_insertions. */
-            static const char bases[] = "ACGT";
+            static const char bases[] = "acgt";
             char base = bases[rng_range(cfg->rng, 4)];
             if (aseq_insert_after(seq, n, base, n->segment,
                                   NUC_FLAG_INDEL_INS) == NULL) {

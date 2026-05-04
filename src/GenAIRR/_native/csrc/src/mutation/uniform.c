@@ -39,7 +39,7 @@ void step_uniform_mutate(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     if (target_mutations <= 0) return;
 
     /* Randomly select positions to mutate */
-    static const char bases[] = "ACGT";
+    static const char bases[] = "acgt";
     int applied = 0;
 
     for (Nuc *n = seq->head; n && applied < target_mutations; n = n->next) {

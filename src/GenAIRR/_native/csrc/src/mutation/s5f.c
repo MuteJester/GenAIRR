@@ -20,6 +20,7 @@
 #include "genairr/s5f.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -133,7 +134,11 @@ void s5f_set_substitution(S5FModel *model, int key,
 
     double running = 0.0;
     for (int i = 0; i < count; i++) {
-        sub->bases[i] = bases[i];
+        /* Lowercase the substitution base so S5F-applied mutations
+         * stay case-consistent with V/D/J reference and NP regions
+         * throughout the engine. The S5F model files ship uppercase
+         * by convention; we normalise once here at load time. */
+        sub->bases[i] = (char)tolower((unsigned char)bases[i]);
         running += weights[i] / total;
         sub->cumulative[i] = running;
     }
@@ -212,10 +217,15 @@ static int bisect_left(const double *arr, int n, double value) {
 /* ── Codon stop check for productive mode ────────────────────── */
 
 static bool is_stop_codon(char b1, char b2, char b3) {
-    /* TAG, TAA, TGA */
-    if (b1 == 'T') {
-        if (b2 == 'A' && (b3 == 'G' || b3 == 'A')) return true;
-        if (b2 == 'G' && b3 == 'A') return true;
+    /* TAG, TAA, TGA — case-insensitive: bases throughout the engine
+     * are lowercase, but callers may pass either case (e.g. 'N'
+     * placeholder is uppercase). */
+    char c1 = (char)tolower((unsigned char)b1);
+    char c2 = (char)tolower((unsigned char)b2);
+    char c3 = (char)tolower((unsigned char)b3);
+    if (c1 == 't') {
+        if (c2 == 'a' && (c3 == 'g' || c3 == 'a')) return true;
+        if (c2 == 'g' && c3 == 'a') return true;
     }
     return false;
 }

@@ -20,9 +20,22 @@
 #include "genairr/allele_bitmap.h"
 #include "genairr/pipeline.h"
 #include "genairr/sim_config.h"
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
+
+/* Case-insensitive nucleotide equality. The boundary-extension voting
+ * below compares bytes from the V/D/J reference (typically lowercase as
+ * loaded by IMGT/AIRR) against ASeq nodes (NP-region nodes are uppercase
+ * when freshly synthesised). A raw byte compare would silently reject
+ * matches whose case happens to differ — the symptom is the call list
+ * staying at the pre-extension allele set even when airr_derive_positions
+ * has extended the displayed coordinates. The two must agree. */
+static inline bool bases_equal_ci(char a, char b) {
+    return (char)tolower((unsigned char)a) == (char)tolower((unsigned char)b);
+}
 
 /* ── Portable popcount ───────────────────────────────────────── */
 
@@ -119,7 +132,8 @@ void allele_bitmap_destroy(AlleleBitmap *bm) {
 
 void allele_call_derive(const AlleleBitmap *bm, const ASeq *seq,
                          Segment seg, AlleleCallResult *out,
-                         const SimRecord *rec) {
+                         const SimRecord *rec,
+                         const BoundaryExtensions *exts) {
     memset(out, 0, sizeof(*out));
 
     if (!bm->data || bm->n_alleles == 0) return;
@@ -174,25 +188,42 @@ void allele_call_derive(const AlleleBitmap *bm, const ASeq *seq,
      * airr_derive_positions() (check_v_3prime_ambiguity, etc.).
      */
     if (rec) {
+        /* When `exts` is provided, cap each per-side walk to the count
+         * that airr_derive_positions() agreed to extend by (post-cap).
+         * That keeps voting and coordinates consistent: voting only
+         * happens at positions the AIRR record actually claims for
+         * this segment, never on bases that were ceded to a neighbour
+         * via the V→D→J overlap rule. Use a sentinel large value when
+         * `exts` is NULL so the walks just break at first mismatch. */
+        const int CAP_NONE = 1 << 30;
+        int v3_cap  = exts ? exts->v_3prime  : CAP_NONE;
+        int d5_cap  = exts ? exts->d_5prime  : CAP_NONE;
+        int d3_cap  = exts ? exts->d_3prime  : CAP_NONE;
+        int j5_cap  = exts ? exts->j_5prime  : CAP_NONE;
+
         /* ── V 3' extension into NP1 ─────────────────────────────── */
         if (seg == SEG_V && rec->v_allele && rec->v_trim_3 > 0
-            && seq->seg_first[SEG_NP1])
+            && seq->seg_first[SEG_NP1] && v3_cap > 0)
         {
             int v_len = rec->v_allele->length;
             int trim_3 = rec->v_trim_3;
             const char *trimmed = rec->v_allele->seq + (v_len - trim_3);
 
             Nuc *np = seq->seg_first[SEG_NP1];
-            for (int i = 0; i < trim_3 && np && np->segment == SEG_NP1
+            int matched = 0;
+            for (int i = 0; i < trim_3 && matched < v3_cap
+                         && np && np->segment == SEG_NP1
                          && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
                  i++, np = np->next) {
-                if (trimmed[i] != np->current) break;
+                if (!bases_equal_ci(trimmed[i], np->current)) break;
                 VOTE(v_len - trim_3 + i, np->current);
+                matched++;
             }
         }
 
         /* ── J 5' extension into NP (NP2 or NP1 for VJ chains) ──── */
-        if (seg == SEG_J && rec->j_allele && rec->j_trim_5 > 0)
+        if (seg == SEG_J && rec->j_allele && rec->j_trim_5 > 0
+            && j5_cap > 0)
         {
             Segment np_seg = seq->seg_first[SEG_NP2] ? SEG_NP2 : SEG_NP1;
             if (seq->seg_last[np_seg]) {
@@ -200,47 +231,65 @@ void allele_call_derive(const AlleleBitmap *bm, const ASeq *seq,
                 const char *j_ref = rec->j_allele->seq;
 
                 Nuc *np = seq->seg_last[np_seg];
+                int matched = 0;
                 for (int i = trim_5 - 1;
-                     i >= 0 && np && np->segment == np_seg
+                     i >= 0 && matched < j5_cap
+                     && np && np->segment == np_seg
                      && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
                      i--, np = np->prev) {
-                    if (j_ref[i] != np->current) break;
+                    if (!bases_equal_ci(j_ref[i], np->current)) break;
                     VOTE(i, np->current);
+                    matched++;
                 }
             }
         }
 
-        /* ── D 5' extension (NP1 end → D start) ─────────────────── */
+        /* ── D 5' extension (NP1 end → D start) ─────────────────── *
+         * Skipped for inverted D: the candidate bases would be
+         * revcomp(canonical) at swapped trim positions, and the
+         * extension here must agree with airr_derive_positions which
+         * also skips D extension when d_inverted. Voting on canonical
+         * here while coordinates declare zero extension would inflate
+         * the call score for the true allele relative to its peers. */
         if (seg == SEG_D && rec->d_allele && rec->d_trim_5 > 0
-            && seq->seg_last[SEG_NP1])
+            && seq->seg_last[SEG_NP1] && d5_cap > 0
+            && !rec->d_inverted)
         {
             int trim_5 = rec->d_trim_5;
             const char *d_ref = rec->d_allele->seq;
 
             Nuc *np = seq->seg_last[SEG_NP1];
+            int matched = 0;
             for (int i = trim_5 - 1;
-                 i >= 0 && np && np->segment == SEG_NP1
+                 i >= 0 && matched < d5_cap
+                 && np && np->segment == SEG_NP1
                  && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
                  i--, np = np->prev) {
-                if (d_ref[i] != np->current) break;
+                if (!bases_equal_ci(d_ref[i], np->current)) break;
                 VOTE(i, np->current);
+                matched++;
             }
         }
 
-        /* ── D 3' extension (NP2 start → D end) ─────────────────── */
+        /* ── D 3' extension (NP2 start → D end) ─────────────────── *
+         * Skipped for inverted D — see D 5' note above. */
         if (seg == SEG_D && rec->d_allele && rec->d_trim_3 > 0
-            && seq->seg_first[SEG_NP2])
+            && seq->seg_first[SEG_NP2] && d3_cap > 0
+            && !rec->d_inverted)
         {
             int d_len = rec->d_allele->length;
             int trim_3 = rec->d_trim_3;
             const char *trimmed = rec->d_allele->seq + (d_len - trim_3);
 
             Nuc *np = seq->seg_first[SEG_NP2];
-            for (int i = 0; i < trim_3 && np && np->segment == SEG_NP2
+            int matched = 0;
+            for (int i = 0; i < trim_3 && matched < d3_cap
+                         && np && np->segment == SEG_NP2
                          && !(np->flags & NUC_FLAG_P_NUCLEOTIDE);
                  i++, np = np->next) {
-                if (trimmed[i] != np->current) break;
+                if (!bases_equal_ci(trimmed[i], np->current)) break;
                 VOTE(d_len - trim_3 + i, np->current);
+                matched++;
             }
         }
     }

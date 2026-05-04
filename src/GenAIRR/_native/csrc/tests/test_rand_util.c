@@ -119,7 +119,9 @@ static void test_range_bounded(void) {
     }
 }
 
-/* rng_nucleotides must fill exactly `len` ACGT bases plus NUL. */
+/* rng_nucleotides must fill exactly `len` acgt bases plus NUL. The
+ * helper emits lowercase to match V/D/J reference and NP-region case
+ * throughout the engine — see assemble.c::NP_BASES. */
 static void test_nucleotides(void) {
     RngState r;
     rng_seed(&r, 23, 0);
@@ -127,8 +129,8 @@ static void test_nucleotides(void) {
     rng_nucleotides(&r, buf, 50);
     assert(buf[50] == '\0');
     for (int i = 0; i < 50; i++) {
-        assert(buf[i] == 'A' || buf[i] == 'C' ||
-               buf[i] == 'G' || buf[i] == 'T');
+        assert(buf[i] == 'a' || buf[i] == 'c' ||
+               buf[i] == 'g' || buf[i] == 't');
     }
 }
 

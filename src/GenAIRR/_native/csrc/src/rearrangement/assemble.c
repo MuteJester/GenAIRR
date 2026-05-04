@@ -13,7 +13,12 @@
 /* ── Internal: NP region sampling ─────────────────────────────── */
 
 #define GENAIRR_NP_BUF_SIZE 256
-static const char NP_BASES[] = "ACGT";
+/* Lowercase to match V/D/J reference case stored by IMGT/AIRR loaders.
+ * Mixing cases (uppercase NP + lowercase germline) silently breaks any
+ * case-sensitive comparison between `sequence` and `germline_alignment`
+ * — including at extension boundaries where NP bases are claimed as
+ * V/D/J. AIRR convention emits sequences in lowercase. */
+static const char NP_BASES[] = "acgt";
 
 /* Sample an index in [0, n) from a categorical distribution.
  * Caller is responsible for ensuring `probs` sums to ~1.0; the

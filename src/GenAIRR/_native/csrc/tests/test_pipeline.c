@@ -6,6 +6,7 @@
  */
 
 #include "genairr/genairr.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -474,9 +475,11 @@ static int test_np_markov_deterministic(void) {
             return 1;
         }
 
-        /* Walk the NP1 nodes and confirm bases are G,C,G */
+        /* Walk the NP1 nodes and confirm bases are g,c,g (lowercase
+         * after engine-wide case standardisation; see assemble.c::
+         * NP_BASES). */
         Nuc *n = seq.seg_first[SEG_NP1];
-        const char expected[3] = {'G', 'C', 'G'};
+        const char expected[3] = {'g', 'c', 'g'};
         for (int i = 0; i < 3; i++) {
             if (!n || n->current != expected[i]) {
                 fprintf(stderr,
@@ -541,7 +544,8 @@ static int test_np_markov_gc_bias(void) {
         int seg_len = aseq_segment_length(&seq, SEG_NP1);
         for (int i = 0; i < seg_len && n; i++, n = n->next) {
             total_bases++;
-            if (n->current == 'G' || n->current == 'C') gc_bases++;
+            char b = (char)tolower((unsigned char)n->current);
+            if (b == 'g' || b == 'c') gc_bases++;
         }
     }
 

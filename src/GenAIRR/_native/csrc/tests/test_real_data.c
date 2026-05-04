@@ -355,7 +355,7 @@ static int test_reassess_with_real_alleles(void) {
 
     /* Derive V allele call from bitmap */
     AlleleCallResult vr;
-    allele_call_derive(&corr.v_bitmap, &seq, SEG_V, &vr, NULL);
+    allele_call_derive(&corr.v_bitmap, &seq, SEG_V, &vr, NULL, NULL);
 
     int true_idx = allele_pool_find_index(&cfg.v_alleles, rec.v_allele->name);
     char v_call[512];

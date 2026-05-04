@@ -44,6 +44,11 @@ typedef struct {
     int d_trim_5_adjusted;
     int d_trim_3_adjusted;
     int j_trim_5_adjusted;
+
+    /* Capped extension counts shared with allele_call_derive() so its
+     * voting walks claim exactly the bases the AIRR coordinates above
+     * report as extended — no more, no less. */
+    BoundaryExtensions extensions;
 } AirrPositions;
 
 /**

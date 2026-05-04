@@ -60,7 +60,7 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         if (amount > 0) {
             char buf[50];
             for (int i = 0; i < amount; i++) {
-                static const char bases[] = "ACGT";
+                static const char bases[] = "acgt";
                 buf[i] = bases[rng_range(cfg->rng, 4)];
             }
             aseq_prepend_bases(seq, buf, amount, SEG_ADAPTER, 0);

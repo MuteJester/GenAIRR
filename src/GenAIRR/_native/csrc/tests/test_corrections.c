@@ -63,7 +63,7 @@ static int test_v_correction_distinct(void) {
         aseq_append_segment(&seq, "ATCGATCGATCG", 12, SEG_V, 0, 7);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_V, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_V, &r, NULL, NULL);
 
         /* V1 should score 12 (all positions match), V2 should score 9 */
         if (r.count != 1) {
@@ -87,7 +87,7 @@ static int test_v_correction_distinct(void) {
         aseq_append_segment(&seq, "ATCGATCGA", 9, SEG_V, 0, 7);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_V, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_V, &r, NULL, NULL);
 
         if (r.count != 2) {
             fprintf(stderr, "Expected 2 tied at trim_3=3, got %d\n", r.count);
@@ -121,7 +121,7 @@ static int test_v_correction_identical(void) {
     aseq_append_segment(&seq, "ATCGATCGATCG", 12, SEG_V, 0, 7);
 
     AlleleCallResult r;
-    allele_call_derive(&bm, &seq, SEG_V, &r, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &r, NULL, NULL);
 
     if (r.count != 3) {
         fprintf(stderr, "Expected 3 tied for identical alleles, got %d\n", r.count);
@@ -159,7 +159,7 @@ static int test_j_correction_distinct(void) {
         aseq_append_segment(&seq, "AATTTGGCCAAGGG", 14, SEG_J, 0, 2);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_J, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_J, &r, NULL, NULL);
         if (r.count != 1) {
             fprintf(stderr, "Expected 1 at full J, got %d\n", r.count);
             allele_bitmap_destroy(&bm);
@@ -175,7 +175,7 @@ static int test_j_correction_distinct(void) {
         aseq_append_segment(&seq, "TTTGGCCAAGGG", 12, SEG_J, 2, 2);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_J, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_J, &r, NULL, NULL);
         if (r.count != 2) {
             fprintf(stderr, "Expected 2 tied at trim_5=2, got %d\n", r.count);
             allele_bitmap_destroy(&bm);
@@ -213,7 +213,7 @@ static int test_d_correction(void) {
         aseq_append_segment(&seq, "AAGTATTACTGTAA", 14, SEG_D, 0, -1);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_D, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_D, &r, NULL, NULL);
         if (r.count != 1) {
             fprintf(stderr, "Expected 1 at full D, got %d\n", r.count);
             allele_bitmap_destroy(&bm);
@@ -229,7 +229,7 @@ static int test_d_correction(void) {
         aseq_append_segment(&seq, "GTATTACTGT", 10, SEG_D, 2, -1);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_D, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_D, &r, NULL, NULL);
         if (r.count != 2) {
             fprintf(stderr, "Expected 2 at D trim 2+2, got %d\n", r.count);
             allele_bitmap_destroy(&bm);
@@ -262,7 +262,7 @@ static int test_d_correction_asymmetric(void) {
         aseq_append_segment(&seq, "BCDEFGHAA", 9, SEG_D, 2, -1);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_D, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_D, &r, NULL, NULL);
         if (r.count != 1) {
             fprintf(stderr, "Expected 1 at D (2,0), got %d\n", r.count);
             allele_bitmap_destroy(&bm);
@@ -278,7 +278,7 @@ static int test_d_correction_asymmetric(void) {
         aseq_append_segment(&seq, "BCDEFGH", 7, SEG_D, 2, -1);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_D, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_D, &r, NULL, NULL);
         if (r.count != 2) {
             fprintf(stderr, "Expected 2 at D (2,2), got %d\n", r.count);
             allele_bitmap_destroy(&bm);
@@ -315,7 +315,7 @@ static int test_short_d_detection(void) {
         aseq_append_segment(&seq, "A", 1, SEG_D, 5, -1);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_D, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_D, &r, NULL, NULL);
 
         if (!allele_call_is_short_d(&r, &bm)) {
             fprintf(stderr, "1bp D should be Short-D (threshold=%d)\n",
@@ -333,7 +333,7 @@ static int test_short_d_detection(void) {
         aseq_append_segment(&seq, "AATTGGCCAATT", 12, SEG_D, 0, -1);
 
         AlleleCallResult r;
-        allele_call_derive(&bm, &seq, SEG_D, &r, NULL);
+        allele_call_derive(&bm, &seq, SEG_D, &r, NULL, NULL);
 
         if (allele_call_is_short_d(&r, &bm)) {
             fprintf(stderr, "Full D should NOT be Short-D\n");
@@ -377,7 +377,7 @@ static int test_mutations_change_call(void) {
     aseq_mutate(&seq, n, 'A', NUC_FLAG_MUTATED);
 
     AlleleCallResult r;
-    allele_call_derive(&bm, &seq, SEG_V, &r, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &r, NULL, NULL);
 
     /* GOD-ALIGNER: V2 should win (8/8) since current at pos 5 is 'A'
      * which matches V2. V1 only scores 7/8. */
@@ -414,7 +414,7 @@ static int test_trimming_creates_equivalence(void) {
     aseq_append_segment(&seq, "ATCGA", 5, SEG_V, 0, 3);
 
     AlleleCallResult r;
-    allele_call_derive(&bm, &seq, SEG_V, &r, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &r, NULL, NULL);
 
     /* Both alleles are identical in positions 0..4 → tie */
     if (r.count != 2) {
@@ -467,7 +467,7 @@ static int test_integration_pipeline_corrections(void) {
 
     /* Derive V call */
     AlleleCallResult vr;
-    allele_call_derive(&corr.v_bitmap, &seq, SEG_V, &vr, NULL);
+    allele_call_derive(&corr.v_bitmap, &seq, SEG_V, &vr, NULL, NULL);
     char v_call[256];
     int v_idx = allele_pool_find_index(&cfg.v_alleles, rec.v_allele->name);
     allele_call_format(&vr, &cfg.v_alleles, v_idx, v_call, sizeof(v_call));
@@ -507,7 +507,7 @@ static int test_format_true_first(void) {
     aseq_append_segment(&seq, "AAAA", 4, SEG_V, 0, 2);
 
     AlleleCallResult r;
-    allele_call_derive(&bm, &seq, SEG_V, &r, NULL);
+    allele_call_derive(&bm, &seq, SEG_V, &r, NULL, NULL);
 
     /* Format with true_idx=1 (V2*01): V2*01 should be listed first */
     char buf[256];

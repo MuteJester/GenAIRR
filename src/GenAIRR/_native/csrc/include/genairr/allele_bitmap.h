@@ -123,6 +123,23 @@ typedef struct {
 } AlleleCallResult;
 
 /**
+ * Boundary-extension counts (post-cap) for the four claimable edges.
+ *
+ * These are the *agreed* extension counts after V → D → J ordering and
+ * NP-overlap capping in airr_derive_positions(). Passing the same
+ * struct to allele_call_derive() ensures its extension voting walks
+ * exactly the bases the AIRR coordinates declare as claimed —
+ * preventing "voting saw N more matches than coordinates extended"
+ * inconsistencies that produce a non-best allele in the call list.
+ */
+typedef struct {
+    int v_3prime;   /* NP1 bases claimed by V from the right */
+    int d_5prime;   /* NP1 bases claimed by D from the left  */
+    int d_3prime;   /* NP2 bases claimed by D from the right */
+    int j_5prime;   /* NP (NP2 / NP1 in VJ) claimed by J     */
+} BoundaryExtensions;
+
+/**
  * Derive the allele call for a segment by walking the ASeq.
  *
  * GOD-ALIGNER SEMANTICS: Uses node->current (the actual base in the
@@ -151,10 +168,17 @@ typedef struct {
  * @param seg   Which segment to evaluate (SEG_V, SEG_D, SEG_J).
  * @param out   Output: best-matching allele indices and scores.
  * @param rec   SimRecord (for boundary extension). NULL to skip.
+ * @param exts  Capped extension counts from airr_derive_positions().
+ *              When NULL, voting uses the un-capped per-side walks
+ *              (legacy path; only correct when no two extensions can
+ *              compete for the same NP region). Production callers
+ *              should pass the same `BoundaryExtensions` they used
+ *              when adjusting AIRR coordinates.
  */
 void  allele_call_derive(const AlleleBitmap *bm, const ASeq *seq,
                           Segment seg, AlleleCallResult *out,
-                          const struct SimRecord *rec);
+                          const struct SimRecord *rec,
+                          const BoundaryExtensions *exts);
 
 /**
  * Format the allele call result as a comma-separated string.
