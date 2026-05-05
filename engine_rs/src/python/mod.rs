@@ -21,6 +21,7 @@
 
 use pyo3::prelude::*;
 
+pub mod contract;
 pub mod outcome;
 pub mod plan;
 pub mod refdata;
@@ -40,6 +41,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<refdata::PyAllele>()?;
     m.add_class::<refdata::PyRefDataConfig>()?;
     m.add_class::<plan::PyPassPlan>()?;
+    contract::register(m)?;
     runner::register(m)?;
     Ok(())
 }

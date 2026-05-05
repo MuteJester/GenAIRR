@@ -338,3 +338,247 @@ def test_compiled_experiment_can_be_run_multiple_times():
     # And re-running with the original seed reproduces the original.
     again = compiled.run(n=2, seed=0)
     assert again[0].final_simulation().bases() == a[0].final_simulation().bases()
+
+
+# ──────────────────────────────────────────────────────────────────
+# F.6 — Contract bridge: productive() + Experiment.run(respect=...)
+# ──────────────────────────────────────────────────────────────────
+
+
+def test_productive_is_reexported_from_top_level():
+    import GenAIRR
+
+    assert hasattr(GenAIRR, "productive")
+    assert callable(GenAIRR.productive)
+    assert GenAIRR.productive is ge.productive
+
+
+def test_productive_returns_contract_set_with_four_named_contracts():
+    cs = ge.productive()
+    assert isinstance(cs, ge.ContractSet)
+    assert len(cs) == 4
+    assert not cs.is_empty()
+    names = cs.names()
+    assert names == [
+        "productive_junction_frame",
+        "no_stop_codon_in_junction",
+        "anchor_preserved.v",
+        "anchor_preserved.j",
+    ]
+
+
+def test_contract_set_repr_includes_count_and_names():
+    r = repr(ge.productive())
+    assert "ContractSet" in r
+    assert "len=4" in r
+    assert "productive_junction_frame" in r
+
+
+def test_run_with_respect_none_matches_run_without_respect():
+    # respect=None is the no-op path — same outcome as no respect arg.
+    cfg = _vj_refdata()
+    exp = Experiment.on(cfg).recombine()
+    a = exp.run(n=3, seed=0)
+    b = exp.run(n=3, seed=0, respect=None)
+    for x, y in zip(a, b):
+        assert x.final_simulation().bases() == y.final_simulation().bases()
+
+
+def test_run_with_productive_contract_constrains_np1_length_to_in_frame():
+    # Synthetic VJ refdata: V_anchor_to_end = 3, J_anchor_to_W3 = 3,
+    # so junction = 6 + NP1. Productive frame ⇒ NP1 % 3 == 0.
+    # Filter NP1 length distribution to {0..6} uniform; with productive
+    # active every NP1 length must be in {0, 3, 6}.
+    cfg = _vj_refdata()
+    outcomes = Experiment.on(cfg).recombine().run(
+        n=20, seed=0, respect=ge.productive()
+    )
+    for o in outcomes:
+        np1 = o.final_simulation().regions()[1]
+        assert len(np1) % 3 == 0, (
+            f"NP1 length {len(np1)} should be divisible by 3 under productive"
+        )
+
+
+def test_run_unconstrained_produces_some_out_of_frame_np1():
+    # Negative control for the test above: without respect, the
+    # uniform NP1 distribution produces out-of-frame lengths
+    # ~67% of the time. Across 20 seeds we should see at least one.
+    cfg = _vj_refdata()
+    outcomes = Experiment.on(cfg).recombine().run(n=20, seed=0)
+    out_of_frame = [
+        o for o in outcomes if len(o.final_simulation().regions()[1]) % 3 != 0
+    ]
+    assert out_of_frame, "expected at least one out-of-frame NP1 without respect"
+
+
+def test_run_accepts_respect_as_single_contract_set():
+    cfg = _vj_refdata()
+    out = Experiment.on(cfg).recombine().run(n=1, seed=0, respect=ge.productive())
+    assert len(out) == 1
+
+
+def test_run_accepts_respect_as_length_one_list():
+    # V5 muscle-memory form — same effect as the bare ContractSet.
+    cfg = _vj_refdata()
+    a = Experiment.on(cfg).recombine().run(n=2, seed=0, respect=ge.productive())
+    b = Experiment.on(cfg).recombine().run(n=2, seed=0, respect=[ge.productive()])
+    for x, y in zip(a, b):
+        assert x.final_simulation().bases() == y.final_simulation().bases()
+
+
+def test_run_accepts_respect_as_empty_list_no_op():
+    # Empty list normalises to None — no contracts active.
+    cfg = _vj_refdata()
+    a = Experiment.on(cfg).recombine().run(n=2, seed=0)
+    b = Experiment.on(cfg).recombine().run(n=2, seed=0, respect=[])
+    for x, y in zip(a, b):
+        assert x.final_simulation().bases() == y.final_simulation().bases()
+
+
+def test_run_rejects_non_contract_set_in_respect():
+    cfg = _vj_refdata()
+    with pytest.raises(TypeError, match="ContractSet"):
+        Experiment.on(cfg).recombine().run(n=1, seed=0, respect="not a contract")
+
+
+def test_run_rejects_non_contract_set_inside_respect_list():
+    cfg = _vj_refdata()
+    with pytest.raises(TypeError, match="respect\\[0\\]"):
+        Experiment.on(cfg).recombine().run(n=1, seed=0, respect=[42])
+
+
+def test_run_rejects_multi_bundle_respect_list():
+    cfg = _vj_refdata()
+    with pytest.raises(NotImplementedError, match="2 bundles"):
+        Experiment.on(cfg).recombine().run(
+            n=1, seed=0, respect=[ge.productive(), ge.productive()]
+        )
+
+
+def test_compiled_experiment_run_supports_respect():
+    # The same respect= kwarg flows through CompiledExperiment.run.
+    cfg = _vj_refdata()
+    compiled = Experiment.on(cfg).recombine().compile()
+    a = compiled.run(n=3, seed=0, respect=ge.productive())
+    for o in a:
+        assert len(o.final_simulation().regions()[1]) % 3 == 0
+
+
+def test_run_with_respect_is_deterministic_under_same_seed():
+    cfg = _vj_refdata()
+    exp = Experiment.on(cfg).recombine()
+    a = exp.run(n=5, seed=0xCAFE, respect=ge.productive())
+    b = exp.run(n=5, seed=0xCAFE, respect=ge.productive())
+    for x, y in zip(a, b):
+        assert x.final_simulation().bases() == y.final_simulation().bases()
+
+
+# ──────────────────────────────────────────────────────────────────
+# F.7 — Strict-mode bridge: PassError → StrictSamplingError
+# ──────────────────────────────────────────────────────────────────
+
+
+def _vj_refdata_with_restrictive_np1(*, np1_lengths):
+    """Build a VJ refdata + PassPlan whose NP1-length distribution is
+    fully under our control. Used by the strict-mode tests so we can
+    construct deliberately-unsatisfiable scenarios.
+    """
+    cfg = _vj_refdata()
+    plan = ge.PassPlan()
+    plan.push_sample_allele("V", cfg)
+    plan.push_sample_allele("J", cfg)
+    plan.push_assemble("V")
+    plan.push_generate_np("NP1", np1_lengths)
+    plan.push_assemble("J")
+    return cfg, plan
+
+
+def test_strict_sampling_error_is_exposed_at_top_level():
+    import GenAIRR
+
+    assert hasattr(GenAIRR, "StrictSamplingError")
+    assert GenAIRR.StrictSamplingError is ge.StrictSamplingError
+    assert issubclass(ge.StrictSamplingError, Exception)
+
+
+def test_strict_with_satisfiable_contract_succeeds():
+    cfg = _vj_refdata()
+    out = (
+        Experiment.on(cfg)
+        .recombine()
+        .run(n=3, seed=0, respect=ge.productive(), strict=True)
+    )
+    assert len(out) == 3
+
+
+def test_strict_with_unsatisfiable_length_distribution_raises():
+    # NP1 distribution {1, 2} → no in-frame lengths possible. Strict
+    # mode must raise StrictSamplingError.
+    cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0), (2, 1.0)])
+    with pytest.raises(ge.StrictSamplingError) as exc_info:
+        ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True)
+
+    pass_name, address, reason = exc_info.value.args
+    assert pass_name == "generate_np.np1"
+    assert address == "np.np1.length"
+    assert reason == "empty_admissible_support"
+
+
+def test_permissive_fallback_succeeds_where_strict_raises():
+    # Same scenario as the strict raise above, but strict=False
+    # accepts the unconstrained sample and lets the run continue.
+    cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0), (2, 1.0)])
+    out = ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=False)
+    np1 = out.final_simulation().regions()[1]
+    # Length must be one of the only-options from the input distribution.
+    assert len(np1) in (1, 2)
+
+
+def test_strict_mode_passes_through_compiled_experiment_run():
+    cfg = _vj_refdata()
+    compiled = Experiment.on(cfg).recombine().compile()
+    # Satisfiable: succeeds.
+    out = compiled.run(n=2, seed=0, respect=ge.productive(), strict=True)
+    assert len(out) == 2
+
+
+def test_strict_mode_default_is_false():
+    # When strict is omitted, the run uses permissive sampling and
+    # must succeed even on an unsatisfiable plan.
+    cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0)])
+    out = ge.run(plan, seed=0, refdata=cfg, respect=ge.productive())
+    assert out is not None
+
+
+def test_strict_without_respect_runs_permissively():
+    # strict=True with no contracts is a no-op for failure semantics
+    # — there's nothing to fail against. The run proceeds normally.
+    cfg = _vj_refdata()
+    out = Experiment.on(cfg).recombine().run(n=1, seed=0, strict=True)
+    assert len(out) == 1
+
+
+def test_strict_sampling_error_args_form_three_tuple():
+    # Public contract: StrictSamplingError.args is always a 3-tuple
+    # so callers can destructure deterministically.
+    cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0)])
+    try:
+        ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True)
+    except ge.StrictSamplingError as e:
+        assert isinstance(e.args, tuple)
+        assert len(e.args) == 3
+        assert all(isinstance(a, str) for a in e.args)
+    else:
+        pytest.fail("expected StrictSamplingError")
+
+
+def test_strict_mode_is_deterministic_under_same_seed():
+    cfg, plan = _vj_refdata_with_restrictive_np1(
+        np1_lengths=[(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)]
+    )
+    # Both runs hit the satisfiable subset → both succeed and produce
+    # identical outputs.
+    a = ge.run(plan, seed=0xC0FFEE, refdata=cfg, respect=ge.productive(), strict=True)
+    b = ge.run(plan, seed=0xC0FFEE, refdata=cfg, respect=ge.productive(), strict=True)
+    assert a.final_simulation().bases() == b.final_simulation().bases()

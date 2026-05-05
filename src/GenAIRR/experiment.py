@@ -37,6 +37,14 @@ from .dataconfig import DataConfig
 from .dataconfig.enums import ChainType
 
 
+# Anything :meth:`Experiment.run` (or :meth:`CompiledExperiment.run`)
+# accepts as ``respect=``. The Rust runner ultimately needs a single
+# :class:`genairr_engine.ContractSet`; the helpers below normalise
+# the convenient list-form ``[productive()]`` (V5 muscle-memory) to
+# that single value.
+RespectInput = Union["_engine.ContractSet", Sequence["_engine.ContractSet"], None]
+
+
 # ──────────────────────────────────────────────────────────────────
 # Config-name resolver — string → DataConfig
 # ──────────────────────────────────────────────────────────────────
@@ -270,6 +278,44 @@ def _normalize_lengths(
 # Public API: Experiment + CompiledExperiment
 # ──────────────────────────────────────────────────────────────────
 
+def _coerce_respect(respect: RespectInput) -> Optional["_engine.ContractSet"]:
+    """Normalise the ``respect=`` argument to a single ``ContractSet``.
+
+    Accepts:
+    - ``None`` → no contracts active.
+    - a single ``ContractSet`` → used directly.
+    - a length-1 sequence containing one ``ContractSet`` → unwrapped
+      (the V5 ``respect=[productive()]`` muscle-memory case).
+
+    Sequences with multiple bundles raise ``NotImplementedError`` —
+    contract composition will land in a later phase. Anything else
+    raises ``TypeError``.
+    """
+    if respect is None:
+        return None
+    if isinstance(respect, _engine.ContractSet):
+        return respect
+    if isinstance(respect, (list, tuple)):
+        if len(respect) == 0:
+            return None
+        if len(respect) == 1:
+            item = respect[0]
+            if not isinstance(item, _engine.ContractSet):
+                raise TypeError(
+                    f"respect[0]: expected genairr_engine.ContractSet, "
+                    f"got {type(item).__name__}"
+                )
+            return item
+        raise NotImplementedError(
+            f"respect=[...] with {len(respect)} bundles is not yet supported. "
+            "Compose contracts inside a single bundle for now."
+        )
+    raise TypeError(
+        f"respect=: expected genairr_engine.ContractSet or sequence of one, "
+        f"got {type(respect).__name__}"
+    )
+
+
 # Anything :meth:`Experiment.on` accepts.
 ExperimentInput = Union[str, DataConfig, "_engine.RefDataConfig"]
 
@@ -374,13 +420,34 @@ class Experiment:
             step.apply(plan, self._refdata)
         return CompiledExperiment(plan, self._refdata)
 
-    def run(self, *, n: int = 1, seed: int = 0) -> List["_engine.Outcome"]:
+    def run(
+        self,
+        *,
+        n: int = 1,
+        seed: int = 0,
+        respect: RespectInput = None,
+        strict: bool = False,
+    ) -> List["_engine.Outcome"]:
         """Compile and run this experiment ``n`` times.
 
-        Equivalent to ``self.compile().run(n=n, seed=seed)``. Returns
-        a list of :class:`genairr_engine.Outcome` objects.
+        Equivalent to
+        ``self.compile().run(n=n, seed=seed, respect=respect, strict=strict)``.
+        Returns a list of :class:`genairr_engine.Outcome` objects.
+
+        Pass ``respect=productive()`` (or any other ``ContractSet``) to
+        constrain every random draw to admissible values; the runtime
+        filters NP base draws, length samples, and mutation /
+        contamination substitutions in real time so the resulting
+        sequences satisfy the bundle by construction.
+
+        ``strict=False`` (default) lets a pass fall back to
+        unconstrained sampling when no admissible candidate exists.
+        ``strict=True`` raises
+        :class:`genairr_engine.StrictSamplingError` instead, so
+        unsatisfiable plans surface as exceptions rather than
+        silently-relaxed outputs.
         """
-        return self.compile().run(n=n, seed=seed)
+        return self.compile().run(n=n, seed=seed, respect=respect, strict=strict)
 
     def __repr__(self) -> str:
         return f"<Experiment chain={self.chain_type} steps={self.step_count}>"
@@ -415,18 +482,46 @@ class CompiledExperiment:
         """The :class:`genairr_engine.RefDataConfig` the plan was built against."""
         return self._refdata
 
-    def run(self, *, n: int = 1, seed: int = 0) -> List["_engine.Outcome"]:
+    def run(
+        self,
+        *,
+        n: int = 1,
+        seed: int = 0,
+        respect: RespectInput = None,
+        strict: bool = False,
+    ) -> List["_engine.Outcome"]:
         """Run the compiled plan ``n`` times.
 
         Each iteration uses ``seed + i`` as the per-run seed so
         consecutive batches stitch together by offsetting ``seed``.
 
+        ``respect`` accepts ``None`` (no contracts), a single
+        :class:`genairr_engine.ContractSet`, or a length-1 sequence
+        containing one (the V5-style ``[productive()]``). When set,
+        every sampling pass filters its candidate distribution
+        through the contract bundle.
+
+        ``strict`` controls the failure mode when filtering yields
+        no admissible candidate:
+        - ``False`` (default, **permissive**) — fall back to
+          unconstrained sampling and continue.
+        - ``True`` (**strict**) — raise
+          :class:`genairr_engine.StrictSamplingError` carrying the
+          failing pass name, trace address, and failure reason.
+
         Raises ``ValueError`` for ``n < 1``.
         """
         if n < 1:
             raise ValueError(f"n must be at least 1, got {n}")
+        contracts = _coerce_respect(respect)
         return [
-            _engine.run(self._plan, seed=seed + i, refdata=self._refdata)
+            _engine.run(
+                self._plan,
+                seed=seed + i,
+                refdata=self._refdata,
+                respect=contracts,
+                strict=strict,
+            )
             for i in range(n)
         ]
 

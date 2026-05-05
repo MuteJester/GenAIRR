@@ -29,6 +29,10 @@ except _PackageNotFoundError:
 # The simulation entry point.
 from .experiment import CompiledExperiment, Experiment, dataconfig_to_refdata
 
+# Canonical contract bundle. Re-exported here so users write
+# ``GenAIRR.productive()`` without reaching into ``genairr_engine``.
+from genairr_engine import StrictSamplingError, productive
+
 # Reference data — DataConfig + species pickles.
 from .data import list_configs
 from .dataconfig import ChainType, ConfigInfo, DataConfig, DataConfigError, Species
@@ -73,6 +77,8 @@ __all__ = [
     "Experiment",
     "CompiledExperiment",
     "dataconfig_to_refdata",
+    "productive",
+    "StrictSamplingError",
     # Reference data
     "DataConfig",
     "DataConfigError",

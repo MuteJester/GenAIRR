@@ -16,6 +16,7 @@ use crate::passes::{
 };
 use crate::refdata::{Allele, ChainType, RefDataConfig};
 
+use super::contract::{pass_error_to_pyerr, PyContractSet};
 use super::outcome::PyOutcome;
 use super::plan::PyPassPlan;
 use super::refdata::PyRefDataConfig;
@@ -185,23 +186,56 @@ fn run_vj_recombination(
 /// `AssembleSegmentPass` or any other pass that requires reference
 /// data. Plans that only use NP / sample-base / echo passes can run
 /// without one.
+///
+/// `respect` is optional: when supplied, every sampling pass filters
+/// its candidate distribution against the contract set so the
+/// resulting simulation respects the bundle by construction.
+///
+/// `strict` controls the failure semantics when filtering produces no
+/// admissible candidate:
+/// - ``False`` (default, **permissive**) — the pass falls back to
+///   unconstrained sampling and the run continues.
+/// - ``True`` (**strict**) — the pass raises
+///   ``StrictSamplingError`` carrying ``(pass_name, address, reason)``
+///   so the caller can react to or surface the failure.
 #[pyfunction]
-#[pyo3(signature = (plan, seed, *, refdata=None))]
+#[pyo3(signature = (plan, seed, *, refdata=None, respect=None, strict=false))]
 fn run(
     plan: &PyPassPlan,
     seed: u64,
     refdata: Option<&PyRefDataConfig>,
-) -> PyOutcome {
-    let outcome = match refdata {
-        Some(r) => PassRuntime::execute_with_refdata(
+    respect: Option<&PyContractSet>,
+    strict: bool,
+) -> PyResult<PyOutcome> {
+    if strict {
+        let outcome = PassRuntime::execute_strict_with_context(
+            plan.inner(),
+            Simulation::new(),
+            seed,
+            refdata.map(|r| r.inner()),
+            respect.map(|c| c.inner()),
+        )
+        .map_err(pass_error_to_pyerr)?;
+        return Ok(PyOutcome::new(outcome));
+    }
+
+    let outcome = match (refdata, respect) {
+        (None, None) => PassRuntime::execute(plan.inner(), Simulation::new(), seed),
+        (Some(r), None) => PassRuntime::execute_with_refdata(
             plan.inner(),
             Simulation::new(),
             seed,
             r.inner(),
         ),
-        None => PassRuntime::execute(plan.inner(), Simulation::new(), seed),
+        (refdata_opt, contracts_opt) => PassRuntime::execute_with_context(
+            plan.inner(),
+            Simulation::new(),
+            seed,
+            refdata_opt.map(|r| r.inner()),
+            contracts_opt.map(|c| c.inner()),
+        ),
     };
-    PyOutcome::new(outcome)
+    Ok(PyOutcome::new(outcome))
 }
 
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
