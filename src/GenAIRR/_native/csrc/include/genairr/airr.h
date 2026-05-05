@@ -191,12 +191,13 @@ typedef struct {
  * be the true allele name only).
  *
  * @param seq   The annotated sequence.
- * @param rec   The simulation record.
+ * @param rec   The simulation record. `observed_status` is refreshed
+ *              to match the exported AIRR productivity fields.
  * @param cfg   The simulation config (for allele pools).
  * @param corr  Pre-built allele bitmaps (NULL to skip corrections).
  * @param out   Output: filled AirrRecord.
  */
-void  airr_serialize(const ASeq *seq, const SimRecord *rec,
+void  airr_serialize(const ASeq *seq, SimRecord *rec,
                       const SimConfig *cfg, const AlleleCorrectionSet *corr,
                       AirrRecord *out);
 

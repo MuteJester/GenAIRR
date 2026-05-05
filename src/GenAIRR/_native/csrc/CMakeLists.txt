@@ -82,6 +82,7 @@ set(LIB_SOURCES
     src/core/allele_bitmap.c
     src/core/codon.c
     src/core/functionality.c
+    src/core/productivity_guard.c
     src/io/gdc_write.c
     src/io/gdc_read.c
     src/api/genairr_api.c

@@ -60,9 +60,9 @@ class TestProductiveContractHonored:
     def test_productive_without_corruption_near_100pct(self):
         """Sanity: the protection mechanism shouldn't affect runs
         that don't use with_ns at all. The flip rate without N
-        corruption should be near zero — there's a tiny known
-        caveat (T2-16: SHM can flip productive after the retry
-        boundary) so we allow ≤2% slack rather than asserting 100%."""
+        corruption should be near zero. The remaining slack here is
+        just retry-budget exhaustion in the legacy rearrangement filter,
+        so we allow ≤2% instead of asserting 100%."""
         records = list(Experiment.on("human_igh")
                        .run(n=N_SEQUENCES, seed=SEED, productive=True))
         n_productive = sum(1 for r in records if r["productive"])

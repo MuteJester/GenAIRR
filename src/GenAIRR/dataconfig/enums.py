@@ -10,9 +10,14 @@ class Productivity(Enum):
         The simulator retries the rearrangement phase (up to
         ``max_productive_attempts``, default 25) until ``rec.productive``
         is true. Every returned record has ``productive == True`` after
-        recombination. **Caveat (T2-16):** SHM is applied AFTER the retry
-        boundary, so heavy mutation rates can flip individual records to
-        ``productive=False`` in the final AIRR output.
+        recombination. S5F mutation, uniform mutation, D inversion,
+        receptor revision, antigen selection, ``with_pcr``,
+        ``with_quality_profile``, ``paired_end``, ``long_read``,
+        ``with_5prime_loss``, ``with_3prime_loss``, ``with_indels``,
+        ``with_contaminants``, and ``with_ns`` now honor that contract
+        downstream, but other later steps still can flip the final AIRR
+        output to ``productive=False`` because the current engine does
+        not yet guard every post-rearrangement edit path.
 
     NON_PRODUCTIVE_ONLY:
         Symmetric to PRODUCTIVE_ONLY — retries until ``rec.productive``
@@ -106,4 +111,3 @@ class Species(Enum):
 
     # Other
     BAT = "Bat"
-

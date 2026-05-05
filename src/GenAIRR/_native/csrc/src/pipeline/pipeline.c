@@ -17,6 +17,7 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/functionality.h"
 #include "genairr/trace.h"
 #include <string.h>
 #include <stdio.h>
@@ -81,6 +82,57 @@ const char *hook_point_name(int hook_id) {
     return hook_names[hook_id];
 }
 
+static const char *productivity_stage_name(ProductivityStage stage) {
+    switch (stage) {
+        case PROD_STAGE_REARRANGEMENT: return "rearrangement";
+        case PROD_STAGE_MOLECULE:      return "molecule";
+        case PROD_STAGE_OBSERVED:      return "observed";
+        default:                       return "unknown";
+    }
+}
+
+static ProductivityStatus *productivity_stage_slot(SimRecord *rec,
+                                                   ProductivityStage stage) {
+    if (!rec) return NULL;
+
+    switch (stage) {
+        case PROD_STAGE_REARRANGEMENT: return &rec->rearrangement_status;
+        case PROD_STAGE_MOLECULE:      return &rec->molecule_status;
+        case PROD_STAGE_OBSERVED:      return &rec->observed_status;
+        default:                       return NULL;
+    }
+}
+
+void productivity_capture_status_from_values(
+        SimRecord *rec, ProductivityStage stage,
+        bool productive, bool stop_codon, bool vj_in_frame,
+        const char *note) {
+    ProductivityStatus *dst = productivity_stage_slot(rec, stage);
+    if (!dst) return;
+
+    dst->valid = true;
+    dst->productive = productive;
+    dst->stop_codon = stop_codon;
+    dst->vj_in_frame = vj_in_frame;
+    snprintf(dst->note, sizeof(dst->note), "%s", note ? note : "");
+
+    TRACE("[productivity] captured stage=%s productive=%s stop_codon=%s "
+          "vj_in_frame=%s%s%s",
+          productivity_stage_name(stage),
+          productive ? "yes" : "no",
+          stop_codon ? "yes" : "no",
+          vj_in_frame ? "yes" : "no",
+          note && note[0] ? " note=" : "",
+          note && note[0] ? note : "");
+}
+
+void productivity_capture_status(SimRecord *rec, ProductivityStage stage) {
+    productivity_capture_status_from_values(
+        rec, stage,
+        rec->productive, rec->stop_codon, rec->vj_in_frame,
+        rec->note);
+}
+
 /* ── Helper: register a step with optional hook ──────────────── */
 
 static inline void add_step(Pipeline *p, int *i, StepFn fn, int hook_id) {
@@ -96,6 +148,7 @@ Pipeline pipeline_build(const SimConfig *cfg) {
     memset(&p, 0, sizeof(p));
     p.retry_boundary = -1;
     p.post_mutation_start = 0;
+    p.observation_start = 0;
     /* Initialize all hook_ids to -1 (no hook) */
     for (int j = 0; j < GENAIRR_MAX_PIPELINE; j++)
         p.hook_ids[j] = -1;
@@ -120,7 +173,7 @@ Pipeline pipeline_build(const SimConfig *cfg) {
     /* PRODUCTIVITY_MIXED disables retry (single rearrangement attempt).
      * PRODUCTIVE_ONLY / NON_PRODUCTIVE_ONLY both retry, with the
      * direction selected at execution time in pipeline_execute_pre_mutation. */
-    if (cfg->features.productivity != PRODUCTIVITY_MIXED) {
+    if (simcfg_has_productivity_contract(cfg)) {
         p.retry_boundary = i - 1;
     }
 
@@ -149,6 +202,7 @@ Pipeline pipeline_build(const SimConfig *cfg) {
     }
 
     /* ── Phase 5: Corruption ops (wet-lab order) ─────────────── */
+    p.observation_start = i;
 
     if (cfg->features.primer_mask) {
         add_step(&p, &i, step_primer_mask, -1);
@@ -292,8 +346,7 @@ void pipeline_execute_pre_mutation(const Pipeline *p, const SimConfig *cfg,
     int max_attempts = cfg->max_productive_attempts;
     if (max_attempts <= 0) max_attempts = 25;
 
-    bool want_productive =
-        (cfg->features.productivity == PRODUCTIVITY_PRODUCTIVE_ONLY);
+    bool want_productive = simcfg_productive_only(cfg);
 
     TRACE("[pipeline] mode=%s, max_attempts=%d, pre-mutation steps=%d",
           want_productive ? "productive_only" : "non_productive_only",
@@ -340,11 +393,33 @@ void pipeline_execute_post_mutation(const Pipeline *p, const SimConfig *cfg,
                                     ASeq *seq, SimRecord *rec,
                                     uint32_t hook_mask, Snapshot *snaps, int *n_snap) {
     int start = p->post_mutation_start;
+    int observation_start = p->observation_start;
     if (start < 0) start = 0;
     if (start > p->n_steps) start = p->n_steps;
+    if (observation_start < start) observation_start = start;
+    if (observation_start > p->n_steps) observation_start = p->n_steps;
 
-    TRACE("[pipeline] post-mutation steps=%d", p->n_steps - start);
-    run_step_range(p, cfg, seq, rec, start, p->n_steps, hook_mask, snaps, n_snap);
+    TRACE("[pipeline] post-mutation steps=%d (molecule=%d, observation=%d)",
+          p->n_steps - start,
+          observation_start - start,
+          p->n_steps - observation_start);
+
+    run_step_range(p, cfg, seq, rec,
+                   start, observation_start,
+                   hook_mask, snaps, n_snap);
+
+    {
+        ProductivityStatus status;
+        productivity_evaluate_status(seq, rec, &status);
+        productivity_capture_status_from_values(
+            rec, PROD_STAGE_MOLECULE,
+            status.productive, status.stop_codon, status.vj_in_frame,
+            status.note);
+    }
+
+    run_step_range(p, cfg, seq, rec,
+                   observation_start, p->n_steps,
+                   hook_mask, snaps, n_snap);
 }
 
 void pipeline_execute(const Pipeline *p, const SimConfig *cfg,

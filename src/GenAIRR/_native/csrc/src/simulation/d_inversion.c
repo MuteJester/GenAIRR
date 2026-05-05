@@ -52,24 +52,55 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <string.h>
 
-void step_d_inversion(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
-    if (!rec->d_allele) return;
-    if (rng_uniform(cfg->rng) >= cfg->d_inversion_prob) return;
+/**
+ * Compute the inverted-D base array and (optionally) the reversed
+ * germline_pos array without mutating `seq`. Returns the D segment
+ * length, or 0 if the segment is missing or trivially short.
+ */
+static int compute_d_inversion(const ASeq *seq, char *out_inverted,
+                               uint16_t *out_gpos_reversed) {
+    const Nuc *first = seq->seg_first[SEG_D];
+    const Nuc *last  = seq->seg_last[SEG_D];
+    if (!first || !last) return 0;
 
+    int d_len = aseq_segment_length(seq, SEG_D);
+    if (d_len <= 1) return 0;
+
+    char bases[GENAIRR_MAX_ALLELE_SEQ];
+    uint16_t gpos[GENAIRR_MAX_ALLELE_SEQ];
+    int i = 0;
+    for (const Nuc *n = first; n; n = n->next) {
+        if (n->segment != SEG_D) break;
+        bases[i] = n->current;
+        gpos[i]  = n->germline_pos;
+        i++;
+    }
+
+    for (int k = 0; k < d_len; k++) {
+        out_inverted[k] = complement(bases[d_len - 1 - k]);
+        if (out_gpos_reversed) {
+            out_gpos_reversed[k] = gpos[d_len - 1 - k];
+        }
+    }
+    return d_len;
+}
+
+static int apply_d_inversion(ASeq *seq, SimRecord *rec) {
     Nuc *first = seq->seg_first[SEG_D];
     Nuc *last  = seq->seg_last[SEG_D];
-    if (!first || !last) return;
+    if (!first || !last) return 0;
 
     /* Collect D bases and germline positions. At this point in the
      * pipeline (pre-SHM) `n->current == n->germline` for every D
      * node, so collecting `n->current` captures the canonical bases
      * for use as the new (inverted) germline reference below. */
     int d_len = aseq_segment_length(seq, SEG_D);
-    if (d_len <= 1) return;
+    if (d_len <= 1) return 0;
 
     char bases[GENAIRR_MAX_ALLELE_SEQ];
     uint16_t gpos[GENAIRR_MAX_ALLELE_SEQ];
@@ -89,14 +120,46 @@ void step_d_inversion(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     for (Nuc *n = first; n; n = n->next) {
         if (n->segment != SEG_D) break;
         char inverted = complement(bases[j]);
-        n->current     = inverted;
-        n->germline    = inverted;
+        n->current      = inverted;
+        n->germline     = inverted;
         n->germline_pos = gpos[j];
-        n->flags      |= NUC_FLAG_INVERTED;   /* T2-13 provenance flag */
+        n->flags       |= NUC_FLAG_INVERTED;   /* T2-13 provenance flag */
         j--;
     }
 
+    /* D inversion is a bulk rewrite over multiple coding nodes.
+     * Rebuild the codon rail so cached amino acids, stop counts, and
+     * per-node productive flags reflect the inverted template. */
+    if (seq->codon_rail_valid) {
+        aseq_build_codon_rail(seq);
+    }
+
     rec->d_inverted = true;
+    return d_len;
+}
+
+void step_d_inversion(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
+    if (!rec->d_allele) return;
+    if (rng_uniform(cfg->rng) >= cfg->d_inversion_prob) return;
+
+    if (simcfg_productive_only(cfg)) {
+        char inverted[GENAIRR_MAX_ALLELE_SEQ];
+        int d_len = compute_d_inversion(seq, inverted, NULL);
+        if (d_len <= 1) return;
+
+        ProductivityDecision decision = productivity_guard_span_rewrite(
+            cfg, seq, rec, PROD_STAGE_MOLECULE, SEG_D,
+            0, d_len, inverted);
+        if (decision != PROD_DECISION_ALLOW) {
+            TRACE("[d_inversion] skipped productive-unsafe inversion (allele=%s)",
+                  rec->d_allele->name);
+            return;
+        }
+    }
+
+    int d_len = apply_d_inversion(seq, rec);
+    if (d_len <= 1) return;
+
     TRACE("[d_inversion] reverse-complemented D segment (%dbp, allele=%s)",
           d_len, rec->d_allele->name);
 }

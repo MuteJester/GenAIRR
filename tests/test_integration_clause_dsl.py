@@ -88,8 +88,9 @@ class TestRunProductive:
         assert nonprod <= 1, f"too many non-productive: {nonprod}/20"
 
     def test_productive_with_mutation(self):
-        """Productive filter applies to initial rearrangement;
-        SHM may later introduce stop codons."""
+        """Productive filter still compiles and runs with mutation enabled.
+        The S5F path now guards PRODUCTIVE_ONLY downstream, while other
+        later observation steps are still handled separately."""
         result = (
             Experiment.on("human_igh")
             .mutate(rate(0.01, 0.03))

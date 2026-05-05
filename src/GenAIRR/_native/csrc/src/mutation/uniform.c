@@ -9,14 +9,16 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <stdlib.h>
 
 void step_uniform_mutate(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
-    (void)rec;
     int len = aseq_length(seq);
     if (len == 0) return;
+
+    const bool productive_guard = simcfg_productive_only(cfg);
 
     /* Count mutable positions (V/D/J only) */
     int n_mutable = 0;
@@ -33,8 +35,9 @@ void step_uniform_mutate(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
     int target_mutations = (int)(rate * n_mutable + 0.5);
 
-    TRACE("[uniform] rate_range=[%.4f, %.4f], sampled_rate=%.4f, mutable=%d/%d, target=%d",
-          cfg->min_mutation_rate, cfg->max_mutation_rate, rate, n_mutable, len, target_mutations);
+    TRACE("[uniform] rate_range=[%.4f, %.4f], sampled_rate=%.4f, mutable=%d/%d, target=%d, productive_guard=%s",
+          cfg->min_mutation_rate, cfg->max_mutation_rate, rate, n_mutable, len,
+          target_mutations, productive_guard ? "yes" : "no");
 
     if (target_mutations <= 0) return;
 
@@ -57,9 +60,31 @@ void step_uniform_mutate(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
         /* Mutate to a different base */
         char new_base;
-        do {
-            new_base = bases[rng_range(cfg->rng, 4)];
-        } while (new_base == n->current);
+        if (productive_guard) {
+            char allowed[3];
+            int allowed_count = 0;
+
+            for (int i = 0; i < 4; i++) {
+                char candidate = bases[i];
+                if (candidate == n->current) continue;
+
+                ProductivityDecision decision = productivity_guard_substitution(
+                    cfg, seq, rec, PROD_STAGE_MOLECULE, n, candidate);
+                if (decision == PROD_DECISION_ALLOW) {
+                    allowed[allowed_count++] = candidate;
+                }
+            }
+
+            if (allowed_count == 0) {
+                continue;
+            }
+
+            new_base = allowed[rng_range(cfg->rng, (uint32_t)allowed_count)];
+        } else {
+            do {
+                new_base = bases[rng_range(cfg->rng, 4)];
+            } while (new_base == n->current);
+        }
 
         aseq_mutate(seq, n, new_base, NUC_FLAG_MUTATED);
         applied++;

@@ -6,28 +6,30 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
+#include <ctype.h>
 #include <stdlib.h>
 
 /* Transition partners: A↔G, C↔T */
 static char transition_of(char base) {
-    switch (base) {
-        case 'A': return 'G';
-        case 'G': return 'A';
-        case 'C': return 'T';
-        case 'T': return 'C';
+    switch ((char)tolower((unsigned char)base)) {
+        case 'a': return 'g';
+        case 'g': return 'a';
+        case 'c': return 't';
+        case 't': return 'c';
         default:  return base;
     }
 }
 
 /* Random transversion (not self, not transition) */
 static char transversion_of(RngState *rng, char base) {
-    switch (base) {
-        case 'A': return rng_range(rng, 2) ? 'C' : 'T';
-        case 'G': return rng_range(rng, 2) ? 'C' : 'T';
-        case 'C': return rng_range(rng, 2) ? 'A' : 'G';
-        case 'T': return rng_range(rng, 2) ? 'A' : 'G';
+    switch ((char)tolower((unsigned char)base)) {
+        case 'a': return rng_range(rng, 2) ? 'c' : 't';
+        case 'g': return rng_range(rng, 2) ? 'c' : 't';
+        case 'c': return rng_range(rng, 2) ? 'a' : 'g';
+        case 't': return rng_range(rng, 2) ? 'a' : 'g';
         default:  return base;
     }
 }
@@ -60,6 +62,11 @@ void step_quality_errors(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
             new_base = transversion_of(cfg->rng, n->current);
         }
 
+        ProductivityDecision decision = productivity_guard_substitution(
+            cfg, seq, rec, PROD_STAGE_OBSERVED, n, new_base);
+        if (decision != PROD_DECISION_ALLOW) {
+            continue;
+        }
         aseq_mutate(seq, n, new_base, NUC_FLAG_SEQ_ERROR);
         error_count++;
     }

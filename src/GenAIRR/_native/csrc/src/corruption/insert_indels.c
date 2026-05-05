@@ -8,6 +8,7 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <stdlib.h>
@@ -47,6 +48,15 @@ void step_insert_indels(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
              * fail and we'd over-count rec->n_insertions. */
             static const char bases[] = "acgt";
             char base = bases[rng_range(cfg->rng, 4)];
+            if (simcfg_productive_only(cfg)) {
+                ProductivityDecision decision = productivity_guard_insertion(
+                    cfg, seq, rec, PROD_STAGE_OBSERVED, n, base,
+                    n->segment, NUC_FLAG_INDEL_INS);
+                if (decision != PROD_DECISION_ALLOW) {
+                    n = next;
+                    continue;
+                }
+            }
             if (aseq_insert_after(seq, n, base, n->segment,
                                   NUC_FLAG_INDEL_INS) == NULL) {
                 TRACE("[indels] pool exhausted at insertion; stopping "
@@ -57,6 +67,14 @@ void step_insert_indels(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
             insertions++;
         } else {
             /* Deletion: remove this node */
+            if (simcfg_productive_only(cfg)) {
+                ProductivityDecision decision = productivity_guard_deletion(
+                    cfg, seq, rec, PROD_STAGE_OBSERVED, n);
+                if (decision != PROD_DECISION_ALLOW) {
+                    n = next;
+                    continue;
+                }
+            }
             aseq_delete(seq, n);
             deletions++;
         }

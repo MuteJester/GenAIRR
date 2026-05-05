@@ -1177,7 +1177,13 @@ static void derive_final_productivity(const ASeq *seq, const SimRecord *rec,
     out->productive  = rec_copy.productive;
     out->stop_codon  = rec_copy.stop_codon;
     out->vj_in_frame = rec_copy.vj_in_frame;
-    strncpy(out->note, rec_copy.note, sizeof(out->note) - 1);
+    /* Contaminant replacement is an identity change, not just a failed
+     * productivity rule, so keep the contaminant note stable even when
+     * final observed productivity is re-derived from the mutated copy. */
+    const char *note_src = (rec->is_contaminant && rec->note[0])
+        ? rec->note
+        : rec_copy.note;
+    strncpy(out->note, note_src, sizeof(out->note) - 1);
     out->note[sizeof(out->note) - 1] = '\0';
 }
 
@@ -1224,7 +1230,7 @@ static void map_positions_to_rc_coords(int seq_len, AirrPositions *pos) {
  * airr_serialize — the main serialization function
  * ═══════════════════════════════════════════════════════════════ */
 
-void airr_serialize(const ASeq *seq, const SimRecord *rec,
+void airr_serialize(const ASeq *seq, SimRecord *rec,
                      const SimConfig *cfg, const AlleleCorrectionSet *corr,
                      AirrRecord *out) {
     memset(out, 0, sizeof(*out));
@@ -1417,6 +1423,10 @@ void airr_serialize(const ASeq *seq, const SimRecord *rec,
             snprintf(out->note, sizeof(out->note), "%s", marker);
         }
     }
+
+    productivity_capture_status_from_values(
+        rec, PROD_STAGE_OBSERVED,
+        out->productive, out->stop_codon, out->vj_in_frame, out->note);
 
     /* ── 9. Sequence-level flags ─────────────────────────────── */
     out->is_reverse_complement = rec->is_reverse_complement;

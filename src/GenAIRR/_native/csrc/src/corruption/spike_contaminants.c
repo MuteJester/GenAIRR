@@ -26,10 +26,55 @@ static const char PHIX_FRAGMENT[] =
     "TTCGATTTTCTGACGAGTAACAAAGTTTGGATTGCTACTGACCGCTCTCGTGCTCGTCGCT"
     "GCGTTGAGGCTTGCGTTTATGGTACGCTGGACTTTGTGGGATACCCTCGCTTTCCTGCTCC";
 
+static int sample_contaminant_payload(const SimConfig *cfg,
+                                      char *seq_buf,
+                                      size_t seq_buf_cap,
+                                      char *type_buf,
+                                      size_t type_buf_cap,
+                                      int *fragment_offset) {
+    int cont_len = 300 + (int)rng_range(cfg->rng, 200);  /* 300-500 bp */
+
+    if (cfg->contaminant_type == 1) {
+        int phix_len = (int)strlen(PHIX_FRAGMENT);
+        int start = (int)rng_range(cfg->rng,
+            (uint32_t)(phix_len > cont_len ? phix_len - cont_len : 1));
+        if (start + cont_len > phix_len) cont_len = phix_len - start;
+        if ((size_t)cont_len >= seq_buf_cap) cont_len = (int)seq_buf_cap - 1;
+        memcpy(seq_buf, PHIX_FRAGMENT + start, (size_t)cont_len);
+        seq_buf[cont_len] = '\0';
+        strncpy(type_buf, "phix", type_buf_cap);
+        if (type_buf_cap > 0) type_buf[type_buf_cap - 1] = '\0';
+        *fragment_offset = start;
+        return cont_len;
+    }
+
+    if ((size_t)cont_len >= seq_buf_cap) cont_len = (int)seq_buf_cap - 1;
+    rng_nucleotides(cfg->rng, seq_buf, cont_len);
+    seq_buf[cont_len] = '\0';
+    strncpy(type_buf, "random", type_buf_cap);
+    if (type_buf_cap > 0) type_buf[type_buf_cap - 1] = '\0';
+    *fragment_offset = -1;
+    return cont_len;
+}
+
 void step_spike_contaminants(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     if (rng_uniform(cfg->rng) >= cfg->contamination_prob) return;
 
     TRACE("[contaminant] TRIGGERED — replacing sequence with contaminant (prob=%.4f)", cfg->contamination_prob);
+
+    char cont_buf[512];
+    char cont_type[32];
+    int fragment_offset = -1;
+    int cont_len = sample_contaminant_payload(
+        cfg, cont_buf, sizeof(cont_buf),
+        cont_type, sizeof(cont_type),
+        &fragment_offset);
+
+    if (simcfg_productive_only(cfg)) {
+        TRACE("[contaminant] skipped productive-unsafe contamination type=%s, length=%d",
+              cont_type, cont_len);
+        return;
+    }
 
     /* Clear the entire sequence */
     aseq_reset(seq);
@@ -44,27 +89,13 @@ void step_spike_contaminants(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     rec->j_allele = NULL;
     rec->c_allele = NULL;
     snprintf(rec->note, sizeof(rec->note), "contaminant");
-
-    /* Generate contaminant sequence */
-    int cont_len = 300 + (int)rng_range(cfg->rng, 200);  /* 300-500 bp */
-
-    if (cfg->contaminant_type == 1) {
-        /* phiX: random substring of the fragment */
-        int phix_len = (int)strlen(PHIX_FRAGMENT);
-        int start = (int)rng_range(cfg->rng,
-            (uint32_t)(phix_len > cont_len ? phix_len - cont_len : 1));
-        if (start + cont_len > phix_len) cont_len = phix_len - start;
-        strncpy(rec->contaminant_type, "phix", sizeof(rec->contaminant_type));
-        aseq_append_segment(seq, PHIX_FRAGMENT + start, cont_len,
-                            SEG_ADAPTER, 0, -1);
-        TRACE("[contaminant] type=phiX, length=%d, fragment_offset=%d", cont_len, start);
+    strncpy(rec->contaminant_type, cont_type, sizeof(rec->contaminant_type));
+    rec->contaminant_type[sizeof(rec->contaminant_type) - 1] = '\0';
+    aseq_append_segment(seq, cont_buf, cont_len, SEG_ADAPTER, 0, -1);
+    if (fragment_offset >= 0) {
+        TRACE("[contaminant] type=phiX, length=%d, fragment_offset=%d",
+              cont_len, fragment_offset);
     } else {
-        /* Random nucleotides */
-        char buf[512];
-        if (cont_len > 511) cont_len = 511;
-        rng_nucleotides(cfg->rng, buf, cont_len);
-        strncpy(rec->contaminant_type, "random", sizeof(rec->contaminant_type));
-        aseq_append_segment(seq, buf, cont_len, SEG_ADAPTER, 0, -1);
         TRACE("[contaminant] type=random, length=%d", cont_len);
     }
 }

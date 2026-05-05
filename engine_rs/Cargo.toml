@@ -1,0 +1,27 @@
+# GenAIRR engine — V6 architecture in Rust.
+#
+# This crate is the kernel of the new simulation engine. It is built
+# as a Python extension via PyO3 + maturin, exposed to Python under the
+# module name `genairr_engine`.
+#
+# The crate intentionally lives outside the existing `src/GenAIRR/_native/`
+# tree so the V5 C engine remains untouched during V6 development.
+
+[package]
+name = "genairr_engine"
+version = "0.0.1"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "GenAIRR V6 simulation engine (Rust kernel)"
+publish = false
+
+[lib]
+# rlib for cargo unit tests; cdylib for the Python extension.
+crate-type = ["cdylib", "rlib"]
+name = "genairr_engine"
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+
+[dev-dependencies]
+# Reserved for proptest / property-based tests added in later phases.

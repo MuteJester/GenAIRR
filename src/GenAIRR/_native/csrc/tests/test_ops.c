@@ -502,7 +502,7 @@ static int test_insert_ns_protects_anchors_under_productive_only(void) {
     ASeq seq; SimRecord rec; SimConfig cfg;
     build_simple_seq(&seq, &rec, &cfg);
     cfg.n_prob = 0.99;
-    cfg.features.productivity = PRODUCTIVITY_PRODUCTIVE_ONLY;
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_PRODUCTIVE_ONLY);
 
     rng_seed(&_test_rng, 42, 0);
     step_insert_ns(&cfg, &seq, &rec);
@@ -524,7 +524,7 @@ static int test_insert_ns_does_not_protect_under_mixed(void) {
     ASeq seq; SimRecord rec; SimConfig cfg;
     build_simple_seq(&seq, &rec, &cfg);
     cfg.n_prob = 0.99;
-    cfg.features.productivity = PRODUCTIVITY_MIXED;
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_MIXED);
 
     rng_seed(&_test_rng, 42, 0);
     step_insert_ns(&cfg, &seq, &rec);

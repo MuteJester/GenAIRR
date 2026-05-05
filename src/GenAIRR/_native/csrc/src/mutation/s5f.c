@@ -12,12 +12,14 @@
  *      a. Weighted-select a position via Fenwick tree.
  *      b. Look up substitution table for the position's 5-mer key.
  *      c. Choose a target base from the cumulative distribution.
- *      d. Apply mutation: update base array, recompute affected 5-mer keys.
+ *      d. Apply mutation: update base array, keep the live ASeq in sync,
+ *         recompute affected 5-mer keys.
  *      e. Update Fenwick tree for the ≤5 affected positions.
- *   7. Write mutations back to ASeq nodes.
+ *   7. Final mutated state is already reflected in the ASeq nodes.
  */
 
 #include "genairr/s5f.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <ctype.h>
@@ -111,12 +113,10 @@ int fenwick_select(const FenwickTree *ft, double r) {
  * ═══════════════════════════════════════════════════════════════ */
 
 void s5f_model_init(S5FModel *model,
-                     double min_rate, double max_rate,
-                     bool productive) {
+                     double min_rate, double max_rate) {
     memset(model, 0, sizeof(*model));
     model->min_mutation_rate = min_rate;
     model->max_mutation_rate = max_rate;
-    model->productive = productive;
 }
 
 void s5f_set_substitution(S5FModel *model, int key,
@@ -214,35 +214,20 @@ static int bisect_left(const double *arr, int n, double value) {
  * `rng` parameter; the local rand_uniform/rand_01 shadow defns that
  * wrapped libc rand() were removed in T0-5. */
 
-/* ── Codon stop check for productive mode ────────────────────── */
-
-static bool is_stop_codon(char b1, char b2, char b3) {
-    /* TAG, TAA, TGA — case-insensitive: bases throughout the engine
-     * are lowercase, but callers may pass either case (e.g. 'N'
-     * placeholder is uppercase). */
-    char c1 = (char)tolower((unsigned char)b1);
-    char c2 = (char)tolower((unsigned char)b2);
-    char c3 = (char)tolower((unsigned char)b3);
-    if (c1 == 't') {
-        if (c2 == 'a' && (c3 == 'g' || c3 == 'a')) return true;
-        if (c2 == 'g' && c3 == 'a') return true;
-    }
-    return false;
-}
-
 /* ═══════════════════════════════════════════════════════════════
  * s5f_mutate — main entry point
  * ═══════════════════════════════════════════════════════════════ */
 
-void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
+void s5f_mutate(const S5FModel *model, const SimConfig *cfg,
+                 ASeq *seq, const SimRecord *rec,
                  struct RngState *rng, S5FResult *result) {
-    (void)rec;  /* used in productive mode for anchor positions */
-
     memset(result, 0, sizeof(*result));
 
     /* ── Step 1: extract flat arrays from ASeq ───────────────── */
     int n = seq->length;
     if (n == 0) return;
+
+    const SimConfig *guard_cfg = simcfg_productive_only(cfg) ? cfg : NULL;
 
     /* Sample mutation rate */
     double mutation_rate = rng_uniform_lh(rng, model->min_mutation_rate,
@@ -252,7 +237,7 @@ void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
     TRACE("[s5f] rate_range=[%.4f, %.4f], sampled_rate=%.4f, seq_len=%d, target=%d, productive_guard=%s",
           model->min_mutation_rate, model->max_mutation_rate,
           mutation_rate, n, target_mutations,
-          model->productive ? "yes" : "no");
+          guard_cfg ? "yes" : "no");
 
     if (target_mutations == 0) {
         result->mutation_rate = mutation_rate;
@@ -269,7 +254,7 @@ void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
     double weights[GENAIRR_MAX_SEQ_LEN];
     int kmer_keys[GENAIRR_MAX_SEQ_LEN];
 
-    /* Node pointer map: to write mutations back to ASeq */
+    /* Node pointer map: to keep the live ASeq in sync incrementally */
     Nuc *node_map[GENAIRR_MAX_SEQ_LEN];
 
     ibases[0] = 4; ibases[1] = 4;  /* NN prefix */
@@ -358,20 +343,11 @@ void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
         }
 
         /* ── Productive mode checks ──────────────────────────── */
-        if (model->productive) {
-            /* Check if mutation would create a stop codon.
-             * Check the 3 codons that overlap this position. */
-            bool creates_stop = false;
-            for (int offset = 0; offset < 3 && !creates_stop; offset++) {
-                int codon_start = sel - offset;
-                if (codon_start < 0 || codon_start + 2 >= n) continue;
-                char c1 = (codon_start == sel)     ? mutation_to : bases[codon_start + 2];
-                char c2 = (codon_start + 1 == sel) ? mutation_to : bases[codon_start + 3];
-                char c3 = (codon_start + 2 == sel) ? mutation_to : bases[codon_start + 4];
-                if (is_stop_codon(c1, c2, c3)) creates_stop = true;
-            }
-            if (creates_stop) {
-                TRACE("[s5f] REJECTED pos=%d %c→%c (would create stop codon)", sel, bases[sel + 2], mutation_to);
+        if (guard_cfg) {
+            ProductivityDecision decision = productivity_guard_substitution(
+                guard_cfg, seq, rec, PROD_STAGE_MOLECULE,
+                node_map[sel], mutation_to);
+            if (decision != PROD_DECISION_ALLOW) {
                 consecutive_failures++;
                 if (consecutive_failures >= MAX_CONSECUTIVE_FAILURES) break;
                 continue;
@@ -385,6 +361,12 @@ void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
         ibases[sel + 2] = s5f_base_to_int(mutation_to);
         update_affected(ibases, n, sel, weights, kmer_keys,
                         mutable_mask, &fenwick, mutability);
+
+        if (mutation_to != naive[sel]) {
+            aseq_mutate(seq, node_map[sel], mutation_to, NUC_FLAG_MUTATED);
+        } else {
+            aseq_revert(seq, node_map[sel]);
+        }
 
         /* Record if not a reversion to naive */
         if (mutation_to != naive[sel]) {
@@ -423,14 +405,8 @@ void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
         consecutive_failures = 0;
     }
 
-    /* ── Step 5: write mutations back to ASeq ────────────────── */
-    for (int m = 0; m < mutation_count; m++) {
-        int p = result->mutations[m].position;
-        if (p >= 0 && p < n) {
-            
-            aseq_mutate(seq, node_map[p], result->mutations[m].to_base, NUC_FLAG_MUTATED);
-        }
-    }
+    /* The live ASeq is kept in sync incrementally as mutations are
+     * accepted, so no end-of-pass write-back is needed here. */
 
     result->count = mutation_count;
     result->mutation_rate = (double)mutation_count / (double)n;

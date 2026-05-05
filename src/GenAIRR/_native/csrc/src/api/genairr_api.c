@@ -63,6 +63,11 @@ struct GenAIRRSimulator {
     uint32_t      hook_mask;
     Snapshot      snapshots[MAX_SNAPSHOTS];
     int           n_snapshots;
+    /* V5/Step 28: counter for STRICT observed-stage retries triggered
+     * inside `simulate_one_record_with_retry`. Counts retries (not
+     * total attempts), so a 1-attempt success contributes 0. Reset
+     * with `genairr_reset_strict_retry_count()`. */
+    uint64_t      strict_retry_count;
 };
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -90,7 +95,7 @@ static int init_from_gdc(GenAIRRSimulator *sim) {
 
     /* Load S5F if present */
     if (sim->gdc.mutation_model_type == GDC_MUTMODEL_S5F) {
-        s5f_model_init(&sim->s5f, 0.01, 0.05, false);
+        s5f_model_init(&sim->s5f, 0.01, 0.05);
         gdc_populate_s5f_model(&sim->s5f, &sim->gdc);
         sim->s5f_loaded = true;
     }
@@ -107,16 +112,13 @@ static int init_from_gdc(GenAIRRSimulator *sim) {
 static void compile(GenAIRRSimulator *sim) {
     if (sim->compiled) return;
 
-    /* Sync S5F params with SimConfig mutation rates. The S5F engine's
-     * `productive` flag means "avoid creating stop codons during SHM"
-     * — only relevant when we've already retried to keep the
-     * rearrangement productive. NON_PRODUCTIVE_ONLY and MIXED don't
-     * impose any post-SHM constraint. */
+    /* Sync S5F params with SimConfig mutation rates. PRODUCTIVE_ONLY
+     * routing now comes only from the native productivity contract
+     * carried by SimConfig; S5F itself no longer carries a separate
+     * productive fallback bit. */
     if (sim->s5f_loaded && sim->cfg.features.mutate) {
         sim->s5f.min_mutation_rate = sim->cfg.min_mutation_rate;
         sim->s5f.max_mutation_rate = sim->cfg.max_mutation_rate;
-        sim->s5f.productive =
-            (sim->cfg.features.productivity == PRODUCTIVITY_PRODUCTIVE_ONLY);
     }
 
     sim->pipeline = pipeline_build(&sim->cfg);
@@ -219,8 +221,9 @@ int genairr_set_feature(GenAIRRSimulator *sim,
          * PRODUCTIVE_ONLY, False → MIXED. Callers that want
          * NON_PRODUCTIVE_ONLY must use genairr_set_param_i32
          * ("productivity_mode", PRODUCTIVITY_NON_PRODUCTIVE_ONLY). */
-        f->productivity = val ? PRODUCTIVITY_PRODUCTIVE_ONLY
-                              : PRODUCTIVITY_MIXED;
+        simcfg_set_productivity_mode(
+            &sim->cfg,
+            val ? PRODUCTIVITY_PRODUCTIVE_ONLY : PRODUCTIVITY_MIXED);
     else if (strcmp(name, "mutate") == 0)             f->mutate = val;
     else if (strcmp(name, "selection_pressure") == 0) f->selection_pressure = val;
     else if (strcmp(name, "csr") == 0)                f->csr = val;
@@ -298,7 +301,19 @@ int genairr_set_param_i32(GenAIRRSimulator *sim,
         if (value == PRODUCTIVITY_PRODUCTIVE_ONLY ||
             value == PRODUCTIVITY_NON_PRODUCTIVE_ONLY ||
             value == PRODUCTIVITY_MIXED) {
-            c->features.productivity = (ProductivityMode)value;
+            simcfg_set_productivity_mode(c, (ProductivityMode)value);
+        } else {
+            return -1;
+        }
+    }
+    else if (strcmp(name, "productivity_strictness") == 0) {
+        /* V5 step 27: flip the strictness axis of the contract.
+         * Validate against the enum range; values outside the known
+         * set are rejected so the contract stays well-defined. */
+        if (value == PROD_STRICTNESS_BEST_EFFORT ||
+            value == PROD_STRICTNESS_STRICT) {
+            simcfg_set_productivity_strictness(c,
+                (ProductivityStrictness)value);
         } else {
             return -1;
         }
@@ -449,11 +464,97 @@ static void run_mutation(GenAIRRSimulator *sim, ASeq *seq, SimRecord *rec,
         csr_adjust_rates(rec, &min_r, &max_r);
         sim->s5f.min_mutation_rate = min_r;
         sim->s5f.max_mutation_rate = max_r;
-        s5f_mutate(&sim->s5f, seq, rec, &sim->rng_state, s5f_result);
+        s5f_mutate(&sim->s5f, &sim->cfg, seq, rec, &sim->rng_state, s5f_result);
         sim->s5f.min_mutation_rate = base_min;
         sim->s5f.max_mutation_rate = base_max;
     } else {
-        s5f_mutate(&sim->s5f, seq, rec, &sim->rng_state, s5f_result);
+        s5f_mutate(&sim->s5f, &sim->cfg, seq, rec, &sim->rng_state, s5f_result);
+    }
+}
+
+/* T3-V5/Step 27: produce one fully-serialized record.
+ *
+ * Runs the per-record block (pre-mutation → mutation → post-mutation
+ * → AIRR serialize) once. Returns true.
+ *
+ * Under PRODUCTIVE_ONLY + STRICT, observed-stage productivity is
+ * additionally re-checked against the contract here and the whole
+ * record is retried up to `cfg->max_productive_attempts` times. The
+ * existing rearrangement retry loop runs inside pipeline_execute_pre_mutation
+ * and only enforces rearrangement-stage productivity, so this layer
+ * adds the missing observed-stage guarantee that STRICT promises.
+ * On exhaustion the most recent record is emitted anyway and a TRACE
+ * line records the leak — STRICT is a "try harder" knob, not a
+ * record-dropping policy.
+ */
+static void simulate_one_record(GenAIRRSimulator *sim, ASeq *seq,
+                                SimRecord *rec, AirrRecord *airr,
+                                S5FResult *s5f_result, uint32_t hook_mask,
+                                Snapshot *snaps, int *n_snap) {
+    pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, seq, rec,
+                                  hook_mask, snaps, n_snap);
+
+    run_mutation(sim, seq, rec, s5f_result);
+
+    if (hook_mask & (1u << HOOK_POST_MUTATION)) {
+        take_snapshot(snaps, n_snap, HOOK_POST_MUTATION, seq, rec);
+    }
+
+    pipeline_execute_post_mutation(&sim->pipeline, &sim->cfg, seq, rec,
+                                   hook_mask, snaps, n_snap);
+
+    airr_serialize(seq, rec, &sim->cfg, &sim->corr, airr);
+
+    if (hook_mask & (1u << HOOK_FINAL)) {
+        take_snapshot(snaps, n_snap, HOOK_FINAL, seq, rec);
+    }
+}
+
+/* True when STRICT + PRODUCTIVE_ONLY observed-stage retry should fire. */
+static bool needs_strict_observed_retry(const SimConfig *cfg,
+                                        const AirrRecord *airr) {
+    if (!simcfg_productive_only(cfg)) return false;
+    if (!simcfg_productivity_strict(cfg)) return false;
+    return !airr->productive;
+}
+
+/* Run one record under the STRICT observed-stage retry policy. The
+ * caller pre-allocates seq/rec/airr/s5f_result buffers; we reset them
+ * each iteration. Returns the number of attempts spent (≥1). */
+static int simulate_one_record_with_retry(GenAIRRSimulator *sim, ASeq *seq,
+                                          SimRecord *rec, AirrRecord *airr,
+                                          S5FResult *s5f_result,
+                                          uint32_t hook_mask,
+                                          Snapshot *snaps, int *n_snap) {
+    int max_attempts = sim->cfg.max_productive_attempts;
+    if (max_attempts <= 0) max_attempts = 1;
+
+    int attempt = 0;
+    for (;;) {
+        if (n_snap) *n_snap = 0;
+        attempt++;
+        simulate_one_record(sim, seq, rec, airr, s5f_result,
+                            hook_mask, snaps, n_snap);
+
+        if (!needs_strict_observed_retry(&sim->cfg, airr)) {
+            return attempt;
+        }
+        if (attempt >= max_attempts) {
+            TRACE("[strict] observed-stage retry exhausted after %d attempts "
+                  "(productive=%s, note=%s) — emitting leaky record",
+                  attempt, airr->productive ? "yes" : "no",
+                  airr->note[0] ? airr->note : "non-productive");
+            return attempt;
+        }
+        /* V5/Step 28: count this retry. We've decided to spend another
+         * attempt, so this is a real retry — not the first attempt and
+         * not an exhaustion. After K retries the simulator has run K+1
+         * attempts on the current record. */
+        sim->strict_retry_count++;
+        TRACE("[strict] observed-stage miss on attempt %d/%d (productive=%s, "
+              "note=%s) — retrying record",
+              attempt, max_attempts, airr->productive ? "yes" : "no",
+              airr->note[0] ? airr->note : "non-productive");
     }
 }
 
@@ -490,19 +591,8 @@ int genairr_simulate(GenAIRRSimulator *sim, int n,
      * tells the caller "I/O failed at row 'written' — file is partial." */
     int written = 0;
     for (int i = 0; i < n; i++) {
-        /* Execute biological assembly/simulation steps first
-         * (everything before mutation-dependent phases). */
-        pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
-                                      0, NULL, NULL);
-
-        /* Mutation phase (S5F or uniform — see run_mutation). */
-        run_mutation(sim, &seq, &rec, &s5f_result);
-
-        /* Execute post-mutation stages (selection + corruption). */
-        pipeline_execute_post_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
+        simulate_one_record_with_retry(sim, &seq, &rec, &airr, &s5f_result,
                                        0, NULL, NULL);
-
-        airr_serialize(&seq, &rec, &sim->cfg, &sim->corr, &airr);
         if (airr_write_tsv_row(fp, &airr) < 0) break;
         written++;
     }
@@ -544,15 +634,8 @@ int genairr_simulate_to_fd(GenAIRRSimulator *sim, int n, int fd) {
 
     int written = 0;
     for (int i = 0; i < n; i++) {
-        pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
-                                      0, NULL, NULL);
-
-        run_mutation(sim, &seq, &rec, &s5f_result);
-
-        pipeline_execute_post_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
+        simulate_one_record_with_retry(sim, &seq, &rec, &airr, &s5f_result,
                                        0, NULL, NULL);
-
-        airr_serialize(&seq, &rec, &sim->cfg, &sim->corr, &airr);
         if (airr_write_tsv_row(fp, &airr) < 0) break;
         written++;
     }
@@ -615,7 +698,7 @@ int genairr_simulate_one(GenAIRRSimulator *sim,
     /* Reset snapshot state */
     sim->n_snapshots = 0;
 
-    static const char *const PROD_NAMES[] = {
+    static const char *const PROD_TARGET_NAMES[] = {
         "mixed", "productive_only", "non_productive_only"
     };
     const char *model_name =
@@ -625,7 +708,7 @@ int genairr_simulate_one(GenAIRRSimulator *sim,
           will_mutate ? "yes" : "no",
           model_name,
           use_csr ? "yes" : "no",
-          PROD_NAMES[(int)sim->cfg.features.productivity]);
+          PROD_TARGET_NAMES[(int)sim->cfg.productivity_contract.target]);
 
     pipeline_execute_pre_mutation(&sim->pipeline, &sim->cfg, &seq, &rec,
                                   sim->hook_mask, sim->snapshots, &sim->n_snapshots);
@@ -839,6 +922,18 @@ int genairr_dump_snapshot_codon_rail(GenAIRRSimulator *sim, int index,
 truncated:
     if (buffer_size > 0) buffer[buffer_size - 1] = '\0';
     return -1;
+}
+
+/* ── STRICT productivity retry diagnostics (V5/Step 28) ──────── */
+
+uint64_t genairr_get_strict_retry_count(GenAIRRSimulator *sim) {
+    if (!sim) return 0;
+    return sim->strict_retry_count;
+}
+
+void genairr_reset_strict_retry_count(GenAIRRSimulator *sim) {
+    if (!sim) return;
+    sim->strict_retry_count = 0;
 }
 
 /* ── Version ─────────────────────────────────────────────────── */

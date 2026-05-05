@@ -340,7 +340,7 @@ static void test_populate_s5f_model(void) {
     assert(rc == 0);
 
     S5FModel model;
-    s5f_model_init(&model, 0.01, 0.15, true);
+    s5f_model_init(&model, 0.01, 0.15);
     gdc_populate_s5f_model(&model, &loaded);
 
     assert(fabs(model.mutability[0] - 0.005) < 1e-10);

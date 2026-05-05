@@ -260,6 +260,26 @@ GENAIRR_EXPORT int genairr_dump_snapshot(GenAIRRSimulator *sim, int index,
 GENAIRR_EXPORT int genairr_dump_snapshot_codon_rail(GenAIRRSimulator *sim, int index,
                                      char *buffer, int buffer_size);
 
+/* ── STRICT productivity retry diagnostics (V5/Step 28) ───────── */
+
+/**
+ * Number of observed-stage retries triggered by `simcfg_productivity_strict`
+ * across all batched simulate calls on this handle since the last reset.
+ *
+ * Each retry corresponds to one extra pipeline pass after a record's
+ * observed productivity disagreed with PRODUCTIVE_ONLY. So if K records
+ * all needed exactly one retry to clear, the counter advances by K.
+ * Successful first attempts do not contribute. Exhausted retries do
+ * not contribute (those are dropped before they would have been spent).
+ *
+ * Useful for verifying STRICT actually fired in tests and for budgeting
+ * retry attempts in production batches.
+ */
+GENAIRR_EXPORT uint64_t genairr_get_strict_retry_count(GenAIRRSimulator *sim);
+
+/** Reset the STRICT retry counter to zero. */
+GENAIRR_EXPORT void genairr_reset_strict_retry_count(GenAIRRSimulator *sim);
+
 /* ── Version info ────────────────────────────────────────────── */
 
 /** Return version string (e.g. "0.1.0"). Static storage. */

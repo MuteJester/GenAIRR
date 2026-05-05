@@ -21,6 +21,16 @@
 #include <string.h>
 #include <stdio.h>
 
+static const FunctionalityValidator *default_validator(void) {
+    static FunctionalityValidator validator;
+    static bool initialized = false;
+    if (!initialized) {
+        validator = functionality_validator_default();
+        initialized = true;
+    }
+    return &validator;
+}
+
 /* ═══════════════════════════════════════════════════════════════
  * Context initialization
  *
@@ -306,11 +316,12 @@ FunctionalityValidator functionality_validator_default(void) {
  *   - contributes_to_vj_in_frame: failure sets vj_in_frame = false
  *
  * Fills: rec->productive, rec->stop_codon, rec->vj_in_frame,
- *        rec->note.
+ *        rec->note, and the rearrangement-stage productivity snapshot.
  * ═══════════════════════════════════════════════════════════════ */
 
-void functionality_assess(const FunctionalityValidator *v,
-                          ASeq *seq, SimRecord *rec) {
+static void functionality_assess_impl(const FunctionalityValidator *v,
+                                      ASeq *seq, SimRecord *rec,
+                                      bool capture_rearrangement) {
     FuncContext ctx;
     func_context_init(&ctx, seq);
 
@@ -321,6 +332,9 @@ void functionality_assess(const FunctionalityValidator *v,
         rec->vj_in_frame = false;
         seq->junction_in_frame = false;
         snprintf(rec->note, sizeof(rec->note), "Missing anchor(s)");
+        if (capture_rearrangement) {
+            productivity_capture_status(rec, PROD_STAGE_REARRANGEMENT);
+        }
         return;
     }
 
@@ -362,4 +376,38 @@ void functionality_assess(const FunctionalityValidator *v,
         snprintf(rec->note, sizeof(rec->note), "%s", first_note);
     else
         rec->note[0] = '\0';
+
+    if (capture_rearrangement) {
+        productivity_capture_status(rec, PROD_STAGE_REARRANGEMENT);
+    }
+}
+
+void functionality_assess(const FunctionalityValidator *v,
+                          ASeq *seq, SimRecord *rec) {
+    functionality_assess_impl(v, seq, rec, true);
+}
+
+void productivity_evaluate_status(const ASeq *seq, const SimRecord *rec,
+                                  ProductivityStatus *out) {
+    if (!out) return;
+
+    memset(out, 0, sizeof(*out));
+    if (!seq || !rec) return;
+
+    ASeq seq_copy = *seq;
+    aseq_rebase(&seq_copy, seq);
+
+    SimRecord rec_copy = *rec;
+
+    if (!seq_copy.codon_rail_valid) {
+        aseq_build_codon_rail(&seq_copy);
+    }
+
+    functionality_assess_impl(default_validator(), &seq_copy, &rec_copy, false);
+
+    out->valid = true;
+    out->productive = rec_copy.productive;
+    out->stop_codon = rec_copy.stop_codon;
+    out->vj_in_frame = rec_copy.vj_in_frame;
+    snprintf(out->note, sizeof(out->note), "%s", rec_copy.note);
 }

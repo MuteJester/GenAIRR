@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
     human_igh_imgt_load_config(&cfg);
 
     S5FModel s5f;
-    s5f_model_init(&s5f, 0.05, 0.15, false);
+    s5f_model_init(&s5f, 0.05, 0.15);
     human_igh_imgt_load_s5f(&s5f);
 
     Pipeline pl = pipeline_build(&cfg);
@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
 
         /* Mutate */
         S5FResult mres;
-        s5f_mutate(&s5f, &seq, &rec, &bench_rng, &mres);
+        s5f_mutate(&s5f, &cfg, &seq, &rec, &bench_rng, &mres);
 
         /* Serialize */
         airr_serialize(&seq, &rec, &cfg, &ctx, &records[success]);

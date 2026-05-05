@@ -190,7 +190,7 @@ static int test_kmer_encoding(void) {
  */
 static int test_set_mutability_str(void) {
     S5FModel model;
-    s5f_model_init(&model, 0.05, 0.15, false);
+    s5f_model_init(&model, 0.05, 0.15);
 
     s5f_set_mutability_str(&model, "ACGTA", 0.42);
 
@@ -213,7 +213,7 @@ static int test_set_mutability_str(void) {
  */
 static int test_substitution_cumulative(void) {
     S5FModel model;
-    s5f_model_init(&model, 0.05, 0.15, false);
+    s5f_model_init(&model, 0.05, 0.15);
 
     /* Set substitution for AAAAA: A→C (0.3), A→G (0.5), A→T (0.2) */
     int key = s5f_encode_kmer(0, 0, 0, 0, 0);
@@ -290,7 +290,7 @@ static int test_s5f_basic_mutation(void) {
     RngState _trng; rng_seed(&_trng, 42, 0);
 
     S5FModel model;
-    s5f_model_init(&model, 0.10, 0.10, false);
+    s5f_model_init(&model, 0.10, 0.10);
     populate_uniform_model(&model);
 
     ASeq seq;
@@ -299,7 +299,7 @@ static int test_s5f_basic_mutation(void) {
     SimRecord rec = {0};
     S5FResult result;
 
-    s5f_mutate(&model, &seq, &rec, &_trng, &result);
+    s5f_mutate(&model, NULL, &seq, &rec, &_trng, &result);
 
     /* With 10% rate on 40bp, target = 4 mutations */
     if (result.count < 1 || result.count > 10) {
@@ -331,7 +331,7 @@ static int test_s5f_np_awareness(void) {
     RngState _trng; rng_seed(&_trng, 123, 0);
 
     S5FModel model;
-    s5f_model_init(&model, 0.10, 0.10, false);
+    s5f_model_init(&model, 0.10, 0.10);
     populate_uniform_model(&model);
 
     ASeq seq;
@@ -340,7 +340,7 @@ static int test_s5f_np_awareness(void) {
     SimRecord rec = {0};
     S5FResult result;
 
-    s5f_mutate(&model, &seq, &rec, &_trng, &result);
+    s5f_mutate(&model, NULL, &seq, &rec, &_trng, &result);
 
     /* Check that no mutation is at positions 20-24 (NP1 region) */
     for (int m = 0; m < result.count; m++) {
@@ -363,7 +363,7 @@ static int test_s5f_zero_rate(void) {
     RngState _trng; rng_seed(&_trng, 99, 0);
 
     S5FModel model;
-    s5f_model_init(&model, 0.0, 0.0, false);
+    s5f_model_init(&model, 0.0, 0.0);
     populate_uniform_model(&model);
 
     ASeq seq;
@@ -372,7 +372,7 @@ static int test_s5f_zero_rate(void) {
     SimRecord rec = {0};
     S5FResult result;
 
-    s5f_mutate(&model, &seq, &rec, &_trng, &result);
+    s5f_mutate(&model, NULL, &seq, &rec, &_trng, &result);
 
     if (result.count != 0) {
         fprintf(stderr, "Zero rate should give 0 mutations, got %d\n", result.count);
@@ -393,7 +393,7 @@ static int test_s5f_writes_to_aseq(void) {
     RngState _trng; rng_seed(&_trng, 77, 0);
 
     S5FModel model;
-    s5f_model_init(&model, 0.15, 0.15, false);
+    s5f_model_init(&model, 0.15, 0.15);
     populate_uniform_model(&model);
 
     ASeq seq;
@@ -405,7 +405,7 @@ static int test_s5f_writes_to_aseq(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &_trng, &result);
+    s5f_mutate(&model, NULL, &seq, &rec, &_trng, &result);
 
     char after[64];
     aseq_to_string(&seq, after, sizeof(after));
@@ -447,7 +447,7 @@ static int test_s5f_mutation_records(void) {
     RngState _trng; rng_seed(&_trng, 55, 0);
 
     S5FModel model;
-    s5f_model_init(&model, 0.10, 0.10, false);
+    s5f_model_init(&model, 0.10, 0.10);
     populate_uniform_model(&model);
 
     ASeq seq;
@@ -464,7 +464,7 @@ static int test_s5f_mutation_records(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &_trng, &result);
+    s5f_mutate(&model, NULL, &seq, &rec, &_trng, &result);
 
     /* Verify from_base matches germline at that position */
     for (int m = 0; m < result.count; m++) {
@@ -497,7 +497,7 @@ static int test_s5f_zero_mutability(void) {
     RngState _trng; rng_seed(&_trng, 200, 0);
 
     S5FModel model;
-    s5f_model_init(&model, 0.20, 0.20, false);
+    s5f_model_init(&model, 0.20, 0.20);
     /* Don't populate — all mutability stays 0 */
 
     ASeq seq;
@@ -505,7 +505,7 @@ static int test_s5f_zero_mutability(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &_trng, &result);
+    s5f_mutate(&model, NULL, &seq, &rec, &_trng, &result);
 
     if (result.count != 0) {
         fprintf(stderr, "Zero mutability should give 0 mutations, got %d\n",
@@ -526,7 +526,7 @@ static int test_s5f_v_only(void) {
     RngState _trng; rng_seed(&_trng, 300, 0);
 
     S5FModel model;
-    s5f_model_init(&model, 0.10, 0.10, false);
+    s5f_model_init(&model, 0.10, 0.10);
     populate_uniform_model(&model);
 
     ASeq seq;
@@ -535,7 +535,7 @@ static int test_s5f_v_only(void) {
 
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &_trng, &result);
+    s5f_mutate(&model, NULL, &seq, &rec, &_trng, &result);
 
     /* target = 10% of 20 = 2 mutations */
     if (result.count < 1 || result.count > 6) {
@@ -554,7 +554,7 @@ static int test_s5f_v_only(void) {
  */
 static int test_s5f_different_seeds(void) {
     S5FModel model;
-    s5f_model_init(&model, 0.15, 0.15, false);
+    s5f_model_init(&model, 0.15, 0.15);
     populate_uniform_model(&model);
 
     /* Run with seed 1 */
@@ -563,7 +563,7 @@ static int test_s5f_different_seeds(void) {
     build_test_seq(&seq1);
     SimRecord rec = {0};
     S5FResult r1;
-    s5f_mutate(&model, &seq1, &rec, &_trng, &r1);
+    s5f_mutate(&model, NULL, &seq1, &rec, &_trng, &r1);
     char s1[64];
     aseq_to_string(&seq1, s1, sizeof(s1));
 
@@ -572,7 +572,7 @@ static int test_s5f_different_seeds(void) {
     ASeq seq2;
     build_test_seq(&seq2);
     S5FResult r2;
-    s5f_mutate(&model, &seq2, &rec, &_trng, &r2);
+    s5f_mutate(&model, NULL, &seq2, &rec, &_trng, &r2);
     char s2[64];
     aseq_to_string(&seq2, s2, sizeof(s2));
 
@@ -601,15 +601,20 @@ static int test_s5f_productive_no_stops(void) {
 
     S5FModel model;
     /* High rate to force many attempts */
-    s5f_model_init(&model, 0.20, 0.20, true);
+    s5f_model_init(&model, 0.20, 0.20);
     populate_uniform_model(&model);
 
     ASeq seq;
     build_test_seq(&seq);
 
+    SimConfig cfg;
+    sim_config_init(&cfg, CHAIN_IGH);
+    cfg.rng = &_trng;
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_PRODUCTIVE_ONLY);
+
     SimRecord rec = {0};
     S5FResult result;
-    s5f_mutate(&model, &seq, &rec, &_trng, &result);
+    s5f_mutate(&model, &cfg, &seq, &rec, &_trng, &result);
 
     /* Check that no stop codon exists in the result sequence */
     char mutated[64];

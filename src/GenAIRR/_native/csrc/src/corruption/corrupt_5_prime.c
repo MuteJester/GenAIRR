@@ -7,10 +7,33 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <stdlib.h>
 #include <string.h>
+
+static void apply_corrupt_5_candidate(ASeq *seq, SimRecord *rec,
+                                      int event,
+                                      int remove_amount,
+                                      int add_amount,
+                                      const char *add_bases) {
+    rec->corruption_5_event = event;
+
+    if (event == 1 || event == 3) {
+        if (remove_amount > 0) {
+            aseq_delete_head_n(seq, remove_amount);
+        }
+        rec->corruption_5_remove_amount = remove_amount;
+    }
+
+    if (event == 2 || event == 3) {
+        if (add_amount > 0) {
+            aseq_prepend_bases(seq, add_bases, add_amount, SEG_ADAPTER, 0);
+        }
+        rec->corruption_5_add_amount = add_amount;
+    }
+}
 
 void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     int len = aseq_length(seq);
@@ -23,9 +46,12 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     else if (r < 0.7) event = 2;  /* add */
     else               event = 3;  /* remove + add */
 
-    rec->corruption_5_event = event;
     TRACE("[corrupt_5'] event=%s, seq_len=%d",
           event == 1 ? "remove" : event == 2 ? "add" : "remove+add", len);
+
+    int remove_amount = 0;
+    int add_amount = 0;
+    char add_buf[50];
 
     /* Remove from 5' end. Respects min=max=0 as "no-op" — the rolled
      * event is still recorded so AIRR output stays consistent, but no
@@ -35,16 +61,10 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     if (event == 1 || event == 3) {
         int lo = cfg->corrupt_5_remove_min;
         int hi = cfg->corrupt_5_remove_max;
-        int amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
-        if (amount > hi) amount = hi;
-        if (amount >= len - 5) amount = len - 5;
-        if (amount < 0) amount = 0;
-
-        if (amount > 0) {
-            aseq_delete_head_n(seq, amount);
-        }
-        rec->corruption_5_remove_amount = amount;
-        TRACE("[corrupt_5'] removed %d bases from 5' end", amount);
+        remove_amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
+        if (remove_amount > hi) remove_amount = hi;
+        if (remove_amount >= len - 5) remove_amount = len - 5;
+        if (remove_amount < 0) remove_amount = 0;
     }
 
     /* Add random bases at 5' end. Same min=max=0 semantics as remove. */
@@ -52,20 +72,42 @@ void step_corrupt_5_prime(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         len = aseq_length(seq);
         int lo = cfg->corrupt_5_add_min;
         int hi = cfg->corrupt_5_add_max;
-        int amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
-        if (amount > hi) amount = hi;
-        if (amount > 50) amount = 50;
-        if (amount < 0) amount = 0;
+        add_amount = lo + (int)(rng_uniform(cfg->rng) * (hi - lo + 1));
+        if (add_amount > hi) add_amount = hi;
+        if (add_amount > 50) add_amount = 50;
+        if (add_amount < 0) add_amount = 0;
 
-        if (amount > 0) {
-            char buf[50];
-            for (int i = 0; i < amount; i++) {
+        if (add_amount > 0) {
+            for (int i = 0; i < add_amount; i++) {
                 static const char bases[] = "acgt";
-                buf[i] = bases[rng_range(cfg->rng, 4)];
+                add_buf[i] = bases[rng_range(cfg->rng, 4)];
             }
-            aseq_prepend_bases(seq, buf, amount, SEG_ADAPTER, 0);
         }
-        rec->corruption_5_add_amount = amount;
-        TRACE("[corrupt_5'] added %d random bases at 5' end", amount);
+    }
+
+    if (simcfg_productive_only(cfg)) {
+        ASeq seq_copy = *seq;
+        aseq_rebase(&seq_copy, seq);
+        SimRecord rec_copy = *rec;
+
+        apply_corrupt_5_candidate(
+            &seq_copy, &rec_copy, event, remove_amount, add_amount, add_buf);
+
+        ProductivityDecision decision = productivity_guard_state(
+            cfg, &seq_copy, &rec_copy, PROD_STAGE_OBSERVED);
+        if (decision != PROD_DECISION_ALLOW) {
+            TRACE("[corrupt_5'] skipped productive-unsafe event (type=%d, remove=%d, add=%d)",
+                  event, remove_amount, add_amount);
+            return;
+        }
+    }
+
+    apply_corrupt_5_candidate(seq, rec, event, remove_amount, add_amount, add_buf);
+
+    if (event == 1 || event == 3) {
+        TRACE("[corrupt_5'] removed %d bases from 5' end", remove_amount);
+    }
+    if (event == 2 || event == 3) {
+        TRACE("[corrupt_5'] added %d random bases at 5' end", add_amount);
     }
 }

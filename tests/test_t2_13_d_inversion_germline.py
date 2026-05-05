@@ -35,9 +35,10 @@ This test file would have caught that immediately.
 """
 from __future__ import annotations
 
-from GenAIRR import Experiment
+from GenAIRR import Experiment, Productivity
 from GenAIRR.ops import with_d_inversion, rate
 from GenAIRR.protocol import _resolve_config
+from GenAIRR.utilities.mcp_helpers import validate_codon_rail_snapshot
 
 
 _COMPLEMENT = {
@@ -283,3 +284,73 @@ class TestNonInvertedRecordsUnchanged:
             checked += 1
 
         assert checked > 0, "No non-inverted records were verifiable"
+
+
+class TestCodonRailAfterInversion:
+    """D inversion rewrites live coding bases, so the codon rail must
+    be rebuilt immediately afterward. Otherwise codon bases and cached
+    amino acids diverge until some later step happens to touch them."""
+
+    def test_post_d_inversion_codon_rail_matches_rewritten_bases(self):
+        sim = (Experiment.on("human_igh")
+               .recombine(with_d_inversion(1.0))
+               .compile(seed=42))
+
+        _, snapshots, _ = sim._sim.simulate_one_hooked(
+            ["post_functionality", "post_d_inversion"]
+        )
+        rails = {
+            snap["hook"]: sim._sim.get_snapshot_codon_rail(i)
+            for i, snap in enumerate(snapshots)
+        }
+
+        before_d = [c["bases"] for c in rails["post_functionality"]
+                    if c["seg"] == "D"]
+        after_d = [c["bases"] for c in rails["post_d_inversion"]
+                   if c["seg"] == "D"]
+
+        assert before_d, "Expected at least one D-overlapping codon before inversion"
+        assert after_d, "Expected at least one D-overlapping codon after inversion"
+        assert before_d != after_d, (
+            "D inversion should change at least one D-overlapping codon; "
+            "otherwise this test is not exercising the rail rebuild path"
+        )
+
+        validation = validate_codon_rail_snapshot(rails["post_d_inversion"])
+        assert validation["valid"], (
+            f"post_d_inversion codon rail is stale or inconsistent: "
+            f"{validation['issues'][:3]}"
+        )
+
+
+class TestProductiveGuardedInversion:
+    """When the productive contract is active, an inversion candidate
+    that would break functionality should be skipped locally rather
+    than emitted and left for observed-stage annotations to discover."""
+
+    def test_productive_only_skips_unsafe_inversion_seed4(self):
+        sim = (Experiment.on("human_igh")
+               .recombine(with_d_inversion(1.0))
+               .compile(seed=4, productivity=Productivity.PRODUCTIVE_ONLY))
+        sim._sim.set_param("max_productive_attempts", 200)
+
+        rec, snapshots, _ = sim._sim.simulate_one_hooked(
+            ["post_functionality", "post_d_inversion"]
+        )
+        by_hook = {snap["hook"]: snap["nodes"] for snap in snapshots}
+
+        before_d = "".join(n["cur"] for n in by_hook["post_functionality"]
+                            if n["seg"] == "D")
+        after_d = "".join(n["cur"] for n in by_hook["post_d_inversion"]
+                           if n["seg"] == "D")
+
+        assert rec["productive"] is True
+        assert rec["d_inverted"] is False, (
+            "Seed 4 should exercise the productive guard skip path for "
+            "an unsafe inversion candidate"
+        )
+        assert before_d
+        assert before_d == after_d, (
+            "D bases changed even though productive-only inversion should "
+            "have been skipped"
+        )

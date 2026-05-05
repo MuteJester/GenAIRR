@@ -187,7 +187,7 @@ static int test_productive_mode(void) {
     rng_seed(&_test_rng, 123, 0);
 
     SimConfig cfg = make_productive_capable_igh_config();
-    cfg.features.productivity = PRODUCTIVITY_PRODUCTIVE_ONLY;
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_PRODUCTIVE_ONLY);
     cfg.max_productive_attempts = 25;
 
     Pipeline p = pipeline_build(&cfg);
@@ -292,7 +292,7 @@ static int run_n_and_count_productive(SimConfig *cfg, int n,
 static int test_productivity_productive_only(void) {
     rng_seed(&_test_rng, 7, 0);
     SimConfig cfg = make_productive_capable_igh_config();
-    cfg.features.productivity   = PRODUCTIVITY_PRODUCTIVE_ONLY;
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_PRODUCTIVE_ONLY);
     cfg.max_productive_attempts = 200;   /* exhaustion ≈ 0 */
 
     int prod = 0, nonprod = 0;
@@ -311,7 +311,7 @@ static int test_productivity_productive_only(void) {
 static int test_productivity_non_productive_only(void) {
     rng_seed(&_test_rng, 11, 0);
     SimConfig cfg = make_productive_capable_igh_config();
-    cfg.features.productivity   = PRODUCTIVITY_NON_PRODUCTIVE_ONLY;
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_NON_PRODUCTIVE_ONLY);
     cfg.max_productive_attempts = 200;
 
     int prod = 0, nonprod = 0;
@@ -330,7 +330,7 @@ static int test_productivity_non_productive_only(void) {
 static int test_productivity_mixed_returns_both(void) {
     rng_seed(&_test_rng, 13, 0);
     SimConfig cfg = make_productive_capable_igh_config();
-    cfg.features.productivity = PRODUCTIVITY_MIXED;
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_MIXED);
 
     int prod = 0, nonprod = 0;
     run_n_and_count_productive(&cfg, 500, &prod, &nonprod);
@@ -362,19 +362,72 @@ static int test_productivity_mixed_returns_both(void) {
     return 0;
 }
 
-/* Back-compat: setting features.productivity via the legacy bool API
- * (`set_feature("productive", true)`) must continue to work. */
-static int test_productivity_legacy_bool_back_compat(void) {
+/* Native helper: callers that still reason in terms of the legacy mode
+ * enum must keep the V5 contract synchronized when changing it. */
+static int test_productivity_mode_sync_helper(void) {
     SimConfig cfg = make_igh_config();
-    /* Simulate the legacy API path: a bool maps onto the enum. */
-    cfg.features.productivity = PRODUCTIVITY_MIXED;     /* default */
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_MIXED);
     if (cfg.features.productivity != PRODUCTIVITY_MIXED) {
         sim_config_destroy(&cfg); return 1;
     }
-    cfg.features.productivity = PRODUCTIVITY_PRODUCTIVE_ONLY;
+    if (cfg.productivity_contract.target != PROD_TARGET_MIXED) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_PRODUCTIVE_ONLY);
     if (cfg.features.productivity != PRODUCTIVITY_PRODUCTIVE_ONLY) {
         sim_config_destroy(&cfg); return 1;
     }
+    if (cfg.productivity_contract.target != PROD_TARGET_PRODUCTIVE_ONLY) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    sim_config_destroy(&cfg);
+    return 0;
+}
+
+/* Native helper: strictness axis round-trips through the setter and
+ * is preserved across legacy mode changes (V5 step 26). */
+static int test_productivity_strictness_sync_helper(void) {
+    SimConfig cfg = make_igh_config();
+
+    /* Default is BEST_EFFORT */
+    if (cfg.productivity_contract.strictness != PROD_STRICTNESS_BEST_EFFORT) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    if (simcfg_productivity_strict(&cfg)) {
+        sim_config_destroy(&cfg); return 1;
+    }
+
+    /* Setter flips to STRICT */
+    simcfg_set_productivity_strictness(&cfg, PROD_STRICTNESS_STRICT);
+    if (cfg.productivity_contract.strictness != PROD_STRICTNESS_STRICT) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    if (!simcfg_productivity_strict(&cfg)) {
+        sim_config_destroy(&cfg); return 1;
+    }
+
+    /* Mode changes must preserve strictness */
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_PRODUCTIVE_ONLY);
+    if (cfg.productivity_contract.target != PROD_TARGET_PRODUCTIVE_ONLY) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    if (cfg.productivity_contract.strictness != PROD_STRICTNESS_STRICT) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    simcfg_set_productivity_mode(&cfg, PRODUCTIVITY_MIXED);
+    if (cfg.productivity_contract.target != PROD_TARGET_MIXED) {
+        sim_config_destroy(&cfg); return 1;
+    }
+    if (cfg.productivity_contract.strictness != PROD_STRICTNESS_STRICT) {
+        sim_config_destroy(&cfg); return 1;
+    }
+
+    /* Setter flips back to BEST_EFFORT */
+    simcfg_set_productivity_strictness(&cfg, PROD_STRICTNESS_BEST_EFFORT);
+    if (simcfg_productivity_strict(&cfg)) {
+        sim_config_destroy(&cfg); return 1;
+    }
+
     sim_config_destroy(&cfg);
     return 0;
 }
@@ -1262,7 +1315,8 @@ int main(void) {
     TEST(test_productivity_productive_only);
     TEST(test_productivity_non_productive_only);
     TEST(test_productivity_mixed_returns_both);
-    TEST(test_productivity_legacy_bool_back_compat);
+    TEST(test_productivity_mode_sync_helper);
+    TEST(test_productivity_strictness_sync_helper);
     TEST(test_debug_print);
     TEST(test_np_markov_deterministic);
     TEST(test_np_markov_gc_bias);

@@ -100,7 +100,6 @@ typedef struct {
 
     double min_mutation_rate;
     double max_mutation_rate;
-    bool   productive;
 } S5FModel;
 
 /**
@@ -109,8 +108,7 @@ typedef struct {
  * via s5f_set_mutability() and s5f_set_substitution().
  */
 void s5f_model_init(S5FModel *model,
-                     double min_rate, double max_rate,
-                     bool productive);
+                     double min_rate, double max_rate);
 
 /**
  * Set mutability for a single 5-mer key.
@@ -169,11 +167,14 @@ typedef struct {
  * NUC_FLAG_MUTATED). Only positions with segment V/D/J are eligible.
  *
  * @param model  The S5F model with loaded mutability/substitution data.
+ * @param cfg    Simulation config. May be NULL for standalone mixed-mode
+ *               tests. Productive guarded behavior requires a real config.
  * @param seq    The annotated sequence to mutate.
  * @param rec    Simulation record (junction anchors for productive mode).
  * @param result Output: mutation details.
  */
-void s5f_mutate(const S5FModel *model, ASeq *seq, const SimRecord *rec,
+void s5f_mutate(const S5FModel *model, const SimConfig *cfg,
+                 ASeq *seq, const SimRecord *rec,
                  struct RngState *rng, S5FResult *result);
 
 #endif /* GENAIRR_S5F_H */

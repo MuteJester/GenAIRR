@@ -9,6 +9,7 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <stdlib.h>
@@ -75,6 +76,12 @@ void step_long_read_errors(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
              * returns NULL on pool exhaustion (>= GENAIRR_MAX_SEQ_LEN
              * nodes already allocated). Break out — further insertions
              * will also fail and we'd over-count `insertions`. */
+            ProductivityDecision decision = productivity_guard_insertion(
+                cfg, seq, rec, PROD_STAGE_OBSERVED, runs[i].end,
+                runs[i].base, runs[i].end->segment, NUC_FLAG_INDEL_INS);
+            if (decision != PROD_DECISION_ALLOW) {
+                continue;
+            }
             if (aseq_insert_after(seq, runs[i].end, runs[i].base,
                                   runs[i].end->segment,
                                   NUC_FLAG_INDEL_INS) == NULL) {
@@ -87,6 +94,11 @@ void step_long_read_errors(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         } else {
             /* Deletion: remove last base of run */
             if (runs[i].length > 1 && !nuc_is_anchor(runs[i].end)) {
+                ProductivityDecision decision = productivity_guard_deletion(
+                    cfg, seq, rec, PROD_STAGE_OBSERVED, runs[i].end);
+                if (decision != PROD_DECISION_ALLOW) {
+                    continue;
+                }
                 aseq_delete(seq, runs[i].end);
                 deletions_applied++;
             }

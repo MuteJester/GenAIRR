@@ -34,6 +34,7 @@ typedef struct {
     int       n_steps;
     int       retry_boundary;    /* index of assess_functionality, or -1 */
     int       post_mutation_start; /* first step that must run after SHM */
+    int       observation_start; /* first observation/corruption step */
 } Pipeline;
 
 /**
@@ -46,6 +47,20 @@ typedef struct {
 Pipeline  pipeline_build(const SimConfig *cfg);
 
 /* ── Simulation record ────────────────────────────────────────── */
+
+typedef struct {
+    bool valid;
+    bool productive;
+    bool stop_codon;
+    bool vj_in_frame;
+    char note[256];
+} ProductivityStatus;
+
+typedef enum {
+    PROD_STAGE_REARRANGEMENT = 0,
+    PROD_STAGE_MOLECULE      = 1,
+    PROD_STAGE_OBSERVED      = 2,
+} ProductivityStage;
 
 /**
  * SimRecord holds scalar metadata that lives alongside the ASeq.
@@ -72,7 +87,9 @@ struct SimRecord {
     int  np1_length;
     int  np2_length;
 
-    /* Functionality assessment */
+    /* Legacy current-stage functionality state. Phase 2 begins
+     * snapshotting this state into the stage-specific statuses below
+     * while the rest of the engine still reads these fields directly. */
     bool productive;
     bool stop_codon;
     bool vj_in_frame;
@@ -125,12 +142,31 @@ struct SimRecord {
     int  n_insertions;
     int  n_deletions;
 
+    /* Stage-specific productivity snapshots captured at named
+     * pipeline boundaries. */
+    ProductivityStatus rearrangement_status;
+    ProductivityStatus molecule_status;
+    ProductivityStatus observed_status;
+
     /* Note/status (small fixed buffer) */
     char note[256];
 };
 
 /** Reset a SimRecord to zero state. */
 void  sim_record_init(SimRecord *rec);
+
+/** Capture an explicit productivity status into a stage slot. */
+void  productivity_capture_status_from_values(
+    SimRecord *rec, ProductivityStage stage,
+    bool productive, bool stop_codon, bool vj_in_frame,
+    const char *note);
+
+/** Capture the current legacy productivity fields into a stage slot. */
+void  productivity_capture_status(SimRecord *rec, ProductivityStage stage);
+
+/** Re-evaluate productivity on a cloned sequence/record state. */
+void  productivity_evaluate_status(const ASeq *seq, const SimRecord *rec,
+                                   ProductivityStatus *out);
 
 /* ── Snapshot (for introspection hooks) ──────────────────────── */
 

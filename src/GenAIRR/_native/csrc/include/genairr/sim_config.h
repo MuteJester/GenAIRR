@@ -99,6 +99,11 @@ typedef struct {
 typedef struct {
     ChainType     chain_type;
     SimFeatures   features;
+    /* Canonical V5-native contract state. The public API still keeps
+     * this synchronized with features.productivity for back-compat, but
+     * native runtime code should prefer this contract as the source of
+     * truth for productive / non-productive filtering decisions. */
+    ProductivityContract productivity_contract;
 
     /* Allele pools (one per segment type that exists) */
     AllelePool    v_alleles;
@@ -217,6 +222,38 @@ typedef struct {
      * sim_config_init initializes it to NULL. */
     RngState     *rng;
 } SimConfig;
+
+/* Native callers that change the legacy mode field must use this
+ * helper so the V5 contract state stays synchronized. Existing
+ * strictness is preserved across mode changes — only the target
+ * field is derived from the legacy enum, since the legacy enum has
+ * no strictness axis. */
+static inline void simcfg_set_productivity_mode(SimConfig *cfg,
+                                                ProductivityMode mode) {
+    if (!cfg) return;
+    ProductivityStrictness prior_strictness = cfg->productivity_contract.strictness;
+    cfg->features.productivity = mode;
+    cfg->productivity_contract = productivity_contract_from_mode(mode);
+    cfg->productivity_contract.strictness = prior_strictness;
+}
+
+static inline void simcfg_set_productivity_strictness(
+        SimConfig *cfg, ProductivityStrictness strictness) {
+    if (!cfg) return;
+    cfg->productivity_contract.strictness = strictness;
+}
+
+static inline bool simcfg_has_productivity_contract(const SimConfig *cfg) {
+    return cfg && cfg->productivity_contract.target != PROD_TARGET_MIXED;
+}
+
+static inline bool simcfg_productive_only(const SimConfig *cfg) {
+    return cfg && cfg->productivity_contract.target == PROD_TARGET_PRODUCTIVE_ONLY;
+}
+
+static inline bool simcfg_productivity_strict(const SimConfig *cfg) {
+    return cfg && cfg->productivity_contract.strictness == PROD_STRICTNESS_STRICT;
+}
 
 /* ── Lifecycle ────────────────────────────────────────────────── */
 

@@ -12,6 +12,11 @@ __pycache__/
 /dist/
 *.whl
 
+# ── V6 Rust build artifacts ──────────────────────────────────
+engine_rs/target/
+engine_rs/Cargo.lock
+/target/
+
 # ── C build artifacts ────────────────────────────────────────
 src/GenAIRR/_native/csrc/build/
 src/GenAIRR/_native/csrc/build_profile/

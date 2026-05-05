@@ -7,6 +7,7 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <ctype.h>
@@ -43,6 +44,11 @@ void step_pcr_amplification(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         if (rng_uniform(cfg->rng) >= eff_rate) continue;
 
         char new_base = random_other_base(cfg->rng, n->current);
+        ProductivityDecision decision = productivity_guard_substitution(
+            cfg, seq, rec, PROD_STAGE_OBSERVED, n, new_base);
+        if (decision != PROD_DECISION_ALLOW) {
+            continue;
+        }
         aseq_mutate(seq, n, new_base, NUC_FLAG_PCR_ERROR);
         error_count++;
     }

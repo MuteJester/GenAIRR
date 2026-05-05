@@ -55,22 +55,69 @@ static int generate_np_uniform(RngState *rng, char *buf, int max_buf) {
     return len;
 }
 
+/* Sample an NP length from the empirical distribution, optionally
+ * constrained to len % 3 == target_mod_3 (constraint-aware sampling
+ * for V5 frame-respecting rearrangement, step 29).
+ *
+ * target_mod_3 < 0 → unconstrained (matches legacy behaviour).
+ * target_mod_3 ∈ {0,1,2} → renormalise empirical probs over allowed
+ *   lengths and draw from that filtered distribution.
+ *
+ * Returns -1 when the empirical distribution has zero mass over the
+ * allowed lengths (caller should fall back to unconstrained sampling
+ * or accept that no constraint-respecting NP exists for this allele
+ * pair).
+ */
+static int sample_np_length(RngState *rng, const NpDist *np,
+                            int target_mod_3) {
+    if (np->max_length <= 0) return 0;
+    if (target_mod_3 < 0) {
+        return sample_categorical(rng, np->length_probs, np->max_length + 1);
+    }
+
+    double total = 0.0;
+    for (int i = 0; i <= np->max_length; i++) {
+        if ((i % 3) == target_mod_3) total += np->length_probs[i];
+    }
+    if (total < 1e-12) return -1;
+
+    double u = rng_uniform(rng) * total;
+    double cum = 0.0;
+    int last_valid = -1;
+    for (int i = 0; i <= np->max_length; i++) {
+        if ((i % 3) != target_mod_3) continue;
+        cum += np->length_probs[i];
+        last_valid = i;
+        if (u <= cum) return i;
+    }
+    return last_valid;
+}
+
 /* Sample an NP region from the empirical TdT Markov model. Length is
  * drawn from `np->length_probs`; the first base from `np->first_base`;
  * subsequent bases from `np->transitions[pos][prev]`. Position is
  * clamped to the last available transition row when the sampled
  * length exceeds n_positions. When a transition row is unobserved
- * (sums to zero), falls back to the marginal first_base distribution. */
+ * (sums to zero), falls back to the marginal first_base distribution.
+ *
+ * `target_mod_3` constrains the sampled length: see `sample_np_length`.
+ * Pass -1 for legacy behaviour. Returns -1 when the constraint cannot
+ * be satisfied; caller decides whether to fall back. */
 static int generate_np_markov(RngState *rng, char *buf, int max_buf,
-                              const NpDist *np) {
+                              const NpDist *np, int target_mod_3) {
     if (np->max_length <= 0) {
         buf[0] = '\0';
         return 0;
     }
 
     /* 1. Sample length from empirical distribution. */
-    int len = sample_categorical(rng, np->length_probs, np->max_length + 1);
-    if (len <= 0) {
+    int len = sample_np_length(rng, np, target_mod_3);
+    if (len < 0) {
+        /* Constraint unsatisfiable: signal caller. */
+        buf[0] = '\0';
+        return -1;
+    }
+    if (len == 0) {
         buf[0] = '\0';
         return 0;
     }
@@ -108,9 +155,14 @@ static int generate_np_markov(RngState *rng, char *buf, int max_buf,
     return len;
 }
 
-static int generate_np(RngState *rng, char *buf, int max_buf, const NpDist *np) {
+/* Generate an NP region (length + bases). When `target_mod_3 >= 0`
+ * the empirical Markov path constrains the length; the uniform fallback
+ * silently ignores the constraint (it has no length distribution to
+ * filter). Returns -1 on a hard constraint failure. */
+static int generate_np(RngState *rng, char *buf, int max_buf,
+                       const NpDist *np, int target_mod_3) {
     if (np && np->length_probs) {
-        return generate_np_markov(rng, buf, max_buf, np);
+        return generate_np_markov(rng, buf, max_buf, np, target_mod_3);
     }
     return generate_np_uniform(rng, buf, max_buf);
 }
@@ -200,6 +252,70 @@ void step_assemble(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
     int v_p_len = 0, d5_p_len = 0, d3_p_len = 0, j_p_len = 0;
 
+    /* V5 step 29: frame-aware NP1 length sampling for VJ chains.
+     *
+     * In a VJ chain (no D) the junction length is fully determined by
+     * V/J alleles, V/J trims, V3' P-nuc length, J5' P-nuc length, and
+     * NP1 length. The first four are fixed at this point; only NP1 is
+     * still being sampled. We pre-compute the deterministic part of
+     * the junction modulo 3 and tell `sample_np_length` to draw NP1
+     * only from lengths that bring the total to a multiple of 3.
+     *
+     * This eliminates frame-induced rearrangement retries on light
+     * chains entirely (modulo stop codons in the junction, which are
+     * rarer). The non-PRODUCTIVE_ONLY path passes target_mod_3=-1
+     * and behaves exactly as before — empirical NP length distribution
+     * is preserved untouched.
+     *
+     * VDJ chains stay on the legacy unconstrained path for now (NP1+
+     * NP2+D interplay is the next step). */
+    int np1_target_mod_3 = -1;
+    int j5_p_len_pre = 0;          /* J5' P-nuc length, pre-sampled when
+                                       constraining NP1 (see below). */
+    bool j5_p_pre_sampled = false;
+    if (!has_d &&
+        simcfg_productive_only(cfg) &&
+        rec->v_allele && allele_has_anchor(rec->v_allele) &&
+        rec->j_allele && allele_has_anchor(rec->j_allele)) {
+
+        /* V contribution to junction: bases from V Cys to end of
+         * trimmed V. Cys codon starts at v_anchor in original allele
+         * coordinates and the trimmed V ends at length - v_trim_3. */
+        int v_part = (rec->v_allele->length - rec->v_trim_3)
+                     - rec->v_allele->anchor;
+        if (v_part < 0) v_part = 0;
+
+        /* J contribution: from start of trimmed J to end of W/F codon
+         * (anchor + 3 bases inclusive, exclusive upper bound). */
+        int j_part = (rec->j_allele->anchor - rec->j_trim_5) + 3;
+        if (j_part < 0) j_part = 0;
+
+        /* V3' P-nuc length is determined here too — replicate the
+         * "v_trim_3 == 0" gate of the actual append below. The append
+         * reads `v_p_len` later; we set it now and skip the sample
+         * call inside the V branch. */
+        if (rec->v_trim_3 == 0 && (rec->v_allele->length - rec->v_trim_5) > 0) {
+            v_p_len = sample_p_nuc_length(cfg->rng, p_dist);
+        }
+
+        /* J5' P-nuc is normally sampled in the J branch AFTER NP1.
+         * Pre-sample it here so we know its contribution to the
+         * fixed junction modulo before we draw NP1. */
+        if (rec->j_trim_5 == 0 &&
+            (rec->j_allele->length - rec->j_trim_5 - rec->j_trim_3) > 0) {
+            j5_p_len_pre = sample_p_nuc_length(cfg->rng, p_dist);
+        }
+        j5_p_pre_sampled = true;
+
+        int fixed_mod = (v_part + v_p_len + j5_p_len_pre + j_part) % 3;
+        np1_target_mod_3 = (3 - fixed_mod) % 3;
+
+        TRACE("[assemble] VJ frame-aware sampling: v_part=%d v3p=%d "
+              "j5p=%d j_part=%d fixed_mod=%d => np1_target_mod_3=%d",
+              v_part, v_p_len, j5_p_len_pre, j_part, fixed_mod,
+              np1_target_mod_3);
+    }
+
     /* ── Append V segment (trimmed) ─────────────────────────── */
     if (rec->v_allele) {
         const char *v_seq = rec->v_allele->seq;
@@ -217,9 +333,13 @@ void step_assemble(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
             aseq_append_segment(seq, v_seq + v_start, v_len,
                                 SEG_V, v_start, v_anchor);
 
-            /* V 3' P-nuc: only when v_trim_3 == 0 (untrimmed end). */
+            /* V 3' P-nuc: only when v_trim_3 == 0 (untrimmed end).
+             * In the VJ frame-aware path the length is pre-sampled
+             * above so we don't double-draw RNG; just use it. */
             if (rec->v_trim_3 == 0) {
-                int k = sample_p_nuc_length(cfg->rng, p_dist);
+                int k = (np1_target_mod_3 >= 0)
+                        ? v_p_len
+                        : sample_p_nuc_length(cfg->rng, p_dist);
                 v_p_len = append_p_nuc(seq, v_seq + v_start, v_len, k,
                                        SEG_NP1, /*head_side=*/false);
             }
@@ -232,7 +352,18 @@ void step_assemble(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     /* ── Generate and append NP1 (TdT N-nucleotides) ───────── */
     {
         char np1_buf[GENAIRR_NP_BUF_SIZE];
-        int np1_n_len = generate_np(cfg->rng, np1_buf, GENAIRR_NP_BUF_SIZE, &cfg->np[0]);
+        int np1_n_len = generate_np(cfg->rng, np1_buf,
+                                    GENAIRR_NP_BUF_SIZE, &cfg->np[0],
+                                    np1_target_mod_3);
+        if (np1_n_len < 0) {
+            /* Frame constraint unsatisfiable for this V/J pair; fall
+             * back to unconstrained sampling. The retry loop will
+             * still catch any non-productive output. */
+            TRACE("[assemble] NP1 frame constraint mod=%d unsatisfiable, "
+                  "falling back to unconstrained", np1_target_mod_3);
+            np1_n_len = generate_np(cfg->rng, np1_buf,
+                                    GENAIRR_NP_BUF_SIZE, &cfg->np[0], -1);
+        }
         if (np1_n_len > 0) {
             aseq_append_np(seq, np1_buf, np1_n_len,
                            SEG_NP1, NUC_FLAG_N_NUCLEOTIDE);
@@ -274,7 +405,10 @@ void step_assemble(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
         /* ── Generate and append NP2 (TdT N-nucleotides) ───── */
         char np2_buf[GENAIRR_NP_BUF_SIZE];
-        int np2_n_len = generate_np(cfg->rng, np2_buf, GENAIRR_NP_BUF_SIZE, &cfg->np[1]);
+        /* VDJ NP2 stays on the legacy unconstrained path; the joint
+         * NP1+NP2 frame-aware path is a follow-up step. */
+        int np2_n_len = generate_np(cfg->rng, np2_buf,
+                                    GENAIRR_NP_BUF_SIZE, &cfg->np[1], -1);
         if (np2_n_len > 0) {
             aseq_append_np(seq, np2_buf, np2_n_len,
                            SEG_NP2, NUC_FLAG_N_NUCLEOTIDE);
@@ -292,9 +426,15 @@ void step_assemble(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
         if (j_len > 0) {
             /* J 5' P-nuc: only when j_trim_5 == 0. Goes BEFORE the J
              * segment, tagged with the segment between D and J (NP2
-             * for VDJ, NP1 for VJ chains). */
+             * for VDJ, NP1 for VJ chains).
+             *
+             * V5 step 29: when the VJ frame-aware path pre-sampled
+             * the J5'P length above, reuse it instead of drawing a
+             * second time so RNG consumption stays consistent. */
             if (rec->j_trim_5 == 0) {
-                int k = sample_p_nuc_length(cfg->rng, p_dist);
+                int k = j5_p_pre_sampled
+                        ? j5_p_len_pre
+                        : sample_p_nuc_length(cfg->rng, p_dist);
                 j_p_len = append_p_nuc(seq, j_seq + j_start, j_len, k,
                                        j5_np_seg, /*head_side=*/true);
             }

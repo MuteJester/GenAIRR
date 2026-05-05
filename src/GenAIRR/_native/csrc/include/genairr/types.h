@@ -53,8 +53,14 @@ typedef enum {
  *       (T1-15: 33% in-frame × ~68% stop-free).
  *   PRODUCTIVITY_PRODUCTIVE_ONLY     (= 1)
  *       Retry rearrangement (up to max_productive_attempts) until
- *       rec.productive == true. T2-16 caveat: SHM runs after the
- *       retry boundary and may flip individual records.
+ *       rec.productive == true. S5F mutation, uniform mutation,
+ *       D inversion, receptor revision, selection pressure, PCR
+ *       amplification, quality-profile sequencing errors, paired-end
+ *       read modeling, long-read homopolymer indels, 5' end
+ *       corruption, 3' end corruption, observed indels, contaminants,
+ *       and insert_ns now honor that contract downstream, but other
+ *       later edit paths can still flip the final observed record
+ *       until the guard rollout is wider.
  *   PRODUCTIVITY_NON_PRODUCTIVE_ONLY (= 2)
  *       Symmetric — retry until rec.productive == false. Useful
  *       for negative training data and out-of-frame statistics.
@@ -67,6 +73,48 @@ typedef enum {
     PRODUCTIVITY_PRODUCTIVE_ONLY     = 1,
     PRODUCTIVITY_NON_PRODUCTIVE_ONLY = 2,
 } ProductivityMode;
+
+/* ── Productivity contract (V5 native-first model) ───────────── */
+
+typedef enum {
+    PROD_TARGET_MIXED               = 0,
+    PROD_TARGET_PRODUCTIVE_ONLY     = 1,
+    PROD_TARGET_NON_PRODUCTIVE_ONLY = 2,
+} ProductivityTarget;
+
+typedef enum {
+    PROD_SCOPE_REARRANGEMENT = 0,
+    PROD_SCOPE_MOLECULE      = 1,
+    PROD_SCOPE_OBSERVED      = 2,
+} ProductivityScope;
+
+typedef enum {
+    PROD_STRICTNESS_BEST_EFFORT = 0,
+    PROD_STRICTNESS_STRICT      = 1,
+} ProductivityStrictness;
+
+typedef struct {
+    ProductivityTarget      target;
+    ProductivityScope       scope;
+    ProductivityStrictness  strictness;
+} ProductivityContract;
+
+/* Bridge helper for the public/API boundary, which still accepts the
+ * legacy ProductivityMode and converts it into the native contract. */
+static inline ProductivityContract
+productivity_contract_from_mode(ProductivityMode mode) {
+    ProductivityContract c = {
+        .target = PROD_TARGET_MIXED,
+        .scope = PROD_SCOPE_REARRANGEMENT,
+        .strictness = PROD_STRICTNESS_BEST_EFFORT,
+    };
+    if (mode == PRODUCTIVITY_PRODUCTIVE_ONLY) {
+        c.target = PROD_TARGET_PRODUCTIVE_ONLY;
+    } else if (mode == PRODUCTIVITY_NON_PRODUCTIVE_ONLY) {
+        c.target = PROD_TARGET_NON_PRODUCTIVE_ONLY;
+    }
+    return c;
+}
 
 /* ── Chain type ───────────────────────────────────────────────── */
 

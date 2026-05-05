@@ -9,6 +9,7 @@
 void sim_config_init(SimConfig *cfg, ChainType chain_type) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->chain_type = chain_type;
+    simcfg_set_productivity_mode(cfg, PRODUCTIVITY_MIXED);
 
     /* Sensible defaults */
     cfg->max_productive_attempts = 25;

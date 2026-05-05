@@ -209,7 +209,7 @@ static int test_pipeline_with_s5f(void) {
 
     /* Apply S5F mutations */
     S5FResult result;
-    s5f_mutate(&s5f, &seq, &rec, &_test_rng, &result);
+    s5f_mutate(&s5f, &cfg, &seq, &rec, &_test_rng, &result);
 
     /* Check mutations occurred */
     if (result.count == 0) {
@@ -351,7 +351,7 @@ static int test_reassess_with_real_alleles(void) {
 
     /* Apply S5F mutations */
     S5FResult mresult;
-    s5f_mutate(&s5f, &seq, &rec, &_test_rng, &mresult);
+    s5f_mutate(&s5f, &cfg, &seq, &rec, &_test_rng, &mresult);
 
     /* Derive V allele call from bitmap */
     AlleleCallResult vr;
@@ -447,7 +447,7 @@ static int test_batch_with_mutation(void) {
         }
 
         S5FResult result;
-        s5f_mutate(&s5f, &seq, &rec, &_test_rng, &result);
+        s5f_mutate(&s5f, &cfg, &seq, &rec, &_test_rng, &result);
         mutations_total += result.count;
         seq_count++;
         aseq_reset(&seq);
@@ -477,7 +477,7 @@ int main(void) {
 
     /* Load data once */
     human_igh_imgt_load_config(&cfg);
-    s5f_model_init(&s5f, 0.05, 0.15, false);
+    s5f_model_init(&s5f, 0.05, 0.15);
     human_igh_imgt_load_s5f(&s5f);
 
     /* Attach test RNG to the manual SimConfig (the embedded loader

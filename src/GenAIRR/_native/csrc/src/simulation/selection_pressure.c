@@ -39,6 +39,7 @@
  */
 
 #include "genairr/pipeline.h"
+#include "genairr/productivity_guard.h"
 #include "genairr/rand_util.h"
 #include "genairr/trace.h"
 #include <stdlib.h>
@@ -203,15 +204,18 @@ void step_selection_pressure(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
     double strength = cfg->selection_strength;
     if (strength <= 0.0) return;
 
+    const bool productive_guard = simcfg_productive_only(cfg);
+
     double cdr_accept    = 1.0 - strength * (1.0 - cfg->cdr_r_acceptance);
     double fwr_accept    = 1.0 - strength * (1.0 - cfg->fwr_r_acceptance);
     double anchor_accept = 1.0 - strength * (1.0 - cfg->anchor_r_acceptance);
 
-    TRACE("[selection] strength=%.2f, CDR_R=%.2f, FWR_R=%.2f, ANCHOR_R=%.2f",
-          strength, cdr_accept, fwr_accept, anchor_accept);
+    TRACE("[selection] strength=%.2f, CDR_R=%.2f, FWR_R=%.2f, ANCHOR_R=%.2f, productive_guard=%s",
+          strength, cdr_accept, fwr_accept, anchor_accept,
+          productive_guard ? "yes" : "no");
 
     int reverted_cdr = 0, reverted_fwr = 0, reverted_anchor = 0;
-    int kept_r = 0, kept_s = 0, skipped_seg = 0;
+    int kept_r = 0, kept_s = 0, skipped_seg = 0, blocked_productive = 0;
 
     /* Walk the entire sequence; only act on coding-segment mutations. */
     for (Nuc *n = seq->head; n; n = n->next) {
@@ -236,12 +240,23 @@ void step_selection_pressure(const SimConfig *cfg, ASeq *seq, SimRecord *rec) {
 
         if (rng_uniform(cfg->rng) < accept) { kept_r++; continue; }
 
+        if (productive_guard && n->germline != '\0') {
+            ProductivityDecision decision = productivity_guard_substitution(
+                cfg, seq, rec, PROD_STAGE_MOLECULE, n, n->germline);
+            if (decision != PROD_DECISION_ALLOW) {
+                kept_r++;
+                blocked_productive++;
+                continue;
+            }
+        }
+
         aseq_revert(seq, n);
         if      (region == REGION_ANCHOR) reverted_anchor++;
         else if (region == REGION_CDR)    reverted_cdr++;
         else                              reverted_fwr++;
     }
 
-    TRACE("[selection] kept %d S + %d R, reverted %d FWR + %d CDR + %d ANCHOR, skipped %d unselectable",
-          kept_s, kept_r, reverted_fwr, reverted_cdr, reverted_anchor, skipped_seg);
+    TRACE("[selection] kept %d S + %d R, reverted %d FWR + %d CDR + %d ANCHOR, blocked %d productive-unsafe reverts, skipped %d unselectable",
+          kept_s, kept_r, reverted_fwr, reverted_cdr, reverted_anchor,
+          blocked_productive, skipped_seg);
 }

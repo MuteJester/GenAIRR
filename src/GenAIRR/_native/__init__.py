@@ -140,6 +140,14 @@ def _load_lib() -> ctypes.CDLL:
     lib.genairr_simulate.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p]
     lib.genairr_simulate.restype = ctypes.c_int
 
+    # ── genairr_get_strict_retry_count (V5/Step 28) ──
+    lib.genairr_get_strict_retry_count.argtypes = [ctypes.c_void_p]
+    lib.genairr_get_strict_retry_count.restype = ctypes.c_uint64
+
+    # ── genairr_reset_strict_retry_count ──
+    lib.genairr_reset_strict_retry_count.argtypes = [ctypes.c_void_p]
+    lib.genairr_reset_strict_retry_count.restype = None
+
     # ── genairr_version ──
     lib.genairr_version.argtypes = []
     lib.genairr_version.restype = ctypes.c_char_p
@@ -409,6 +417,21 @@ class CSimulator:
     def set_seed(self, seed: int) -> None:
         """Set the random seed (0 = time-based)."""
         self._lib.genairr_set_seed(self._handle, seed)
+
+    @property
+    def strict_retry_count(self) -> int:
+        """Number of STRICT observed-stage retries triggered across
+        all batched simulate calls on this handle since the last reset.
+
+        See ``genairr_get_strict_retry_count`` (V5/Step 28). Counts
+        retries (not total attempts), so a 1-attempt success contributes 0.
+        Useful for verifying STRICT actually fired in tests.
+        """
+        return int(self._lib.genairr_get_strict_retry_count(self._handle))
+
+    def reset_strict_retry_count(self) -> None:
+        """Reset the STRICT retry counter to zero."""
+        self._lib.genairr_reset_strict_retry_count(self._handle)
 
     def set_mutation_model(self, name: str) -> None:
         """Select the SHM kernel: ``"s5f"`` (default) or ``"uniform"``.
