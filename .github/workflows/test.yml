@@ -45,8 +45,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install maturin pytest pandas
 
-      - name: Build & install genairr_engine
-        run: maturin develop --release -m engine_rs/Cargo.toml
+      - name: Build genairr_engine wheel
+        run: maturin build --release --out dist -m engine_rs/Cargo.toml
+
+      - name: Install genairr_engine wheel
+        shell: bash
+        run: pip install dist/genairr_engine-*.whl
 
       - name: Install GenAIRR (pure-Python)
         run: pip install -e .
