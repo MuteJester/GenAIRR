@@ -1,18 +1,17 @@
 [build-system]
-requires = ["setuptools>=64", "wheel", "cmake>=3.14", "ninja>=1.10"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.cibuildwheel]
-# Skip PyPy, 32-bit, and musl i686
-skip = "pp* *-musllinux_i686 *-win32"
+# The simulation kernel ships separately as `genairr_engine` (built
+# with maturin from `engine_rs/`). End-users typically install both
+# wheels; in CI we build them in two passes.
 
-# Smoke test: verify the C library loads after wheel install
-test-command = "python -c \"from GenAIRR._native import get_version; print('GenAIRR C backend:', get_version())\""
+[tool.cibuildwheel]
+# Skip PyPy, 32-bit, and musl i686.
+skip = "pp* *-musllinux_i686 *-win32"
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64", "aarch64"]
-# Let cibuildwheel choose its default manylinux images
-# cmake and ninja are build-system requires, installed automatically by pip
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]

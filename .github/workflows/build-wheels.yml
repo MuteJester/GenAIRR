@@ -1,6 +1,9 @@
 # Build pre-compiled wheels for all platforms and publish to PyPI.
 # Triggered on release publish or version tag push.
-# Tests must pass before wheels are built and published.
+#
+# Two packages are produced:
+#   - genairr_engine  (Rust, built per-OS/arch via maturin; abi3-py39)
+#   - GenAIRR         (pure Python, single universal wheel + sdist)
 
 name: Build Wheels & Publish
 
@@ -10,20 +13,21 @@ on:
   push:
     tags:
       - 'v*'
-  # Allow manual trigger for testing the workflow
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  # ── Gate: run tests first ──────────────────────────────────────
+  # ── Gate: tests must pass before any wheel is built ────────────
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.10', '3.12']
+
     steps:
       - uses: actions/checkout@v4
 
@@ -31,33 +35,48 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install package (builds C backend)
-        run: |
-          pip install pytest pandas
-          pip install -e ".[all]"
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Run tests
+      - name: Install maturin + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest pandas
+
+      - name: Build & install genairr_engine
+        run: maturin develop --release -m engine_rs/Cargo.toml
+
+      - name: Install GenAIRR
+        run: pip install -e .
+
+      - name: Run pytest
         run: pytest tests/ -x -q
 
-  # ── Build wheels for all platforms ─────────────────────────────
-  # macOS needs two runners: macos-13 (Intel) for x86_64, macos-latest (M-series) for arm64.
-  # cibuildwheel cannot cross-compile C extensions across architectures.
-  build_wheels:
+  # ── Build genairr_engine wheels (Rust) ─────────────────────────
+  # PyO3 abi3-py39 means one wheel per (OS, arch) covers Python 3.9+.
+  build_engine_wheels:
+    name: genairr_engine wheels (${{ matrix.target }} on ${{ matrix.os }})
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Linux
           - os: ubuntu-latest
-            cibw_archs: "x86_64 aarch64"
-            artifact_name: "wheels-linux"
-          - os: macos-latest
-            cibw_archs: "arm64"
-            artifact_name: "wheels-macos-arm64"
+            target: x86_64
+            manylinux: manylinux_2_28
+          - os: ubuntu-latest
+            target: aarch64
+            manylinux: manylinux_2_28
+          # macOS
+          - os: macos-13       # Intel runner
+            target: x86_64
+          - os: macos-latest   # Apple Silicon runner
+            target: aarch64
+          # Windows
           - os: windows-latest
-            cibw_archs: "AMD64"
-            artifact_name: "wheels-windows"
+            target: x64
 
     steps:
       - uses: actions/checkout@v4
@@ -66,60 +85,23 @@ jobs:
         with:
           python-version: '3.12'
 
-      # Linux aarch64 wheels need QEMU emulation
-      - name: Set up QEMU
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
+      - name: Build wheel via maturin
+        uses: PyO3/maturin-action@v1
         with:
-          platforms: arm64
+          working-directory: engine_rs
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out ../dist/engine
 
-      # Pre-download virtualenv.pyz into cibuildwheel's cache dir using
-      # authenticated GitHub API to avoid HTTP 429 rate limits.
-      - name: Pre-cache virtualenv for cibuildwheel
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VENV_VERSION="20.27.1"
-          VENV_FILE="virtualenv-${VENV_VERSION}.pyz"
-
-          # Determine cibuildwheel cache directory per OS
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            CACHE_DIR="$HOME/Library/Caches/cibuildwheel"
-          elif [ "$RUNNER_OS" = "Windows" ]; then
-            CACHE_DIR="$LOCALAPPDATA/pypa/cibuildwheel/Cache"
-          else
-            CACHE_DIR="$HOME/.cache/cibuildwheel"
-          fi
-
-          mkdir -p "$CACHE_DIR"
-          DEST="$CACHE_DIR/$VENV_FILE"
-
-          if [ ! -f "$DEST" ]; then
-            echo "Downloading virtualenv.pyz with authenticated GitHub API..."
-            curl -sSL --retry 3 --retry-delay 5 \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/octet-stream" \
-              "https://github.com/pypa/get-virtualenv/raw/refs/tags/${VENV_VERSION}/public/virtualenv.pyz" \
-              -o "$DEST"
-            echo "Downloaded to $DEST ($(wc -c < "$DEST") bytes)"
-          else
-            echo "virtualenv.pyz already cached at $DEST"
-          fi
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.22
-        env:
-          CIBW_ARCHS: ${{ matrix.cibw_archs }}
-
-      - name: Upload wheel artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ./wheelhouse/*.whl
+          name: engine-wheels-${{ matrix.os }}-${{ matrix.target }}
+          path: dist/engine/*.whl
 
-  # ── Build source distribution ──────────────────────────────────
-  build_sdist:
+  # ── Build genairr_engine sdist ─────────────────────────────────
+  build_engine_sdist:
+    name: genairr_engine sdist
     needs: test
     runs-on: ubuntu-latest
 
@@ -130,22 +112,53 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Build sdist
-        run: |
-          pip install build
-          python -m build --sdist
+      - name: Build sdist via maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: engine_rs
+          command: sdist
+          args: --out ../dist/engine
 
-      - name: Upload sdist artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sdist
-          path: dist/*.tar.gz
+          name: engine-sdist
+          path: dist/engine/*.tar.gz
+
+  # ── Build GenAIRR pure-Python wheel + sdist ────────────────────
+  # Single universal wheel covers every OS/arch since there's no
+  # native code in the GenAIRR package itself.
+  build_python_dist:
+    name: GenAIRR sdist + universal wheel
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+          python -m build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
 
   # ── Publish to PyPI ────────────────────────────────────────────
+  # Both packages get pushed in a single twine upload. Skipped on
+  # manual workflow_dispatch — only release publish or tag push.
   publish:
-    needs: [build_wheels, build_sdist]
+    name: Publish to PyPI
+    needs: [build_engine_wheels, build_engine_sdist, build_python_dist]
     runs-on: ubuntu-latest
-    # Only publish on release or tag push (not manual dispatch)
     if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
 
     steps:
@@ -160,3 +173,4 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: dist

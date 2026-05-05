@@ -1,53 +1,49 @@
-# GenAIRR — developer Makefile (T2-7).
+# GenAIRR — developer Makefile.
 #
-# The canonical dev workflow is now `make build`, which runs setup.py's
-# CMakeBuild and copies the freshly-built libgenairr.so into
-# src/GenAIRR/_native/ — the single location _find_library() searches.
-# Running `cmake --build src/GenAIRR/_native/csrc/build` directly no
-# longer suffices, because that path is no longer on the search list
-# (it used to silently shadow installed libraries).
+# Two packages live in this repo:
+#   - engine_rs/   Rust simulation kernel, built via maturin into the
+#                  active venv as the `genairr_engine` extension wheel.
+#   - src/GenAIRR/ Pure-Python wrappers around `genairr_engine`,
+#                  installed editable.
+#
+# `make build` rebuilds both. Run it whenever Rust sources change;
+# pure-Python edits hot-reload through the editable install.
 
-PYTHON      ?= python
-PIP         ?= $(PYTHON) -m pip
-CSRC_DIR    := src/GenAIRR/_native/csrc
-NATIVE_DIR  := src/GenAIRR/_native
+PYTHON ?= python
+PIP    ?= $(PYTHON) -m pip
 
-.PHONY: help build clean test test-c rebuild
+.PHONY: help build clean rebuild test test-rust test-python
 
 help:
 	@echo "GenAIRR developer targets:"
-	@echo "  make build      Rebuild C backend + reinstall (canonical dev rebuild)"
-	@echo "  make clean      Remove build trees and bundled .so files"
-	@echo "  make rebuild    clean + build"
-	@echo "  make test       Run the Python test suite (pytest)"
-	@echo "  make test-c     Configure + build the C tests, then run ctest"
+	@echo "  make build       Rebuild Rust engine + reinstall Python package"
+	@echo "  make rebuild     clean + build"
+	@echo "  make clean       Remove build artifacts"
+	@echo "  make test        Run the Python test suite (pytest)"
+	@echo "  make test-rust   Run the Rust unit + integration tests (cargo test)"
+	@echo "  make test-python Same as 'make test'"
 
 # --- Build ---------------------------------------------------------
 
 build:
+	$(PIP) install --upgrade maturin
+	maturin develop --release -m engine_rs/Cargo.toml
 	$(PIP) install -e . --no-build-isolation
 
 rebuild: clean build
 
 # --- Clean ---------------------------------------------------------
-#
-# Removes *all* in-tree C build artifacts. The bundled .so glob covers
-# every SOVERSION suffix (libgenairr.so, libgenairr.so.0,
-# libgenairr.so.1.0.0, libgenairr.dylib, genairr.dll) so a stale build
-# from a previous version cannot lurk after a clean.
 
 clean:
-	rm -rf $(CSRC_DIR)/build $(CSRC_DIR)/build_*
-	rm -f $(NATIVE_DIR)/libgenairr.so* $(NATIVE_DIR)/libgenairr.dylib* \
-	      $(NATIVE_DIR)/genairr.dll
 	rm -rf build/ dist/ src/GenAIRR.egg-info/
+	rm -rf engine_rs/target/
 
 # --- Tests ---------------------------------------------------------
 
-test:
+test: test-python
+
+test-python:
 	$(PYTHON) -m pytest tests/
 
-test-c:
-	cmake -S $(CSRC_DIR) -B $(CSRC_DIR)/build -DCMAKE_BUILD_TYPE=Release
-	cmake --build $(CSRC_DIR)/build
-	cd $(CSRC_DIR)/build && ctest --output-on-failure
+test-rust:
+	cd engine_rs && cargo test --all-features

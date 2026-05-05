@@ -20,6 +20,7 @@ pub mod ir;
 pub mod junction;
 pub mod pass;
 pub mod passes;
+pub mod python;
 pub mod refdata;
 pub mod rng;
 pub mod s5f;
@@ -36,6 +37,7 @@ fn version() -> &'static str {
 #[pymodule]
 fn genairr_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
+    python::register(m)?;
     Ok(())
 }
 
