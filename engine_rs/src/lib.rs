@@ -13,6 +13,7 @@
 
 use pyo3::prelude::*;
 
+pub mod airr_record;
 pub mod assignment;
 pub mod contract;
 pub mod dist;

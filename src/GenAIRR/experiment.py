@@ -29,7 +29,7 @@ the V6 migration add mutation / corruption / observation steps.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
 
 import genairr_engine as _engine
 
@@ -43,6 +43,26 @@ from .dataconfig.enums import ChainType
 # the convenient list-form ``[productive()]`` (V5 muscle-memory) to
 # that single value.
 RespectInput = Union["_engine.ContractSet", Sequence["_engine.ContractSet"], None]
+
+
+# Sentinel for `using(...)` arguments that the caller did not pass at
+# all. We can't use ``None`` for "unchanged" because ``None`` already
+# means "clear the lock."
+class _Unset:
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<UNSET>"
+
+
+_UNSET: _Unset = _Unset()
+
+
+# Inputs accepted by :meth:`Experiment.using` per segment. ``None``
+# clears any prior lock; a single name is a one-allele lock; an
+# iterable of names is a multi-allele subset; ``_UNSET`` (the default)
+# leaves the existing lock unchanged.
+_LockInput = Union[str, Iterable[str], None, _Unset]
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -221,10 +241,28 @@ _DEFAULT_NP_LENGTHS: Sequence[Tuple[int, float]] = tuple((i, 1.0) for i in range
 
 @dataclass(frozen=True)
 class _RecombineStep:
-    """One ``recombine()`` invocation, captured for later compilation."""
+    """One ``recombine()`` invocation, captured for later compilation.
+
+    ``np1_lengths`` / ``np2_lengths`` are the empirical NP-length
+    distributions to use. ``trim_*`` are optional empirical trim
+    distributions; when ``None`` the corresponding trim pass is
+    omitted (so a synthetic refdata without trim data still works).
+
+    ``locks_*`` are optional allele-ID subsets supplied by
+    :meth:`Experiment.using`. When set, the matching
+    ``push_sample_allele`` call samples uniformly only from those
+    IDs instead of the full pool.
+    """
 
     np1_lengths: Tuple[Tuple[int, float], ...]
     np2_lengths: Tuple[Tuple[int, float], ...]
+    trim_v_3: Optional[Tuple[Tuple[int, float], ...]]
+    trim_d_5: Optional[Tuple[Tuple[int, float], ...]]
+    trim_d_3: Optional[Tuple[Tuple[int, float], ...]]
+    trim_j_5: Optional[Tuple[Tuple[int, float], ...]]
+    locks_v: Optional[Tuple[int, ...]] = None
+    locks_d: Optional[Tuple[int, ...]] = None
+    locks_j: Optional[Tuple[int, ...]] = None
 
     def apply(
         self,
@@ -235,16 +273,32 @@ class _RecombineStep:
         np1 = list(self.np1_lengths)
         np2 = list(self.np2_lengths)
 
+        v_ids = list(self.locks_v) if self.locks_v is not None else None
+        d_ids = list(self.locks_d) if self.locks_d is not None else None
+        j_ids = list(self.locks_j) if self.locks_j is not None else None
+
         if chain == "vj":
-            plan.push_sample_allele("V", refdata)
-            plan.push_sample_allele("J", refdata)
+            plan.push_sample_allele("V", refdata, allowed_ids=v_ids)
+            plan.push_sample_allele("J", refdata, allowed_ids=j_ids)
+            if self.trim_v_3:
+                plan.push_trim("V", "3", list(self.trim_v_3))
+            if self.trim_j_5:
+                plan.push_trim("J", "5", list(self.trim_j_5))
             plan.push_assemble("V")
             plan.push_generate_np("NP1", np1)
             plan.push_assemble("J")
         elif chain == "vdj":
-            plan.push_sample_allele("V", refdata)
-            plan.push_sample_allele("D", refdata)
-            plan.push_sample_allele("J", refdata)
+            plan.push_sample_allele("V", refdata, allowed_ids=v_ids)
+            plan.push_sample_allele("D", refdata, allowed_ids=d_ids)
+            plan.push_sample_allele("J", refdata, allowed_ids=j_ids)
+            if self.trim_v_3:
+                plan.push_trim("V", "3", list(self.trim_v_3))
+            if self.trim_d_5:
+                plan.push_trim("D", "5", list(self.trim_d_5))
+            if self.trim_d_3:
+                plan.push_trim("D", "3", list(self.trim_d_3))
+            if self.trim_j_5:
+                plan.push_trim("J", "5", list(self.trim_j_5))
             plan.push_assemble("V")
             plan.push_generate_np("NP1", np1)
             plan.push_assemble("D")
@@ -252,6 +306,162 @@ class _RecombineStep:
             plan.push_assemble("J")
         else:  # pragma: no cover — RefDataConfig only constructs vj/vdj.
             raise ValueError(f"unsupported chain_type {chain!r}")
+
+
+@dataclass(frozen=True)
+class _MutateStep:
+    """One ``mutate()`` invocation, captured for later compilation.
+
+    ``model`` is either ``"uniform"`` (position-independent SHM via
+    ``UniformMutationPass``) or ``"s5f"`` (context-dependent SHM via
+    ``S5FMutationPass`` with the bundled S5F kernel named in
+    ``s5f_model_name``).
+
+    ``count_pairs`` is the empirical distribution over the number of
+    mutations per simulation, expressed as ``((count, weight), ...)``.
+    """
+
+    model: str
+    count_pairs: Tuple[Tuple[int, float], ...]
+    s5f_model_name: str
+
+    def apply(
+        self,
+        plan: "_engine.PassPlan",
+        refdata: "_engine.RefDataConfig",
+    ) -> None:
+        del refdata  # not needed for mutation passes
+        count_list = list(self.count_pairs)
+        if self.model == "uniform":
+            plan.push_mutate_uniform(count_list)
+        elif self.model == "s5f":
+            from ._s5f_loader import load_builtin_s5f_kernel
+
+            mutability, substitution = load_builtin_s5f_kernel(self.s5f_model_name)
+            plan.push_mutate_s5f(count_list, mutability, substitution)
+        else:  # pragma: no cover — guarded at builder time.
+            raise ValueError(f"unsupported mutation model {self.model!r}")
+
+
+# Names of the four corruption passes the Rust kernel exposes. Used
+# both as a discriminator on `_CorruptStep` and as the Python-facing
+# kwarg name on the `Experiment` builder.
+_CORRUPT_KIND_PCR = "pcr"
+_CORRUPT_KIND_QUALITY = "quality"
+_CORRUPT_KIND_INDEL = "indel"
+_CORRUPT_KIND_CONTAMINANT = "contaminant"
+
+
+@dataclass(frozen=True)
+class _CorruptStep:
+    """One ``corrupt_*()`` invocation, captured for later compilation.
+
+    ``kind`` selects which Rust corruption pass to construct:
+    ``"pcr"``, ``"quality"``, ``"indel"``, or ``"contaminant"``.
+    Other fields are pass-specific:
+
+    - PCR / quality / indel use ``count_pairs``.
+    - Indel additionally uses ``insertion_prob``.
+    - Contaminant uses ``apply_prob`` only (its model is
+      probability-driven at the read level, not count-driven).
+    """
+
+    kind: str
+    count_pairs: Tuple[Tuple[int, float], ...]
+    insertion_prob: float
+    apply_prob: float
+
+    def apply(
+        self,
+        plan: "_engine.PassPlan",
+        refdata: "_engine.RefDataConfig",
+    ) -> None:
+        del refdata  # not used by corruption passes
+        count_list = list(self.count_pairs)
+        if self.kind == _CORRUPT_KIND_PCR:
+            plan.push_corrupt_pcr(count_list)
+        elif self.kind == _CORRUPT_KIND_QUALITY:
+            plan.push_corrupt_quality(count_list)
+        elif self.kind == _CORRUPT_KIND_INDEL:
+            plan.push_corrupt_indel(count_list, insertion_prob=self.insertion_prob)
+        elif self.kind == _CORRUPT_KIND_CONTAMINANT:
+            plan.push_corrupt_contaminant(self.apply_prob)
+        else:  # pragma: no cover — guarded at builder time.
+            raise ValueError(f"unsupported corruption kind {self.kind!r}")
+
+
+def _normalize_count(
+    count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+) -> Tuple[Tuple[int, float], ...]:
+    """Normalise the user-friendly ``count=`` argument to the
+    list-of-pairs shape ``PyPassPlan.push_mutate_*`` expects.
+
+    Accepts:
+    - ``count=15`` — fixed count.
+    - ``count=(5, 25)`` — uniform integer in ``[5, 25]``
+      (high inclusive, matches the Pythonic ``range``-with-stop
+      conventions; both endpoints are valid sample values).
+    - ``count=[(5, 1.0), (10, 1.0), (15, 1.0)]`` — explicit
+      empirical distribution.
+    """
+    # Single int: fixed count. Reject bools (which are int subclasses)
+    # so a stray True/False raises TypeError instead of silently
+    # becoming ``count=1`` / ``count=0``.
+    if isinstance(count, bool) or not isinstance(count, (int, tuple, list)):
+        raise TypeError(
+            f"count: expected int, (low, high) tuple, or list of "
+            f"(count, weight) pairs, got {type(count).__name__}"
+        )
+    if isinstance(count, int):
+        if count < 0:
+            raise ValueError(f"count must be non-negative, got {count}")
+        return ((int(count), 1.0),)
+    # Tuple form: must be (low, high) of two ints OR a single
+    # (count, weight) pair we promote to a 1-element list.
+    if isinstance(count, tuple) and len(count) == 2:
+        a, b = count[0], count[1]
+        if (
+            isinstance(a, int)
+            and isinstance(b, int)
+            and not isinstance(a, bool)
+            and not isinstance(b, bool)
+        ):
+            low, high = a, b
+            if low < 0 or high < low:
+                raise ValueError(
+                    f"count range must satisfy 0 <= low <= high, got ({low}, {high})"
+                )
+            return tuple((c, 1.0) for c in range(low, high + 1))
+    # Otherwise: empirical (count, weight) list/tuple.
+    pairs: List[Tuple[int, float]] = []
+    for pair in count:
+        if not (isinstance(pair, (tuple, list)) and len(pair) == 2):
+            raise TypeError(
+                f"count entries must be (count, weight) pairs, got {pair!r}"
+            )
+        c, w = pair
+        if isinstance(c, bool) or not isinstance(c, int) or c < 0:
+            raise ValueError(
+                f"count entry must have a non-negative int count, got {c!r}"
+            )
+        pairs.append((int(c), float(w)))
+    if not pairs:
+        raise ValueError("count distribution must contain at least one entry")
+    return tuple(pairs)
+
+
+def _to_immutable_pairs(
+    pairs: Optional[List[Tuple[int, float]]],
+) -> Optional[Tuple[Tuple[int, float], ...]]:
+    """Convert an optional ``list[(int, float)]`` (the shape returned
+    by :mod:`._dataconfig_extract`) into the hashable tuple-of-tuples
+    form that :class:`_RecombineStep`'s frozen dataclass requires.
+    ``None`` passes through unchanged so the step can omit the trim
+    pass entirely when no empirical distribution is available.
+    """
+    if not pairs:
+        return None
+    return tuple((int(c), float(w)) for c, w in pairs)
 
 
 def _normalize_lengths(
@@ -320,15 +530,24 @@ def _coerce_respect(respect: RespectInput) -> Optional["_engine.ContractSet"]:
 ExperimentInput = Union[str, DataConfig, "_engine.RefDataConfig"]
 
 
-def _coerce_to_refdata(source: ExperimentInput) -> "_engine.RefDataConfig":
-    """Normalise ``Experiment.on`` input to a Rust ``RefDataConfig``."""
+def _coerce_to_refdata_and_dataconfig(
+    source: ExperimentInput,
+) -> Tuple["_engine.RefDataConfig", Optional[DataConfig]]:
+    """Normalise ``Experiment.on`` input to ``(refdata, dataconfig)``.
+
+    The DataConfig — when available — carries the empirical
+    distributions (NP lengths, per-gene trims) that ``recombine()``
+    uses by default. A bare ``RefDataConfig`` from the user has no
+    DataConfig backing, so empirical distributions fall through to
+    the uniform ``[0..6]`` placeholder.
+    """
     if isinstance(source, _engine.RefDataConfig):
-        return source
+        return source, None
     if isinstance(source, str):
         cfg = _resolve_config_name(source)
-        return dataconfig_to_refdata(cfg)
+        return dataconfig_to_refdata(cfg), cfg
     if isinstance(source, DataConfig):
-        return dataconfig_to_refdata(source)
+        return dataconfig_to_refdata(source), source
     raise TypeError(
         f"Experiment.on(...): expected a config-name string, "
         f"GenAIRR.DataConfig, or genairr_engine.RefDataConfig, "
@@ -350,11 +569,24 @@ class Experiment:
     different seeds.
     """
 
-    __slots__ = ("_refdata", "_steps")
+    __slots__ = ("_refdata", "_steps", "_dataconfig", "_locks")
 
-    def __init__(self, refdata: "_engine.RefDataConfig") -> None:
+    def __init__(
+        self,
+        refdata: "_engine.RefDataConfig",
+        dataconfig: Optional[DataConfig] = None,
+    ) -> None:
         self._refdata = refdata
-        self._steps: List[_RecombineStep] = []
+        self._dataconfig = dataconfig
+        self._steps: List[Union[_RecombineStep, _MutateStep, _CorruptStep]] = []
+        # Per-segment allele-lock subsets set by ``.using(...)``. Each
+        # entry is ``None`` (no lock — sample uniformly across the pool)
+        # or a tuple of allele IDs to sample uniformly across.
+        self._locks: Dict[str, Optional[Tuple[int, ...]]] = {
+            "V": None,
+            "D": None,
+            "J": None,
+        }
 
     @classmethod
     def on(cls, source: ExperimentInput) -> "Experiment":
@@ -364,8 +596,18 @@ class Experiment:
         - a config-name string (e.g. ``"human_igh"``),
         - a :class:`GenAIRR.DataConfig` instance,
         - a :class:`genairr_engine.RefDataConfig`.
+
+        When ``source`` is a config name or a ``DataConfig``, the
+        underlying empirical distributions (NP lengths, per-gene
+        trims) are kept on the experiment so :meth:`recombine` can
+        use them as the default sampling distributions. A bare
+        ``RefDataConfig`` has no such backing — :meth:`recombine`
+        falls through to its uniform ``[0..6]`` placeholder unless
+        the caller passes ``np1_lengths`` / ``np2_lengths``
+        explicitly.
         """
-        return cls(_coerce_to_refdata(source))
+        refdata, dataconfig = _coerce_to_refdata_and_dataconfig(source)
+        return cls(refdata, dataconfig)
 
     @property
     def chain_type(self) -> str:
@@ -382,31 +624,360 @@ class Experiment:
         """The engine-native ``RefDataConfig`` this experiment is bound to."""
         return self._refdata
 
+    def corrupt_pcr(
+        self,
+        *,
+        count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+    ) -> "Experiment":
+        """Append a PCR-error corruption step.
+
+        ``count`` is the per-simulation distribution over the number
+        of PCR-induced base substitutions. Same input forms as
+        :meth:`mutate`'s ``count`` (fixed int, ``(low, high)`` range,
+        or empirical ``(count, weight)`` list).
+
+        Each error samples a uniform position in the assembled pool
+        and replaces the base with a uniform A/C/G/T draw. The trace
+        records the events at ``corrupt.pcr.{count, error_site[i],
+        error_base[i]}``.
+        """
+        pairs = _normalize_count(count)
+        self._steps.append(
+            _CorruptStep(
+                kind=_CORRUPT_KIND_PCR,
+                count_pairs=pairs,
+                insertion_prob=0.0,
+                apply_prob=0.0,
+            )
+        )
+        return self
+
+    def corrupt_quality(
+        self,
+        *,
+        count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+    ) -> "Experiment":
+        """Append a sequencing-quality-error corruption step.
+
+        Same shape as :meth:`corrupt_pcr` but each substitution
+        writes the destination base in **lowercase** to mark the
+        position as corrupted (the V5 sequencing-error convention).
+        """
+        pairs = _normalize_count(count)
+        self._steps.append(
+            _CorruptStep(
+                kind=_CORRUPT_KIND_QUALITY,
+                count_pairs=pairs,
+                insertion_prob=0.0,
+                apply_prob=0.0,
+            )
+        )
+        return self
+
+    def corrupt_indels(
+        self,
+        *,
+        count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+        insertion_prob: float = 0.5,
+    ) -> "Experiment":
+        """Append an indel corruption step.
+
+        ``count`` is the per-simulation distribution over the total
+        number of indel events. Each event independently chooses
+        insertion (probability ``insertion_prob``) vs. deletion.
+        Insertions sample a uniform A/C/G/T base. Indels change
+        pool length and shift downstream region ranges accordingly.
+
+        Raises ``ValueError`` if ``insertion_prob`` is outside
+        ``[0.0, 1.0]`` or non-finite.
+        """
+        if (
+            insertion_prob != insertion_prob  # NaN check
+            or not (0.0 <= insertion_prob <= 1.0)
+        ):
+            raise ValueError(
+                f"insertion_prob must be a finite number in [0.0, 1.0], "
+                f"got {insertion_prob}"
+            )
+        pairs = _normalize_count(count)
+        self._steps.append(
+            _CorruptStep(
+                kind=_CORRUPT_KIND_INDEL,
+                count_pairs=pairs,
+                insertion_prob=float(insertion_prob),
+                apply_prob=0.0,
+            )
+        )
+        return self
+
+    def corrupt_contaminants(self, *, prob: float) -> "Experiment":
+        """Append a contaminant-replacement corruption step.
+
+        With probability ``prob`` the entire assembled pool is
+        overwritten with uniform A/C/G/T bases. Models primer
+        dimers, bacterial DNA, or any non-receptor sequence in the
+        library. ``prob=0.0`` is a no-op (coin flip recorded but
+        never fires); ``prob=1.0`` always contaminates.
+
+        Raises ``ValueError`` if ``prob`` is outside ``[0.0, 1.0]``
+        or non-finite.
+        """
+        if prob != prob or not (0.0 <= prob <= 1.0):
+            raise ValueError(
+                f"prob must be a finite number in [0.0, 1.0], got {prob}"
+            )
+        self._steps.append(
+            _CorruptStep(
+                kind=_CORRUPT_KIND_CONTAMINANT,
+                count_pairs=(),
+                insertion_prob=0.0,
+                apply_prob=float(prob),
+            )
+        )
+        return self
+
+    def mutate(
+        self,
+        *,
+        model: str = "s5f",
+        count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+        s5f_model: str = "hh_s5f",
+    ) -> "Experiment":
+        """Append a somatic-hypermutation step.
+
+        ``model`` selects the mutation kernel:
+        - ``"s5f"`` (default) — context-dependent SHM via the bundled
+          S5F kernel named in ``s5f_model``. Available kernels:
+          ``"hh_s5f"``, ``"hh_s5f_60"``, ``"hh_s5f_opposite"``,
+          ``"hkl_s5f"``.
+        - ``"uniform"`` — position-independent SHM. Each mutated
+          position gets a uniformly drawn A/C/G/T replacement.
+
+        ``count`` is the per-simulation mutation count distribution.
+        Accepts:
+        - ``count=15`` — fixed: every simulation gets exactly 15
+          mutations.
+        - ``count=(5, 25)`` — uniform integer in ``[5, 25]`` (both
+          endpoints inclusive).
+        - ``count=[(5, 1.0), (10, 2.0), ...]`` — explicit empirical
+          ``(count, weight)`` distribution.
+
+        ``count=0`` is a no-op (the pass runs but applies zero
+        mutations).
+        """
+        model_lc = model.lower()
+        if model_lc not in ("uniform", "s5f"):
+            raise ValueError(
+                f"model must be 'uniform' or 's5f' (got {model!r})"
+            )
+        pairs = _normalize_count(count)
+        self._steps.append(
+            _MutateStep(
+                model=model_lc,
+                count_pairs=pairs,
+                s5f_model_name=s5f_model,
+            )
+        )
+        return self
+
+    def using(
+        self,
+        *,
+        v: "_LockInput" = _UNSET,
+        d: "_LockInput" = _UNSET,
+        j: "_LockInput" = _UNSET,
+    ) -> "Experiment":
+        """Restrict allele sampling to a named subset (allele-locking).
+
+        Each kwarg accepts:
+        - a single allele name string (e.g. ``"IGHV1-2*02"``),
+        - a list / tuple of allele names (sample uniformly among them),
+        - ``None`` to clear a previously-set lock for that segment.
+        - omitted (default) — the existing lock for that segment is
+          left unchanged.
+
+        The locks are applied to the next ``recombine()`` step's
+        ``push_sample_allele`` calls at compile time. Calling
+        ``.using(...)`` more than once overlays the new values onto
+        the previous locks (per-segment), so
+        ``.using(v="A").using(d="B")`` locks both V and D.
+
+        Raises:
+        - ``ValueError`` if an allele name doesn't exist in the
+          configured refdata, or if a lock is set for ``D`` on a VJ
+          chain.
+        - ``TypeError`` if an unexpected input shape is passed.
+        """
+        for segment, value in (("V", v), ("D", d), ("J", j)):
+            if value is _UNSET:
+                continue
+            if value is None:
+                self._locks[segment] = None
+                continue
+            ids = self._resolve_lock(segment, value)
+            self._locks[segment] = ids
+        return self
+
+    def _resolve_lock(
+        self,
+        segment: str,
+        value: Union[str, Iterable[str]],
+    ) -> Tuple[int, ...]:
+        """Resolve allele-name(s) → tuple of allele IDs against this
+        experiment's refdata. Raises on unknown names, on D locks
+        for VJ chains, or on non-string inputs."""
+        if segment == "D" and self._refdata.chain_type != "vdj":
+            raise ValueError(
+                f"cannot lock D alleles on a {self._refdata.chain_type!r} chain"
+            )
+
+        if isinstance(value, str):
+            names: Tuple[str, ...] = (value,)
+        else:
+            try:
+                names = tuple(value)
+            except TypeError as exc:
+                raise TypeError(
+                    f"using(): {segment} lock must be a name string or an "
+                    f"iterable of name strings; got {type(value).__name__}"
+                ) from exc
+            if not all(isinstance(n, str) for n in names):
+                raise TypeError(
+                    f"using(): {segment} lock entries must all be strings"
+                )
+            if not names:
+                raise ValueError(
+                    f"using(): {segment} lock list must be non-empty "
+                    "(pass None to clear instead)"
+                )
+
+        index = self._allele_name_index(segment)
+        ids: List[int] = []
+        seen: set = set()
+        for name in names:
+            if name not in index:
+                raise ValueError(
+                    f"using(): no {segment} allele named {name!r} in refdata "
+                    "(check spelling against `list_alleles` or the loaded config)"
+                )
+            allele_id = index[name]
+            if allele_id in seen:
+                raise ValueError(
+                    f"using(): duplicate {segment} allele {name!r} in lock list"
+                )
+            seen.add(allele_id)
+            ids.append(allele_id)
+        return tuple(ids)
+
+    def _allele_name_index(self, segment: str) -> Dict[str, int]:
+        """Build a name → allele_id map for the given segment by
+        scanning the refdata pool. Cheap enough to do per-call given
+        typical pool sizes (≤ a few hundred) and the rarity of
+        ``.using()``."""
+        if segment == "V":
+            n = self._refdata.v_pool_size()
+            getter = self._refdata.v_allele
+        elif segment == "D":
+            n = self._refdata.d_pool_size()
+            getter = self._refdata.d_allele
+        elif segment == "J":
+            n = self._refdata.j_pool_size()
+            getter = self._refdata.j_allele
+        else:  # pragma: no cover — guarded above.
+            raise ValueError(f"unsupported segment {segment!r}")
+        return {getter(i).name: i for i in range(n)}
+
     def recombine(
         self,
         *,
         np1_lengths: Optional[Iterable[Tuple[int, float]]] = None,
         np2_lengths: Optional[Iterable[Tuple[int, float]]] = None,
+        trim: bool = True,
     ) -> "Experiment":
         """Append a standard V(D)J recombination step.
 
         Compiles to:
-        - **VJ:** sample V → sample J → assemble V → generate NP1 →
-          assemble J.
-        - **VDJ:** sample V → sample D → sample J → assemble V →
-          generate NP1 → assemble D → generate NP2 → assemble J.
+        - **VJ:** sample V → sample J → (trim V_3, J_5) → assemble V
+          → generate NP1 → assemble J.
+        - **VDJ:** sample V → sample D → sample J → (trim V_3, D_5,
+          D_3, J_5) → assemble V → generate NP1 → assemble D →
+          generate NP2 → assemble J.
 
-        ``np1_lengths`` and ``np2_lengths`` default to the uniform
+        ``np1_lengths`` / ``np2_lengths`` default to the species'
+        empirical NP-length distributions (from
+        ``DataConfig.NP_lengths``) when the experiment is bound to
+        a DataConfig. For raw-RefDataConfig experiments where no
+        empirical data is available, both fall back to the uniform
         ``[(0, 1.0), ..., (6, 1.0)]`` distribution. Pass an explicit
-        iterable of ``(length, weight)`` tuples to override.
-        ``np2_lengths`` is silently ignored on VJ chains.
+        iterable of ``(length, weight)`` tuples to override the
+        default. ``np2_lengths`` is silently ignored on VJ chains.
+
+        ``trim=True`` (default) inserts trim passes before assembly
+        when the bound DataConfig carries empirical trim
+        distributions. Trim distributions are marginalized from the
+        per-gene ``trim_dicts`` to a single segment-level
+        distribution. Set ``trim=False`` to disable trimming
+        entirely (e.g. for tests that expect untrimmed alleles).
+        Raw-RefDataConfig experiments always have ``trim`` as a
+        no-op since there's no DataConfig to source the
+        distributions from.
         """
+        defaults = self._recombine_defaults() if trim or self._dataconfig else None
+
+        np1 = (
+            _normalize_lengths(np1_lengths)
+            if np1_lengths is not None
+            else self._default_np_lengths(defaults, "np1")
+        )
+        np2 = (
+            _normalize_lengths(np2_lengths)
+            if np2_lengths is not None
+            else self._default_np_lengths(defaults, "np2")
+        )
+
+        if trim and defaults is not None:
+            trim_v_3 = _to_immutable_pairs(defaults.get("trim_v_3"))
+            trim_d_5 = _to_immutable_pairs(defaults.get("trim_d_5"))
+            trim_d_3 = _to_immutable_pairs(defaults.get("trim_d_3"))
+            trim_j_5 = _to_immutable_pairs(defaults.get("trim_j_5"))
+        else:
+            trim_v_3 = trim_d_5 = trim_d_3 = trim_j_5 = None
+
         step = _RecombineStep(
-            np1_lengths=_normalize_lengths(np1_lengths),
-            np2_lengths=_normalize_lengths(np2_lengths),
+            np1_lengths=np1,
+            np2_lengths=np2,
+            trim_v_3=trim_v_3,
+            trim_d_5=trim_d_5,
+            trim_d_3=trim_d_3,
+            trim_j_5=trim_j_5,
         )
         self._steps.append(step)
         return self
+
+    def _recombine_defaults(self):
+        """Lazy-extract the empirical distributions for this
+        experiment's DataConfig. Returns ``None`` for raw-RefDataConfig
+        experiments. Cached on first call.
+        """
+        if self._dataconfig is None:
+            return None
+        from ._dataconfig_extract import extract_recombine_defaults
+
+        return extract_recombine_defaults(self._dataconfig)
+
+    @staticmethod
+    def _default_np_lengths(
+        defaults, key: str
+    ) -> Tuple[Tuple[int, float], ...]:
+        """Pick the NP-length distribution to use when the user
+        didn't pass an explicit one: empirical if available, else
+        the uniform placeholder.
+        """
+        if defaults is not None:
+            empirical = defaults.get(key)
+            if empirical:
+                return tuple(empirical)
+        return tuple(_DEFAULT_NP_LENGTHS)
 
     def compile(self) -> "CompiledExperiment":
         """Compile the recorded steps into a ``PassPlan`` and return
@@ -415,10 +986,44 @@ class Experiment:
         Idempotent: calling ``compile()`` twice produces two distinct
         ``CompiledExperiment`` instances with structurally-equal plans.
         """
+        from dataclasses import replace as _replace
+
+        any_lock = any(self._locks[seg] is not None for seg in ("V", "D", "J"))
         plan = _engine.PassPlan()
         for step in self._steps:
+            # Inject any allele-locks set via ``.using(...)`` into the
+            # recombine step at compile time. Other step types ignore
+            # locks.
+            if any_lock and isinstance(step, _RecombineStep):
+                step = _replace(
+                    step,
+                    locks_v=self._locks["V"],
+                    locks_d=self._locks["D"],
+                    locks_j=self._locks["J"],
+                )
             step.apply(plan, self._refdata)
         return CompiledExperiment(plan, self._refdata)
+
+    def run_records(
+        self,
+        *,
+        n: int = 1,
+        seed: int = 0,
+        respect: RespectInput = None,
+        strict: bool = False,
+    ) -> "SimulationResult":
+        """Compile and run, then return the batch as a
+        :class:`SimulationResult` ready for ``.to_csv`` / ``.to_fasta``
+        / ``.to_dataframe`` export.
+
+        Same arguments as :meth:`run`. Returns a
+        :class:`GenAIRR.SimulationResult` instead of a raw list of
+        ``Outcome`` objects.
+        """
+        from .result import SimulationResult
+
+        outcomes = self.run(n=n, seed=seed, respect=respect, strict=strict)
+        return SimulationResult.from_outcomes(outcomes, self._refdata)
 
     def run(
         self,
@@ -448,6 +1053,40 @@ class Experiment:
         silently-relaxed outputs.
         """
         return self.compile().run(n=n, seed=seed, respect=respect, strict=strict)
+
+    def stream(
+        self,
+        *,
+        n: Optional[int] = None,
+        seed: int = 0,
+        respect: RespectInput = None,
+        strict: bool = False,
+    ) -> Iterator["_engine.Outcome"]:
+        """Compile and lazily yield :class:`genairr_engine.Outcome`
+        objects. See :meth:`CompiledExperiment.stream` for full
+        semantics."""
+        return self.compile().stream(
+            n=n, seed=seed, respect=respect, strict=strict
+        )
+
+    def stream_records(
+        self,
+        *,
+        n: Optional[int] = None,
+        seed: int = 0,
+        respect: RespectInput = None,
+        strict: bool = False,
+        id_prefix: str = "seq",
+    ) -> Iterator[Dict[str, Any]]:
+        """Compile and lazily yield AIRR-format record dicts. See
+        :meth:`CompiledExperiment.stream_records`."""
+        return self.compile().stream_records(
+            n=n,
+            seed=seed,
+            respect=respect,
+            strict=strict,
+            id_prefix=id_prefix,
+        )
 
     def __repr__(self) -> str:
         return f"<Experiment chain={self.chain_type} steps={self.step_count}>"
@@ -524,6 +1163,94 @@ class CompiledExperiment:
             )
             for i in range(n)
         ]
+
+    def run_records(
+        self,
+        *,
+        n: int = 1,
+        seed: int = 0,
+        respect: RespectInput = None,
+        strict: bool = False,
+    ) -> "SimulationResult":
+        """Run the compiled plan ``n`` times and return the batch as
+        a :class:`SimulationResult` ready for ``.to_csv`` /
+        ``.to_fasta`` / ``.to_dataframe`` export.
+
+        Same arguments as :meth:`run`.
+        """
+        from .result import SimulationResult
+
+        outcomes = self.run(n=n, seed=seed, respect=respect, strict=strict)
+        return SimulationResult.from_outcomes(outcomes, self._refdata)
+
+    def stream(
+        self,
+        *,
+        n: Optional[int] = None,
+        seed: int = 0,
+        respect: RespectInput = None,
+        strict: bool = False,
+    ) -> Iterator["_engine.Outcome"]:
+        """Lazily yield :class:`genairr_engine.Outcome` objects one at
+        a time, without materialising the full batch in memory.
+
+        Useful for large simulations where holding ``n`` outcomes
+        would be wasteful — typical pattern is
+
+        >>> for outcome in compiled.stream(n=1_000_000, seed=0):
+        ...     write_to_disk(outcome)
+
+        ``n=None`` (the default) yields outcomes indefinitely; the
+        caller is expected to stop with ``itertools.islice``,
+        ``break``, or similar. ``n=N`` yields exactly ``N`` outcomes
+        with seeds ``seed`` … ``seed + N - 1``.
+
+        ``respect`` and ``strict`` behave as in :meth:`run`.
+
+        Raises ``ValueError`` when ``n`` is set to a value below 1.
+        """
+        if n is not None and n < 1:
+            raise ValueError(f"n must be at least 1, got {n}")
+        contracts = _coerce_respect(respect)
+        i = 0
+        while n is None or i < n:
+            yield _engine.run(
+                self._plan,
+                seed=seed + i,
+                refdata=self._refdata,
+                respect=contracts,
+                strict=strict,
+            )
+            i += 1
+
+    def stream_records(
+        self,
+        *,
+        n: Optional[int] = None,
+        seed: int = 0,
+        respect: RespectInput = None,
+        strict: bool = False,
+        id_prefix: str = "seq",
+    ) -> Iterator[Dict[str, Any]]:
+        """Lazily yield AIRR-format record dicts (one per outcome).
+
+        Same shape as the records inside a :class:`SimulationResult`,
+        but yielded one at a time so callers can write each record to
+        disk without retaining the prior ones. Pairs naturally with
+        :func:`csv.DictWriter` for streaming TSV/CSV output.
+
+        Each record's ``sequence_id`` is set to
+        ``f"{id_prefix}{i}"`` so streamed batches have unique
+        AIRR-style identifiers without buffering.
+        """
+        from ._airr_record import outcome_to_airr_record
+
+        for i, outcome in enumerate(
+            self.stream(n=n, seed=seed, respect=respect, strict=strict)
+        ):
+            yield outcome_to_airr_record(
+                outcome, self._refdata, sequence_id=f"{id_prefix}{i}"
+            )
 
     def __repr__(self) -> str:
         return (

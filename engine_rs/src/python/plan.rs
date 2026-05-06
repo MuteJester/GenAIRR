@@ -22,7 +22,11 @@ use crate::assignment::TrimEnd;
 use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
 use crate::ir::Segment;
 use crate::pass::PassPlan;
-use crate::passes::{AssembleSegmentPass, GenerateNPPass, SampleAllelePass, TrimPass};
+use crate::passes::{
+    AssembleSegmentPass, ContaminantPass, GenerateNPPass, IndelPass, PCRErrorPass,
+    QualityErrorPass, S5FMutationPass, SampleAllelePass, TrimPass, UniformMutationPass,
+};
+use crate::s5f::{S5FKernel, S5F_NUM_CONTEXTS, S5F_SUBSTITUTION_LEN};
 
 use super::refdata::PyRefDataConfig;
 
@@ -66,17 +70,28 @@ impl PyPassPlan {
     }
 
     /// Append a `SampleAllelePass` for `segment`. Requires the active
-    /// `refdata` so the per-segment uniform allele distribution can
-    /// be built at push time.
+    /// `refdata` so the per-segment allele distribution can be built
+    /// at push time.
+    ///
+    /// When `allowed_ids` is `None`, the distribution is uniform over
+    /// the full pool. When `allowed_ids` is `Some(list)`, the
+    /// distribution is uniform over only the listed IDs — the
+    /// allele-locking path used by `Experiment.using(...)`.
     ///
     /// Errors:
     /// - `ValueError` when `segment` isn't `"V"`, `"D"`, or `"J"`.
     /// - `ValueError` when the corresponding pool in `refdata` is empty.
+    /// - `ValueError` when `allowed_ids` is empty, contains
+    ///   out-of-range IDs, or contains duplicates.
+    #[pyo3(signature = (segment, refdata, allowed_ids = None))]
     fn push_sample_allele(
         &mut self,
         segment: &str,
         refdata: &PyRefDataConfig,
+        allowed_ids: Option<Vec<u32>>,
     ) -> PyResult<()> {
+        use crate::refdata::AlleleId;
+
         let seg = parse_recombinable_segment(segment)?;
         let cfg = refdata.inner();
         let pool = cfg.pool_for(seg).ok_or_else(|| {
@@ -88,10 +103,39 @@ impl PyPassPlan {
                 segment
             )));
         }
-        self.inner.push(Box::new(SampleAllelePass::new(
-            seg,
-            Box::new(AllelePoolDist::uniform(pool)),
-        )));
+
+        let dist: Box<AllelePoolDist> = match allowed_ids {
+            None => Box::new(AllelePoolDist::uniform(pool)),
+            Some(ids) => {
+                if ids.is_empty() {
+                    return Err(PyValueError::new_err(format!(
+                        "{} allowed_ids must contain at least one id",
+                        segment
+                    )));
+                }
+                let pool_len = pool.len() as u32;
+                let mut seen = std::collections::HashSet::with_capacity(ids.len());
+                for raw in &ids {
+                    if *raw >= pool_len {
+                        return Err(PyValueError::new_err(format!(
+                            "{} allowed_id {} out of range (pool size {})",
+                            segment, raw, pool_len
+                        )));
+                    }
+                    if !seen.insert(*raw) {
+                        return Err(PyValueError::new_err(format!(
+                            "{} allowed_id {} appears more than once",
+                            segment, raw
+                        )));
+                    }
+                }
+                let allele_ids: Vec<AlleleId> =
+                    ids.into_iter().map(AlleleId::new).collect();
+                Box::new(AllelePoolDist::restricted_uniform(pool, allele_ids))
+            }
+        };
+
+        self.inner.push(Box::new(SampleAllelePass::new(seg, dist)));
         Ok(())
     }
 
@@ -137,6 +181,156 @@ impl PyPassPlan {
             Box::new(EmpiricalLengthDist::from_pairs(length_pairs)),
             Box::new(UniformBase),
         )));
+        Ok(())
+    }
+
+    /// Append a `UniformMutationPass`. ``count_pairs`` is a
+    /// ``(count, weight)`` distribution over the number of mutations
+    /// applied; each mutation samples a position uniformly across
+    /// the assembled pool and substitutes the base with a uniformly
+    /// drawn A/C/G/T.
+    ///
+    /// Errors: ``ValueError`` when ``count_pairs`` is empty.
+    fn push_mutate_uniform(&mut self, count_pairs: Vec<(i64, f64)>) -> PyResult<()> {
+        if count_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "count_pairs must contain at least one (count, weight) entry",
+            ));
+        }
+        self.inner.push(Box::new(UniformMutationPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
+            Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
+    /// Append an `S5FMutationPass` with the given S5F kernel data.
+    ///
+    /// ``mutability`` is a flat ``Vec<f64>`` of length 1024 (one entry
+    /// per 4⁵ canonical 5-mer context, indexed via
+    /// ``S5FKernel::encode_context``). ``substitution`` is a flat
+    /// ``Vec<f64>`` of length 4096 (1024 contexts × 4 destination
+    /// bases A/C/G/T). ``count_pairs`` follows the same shape as
+    /// ``push_mutate_uniform``.
+    ///
+    /// Errors: ``ValueError`` when ``count_pairs`` is empty or kernel
+    /// dimensions are wrong.
+    fn push_mutate_s5f(
+        &mut self,
+        count_pairs: Vec<(i64, f64)>,
+        mutability: Vec<f64>,
+        substitution: Vec<f64>,
+    ) -> PyResult<()> {
+        if count_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "count_pairs must contain at least one (count, weight) entry",
+            ));
+        }
+        if mutability.len() != S5F_NUM_CONTEXTS {
+            return Err(PyValueError::new_err(format!(
+                "mutability must have length {} (got {})",
+                S5F_NUM_CONTEXTS,
+                mutability.len()
+            )));
+        }
+        if substitution.len() != S5F_SUBSTITUTION_LEN {
+            return Err(PyValueError::new_err(format!(
+                "substitution must have length {} (got {})",
+                S5F_SUBSTITUTION_LEN,
+                substitution.len()
+            )));
+        }
+        let kernel = S5FKernel::new(mutability, substitution);
+        self.inner.push(Box::new(S5FMutationPass::new(
+            kernel,
+            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
+        )));
+        Ok(())
+    }
+
+    /// Append a `PCRErrorPass`. ``count_pairs`` is the empirical
+    /// distribution over the number of PCR-induced base substitution
+    /// errors per simulation; each error samples a uniform position
+    /// and replaces the base with a uniform A/C/G/T draw.
+    fn push_corrupt_pcr(&mut self, count_pairs: Vec<(i64, f64)>) -> PyResult<()> {
+        if count_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "count_pairs must contain at least one (count, weight) entry",
+            ));
+        }
+        self.inner.push(Box::new(PCRErrorPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
+            Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
+    /// Append a `QualityErrorPass`. Same shape as PCR but each
+    /// substitution writes the destination base as **lowercase** to
+    /// preserve the V5 sequencing-error convention (uppercase =
+    /// germline, lowercase = corrupted).
+    fn push_corrupt_quality(&mut self, count_pairs: Vec<(i64, f64)>) -> PyResult<()> {
+        if count_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "count_pairs must contain at least one (count, weight) entry",
+            ));
+        }
+        self.inner.push(Box::new(QualityErrorPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
+            Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
+    /// Append an `IndelPass`. ``count_pairs`` is the empirical
+    /// distribution over the total number of indel events per
+    /// simulation; each event independently chooses insertion vs.
+    /// deletion with probability ``insertion_prob`` (defaults to
+    /// 0.5). Insertions sample a uniform A/C/G/T base.
+    ///
+    /// Errors: ``ValueError`` when ``insertion_prob`` is outside
+    /// ``[0.0, 1.0]`` or non-finite, or when ``count_pairs`` is empty.
+    #[pyo3(signature = (count_pairs, *, insertion_prob=0.5))]
+    fn push_corrupt_indel(
+        &mut self,
+        count_pairs: Vec<(i64, f64)>,
+        insertion_prob: f64,
+    ) -> PyResult<()> {
+        if count_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "count_pairs must contain at least one (count, weight) entry",
+            ));
+        }
+        if !insertion_prob.is_finite() || !(0.0..=1.0).contains(&insertion_prob) {
+            return Err(PyValueError::new_err(format!(
+                "insertion_prob must be a finite number in [0.0, 1.0], got {}",
+                insertion_prob
+            )));
+        }
+        self.inner.push(Box::new(IndelPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
+            insertion_prob,
+            Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
+    /// Append a `ContaminantPass`. With probability ``apply_prob``
+    /// the entire assembled pool is overwritten with uniform
+    /// A/C/G/T bases (modelling primer dimers, bacterial DNA, or
+    /// any non-receptor sequence in the library).
+    ///
+    /// Errors: ``ValueError`` when ``apply_prob`` is outside
+    /// ``[0.0, 1.0]`` or non-finite.
+    fn push_corrupt_contaminant(&mut self, apply_prob: f64) -> PyResult<()> {
+        if !apply_prob.is_finite() || !(0.0..=1.0).contains(&apply_prob) {
+            return Err(PyValueError::new_err(format!(
+                "apply_prob must be a finite number in [0.0, 1.0], got {}",
+                apply_prob
+            )));
+        }
+        self.inner
+            .push(Box::new(ContaminantPass::new(apply_prob, Box::new(UniformBase))));
         Ok(())
     }
 

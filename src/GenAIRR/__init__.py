@@ -28,6 +28,7 @@ except _PackageNotFoundError:
 
 # The simulation entry point.
 from .experiment import CompiledExperiment, Experiment, dataconfig_to_refdata
+from .result import SimulationResult
 
 # Canonical contract bundle. Re-exported here so users write
 # ``GenAIRR.productive()`` without reaching into ``genairr_engine``.
@@ -76,6 +77,7 @@ __all__ = [
     # Simulation API
     "Experiment",
     "CompiledExperiment",
+    "SimulationResult",
     "dataconfig_to_refdata",
     "productive",
     "StrictSamplingError",

@@ -454,6 +454,12 @@ impl Distribution for EmpiricalLengthDist {
 #[derive(Clone, Debug)]
 pub struct AllelePoolDist {
     cumulative: Vec<f64>,
+    /// `Some(ids)` when the distribution covers a strict subset of
+    /// the pool: cumulative bucket `i` corresponds to `ids[i]`.
+    /// `None` when the distribution covers the entire pool with
+    /// identity index→ID mapping (the default for `uniform` and
+    /// `from_weights`).
+    ids: Option<Vec<AlleleId>>,
     total: f64,
 }
 
@@ -466,6 +472,50 @@ impl AllelePoolDist {
             "AllelePoolDist::uniform: pool must contain at least one allele"
         );
         Self::from_weights(pool, vec![1.0; pool.len()])
+    }
+
+    /// Uniform distribution restricted to the alleles named in
+    /// `allowed_ids`. The resulting distribution samples each listed
+    /// allele with equal probability and ignores the rest of the
+    /// pool. Used by the `Experiment.using(...)` allele-lock API.
+    ///
+    /// Panics if:
+    /// - `allowed_ids` is empty,
+    /// - any ID is out of range for `pool` (i.e. `id.index() >= pool.len()`),
+    /// - `allowed_ids` contains duplicates.
+    pub fn restricted_uniform(pool: &AllelePool, allowed_ids: Vec<AlleleId>) -> Self {
+        assert!(
+            !allowed_ids.is_empty(),
+            "AllelePoolDist::restricted_uniform: allowed_ids must be non-empty"
+        );
+        let pool_len = pool.len() as u32;
+        let mut seen = std::collections::HashSet::with_capacity(allowed_ids.len());
+        for id in &allowed_ids {
+            assert!(
+                id.index() < pool_len,
+                "AllelePoolDist::restricted_uniform: AlleleId({}) is out of range \
+                 for pool of size {}",
+                id.index(),
+                pool_len
+            );
+            assert!(
+                seen.insert(*id),
+                "AllelePoolDist::restricted_uniform: duplicate AlleleId({}) in \
+                 allowed_ids",
+                id.index()
+            );
+        }
+
+        let n = allowed_ids.len();
+        let mut cumulative = Vec::with_capacity(n);
+        for i in 0..n {
+            cumulative.push((i + 1) as f64);
+        }
+        Self {
+            cumulative,
+            ids: Some(allowed_ids),
+            total: n as f64,
+        }
     }
 
     /// Empirical distribution over `pool` with one weight per
@@ -512,6 +562,7 @@ impl AllelePoolDist {
 
         Self {
             cumulative,
+            ids: None,
             total: running,
         }
     }
@@ -542,7 +593,10 @@ impl Distribution for AllelePoolDist {
         let idx = self.cumulative.partition_point(|&c| c <= r);
         // Same defensive last-index clamp as EmpiricalLengthDist.
         let idx = idx.min(self.cumulative.len() - 1);
-        AlleleId::new(idx as u32)
+        match &self.ids {
+            Some(ids) => ids[idx],
+            None => AlleleId::new(idx as u32),
+        }
     }
 
     fn support(&self) -> Option<Vec<(AlleleId, f64)>> {
@@ -550,7 +604,11 @@ impl Distribution for AllelePoolDist {
         let mut prev_cum = 0.0;
         for (i, &cum) in self.cumulative.iter().enumerate() {
             let w = cum - prev_cum;
-            pairs.push((AlleleId::new(i as u32), w));
+            let id = match &self.ids {
+                Some(ids) => ids[i],
+                None => AlleleId::new(i as u32),
+            };
+            pairs.push((id, w));
             prev_cum = cum;
         }
         Some(pairs)
@@ -1135,5 +1193,86 @@ mod tests {
             let resolved = p.get(id);
             assert!(resolved.is_some(), "sampled id {:?} did not resolve", id);
         }
+    }
+
+    // ── restricted_uniform tests ────────────────────────────────────
+
+    #[test]
+    fn allele_pool_dist_restricted_uniform_only_samples_allowed_ids() {
+        let p = make_pool(10);
+        let allowed = vec![AlleleId::new(2), AlleleId::new(5), AlleleId::new(7)];
+        let dist = AllelePoolDist::restricted_uniform(&p, allowed.clone());
+        assert_eq!(dist.len(), 3);
+        let mut rng = Rng::new(0xbeef);
+        for _ in 0..500 {
+            let id = dist.sample(&mut rng);
+            assert!(
+                allowed.contains(&id),
+                "sampled id {:?} not in allowed set",
+                id
+            );
+        }
+    }
+
+    #[test]
+    fn allele_pool_dist_restricted_uniform_covers_all_allowed() {
+        let p = make_pool(8);
+        let allowed = vec![AlleleId::new(1), AlleleId::new(4), AlleleId::new(6)];
+        let dist = AllelePoolDist::restricted_uniform(&p, allowed.clone());
+        let mut rng = Rng::new(0xc0de);
+        let mut seen = vec![false; allowed.len()];
+        for _ in 0..2000 {
+            let id = dist.sample(&mut rng);
+            let pos = allowed.iter().position(|&a| a == id).unwrap();
+            seen[pos] = true;
+        }
+        assert!(seen.iter().all(|&s| s), "not every allowed id was sampled");
+    }
+
+    #[test]
+    fn allele_pool_dist_restricted_uniform_single_id_always_returns_it() {
+        let p = make_pool(20);
+        let dist = AllelePoolDist::restricted_uniform(&p, vec![AlleleId::new(13)]);
+        let mut rng = Rng::new(7);
+        for _ in 0..50 {
+            assert_eq!(dist.sample(&mut rng), AlleleId::new(13));
+        }
+    }
+
+    #[test]
+    fn allele_pool_dist_restricted_uniform_support_round_trip() {
+        let p = make_pool(6);
+        let allowed = vec![AlleleId::new(0), AlleleId::new(3), AlleleId::new(5)];
+        let dist = AllelePoolDist::restricted_uniform(&p, allowed.clone());
+        let support = dist.support().expect("support is Some");
+        let support_ids: Vec<AlleleId> = support.iter().map(|(id, _)| *id).collect();
+        assert_eq!(support_ids, allowed);
+        for (_, weight) in &support {
+            assert!((*weight - 1.0).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "allowed_ids must be non-empty")]
+    fn allele_pool_dist_restricted_uniform_rejects_empty() {
+        let p = make_pool(3);
+        let _ = AllelePoolDist::restricted_uniform(&p, vec![]);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn allele_pool_dist_restricted_uniform_rejects_out_of_range_id() {
+        let p = make_pool(3);
+        let _ = AllelePoolDist::restricted_uniform(&p, vec![AlleleId::new(5)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate")]
+    fn allele_pool_dist_restricted_uniform_rejects_duplicate_ids() {
+        let p = make_pool(3);
+        let _ = AllelePoolDist::restricted_uniform(
+            &p,
+            vec![AlleleId::new(1), AlleleId::new(1)],
+        );
     }
 }
