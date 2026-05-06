@@ -1,9 +1,9 @@
 //! `ContaminantPass` — wholesale sequence replacement (E.6).
 
-use crate::contract::ChoiceContext;
-use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
+use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
-use crate::pass::{Pass, PassContext, PassError};
+use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::constrained::{sample_targeted_base, TargetedBaseChoice};
 use crate::trace::ChoiceValue;
 
 /// Models read contamination: with probability `apply_prob` the
@@ -64,55 +64,6 @@ impl ContaminantPass {
         self.apply_prob
     }
 
-    fn constraint_sampling_error(
-        &self,
-        address: impl Into<String>,
-        reason: FilteredSampleError,
-    ) -> PassError {
-        PassError::constraint_sampling(self.name(), address, reason)
-    }
-
-    fn sample_base(
-        &self,
-        sim: &Simulation,
-        ctx: &mut PassContext,
-        address: &str,
-        index: u32,
-        count: u32,
-        site: NucHandle,
-        strict: bool,
-    ) -> Result<u8, PassError> {
-        let refdata = ctx.refdata;
-        let contracts = ctx.contracts;
-
-        if let Some(contracts) = contracts {
-            let context = ChoiceContext::indexed_target(index, count, site);
-            match sample_filtered_result(ctx.rng, self.base_dist.as_ref(), |candidate: &u8| {
-                contracts
-                    .admits_with_context(
-                        sim,
-                        refdata,
-                        address,
-                        &ChoiceValue::Base(*candidate),
-                        context,
-                    )
-                    .is_ok()
-            }) {
-                Ok(value) => return Ok(value),
-                Err(reason) if strict => {
-                    return Err(self.constraint_sampling_error(address, reason));
-                }
-                Err(_) => {
-                    // Permissive legacy path: if filtering cannot
-                    // produce a value, preserve unconstrained
-                    // contaminant replacement.
-                }
-            }
-        }
-
-        Ok(self.base_dist.sample(ctx.rng))
-    }
-
     fn execute_with_sampling_mode(
         &self,
         sim: &Simulation,
@@ -139,7 +90,12 @@ impl ContaminantPass {
         for i in 0..pool_len {
             let site = NucHandle::new(i);
             let address = format!("corrupt.contaminant.bases[{}]", i);
-            let new_base = self.sample_base(&current, ctx, &address, i, pool_len, site, strict)?;
+            let new_base = sample_targeted_base(
+                &current,
+                ctx,
+                self.base_dist.as_ref(),
+                TargetedBaseChoice::new(self.name(), &address, i, pool_len, site, strict),
+            )?;
             ctx.trace.record(address, ChoiceValue::Base(new_base));
             current = current.with_base_changed(site, new_base);
         }
@@ -171,6 +127,10 @@ impl Pass for ContaminantPass {
             "corrupt.contaminant.bases[0..n]".to_string(),
         ]
     }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::EditBases]
+    }
 }
 
 #[cfg(test)]
@@ -178,7 +138,7 @@ mod tests {
     use super::*;
     use crate::assignment::AlleleInstance;
     use crate::contract::productive;
-    use crate::dist::UniformBase;
+    use crate::dist::{FilteredSampleError, UniformBase};
     use crate::ir::{Nucleotide, Region, Segment};
     use crate::pass::{PassPlan, PassRuntime};
     use crate::refdata::{Allele, AlleleId, ChainType, RefDataConfig};

@@ -18,6 +18,7 @@
 //!   quality error, contamination, indels — Phase E.4–E.7).
 
 pub mod assemble_segment;
+pub(crate) mod constrained;
 pub mod corrupt;
 pub mod echo;
 pub mod generate_np;

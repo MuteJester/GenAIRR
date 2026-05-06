@@ -1,7 +1,7 @@
 //! `AssembleSegmentPass` — copy a germline allele slice into the pool (C.8).
 
 use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
-use crate::pass::{Pass, PassContext};
+use crate::pass::{Pass, PassContext, PassEffect, PassError, PassRequirement};
 
 /// Assemble one germline segment (V, D, or J) from its assigned
 /// `AlleleInstance` into the simulation pool.
@@ -55,54 +55,66 @@ impl AssembleSegmentPass {
     pub fn segment(&self) -> Segment {
         self.segment
     }
-}
 
-impl Pass for AssembleSegmentPass {
-    fn name(&self) -> &str {
-        match self.segment {
-            Segment::V => "assemble.v",
-            Segment::D => "assemble.d",
-            Segment::J => "assemble.j",
-            _ => unreachable!("AssembleSegmentPass with non-V/D/J segment"),
-        }
-    }
-
-    fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
-        let refdata = ctx.refdata.unwrap_or_else(|| {
-            panic!(
-                "AssembleSegmentPass({:?}): PassContext.refdata is None — \
-                 use PassRuntime::execute_with_refdata for plans containing \
-                 assembly passes",
-                self.segment
-            )
-        });
-
-        let inst = sim
-            .assignments
-            .get(self.segment)
-            .copied()
-            .unwrap_or_else(|| {
+    fn execute_with_validation(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        let refdata = match ctx.refdata {
+            Some(refdata) => refdata,
+            None if strict => return Err(PassError::missing_refdata(self.name())),
+            None => {
                 panic!(
-                    "AssembleSegmentPass({:?}): no allele assigned — \
-                 SampleAllelePass for this segment must run before assembly",
+                    "AssembleSegmentPass({:?}): PassContext.refdata is None — \
+                     use PassRuntime::execute_with_refdata for plans containing \
+                     assembly passes",
                     self.segment
                 )
-            });
+            }
+        };
 
-        let allele = refdata
-            .get(self.segment, inst.allele_id)
-            .unwrap_or_else(|| {
+        let inst = match sim.assignments.get(self.segment).copied() {
+            Some(inst) => inst,
+            None if strict => return Err(PassError::missing_assignment(self.name(), self.segment)),
+            None => {
+                panic!(
+                    "AssembleSegmentPass({:?}): no allele assigned — \
+                     SampleAllelePass for this segment must run before assembly",
+                    self.segment
+                )
+            }
+        };
+
+        let allele = match refdata.get(self.segment, inst.allele_id) {
+            Some(allele) => allele,
+            None if strict => {
+                return Err(PassError::missing_allele(
+                    self.name(),
+                    self.segment,
+                    inst.allele_id.index(),
+                ));
+            }
+            None => {
                 panic!(
                     "AssembleSegmentPass({:?}): allele_id {:?} out of bounds \
-                 for refdata pool",
+                     for refdata pool",
                     self.segment, inst.allele_id
                 )
-            });
+            }
+        };
 
         let trim_5 = inst.trim_5 as u32;
         let trim_3 = inst.trim_3 as u32;
         let allele_len = allele.len();
 
+        if strict && trim_5 + trim_3 > allele_len {
+            return Err(PassError::invalid_plan_state(
+                self.name(),
+                "trim_exceeds_allele_length",
+            ));
+        }
         assert!(
             trim_5 + trim_3 <= allele_len,
             "AssembleSegmentPass({:?}): trim_5 ({}) + trim_3 ({}) exceeds \
@@ -145,12 +157,47 @@ impl Pass for AssembleSegmentPass {
             .with_frame_phase(frame_phase)
             .with_codon_rail_recomputed(&current.pool);
 
-        current.with_region_added(region)
+        Ok(current.with_region_added(region))
+    }
+}
+
+impl Pass for AssembleSegmentPass {
+    fn name(&self) -> &str {
+        match self.segment {
+            Segment::V => "assemble.v",
+            Segment::D => "assemble.d",
+            Segment::J => "assemble.j",
+            _ => unreachable!("AssembleSegmentPass with non-V/D/J segment"),
+        }
+    }
+
+    fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
+        self.execute_with_validation(sim, ctx, false)
+            .expect("AssembleSegmentPass permissive execution must not return PassError")
+    }
+
+    fn execute_checked(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_validation(sim, ctx, true)
     }
 
     fn declared_choices(&self) -> Vec<String> {
         // Deterministic — no choices.
         Vec::new()
+    }
+
+    fn requirements(&self) -> Vec<PassRequirement> {
+        vec![
+            PassRequirement::RefData,
+            PassRequirement::AlleleAssignment(self.segment),
+        ]
+    }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::AssembleSegment(self.segment)]
     }
 }
 
@@ -195,7 +242,7 @@ mod tests {
     use super::*;
     use crate::assignment::TrimEnd;
     use crate::dist::{AllelePoolDist, EmpiricalLengthDist};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::{PassError, PassPlan, PassRuntime};
     use crate::passes::sample_allele::test_support::make_test_pool;
     use crate::passes::{SampleAllelePass, TrimPass};
 
@@ -220,12 +267,54 @@ mod tests {
     }
 
     #[test]
+    fn assemble_segment_strict_errors_without_refdata() {
+        let mut plan = PassPlan::new();
+        let v_pool = make_test_pool(1, Segment::V);
+        plan.push(Box::new(SampleAllelePass::new(
+            Segment::V,
+            Box::new(AllelePoolDist::uniform(&v_pool)),
+        )));
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+
+        let err = PassRuntime::execute_strict_with_context(&plan, Simulation::new(), 0, None, None)
+            .unwrap_err();
+
+        assert_eq!(err.pass_name(), "assemble.v");
+        assert!(matches!(err, PassError::MissingRefData { .. }));
+    }
+
+    #[test]
     #[should_panic(expected = "no allele assigned")]
     fn assemble_segment_pass_panics_without_allele_assignment() {
         let refdata = make_test_refdata();
         let mut plan = PassPlan::new();
         plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
         let _ = PassRuntime::execute_with_refdata(&plan, Simulation::new(), 0, &refdata);
+    }
+
+    #[test]
+    fn assemble_segment_strict_errors_without_allele_assignment() {
+        let refdata = make_test_refdata();
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+
+        let err = PassRuntime::execute_strict_with_context(
+            &plan,
+            Simulation::new(),
+            0,
+            Some(&refdata),
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.pass_name(), "assemble.v");
+        assert!(matches!(
+            err,
+            PassError::MissingAssignment {
+                segment: Segment::V,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -257,6 +346,40 @@ mod tests {
         // test to succeed; we rely on test_refdata having allele 0
         // be the V whose length is 9.
         let _ = PassRuntime::execute_with_refdata(&plan, Simulation::new(), 0, &refdata);
+    }
+
+    #[test]
+    fn assemble_segment_strict_errors_when_trim_exceeds_length() {
+        let refdata = make_test_refdata();
+        let v_pool = make_test_pool(1, Segment::V);
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(SampleAllelePass::new(
+            Segment::V,
+            Box::new(AllelePoolDist::uniform(&v_pool)),
+        )));
+        plan.push(Box::new(TrimPass::new(
+            Segment::V,
+            TrimEnd::Five,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(5, 1.0)])),
+        )));
+        plan.push(Box::new(TrimPass::new(
+            Segment::V,
+            TrimEnd::Three,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(5, 1.0)])),
+        )));
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+
+        let err = PassRuntime::execute_strict_with_context(
+            &plan,
+            Simulation::new(),
+            0,
+            Some(&refdata),
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.pass_name(), "assemble.v");
+        assert!(matches!(err, PassError::InvalidPlanState { .. }));
     }
 
     #[test]

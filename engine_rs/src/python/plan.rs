@@ -94,9 +94,9 @@ impl PyPassPlan {
 
         let seg = parse_recombinable_segment(segment)?;
         let cfg = refdata.inner();
-        let pool = cfg.pool_for(seg).ok_or_else(|| {
-            PyValueError::new_err(format!("no pool for segment {:?}", segment))
-        })?;
+        let pool = cfg
+            .pool_for(seg)
+            .ok_or_else(|| PyValueError::new_err(format!("no pool for segment {:?}", segment)))?;
         if pool.is_empty() {
             return Err(PyValueError::new_err(format!(
                 "{} pool is empty in supplied refdata",
@@ -129,8 +129,7 @@ impl PyPassPlan {
                         )));
                     }
                 }
-                let allele_ids: Vec<AlleleId> =
-                    ids.into_iter().map(AlleleId::new).collect();
+                let allele_ids: Vec<AlleleId> = ids.into_iter().map(AlleleId::new).collect();
                 Box::new(AllelePoolDist::restricted_uniform(pool, allele_ids))
             }
         };
@@ -329,8 +328,10 @@ impl PyPassPlan {
                 apply_prob
             )));
         }
-        self.inner
-            .push(Box::new(ContaminantPass::new(apply_prob, Box::new(UniformBase))));
+        self.inner.push(Box::new(ContaminantPass::new(
+            apply_prob,
+            Box::new(UniformBase),
+        )));
         Ok(())
     }
 

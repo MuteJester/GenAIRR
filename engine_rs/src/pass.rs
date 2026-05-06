@@ -25,13 +25,57 @@
 //! threads `&Simulation → Simulation` through arbitrarily many
 //! passes while collecting trace + history.
 
-use crate::contract::ContractSet;
+use crate::contract::{ContractSet, ContractViolation};
 use crate::dist::FilteredSampleError;
-use crate::ir::Simulation;
+use crate::event::EventRecord;
+use crate::ir::{Segment, Simulation};
 use crate::refdata::RefDataConfig;
 use crate::rng::Rng;
 use crate::trace::Trace;
 use std::fmt;
+
+// ──────────────────────────────────────────────────────────────────
+// Pass metadata — compile-time requirements/effects
+// ──────────────────────────────────────────────────────────────────
+
+/// Static requirement a pass has before it can execute safely.
+///
+/// The compiled-simulator boundary consumes this metadata to reject
+/// invalid plans before runtime. It is intentionally small and typed:
+/// build-time analysis should not infer semantics from pass names or
+/// trace-address strings.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum PassRequirement {
+    /// Pass needs reference data in `PassContext::refdata`.
+    RefData,
+    /// Pass needs an allele assignment for the given segment to have
+    /// been produced by an earlier pass.
+    AlleleAssignment(Segment),
+}
+
+/// Static effect a pass has on the simulation state.
+///
+/// This is not a full dataflow language. It is the durable surface the
+/// compiler layer needs for basic ordering validation and introspection.
+/// More precise event/effect metadata can be added without changing the
+/// existing pass execution contract.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum PassEffect {
+    /// Assigns an allele id to a recombinable segment.
+    AssignAllele(Segment),
+    /// Updates trim metadata on an assigned allele instance.
+    TrimAllele(Segment),
+    /// Assembles a germline segment into the nucleotide pool/sequence.
+    AssembleSegment(Segment),
+    /// Appends a region to the sequence.
+    AppendRegion(Segment),
+    /// Appends one or more nucleotides without creating a region.
+    AppendNucleotides,
+    /// Edits existing nucleotide bases without changing pool length.
+    EditBases,
+    /// Changes pool length and shifts downstream handles/ranges.
+    StructuralIndel,
+}
 
 // ──────────────────────────────────────────────────────────────────
 // PassContext — what every pass sees in addition to the IR
@@ -101,6 +145,32 @@ pub enum PassError {
         address: String,
         reason: FilteredSampleError,
     },
+    /// A pass that requires reference data was run without it.
+    MissingRefData { pass_name: String },
+    /// A pass requires an allele assignment that is absent in the
+    /// current IR revision. Usually indicates invalid pass ordering.
+    MissingAssignment { pass_name: String, segment: Segment },
+    /// The IR references an allele id that is absent from the supplied
+    /// reference data.
+    MissingAllele {
+        pass_name: String,
+        segment: Segment,
+        allele_id: u32,
+    },
+    /// A distribution emitted a value outside the pass's valid domain.
+    InvalidDistributionOutput {
+        pass_name: String,
+        address: String,
+        value: i64,
+        reason: String,
+    },
+    /// The current IR and plan state are inconsistent for this pass.
+    InvalidPlanState { pass_name: String, reason: String },
+    /// A pass produced a post-state that violates active contracts.
+    ContractViolation {
+        pass_name: String,
+        violations: Vec<ContractViolation>,
+    },
 }
 
 impl PassError {
@@ -116,21 +186,86 @@ impl PassError {
         }
     }
 
+    pub fn missing_refdata(pass_name: impl Into<String>) -> Self {
+        Self::MissingRefData {
+            pass_name: pass_name.into(),
+        }
+    }
+
+    pub fn missing_assignment(pass_name: impl Into<String>, segment: Segment) -> Self {
+        Self::MissingAssignment {
+            pass_name: pass_name.into(),
+            segment,
+        }
+    }
+
+    pub fn missing_allele(pass_name: impl Into<String>, segment: Segment, allele_id: u32) -> Self {
+        Self::MissingAllele {
+            pass_name: pass_name.into(),
+            segment,
+            allele_id,
+        }
+    }
+
+    pub fn invalid_distribution_output(
+        pass_name: impl Into<String>,
+        address: impl Into<String>,
+        value: i64,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::InvalidDistributionOutput {
+            pass_name: pass_name.into(),
+            address: address.into(),
+            value,
+            reason: reason.into(),
+        }
+    }
+
+    pub fn invalid_plan_state(pass_name: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::InvalidPlanState {
+            pass_name: pass_name.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub fn contract_violation(
+        pass_name: impl Into<String>,
+        violations: Vec<ContractViolation>,
+    ) -> Self {
+        Self::ContractViolation {
+            pass_name: pass_name.into(),
+            violations,
+        }
+    }
+
     pub fn pass_name(&self) -> &str {
         match self {
             Self::ConstraintSampling { pass_name, .. } => pass_name,
+            Self::MissingRefData { pass_name } => pass_name,
+            Self::MissingAssignment { pass_name, .. } => pass_name,
+            Self::MissingAllele { pass_name, .. } => pass_name,
+            Self::InvalidDistributionOutput { pass_name, .. } => pass_name,
+            Self::InvalidPlanState { pass_name, .. } => pass_name,
+            Self::ContractViolation { pass_name, .. } => pass_name,
         }
     }
 
     pub fn address(&self) -> &str {
         match self {
             Self::ConstraintSampling { address, .. } => address,
+            Self::InvalidDistributionOutput { address, .. } => address,
+            Self::MissingRefData { .. }
+            | Self::MissingAssignment { .. }
+            | Self::MissingAllele { .. }
+            | Self::InvalidPlanState { .. }
+            | Self::ContractViolation { .. } => "",
         }
     }
 
     pub fn constraint_reason(&self) -> Option<FilteredSampleError> {
         match self {
             Self::ConstraintSampling { reason, .. } => Some(*reason),
+            _ => None,
         }
     }
 }
@@ -159,6 +294,54 @@ impl fmt::Display for PassError {
                     "{} failed strict constrained sampling at {}: {}",
                     pass_name, address, detail
                 )
+            }
+            Self::MissingRefData { pass_name } => {
+                write!(
+                    f,
+                    "{} requires reference data in strict execution",
+                    pass_name
+                )
+            }
+            Self::MissingAssignment { pass_name, segment } => write!(
+                f,
+                "{} requires a {:?} allele assignment before execution",
+                pass_name, segment
+            ),
+            Self::MissingAllele {
+                pass_name,
+                segment,
+                allele_id,
+            } => write!(
+                f,
+                "{} could not resolve {:?} allele id {} in reference data",
+                pass_name, segment, allele_id
+            ),
+            Self::InvalidDistributionOutput {
+                pass_name,
+                address,
+                value,
+                reason,
+            } => write!(
+                f,
+                "{} received invalid distribution output at {}: {} ({})",
+                pass_name, address, value, reason
+            ),
+            Self::InvalidPlanState { pass_name, reason } => {
+                write!(
+                    f,
+                    "{} cannot execute in current plan state: {}",
+                    pass_name, reason
+                )
+            }
+            Self::ContractViolation {
+                pass_name,
+                violations,
+            } => {
+                write!(f, "{} produced a contract-invalid state", pass_name)?;
+                for violation in violations {
+                    write!(f, "; {}: {}", violation.contract_name, violation.reason)?;
+                }
+                Ok(())
             }
         }
     }
@@ -242,6 +425,24 @@ pub trait Pass {
     fn declared_choices(&self) -> Vec<String> {
         Vec::new()
     }
+
+    /// Static requirements this pass has before it can execute safely.
+    ///
+    /// The compiled-simulator layer uses this to reject invalid plans
+    /// early (for example, assembly without refdata or without a prior
+    /// sample-allele pass). Defaults to no requirements.
+    fn requirements(&self) -> Vec<PassRequirement> {
+        Vec::new()
+    }
+
+    /// Static effects this pass has on the simulation state.
+    ///
+    /// The compiled-simulator layer uses this as a typed plan summary
+    /// and for coarse ordering validation. Defaults to no declared
+    /// effects, which is appropriate for pure analysis/no-op passes.
+    fn effects(&self) -> Vec<PassEffect> {
+        Vec::new()
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -309,11 +510,17 @@ impl Default for PassPlan {
 ///
 /// `trace` is the addressed-choice record made during the run —
 /// every choice from every pass, in chronological order.
+///
+/// `events` is the committed event ledger. The compiled simulator
+/// emits one event for each committed pass transition. Low-level
+/// `PassRuntime` entry points leave this empty because they do not
+/// own the compiled transaction boundary.
 #[derive(Clone, Debug)]
 pub struct Outcome {
     pub revisions: Vec<Simulation>,
     pub pass_names: Vec<String>,
     pub trace: Trace,
+    pub events: Vec<EventRecord>,
 }
 
 impl Outcome {
@@ -333,6 +540,11 @@ impl Outcome {
             .iter()
             .position(|n| n == name)
             .map(|i| &self.revisions[i + 1])
+    }
+
+    /// The committed event ledger for this run.
+    pub fn events(&self) -> &[EventRecord] {
+        &self.events
     }
 }
 
@@ -433,6 +645,7 @@ impl PassRuntime {
             revisions,
             pass_names,
             trace,
+            events: Vec::new(),
         }
     }
 
@@ -469,6 +682,7 @@ impl PassRuntime {
             revisions,
             pass_names,
             trace,
+            events: Vec::new(),
         })
     }
 }

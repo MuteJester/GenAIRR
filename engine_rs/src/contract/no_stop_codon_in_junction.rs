@@ -5,7 +5,7 @@ use crate::junction::compute_junction;
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
 
-use super::{ChoiceContext, Contract, ContractViolation};
+use super::{ChoiceContext, ChoiceKind, Contract, ContractViolation};
 
 /// Verifies that no codon inside the junction translates to a stop
 /// (TAA, TAG, TGA). Walks codons from `junction.start` in steps of
@@ -79,6 +79,11 @@ impl NoStopCodonInJunction {
             }
         }
         None
+    }
+
+    fn is_targeted_substitution_candidate(address: &str, context: ChoiceContext) -> bool {
+        context.kind == ChoiceKind::TargetedBaseSubstitution
+            || Self::parse_targeted_substitution_base_address(address).is_some()
     }
 
     fn parse_filter_candidate(
@@ -329,7 +334,7 @@ impl NoStopCodonInJunction {
         candidate: &ChoiceValue,
         context: ChoiceContext,
     ) -> Result<(), ContractViolation> {
-        if Self::parse_targeted_substitution_base_address(address).is_none() {
+        if !Self::is_targeted_substitution_candidate(address, context) {
             return Ok(());
         }
 

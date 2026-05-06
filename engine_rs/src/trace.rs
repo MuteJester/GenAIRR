@@ -117,6 +117,16 @@ impl Trace {
         self.choices.push(ChoiceRecord::new(address, value));
     }
 
+    /// Atomically append a completed per-pass trace delta.
+    ///
+    /// The compiled simulator builds trace entries in a local
+    /// per-pass buffer. Only after the pass result has passed all
+    /// execution fences does it move that delta into the run trace.
+    /// This keeps trace/history/state commits aligned.
+    pub fn append_delta(&mut self, mut delta: Trace) {
+        self.choices.append(&mut delta.choices);
+    }
+
     /// All recorded choices in chronological order.
     pub fn choices(&self) -> &[ChoiceRecord] {
         &self.choices
@@ -190,6 +200,23 @@ mod tests {
             t.choices()[2].value,
             ChoiceValue::Bases(b"acgtcga".to_vec())
         );
+    }
+
+    #[test]
+    fn trace_append_delta_moves_records_in_order() {
+        let mut run_trace = Trace::new();
+        run_trace.record("first.choice", ChoiceValue::Int(1));
+
+        let mut delta = Trace::new();
+        delta.record("second.choice", ChoiceValue::Base(b'A'));
+        delta.record("third.choice", ChoiceValue::Bool(true));
+
+        run_trace.append_delta(delta);
+
+        assert_eq!(run_trace.len(), 3);
+        assert_eq!(run_trace.choices()[0].address, "first.choice");
+        assert_eq!(run_trace.choices()[1].address, "second.choice");
+        assert_eq!(run_trace.choices()[2].address, "third.choice");
     }
 
     #[test]

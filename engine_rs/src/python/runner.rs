@@ -8,9 +8,10 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::compiled::{CompiledSimulator, ExecutionPolicy};
 use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
-use crate::ir::{flag, Segment, Simulation};
-use crate::pass::{PassPlan, PassRuntime};
+use crate::ir::{flag, Segment};
+use crate::pass::PassPlan;
 use crate::passes::{
     AssembleSegmentPass, EchoPass, GenerateNPPass, SampleAllelePass, SampleBasePass,
 };
@@ -20,6 +21,19 @@ use super::contract::{pass_error_to_pyerr, PyContractSet};
 use super::outcome::PyOutcome;
 use super::plan::PyPassPlan;
 use super::refdata::PyRefDataConfig;
+
+fn run_compiled(
+    plan: &PassPlan,
+    seed: u64,
+    refdata: Option<&RefDataConfig>,
+    contracts: Option<&crate::contract::ContractSet>,
+    policy: ExecutionPolicy,
+) -> PyResult<PyOutcome> {
+    let compiled = CompiledSimulator::compile(plan, refdata, contracts, policy)
+        .map_err(|err| PyValueError::new_err(err.to_string()))?;
+    let outcome = compiled.run_one(seed).map_err(pass_error_to_pyerr)?;
+    Ok(PyOutcome::new(outcome))
+}
 
 /// Run a small built-in mixed plan (8 × `EchoPass` interleaved with
 /// 8 × `SampleBasePass`) and return the resulting [`PyOutcome`].
@@ -41,8 +55,8 @@ fn run_smoke_plan(seed: u64) -> PyOutcome {
         )));
     }
 
-    let outcome = PassRuntime::execute(&plan, Simulation::new(), seed);
-    PyOutcome::new(outcome)
+    run_compiled(&plan, seed, None, None, ExecutionPolicy::Permissive)
+        .expect("smoke plan should compile and run")
 }
 
 /// Build the synthetic VJ refdata used by [`run_smoke_vj_recombination`]:
@@ -107,8 +121,8 @@ fn run_smoke_vj_recombination(seed: u64) -> PyOutcome {
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
 
-    let outcome = PassRuntime::execute_with_refdata(&plan, Simulation::new(), seed, &cfg);
-    PyOutcome::new(outcome)
+    run_compiled(&plan, seed, Some(&cfg), None, ExecutionPolicy::Permissive)
+        .expect("smoke VJ recombination plan should compile and run")
 }
 
 /// Run a VJ recombination plan against a Python-supplied
@@ -175,8 +189,7 @@ fn run_vj_recombination(
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
 
-    let outcome = PassRuntime::execute_with_refdata(&plan, Simulation::new(), seed, cfg);
-    Ok(PyOutcome::new(outcome))
+    run_compiled(&plan, seed, Some(cfg), None, ExecutionPolicy::Permissive)
 }
 
 /// Execute a Python-built [`PyPassPlan`] and return the resulting
@@ -207,35 +220,18 @@ fn run(
     respect: Option<&PyContractSet>,
     strict: bool,
 ) -> PyResult<PyOutcome> {
-    if strict {
-        let outcome = PassRuntime::execute_strict_with_context(
-            plan.inner(),
-            Simulation::new(),
-            seed,
-            refdata.map(|r| r.inner()),
-            respect.map(|c| c.inner()),
-        )
-        .map_err(pass_error_to_pyerr)?;
-        return Ok(PyOutcome::new(outcome));
-    }
-
-    let outcome = match (refdata, respect) {
-        (None, None) => PassRuntime::execute(plan.inner(), Simulation::new(), seed),
-        (Some(r), None) => PassRuntime::execute_with_refdata(
-            plan.inner(),
-            Simulation::new(),
-            seed,
-            r.inner(),
-        ),
-        (refdata_opt, contracts_opt) => PassRuntime::execute_with_context(
-            plan.inner(),
-            Simulation::new(),
-            seed,
-            refdata_opt.map(|r| r.inner()),
-            contracts_opt.map(|c| c.inner()),
-        ),
+    let policy = if strict {
+        ExecutionPolicy::Strict
+    } else {
+        ExecutionPolicy::Permissive
     };
-    Ok(PyOutcome::new(outcome))
+    run_compiled(
+        plan.inner(),
+        seed,
+        refdata.map(|r| r.inner()),
+        respect.map(|c| c.inner()),
+        policy,
+    )
 }
 
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {

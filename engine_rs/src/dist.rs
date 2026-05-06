@@ -1270,9 +1270,6 @@ mod tests {
     #[should_panic(expected = "duplicate")]
     fn allele_pool_dist_restricted_uniform_rejects_duplicate_ids() {
         let p = make_pool(3);
-        let _ = AllelePoolDist::restricted_uniform(
-            &p,
-            vec![AlleleId::new(1), AlleleId::new(1)],
-        );
+        let _ = AllelePoolDist::restricted_uniform(&p, vec![AlleleId::new(1), AlleleId::new(1)]);
     }
 }

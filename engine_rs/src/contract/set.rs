@@ -111,6 +111,25 @@ impl ContractSet {
         }
         Ok(())
     }
+
+    /// Structural-event variant of [`ContractSet::admits_with_context`].
+    ///
+    /// Used for candidates whose admissibility depends on the complete
+    /// post-event IR, such as indels that change pool length and shift
+    /// downstream sequence metadata.
+    pub fn admits_post_event(
+        &self,
+        pre_sim: &Simulation,
+        post_sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        address: &str,
+        context: ChoiceContext,
+    ) -> Result<(), ContractViolation> {
+        for c in &self.contracts {
+            c.admits_post_event(pre_sim, post_sim, refdata, address, context)?;
+        }
+        Ok(())
+    }
 }
 
 impl Default for ContractSet {
@@ -125,9 +144,7 @@ mod tests {
         make_assembled_sim, make_assembled_sim_from_refdata, make_v_anchor_at,
         make_vj_for_frame_test, make_vj_with_anchor_codons,
     };
-    use super::super::{
-        AnchorPreserved, NoStopCodonInJunction, ProductiveJunctionFrame,
-    };
+    use super::super::{AnchorPreserved, NoStopCodonInJunction, ProductiveJunctionFrame};
     use super::*;
     use crate::assignment::AlleleInstance;
     use crate::ir::Segment;

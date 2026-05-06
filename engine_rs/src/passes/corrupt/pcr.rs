@@ -1,9 +1,9 @@
 //! `PCRErrorPass` — observation-stage PCR amplification errors (E.4).
 
-use crate::contract::ChoiceContext;
-use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
+use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
-use crate::pass::{Pass, PassContext, PassError};
+use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::constrained::{sample_targeted_base, TargetedBaseChoice};
 use crate::trace::ChoiceValue;
 
 /// Models PCR amplification errors as a small number of random
@@ -47,55 +47,6 @@ impl PCRErrorPass {
         }
     }
 
-    fn constraint_sampling_error(
-        &self,
-        address: impl Into<String>,
-        reason: FilteredSampleError,
-    ) -> PassError {
-        PassError::constraint_sampling(self.name(), address, reason)
-    }
-
-    fn sample_base(
-        &self,
-        sim: &Simulation,
-        ctx: &mut PassContext,
-        address: &str,
-        index: u32,
-        count: u32,
-        site: NucHandle,
-        strict: bool,
-    ) -> Result<u8, PassError> {
-        let refdata = ctx.refdata;
-        let contracts = ctx.contracts;
-
-        if let Some(contracts) = contracts {
-            let context = ChoiceContext::indexed_target(index, count, site);
-            match sample_filtered_result(ctx.rng, self.base_dist.as_ref(), |candidate: &u8| {
-                contracts
-                    .admits_with_context(
-                        sim,
-                        refdata,
-                        address,
-                        &ChoiceValue::Base(*candidate),
-                        context,
-                    )
-                    .is_ok()
-            }) {
-                Ok(value) => return Ok(value),
-                Err(reason) if strict => {
-                    return Err(self.constraint_sampling_error(address, reason));
-                }
-                Err(_) => {
-                    // Permissive legacy path: if support is missing
-                    // or filtered empty, fall back to unconstrained
-                    // PCR error sampling.
-                }
-            }
-        }
-
-        Ok(self.base_dist.sample(ctx.rng))
-    }
-
     fn execute_with_sampling_mode(
         &self,
         sim: &Simulation,
@@ -103,9 +54,30 @@ impl PCRErrorPass {
         strict: bool,
     ) -> Result<Simulation, PassError> {
         let count_raw = self.count_dist.sample(ctx.rng);
+        if strict && count_raw < 0 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                "corrupt.pcr.count",
+                count_raw,
+                "negative_count",
+            ));
+        }
+        if strict && count_raw > u32::MAX as i64 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                "corrupt.pcr.count",
+                count_raw,
+                "count_exceeds_u32",
+            ));
+        }
         assert!(
             count_raw >= 0,
             "PCRErrorPass: count distribution returned negative {}",
+            count_raw
+        );
+        assert!(
+            count_raw <= u32::MAX as i64,
+            "PCRErrorPass: count distribution returned {} > u32::MAX",
             count_raw
         );
         let count = count_raw as u32;
@@ -127,8 +99,12 @@ impl PCRErrorPass {
                 format!("corrupt.pcr.error_site[{}]", i),
                 ChoiceValue::Int(site as i64),
             );
-            let new_base =
-                self.sample_base(&current, ctx, &base_address, i, count, site_handle, strict)?;
+            let new_base = sample_targeted_base(
+                &current,
+                ctx,
+                self.base_dist.as_ref(),
+                TargetedBaseChoice::new(self.name(), &base_address, i, count, site_handle, strict),
+            )?;
             ctx.trace.record(base_address, ChoiceValue::Base(new_base));
 
             current = current.with_base_changed(site_handle, new_base);
@@ -163,13 +139,17 @@ impl Pass for PCRErrorPass {
             "corrupt.pcr.error_base[0..n]".to_string(),
         ]
     }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::EditBases]
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::contract::productive;
-    use crate::dist::{EmpiricalLengthDist, UniformBase};
+    use crate::dist::{EmpiricalLengthDist, FilteredSampleError, UniformBase};
     use crate::ir::{Nucleotide, Region, Segment};
     use crate::pass::{PassPlan, PassRuntime};
     use crate::passes::test_support::{

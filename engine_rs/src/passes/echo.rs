@@ -1,7 +1,7 @@
 //! `EchoPass` — the deterministic transform reference pass.
 
 use crate::ir::{Nucleotide, Segment, Simulation};
-use crate::pass::{Pass, PassContext};
+use crate::pass::{Pass, PassContext, PassEffect};
 
 /// A deterministic transform pass that appends one configured
 /// nucleotide to the simulation's pool when executed.
@@ -65,6 +65,10 @@ impl Pass for EchoPass {
             self.segment,
         ));
         next
+    }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::AppendNucleotides]
     }
 }
 

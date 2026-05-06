@@ -49,7 +49,10 @@ impl PyChoiceRecord {
     }
 
     fn __repr__(&self) -> String {
-        format!("<ChoiceRecord {}={:?}>", self.inner.address, self.inner.value)
+        format!(
+            "<ChoiceRecord {}={:?}>",
+            self.inner.address, self.inner.value
+        )
     }
 }
 

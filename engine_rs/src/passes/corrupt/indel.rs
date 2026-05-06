@@ -1,9 +1,17 @@
 //! `IndelPass` — insertions + deletions at the observation stage (E.7).
 
-use crate::dist::Distribution;
+use crate::contract::ChoiceContext;
+use crate::dist::{Distribution, FilteredSampleError};
 use crate::ir::{flag, NucHandle, Nucleotide, Segment, Simulation};
-use crate::pass::{Pass, PassContext};
+use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::constrained::{sample_contract_verified_event, PostEventCandidate};
 use crate::trace::ChoiceValue;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum IndelEvent {
+    Insertion { site: u32, base: u8 },
+    Deletion { site: Option<u32> },
+}
 
 /// Models PCR / sequencing indels: a small number of insertions
 /// and deletions sprinkled across the assembled sequence.
@@ -39,6 +47,12 @@ use crate::trace::ChoiceValue;
 ///   still happen at position 0).
 /// - Deletion when pool length = 0: the kind is recorded but the
 ///   IR isn't modified (no-op).
+///
+/// **Constraint awareness:** with active contracts, kind/site/base are
+/// treated as one finite structural event. The pass builds each
+/// candidate's hypothetical post-event `Simulation` and samples only
+/// from candidates whose post-state verifies against the active
+/// contracts. No-contract execution stays on the legacy RNG path.
 pub struct IndelPass {
     count_dist: Box<dyn Distribution<Output = i64>>,
     insertion_prob: f64,
@@ -102,6 +116,220 @@ impl IndelPass {
 
         Segment::V
     }
+
+    fn base_support(&self) -> Result<Vec<(u8, f64)>, FilteredSampleError> {
+        let support = self
+            .base_dist
+            .support()
+            .ok_or(FilteredSampleError::SupportUnavailable)?;
+        let total: f64 = support.iter().map(|(_, weight)| *weight).sum();
+        if support.is_empty() || !total.is_finite() || total <= 0.0 {
+            return Err(FilteredSampleError::InvalidFilteredSupport);
+        }
+        if support
+            .iter()
+            .any(|(_, weight)| !weight.is_finite() || *weight <= 0.0)
+        {
+            return Err(FilteredSampleError::InvalidFilteredSupport);
+        }
+        Ok(support
+            .into_iter()
+            .map(|(base, weight)| (base, weight / total))
+            .collect())
+    }
+
+    fn constrained_candidates(
+        &self,
+        sim: &Simulation,
+        index: u32,
+        count: u32,
+    ) -> Result<Vec<PostEventCandidate<IndelEvent>>, FilteredSampleError> {
+        let pool_len = sim.pool.len() as u32;
+        let mut candidates = Vec::new();
+
+        if self.insertion_prob > 0.0 {
+            let base_support = self.base_support()?;
+            let site_weight = self.insertion_prob / (pool_len + 1) as f64;
+
+            for site in 0..=pool_len {
+                let segment = Self::insertion_segment(sim, site);
+                for &(base, base_weight) in &base_support {
+                    let nuc = Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED);
+                    let post_sim = sim.with_indel_inserted(site, nuc);
+                    candidates.push(PostEventCandidate::new(
+                        IndelEvent::Insertion { site, base },
+                        site_weight * base_weight,
+                        post_sim,
+                        ChoiceContext::indel_insertion(index, count, NucHandle::new(site)),
+                    ));
+                }
+            }
+        }
+
+        let deletion_prob = 1.0 - self.insertion_prob;
+        if deletion_prob > 0.0 {
+            if pool_len == 0 {
+                candidates.push(PostEventCandidate::new(
+                    IndelEvent::Deletion { site: None },
+                    deletion_prob,
+                    sim.clone(),
+                    ChoiceContext::indel_deletion_noop(index, count),
+                ));
+            } else {
+                let site_weight = deletion_prob / pool_len as f64;
+                for site in 0..pool_len {
+                    let post_sim = sim.with_indel_deleted(site);
+                    candidates.push(PostEventCandidate::new(
+                        IndelEvent::Deletion { site: Some(site) },
+                        site_weight,
+                        post_sim,
+                        ChoiceContext::indel_deletion(index, count, NucHandle::new(site)),
+                    ));
+                }
+            }
+        }
+
+        Ok(candidates)
+    }
+
+    fn sample_legacy_event(&self, sim: &Simulation, ctx: &mut PassContext) -> IndelEvent {
+        let insertion = ctx.rng.next_f64() < self.insertion_prob;
+        let pool_len = sim.pool.len() as u32;
+
+        if insertion {
+            let site = if pool_len == 0 {
+                0
+            } else {
+                ctx.rng.range_u32(pool_len + 1)
+            };
+            let base = self.base_dist.sample(ctx.rng);
+            IndelEvent::Insertion { site, base }
+        } else if pool_len == 0 {
+            IndelEvent::Deletion { site: None }
+        } else {
+            IndelEvent::Deletion {
+                site: Some(ctx.rng.range_u32(pool_len)),
+            }
+        }
+    }
+
+    fn sample_event(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        index: u32,
+        count: u32,
+        strict: bool,
+    ) -> Result<IndelEvent, PassError> {
+        if ctx.contracts.is_some() {
+            let event_address = format!("corrupt.indel.site[{}]", index);
+            let candidates = self.constrained_candidates(sim, index, count);
+            if let Some(event) = sample_contract_verified_event(
+                sim,
+                ctx,
+                self.name(),
+                &event_address,
+                strict,
+                candidates,
+            )? {
+                return Ok(event);
+            }
+        }
+
+        Ok(self.sample_legacy_event(sim, ctx))
+    }
+
+    fn record_event(ctx: &mut PassContext, index: u32, event: IndelEvent) {
+        match event {
+            IndelEvent::Insertion { site, base } => {
+                ctx.trace.record(
+                    format!("corrupt.indel.kind[{}]", index),
+                    ChoiceValue::Bool(true),
+                );
+                ctx.trace.record(
+                    format!("corrupt.indel.site[{}]", index),
+                    ChoiceValue::Int(site as i64),
+                );
+                ctx.trace.record(
+                    format!("corrupt.indel.base[{}]", index),
+                    ChoiceValue::Base(base),
+                );
+            }
+            IndelEvent::Deletion { site } => {
+                ctx.trace.record(
+                    format!("corrupt.indel.kind[{}]", index),
+                    ChoiceValue::Bool(false),
+                );
+                ctx.trace.record(
+                    format!("corrupt.indel.site[{}]", index),
+                    ChoiceValue::Int(site.map(i64::from).unwrap_or(-1)),
+                );
+            }
+        }
+    }
+
+    fn apply_event(sim: &Simulation, event: IndelEvent) -> Simulation {
+        match event {
+            IndelEvent::Insertion { site, base } => {
+                let segment = Self::insertion_segment(sim, site);
+                let new_nuc = Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED);
+                sim.with_indel_inserted(site, new_nuc)
+            }
+            IndelEvent::Deletion { site: Some(site) } => sim.with_indel_deleted(site),
+            IndelEvent::Deletion { site: None } => sim.clone(),
+        }
+    }
+
+    fn execute_with_sampling_mode(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        let count_raw = self.count_dist.sample(ctx.rng);
+        if strict && count_raw < 0 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                "corrupt.indel.count",
+                count_raw,
+                "negative_count",
+            ));
+        }
+        if strict && count_raw > u32::MAX as i64 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                "corrupt.indel.count",
+                count_raw,
+                "count_exceeds_u32",
+            ));
+        }
+        assert!(
+            count_raw >= 0,
+            "IndelPass: count distribution returned negative {}",
+            count_raw
+        );
+        assert!(
+            count_raw <= u32::MAX as i64,
+            "IndelPass: count distribution returned {} > u32::MAX",
+            count_raw
+        );
+        let count = count_raw as u32;
+        ctx.trace
+            .record("corrupt.indel.count", ChoiceValue::Int(count_raw));
+
+        if count == 0 {
+            return Ok(sim.clone());
+        }
+
+        let mut current = sim.clone();
+        for i in 0..count {
+            let event = self.sample_event(&current, ctx, i, count, strict)?;
+            Self::record_event(ctx, i, event);
+            current = Self::apply_event(&current, event);
+        }
+
+        Ok(current)
+    }
 }
 
 impl Pass for IndelPass {
@@ -110,73 +338,16 @@ impl Pass for IndelPass {
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
-        let count_raw = self.count_dist.sample(ctx.rng);
-        assert!(
-            count_raw >= 0,
-            "IndelPass: count distribution returned negative {}",
-            count_raw
-        );
-        let count = count_raw as u32;
-        ctx.trace
-            .record("corrupt.indel.count", ChoiceValue::Int(count_raw));
+        self.execute_with_sampling_mode(sim, ctx, false)
+            .expect("IndelPass permissive execution must not return PassError")
+    }
 
-        if count == 0 {
-            return sim.clone();
-        }
-
-        let mut current = sim.clone();
-        for i in 0..count {
-            // Decide insertion vs deletion.
-            let insertion = ctx.rng.next_f64() < self.insertion_prob;
-            ctx.trace.record(
-                format!("corrupt.indel.kind[{}]", i),
-                ChoiceValue::Bool(insertion),
-            );
-
-            let pool_len = current.pool.len() as u32;
-
-            if insertion {
-                // Pool position can be in [0, pool_len] inclusive
-                // (insertion at end is allowed).
-                let site = if pool_len == 0 {
-                    0
-                } else {
-                    ctx.rng.range_u32(pool_len + 1)
-                };
-                ctx.trace.record(
-                    format!("corrupt.indel.site[{}]", i),
-                    ChoiceValue::Int(site as i64),
-                );
-
-                let base = self.base_dist.sample(ctx.rng);
-                ctx.trace.record(
-                    format!("corrupt.indel.base[{}]", i),
-                    ChoiceValue::Base(base),
-                );
-
-                let segment = Self::insertion_segment(&current, site);
-                let new_nuc = Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED);
-                current = current.with_indel_inserted(site, new_nuc);
-            } else {
-                // Deletion: skip if pool empty.
-                if pool_len == 0 {
-                    // Record a sentinel position so the trace stays
-                    // structurally consistent; downstream queries
-                    // can detect the no-op via this value.
-                    ctx.trace
-                        .record(format!("corrupt.indel.site[{}]", i), ChoiceValue::Int(-1));
-                    continue;
-                }
-                let site = ctx.rng.range_u32(pool_len);
-                ctx.trace.record(
-                    format!("corrupt.indel.site[{}]", i),
-                    ChoiceValue::Int(site as i64),
-                );
-                current = current.with_indel_deleted(site);
-            }
-        }
-
-        current
+    fn execute_checked(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, true)
     }
 
     fn declared_choices(&self) -> Vec<String> {
@@ -187,14 +358,20 @@ impl Pass for IndelPass {
             "corrupt.indel.base[0..n]".to_string(),
         ]
     }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::StructuralIndel]
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dist::{EmpiricalLengthDist, UniformBase};
+    use crate::contract::productive;
+    use crate::dist::{EmpiricalLengthDist, FilteredSampleError, UniformBase};
     use crate::ir::{NucHandle, Region};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::{PassError, PassPlan, PassRuntime};
+    use crate::passes::test_support::make_substitution_productive_vj_fixture;
 
     /// Helper: build a sim with a 12-base germline V region. Used as
     /// the canonical input for indel-pass tests so length/region
@@ -302,6 +479,27 @@ mod tests {
             Box::new(UniformBase),
         )));
         let _ = PassRuntime::execute(&plan, indel_test_sim(), 0);
+    }
+
+    #[test]
+    fn indel_pass_strict_errors_on_negative_count() {
+        use crate::dist::UniformInt;
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(IndelPass::new(
+            Box::new(UniformInt::new(-3, -2)),
+            0.5,
+            Box::new(UniformBase),
+        )));
+
+        let err = PassRuntime::execute_strict_with_context(&plan, indel_test_sim(), 0, None, None)
+            .unwrap_err();
+
+        assert_eq!(err.pass_name(), "corrupt.indel");
+        assert_eq!(err.address(), "corrupt.indel.count");
+        assert!(matches!(
+            err,
+            PassError::InvalidDistributionOutput { value: -3, .. }
+        ));
     }
 
     #[test]
@@ -748,5 +946,90 @@ mod tests {
         assert!(declared.contains(&"corrupt.indel.kind[0..n]".to_string()));
         assert!(declared.contains(&"corrupt.indel.site[0..n]".to_string()));
         assert!(declared.contains(&"corrupt.indel.base[0..n]".to_string()));
+    }
+
+    #[test]
+    fn indel_pass_productive_filters_insertion_to_structurally_safe_site() {
+        let (cfg, sim) = make_substitution_productive_vj_fixture();
+        let contracts = productive();
+
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(IndelPass::new(
+            fixed_count(1),
+            1.0,
+            Box::new(UniformBase),
+        )));
+
+        let outcome =
+            PassRuntime::execute_with_context(&plan, sim, 0, Some(&cfg), Some(&contracts));
+
+        assert_eq!(
+            outcome.trace.find("corrupt.indel.kind[0]").unwrap().value,
+            ChoiceValue::Bool(true)
+        );
+        assert_eq!(
+            outcome.trace.find("corrupt.indel.site[0]").unwrap().value,
+            ChoiceValue::Int(6)
+        );
+        assert!(contracts
+            .verify(outcome.final_simulation(), Some(&cfg))
+            .is_ok());
+    }
+
+    #[test]
+    fn indel_pass_permissive_falls_back_when_deletions_cannot_satisfy_contracts() {
+        let (cfg, sim) = make_substitution_productive_vj_fixture();
+        let contracts = productive();
+
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(IndelPass::new(
+            fixed_count(1),
+            0.0,
+            Box::new(UniformBase),
+        )));
+
+        let outcome =
+            PassRuntime::execute_with_context(&plan, sim, 0, Some(&cfg), Some(&contracts));
+
+        assert_eq!(
+            outcome.trace.find("corrupt.indel.kind[0]").unwrap().value,
+            ChoiceValue::Bool(false)
+        );
+        let violations = contracts
+            .verify(outcome.final_simulation(), Some(&cfg))
+            .unwrap_err();
+        assert!(
+            violations.iter().any(|v| {
+                v.contract_name == "productive_junction_frame"
+                    || v.contract_name == "anchor_preserved.v"
+                    || v.contract_name == "anchor_preserved.j"
+            }),
+            "expected productive-bundle structural violation, got {:?}",
+            violations
+        );
+    }
+
+    #[test]
+    fn indel_pass_strict_errors_when_deletion_filter_empty() {
+        let (cfg, sim) = make_substitution_productive_vj_fixture();
+        let contracts = productive();
+
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(IndelPass::new(
+            fixed_count(1),
+            0.0,
+            Box::new(UniformBase),
+        )));
+
+        let err =
+            PassRuntime::execute_strict_with_context(&plan, sim, 0, Some(&cfg), Some(&contracts))
+                .unwrap_err();
+
+        assert_eq!(err.pass_name(), "corrupt.indel");
+        assert_eq!(err.address(), "corrupt.indel.site[0]");
+        assert_eq!(
+            err.constraint_reason(),
+            Some(FilteredSampleError::EmptyAdmissibleSupport)
+        );
     }
 }

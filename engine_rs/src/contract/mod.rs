@@ -78,6 +78,25 @@ impl ContractViolation {
 // ChoiceContext — optional execution context for candidate filtering
 // ──────────────────────────────────────────────────────────────────
 
+/// Semantic class of the candidate choice being filtered.
+///
+/// Addresses remain useful for trace readability and backwards
+/// compatibility, but contracts should prefer this typed signal when
+/// deciding whether a candidate has biological meaning.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ChoiceKind {
+    /// No additional semantic class is known.
+    Plain,
+    /// Candidate is the destination base for a substitution at
+    /// `ChoiceContext::target`.
+    TargetedBaseSubstitution,
+    /// Candidate is a structural insertion at `ChoiceContext::target`.
+    IndelInsertion,
+    /// Candidate is a structural deletion at `ChoiceContext::target`.
+    IndelDeletion,
+}
+
 /// Extra context for a candidate choice being filtered by contracts.
 ///
 /// Plain addressed choices only carry `"np.np1.bases[3]"` plus the
@@ -89,10 +108,12 @@ impl ContractViolation {
 /// - Site-based transforms need the target nucleotide handle so a
 ///   contract can evaluate the exact post-candidate local state.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct ChoiceContext {
     pub draw_index: Option<u32>,
     pub draw_count: Option<u32>,
     pub target: Option<NucHandle>,
+    pub kind: ChoiceKind,
 }
 
 impl ChoiceContext {
@@ -101,6 +122,7 @@ impl ChoiceContext {
             draw_index: None,
             draw_count: None,
             target: None,
+            kind: ChoiceKind::Plain,
         }
     }
 
@@ -109,14 +131,51 @@ impl ChoiceContext {
             draw_index: Some(draw_index),
             draw_count: Some(draw_count),
             target: None,
+            kind: ChoiceKind::Plain,
         }
     }
 
     pub const fn indexed_target(draw_index: u32, draw_count: u32, target: NucHandle) -> Self {
+        Self::targeted_base_substitution(draw_index, draw_count, target)
+    }
+
+    pub const fn targeted_base_substitution(
+        draw_index: u32,
+        draw_count: u32,
+        target: NucHandle,
+    ) -> Self {
         Self {
             draw_index: Some(draw_index),
             draw_count: Some(draw_count),
             target: Some(target),
+            kind: ChoiceKind::TargetedBaseSubstitution,
+        }
+    }
+
+    pub const fn indel_insertion(draw_index: u32, draw_count: u32, target: NucHandle) -> Self {
+        Self {
+            draw_index: Some(draw_index),
+            draw_count: Some(draw_count),
+            target: Some(target),
+            kind: ChoiceKind::IndelInsertion,
+        }
+    }
+
+    pub const fn indel_deletion(draw_index: u32, draw_count: u32, target: NucHandle) -> Self {
+        Self {
+            draw_index: Some(draw_index),
+            draw_count: Some(draw_count),
+            target: Some(target),
+            kind: ChoiceKind::IndelDeletion,
+        }
+    }
+
+    pub const fn indel_deletion_noop(draw_index: u32, draw_count: u32) -> Self {
+        Self {
+            draw_index: Some(draw_index),
+            draw_count: Some(draw_count),
+            target: None,
+            kind: ChoiceKind::IndelDeletion,
         }
     }
 }
@@ -207,6 +266,26 @@ pub trait Contract {
     ) -> Result<(), ContractViolation> {
         let _ = context;
         self.admits(sim, refdata, address, candidate)
+    }
+
+    /// Post-event filter mode for structural candidates.
+    ///
+    /// Structural edits such as indels are best evaluated against the
+    /// complete hypothetical post-event IR, because they can shift
+    /// ranges, frame phases, anchors, and codon rails. The default
+    /// implementation delegates to `verify(post_sim, refdata)`, giving
+    /// every existing contract safe structural filtering without each
+    /// contract needing a bespoke indel implementation.
+    fn admits_post_event(
+        &self,
+        pre_sim: &Simulation,
+        post_sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        address: &str,
+        context: ChoiceContext,
+    ) -> Result<(), ContractViolation> {
+        let _ = (pre_sim, address, context);
+        self.verify(post_sim, refdata)
     }
 }
 

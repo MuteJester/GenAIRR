@@ -9,6 +9,8 @@
 //!   [`crate::ir::Simulation`].
 //! - [`trace`] — `PyChoiceRecord` + `PyTrace`, read-only views of
 //!   [`crate::trace::ChoiceRecord`] and [`crate::trace::Trace`].
+//! - [`event`] — `PyEventRecord` + `PyStateSummary`, read-only views
+//!   of committed event ledger records.
 //! - [`outcome`] — `PyOutcome`, a read-only view of
 //!   [`crate::pass::Outcome`].
 //! - [`runner`] — module-level Python entry points that build and
@@ -22,6 +24,7 @@
 use pyo3::prelude::*;
 
 pub mod contract;
+pub mod event;
 pub mod outcome;
 pub mod plan;
 pub mod refdata;
@@ -37,6 +40,8 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<simulation::PySimulation>()?;
     m.add_class::<trace::PyChoiceRecord>()?;
     m.add_class::<trace::PyTrace>()?;
+    m.add_class::<event::PyStateSummary>()?;
+    m.add_class::<event::PyEventRecord>()?;
     m.add_class::<outcome::PyOutcome>()?;
     m.add_class::<refdata::PyAllele>()?;
     m.add_class::<refdata::PyRefDataConfig>()?;

@@ -7,12 +7,14 @@ use pyo3::types::PyDict;
 use crate::airr_record::{build_airr_record, AirrRecord};
 use crate::pass::Outcome;
 
+use super::event::PyEventRecord;
 use super::refdata::PyRefDataConfig;
 use super::simulation::PySimulation;
 use super::trace::PyTrace;
 
 /// The result of executing a `PassPlan`: the IR revision history,
-/// the per-revision pass names, and the addressed-choice trace.
+/// the per-revision pass names, the addressed-choice trace, and the
+/// committed event ledger.
 #[pyclass(name = "Outcome", module = "genairr_engine", frozen)]
 pub struct PyOutcome {
     pub(crate) inner: Outcome,
@@ -81,6 +83,21 @@ impl PyOutcome {
         PyTrace::new(self.inner.trace.clone())
     }
 
+    /// Number of committed event records.
+    fn event_count(&self) -> usize {
+        self.inner.events.len()
+    }
+
+    /// The committed event ledger, in execution order.
+    fn events(&self) -> Vec<PyEventRecord> {
+        self.inner
+            .events
+            .iter()
+            .cloned()
+            .map(PyEventRecord::new)
+            .collect()
+    }
+
     /// Build a fully-populated AIRR Rearrangement record dict from
     /// this outcome and the reference data it ran against.
     ///
@@ -104,10 +121,11 @@ impl PyOutcome {
 
     fn __repr__(&self) -> String {
         format!(
-            "<Outcome revisions={} passes={} trace_len={}>",
+            "<Outcome revisions={} passes={} trace_len={} events={}>",
             self.inner.revisions.len(),
             self.inner.pass_names.len(),
             self.inner.trace.len(),
+            self.inner.events.len(),
         )
     }
 }
@@ -118,10 +136,7 @@ impl PyOutcome {
 /// `Option<i64>` becomes `int | None`, `Option<f64>` becomes `float
 /// | None`, `Option<bool>` becomes `bool | None`. Strings and the
 /// few `bool`/`i64`/`f64` non-optional fields go through directly.
-fn airr_record_to_pydict<'py>(
-    py: Python<'py>,
-    rec: &AirrRecord,
-) -> PyResult<Bound<'py, PyDict>> {
+fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new_bound(py);
 
     // AIRR metadata

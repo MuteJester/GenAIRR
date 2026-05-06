@@ -173,9 +173,21 @@ pub fn build_airr_record(
     rec.locus = derive_locus(&rec.v_call, &rec.j_call, &rec.d_call);
 
     // Sequence-coord regions (raw pool start/end).
-    let v_region = sim.sequence.regions.iter().find(|r| r.segment == Segment::V);
-    let d_region = sim.sequence.regions.iter().find(|r| r.segment == Segment::D);
-    let j_region = sim.sequence.regions.iter().find(|r| r.segment == Segment::J);
+    let v_region = sim
+        .sequence
+        .regions
+        .iter()
+        .find(|r| r.segment == Segment::V);
+    let d_region = sim
+        .sequence
+        .regions
+        .iter()
+        .find(|r| r.segment == Segment::D);
+    let j_region = sim
+        .sequence
+        .regions
+        .iter()
+        .find(|r| r.segment == Segment::J);
     let np1_region = sim
         .sequence
         .regions
@@ -225,13 +237,9 @@ pub fn build_airr_record(
     // to enforce strictness.
     let v_anchor = lookup_allele(refdata, Segment::V, v_id).and_then(|a| a.anchor);
     let j_anchor = lookup_allele(refdata, Segment::J, j_id).and_then(|a| a.anchor);
-    if let (Some(vr), Some(jr), Some(va), Some(ja)) =
-        (v_region, j_region, v_anchor, j_anchor)
-    {
-        let v_anchor_in_pool: i64 =
-            vr.start.index() as i64 + (va as i64 - 0); // v_trim_5 always 0 in our DSL
-        let j_anchor_in_pool: i64 =
-            jr.start.index() as i64 + (ja as i64 - rec.j_trim_5);
+    if let (Some(vr), Some(jr), Some(va), Some(ja)) = (v_region, j_region, v_anchor, j_anchor) {
+        let v_anchor_in_pool: i64 = vr.start.index() as i64 + (va as i64 - 0); // v_trim_5 always 0 in our DSL
+        let j_anchor_in_pool: i64 = jr.start.index() as i64 + (ja as i64 - rec.j_trim_5);
         if j_anchor_in_pool + 3 > v_anchor_in_pool {
             let jstart = v_anchor_in_pool;
             let jend = j_anchor_in_pool + 3;
@@ -430,8 +438,7 @@ fn walk_alignment_columns(
 
                 if let Some(allele_seq) = allele_seq {
                     let mut expected_pos: usize = trim_5.max(0) as usize;
-                    let end_germ: usize =
-                        (allele_seq.len() as i64 - trim_3).max(0) as usize;
+                    let end_germ: usize = (allele_seq.len() as i64 - trim_3).max(0) as usize;
                     for i in r_start..r_end {
                         let nuc: &Nucleotide = &sim.pool.as_slice()[i];
                         let base_char = bases[i];
@@ -447,9 +454,7 @@ fn walk_alignment_columns(
                         } else {
                             let germ_pos = nuc.germline_pos as usize;
                             // Fill any preceding deletion gap.
-                            while expected_pos < germ_pos
-                                && expected_pos < allele_seq.len()
-                            {
+                            while expected_pos < germ_pos && expected_pos < allele_seq.len() {
                                 sa.push(b'-');
                                 let g = allele_seq[expected_pos];
                                 galn.push(g);
@@ -609,7 +614,11 @@ fn push_dmask_for_seg(dmask: &mut Vec<u8>, seg: Segment, ga_char: u8) {
     }
 }
 
-fn lookup_name(refdata: &RefDataConfig, segment: Segment, id: Option<crate::refdata::AlleleId>) -> String {
+fn lookup_name(
+    refdata: &RefDataConfig,
+    segment: Segment,
+    id: Option<crate::refdata::AlleleId>,
+) -> String {
     id.and_then(|aid| refdata.get(segment, aid))
         .map(|a| a.name.clone())
         .unwrap_or_default()
@@ -681,30 +690,70 @@ fn derive_locus(v_call: &str, j_call: &str, d_call: &str) -> String {
 // ── Translation ────────────────────────────────────────────────────
 
 const GENETIC_CODE: &[(&[u8; 3], char)] = &[
-    (b"TTT", 'F'), (b"TTC", 'F'),
-    (b"TTA", 'L'), (b"TTG", 'L'), (b"CTT", 'L'), (b"CTC", 'L'),
-    (b"CTA", 'L'), (b"CTG", 'L'),
-    (b"ATT", 'I'), (b"ATC", 'I'), (b"ATA", 'I'),
+    (b"TTT", 'F'),
+    (b"TTC", 'F'),
+    (b"TTA", 'L'),
+    (b"TTG", 'L'),
+    (b"CTT", 'L'),
+    (b"CTC", 'L'),
+    (b"CTA", 'L'),
+    (b"CTG", 'L'),
+    (b"ATT", 'I'),
+    (b"ATC", 'I'),
+    (b"ATA", 'I'),
     (b"ATG", 'M'),
-    (b"GTT", 'V'), (b"GTC", 'V'), (b"GTA", 'V'), (b"GTG", 'V'),
-    (b"TCT", 'S'), (b"TCC", 'S'), (b"TCA", 'S'), (b"TCG", 'S'),
-    (b"AGT", 'S'), (b"AGC", 'S'),
-    (b"CCT", 'P'), (b"CCC", 'P'), (b"CCA", 'P'), (b"CCG", 'P'),
-    (b"ACT", 'T'), (b"ACC", 'T'), (b"ACA", 'T'), (b"ACG", 'T'),
-    (b"GCT", 'A'), (b"GCC", 'A'), (b"GCA", 'A'), (b"GCG", 'A'),
-    (b"TAT", 'Y'), (b"TAC", 'Y'),
-    (b"TAA", '*'), (b"TAG", '*'), (b"TGA", '*'),
-    (b"CAT", 'H'), (b"CAC", 'H'),
-    (b"CAA", 'Q'), (b"CAG", 'Q'),
-    (b"AAT", 'N'), (b"AAC", 'N'),
-    (b"AAA", 'K'), (b"AAG", 'K'),
-    (b"GAT", 'D'), (b"GAC", 'D'),
-    (b"GAA", 'E'), (b"GAG", 'E'),
-    (b"TGT", 'C'), (b"TGC", 'C'),
+    (b"GTT", 'V'),
+    (b"GTC", 'V'),
+    (b"GTA", 'V'),
+    (b"GTG", 'V'),
+    (b"TCT", 'S'),
+    (b"TCC", 'S'),
+    (b"TCA", 'S'),
+    (b"TCG", 'S'),
+    (b"AGT", 'S'),
+    (b"AGC", 'S'),
+    (b"CCT", 'P'),
+    (b"CCC", 'P'),
+    (b"CCA", 'P'),
+    (b"CCG", 'P'),
+    (b"ACT", 'T'),
+    (b"ACC", 'T'),
+    (b"ACA", 'T'),
+    (b"ACG", 'T'),
+    (b"GCT", 'A'),
+    (b"GCC", 'A'),
+    (b"GCA", 'A'),
+    (b"GCG", 'A'),
+    (b"TAT", 'Y'),
+    (b"TAC", 'Y'),
+    (b"TAA", '*'),
+    (b"TAG", '*'),
+    (b"TGA", '*'),
+    (b"CAT", 'H'),
+    (b"CAC", 'H'),
+    (b"CAA", 'Q'),
+    (b"CAG", 'Q'),
+    (b"AAT", 'N'),
+    (b"AAC", 'N'),
+    (b"AAA", 'K'),
+    (b"AAG", 'K'),
+    (b"GAT", 'D'),
+    (b"GAC", 'D'),
+    (b"GAA", 'E'),
+    (b"GAG", 'E'),
+    (b"TGT", 'C'),
+    (b"TGC", 'C'),
     (b"TGG", 'W'),
-    (b"CGT", 'R'), (b"CGC", 'R'), (b"CGA", 'R'), (b"CGG", 'R'),
-    (b"AGA", 'R'), (b"AGG", 'R'),
-    (b"GGT", 'G'), (b"GGC", 'G'), (b"GGA", 'G'), (b"GGG", 'G'),
+    (b"CGT", 'R'),
+    (b"CGC", 'R'),
+    (b"CGA", 'R'),
+    (b"CGG", 'R'),
+    (b"AGA", 'R'),
+    (b"AGG", 'R'),
+    (b"GGT", 'G'),
+    (b"GGC", 'G'),
+    (b"GGA", 'G'),
+    (b"GGG", 'G'),
 ];
 
 fn translate_codon(codon: &[u8]) -> char {
@@ -712,9 +761,18 @@ fn translate_codon(codon: &[u8]) -> char {
         return 'X';
     }
     let upper = [
-        match codon[0] { b'U' | b'u' => b'T', c => c.to_ascii_uppercase() },
-        match codon[1] { b'U' | b'u' => b'T', c => c.to_ascii_uppercase() },
-        match codon[2] { b'U' | b'u' => b'T', c => c.to_ascii_uppercase() },
+        match codon[0] {
+            b'U' | b'u' => b'T',
+            c => c.to_ascii_uppercase(),
+        },
+        match codon[1] {
+            b'U' | b'u' => b'T',
+            c => c.to_ascii_uppercase(),
+        },
+        match codon[2] {
+            b'U' | b'u' => b'T',
+            c => c.to_ascii_uppercase(),
+        },
     ];
     for (k, v) in GENETIC_CODE {
         if k[0] == upper[0] && k[1] == upper[1] && k[2] == upper[2] {

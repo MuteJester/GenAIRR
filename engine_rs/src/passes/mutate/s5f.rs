@@ -3,7 +3,7 @@
 use crate::contract::ChoiceContext;
 use crate::dist::{Distribution, FilteredSampleError};
 use crate::ir::{NucHandle, NucleotidePool, Simulation};
-use crate::pass::{Pass, PassContext, PassError};
+use crate::pass::{Pass, PassContext, PassEffect, PassError};
 use crate::s5f::S5FKernel;
 use crate::trace::ChoiceValue;
 
@@ -198,9 +198,30 @@ impl S5FMutationPass {
     ) -> Result<Simulation, PassError> {
         // 1. Sample mutation count.
         let count_raw = self.count_dist.sample(ctx.rng);
+        if strict && count_raw < 0 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                "mutate.s5f.count",
+                count_raw,
+                "negative_count",
+            ));
+        }
+        if strict && count_raw > u32::MAX as i64 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                "mutate.s5f.count",
+                count_raw,
+                "count_exceeds_u32",
+            ));
+        }
         assert!(
             count_raw >= 0,
             "S5FMutationPass: count distribution returned negative {}",
+            count_raw
+        );
+        assert!(
+            count_raw <= u32::MAX as i64,
+            "S5FMutationPass: count distribution returned {} > u32::MAX",
             count_raw
         );
         ctx.trace
@@ -297,6 +318,10 @@ impl Pass for S5FMutationPass {
             "mutate.s5f.site[0..n]".to_string(),
             "mutate.s5f.base[0..n]".to_string(),
         ]
+    }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::EditBases]
     }
 }
 

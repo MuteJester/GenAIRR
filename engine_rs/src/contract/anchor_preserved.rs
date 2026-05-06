@@ -7,7 +7,9 @@ use super::{Contract, ContractViolation};
 
 /// Verifies that the assigned allele's anchor codon (3 bases
 /// starting at `allele.anchor`) sits entirely within the post-trim
-/// retained slice for a given segment.
+/// retained slice for a given segment and, when that segment has
+/// already been assembled, that the live pool still carries those
+/// three anchor-provenance nucleotides at the mapped anchor position.
 ///
 /// Vacuously satisfied (returns `Ok`) when:
 /// - no allele is assigned to `segment` yet,
@@ -18,7 +20,9 @@ use super::{Contract, ContractViolation};
 /// Returns a `ContractViolation` when:
 /// - `trim_5 > allele.anchor` (anchor 5'-trimmed away), or
 /// - `allele.anchor + 3 > allele.len() - trim_3` (anchor
-///   3'-trimmed away).
+///   3'-trimmed away), or
+/// - a post-assembly structural edit has removed/shifted/replaced the
+///   live anchor codon provenance.
 pub struct AnchorPreserved {
     segment: Segment,
 }
@@ -117,15 +121,71 @@ impl Contract for AnchorPreserved {
             ));
         }
 
+        let Some(region) = sim
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == self.segment)
+        else {
+            return Ok(());
+        };
+
+        let anchor_pool_start = region.start.index() + (anchor - trim_5);
+        if anchor_pool_start + 3 > region.end.index() {
+            return Err(ContractViolation::new(
+                self.name(),
+                format!(
+                    "anchor codon maps to pool range [{}, {}) but assembled {:?} \
+                     region ends at {}",
+                    anchor_pool_start,
+                    anchor_pool_start + 3,
+                    self.segment,
+                    region.end.index()
+                ),
+            ));
+        }
+
+        for offset in 0..3 {
+            let pool_pos = anchor_pool_start + offset;
+            let expected_germline_pos = (anchor + offset) as u16;
+            let Some(nuc) = sim.pool.get(crate::ir::NucHandle::new(pool_pos)) else {
+                return Err(ContractViolation::new(
+                    self.name(),
+                    format!(
+                        "anchor codon maps to missing pool position {} in {:?} region",
+                        pool_pos, self.segment
+                    ),
+                ));
+            };
+
+            if nuc.segment != self.segment || nuc.germline_pos != expected_germline_pos {
+                return Err(ContractViolation::new(
+                    self.name(),
+                    format!(
+                        "anchor codon provenance mismatch at pool position {}: \
+                         expected {:?} germline position {}, got {:?} germline position {}",
+                        pool_pos,
+                        self.segment,
+                        expected_germline_pos,
+                        nuc.segment,
+                        nuc.germline_pos
+                    ),
+                ));
+            }
+        }
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_support::make_v_anchor_at;
+    use super::super::test_support::{
+        make_assembled_sim_from_refdata, make_v_anchor_at, make_vj_with_anchor_codons,
+    };
     use super::*;
     use crate::assignment::AlleleInstance;
+    use crate::ir::{flag, Nucleotide};
     use crate::refdata::{Allele, AlleleId, ChainType, RefDataConfig};
 
     #[test]
@@ -193,6 +253,27 @@ mod tests {
             .with_allele_assigned(Segment::V, AlleleInstance::new(AlleleId::new(0)));
 
         assert!(contract.verify(&sim, Some(&cfg)).is_ok());
+    }
+
+    #[test]
+    fn anchor_preserved_rejects_live_anchor_provenance_shift_after_indel() {
+        let cfg = make_vj_with_anchor_codons(b"GGG", b"TTT");
+        let sim = make_assembled_sim_from_refdata(&cfg);
+        let shifted = sim.with_indel_inserted(
+            6,
+            Nucleotide::synthetic(b'A', Segment::V, flag::INDEL_INSERTED),
+        );
+
+        let err = AnchorPreserved::new(Segment::V)
+            .verify(&shifted, Some(&cfg))
+            .unwrap_err();
+
+        assert_eq!(err.contract_name, "anchor_preserved.v");
+        assert!(
+            err.reason.contains("provenance mismatch"),
+            "reason should mention live provenance mismatch, got: {}",
+            err.reason
+        );
     }
 
     #[test]

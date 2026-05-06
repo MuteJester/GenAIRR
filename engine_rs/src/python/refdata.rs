@@ -158,13 +158,7 @@ impl PyRefDataConfig {
 
     /// Append a V allele. Returns the new allele id (`u32`).
     #[pyo3(signature = (name, gene, seq, *, anchor=None))]
-    fn add_v_allele(
-        &mut self,
-        name: &str,
-        gene: &str,
-        seq: &[u8],
-        anchor: Option<u16>,
-    ) -> u32 {
+    fn add_v_allele(&mut self, name: &str, gene: &str, seq: &[u8], anchor: Option<u16>) -> u32 {
         push_allele(&mut self.inner.v_pool, Segment::V, name, gene, seq, anchor)
     }
 
@@ -195,13 +189,7 @@ impl PyRefDataConfig {
 
     /// Append a J allele. Returns the new allele id (`u32`).
     #[pyo3(signature = (name, gene, seq, *, anchor=None))]
-    fn add_j_allele(
-        &mut self,
-        name: &str,
-        gene: &str,
-        seq: &[u8],
-        anchor: Option<u16>,
-    ) -> u32 {
+    fn add_j_allele(&mut self, name: &str, gene: &str, seq: &[u8], anchor: Option<u16>) -> u32 {
         push_allele(&mut self.inner.j_pool, Segment::J, name, gene, seq, anchor)
     }
 

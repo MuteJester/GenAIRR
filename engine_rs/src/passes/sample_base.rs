@@ -2,7 +2,7 @@
 
 use crate::dist::Distribution;
 use crate::ir::{NucFlags, Nucleotide, Segment, Simulation};
-use crate::pass::{Pass, PassContext};
+use crate::pass::{Pass, PassContext, PassEffect};
 use crate::trace::ChoiceValue;
 
 /// A sampling pass that draws one base byte from a `Distribution`,
@@ -77,6 +77,10 @@ impl Pass for SampleBasePass {
         // configured address. Phase D's upstream-bound propagation
         // and build-time validator both consume this list.
         vec![self.address.clone()]
+    }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::AppendNucleotides]
     }
 }
 

@@ -6,7 +6,9 @@
 //! - The [`productive()`] module-level factory that returns the
 //!   canonical productive-sequence bundle.
 //! - The [`StrictSamplingError`] Python exception class raised from
-//!   strict-mode runs when a contract cannot admit any candidate.
+//!   strict-mode runs when a candidate cannot be sampled, a pass
+//!   precondition is not satisfied, or a post-pass contract fence
+//!   fails.
 //!
 //! Custom contract construction from Python (e.g. building a
 //! `ContractSet` allele-by-allele) is intentionally **not** in this
@@ -26,16 +28,14 @@ create_exception!(
     genairr_engine,
     StrictSamplingError,
     PyException,
-    "Raised by strict-mode runs when a contract bundle cannot admit any \
-     candidate at a sampling pass.\n\
+    "Raised by strict-mode runs when a pass cannot execute safely.\n\
      \n\
      Exception args are a 3-tuple ``(pass_name, address, reason)`` where:\n\
      - ``pass_name`` (str) is the name of the failing pass (e.g. \
        ``\"generate_np.np1\"``);\n\
-     - ``address`` (str) is the trace address being sampled (e.g. \
+     - ``address`` (str) is the trace address when applicable (e.g. \
        ``\"np.np1.length\"``);\n\
-     - ``reason`` (str) is one of ``\"support_unavailable\"``, \
-       ``\"empty_admissible_support\"``, or ``\"invalid_filtered_support\"``."
+     - ``reason`` (str) is a stable lowercase error reason."
 );
 
 /// Convert a [`PassError`] into a Python [`StrictSamplingError`]
@@ -55,15 +55,62 @@ pub(crate) fn pass_error_to_pyerr(err: PassError) -> PyErr {
             };
             StrictSamplingError::new_err((pass_name, address, reason_str.to_string()))
         }
+        PassError::MissingRefData { pass_name } => {
+            StrictSamplingError::new_err((pass_name, String::new(), "missing_refdata".to_string()))
+        }
+        PassError::MissingAssignment { pass_name, segment } => StrictSamplingError::new_err((
+            pass_name,
+            String::new(),
+            format!("missing_assignment.{:?}", segment).to_ascii_lowercase(),
+        )),
+        PassError::MissingAllele {
+            pass_name,
+            segment,
+            allele_id,
+        } => StrictSamplingError::new_err((
+            pass_name,
+            String::new(),
+            format!("missing_allele.{:?}.{}", segment, allele_id).to_ascii_lowercase(),
+        )),
+        PassError::InvalidDistributionOutput {
+            pass_name,
+            address,
+            reason,
+            ..
+        } => StrictSamplingError::new_err((
+            pass_name,
+            address,
+            format!("invalid_distribution_output.{}", reason),
+        )),
+        PassError::InvalidPlanState { pass_name, reason } => StrictSamplingError::new_err((
+            pass_name,
+            String::new(),
+            format!("invalid_plan_state.{}", reason),
+        )),
+        PassError::ContractViolation {
+            pass_name,
+            violations,
+        } => {
+            let contract_names = violations
+                .iter()
+                .map(|violation| violation.contract_name.as_str())
+                .collect::<Vec<_>>()
+                .join(",");
+            StrictSamplingError::new_err((
+                pass_name,
+                String::new(),
+                format!("contract_violation.{}", contract_names),
+            ))
+        }
     }
 }
 
 /// A bundle of contracts that all must hold for the simulation.
 ///
 /// Returned by factory functions like [`productive()`]. Pass to
-/// runners as the `respect=` argument; the runtime threads it
-/// through `PassRuntime::execute_with_context` so every sampling
-/// pass filters its candidate distribution against this bundle.
+/// runners as the `respect=` argument; the compiled simulator
+/// threads it through each pass so sampling can filter candidates
+/// and strict execution can verify post-pass state.
 #[pyclass(name = "ContractSet", module = "genairr_engine", unsendable)]
 pub struct PyContractSet {
     pub(crate) inner: ContractSet,
@@ -112,7 +159,8 @@ impl PyContractSet {
 /// Pass this to ``Experiment.run(respect=...)`` (or to
 /// ``genairr_engine.run(plan, seed, respect=...)``) to constrain
 /// every NP-base draw, every length sample, and every mutation /
-/// corruption substitution to admissible values.
+/// corruption substitution to admissible values. In strict mode, the
+/// compiled simulator also verifies the bundle after each pass.
 #[pyfunction]
 pub fn productive() -> PyContractSet {
     PyContractSet {
@@ -123,6 +171,9 @@ pub fn productive() -> PyContractSet {
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyContractSet>()?;
     m.add_function(wrap_pyfunction!(productive, m)?)?;
-    m.add("StrictSamplingError", m.py().get_type_bound::<StrictSamplingError>())?;
+    m.add(
+        "StrictSamplingError",
+        m.py().get_type_bound::<StrictSamplingError>(),
+    )?;
     Ok(())
 }

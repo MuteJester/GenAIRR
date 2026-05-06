@@ -3,7 +3,7 @@
 use crate::assignment::AlleleInstance;
 use crate::dist::Distribution;
 use crate::ir::{Segment, Simulation};
-use crate::pass::{Pass, PassContext};
+use crate::pass::{Pass, PassContext, PassEffect};
 use crate::refdata::AlleleId;
 use crate::trace::ChoiceValue;
 
@@ -88,6 +88,10 @@ impl Pass for SampleAllelePass {
 
     fn declared_choices(&self) -> Vec<String> {
         vec![self.address().to_string()]
+    }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::AssignAllele(self.segment)]
     }
 }
 

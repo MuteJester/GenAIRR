@@ -2,8 +2,13 @@
 
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
-use crate::pass::{Pass, PassContext};
+use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::constrained::{sample_targeted_base, TargetedBaseChoice};
 use crate::trace::ChoiceValue;
+
+fn lowercase_base(base: u8) -> u8 {
+    base.to_ascii_lowercase()
+}
 
 /// Models sequencing errors as random base substitutions written
 /// in **lowercase** to mark the position as corrupted.
@@ -20,6 +25,9 @@ use crate::trace::ChoiceValue;
 /// base + `with_base_changed`), with two distinctions:
 /// - The destination base is lowercased before being written.
 /// - Trace addresses use the `corrupt.quality.*` prefix.
+/// When contracts are active, filtering evaluates the lowercased
+/// value that will actually be written, while still sampling from the
+/// configured base distribution.
 ///
 /// Pass `name()` is `"corrupt.quality"`. Codon-rail consistency
 /// is preserved by `with_base_changed` (the codon translator is
@@ -45,18 +53,38 @@ impl QualityErrorPass {
             base_dist,
         }
     }
-}
 
-impl Pass for QualityErrorPass {
-    fn name(&self) -> &str {
-        "corrupt.quality"
-    }
-
-    fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
+    fn execute_with_sampling_mode(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
         let count_raw = self.count_dist.sample(ctx.rng);
+        if strict && count_raw < 0 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                "corrupt.quality.count",
+                count_raw,
+                "negative_count",
+            ));
+        }
+        if strict && count_raw > u32::MAX as i64 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                "corrupt.quality.count",
+                count_raw,
+                "count_exceeds_u32",
+            ));
+        }
         assert!(
             count_raw >= 0,
             "QualityErrorPass: count distribution returned negative {}",
+            count_raw
+        );
+        assert!(
+            count_raw <= u32::MAX as i64,
+            "QualityErrorPass: count distribution returned {} > u32::MAX",
             count_raw
         );
         let count = count_raw as u32;
@@ -65,30 +93,52 @@ impl Pass for QualityErrorPass {
 
         let pool_len = sim.pool.len() as u32;
         if pool_len == 0 || count == 0 {
-            return sim.clone();
+            return Ok(sim.clone());
         }
 
         let mut current = sim.clone();
         for i in 0..count {
             let site = ctx.rng.range_u32(pool_len);
-            // Sample then lowercase. This is the biological marker
-            // — the recorded trace value matches what's actually
-            // written to the pool, preserving faithfulness.
-            let new_base = self.base_dist.sample(ctx.rng).to_ascii_lowercase();
+            let site_handle = NucHandle::new(site);
+            let base_address = format!("corrupt.quality.error_base[{}]", i);
 
             ctx.trace.record(
                 format!("corrupt.quality.error_site[{}]", i),
                 ChoiceValue::Int(site as i64),
             );
-            ctx.trace.record(
-                format!("corrupt.quality.error_base[{}]", i),
-                ChoiceValue::Base(new_base),
-            );
 
-            current = current.with_base_changed(NucHandle::new(site), new_base);
+            let new_base = sample_targeted_base(
+                &current,
+                ctx,
+                self.base_dist.as_ref(),
+                TargetedBaseChoice::new(self.name(), &base_address, i, count, site_handle, strict)
+                    .with_value_transform(lowercase_base),
+            )?;
+            ctx.trace.record(base_address, ChoiceValue::Base(new_base));
+
+            current = current.with_base_changed(site_handle, new_base);
         }
 
-        current
+        Ok(current)
+    }
+}
+
+impl Pass for QualityErrorPass {
+    fn name(&self) -> &str {
+        "corrupt.quality"
+    }
+
+    fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
+        self.execute_with_sampling_mode(sim, ctx, false)
+            .expect("QualityErrorPass permissive execution must not return PassError")
+    }
+
+    fn execute_checked(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, true)
     }
 
     fn declared_choices(&self) -> Vec<String> {
@@ -98,14 +148,23 @@ impl Pass for QualityErrorPass {
             "corrupt.quality.error_base[0..n]".to_string(),
         ]
     }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::EditBases]
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dist::{EmpiricalLengthDist, UniformBase};
+    use crate::contract::productive;
+    use crate::dist::{EmpiricalLengthDist, FilteredSampleError, UniformBase};
     use crate::ir::{Nucleotide, Region, Segment};
     use crate::pass::{PassPlan, PassRuntime};
+    use crate::passes::test_support::{
+        make_substitution_productive_vj_fixture, StopOnlyMutationBaseDist,
+        StopThenSafeMutationBaseDist,
+    };
 
     fn quality_test_sim() -> Simulation {
         // All-uppercase germline so the lowercase-after-error
@@ -117,6 +176,44 @@ mod tests {
             sim = next;
         }
         sim
+    }
+
+    fn quality_single_error_plan(base_dist: Box<dyn Distribution<Output = u8>>) -> PassPlan {
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(QualityErrorPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
+            base_dist,
+        )));
+        plan
+    }
+
+    fn quality_error_site(seed: u64, sim: Simulation) -> u32 {
+        let outcome = PassRuntime::execute(
+            &quality_single_error_plan(Box::new(StopOnlyMutationBaseDist)),
+            sim,
+            seed,
+        );
+        match outcome
+            .trace
+            .find("corrupt.quality.error_site[0]")
+            .unwrap()
+            .value
+        {
+            ChoiceValue::Int(site) => site as u32,
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    fn find_seed_for_quality_error_site(sim: &Simulation, target_site: u32) -> u64 {
+        for seed in 0..512u64 {
+            if quality_error_site(seed, sim.clone()) == target_site {
+                return seed;
+            }
+        }
+        panic!(
+            "no seed in search range targeted quality site {}",
+            target_site
+        );
     }
 
     #[test]
@@ -263,5 +360,85 @@ mod tests {
         assert!(declared.contains(&"corrupt.quality.count".to_string()));
         assert!(declared.contains(&"corrupt.quality.error_site[0..n]".to_string()));
         assert!(declared.contains(&"corrupt.quality.error_base[0..n]".to_string()));
+    }
+
+    #[test]
+    fn quality_error_productive_filters_lowercase_base_that_would_create_stop() {
+        let (cfg, sim) = make_substitution_productive_vj_fixture();
+        let seed = find_seed_for_quality_error_site(&sim, 2);
+        let contracts = productive();
+
+        let constrained = PassRuntime::execute_with_context(
+            &quality_single_error_plan(Box::new(StopThenSafeMutationBaseDist)),
+            sim.clone(),
+            seed,
+            Some(&cfg),
+            Some(&contracts),
+        );
+
+        assert_eq!(
+            constrained
+                .trace
+                .find("corrupt.quality.error_site[0]")
+                .unwrap()
+                .value,
+            ChoiceValue::Int(2)
+        );
+        assert_eq!(
+            constrained
+                .trace
+                .find("corrupt.quality.error_base[0]")
+                .unwrap()
+                .value,
+            ChoiceValue::Base(b'c')
+        );
+        assert!(contracts
+            .verify(constrained.final_simulation(), Some(&cfg))
+            .is_ok());
+
+        let unconstrained = PassRuntime::execute_with_context(
+            &quality_single_error_plan(Box::new(StopThenSafeMutationBaseDist)),
+            sim,
+            seed,
+            Some(&cfg),
+            None,
+        );
+        assert_eq!(
+            unconstrained
+                .trace
+                .find("corrupt.quality.error_base[0]")
+                .unwrap()
+                .value,
+            ChoiceValue::Base(b'a')
+        );
+        let violations = productive()
+            .verify(unconstrained.final_simulation(), Some(&cfg))
+            .unwrap_err();
+        assert!(violations
+            .iter()
+            .any(|v| v.contract_name == "no_stop_codon_in_junction"));
+    }
+
+    #[test]
+    fn quality_error_strict_errors_when_base_filter_empty() {
+        let (cfg, sim) = make_substitution_productive_vj_fixture();
+        let seed = find_seed_for_quality_error_site(&sim, 2);
+        let contracts = productive();
+
+        let err = PassRuntime::execute_strict_with_context(
+            &quality_single_error_plan(Box::new(StopOnlyMutationBaseDist)),
+            sim,
+            seed,
+            Some(&cfg),
+            Some(&contracts),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.pass_name(), "corrupt.quality");
+        assert_eq!(err.address(), "corrupt.quality.error_base[0]");
+        assert_eq!(
+            err.constraint_reason(),
+            Some(FilteredSampleError::EmptyAdmissibleSupport)
+        );
     }
 }

@@ -3,7 +3,7 @@
 use crate::contract::ChoiceContext;
 use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
 use crate::ir::{flag, NucHandle, Nucleotide, Region, Segment, Simulation};
-use crate::pass::{Pass, PassContext, PassError};
+use crate::pass::{Pass, PassContext, PassEffect, PassError};
 use crate::trace::ChoiceValue;
 
 /// Generate one NP (non-template) region — a stretch of bases
@@ -209,6 +209,22 @@ impl GenerateNPPass {
         // original Phase D.6 fallback behavior.
         let address = self.length_address();
         let length = self.sample_length(sim, ctx, address, strict)?;
+        if strict && length < 0 {
+            return Err(PassError::invalid_distribution_output(
+                self.pass_name(),
+                address,
+                length,
+                "negative_length",
+            ));
+        }
+        if strict && length > u32::MAX as i64 {
+            return Err(PassError::invalid_distribution_output(
+                self.pass_name(),
+                address,
+                length,
+                "length_exceeds_u32",
+            ));
+        }
         assert!(
             length >= 0,
             "GenerateNPPass({}): length distribution returned negative value {}",
@@ -285,13 +301,17 @@ impl Pass for GenerateNPPass {
             format!("{}[0..n]", self.bases_prefix()),
         ]
     }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::AppendRegion(self.np_segment)]
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dist::{EmpiricalLengthDist, UniformBase};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::{PassError, PassPlan, PassRuntime};
     use crate::passes::EchoPass;
 
     #[test]
@@ -502,5 +522,26 @@ mod tests {
             Box::new(UniformBase),
         )));
         let _ = PassRuntime::execute(&plan, Simulation::new(), 0);
+    }
+
+    #[test]
+    fn generate_np_pass_strict_errors_on_negative_length() {
+        use crate::dist::UniformInt;
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(GenerateNPPass::new(
+            Segment::Np1,
+            Box::new(UniformInt::new(-3, -1)),
+            Box::new(UniformBase),
+        )));
+
+        let err = PassRuntime::execute_strict_with_context(&plan, Simulation::new(), 0, None, None)
+            .unwrap_err();
+
+        assert_eq!(err.pass_name(), "generate_np.np1");
+        assert_eq!(err.address(), "np.np1.length");
+        assert!(matches!(
+            err,
+            PassError::InvalidDistributionOutput { value, .. } if value < 0
+        ));
     }
 }

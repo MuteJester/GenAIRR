@@ -15,8 +15,10 @@ use pyo3::prelude::*;
 
 pub mod airr_record;
 pub mod assignment;
+pub mod compiled;
 pub mod contract;
 pub mod dist;
+pub mod event;
 pub mod ir;
 pub mod junction;
 pub mod pass;

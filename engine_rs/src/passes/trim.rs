@@ -3,7 +3,7 @@
 use crate::assignment::TrimEnd;
 use crate::dist::Distribution;
 use crate::ir::{Segment, Simulation};
-use crate::pass::{Pass, PassContext};
+use crate::pass::{Pass, PassContext, PassEffect, PassError, PassRequirement};
 use crate::trace::ChoiceValue;
 
 /// Sample a trim amount from a distribution and apply it to the
@@ -80,15 +80,35 @@ impl TrimPass {
             _ => unreachable!("TrimPass with non-V/D/J segment"),
         }
     }
-}
 
-impl Pass for TrimPass {
-    fn name(&self) -> &str {
-        self.address()
-    }
+    fn execute_with_validation(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        if strict && sim.assignments.get(self.segment).is_none() {
+            return Err(PassError::missing_assignment(self.name(), self.segment));
+        }
 
-    fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         let value = self.distribution.sample(ctx.rng);
+        if strict && value < 0 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                self.address(),
+                value,
+                "negative_trim",
+            ));
+        }
+        if strict && value > u16::MAX as i64 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                self.address(),
+                value,
+                "trim_exceeds_u16",
+            ));
+        }
+
         assert!(
             value >= 0,
             "TrimPass({}): distribution returned negative trim {}",
@@ -103,11 +123,38 @@ impl Pass for TrimPass {
         );
 
         ctx.trace.record(self.address(), ChoiceValue::Int(value));
-        sim.with_trim(self.segment, self.end, value as u16)
+        Ok(sim.with_trim(self.segment, self.end, value as u16))
+    }
+}
+
+impl Pass for TrimPass {
+    fn name(&self) -> &str {
+        self.address()
+    }
+
+    fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
+        self.execute_with_validation(sim, ctx, false)
+            .expect("TrimPass permissive execution must not return PassError")
+    }
+
+    fn execute_checked(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_validation(sim, ctx, true)
     }
 
     fn declared_choices(&self) -> Vec<String> {
         vec![self.address().to_string()]
+    }
+
+    fn requirements(&self) -> Vec<PassRequirement> {
+        vec![PassRequirement::AlleleAssignment(self.segment)]
+    }
+
+    fn effects(&self) -> Vec<PassEffect> {
+        vec![PassEffect::TrimAllele(self.segment)]
     }
 }
 
@@ -115,7 +162,7 @@ impl Pass for TrimPass {
 mod tests {
     use super::*;
     use crate::dist::{AllelePoolDist, EmpiricalLengthDist};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::{PassError, PassPlan, PassRuntime};
     use crate::passes::sample_allele::test_support::make_test_pool;
     use crate::passes::SampleAllelePass;
 
@@ -192,6 +239,28 @@ mod tests {
     }
 
     #[test]
+    fn trim_pass_strict_errors_when_no_allele_assigned() {
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(TrimPass::new(
+            Segment::V,
+            TrimEnd::Three,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(2, 1.0)])),
+        )));
+
+        let err = PassRuntime::execute_strict_with_context(&plan, Simulation::new(), 0, None, None)
+            .unwrap_err();
+
+        assert_eq!(err.pass_name(), "trim.v_3");
+        assert!(matches!(
+            err,
+            PassError::MissingAssignment {
+                segment: Segment::V,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     #[should_panic(expected = "negative trim")]
     fn trim_pass_panics_on_negative_distribution_output() {
         // Runtime defensive check. UniformInt::new(-5, -1) always
@@ -209,6 +278,32 @@ mod tests {
             Box::new(UniformInt::new(-5, -1)),
         )));
         let _ = PassRuntime::execute(&plan, Simulation::new(), 1);
+    }
+
+    #[test]
+    fn trim_pass_strict_errors_on_negative_distribution_output() {
+        use crate::dist::UniformInt;
+        let v_pool = make_test_pool(1, Segment::V);
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(SampleAllelePass::new(
+            Segment::V,
+            Box::new(AllelePoolDist::uniform(&v_pool)),
+        )));
+        plan.push(Box::new(TrimPass::new(
+            Segment::V,
+            TrimEnd::Three,
+            Box::new(UniformInt::new(-5, -1)),
+        )));
+
+        let err = PassRuntime::execute_strict_with_context(&plan, Simulation::new(), 1, None, None)
+            .unwrap_err();
+
+        assert_eq!(err.pass_name(), "trim.v_3");
+        assert_eq!(err.address(), "trim.v_3");
+        assert!(matches!(
+            err,
+            PassError::InvalidDistributionOutput { value, .. } if value < 0
+        ));
     }
 
     #[test]
