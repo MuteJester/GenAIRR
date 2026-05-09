@@ -200,12 +200,29 @@ pub fn build_airr_record(
         .iter()
         .find(|r| r.segment == Segment::Np2);
 
-    rec.v_sequence_start = v_region.map(|r| r.start.index() as i64);
-    rec.v_sequence_end = v_region.map(|r| r.end.index() as i64);
-    rec.d_sequence_start = d_region.map(|r| r.start.index() as i64);
-    rec.d_sequence_end = d_region.map(|r| r.end.index() as i64);
-    rec.j_sequence_start = j_region.map(|r| r.start.index() as i64);
-    rec.j_sequence_end = j_region.map(|r| r.end.index() as i64);
+    // Phase 11.2: pool-position coords come from the live-call
+    // hypothesis when one is available — that way NP-side elastic
+    // extension is reflected in the AIRR record. Fall back to the
+    // structural region for raw-RefDataConfig runs (no live calls)
+    // or unsupported segments.
+    if let Some(r) = v_region {
+        let (s_start, s_end) = live_sequence_range(sim, Segment::V)
+            .unwrap_or((r.start.index() as i64, r.end.index() as i64));
+        rec.v_sequence_start = Some(s_start);
+        rec.v_sequence_end = Some(s_end);
+    }
+    if let Some(r) = d_region {
+        let (s_start, s_end) = live_sequence_range(sim, Segment::D)
+            .unwrap_or((r.start.index() as i64, r.end.index() as i64));
+        rec.d_sequence_start = Some(s_start);
+        rec.d_sequence_end = Some(s_end);
+    }
+    if let Some(r) = j_region {
+        let (s_start, s_end) = live_sequence_range(sim, Segment::J)
+            .unwrap_or((r.start.index() as i64, r.end.index() as i64));
+        rec.j_sequence_start = Some(s_start);
+        rec.j_sequence_end = Some(s_end);
+    }
 
     // NP region nucleotide strings.
     if let Some(r) = np1_region {
@@ -725,6 +742,17 @@ fn live_germline_range(sim: &Simulation, segment: Segment) -> Option<(i64, i64)>
     let call = sim.live_calls.as_ref()?.get(segment)?;
     let h = call.hypotheses.first()?;
     Some((h.ref_start as i64, h.ref_end as i64))
+}
+
+/// Phase 11.2: pull `(seq_start, seq_end)` from the first live-call
+/// hypothesis for a V / D / J segment. These are pool positions —
+/// the same coordinate space as the structural `region.start/end` —
+/// but they reflect any NP-side elastic extension the walker
+/// performed.
+fn live_sequence_range(sim: &Simulation, segment: Segment) -> Option<(i64, i64)> {
+    let call = sim.live_calls.as_ref()?.get(segment)?;
+    let h = call.hypotheses.first()?;
+    Some((h.seq_start as i64, h.seq_end as i64))
 }
 
 fn live_call_name(

@@ -5143,6 +5143,42 @@ mod tests {
     }
 
     #[test]
+    fn phase11_2_v_sequence_end_reflects_np_extension() {
+        // Phase 11.2 invariant: `v_sequence_end` reads from the
+        // live-call hypothesis seq_end, so when NP1 bases extend V's
+        // right boundary the AIRR sequence coord grows past the
+        // structural V-region end. Concrete: V_3 trim 3 + NP1="AAA"
+        // (V1 suffix) → live seq_end = 12 (3 NP1 bases claimed).
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        // Structural V region ended at pool position 9; live
+        // hypothesis grew to 12 → AIRR record reports 12.
+        assert_eq!(rec.v_sequence_end, Some(12));
+    }
+
+    #[test]
+    fn phase11_2_j_sequence_start_reflects_np_extension() {
+        // Symmetric: J_5 trim 3 + NP2="AAA" (J1 prefix) → J's
+        // live seq_start moves left into NP2.
+        //
+        // Pool layout: V(12) + NP1(0) + D(12) + NP2(3) + J(6) = 33.
+        //   J structural region at [27, 33).
+        //   NP2 at [24, 27).
+        // After J left-extension into NP2, live seq_start = 24.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.j_sequence_start, Some(24));
+        // Structural J end stays where it was; only seq_start moves.
+        assert_eq!(rec.j_sequence_end, Some(33));
+    }
+
+    #[test]
     fn phase11_1_no_extension_preserves_structural_germline_bounds() {
         // Sanity: when NO extension fires (no NP, or NP doesn't
         // match), AIRR germline bounds match the structural trim
