@@ -3,7 +3,7 @@
 use crate::contract::ChoiceContext;
 use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
 use crate::ir::{flag, NucHandle, Nucleotide, Region, Segment, Simulation};
-use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::pass::{IntegerSupport, Pass, PassCompileFact, PassContext, PassEffect, PassError};
 use crate::trace::ChoiceValue;
 
 /// Generate one NP (non-template) region — a stretch of bases
@@ -304,6 +304,13 @@ impl Pass for GenerateNPPass {
 
     fn effects(&self) -> Vec<PassEffect> {
         vec![PassEffect::AppendRegion(self.np_segment)]
+    }
+
+    fn compile_facts(&self) -> Vec<PassCompileFact> {
+        vec![PassCompileFact::NpLengthSupport {
+            segment: self.np_segment,
+            support: IntegerSupport::from_weighted_pairs(self.length_dist.support()),
+        }]
     }
 }
 

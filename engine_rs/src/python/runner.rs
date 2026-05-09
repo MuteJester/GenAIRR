@@ -226,7 +226,7 @@ fn run(
         ExecutionPolicy::Permissive
     };
     run_compiled(
-        plan.inner(),
+        plan.inner()?,
         seed,
         refdata.map(|r| r.inner()),
         respect.map(|c| c.inner()),

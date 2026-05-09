@@ -25,11 +25,13 @@
 //! threads `&Simulation → Simulation` through arbitrarily many
 //! passes while collecting trace + history.
 
+use crate::assignment::TrimEnd;
 use crate::contract::{ContractSet, ContractViolation};
 use crate::dist::FilteredSampleError;
 use crate::event::EventRecord;
+use crate::feasibility::FeasibilityContext;
 use crate::ir::{Segment, Simulation};
-use crate::refdata::RefDataConfig;
+use crate::refdata::{AlleleId, RefDataConfig};
 use crate::rng::Rng;
 use crate::trace::Trace;
 use std::fmt;
@@ -77,6 +79,91 @@ pub enum PassEffect {
     StructuralIndel,
 }
 
+/// Compile-time view of an integer distribution's support.
+///
+/// This is deliberately smaller than [`crate::dist::Distribution`]:
+/// the compiler only needs to know whether a finite, positive-mass
+/// support exists and which values it contains. Passes convert their
+/// private distribution objects into these typed facts without exposing
+/// concrete distribution types or requiring downcasts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IntegerSupport {
+    Enumerated(Vec<i64>),
+    Unavailable,
+    Invalid(String),
+}
+
+impl IntegerSupport {
+    pub(crate) fn from_weighted_pairs(pairs: Option<Vec<(i64, f64)>>) -> Self {
+        let Some(pairs) = pairs else {
+            return Self::Unavailable;
+        };
+        if pairs.is_empty() {
+            return Self::Invalid("empty_support".to_string());
+        }
+
+        let mut values = Vec::with_capacity(pairs.len());
+        for (index, (value, weight)) in pairs.into_iter().enumerate() {
+            if weight <= 0.0 || !weight.is_finite() {
+                return Self::Invalid(format!("invalid_weight_at_index_{index}"));
+            }
+            values.push(value);
+        }
+        Self::Enumerated(values)
+    }
+}
+
+/// Compile-time view of an allele-id distribution's support.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AlleleIdSupport {
+    Enumerated(Vec<AlleleId>),
+    Unavailable,
+    Invalid(String),
+}
+
+impl AlleleIdSupport {
+    pub(crate) fn from_weighted_pairs(pairs: Option<Vec<(AlleleId, f64)>>) -> Self {
+        let Some(pairs) = pairs else {
+            return Self::Unavailable;
+        };
+        if pairs.is_empty() {
+            return Self::Invalid("empty_support".to_string());
+        }
+
+        let mut values = Vec::with_capacity(pairs.len());
+        for (index, (value, weight)) in pairs.into_iter().enumerate() {
+            if weight <= 0.0 || !weight.is_finite() {
+                return Self::Invalid(format!("invalid_weight_at_index_{index}"));
+            }
+            values.push(value);
+        }
+        Self::Enumerated(values)
+    }
+}
+
+/// Typed facts exposed by passes for semantic compile-time analysis.
+///
+/// These facts are intentionally domain-specific and sparse. They let
+/// the compiled simulator validate contract preconditions from pass
+/// semantics instead of parsing trace-address strings or downcasting
+/// trait objects.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PassCompileFact {
+    AlleleSampleSupport {
+        segment: Segment,
+        support: AlleleIdSupport,
+    },
+    TrimSupport {
+        segment: Segment,
+        end: TrimEnd,
+        support: IntegerSupport,
+    },
+    NpLengthSupport {
+        segment: Segment,
+        support: IntegerSupport,
+    },
+}
+
 // ──────────────────────────────────────────────────────────────────
 // PassContext — what every pass sees in addition to the IR
 // ──────────────────────────────────────────────────────────────────
@@ -118,12 +205,21 @@ pub enum PassEffect {
 pub struct PassContext<'a> {
     pub trace: &'a mut Trace,
     pub rng: &'a mut Rng,
+    /// Zero-based index of the pass currently executing inside the
+    /// compiled plan. Direct `PassRuntime` execution also fills this
+    /// field so pass logic can avoid guessing lifecycle state from
+    /// partially-populated IR defaults.
+    pub pass_index: usize,
     pub refdata: Option<&'a RefDataConfig>,
     /// Active contract set (D.6). Sampling passes consult this
     /// via `dist::sample_filtered` to draw only admissible
     /// candidates. `None` means no contracts are active —
     /// equivalent to MIXED mode.
     pub contracts: Option<&'a ContractSet>,
+    /// Compile-derived downstream feasibility domains. Sampling
+    /// passes consult this alongside contracts to avoid committing
+    /// choices that leave no valid future completion.
+    pub feasibility: Option<&'a FeasibilityContext>,
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -443,6 +539,15 @@ pub trait Pass {
     fn effects(&self) -> Vec<PassEffect> {
         Vec::new()
     }
+
+    /// Typed semantic facts available to the compile-time validator.
+    ///
+    /// Defaults to no facts. Sampling passes override this to expose
+    /// finite supports for the choices whose domains matter to contract
+    /// preconditions and parameter validation.
+    fn compile_facts(&self) -> Vec<PassCompileFact> {
+        Vec::new()
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -628,13 +733,15 @@ impl PassRuntime {
 
         revisions.push(initial);
 
-        for pass in plan.passes() {
+        for (pass_index, pass) in plan.passes().iter().enumerate() {
             let prev = revisions.last().expect("non-empty by construction");
             let mut ctx = PassContext {
                 trace: &mut trace,
                 rng: &mut rng,
+                pass_index,
                 refdata,
                 contracts,
+                feasibility: None,
             };
             let next = pass.execute(prev, &mut ctx);
             pass_names.push(pass.name().to_string());
@@ -665,13 +772,15 @@ impl PassRuntime {
 
         revisions.push(initial);
 
-        for pass in plan.passes() {
+        for (pass_index, pass) in plan.passes().iter().enumerate() {
             let prev = revisions.last().expect("non-empty by construction");
             let mut ctx = PassContext {
                 trace: &mut trace,
                 rng: &mut rng,
+                pass_index,
                 refdata,
                 contracts,
+                feasibility: None,
             };
             let next = pass.execute_checked(prev, &mut ctx)?;
             pass_names.push(pass.name().to_string());

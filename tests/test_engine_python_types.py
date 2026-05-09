@@ -21,7 +21,14 @@ import pytest
 
 
 def test_module_exports_expected_classes():
-    for name in ("Outcome", "Simulation", "Region", "Trace", "ChoiceRecord"):
+    for name in (
+        "Outcome",
+        "Simulation",
+        "Region",
+        "Trace",
+        "ChoiceRecord",
+        "CompiledSimulator",
+    ):
         assert hasattr(genairr_engine, name), f"missing {name!r} export"
 
 
@@ -622,6 +629,16 @@ def test_run_vj_recombination_respects_np1_max_length():
 # ──────────────────────────────────────────────────────────────────
 
 
+def _build_smoke_vj_plan(cfg):
+    plan = genairr_engine.PassPlan()
+    plan.push_sample_allele("V", cfg)
+    plan.push_sample_allele("J", cfg)
+    plan.push_assemble("V")
+    plan.push_generate_np("NP1", [(i, 1.0) for i in range(7)])
+    plan.push_assemble("J")
+    return plan
+
+
 def test_pass_plan_starts_empty():
     plan = genairr_engine.PassPlan()
     assert len(plan) == 0
@@ -648,12 +665,7 @@ def test_pass_plan_run_matches_run_vj_recombination_under_same_seed():
     cfg = _build_smoke_vj_refdata()
     seed = 0xC0FFEE
 
-    plan = genairr_engine.PassPlan()
-    plan.push_sample_allele("V", cfg)
-    plan.push_sample_allele("J", cfg)
-    plan.push_assemble("V")
-    plan.push_generate_np("NP1", [(i, 1.0) for i in range(7)])
-    plan.push_assemble("J")
+    plan = _build_smoke_vj_plan(cfg)
 
     o_built = genairr_engine.run(plan, seed=seed, refdata=cfg)
     o_recipe = genairr_engine.run_vj_recombination(cfg, seed)
@@ -800,12 +812,7 @@ def test_pass_plan_push_trim_rejects_empty_pairs():
 
 def test_pass_plan_run_is_deterministic_under_same_seed():
     cfg = _build_smoke_vj_refdata()
-    plan = genairr_engine.PassPlan()
-    plan.push_sample_allele("V", cfg)
-    plan.push_sample_allele("J", cfg)
-    plan.push_assemble("V")
-    plan.push_generate_np("NP1", [(i, 1.0) for i in range(7)])
-    plan.push_assemble("J")
+    plan = _build_smoke_vj_plan(cfg)
 
     o1 = genairr_engine.run(plan, seed=0xCAFE, refdata=cfg)
     o2 = genairr_engine.run(plan, seed=0xCAFE, refdata=cfg)
@@ -816,14 +823,118 @@ def test_pass_plan_can_be_re_run_with_different_seeds():
     # The plan is borrowed by the runner, not consumed — so we can
     # call run() multiple times against the same plan.
     cfg = _build_smoke_vj_refdata()
-    plan = genairr_engine.PassPlan()
-    plan.push_sample_allele("V", cfg)
-    plan.push_sample_allele("J", cfg)
-    plan.push_assemble("V")
-    plan.push_generate_np("NP1", [(i, 1.0) for i in range(7)])
-    plan.push_assemble("J")
+    plan = _build_smoke_vj_plan(cfg)
 
     runs = [genairr_engine.run(plan, seed=s, refdata=cfg) for s in range(5)]
     bases = [r.final_simulation().bases() for r in runs]
     # Not all 5 should be identical (NP1 varies with seed).
     assert len(set(bases)) > 1
+
+
+# ──────────────────────────────────────────────────────────────────
+# F.8 — owning CompiledSimulator
+# ──────────────────────────────────────────────────────────────────
+
+
+def test_pass_plan_compile_returns_owning_compiled_simulator():
+    cfg = _build_smoke_vj_refdata()
+    plan = _build_smoke_vj_plan(cfg)
+
+    compiled = plan.compile(refdata=cfg)
+
+    assert isinstance(compiled, genairr_engine.CompiledSimulator)
+    assert compiled.policy() == "permissive"
+    assert compiled.pass_names() == [
+        "sample_allele.v",
+        "sample_allele.j",
+        "assemble.v",
+        "generate_np.np1",
+        "assemble.j",
+    ]
+    assert "consumed=true" in repr(plan)
+    with pytest.raises(ValueError, match="consumed"):
+        len(plan)
+    with pytest.raises(ValueError, match="consumed"):
+        plan.push_generate_np("NP1", [(0, 1.0)])
+
+
+def test_compiled_simulator_runs_repeatedly_without_recompiling():
+    cfg = _build_smoke_vj_refdata()
+    compiled = _build_smoke_vj_plan(cfg).compile(refdata=cfg)
+
+    a = compiled.run(0xCAFE)
+    b = compiled.run(0xCAFE)
+
+    assert a.final_simulation().bases() == b.final_simulation().bases()
+    assert a.pass_names() == b.pass_names() == compiled.pass_names()
+
+
+def test_compiled_simulator_run_batch_uses_seed_stitching():
+    cfg = _build_smoke_vj_refdata()
+    compiled = _build_smoke_vj_plan(cfg).compile(refdata=cfg)
+
+    batch = compiled.run_batch(3, 100)
+    expected = [compiled.run(seed) for seed in range(100, 103)]
+
+    assert len(batch) == 3
+    assert [o.final_simulation().bases() for o in batch] == [
+        o.final_simulation().bases() for o in expected
+    ]
+
+
+def test_pass_plan_compile_failure_does_not_consume_builder():
+    plan = genairr_engine.PassPlan()
+    plan.push_assemble("V")
+
+    with pytest.raises(ValueError, match="requires reference data"):
+        plan.compile()
+
+    assert len(plan) == 1
+    assert "len=1" in repr(plan)
+
+
+def test_pass_plan_productive_compile_rejects_anchorless_v_support():
+    cfg = genairr_engine.RefDataConfig.vj()
+    cfg.add_v_allele("v_anchorless*01", "v_anchorless", b"AAACCCGGG")
+    cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
+    plan = _build_smoke_vj_plan(cfg)
+
+    with pytest.raises(ValueError, match="V sample support has no alleles"):
+        plan.compile(refdata=cfg, respect=genairr_engine.productive())
+
+    assert len(plan) == 5
+    assert "len=5" in repr(plan)
+
+
+def test_pass_plan_productive_compile_rejects_no_in_frame_np_mass():
+    cfg = _build_smoke_vj_refdata()
+    plan = genairr_engine.PassPlan()
+    plan.push_sample_allele("V", cfg)
+    plan.push_sample_allele("J", cfg)
+    plan.push_assemble("V")
+    plan.push_generate_np("NP1", [(1, 1.0), (2, 1.0)])
+    plan.push_assemble("J")
+
+    with pytest.raises(ValueError, match="NP1 length support has no in-frame mass"):
+        plan.compile(refdata=cfg, respect=genairr_engine.productive())
+
+    assert len(plan) == 5
+
+
+def test_compiled_simulator_captures_contracts_and_strict_policy():
+    cfg = _build_smoke_vj_refdata()
+    compiled = _build_smoke_vj_plan(cfg).compile(
+        refdata=cfg,
+        respect=genairr_engine.productive(),
+        strict=True,
+    )
+
+    assert compiled.policy() == "strict"
+    assert compiled.active_contracts() == [
+        "productive_junction_frame",
+        "no_stop_codon_in_junction",
+        "anchor_preserved.v",
+        "anchor_preserved.j",
+    ]
+    out = compiled.run(0)
+    assert out.final_simulation().regions()[1].frame_phase == 0

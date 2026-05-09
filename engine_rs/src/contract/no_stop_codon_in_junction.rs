@@ -5,7 +5,7 @@ use crate::junction::compute_junction;
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
 
-use super::{ChoiceContext, ChoiceKind, Contract, ContractViolation};
+use super::{ChoiceContext, ChoiceKind, Contract, ContractKind, ContractViolation};
 
 /// Verifies that no codon inside the junction translates to a stop
 /// (TAA, TAG, TGA). Walks codons from `junction.start` in steps of
@@ -417,6 +417,10 @@ impl Default for NoStopCodonInJunction {
 impl Contract for NoStopCodonInJunction {
     fn name(&self) -> &str {
         "no_stop_codon_in_junction"
+    }
+
+    fn kind(&self) -> ContractKind {
+        ContractKind::NoStopCodonInJunction
     }
 
     fn verify(

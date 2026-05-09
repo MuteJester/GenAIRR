@@ -1,8 +1,9 @@
 """GenAIRR — fluent DSL for receptor-sequence simulation.
 
-The :class:`Experiment` builder compiles a chain of fluent steps into
-a Rust ``PassPlan`` (via :mod:`genairr_engine`) and runs it to
-produce a list of :class:`genairr_engine.Outcome` objects.
+The :class:`Experiment` builder lowers a chain of fluent steps into a
+Rust ``PassPlan`` (via :mod:`genairr_engine`), compiles that IR into an
+owning ``CompiledSimulator``, and runs it to produce a list of
+:class:`genairr_engine.Outcome` objects.
 
 Typical usage::
 
@@ -37,11 +38,11 @@ from .dataconfig import DataConfig
 from .dataconfig.enums import ChainType
 
 
-# Anything :meth:`Experiment.run` (or :meth:`CompiledExperiment.run`)
-# accepts as ``respect=``. The Rust runner ultimately needs a single
-# :class:`genairr_engine.ContractSet`; the helpers below normalise
-# the convenient list-form ``[productive()]`` (V5 muscle-memory) to
-# that single value.
+# Anything :meth:`Experiment.compile` (or the one-shot
+# :meth:`Experiment.run`) accepts as ``respect=``. The Rust compiler
+# ultimately needs a single :class:`genairr_engine.ContractSet`; the
+# helpers below normalise the convenient list-form ``[productive()]``
+# (V5 muscle-memory) to that single value.
 RespectInput = Union["_engine.ContractSet", Sequence["_engine.ContractSet"], None]
 
 
@@ -979,15 +980,23 @@ class Experiment:
                 return tuple(empirical)
         return tuple(_DEFAULT_NP_LENGTHS)
 
-    def compile(self) -> "CompiledExperiment":
-        """Compile the recorded steps into a ``PassPlan`` and return
-        a :class:`CompiledExperiment` ready to be ``run()``.
+    def compile(self, *, respect: RespectInput = None) -> "CompiledExperiment":
+        """Compile the recorded steps into a reusable
+        :class:`CompiledExperiment`.
 
         Idempotent: calling ``compile()`` twice produces two distinct
-        ``CompiledExperiment`` instances with structurally-equal plans.
+        ``CompiledExperiment`` instances with structurally-equal
+        compiled simulators.
+
+        ``respect`` accepts ``None`` (no contracts), a single
+        :class:`genairr_engine.ContractSet`, or a length-1 sequence
+        containing one. Contracts are compile-time inputs: the
+        resulting compiled simulator owns the active contract bundle
+        and reuses it for every run.
         """
         from dataclasses import replace as _replace
 
+        contracts = _coerce_respect(respect)
         any_lock = any(self._locks[seg] is not None for seg in ("V", "D", "J"))
         plan = _engine.PassPlan()
         for step in self._steps:
@@ -1002,7 +1011,8 @@ class Experiment:
                     locks_j=self._locks["J"],
                 )
             step.apply(plan, self._refdata)
-        return CompiledExperiment(plan, self._refdata)
+        simulator = plan.compile(refdata=self._refdata, respect=contracts)
+        return CompiledExperiment(simulator, self._refdata)
 
     def run_records(
         self,
@@ -1036,7 +1046,7 @@ class Experiment:
         """Compile and run this experiment ``n`` times.
 
         Equivalent to
-        ``self.compile().run(n=n, seed=seed, respect=respect, strict=strict)``.
+        ``self.compile(respect=respect).run(n=n, seed=seed, strict=strict)``.
         Returns a list of :class:`genairr_engine.Outcome` objects.
 
         Pass ``respect=productive()`` (or any other ``ContractSet``) to
@@ -1045,14 +1055,14 @@ class Experiment:
         contamination substitutions in real time so the resulting
         sequences satisfy the bundle by construction.
 
+        Statically impossible contract configurations fail during
+        ``compile()`` with ``ValueError``. For runtime residue,
         ``strict=False`` (default) lets a pass fall back to
-        unconstrained sampling when no admissible candidate exists.
+        unconstrained sampling when no admissible candidate exists;
         ``strict=True`` raises
-        :class:`genairr_engine.StrictSamplingError` instead, so
-        unsatisfiable plans surface as exceptions rather than
-        silently-relaxed outputs.
+        :class:`genairr_engine.StrictSamplingError` instead.
         """
-        return self.compile().run(n=n, seed=seed, respect=respect, strict=strict)
+        return self.compile(respect=respect).run(n=n, seed=seed, strict=strict)
 
     def stream(
         self,
@@ -1065,9 +1075,7 @@ class Experiment:
         """Compile and lazily yield :class:`genairr_engine.Outcome`
         objects. See :meth:`CompiledExperiment.stream` for full
         semantics."""
-        return self.compile().stream(
-            n=n, seed=seed, respect=respect, strict=strict
-        )
+        return self.compile(respect=respect).stream(n=n, seed=seed, strict=strict)
 
     def stream_records(
         self,
@@ -1080,10 +1088,9 @@ class Experiment:
     ) -> Iterator[Dict[str, Any]]:
         """Compile and lazily yield AIRR-format record dicts. See
         :meth:`CompiledExperiment.stream_records`."""
-        return self.compile().stream_records(
+        return self.compile(respect=respect).stream_records(
             n=n,
             seed=seed,
-            respect=respect,
             strict=strict,
             id_prefix=id_prefix,
         )
@@ -1095,26 +1102,40 @@ class Experiment:
 class CompiledExperiment:
     """A frozen ``Experiment`` ready for execution.
 
-    Holds the compiled :class:`genairr_engine.PassPlan` and the
-    refdata it was built against. ``run()`` is the only public
-    behaviour — a ``CompiledExperiment`` is intentionally a leaf
-    object with no further configuration.
+    Holds the owning :class:`genairr_engine.CompiledSimulator` and the
+    refdata it was built against. Contracts are captured at compile
+    time; ``run()`` only accepts execution parameters.
     """
 
-    __slots__ = ("_plan", "_refdata")
+    __slots__ = ("_simulator", "_refdata")
 
     def __init__(
         self,
-        plan: "_engine.PassPlan",
+        simulator: "_engine.CompiledSimulator",
         refdata: "_engine.RefDataConfig",
     ) -> None:
-        self._plan = plan
+        self._simulator = simulator
         self._refdata = refdata
 
     @property
-    def plan(self) -> "_engine.PassPlan":
-        """The compiled :class:`genairr_engine.PassPlan`."""
-        return self._plan
+    def simulator(self) -> "_engine.CompiledSimulator":
+        """The owning Rust compiled simulator."""
+        return self._simulator
+
+    @property
+    def pass_plan(self) -> Tuple[str, ...]:
+        """Read-only pass-name summary of the compiled pipeline."""
+        return tuple(self._simulator.pass_names())
+
+    @property
+    def pass_names(self) -> Tuple[str, ...]:
+        """Stable names of the compiled pass sequence."""
+        return self.pass_plan
+
+    @property
+    def active_contracts(self) -> Tuple[str, ...]:
+        """Stable names of the contract bundle captured at compile time."""
+        return tuple(self._simulator.active_contracts())
 
     @property
     def refdata(self) -> "_engine.RefDataConfig":
@@ -1126,19 +1147,12 @@ class CompiledExperiment:
         *,
         n: int = 1,
         seed: int = 0,
-        respect: RespectInput = None,
         strict: bool = False,
     ) -> List["_engine.Outcome"]:
-        """Run the compiled plan ``n`` times.
+        """Run the compiled simulator ``n`` times.
 
         Each iteration uses ``seed + i`` as the per-run seed so
         consecutive batches stitch together by offsetting ``seed``.
-
-        ``respect`` accepts ``None`` (no contracts), a single
-        :class:`genairr_engine.ContractSet`, or a length-1 sequence
-        containing one (the V5-style ``[productive()]``). When set,
-        every sampling pass filters its candidate distribution
-        through the contract bundle.
 
         ``strict`` controls the failure mode when filtering yields
         no admissible candidate:
@@ -1152,27 +1166,16 @@ class CompiledExperiment:
         """
         if n < 1:
             raise ValueError(f"n must be at least 1, got {n}")
-        contracts = _coerce_respect(respect)
-        return [
-            _engine.run(
-                self._plan,
-                seed=seed + i,
-                refdata=self._refdata,
-                respect=contracts,
-                strict=strict,
-            )
-            for i in range(n)
-        ]
+        return self._simulator.run_batch(n, seed, strict=strict)
 
     def run_records(
         self,
         *,
         n: int = 1,
         seed: int = 0,
-        respect: RespectInput = None,
         strict: bool = False,
     ) -> "SimulationResult":
-        """Run the compiled plan ``n`` times and return the batch as
+        """Run the compiled simulator ``n`` times and return the batch as
         a :class:`SimulationResult` ready for ``.to_csv`` /
         ``.to_fasta`` / ``.to_dataframe`` export.
 
@@ -1180,7 +1183,7 @@ class CompiledExperiment:
         """
         from .result import SimulationResult
 
-        outcomes = self.run(n=n, seed=seed, respect=respect, strict=strict)
+        outcomes = self.run(n=n, seed=seed, strict=strict)
         return SimulationResult.from_outcomes(outcomes, self._refdata)
 
     def stream(
@@ -1188,7 +1191,6 @@ class CompiledExperiment:
         *,
         n: Optional[int] = None,
         seed: int = 0,
-        respect: RespectInput = None,
         strict: bool = False,
     ) -> Iterator["_engine.Outcome"]:
         """Lazily yield :class:`genairr_engine.Outcome` objects one at
@@ -1205,22 +1207,15 @@ class CompiledExperiment:
         ``break``, or similar. ``n=N`` yields exactly ``N`` outcomes
         with seeds ``seed`` … ``seed + N - 1``.
 
-        ``respect`` and ``strict`` behave as in :meth:`run`.
+        ``strict`` behaves as in :meth:`run`.
 
         Raises ``ValueError`` when ``n`` is set to a value below 1.
         """
         if n is not None and n < 1:
             raise ValueError(f"n must be at least 1, got {n}")
-        contracts = _coerce_respect(respect)
         i = 0
         while n is None or i < n:
-            yield _engine.run(
-                self._plan,
-                seed=seed + i,
-                refdata=self._refdata,
-                respect=contracts,
-                strict=strict,
-            )
+            yield self._simulator.run(seed + i, strict=strict)
             i += 1
 
     def stream_records(
@@ -1228,7 +1223,6 @@ class CompiledExperiment:
         *,
         n: Optional[int] = None,
         seed: int = 0,
-        respect: RespectInput = None,
         strict: bool = False,
         id_prefix: str = "seq",
     ) -> Iterator[Dict[str, Any]]:
@@ -1246,7 +1240,7 @@ class CompiledExperiment:
         from ._airr_record import outcome_to_airr_record
 
         for i, outcome in enumerate(
-            self.stream(n=n, seed=seed, respect=respect, strict=strict)
+            self.stream(n=n, seed=seed, strict=strict)
         ):
             yield outcome_to_airr_record(
                 outcome, self._refdata, sequence_id=f"{id_prefix}{i}"
@@ -1254,6 +1248,7 @@ class CompiledExperiment:
 
     def __repr__(self) -> str:
         return (
-            f"<CompiledExperiment plan_len={len(self._plan)} "
-            f"chain={self._refdata.chain_type}>"
+            f"<CompiledExperiment plan_len={len(self.pass_plan)} "
+            f"chain={self._refdata.chain_type} "
+            f"contracts={len(self.active_contracts)}>"
         )

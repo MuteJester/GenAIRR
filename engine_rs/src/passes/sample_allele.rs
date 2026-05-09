@@ -1,9 +1,9 @@
 //! `SampleAllelePass` — recombination-stage allele sampling (C.5).
 
 use crate::assignment::AlleleInstance;
-use crate::dist::Distribution;
+use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
 use crate::ir::{Segment, Simulation};
-use crate::pass::{Pass, PassContext, PassEffect};
+use crate::pass::{AlleleIdSupport, Pass, PassCompileFact, PassContext, PassEffect, PassError};
 use crate::refdata::AlleleId;
 use crate::trace::ChoiceValue;
 
@@ -72,6 +72,57 @@ impl SampleAllelePass {
             _ => unreachable!("SampleAllelePass with non-V/D/J segment"),
         }
     }
+
+    fn sample_allele(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<AlleleId, PassError> {
+        let refdata = ctx.refdata;
+        let contracts = ctx.contracts;
+        let feasibility = ctx.feasibility;
+        let pass_index = ctx.pass_index;
+
+        if contracts.is_some() || feasibility.is_some() {
+            match sample_filtered_result(ctx.rng, self.distribution.as_ref(), |candidate| {
+                let choice = ChoiceValue::AlleleId(candidate.index());
+                let contract_ok = contracts.map_or(true, |contracts| {
+                    contracts
+                        .admits(sim, refdata, self.address(), &choice)
+                        .is_ok()
+                });
+                let feasible_ok = feasibility.map_or(true, |feasibility| {
+                    feasibility.admits(pass_index, sim, refdata, self.address(), &choice)
+                });
+                contract_ok && feasible_ok
+            }) {
+                Ok(value) => return Ok(value),
+                Err(reason) if strict => {
+                    return Err(self.constraint_sampling_error(reason));
+                }
+                Err(_) => {}
+            }
+        }
+
+        Ok(self.distribution.sample(ctx.rng))
+    }
+
+    fn constraint_sampling_error(&self, reason: FilteredSampleError) -> PassError {
+        PassError::constraint_sampling(self.address(), self.address(), reason)
+    }
+
+    fn execute_with_sampling_mode(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        let id = self.sample_allele(sim, ctx, strict)?;
+        ctx.trace
+            .record(self.address(), ChoiceValue::AlleleId(id.index()));
+        Ok(sim.with_allele_assigned(self.segment, AlleleInstance::new(id)))
+    }
 }
 
 impl Pass for SampleAllelePass {
@@ -80,10 +131,16 @@ impl Pass for SampleAllelePass {
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
-        let id = self.distribution.sample(ctx.rng);
-        ctx.trace
-            .record(self.address(), ChoiceValue::AlleleId(id.index()));
-        sim.with_allele_assigned(self.segment, AlleleInstance::new(id))
+        self.execute_with_sampling_mode(sim, ctx, false)
+            .expect("SampleAllelePass permissive execution must not return PassError")
+    }
+
+    fn execute_checked(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, true)
     }
 
     fn declared_choices(&self) -> Vec<String> {
@@ -92,6 +149,13 @@ impl Pass for SampleAllelePass {
 
     fn effects(&self) -> Vec<PassEffect> {
         vec![PassEffect::AssignAllele(self.segment)]
+    }
+
+    fn compile_facts(&self) -> Vec<PassCompileFact> {
+        vec![PassCompileFact::AlleleSampleSupport {
+            segment: self.segment,
+            support: AlleleIdSupport::from_weighted_pairs(self.distribution.support()),
+        }]
     }
 }
 

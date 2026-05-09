@@ -17,7 +17,8 @@
 //! in a single pass. The Python builder did four passes; this is
 //! one of the main reasons we expect a >5× speedup at scale.
 
-use crate::ir::{Nucleotide, Segment, Simulation};
+use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
+use crate::live_call::SegmentLiveCall;
 use crate::pass::Outcome;
 use crate::refdata::{Allele, RefDataConfig};
 use crate::trace::{ChoiceValue, Trace};
@@ -167,9 +168,9 @@ pub fn build_airr_record(
     let d_id = sim.assignments.d.map(|i| i.allele_id);
     let j_id = sim.assignments.j.map(|i| i.allele_id);
 
-    rec.v_call = lookup_name(refdata, Segment::V, v_id);
-    rec.d_call = lookup_name(refdata, Segment::D, d_id);
-    rec.j_call = lookup_name(refdata, Segment::J, j_id);
+    rec.v_call = projected_call_name(refdata, sim, Segment::V, v_id);
+    rec.d_call = projected_call_name(refdata, sim, Segment::D, d_id);
+    rec.j_call = projected_call_name(refdata, sim, Segment::J, j_id);
     rec.locus = derive_locus(&rec.v_call, &rec.j_call, &rec.d_call);
 
     // Sequence-coord regions (raw pool start/end).
@@ -265,9 +266,19 @@ pub fn build_airr_record(
             rec.vj_in_frame = Some(in_frame);
             if in_frame {
                 let has_stop = junction_has_stop(junction_nt);
+                let anchors_preserved =
+                    anchor_amino_acid_preserved(sim, refdata, Segment::V, vr, v_id, rec.v_trim_5)
+                        && anchor_amino_acid_preserved(
+                            sim,
+                            refdata,
+                            Segment::J,
+                            jr,
+                            j_id,
+                            rec.j_trim_5,
+                        );
                 rec.stop_codon = Some(has_stop);
                 rec.junction_aa = translate_seq(junction_nt);
-                rec.productive = Some(!has_stop);
+                rec.productive = Some(!has_stop && anchors_preserved);
             } else {
                 rec.stop_codon = Some(false);
                 rec.junction_aa = String::new();
@@ -575,6 +586,49 @@ fn bytes_to_string(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
+fn anchor_amino_acid_preserved(
+    sim: &Simulation,
+    refdata: &RefDataConfig,
+    segment: Segment,
+    region: &Region,
+    allele_id: Option<crate::refdata::AlleleId>,
+    trim_5: i64,
+) -> bool {
+    let Some(allele) = lookup_allele(refdata, segment, allele_id) else {
+        return true;
+    };
+    let Some(anchor) = allele.anchor else {
+        return true;
+    };
+
+    let anchor = anchor as i64;
+    if trim_5 < 0 || anchor < trim_5 || anchor + 3 > allele.seq.len() as i64 {
+        return false;
+    }
+
+    let pool_start = region.start.index() as i64 + (anchor - trim_5);
+    if pool_start < region.start.index() as i64 || pool_start + 3 > region.end.index() as i64 {
+        return false;
+    }
+
+    let pool_start = pool_start as u32;
+    let mut live = [b'N'; 3];
+    for offset in 0..3 {
+        let Some(nuc) = sim.pool.get(NucHandle::new(pool_start + offset)) else {
+            return false;
+        };
+        live[offset as usize] = nuc.base;
+    }
+
+    let ref_start = anchor as usize;
+    let reference = [
+        allele.seq[ref_start],
+        allele.seq[ref_start + 1],
+        allele.seq[ref_start + 2],
+    ];
+    translate_codon(&live) == translate_codon(&reference)
+}
+
 fn bytes_uppercase_in_place(bytes: &mut [u8]) {
     for b in bytes.iter_mut() {
         if (*b).is_ascii_lowercase() {
@@ -622,6 +676,34 @@ fn lookup_name(
     id.and_then(|aid| refdata.get(segment, aid))
         .map(|a| a.name.clone())
         .unwrap_or_default()
+}
+
+fn projected_call_name(
+    refdata: &RefDataConfig,
+    sim: &Simulation,
+    segment: Segment,
+    origin_id: Option<crate::refdata::AlleleId>,
+) -> String {
+    live_call_name(
+        refdata,
+        sim.live_calls.as_ref().and_then(|state| state.get(segment)),
+        segment,
+    )
+    .unwrap_or_else(|| lookup_name(refdata, segment, origin_id))
+}
+
+fn live_call_name(
+    refdata: &RefDataConfig,
+    call: Option<&SegmentLiveCall>,
+    segment: Segment,
+) -> Option<String> {
+    let call = call?;
+    let names: Vec<String> = call
+        .allele_call
+        .iter_ids()
+        .filter_map(|id| refdata.get(segment, id).map(|allele| allele.name.clone()))
+        .collect();
+    Some(names.join(","))
 }
 
 fn lookup_allele<'a>(
@@ -850,6 +932,13 @@ fn junction_has_stop(seq: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assignment::AlleleInstance;
+    use crate::live_call::{
+        AlleleBitSet, EvidenceScore, HypothesisFlags, LiveCallState, PlacementHypothesis,
+        SegmentLiveCall,
+    };
+    use crate::refdata::{Allele, AlleleId, ChainType};
+    use crate::trace::Trace;
 
     #[test]
     fn translate_codon_basic() {
@@ -904,5 +993,160 @@ mod tests {
         assert!(junction_has_stop("ATGTGA"));
         assert!(!junction_has_stop("ATG"));
         assert!(!junction_has_stop("ATGCCC"));
+    }
+
+    fn anchor_record_fixture() -> (RefDataConfig, Simulation) {
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        let _ = cfg.v_pool.push(Allele {
+            name: "v_airr*01".into(),
+            gene: "v_airr".into(),
+            seq: b"TGT".to_vec(),
+            segment: Segment::V,
+            anchor: Some(0),
+        });
+
+        let mut sim = Simulation::new();
+        for (i, &b) in b"TGT".iter().enumerate() {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
+            sim = next;
+        }
+        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3))
+            .with_codon_rail_recomputed(&sim.pool);
+        sim = sim.with_region_added(region).with_allele_assigned(
+            Segment::V,
+            crate::assignment::AlleleInstance::new(AlleleId::new(0)),
+        );
+
+        (cfg, sim)
+    }
+
+    fn outcome_from_sim(sim: Simulation) -> Outcome {
+        Outcome {
+            revisions: vec![sim],
+            pass_names: Vec::new(),
+            trace: Trace::new(),
+            events: Vec::new(),
+        }
+    }
+
+    fn call_projection_fixture() -> (RefDataConfig, Simulation, AlleleId, AlleleId) {
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        let v0 = cfg.v_pool.push(Allele {
+            name: "IGHV1-1*01".into(),
+            gene: "IGHV1-1".into(),
+            seq: b"AAACCC".to_vec(),
+            segment: Segment::V,
+            anchor: None,
+        });
+        let v1 = cfg.v_pool.push(Allele {
+            name: "IGHV1-1*02".into(),
+            gene: "IGHV1-1".into(),
+            seq: b"AAACCC".to_vec(),
+            segment: Segment::V,
+            anchor: None,
+        });
+
+        let mut sim = Simulation::new();
+        for (i, &base) in b"AAACCC".iter().enumerate() {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(base, i as u16, Segment::V));
+            sim = next;
+        }
+        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(6))
+            .with_codon_rail_recomputed(&sim.pool);
+        sim = sim
+            .with_region_added(region)
+            .with_allele_assigned(Segment::V, AlleleInstance::new(v0));
+
+        (cfg, sim, v0, v1)
+    }
+
+    #[test]
+    fn airr_call_projection_falls_back_to_origin_assignment_without_live_call() {
+        let (cfg, sim, _v0, _v1) = call_projection_fixture();
+        let outcome = outcome_from_sim(sim);
+        let rec = build_airr_record(&outcome, &cfg, "fallback");
+
+        assert_eq!(rec.v_call, "IGHV1-1*01");
+        assert_eq!(rec.locus, "IGH");
+    }
+
+    #[test]
+    fn airr_call_projection_prefers_live_call_allele_set() {
+        let (cfg, sim, v0, v1) = call_projection_fixture();
+        let hypothesis = PlacementHypothesis::new(
+            Segment::V,
+            0,
+            6,
+            0,
+            6,
+            AlleleBitSet::from_ids(cfg.v_pool.len(), [v0, v1]),
+            EvidenceScore::exact(6, 0),
+            HypothesisFlags::EMPTY,
+        );
+        let call =
+            SegmentLiveCall::from_hypotheses(Segment::V, cfg.v_pool.len(), vec![hypothesis], 1);
+        let live = LiveCallState::empty().with_segment_call(call);
+        let outcome = outcome_from_sim(sim.with_live_calls(live));
+
+        let rec = build_airr_record(&outcome, &cfg, "live");
+
+        assert_eq!(rec.v_call, "IGHV1-1*01,IGHV1-1*02");
+        assert_eq!(rec.locus, "IGH");
+    }
+
+    #[test]
+    fn airr_call_projection_uses_empty_call_when_live_call_is_unsupported() {
+        let (cfg, sim, _v0, _v1) = call_projection_fixture();
+        let call = SegmentLiveCall::from_hypotheses(Segment::V, cfg.v_pool.len(), Vec::new(), 1);
+        let live = LiveCallState::empty().with_segment_call(call);
+        let outcome = outcome_from_sim(sim.with_live_calls(live));
+
+        let rec = build_airr_record(&outcome, &cfg, "unsupported");
+
+        assert_eq!(rec.v_call, "");
+    }
+
+    #[test]
+    fn anchor_amino_acid_preserved_allows_synonymous_change() {
+        let (cfg, sim) = anchor_record_fixture();
+        let changed = sim.with_base_changed(NucHandle::new(2), b'C');
+        let region = changed
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == Segment::V)
+            .unwrap();
+
+        assert!(anchor_amino_acid_preserved(
+            &changed,
+            &cfg,
+            Segment::V,
+            region,
+            Some(AlleleId::new(0)),
+            0,
+        ));
+    }
+
+    #[test]
+    fn anchor_amino_acid_preserved_rejects_nonsynonymous_change() {
+        let (cfg, sim) = anchor_record_fixture();
+        let changed = sim.with_base_changed(NucHandle::new(0), b'A');
+        let region = changed
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == Segment::V)
+            .unwrap();
+
+        assert!(!anchor_amino_acid_preserved(
+            &changed,
+            &cfg,
+            Segment::V,
+            region,
+            Some(AlleleId::new(0)),
+            0,
+        ));
     }
 }

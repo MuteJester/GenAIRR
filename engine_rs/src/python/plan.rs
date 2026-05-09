@@ -19,6 +19,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::assignment::TrimEnd;
+use crate::compiled::ExecutionPolicy;
 use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
 use crate::ir::Segment;
 use crate::pass::PassPlan;
@@ -28,6 +29,8 @@ use crate::passes::{
 };
 use crate::s5f::{S5FKernel, S5F_NUM_CONTEXTS, S5F_SUBSTITUTION_LEN};
 
+use super::compiled::PyCompiledSimulator;
+use super::contract::PyContractSet;
 use super::refdata::PyRefDataConfig;
 
 /// A `PassPlan` constructed from Python.
@@ -39,14 +42,28 @@ use super::refdata::PyRefDataConfig;
 /// threads. Plain Python use is single-threaded so this is fine.
 #[pyclass(name = "PassPlan", module = "genairr_engine", unsendable)]
 pub struct PyPassPlan {
-    inner: PassPlan,
+    inner: Option<PassPlan>,
 }
 
 impl PyPassPlan {
     /// Borrow the inner `PassPlan`. Used by runners.
-    pub(crate) fn inner(&self) -> &PassPlan {
-        &self.inner
+    pub(crate) fn inner(&self) -> PyResult<&PassPlan> {
+        self.inner.as_ref().ok_or_else(consumed_plan_err)
     }
+
+    fn inner_mut(&mut self) -> PyResult<&mut PassPlan> {
+        self.inner.as_mut().ok_or_else(consumed_plan_err)
+    }
+
+    pub(crate) fn take_inner(&mut self) -> PyResult<PassPlan> {
+        self.inner.take().ok_or_else(consumed_plan_err)
+    }
+}
+
+fn consumed_plan_err() -> PyErr {
+    PyValueError::new_err(
+        "PassPlan has been consumed by compile(); create a new PassPlan for additional edits or one-shot runs",
+    )
 }
 
 #[pymethods]
@@ -55,18 +72,18 @@ impl PyPassPlan {
     #[new]
     fn new() -> Self {
         Self {
-            inner: PassPlan::new(),
+            inner: Some(PassPlan::new()),
         }
     }
 
     /// Number of passes currently in the plan.
-    fn __len__(&self) -> usize {
-        self.inner.len()
+    fn __len__(&self) -> PyResult<usize> {
+        Ok(self.inner()?.len())
     }
 
     /// Whether the plan contains zero passes.
-    fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+    fn is_empty(&self) -> PyResult<bool> {
+        Ok(self.inner()?.is_empty())
     }
 
     /// Append a `SampleAllelePass` for `segment`. Requires the active
@@ -134,7 +151,8 @@ impl PyPassPlan {
             }
         };
 
-        self.inner.push(Box::new(SampleAllelePass::new(seg, dist)));
+        self.inner_mut()?
+            .push(Box::new(SampleAllelePass::new(seg, dist)));
         Ok(())
     }
 
@@ -146,7 +164,8 @@ impl PyPassPlan {
     /// Errors: `ValueError` when `segment` isn't `"V"`, `"D"`, or `"J"`.
     fn push_assemble(&mut self, segment: &str) -> PyResult<()> {
         let seg = parse_recombinable_segment(segment)?;
-        self.inner.push(Box::new(AssembleSegmentPass::new(seg)));
+        self.inner_mut()?
+            .push(Box::new(AssembleSegmentPass::new(seg)));
         Ok(())
     }
 
@@ -158,9 +177,10 @@ impl PyPassPlan {
     /// Errors:
     /// - `ValueError` when `np_segment` isn't `"NP1"` or `"NP2"`.
     /// - `ValueError` when `length_pairs` is empty.
-    /// - `ValueError` when any pair has a negative length or
-    ///   non-finite / non-positive weight (propagated from
-    ///   `EmpiricalLengthDist::from_pairs`).
+    /// - compile-time validation rejects negative lengths when the
+    ///   plan is compiled.
+    /// - non-finite / non-positive weights panic in
+    ///   `EmpiricalLengthDist::from_pairs` at construction time.
     fn push_generate_np(
         &mut self,
         np_segment: &str,
@@ -175,7 +195,7 @@ impl PyPassPlan {
         // EmpiricalLengthDist::from_pairs panics on bad input — we
         // accept that for now; the Rust constructor's validation is
         // shared with all paths.
-        self.inner.push(Box::new(GenerateNPPass::new(
+        self.inner_mut()?.push(Box::new(GenerateNPPass::new(
             seg,
             Box::new(EmpiricalLengthDist::from_pairs(length_pairs)),
             Box::new(UniformBase),
@@ -196,7 +216,7 @@ impl PyPassPlan {
                 "count_pairs must contain at least one (count, weight) entry",
             ));
         }
-        self.inner.push(Box::new(UniformMutationPass::new(
+        self.inner_mut()?.push(Box::new(UniformMutationPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
             Box::new(UniformBase),
         )));
@@ -240,7 +260,7 @@ impl PyPassPlan {
             )));
         }
         let kernel = S5FKernel::new(mutability, substitution);
-        self.inner.push(Box::new(S5FMutationPass::new(
+        self.inner_mut()?.push(Box::new(S5FMutationPass::new(
             kernel,
             Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
         )));
@@ -257,7 +277,7 @@ impl PyPassPlan {
                 "count_pairs must contain at least one (count, weight) entry",
             ));
         }
-        self.inner.push(Box::new(PCRErrorPass::new(
+        self.inner_mut()?.push(Box::new(PCRErrorPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
             Box::new(UniformBase),
         )));
@@ -274,7 +294,7 @@ impl PyPassPlan {
                 "count_pairs must contain at least one (count, weight) entry",
             ));
         }
-        self.inner.push(Box::new(QualityErrorPass::new(
+        self.inner_mut()?.push(Box::new(QualityErrorPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
             Box::new(UniformBase),
         )));
@@ -306,7 +326,7 @@ impl PyPassPlan {
                 insertion_prob
             )));
         }
-        self.inner.push(Box::new(IndelPass::new(
+        self.inner_mut()?.push(Box::new(IndelPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
             insertion_prob,
             Box::new(UniformBase),
@@ -328,7 +348,7 @@ impl PyPassPlan {
                 apply_prob
             )));
         }
-        self.inner.push(Box::new(ContaminantPass::new(
+        self.inner_mut()?.push(Box::new(ContaminantPass::new(
             apply_prob,
             Box::new(UniformBase),
         )));
@@ -356,7 +376,7 @@ impl PyPassPlan {
                 "length_pairs must contain at least one (length, weight) entry",
             ));
         }
-        self.inner.push(Box::new(TrimPass::new(
+        self.inner_mut()?.push(Box::new(TrimPass::new(
             seg,
             trim_end,
             Box::new(EmpiricalLengthDist::from_pairs(length_pairs)),
@@ -364,8 +384,34 @@ impl PyPassPlan {
         Ok(())
     }
 
+    /// Compile this builder into an owning `CompiledSimulator`.
+    ///
+    /// Compilation consumes the plan on success. This is intentional:
+    /// the compiled simulator owns the pass IR and can run repeatedly
+    /// without re-validating or re-borrowing the builder.
+    #[pyo3(signature = (*, refdata=None, respect=None, strict=false))]
+    fn compile(
+        &mut self,
+        refdata: Option<&PyRefDataConfig>,
+        respect: Option<&PyContractSet>,
+        strict: bool,
+    ) -> PyResult<PyCompiledSimulator> {
+        let policy = if strict {
+            ExecutionPolicy::Strict
+        } else {
+            ExecutionPolicy::Permissive
+        };
+
+        let refdata = refdata.map(|r| r.inner().clone());
+        let contracts = respect.map(|c| c.inner().clone());
+        PyCompiledSimulator::compile_from_plan(self, refdata, contracts, policy)
+    }
+
     fn __repr__(&self) -> String {
-        format!("<PassPlan len={}>", self.inner.len())
+        match &self.inner {
+            Some(plan) => format!("<PassPlan len={}>", plan.len()),
+            None => "<PassPlan consumed=true>".to_string(),
+        }
     }
 }
 

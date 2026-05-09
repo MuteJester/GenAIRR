@@ -13,6 +13,8 @@
 //!   of committed event ledger records.
 //! - [`outcome`] — `PyOutcome`, a read-only view of
 //!   [`crate::pass::Outcome`].
+//! - [`compiled`] — `PyCompiledSimulator`, an owning compile-once
+//!   execution artifact.
 //! - [`runner`] — module-level Python entry points that build and
 //!   execute plans, returning `PyOutcome`.
 //!
@@ -23,6 +25,7 @@
 
 use pyo3::prelude::*;
 
+pub mod compiled;
 pub mod contract;
 pub mod event;
 pub mod outcome;
@@ -46,6 +49,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<refdata::PyAllele>()?;
     m.add_class::<refdata::PyRefDataConfig>()?;
     m.add_class::<plan::PyPassPlan>()?;
+    m.add_class::<compiled::PyCompiledSimulator>()?;
     contract::register(m)?;
     runner::register(m)?;
     Ok(())

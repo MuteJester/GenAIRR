@@ -5,7 +5,7 @@ use crate::junction::compute_junction;
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
 
-use super::{Contract, ContractViolation};
+use super::{Contract, ContractKind, ContractViolation};
 
 /// Verifies that the junction (V Cys → J W/F + 3) has a length
 /// divisible by 3 — i.e., the codon frame closes cleanly across
@@ -40,6 +40,10 @@ impl Default for ProductiveJunctionFrame {
 impl Contract for ProductiveJunctionFrame {
     fn name(&self) -> &str {
         "productive_junction_frame"
+    }
+
+    fn kind(&self) -> ContractKind {
+        ContractKind::ProductiveJunctionFrame
     }
 
     fn verify(

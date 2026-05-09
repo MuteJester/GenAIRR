@@ -1,15 +1,19 @@
 //! `AnchorPreserved` — anchor codon must remain in the retained slice.
 
-use crate::ir::{Segment, Simulation};
-use crate::refdata::RefDataConfig;
+use crate::assignment::TrimEnd;
+use crate::ir::{translate_codon, NucHandle, Segment, Simulation};
+use crate::refdata::{Allele, AlleleId, RefDataConfig};
+use crate::trace::ChoiceValue;
 
-use super::{Contract, ContractViolation};
+use super::{ChoiceContext, ChoiceKind, Contract, ContractKind, ContractViolation};
 
 /// Verifies that the assigned allele's anchor codon (3 bases
 /// starting at `allele.anchor`) sits entirely within the post-trim
 /// retained slice for a given segment and, when that segment has
 /// already been assembled, that the live pool still carries those
-/// three anchor-provenance nucleotides at the mapped anchor position.
+/// three anchor-provenance nucleotides at the mapped anchor position,
+/// and that the live anchor codon still translates to the same amino
+/// acid as the assigned reference allele's anchor codon.
 ///
 /// Vacuously satisfied (returns `Ok`) when:
 /// - no allele is assigned to `segment` yet,
@@ -22,7 +26,8 @@ use super::{Contract, ContractViolation};
 /// - `allele.anchor + 3 > allele.len() - trim_3` (anchor
 ///   3'-trimmed away), or
 /// - a post-assembly structural edit has removed/shifted/replaced the
-///   live anchor codon provenance.
+///   live anchor codon provenance, or
+/// - a targeted substitution changes the anchor codon's amino acid.
 pub struct AnchorPreserved {
     segment: Segment,
 }
@@ -53,11 +58,265 @@ impl AnchorPreserved {
             _ => unreachable!("AnchorPreserved with non-V/D/J segment"),
         }
     }
+
+    fn sample_address_for(segment: Segment) -> &'static str {
+        match segment {
+            Segment::V => "sample_allele.v",
+            Segment::D => "sample_allele.d",
+            Segment::J => "sample_allele.j",
+            _ => unreachable!("AnchorPreserved with non-V/D/J segment"),
+        }
+    }
+
+    fn trim_end_for_address(segment: Segment, address: &str) -> Option<TrimEnd> {
+        match (segment, address) {
+            (Segment::V, "trim.v_5") | (Segment::D, "trim.d_5") | (Segment::J, "trim.j_5") => {
+                Some(TrimEnd::Five)
+            }
+            (Segment::V, "trim.v_3") | (Segment::D, "trim.d_3") | (Segment::J, "trim.j_3") => {
+                Some(TrimEnd::Three)
+            }
+            _ => None,
+        }
+    }
+
+    fn require_anchor_retained(
+        &self,
+        allele: &Allele,
+        trim_5: u16,
+        trim_3: u16,
+    ) -> Result<(), ContractViolation> {
+        let Some(anchor) = allele.anchor.map(|anchor| anchor as u32) else {
+            return Err(ContractViolation::new(
+                self.name(),
+                format!("{} '{}' has no anchor", allele.name, allele.gene),
+            ));
+        };
+        if anchor + 3 > allele.len() {
+            return Err(ContractViolation::new(
+                self.name(),
+                format!(
+                    "anchor codon at [{}, {}) exceeds allele length {} for {} '{}'",
+                    anchor,
+                    anchor + 3,
+                    allele.len(),
+                    allele.name,
+                    allele.gene
+                ),
+            ));
+        }
+
+        let trim_5 = trim_5 as u32;
+        let trim_3 = trim_3 as u32;
+        let retained_end = allele.len().saturating_sub(trim_3);
+        if anchor < trim_5 {
+            return Err(ContractViolation::new(
+                self.name(),
+                format!(
+                    "candidate would 5'-trim anchor at allele position {} from {} '{}'",
+                    anchor, allele.name, allele.gene
+                ),
+            ));
+        }
+        if anchor + 3 > retained_end {
+            return Err(ContractViolation::new(
+                self.name(),
+                format!(
+                    "candidate would 3'-trim anchor codon [{}, {}) from {} '{}'",
+                    anchor,
+                    anchor + 3,
+                    allele.name,
+                    allele.gene
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn anchor_codon(allele: &Allele, anchor: u32) -> [u8; 3] {
+        [
+            allele.seq[anchor as usize],
+            allele.seq[anchor as usize + 1],
+            allele.seq[anchor as usize + 2],
+        ]
+    }
+
+    fn codon_amino_acid(codon: [u8; 3]) -> u8 {
+        translate_codon(codon[0], codon[1], codon[2])
+    }
+
+    fn anchor_pool_start(
+        &self,
+        sim: &Simulation,
+        allele: &Allele,
+        anchor: u32,
+        trim_5: u16,
+    ) -> Result<Option<u32>, ContractViolation> {
+        let Some(region) = sim
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == self.segment)
+        else {
+            return Ok(None);
+        };
+
+        let trim_5 = trim_5 as u32;
+        if anchor < trim_5 {
+            return Err(ContractViolation::new(
+                self.name(),
+                format!(
+                    "anchor at allele position {} but trim_5 = {} \
+                     (anchor 5'-trimmed away from {} '{}')",
+                    anchor, trim_5, allele.name, allele.gene
+                ),
+            ));
+        }
+
+        let anchor_pool_start = region.start.index() + (anchor - trim_5);
+        if anchor_pool_start + 3 > region.end.index() {
+            return Err(ContractViolation::new(
+                self.name(),
+                format!(
+                    "anchor codon maps to pool range [{}, {}) but assembled {:?} \
+                     region ends at {}",
+                    anchor_pool_start,
+                    anchor_pool_start + 3,
+                    self.segment,
+                    region.end.index()
+                ),
+            ));
+        }
+
+        Ok(Some(anchor_pool_start))
+    }
+
+    fn live_anchor_codon(
+        &self,
+        sim: &Simulation,
+        anchor_pool_start: u32,
+    ) -> Result<[u8; 3], ContractViolation> {
+        let mut codon = [b'N'; 3];
+        for offset in 0..3 {
+            let pool_pos = anchor_pool_start + offset;
+            let Some(nuc) = sim.pool.get(NucHandle::new(pool_pos)) else {
+                return Err(ContractViolation::new(
+                    self.name(),
+                    format!(
+                        "anchor codon maps to missing pool position {} in {:?} region",
+                        pool_pos, self.segment
+                    ),
+                ));
+            };
+            codon[offset as usize] = nuc.base;
+        }
+        Ok(codon)
+    }
+
+    fn require_anchor_amino_acid_preserved(
+        &self,
+        allele: &Allele,
+        reference_codon: [u8; 3],
+        live_codon: [u8; 3],
+    ) -> Result<(), ContractViolation> {
+        let reference_aa = Self::codon_amino_acid(reference_codon);
+        let live_aa = Self::codon_amino_acid(live_codon);
+        if live_aa == reference_aa {
+            return Ok(());
+        }
+
+        Err(ContractViolation::new(
+            self.name(),
+            format!(
+                "anchor codon amino acid changed for {} '{}': reference {}{}{} -> {}, live {}{}{} -> {}",
+                allele.name,
+                allele.gene,
+                reference_codon[0] as char,
+                reference_codon[1] as char,
+                reference_codon[2] as char,
+                reference_aa as char,
+                live_codon[0] as char,
+                live_codon[1] as char,
+                live_codon[2] as char,
+                live_aa as char
+            ),
+        ))
+    }
+
+    fn admits_targeted_anchor_substitution(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        address: &str,
+        candidate: &ChoiceValue,
+        context: ChoiceContext,
+    ) -> Result<(), ContractViolation> {
+        if context.kind != ChoiceKind::TargetedBaseSubstitution {
+            return Ok(());
+        }
+
+        let candidate_base = match candidate {
+            ChoiceValue::Base(base) => *base,
+            _ => return Ok(()),
+        };
+        let target = match context.target {
+            Some(target) => target,
+            None => return Ok(()),
+        };
+        let refdata = match refdata {
+            Some(refdata) => refdata,
+            None => return Ok(()),
+        };
+        let inst = match sim.assignments.get(self.segment) {
+            Some(inst) => inst,
+            None => return Ok(()),
+        };
+        let allele = match refdata.get(self.segment, inst.allele_id) {
+            Some(allele) => allele,
+            None => return Ok(()),
+        };
+        let anchor = match allele.anchor {
+            Some(anchor) => anchor as u32,
+            None => return Ok(()),
+        };
+
+        self.require_anchor_retained(allele, inst.trim_5, inst.trim_3)?;
+        let Some(anchor_pool_start) = self.anchor_pool_start(sim, allele, anchor, inst.trim_5)?
+        else {
+            return Ok(());
+        };
+
+        let target_idx = target.index();
+        if target_idx < anchor_pool_start || target_idx >= anchor_pool_start + 3 {
+            return Ok(());
+        }
+
+        let reference_codon = Self::anchor_codon(allele, anchor);
+        let mut live_codon = self.live_anchor_codon(sim, anchor_pool_start)?;
+        live_codon[(target_idx - anchor_pool_start) as usize] = candidate_base;
+
+        self.require_anchor_amino_acid_preserved(allele, reference_codon, live_codon)
+            .map_err(|_| {
+                ContractViolation::new(
+                    self.name(),
+                    format!(
+                        "candidate at {} for target {} would change {:?} anchor amino acid",
+                        address, target_idx, self.segment
+                    ),
+                )
+            })
+    }
 }
 
 impl Contract for AnchorPreserved {
     fn name(&self) -> &str {
         Self::name_for(self.segment)
+    }
+
+    fn kind(&self) -> ContractKind {
+        ContractKind::AnchorPreserved {
+            segment: self.segment,
+        }
     }
 
     fn verify(
@@ -121,30 +380,12 @@ impl Contract for AnchorPreserved {
             ));
         }
 
-        let Some(region) = sim
-            .sequence
-            .regions
-            .iter()
-            .find(|r| r.segment == self.segment)
+        let Some(anchor_pool_start) = self.anchor_pool_start(sim, allele, anchor, inst.trim_5)?
         else {
             return Ok(());
         };
 
-        let anchor_pool_start = region.start.index() + (anchor - trim_5);
-        if anchor_pool_start + 3 > region.end.index() {
-            return Err(ContractViolation::new(
-                self.name(),
-                format!(
-                    "anchor codon maps to pool range [{}, {}) but assembled {:?} \
-                     region ends at {}",
-                    anchor_pool_start,
-                    anchor_pool_start + 3,
-                    self.segment,
-                    region.end.index()
-                ),
-            ));
-        }
-
+        let mut live_codon = [b'N'; 3];
         for offset in 0..3 {
             let pool_pos = anchor_pool_start + offset;
             let expected_germline_pos = (anchor + offset) as u16;
@@ -172,9 +413,75 @@ impl Contract for AnchorPreserved {
                     ),
                 ));
             }
+            live_codon[offset as usize] = nuc.base;
         }
 
+        let reference_codon = Self::anchor_codon(allele, anchor);
+        self.require_anchor_amino_acid_preserved(allele, reference_codon, live_codon)?;
+
         Ok(())
+    }
+
+    fn admits(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        address: &str,
+        candidate: &ChoiceValue,
+    ) -> Result<(), ContractViolation> {
+        let Some(refdata) = refdata else {
+            return Ok(());
+        };
+
+        if address == Self::sample_address_for(self.segment) {
+            let ChoiceValue::AlleleId(raw_id) = candidate else {
+                return Ok(());
+            };
+            let allele = refdata
+                .get(self.segment, AlleleId::new(*raw_id))
+                .ok_or_else(|| {
+                    ContractViolation::new(
+                        self.name(),
+                        format!(
+                            "candidate allele id {} is absent from {:?} pool",
+                            raw_id, self.segment
+                        ),
+                    )
+                })?;
+            return self.require_anchor_retained(allele, 0, 0);
+        }
+
+        let Some(end) = Self::trim_end_for_address(self.segment, address) else {
+            return Ok(());
+        };
+        let value = match candidate {
+            ChoiceValue::Int(value) if (0..=u16::MAX as i64).contains(value) => *value as u16,
+            _ => return Ok(()),
+        };
+        let Some(inst) = sim.assignments.get(self.segment).copied() else {
+            return Ok(());
+        };
+        let Some(allele) = refdata.get(self.segment, inst.allele_id) else {
+            return Ok(());
+        };
+
+        let (trim_5, trim_3) = match end {
+            TrimEnd::Five => (value, inst.trim_3),
+            TrimEnd::Three => (inst.trim_5, value),
+        };
+        self.require_anchor_retained(allele, trim_5, trim_3)
+    }
+
+    fn admits_with_context(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        address: &str,
+        candidate: &ChoiceValue,
+        context: ChoiceContext,
+    ) -> Result<(), ContractViolation> {
+        self.admits(sim, refdata, address, candidate)?;
+        self.admits_targeted_anchor_substitution(sim, refdata, address, candidate, context)
     }
 }
 
@@ -272,6 +579,59 @@ mod tests {
         assert!(
             err.reason.contains("provenance mismatch"),
             "reason should mention live provenance mismatch, got: {}",
+            err.reason
+        );
+    }
+
+    #[test]
+    fn anchor_preserved_rejects_live_anchor_amino_acid_change() {
+        let cfg = make_vj_with_anchor_codons(b"TGT", b"TGG");
+        let sim = make_assembled_sim_from_refdata(&cfg);
+        let changed = sim.with_base_changed(NucHandle::new(6), b'A');
+
+        let err = AnchorPreserved::new(Segment::V)
+            .verify(&changed, Some(&cfg))
+            .unwrap_err();
+
+        assert_eq!(err.contract_name, "anchor_preserved.v");
+        assert!(
+            err.reason.contains("anchor codon amino acid changed"),
+            "reason should mention anchor amino-acid change, got: {}",
+            err.reason
+        );
+    }
+
+    #[test]
+    fn anchor_preserved_allows_synonymous_anchor_base_change() {
+        let cfg = make_vj_with_anchor_codons(b"TGT", b"TGG");
+        let sim = make_assembled_sim_from_refdata(&cfg);
+        let synonymous = sim.with_base_changed(NucHandle::new(2), b'C');
+
+        assert!(AnchorPreserved::new(Segment::V)
+            .verify(&synonymous, Some(&cfg))
+            .is_ok());
+    }
+
+    #[test]
+    fn anchor_preserved_rejects_targeted_anchor_substitution_candidate() {
+        let cfg = make_vj_with_anchor_codons(b"TGT", b"TGG");
+        let sim = make_assembled_sim_from_refdata(&cfg);
+        let contract = AnchorPreserved::new(Segment::V);
+
+        let err = contract
+            .admits_with_context(
+                &sim,
+                Some(&cfg),
+                "mutate.uniform.base[0]",
+                &ChoiceValue::Base(b'A'),
+                ChoiceContext::targeted_base_substitution(0, 1, NucHandle::new(6)),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.contract_name, "anchor_preserved.v");
+        assert!(
+            err.reason.contains("would change V anchor amino acid"),
+            "reason should mention anchor amino-acid filtering, got: {}",
             err.reason
         );
     }

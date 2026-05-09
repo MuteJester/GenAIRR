@@ -11,7 +11,7 @@ it produces. Verifies:
   canonical 8-pass VDJ shape.
 - Custom NP-length distributions propagate through to the final
   trace.
-- ``compile()`` is idempotent and the same plan can be re-run with
+- ``compile()`` is idempotent and the same compiled simulator can be re-run with
   different seeds.
 - ``run(n, seed)`` produces ``n`` outcomes with deterministic per-run
   seeds (``seed + i``).
@@ -139,12 +139,12 @@ def test_compile_produces_compiled_experiment():
 
 def test_compile_vj_recombine_produces_five_pass_plan():
     compiled = Experiment.on(_vj_refdata()).recombine().compile()
-    assert len(compiled.plan) == 5
+    assert len(compiled.pass_plan) == 5
 
 
 def test_compile_vdj_recombine_produces_eight_pass_plan():
     compiled = Experiment.on(_vdj_refdata()).recombine().compile()
-    assert len(compiled.plan) == 8
+    assert len(compiled.pass_plan) == 8
 
 
 def test_compile_is_idempotent_and_returns_distinct_instances():
@@ -152,7 +152,8 @@ def test_compile_is_idempotent_and_returns_distinct_instances():
     a = exp.compile()
     b = exp.compile()
     assert a is not b
-    assert len(a.plan) == len(b.plan) == 5
+    assert a.simulator is not b.simulator
+    assert len(a.pass_plan) == len(b.pass_plan) == 5
 
 
 def test_compiled_experiment_repr_includes_plan_len_and_chain():
@@ -163,11 +164,18 @@ def test_compiled_experiment_repr_includes_plan_len_and_chain():
     assert "chain=vj" in r
 
 
-def test_compiled_experiment_exposes_plan_and_refdata():
+def test_compiled_experiment_exposes_simulator_pass_summary_and_refdata():
     cfg = _vj_refdata()
     compiled = Experiment.on(cfg).recombine().compile()
     assert compiled.refdata is cfg
-    assert isinstance(compiled.plan, ge.PassPlan)
+    assert isinstance(compiled.simulator, ge.CompiledSimulator)
+    assert compiled.pass_plan == (
+        "sample_allele.v",
+        "sample_allele.j",
+        "assemble.v",
+        "generate_np.np1",
+        "assemble.j",
+    )
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -457,10 +465,16 @@ def test_run_rejects_multi_bundle_respect_list():
 
 
 def test_compiled_experiment_run_supports_respect():
-    # The same respect= kwarg flows through CompiledExperiment.run.
+    # Contracts are captured at compile time and reused by run().
     cfg = _vj_refdata()
-    compiled = Experiment.on(cfg).recombine().compile()
-    a = compiled.run(n=3, seed=0, respect=ge.productive())
+    compiled = Experiment.on(cfg).recombine().compile(respect=ge.productive())
+    assert compiled.active_contracts == (
+        "productive_junction_frame",
+        "no_stop_codon_in_junction",
+        "anchor_preserved.v",
+        "anchor_preserved.j",
+    )
+    a = compiled.run(n=3, seed=0)
     for o in a:
         assert len(o.final_simulation().regions()[1]) % 3 == 0
 
@@ -494,6 +508,47 @@ def _vj_refdata_with_restrictive_np1(*, np1_lengths):
     return cfg, plan
 
 
+def _vj_refdata_with_runtime_frame_residue():
+    """Build a plan where one J allele has no productive NP1 completion.
+
+    J allele 0 has anchor 0 and admits NP1 length 0. J allele 1 has
+    anchor 1, so NP1 length 0 is out of frame. The compiled simulator
+    should now filter J allele 1 before NP1 length sampling rather than
+    relying on a later strict runtime failure.
+    """
+    cfg = ge.RefDataConfig.vj()
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_j_allele("j_good*01", "j_good", b"TTTAAA", anchor=0)
+    cfg.add_j_allele("j_bad*01", "j_bad", b"TTTAAA", anchor=1)
+    plan = ge.PassPlan()
+    plan.push_sample_allele("V", cfg)
+    plan.push_sample_allele("J", cfg)
+    plan.push_assemble("V")
+    plan.push_generate_np("NP1", [(0, 1.0)])
+    plan.push_assemble("J")
+    return cfg, plan
+
+
+def _vj_refdata_with_stop_in_v_anchor():
+    """Build a strict-runtime contract violation that is not a compile
+    precondition failure.
+
+    The V anchor codon is TAA, so the final materialized junction has a
+    stop codon even though frame and anchor-preservation preconditions
+    are satisfiable.
+    """
+    cfg = ge.RefDataConfig.vj()
+    cfg.add_v_allele("v_stop*01", "v_stop", b"AAATAAGGG", anchor=3)
+    cfg.add_j_allele("j1*01", "j1", b"TGGAAA", anchor=0)
+    plan = ge.PassPlan()
+    plan.push_sample_allele("V", cfg)
+    plan.push_sample_allele("J", cfg)
+    plan.push_assemble("V")
+    plan.push_generate_np("NP1", [(0, 1.0)])
+    plan.push_assemble("J")
+    return cfg, plan
+
+
 def test_strict_sampling_error_is_exposed_at_top_level():
     import GenAIRR
 
@@ -512,43 +567,44 @@ def test_strict_with_satisfiable_contract_succeeds():
     assert len(out) == 3
 
 
-def test_strict_with_unsatisfiable_length_distribution_raises():
-    # NP1 distribution {1, 2} → no in-frame lengths possible. Strict
-    # mode must raise StrictSamplingError.
+def test_productive_compile_rejects_unsatisfiable_length_distribution():
+    # NP1 distribution {1, 2} has no in-frame mass for this VJ fixture.
+    # This is now a build-time D7 failure, independent of strict mode.
     cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0), (2, 1.0)])
-    with pytest.raises(ge.StrictSamplingError) as exc_info:
+    with pytest.raises(ValueError, match="NP1 length support has no in-frame mass"):
         ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True)
 
-    pass_name, address, reason = exc_info.value.args
-    assert pass_name == "generate_np.np1"
-    assert address == "np.np1.length"
-    assert reason == "empty_admissible_support"
 
-
-def test_permissive_fallback_succeeds_where_strict_raises():
-    # Same scenario as the strict raise above, but strict=False
-    # accepts the unconstrained sample and lets the run continue.
-    cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0), (2, 1.0)])
-    out = ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=False)
-    np1 = out.final_simulation().regions()[1]
-    # Length must be one of the only-options from the input distribution.
-    assert len(np1) in (1, 2)
+def test_compiled_feasibility_filters_runtime_frame_residue():
+    # Compile succeeds because the declared support has an in-frame path,
+    # but the bad J allele would leave NP1 with no admissible length.
+    # The compiled feasibility layer should filter that J candidate
+    # before it is committed, in strict and permissive modes alike.
+    cfg, plan = _vj_refdata_with_runtime_frame_residue()
+    for strict in (False, True):
+        for seed in range(20):
+            out = ge.run(
+                plan,
+                seed=seed,
+                refdata=cfg,
+                respect=ge.productive(),
+                strict=strict,
+            )
+            assert out.final_simulation().j_allele_id() == 0
 
 
 def test_strict_mode_passes_through_compiled_experiment_run():
     cfg = _vj_refdata()
-    compiled = Experiment.on(cfg).recombine().compile()
+    compiled = Experiment.on(cfg).recombine().compile(respect=ge.productive())
     # Satisfiable: succeeds.
-    out = compiled.run(n=2, seed=0, respect=ge.productive(), strict=True)
+    out = compiled.run(n=2, seed=0, strict=True)
     assert len(out) == 2
 
 
 def test_strict_mode_default_is_false():
-    # When strict is omitted, the run uses permissive sampling and
-    # must succeed even on an unsatisfiable plan.
-    cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0)])
+    cfg, plan = _vj_refdata_with_runtime_frame_residue()
     out = ge.run(plan, seed=0, refdata=cfg, respect=ge.productive())
-    assert out is not None
+    assert out.final_simulation().j_allele_id() == 0
 
 
 def test_strict_without_respect_runs_permissively():
@@ -562,15 +618,13 @@ def test_strict_without_respect_runs_permissively():
 def test_strict_sampling_error_args_form_three_tuple():
     # Public contract: StrictSamplingError.args is always a 3-tuple
     # so callers can destructure deterministically.
-    cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0)])
-    try:
+    cfg, plan = _vj_refdata_with_stop_in_v_anchor()
+    with pytest.raises(ge.StrictSamplingError) as err:
         ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True)
-    except ge.StrictSamplingError as e:
-        assert isinstance(e.args, tuple)
-        assert len(e.args) == 3
-        assert all(isinstance(a, str) for a in e.args)
-    else:
-        pytest.fail("expected StrictSamplingError")
+    exc = err.value
+    assert isinstance(exc.args, tuple)
+    assert len(exc.args) == 3
+    assert all(isinstance(a, str) for a in exc.args)
 
 
 def test_strict_mode_is_deterministic_under_same_seed():
@@ -582,6 +636,26 @@ def test_strict_mode_is_deterministic_under_same_seed():
     a = ge.run(plan, seed=0xC0FFEE, refdata=cfg, respect=ge.productive(), strict=True)
     b = ge.run(plan, seed=0xC0FFEE, refdata=cfg, respect=ge.productive(), strict=True)
     assert a.final_simulation().bases() == b.final_simulation().bases()
+
+
+def test_light_chain_productive_strict_batches_have_feasible_upstream_choices():
+    # Regression for VJ productive feasibility: these seed windows used
+    # to commit V/J/trim choices that left NP1 with no admissible length,
+    # causing strict runtime failure or permissive nonproductive fallback.
+    cases = [
+        ("human_igk", 20260507, 60),
+        ("human_igl", 0, 30),
+        ("human_igl", 42, 30),
+        ("human_igl", 20260507, 50),
+    ]
+    for cfg_name, seed, n in cases:
+        records = Experiment.on(cfg_name).recombine().run_records(
+            n=n,
+            seed=seed,
+            respect=ge.productive(),
+            strict=True,
+        )
+        assert all(rec["productive"] is True for rec in records), cfg_name
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -1043,17 +1117,28 @@ def test_recombine_with_raw_refdata_trim_true_is_silent_no_op():
 
 
 def test_recombine_explicit_np1_lengths_overrides_empirical_default():
-    # User-supplied np1_lengths wins over the empirical default.
-    out = _human_igh_exp().recombine(np1_lengths=[(0, 1.0)]).run(n=10, seed=0)
-    # The first recombine() (in _human_igh_exp) plus this second
-    # recombine() means the plan has 2 recombine steps. Check the
-    # NP1 length recorded by the SECOND recombine — addresses are
-    # shared, so the trace contains 2 entries at np.np1.length.
-    # Just look at the final trace state to confirm it's 0.
+    # User-supplied np1_lengths wins over the empirical default
+    # (which would otherwise draw from human_igh's empirical NP1
+    # distribution).
+    #
+    # The earlier version of this test chained `_human_igh_exp().recombine(...)`
+    # to verify the second recombine's NP1 distribution overrode the first.
+    # That pattern became invalid under Phase 5's compile-time
+    # trim-after-assembly check (the second recombine's trim passes land
+    # after the first recombine's assemble passes). The real intent —
+    # "explicit np1_lengths makes the recorded NP1 length match the
+    # supplied distribution" — is independent of chaining, so we use a
+    # single recombine with the explicit override.
+    out = (
+        Experiment.on("human_igh")
+        .recombine(np1_lengths=[(0, 1.0)])
+        .run(n=10, seed=0)
+    )
     for o in out:
         np1_lens = [
             r.value for r in o.trace().prefix_query("np.np1.length")
         ]
+        assert np1_lens, "expected at least one np.np1.length trace entry"
         assert np1_lens[-1] == 0
 
 
@@ -3483,23 +3568,25 @@ def test_alignment_consistent_under_contaminant_pass():
 
 
 def test_germline_alignment_byte_matches_source_allele():
-    # Pull a record and verify each V/D/J position in germline_alignment
-    # equals the corresponding source allele base (post-trim, pre-mutation).
-    rec = (
+    # Verify each V position in germline_alignment equals the
+    # corresponding source allele base (post-trim, pre-mutation).
+    # The "source allele" is the originally-sampled provenance
+    # allele, not whatever set ``rec['v_call']`` projects to today —
+    # under Phase 4 the call is a live-call view that can become a
+    # multi-allele string after a mutation pass refreshes it (Phase 6).
+    # We pull provenance from the simulation IR directly.
+    result = (
         _human_igh_exp()
         .mutate(count=8)
-        .run_records(n=1, seed=42)[0]
+        .run_records(n=1, seed=42)
     )
+    rec = result[0]
     refdata = _human_igh_exp().refdata
     galn = rec["germline_alignment"]
 
-    # Walk V region in the alignment.
-    v_call = rec["v_call"]
-    # Find allele id by name.
-    for i in range(refdata.v_pool_size()):
-        if refdata.v_allele(i).name == v_call:
-            v_id = i
-            break
+    sim = result.outcomes[0].final_simulation()
+    v_id = sim.v_allele_id()
+    assert v_id is not None, "expected V provenance after recombine + mutate"
     v_seq = bytes(refdata.v_allele(v_id).seq()).decode().upper()
     v_start = rec["v_sequence_start"]
     v_end = rec["v_sequence_end"]

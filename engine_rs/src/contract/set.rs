@@ -3,8 +3,9 @@
 use crate::ir::Simulation;
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
+use std::sync::Arc;
 
-use super::{ChoiceContext, Contract, ContractViolation};
+use super::{ChoiceContext, Contract, ContractKind, ContractViolation};
 
 /// A set of contracts that all must hold for the simulation.
 ///
@@ -20,8 +21,13 @@ use super::{ChoiceContext, Contract, ContractViolation};
 /// **`admits` short-circuits** on the first inadmissible contract
 /// because sampling speed matters and one violation is enough to
 /// reject the candidate.
+///
+/// Contract objects are shared behind `Arc` so compiled simulators can
+/// cheaply capture immutable contract bundles. Contract implementations
+/// should remain pure predicates over their inputs.
+#[derive(Clone)]
 pub struct ContractSet {
-    contracts: Vec<Box<dyn Contract>>,
+    contracts: Vec<Arc<dyn Contract>>,
 }
 
 impl ContractSet {
@@ -35,13 +41,13 @@ impl ContractSet {
     /// Builder-style append. Returns `self` for chaining.
     #[must_use]
     pub fn with(mut self, contract: Box<dyn Contract>) -> Self {
-        self.contracts.push(contract);
+        self.contracts.push(contract.into());
         self
     }
 
     /// In-place append. Returns `&mut self` for builder-mut chains.
     pub fn add(&mut self, contract: Box<dyn Contract>) -> &mut Self {
-        self.contracts.push(contract);
+        self.contracts.push(contract.into());
         self
     }
 
@@ -58,6 +64,13 @@ impl ContractSet {
     /// Iterate over the contained contracts.
     pub fn iter(&self) -> impl Iterator<Item = &dyn Contract> {
         self.contracts.iter().map(|c| c.as_ref())
+    }
+
+    /// Whether a built-in semantic contract kind is active.
+    pub fn contains_kind(&self, kind: ContractKind) -> bool {
+        self.contracts
+            .iter()
+            .any(|contract| contract.kind() == kind)
     }
 
     /// Verify every contract. Returns `Ok(())` only if all pass.
@@ -141,8 +154,7 @@ impl Default for ContractSet {
 #[cfg(test)]
 mod tests {
     use super::super::test_support::{
-        make_assembled_sim, make_assembled_sim_from_refdata, make_v_anchor_at,
-        make_vj_for_frame_test, make_vj_with_anchor_codons,
+        make_assembled_sim_from_refdata, make_v_anchor_at, make_vj_with_anchor_codons,
     };
     use super::super::{AnchorPreserved, NoStopCodonInJunction, ProductiveJunctionFrame};
     use super::*;
@@ -188,10 +200,8 @@ mod tests {
 
     #[test]
     fn contract_set_verify_succeeds_when_all_pass() {
-        let cfg = make_vj_for_frame_test(Some(6), Some(0));
-        let v_inst = AlleleInstance::new(AlleleId::new(0));
-        let j_inst = AlleleInstance::new(AlleleId::new(0));
-        let sim = make_assembled_sim(0, 9, 9, 6, v_inst, j_inst);
+        let cfg = make_vj_with_anchor_codons(b"TGT", b"TGG");
+        let sim = make_assembled_sim_from_refdata(&cfg);
 
         let s = ContractSet::new()
             .with(Box::new(AnchorPreserved::new(Segment::V)))

@@ -834,6 +834,10 @@ fn refresh_regions_covering(seq: &Sequence, pool: &NucleotidePool, handle: NucHa
 
 /// The root of one simulation. Owns the nucleotide pool, the
 /// assembled sequence, and the per-simulation allele assignments.
+/// `live_calls` is the dynamic allele-call evidence sidecar. Early
+/// phases populate exact assembled-region calls from the compiled
+/// simulator; AIRR call projection reads V/D/J call sets from it
+/// when present.
 /// Future phases add: pass history (already collected by the
 /// runtime in `Outcome`), contract set, RNG state.
 #[derive(Clone, Debug, Default)]
@@ -849,6 +853,11 @@ pub struct Simulation {
     /// (C.5) populates one slot; trim passes (C.6) update the
     /// instance via `with_trim`. See `assignment.rs` for the type.
     pub assignments: crate::assignment::AlleleAssignments,
+
+    /// Dynamic V/D/J call evidence over the current observed sequence.
+    /// Optional because direct/non-compiled execution can still build
+    /// structural simulations without the live-call index.
+    pub live_calls: Option<crate::live_call::LiveCallState>,
 }
 
 impl Simulation {
@@ -863,6 +872,20 @@ impl Simulation {
             pool: NucleotidePool::with_capacity(nuc_capacity),
             sequence: Sequence::new(),
             assignments: crate::assignment::AlleleAssignments::new(),
+            live_calls: None,
+        }
+    }
+
+    /// Return a new simulation with dynamic live-call evidence set.
+    ///
+    /// The compiled runtime uses this to persist live-call updates
+    /// after pass effects.
+    pub fn with_live_calls(&self, live_calls: crate::live_call::LiveCallState) -> Self {
+        Self {
+            pool: self.pool.clone(),
+            sequence: self.sequence.clone(),
+            assignments: self.assignments,
+            live_calls: Some(live_calls),
         }
     }
 
@@ -892,6 +915,7 @@ impl Simulation {
                 pool,
                 sequence: self.sequence.clone(),
                 assignments: self.assignments,
+                live_calls: self.live_calls.clone(),
             },
             h,
         )
@@ -914,6 +938,7 @@ impl Simulation {
             pool: new_pool,
             sequence: new_sequence,
             assignments: self.assignments,
+            live_calls: self.live_calls.clone(),
         }
     }
 
@@ -933,6 +958,7 @@ impl Simulation {
             pool: new_pool,
             sequence: new_sequence,
             assignments: self.assignments,
+            live_calls: self.live_calls.clone(),
         }
     }
 
@@ -942,6 +968,7 @@ impl Simulation {
             pool: self.pool.clone(),
             sequence: self.sequence.with_region_added(region),
             assignments: self.assignments,
+            live_calls: self.live_calls.clone(),
         }
     }
 
@@ -959,6 +986,7 @@ impl Simulation {
             pool: self.pool.clone(),
             sequence: self.sequence.clone(),
             assignments: self.assignments.with_assigned(segment, instance),
+            live_calls: self.live_calls.clone(),
         }
     }
 
@@ -971,6 +999,7 @@ impl Simulation {
             pool: self.pool.clone(),
             sequence: self.sequence.clone(),
             assignments: self.assignments.with_trim(segment, end, value),
+            live_calls: self.live_calls.clone(),
         }
     }
 
@@ -1010,6 +1039,7 @@ impl Simulation {
                 regions: new_regions,
             },
             assignments: self.assignments,
+            live_calls: self.live_calls.clone(),
         }
     }
 
@@ -1044,6 +1074,7 @@ impl Simulation {
                 regions: new_regions,
             },
             assignments: self.assignments,
+            live_calls: self.live_calls.clone(),
         }
     }
 }
@@ -1187,6 +1218,7 @@ mod tests {
         let s = Simulation::new();
         assert!(s.pool.is_empty());
         assert_eq!(s.sequence.region_count(), 0);
+        assert!(s.live_calls.is_none());
     }
 
     #[test]
@@ -1195,6 +1227,36 @@ mod tests {
         let s = Simulation::with_capacity(500);
         assert!(s.pool.is_empty());
         assert_eq!(s.sequence.region_count(), 0);
+        assert!(s.live_calls.is_none());
+    }
+
+    #[test]
+    fn simulation_live_call_sidecar_is_persistent_and_dormant() {
+        let live = crate::live_call::LiveCallState::empty().with_dirty_window(
+            crate::live_call::DirtyWindow::new(
+                1,
+                4,
+                crate::live_call::DirtyReason::BaseEdited { site: 2 },
+            ),
+        );
+        let s0 = Simulation::new().with_live_calls(live.clone());
+        let (s1, handle) = s0.with_nucleotide_pushed(Nucleotide::germline(b'A', 0, Segment::V));
+        let s2 = s1.with_base_changed(handle, b'C');
+        let s3 = s2.with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(1),
+        ));
+
+        assert_eq!(s0.live_calls.as_ref(), Some(&live));
+        assert_eq!(s1.live_calls.as_ref(), Some(&live));
+        assert_eq!(s2.live_calls.as_ref(), Some(&live));
+        assert_eq!(s3.live_calls.as_ref(), Some(&live));
+
+        // Dormant means core structural edits do not yet interpret or
+        // mutate live calls; they only preserve the sidecar.
+        assert_eq!(s3.pool.len(), 1);
+        assert_eq!(s3.sequence.region_count(), 1);
     }
 
     #[test]
@@ -2180,6 +2242,7 @@ mod tests {
             pool: pool0,
             sequence: Sequence::new().with_region_added(region0),
             assignments: crate::assignment::AlleleAssignments::new(),
+            live_calls: None,
         };
 
         // Property check at revision 0.
@@ -2222,6 +2285,7 @@ mod tests {
                 pool: new_pool,
                 sequence: new_sequence,
                 assignments: crate::assignment::AlleleAssignments::new(),
+                live_calls: prev.live_calls.clone(),
             });
         }
 

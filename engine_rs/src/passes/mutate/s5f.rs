@@ -51,6 +51,19 @@ pub struct S5FMutationPass {
     count_dist: Box<dyn Distribution<Output = i64>>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct S5FMutationEvent {
+    site: u32,
+    base: u8,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct WeightedS5FMutationEvent {
+    event: S5FMutationEvent,
+    weight: f64,
+    context: ChoiceContext,
+}
+
 impl S5FMutationPass {
     pub fn new(kernel: S5FKernel, count_dist: Box<dyn Distribution<Output = i64>>) -> Self {
         Self { kernel, count_dist }
@@ -126,68 +139,77 @@ impl S5FMutationPass {
         Ok(Some(candidates.last().expect("non-empty candidates").0))
     }
 
-    fn constraint_sampling_error(
-        &self,
-        address: impl Into<String>,
-        reason: FilteredSampleError,
-    ) -> PassError {
-        PassError::constraint_sampling(self.name(), address, reason)
-    }
-
-    fn sample_base(
+    fn event_candidates(
         &self,
         sim: &Simulation,
-        ctx: &mut PassContext,
-        address: &str,
+        profile: &[(u32, f64)],
         index: u32,
         count: u32,
-        site: NucHandle,
-        row: [f64; 4],
-        strict: bool,
-    ) -> Result<Option<u8>, PassError> {
-        let candidates = Self::positive_row_candidates(row);
+    ) -> Result<Vec<WeightedS5FMutationEvent>, FilteredSampleError> {
+        let mut events = Vec::new();
+
+        for &(site, mutability) in profile {
+            if !mutability.is_finite() || mutability <= 0.0 {
+                continue;
+            }
+
+            let Some(context) = Self::context_at(&sim.pool, site) else {
+                continue;
+            };
+            let row = self.kernel.substitution_row(context);
+            let row_candidates = Self::positive_row_candidates(row);
+            if row_candidates.is_empty() {
+                continue;
+            }
+            let row_total: f64 = row_candidates.iter().map(|(_, weight)| *weight).sum();
+            if !row_total.is_finite() || row_total <= 0.0 {
+                return Err(FilteredSampleError::InvalidFilteredSupport);
+            }
+
+            for (base, weight) in row_candidates {
+                events.push(WeightedS5FMutationEvent {
+                    event: S5FMutationEvent { site, base },
+                    weight: mutability * (weight / row_total),
+                    context: ChoiceContext::targeted_base_substitution(
+                        index,
+                        count,
+                        NucHandle::new(site),
+                    ),
+                });
+            }
+        }
+
+        Ok(events)
+    }
+
+    fn sample_weighted_event(
+        rng: &mut crate::rng::Rng,
+        candidates: &[WeightedS5FMutationEvent],
+    ) -> Result<Option<S5FMutationEvent>, FilteredSampleError> {
         if candidates.is_empty() {
             return Ok(None);
         }
 
-        let refdata = ctx.refdata;
-        let contracts = ctx.contracts;
-
-        if let Some(contracts) = contracts {
-            let context = ChoiceContext::indexed_target(index, count, site);
-            let filtered: Vec<(u8, f64)> = candidates
-                .iter()
-                .copied()
-                .filter(|(candidate, _)| {
-                    contracts
-                        .admits_with_context(
-                            sim,
-                            refdata,
-                            address,
-                            &ChoiceValue::Base(*candidate),
-                            context,
-                        )
-                        .is_ok()
-                })
-                .collect();
-
-            if filtered.is_empty() {
-                if strict {
-                    return Err(self.constraint_sampling_error(
-                        address,
-                        FilteredSampleError::EmptyAdmissibleSupport,
-                    ));
-                }
-                return Self::sample_weighted_base(ctx.rng, &candidates)
-                    .map_err(|reason| self.constraint_sampling_error(address, reason));
-            }
-
-            return Self::sample_weighted_base(ctx.rng, &filtered)
-                .map_err(|reason| self.constraint_sampling_error(address, reason));
+        let total: f64 = candidates.iter().map(|candidate| candidate.weight).sum();
+        if !total.is_finite() || total <= 0.0 {
+            return Err(FilteredSampleError::InvalidFilteredSupport);
         }
 
-        Self::sample_weighted_base(ctx.rng, &candidates)
-            .map_err(|reason| self.constraint_sampling_error(address, reason))
+        let r = rng.next_f64() * total;
+        let mut cum = 0.0;
+        for candidate in candidates {
+            cum += candidate.weight;
+            if r < cum {
+                return Ok(Some(candidate.event));
+            }
+        }
+
+        Ok(Some(
+            candidates
+                .last()
+                .expect("non-empty candidates checked above")
+                .event,
+        ))
     }
 
     fn execute_with_sampling_mode(
@@ -247,6 +269,69 @@ impl S5FMutationPass {
             if total <= 0.0 || !total.is_finite() {
                 break;
             }
+            let base_address = format!("mutate.s5f.base[{}]", i);
+
+            if let Some(contracts) = ctx.contracts {
+                let candidates = match self.event_candidates(&current, &profile, i, count) {
+                    Ok(candidates) => candidates,
+                    Err(reason) if strict => {
+                        return Err(PassError::constraint_sampling(
+                            self.name(),
+                            &base_address,
+                            reason,
+                        ));
+                    }
+                    Err(_) => Vec::new(),
+                };
+                let filtered: Vec<WeightedS5FMutationEvent> = candidates
+                    .into_iter()
+                    .filter(|candidate| {
+                        contracts
+                            .admits_with_context(
+                                &current,
+                                ctx.refdata,
+                                &base_address,
+                                &ChoiceValue::Base(candidate.event.base),
+                                candidate.context,
+                            )
+                            .is_ok()
+                    })
+                    .collect();
+
+                match Self::sample_weighted_event(ctx.rng, &filtered) {
+                    Ok(Some(event)) => {
+                        ctx.trace.record(
+                            format!("mutate.s5f.site[{}]", i),
+                            ChoiceValue::Int(event.site as i64),
+                        );
+                        ctx.trace
+                            .record(base_address, ChoiceValue::Base(event.base));
+
+                        current = current.with_base_changed(NucHandle::new(event.site), event.base);
+                        continue;
+                    }
+                    Ok(None) if strict => {
+                        return Err(PassError::constraint_sampling(
+                            self.name(),
+                            &base_address,
+                            FilteredSampleError::EmptyAdmissibleSupport,
+                        ));
+                    }
+                    Err(reason) if strict => {
+                        return Err(PassError::constraint_sampling(
+                            self.name(),
+                            &base_address,
+                            reason,
+                        ));
+                    }
+                    Ok(None) | Err(_) => {
+                        // Permissive mode keeps the historical fallback:
+                        // if no admissible contract-aware site+base event
+                        // exists, draw an unconstrained legacy event.
+                    }
+                }
+            }
+
             let r = ctx.rng.next_f64() * total;
             let mut cum = 0.0;
             let mut chosen_pos = profile[0].0;
@@ -265,20 +350,14 @@ impl S5FMutationPass {
                 None => continue,
             };
             let row = self.kernel.substitution_row(context);
-            let base_address = format!("mutate.s5f.base[{}]", i);
-            let chosen_base = match self.sample_base(
-                &current,
-                ctx,
-                &base_address,
-                i,
-                count,
-                NucHandle::new(chosen_pos),
-                row,
-                strict,
-            )? {
-                Some(base) => base,
-                None => continue,
-            };
+            let candidates = Self::positive_row_candidates(row);
+            let chosen_base =
+                match Self::sample_weighted_base(ctx.rng, &candidates).map_err(|reason| {
+                    PassError::constraint_sampling(self.name(), &base_address, reason)
+                })? {
+                    Some(base) => base,
+                    None => continue,
+                };
 
             ctx.trace.record(
                 format!("mutate.s5f.site[{}]", i),

@@ -1,9 +1,11 @@
 //! `TrimPass` — recombination-stage trim sampling (C.6).
 
 use crate::assignment::TrimEnd;
-use crate::dist::Distribution;
+use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
 use crate::ir::{Segment, Simulation};
-use crate::pass::{Pass, PassContext, PassEffect, PassError, PassRequirement};
+use crate::pass::{
+    IntegerSupport, Pass, PassCompileFact, PassContext, PassEffect, PassError, PassRequirement,
+};
 use crate::trace::ChoiceValue;
 
 /// Sample a trim amount from a distribution and apply it to the
@@ -81,6 +83,45 @@ impl TrimPass {
         }
     }
 
+    fn sample_trim(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<i64, PassError> {
+        let refdata = ctx.refdata;
+        let contracts = ctx.contracts;
+        let feasibility = ctx.feasibility;
+        let pass_index = ctx.pass_index;
+
+        if contracts.is_some() || feasibility.is_some() {
+            match sample_filtered_result(ctx.rng, self.distribution.as_ref(), |candidate| {
+                let choice = ChoiceValue::Int(*candidate);
+                let contract_ok = contracts.map_or(true, |contracts| {
+                    contracts
+                        .admits(sim, refdata, self.address(), &choice)
+                        .is_ok()
+                });
+                let feasible_ok = feasibility.map_or(true, |feasibility| {
+                    feasibility.admits(pass_index, sim, refdata, self.address(), &choice)
+                });
+                contract_ok && feasible_ok
+            }) {
+                Ok(value) => return Ok(value),
+                Err(reason) if strict => {
+                    return Err(self.constraint_sampling_error(reason));
+                }
+                Err(_) => {}
+            }
+        }
+
+        Ok(self.distribution.sample(ctx.rng))
+    }
+
+    fn constraint_sampling_error(&self, reason: FilteredSampleError) -> PassError {
+        PassError::constraint_sampling(self.name(), self.address(), reason)
+    }
+
     fn execute_with_validation(
         &self,
         sim: &Simulation,
@@ -91,7 +132,7 @@ impl TrimPass {
             return Err(PassError::missing_assignment(self.name(), self.segment));
         }
 
-        let value = self.distribution.sample(ctx.rng);
+        let value = self.sample_trim(sim, ctx, strict)?;
         if strict && value < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
@@ -155,6 +196,14 @@ impl Pass for TrimPass {
 
     fn effects(&self) -> Vec<PassEffect> {
         vec![PassEffect::TrimAllele(self.segment)]
+    }
+
+    fn compile_facts(&self) -> Vec<PassCompileFact> {
+        vec![PassCompileFact::TrimSupport {
+            segment: self.segment,
+            end: self.end,
+            support: IntegerSupport::from_weighted_pairs(self.distribution.support()),
+        }]
     }
 }
 

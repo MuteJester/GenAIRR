@@ -190,6 +190,19 @@ impl Default for ChoiceContext {
 // Contract trait
 // ──────────────────────────────────────────────────────────────────
 
+/// Stable semantic identity for built-in contracts.
+///
+/// `Contract::name()` remains the human-readable diagnostic surface.
+/// The compiler uses `ContractKind` for typed dispatch so build-time
+/// validation does not depend on parsing names.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ContractKind {
+    ProductiveJunctionFrame,
+    NoStopCodonInJunction,
+    AnchorPreserved { segment: Segment },
+    Custom,
+}
+
 /// A predicate over the simulation IR.
 ///
 /// Phase C.9 surfaces only `verify`. Phase D will add filter
@@ -201,6 +214,15 @@ pub trait Contract {
     /// Convention: hierarchical-string addresses matching D3 (e.g.,
     /// `"anchor_preserved.v"`, `"productive_junction_frame"`).
     fn name(&self) -> &str;
+
+    /// Typed semantic identity for built-in contracts.
+    ///
+    /// Custom contracts inherit `Custom`. Built-ins override this so
+    /// the compiled simulator can validate preconditions without
+    /// downcasting trait objects or string-matching names.
+    fn kind(&self) -> ContractKind {
+        ContractKind::Custom
+    }
 
     /// Verify mode: does this contract hold for `sim`?
     ///
