@@ -4918,21 +4918,22 @@ mod tests {
         // V right-extension walker reaches into NP1 and narrows
         // the call back to {V1}.
         //
-        // NB: AIRR record fields like `v_cigar` and `v_germline_end`
-        // are region-based, not live-call-extension-based. The
-        // structural V region is still 9 bases (after V_3 trim of 3),
-        // so v_cigar = "9M" and v_germline_end = 9. The extension is
-        // visible only via the live `v_call` narrowing.
+        // Phase 11.1: AIRR `v_germline_end` now reads from the live-
+        // call hypothesis bounds, so it reflects the elastic
+        // extension (12) rather than the post-trim structural range
+        // (9). `v_cigar` is still region-based — that rewire is
+        // Phase 11.3.
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
         let (_outcome, rec) = curated_run(&cfg, plan);
 
         assert_eq!(rec.v_call, "V1*01");
-        // CIGAR / germline coords reflect the structural V region —
-        // the elastic NP1 extension lives only in the live-call layer.
+        // Live-call hypothesis ref_end reaches the full V allele
+        // length after extending into the 3 NP1 bases.
+        assert_eq!(rec.v_germline_end, Some(12));
+        // CIGAR is still structural (Phase 11.3 rewires this).
         assert_eq!(rec.v_cigar, "9M");
-        assert_eq!(rec.v_germline_end, Some(9));
     }
 
     #[test]
@@ -5014,17 +5015,20 @@ mod tests {
         // distinguishing prefix). J left-extension reaches backward
         // into NP2 and narrows j_call back to {J1}.
         //
-        // Like the V case, the AIRR `j_cigar` / `j_germline_start`
-        // reflect the structural J region (6 bases after J_5 trim of
-        // 3). The elastic extension shows up only in the live `j_call`.
+        // Phase 11.1: `j_germline_start` now reads from the live-call
+        // hypothesis bounds — extension into NP2 dragged ref_start
+        // from 3 (post-trim_5) back to 0. `j_cigar` stays structural
+        // until Phase 11.3.
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
         let (_outcome, rec) = curated_run(&cfg, plan);
 
         assert_eq!(rec.j_call, "J1*01");
+        // Live-call hypothesis ref_start reached 0 after NP2 extension.
+        assert_eq!(rec.j_germline_start, Some(0));
+        // CIGAR is still structural (Phase 11.3 rewires this).
         assert_eq!(rec.j_cigar, "6M");
-        assert_eq!(rec.j_germline_start, Some(3));
     }
 
     #[test]
@@ -5101,6 +5105,60 @@ mod tests {
             "expected an I op in v_cigar, got {}",
             rec.v_cigar
         );
+    }
+
+    #[test]
+    fn phase11_1_v_germline_end_reflects_np_extension() {
+        // Phase 11.1 invariant: `v_germline_end` reads from the live-
+        // call hypothesis instead of the trim-derived structural
+        // range. Trim V_3 by 3 (structural end = 9), then NP1 = "AAA"
+        // recovers V1's allele bases at ref pos 9, 10, 11 → live
+        // ref_end advances to 12. AIRR `v_germline_end` should be 12.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        // Trim says structural V end is 9; live extension says 12.
+        // Phase 11.1 prefers live.
+        assert_eq!(rec.v_trim_3, 3);
+        assert_eq!(rec.v_germline_end, Some(12));
+    }
+
+    #[test]
+    fn phase11_1_d_germline_bounds_reflect_np_extension() {
+        // Trim D_5 = 3, NP1 = "C" (single base) → D's left-extension
+        // walker checks ref pos 2; D1[2]='C' matches → ref_start
+        // moves from 3 → 2. AIRR `d_germline_start` should be 2.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 0, 3, 0, 0, 1, b'C', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        // Live d_call narrows to D1 (only D1 has C at pos 2).
+        assert_eq!(rec.d_call, "D1*01");
+        // Live ref_start = 2 (post-extension); structural would be 3.
+        assert_eq!(rec.d_trim_5, 3);
+        assert_eq!(rec.d_germline_start, Some(2));
+    }
+
+    #[test]
+    fn phase11_1_no_extension_preserves_structural_germline_bounds() {
+        // Sanity: when NO extension fires (no NP, or NP doesn't
+        // match), AIRR germline bounds match the structural trim
+        // range. (Live-call hypothesis ref_start/ref_end match the
+        // structural values in this case.)
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        // Trim V_3 = 3, no NP1 → V's right-extension halts
+        // immediately at the V/D boundary (D1's first base 'T'
+        // doesn't match any V allele's pos 9). v_germline_end stays
+        // at 9 = structural post-trim end.
+        let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 0, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.v_trim_3, 3);
+        assert_eq!(rec.v_germline_end, Some(9));
     }
 
     #[test]

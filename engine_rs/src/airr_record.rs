@@ -329,23 +329,41 @@ pub fn build_airr_record(
     rec.j_alignment_start = walk.align_ranges[2].map(|(s, _)| s);
     rec.j_alignment_end = walk.align_ranges[2].map(|(_, e)| e);
 
-    // Germline coord pairs: derived from trim values + allele length.
+    // Germline coord pairs.
+    //
+    // Phase 11.1: prefer the live-call hypothesis bounds (which can
+    // grow past the structural trim range when NP bases extend the
+    // allele's reference). Fall back to the structural trim-derived
+    // values when no live call is present (raw RefDataConfig with
+    // no reference index, or the segment is `Unsupported`).
     if let Some(allele) = lookup_allele(refdata, Segment::V, v_id) {
         if rec.v_alignment_start.is_some() {
-            rec.v_germline_start = Some(rec.v_trim_5);
-            rec.v_germline_end = Some(allele.seq.len() as i64 - rec.v_trim_3);
+            let (g_start, g_end) = live_germline_range(sim, Segment::V).unwrap_or((
+                rec.v_trim_5,
+                allele.seq.len() as i64 - rec.v_trim_3,
+            ));
+            rec.v_germline_start = Some(g_start);
+            rec.v_germline_end = Some(g_end);
         }
     }
     if let Some(allele) = lookup_allele(refdata, Segment::D, d_id) {
         if rec.d_alignment_start.is_some() {
-            rec.d_germline_start = Some(rec.d_trim_5);
-            rec.d_germline_end = Some(allele.seq.len() as i64 - rec.d_trim_3);
+            let (g_start, g_end) = live_germline_range(sim, Segment::D).unwrap_or((
+                rec.d_trim_5,
+                allele.seq.len() as i64 - rec.d_trim_3,
+            ));
+            rec.d_germline_start = Some(g_start);
+            rec.d_germline_end = Some(g_end);
         }
     }
     if let Some(allele) = lookup_allele(refdata, Segment::J, j_id) {
         if rec.j_alignment_start.is_some() {
-            rec.j_germline_start = Some(rec.j_trim_5);
-            rec.j_germline_end = Some(allele.seq.len() as i64 - rec.j_trim_3);
+            let (g_start, g_end) = live_germline_range(sim, Segment::J).unwrap_or((
+                rec.j_trim_5,
+                allele.seq.len() as i64 - rec.j_trim_3,
+            ));
+            rec.j_germline_start = Some(g_start);
+            rec.j_germline_end = Some(g_end);
         }
     }
 
@@ -690,6 +708,23 @@ fn projected_call_name(
         segment,
     )
     .unwrap_or_else(|| lookup_name(refdata, segment, origin_id))
+}
+
+/// Phase 11.1: pull `(ref_start, ref_end)` from the first live-call
+/// hypothesis for a V / D / J segment. Returns `None` when there is
+/// no live-call layer attached to the simulation, when the call has
+/// no allele assigned, or when the call is `Unsupported` (no
+/// hypotheses).
+///
+/// This is the seam through which the AIRR projection becomes
+/// evidence-driven: when an NP-side extension grew the hypothesis's
+/// reference span past the trim-derived structural range, the AIRR
+/// `*_germline_start` / `*_germline_end` reflect that growth instead
+/// of the trim values.
+fn live_germline_range(sim: &Simulation, segment: Segment) -> Option<(i64, i64)> {
+    let call = sim.live_calls.as_ref()?.get(segment)?;
+    let h = call.hypotheses.first()?;
+    Some((h.ref_start as i64, h.ref_end as i64))
 }
 
 fn live_call_name(

@@ -3041,10 +3041,13 @@ def test_alignment_span_equals_cigar_op_total():
         )
 
 
-def test_germline_span_equals_cigar_m_plus_d():
-    # The number of source-allele bases that survived in the alignment
-    # is M + D (positions where the germline carries a base).
-    # Equivalently: germline_end - germline_start = M + D.
+def test_germline_span_at_least_cigar_m_plus_d():
+    # The number of source-allele bases the alignment + live-extension
+    # account for is at least M + D. Phase 11.1 lifted germline coords
+    # to read from the live-call hypothesis bounds, so when an NP-side
+    # extension grew the hypothesis's ref range the germline span can
+    # exceed M + D (which still counts only the structural alignment
+    # columns until Phase 11.3 rewires the CIGAR to match).
     rec = (
         _human_igh_exp()
         .corrupt_indels(count=5, insertion_prob=0.5)
@@ -3057,7 +3060,7 @@ def test_germline_span_equals_cigar_m_plus_d():
         if g_s is None:
             continue
         ops = _cigar_op_counts(cig)
-        assert g_e - g_s == ops["M"] + ops["D"]
+        assert g_e - g_s >= ops["M"] + ops["D"]
 
 
 def test_d_coords_none_for_vj_chain():
@@ -3497,6 +3500,13 @@ def test_identity_helper_from_columns():
 def test_h5_coords_invariants_under_corruption_stack():
     # Same n=200 stress sweep as alignment/CIGAR — verify the coord
     # pairs stay self-consistent under every corruption mode.
+    #
+    # Phase 11.1 caveat: `*_germline_start/_end` now reads from the
+    # live-call hypothesis bounds, so the structural identity
+    # `germline_span == M + D` becomes `germline_span >= M + D`. The
+    # extra positions are NP-side elastic extensions that aren't yet
+    # in the (still-structural) CIGAR. Phase 11.3 will rewire the
+    # CIGAR to match, at which point this can revert to equality.
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
@@ -3520,9 +3530,9 @@ def test_h5_coords_invariants_under_corruption_stack():
                 failures.append(
                     (i, seg, "alignment-span", a_e - a_s, ops)
                 )
-            if g_e - g_s != ops["M"] + ops["D"]:
+            if g_e - g_s < ops["M"] + ops["D"]:
                 failures.append(
-                    (i, seg, "germline-span", g_e - g_s, ops)
+                    (i, seg, "germline-span-shrunk-below-M+D", g_e - g_s, ops)
                 )
     assert failures == [], f"H.5 invariants broke for: {failures[:3]}"
 
