@@ -200,38 +200,41 @@ pub fn build_airr_record(
         .iter()
         .find(|r| r.segment == Segment::Np2);
 
-    // Phase 11.2: pool-position coords come from the live-call
-    // hypothesis when one is available — that way NP-side elastic
-    // extension is reflected in the AIRR record. Fall back to the
-    // structural region for raw-RefDataConfig runs (no live calls)
-    // or unsupported segments.
+    // Phase 11.4: sequence coords come from the column-walker's
+    // pool-range output, which honours the same overlap-resolution
+    // rule the column relabel uses. The fallback is the structural
+    // region (raw RefDataConfig runs, no live calls). Note: the
+    // walker output itself is computed below; placeholder values
+    // from the structural region are written here and then refined
+    // post-walk to keep the data flow obvious.
     if let Some(r) = v_region {
-        let (s_start, s_end) = live_sequence_range(sim, Segment::V)
-            .unwrap_or((r.start.index() as i64, r.end.index() as i64));
-        rec.v_sequence_start = Some(s_start);
-        rec.v_sequence_end = Some(s_end);
+        rec.v_sequence_start = Some(r.start.index() as i64);
+        rec.v_sequence_end = Some(r.end.index() as i64);
     }
     if let Some(r) = d_region {
-        let (s_start, s_end) = live_sequence_range(sim, Segment::D)
-            .unwrap_or((r.start.index() as i64, r.end.index() as i64));
-        rec.d_sequence_start = Some(s_start);
-        rec.d_sequence_end = Some(s_end);
+        rec.d_sequence_start = Some(r.start.index() as i64);
+        rec.d_sequence_end = Some(r.end.index() as i64);
     }
     if let Some(r) = j_region {
-        let (s_start, s_end) = live_sequence_range(sim, Segment::J)
-            .unwrap_or((r.start.index() as i64, r.end.index() as i64));
-        rec.j_sequence_start = Some(s_start);
-        rec.j_sequence_end = Some(s_end);
+        rec.j_sequence_start = Some(r.start.index() as i64);
+        rec.j_sequence_end = Some(r.end.index() as i64);
     }
 
     // NP region nucleotide strings.
+    //
+    // Phase 11.4: when a V/D/J live-call extension claims one or more
+    // NP positions (e.g. NP1[0..3] reabsorbed back into V), those
+    // positions are no longer "non-templated" — they belong to a
+    // segment. The AIRR `np1` / `np2` strings drop them.
     if let Some(r) = np1_region {
-        rec.np1 = rec.sequence[r.start.index() as usize..r.end.index() as usize].to_string();
-        rec.np1_length = (r.end.index() - r.start.index()) as i64;
+        let (s, n) = unclaimed_np_string(sim, refdata, &rec.sequence, r);
+        rec.np1 = s;
+        rec.np1_length = n;
     }
     if let Some(r) = np2_region {
-        rec.np2 = rec.sequence[r.start.index() as usize..r.end.index() as usize].to_string();
-        rec.np2_length = (r.end.index() - r.start.index()) as i64;
+        let (s, n) = unclaimed_np_string(sim, refdata, &rec.sequence, r);
+        rec.np2 = s;
+        rec.np2_length = n;
     }
 
     // Mutation + corruption counters.
@@ -346,6 +349,23 @@ pub fn build_airr_record(
     rec.j_alignment_start = walk.align_ranges[2].map(|(s, _)| s);
     rec.j_alignment_end = walk.align_ranges[2].map(|(_, e)| e);
 
+    // Phase 11.4: refine sequence coords from the walker output.
+    // The walker resolved any overlap between V/D/J live-call
+    // hypotheses, so its `seq_ranges` reflects each segment's
+    // *effective* span — guaranteeing CIGAR M+I+D == seq_len + D_ops.
+    if let Some((s, e)) = walk.seq_ranges[0] {
+        rec.v_sequence_start = Some(s);
+        rec.v_sequence_end = Some(e);
+    }
+    if let Some((s, e)) = walk.seq_ranges[1] {
+        rec.d_sequence_start = Some(s);
+        rec.d_sequence_end = Some(e);
+    }
+    if let Some((s, e)) = walk.seq_ranges[2] {
+        rec.j_sequence_start = Some(s);
+        rec.j_sequence_end = Some(e);
+    }
+
     // Germline coord pairs.
     //
     // Phase 11.1: prefer the live-call hypothesis bounds (which can
@@ -405,6 +425,12 @@ struct AlignmentWalk {
     /// Per-segment alignment-string spans `(start, end)` (0-based
     /// half-open). `None` when the segment contributed no columns.
     align_ranges: [Option<(i64, i64)>; 3],
+    /// Per-segment pool-position spans `(start, end)` (0-based
+    /// half-open). Tracks the structural region plus any NP columns
+    /// the column-walker claimed for the segment — i.e. the slice of
+    /// the sequence that this segment "owns" after live-call overlap
+    /// resolution. Used for `*_sequence_start/end`.
+    seq_ranges: [Option<(i64, i64)>; 3],
     /// Per-segment identity (matches / total), or `None` when no
     /// columns. Indexed V=0, D=1, J=2.
     identities: [Option<f64>; 3],
@@ -432,6 +458,10 @@ fn walk_alignment_columns(
 
     // Per-segment alignment-string spans (column offsets).
     let mut align_ranges: [Option<(i64, i64)>; 3] = [None, None, None];
+
+    // Per-segment pool-position spans. Mirrors `align_ranges`, but
+    // in pool coordinates so it's usable for AIRR `*_sequence_*`.
+    let mut seq_ranges: [Option<(i64, i64)>; 3] = [None, None, None];
 
     // Per-segment identity counters [matches, total].
     let mut id_counts: [[u64; 2]; 3] = [[0, 0], [0, 0], [0, 0]];
@@ -547,14 +577,65 @@ fn walk_alignment_columns(
 
                 let span_end = sa.len() as i64;
                 if span_end > span_start {
-                    align_ranges[seg_idx] = Some((span_start, span_end));
+                    // Phase 11.4: a prior NP-side claim (e.g. J's
+                    // left-extension into NP2) may have already set
+                    // `align_ranges[seg_idx]` to a span that begins
+                    // *before* this structural region. Preserve that
+                    // earlier start instead of overwriting.
+                    let new_start = match align_ranges[seg_idx] {
+                        Some((s, _)) => s.min(span_start),
+                        None => span_start,
+                    };
+                    align_ranges[seg_idx] = Some((new_start, span_end));
+                    // Mirror in pool space.
+                    let pool_start = r_start as i64;
+                    let pool_end = r_end as i64;
+                    let new_pool_start = match seq_ranges[seg_idx] {
+                        Some((s, _)) => s.min(pool_start),
+                        None => pool_start,
+                    };
+                    seq_ranges[seg_idx] = Some((new_pool_start, pool_end));
                 }
             }
             Segment::Np1 | Segment::Np2 => {
+                // Phase 11.3 + 11.4 + 11.5: NP positions claimed by an
+                // adjacent V/D/J live-call extension are relabelled.
+                // The claimed column emits the source allele's germline
+                // byte (instead of `N`), pushes an `M` op onto that
+                // segment's CIGAR, contributes to its identity counter,
+                // and extends its `align_ranges`. Unclaimed positions
+                // remain plain NP columns.
                 for i in r_start..r_end {
-                    sa.push(bases[i]);
-                    galn.push(b'N');
-                    dmask.push(b'N');
+                    let base_char = bases[i];
+                    sa.push(base_char);
+                    if let Some((claim_seg, allele_byte)) = np_claim_owner(sim, refdata, i) {
+                        let claim_idx = match claim_seg {
+                            Segment::V => 0,
+                            Segment::D => 1,
+                            Segment::J => 2,
+                            _ => unreachable!(),
+                        };
+                        galn.push(allele_byte);
+                        push_dmask_for_seg(&mut dmask, claim_seg, allele_byte);
+                        push_cigar_op(&mut cigar_runs[claim_idx], b'M');
+                        id_counts[claim_idx][1] += 1;
+                        if eq_ascii_case_insensitive(base_char, allele_byte) {
+                            id_counts[claim_idx][0] += 1;
+                        }
+                        let col = (sa.len() as i64) - 1;
+                        align_ranges[claim_idx] = Some(match align_ranges[claim_idx] {
+                            Some((s, _)) => (s, col + 1),
+                            None => (col, col + 1),
+                        });
+                        let pool_pos = i as i64;
+                        seq_ranges[claim_idx] = Some(match seq_ranges[claim_idx] {
+                            Some((s, e)) => (s.min(pool_pos), e.max(pool_pos + 1)),
+                            None => (pool_pos, pool_pos + 1),
+                        });
+                    } else {
+                        galn.push(b'N');
+                        dmask.push(b'N');
+                    }
                 }
             }
         }
@@ -604,6 +685,7 @@ fn walk_alignment_columns(
         dmask: bytes_to_string(&dmask),
         cigars,
         align_ranges,
+        seq_ranges,
         identities,
     }
 }
@@ -744,15 +826,96 @@ fn live_germline_range(sim: &Simulation, segment: Segment) -> Option<(i64, i64)>
     Some((h.ref_start as i64, h.ref_end as i64))
 }
 
-/// Phase 11.2: pull `(seq_start, seq_end)` from the first live-call
-/// hypothesis for a V / D / J segment. These are pool positions —
-/// the same coordinate space as the structural `region.start/end` —
-/// but they reflect any NP-side elastic extension the walker
-/// performed.
-fn live_sequence_range(sim: &Simulation, segment: Segment) -> Option<(i64, i64)> {
-    let call = sim.live_calls.as_ref()?.get(segment)?;
+/// Phase 11.3 / 11.4: figure out which V/D/J segment (if any) has
+/// an extension hypothesis that claims this NP pool position.
+///
+/// Returns `Some((segment, germline_byte))` when an adjacent V/D/J
+/// live-call hypothesis extended past its structural region into
+/// `pool_pos`. The germline byte comes from the segment's source
+/// allele at the inferred reference position. Returns `None` when
+/// no V/D/J claim exists — the position stays an NP column with `N`
+/// in `germline_alignment`.
+///
+/// Tie-breaking when both V (right extension) and D (left extension)
+/// claim the same NP1 position: V wins. Same for D vs J on NP2.
+/// This matches the natural V→D→J order and is deterministic.
+fn np_claim_owner(
+    sim: &Simulation,
+    refdata: &RefDataConfig,
+    pool_pos: usize,
+) -> Option<(Segment, u8)> {
+    for seg in [Segment::V, Segment::D, Segment::J] {
+        if let Some(claim) = check_segment_claim(sim, refdata, seg, pool_pos) {
+            return Some(claim);
+        }
+    }
+    None
+}
+
+/// Phase 11.4: build the AIRR `np1` / `np2` string from an NP
+/// structural region by skipping any pool position that has been
+/// claimed by a V/D/J live-call extension. The resulting string is
+/// the "true" non-templated insertion as the evidence layer sees it.
+fn unclaimed_np_string(
+    sim: &Simulation,
+    refdata: &RefDataConfig,
+    sequence: &str,
+    region: &Region,
+) -> (String, i64) {
+    let bytes = sequence.as_bytes();
+    let r_start = region.start.index() as usize;
+    let r_end = region.end.index() as usize;
+    let mut out = String::with_capacity(r_end.saturating_sub(r_start));
+    for i in r_start..r_end.min(bytes.len()) {
+        if np_claim_owner(sim, refdata, i).is_none() {
+            out.push(bytes[i] as char);
+        }
+    }
+    let len = out.len() as i64;
+    (out, len)
+}
+
+fn check_segment_claim(
+    sim: &Simulation,
+    refdata: &RefDataConfig,
+    seg: Segment,
+    pool_pos: usize,
+) -> Option<(Segment, u8)> {
+    let call = sim.live_calls.as_ref()?.get(seg)?;
     let h = call.hypotheses.first()?;
-    Some((h.seq_start as i64, h.seq_end as i64))
+    let allele_id = match seg {
+        Segment::V => sim.assignments.v.map(|i| i.allele_id),
+        Segment::D => sim.assignments.d.map(|i| i.allele_id),
+        Segment::J => sim.assignments.j.map(|i| i.allele_id),
+        _ => None,
+    }?;
+    let allele = refdata.get(seg, allele_id)?;
+    let region = sim
+        .sequence
+        .regions
+        .iter()
+        .find(|r| r.segment == seg)?;
+    let r_start = region.start.index() as usize;
+    let r_end = region.end.index() as usize;
+    let h_seq_start = h.seq_start as usize;
+    let h_seq_end = h.seq_end as usize;
+    // Position must be inside the live span...
+    if pool_pos < h_seq_start || pool_pos >= h_seq_end {
+        return None;
+    }
+    // ...and OUTSIDE the structural region (i.e. extension territory).
+    if pool_pos >= r_start && pool_pos < r_end {
+        return None;
+    }
+    // Linear interpolation: at `h.seq_start + k` the walker matched
+    // ref pos `h.ref_start + k`. NP regions don't carry indels, so
+    // the offset is monotonic.
+    let offset = pool_pos - h_seq_start;
+    let ref_pos = h.ref_start as usize + offset;
+    if ref_pos >= allele.seq.len() {
+        return None;
+    }
+    Some((seg, allele.seq[ref_pos]))
 }
 
 fn live_call_name(

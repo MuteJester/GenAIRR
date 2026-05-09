@@ -4918,22 +4918,20 @@ mod tests {
         // V right-extension walker reaches into NP1 and narrows
         // the call back to {V1}.
         //
-        // Phase 11.1: AIRR `v_germline_end` now reads from the live-
-        // call hypothesis bounds, so it reflects the elastic
-        // extension (12) rather than the post-trim structural range
-        // (9). `v_cigar` is still region-based — that rewire is
-        // Phase 11.3.
+        // Phase 11.1+11.3: AIRR `v_germline_end` reads from the live-
+        // call hypothesis bounds (12, the full V allele length after
+        // NP1 extension claimed 3 bases), and `v_cigar` covers the
+        // extended span (12M = 9 structural + 3 NP1 columns claimed
+        // by V's right extension).
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
         let (_outcome, rec) = curated_run(&cfg, plan);
 
         assert_eq!(rec.v_call, "V1*01");
-        // Live-call hypothesis ref_end reaches the full V allele
-        // length after extending into the 3 NP1 bases.
         assert_eq!(rec.v_germline_end, Some(12));
-        // CIGAR is still structural (Phase 11.3 rewires this).
-        assert_eq!(rec.v_cigar, "9M");
+        // CIGAR runs 12M after Phase 11.3 column-relabelling.
+        assert_eq!(rec.v_cigar, "12M");
     }
 
     #[test]
@@ -5015,20 +5013,19 @@ mod tests {
         // distinguishing prefix). J left-extension reaches backward
         // into NP2 and narrows j_call back to {J1}.
         //
-        // Phase 11.1: `j_germline_start` now reads from the live-call
-        // hypothesis bounds — extension into NP2 dragged ref_start
-        // from 3 (post-trim_5) back to 0. `j_cigar` stays structural
-        // until Phase 11.3.
+        // Phase 11.1+11.3: `j_germline_start` reads from live-call
+        // hypothesis (0 — extension into NP2 dragged ref_start from
+        // 3 back to 0), and `j_cigar` is 9M (3 claimed NP2 columns +
+        // 6 structural J columns).
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
         let (_outcome, rec) = curated_run(&cfg, plan);
 
         assert_eq!(rec.j_call, "J1*01");
-        // Live-call hypothesis ref_start reached 0 after NP2 extension.
         assert_eq!(rec.j_germline_start, Some(0));
-        // CIGAR is still structural (Phase 11.3 rewires this).
-        assert_eq!(rec.j_cigar, "6M");
+        // CIGAR runs 9M after Phase 11.3 column-relabelling.
+        assert_eq!(rec.j_cigar, "9M");
     }
 
     #[test]
@@ -5195,6 +5192,106 @@ mod tests {
 
         assert_eq!(rec.v_trim_3, 3);
         assert_eq!(rec.v_germline_end, Some(9));
+    }
+
+    #[test]
+    fn phase11_3_v_cigar_extends_into_claimed_np1_columns() {
+        // Phase 11.3: V's CIGAR includes claimed NP1 columns. With
+        // V_3 trim 3 and NP1="AAA" (V1's distinguishing suffix), V
+        // right-extends 3 bases into NP1 → CIGAR runs 12 M ops total.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.v_cigar, "12M");
+    }
+
+    #[test]
+    fn phase11_3_j_cigar_extends_into_claimed_np2_columns() {
+        // Phase 11.3 mirror: J left-extends 3 bases into NP2.
+        // Structural J = 6M; with extension J's CIGAR = 9M.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.j_cigar, "9M");
+    }
+
+    #[test]
+    fn phase11_4_np1_string_drops_columns_claimed_by_v() {
+        // Phase 11.4: when V's right extension reabsorbs NP1 bases,
+        // those bases are no longer "non-templated" — np1 / np1_length
+        // must drop them. With V_3 trim 3 and NP1="AAA" all three NP1
+        // bases are claimed by V → np1 is empty.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.np1, "");
+        assert_eq!(rec.np1_length, 0);
+    }
+
+    #[test]
+    fn phase11_4_np2_string_drops_columns_claimed_by_j() {
+        // Mirror of 11.4 for NP2. With J_5 trim 3 and NP2="AAA"
+        // all three NP2 bases get claimed by J's left extension.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.np2, "");
+        assert_eq!(rec.np2_length, 0);
+    }
+
+    #[test]
+    fn phase11_4_v_alignment_end_extends_with_np_claim() {
+        // Phase 11.4: `v_alignment_end` covers the claimed NP columns
+        // too. Without extension v_alignment_end = 12 (full V region);
+        // with V_3 trim 3 + NP1="AAA" the structural V region is 9
+        // columns long but V claims 3 NP1 columns → v_alignment_end
+        // moves out to 12 (still 12 columns but now 9 structural +
+        // 3 NP).
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.v_alignment_start, Some(0));
+        assert_eq!(rec.v_alignment_end, Some(12));
+    }
+
+    #[test]
+    fn phase11_4_j_alignment_start_extends_with_np_claim() {
+        // Mirror: when J left-extends into NP2, j_alignment_start
+        // moves leftward. Pool layout is V(12)+NP1(0)+D(12)+NP2(3)+J(6).
+        // Structural J spans columns [24, 30); with NP2 claimed,
+        // j_alignment_start = 24 - 3 = 21 (note: column = pool index
+        // here because there are no synthetic insertions / deletions).
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.j_alignment_start, Some(24));
+        assert_eq!(rec.j_alignment_end, Some(33));
+    }
+
+    #[test]
+    fn phase11_5_v_identity_counts_extended_columns() {
+        // Phase 11.5: V's identity reflects matches over the full
+        // claimed span. With V_3 trim 3 + NP1="AAA" (which match V1
+        // exactly at pos 9-11), every column in V's extended span is
+        // a match → identity = 1.0.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.v_identity, Some(1.0));
     }
 
     #[test]

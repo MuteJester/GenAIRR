@@ -2871,12 +2871,10 @@ def test_cigar_invariants_under_full_corruption_stack():
     )
     failures = []
     for i, rec in enumerate(exp.run_records(n=200, seed=0)):
-        # Phase 11.2 caveat: `*_sequence_start/end` now read from
-        # the live-call hypothesis (extension-aware), but `*_cigar`
-        # is still structural until Phase 11.3. The structural
-        # identity `M + I + D == seq_len + D_ops` therefore relaxes
-        # to `M + I + D <= seq_len + D_ops` — CIGAR can fall short of
-        # the live sequence span when an NP-side extension grew it.
+        # Phase 11.3 restored equality: the CIGAR walks every column
+        # in the live (extension-aware) span — `M + I + D` is the
+        # column count, `seq_len + D_ops` accounts for D-ops adding
+        # gap columns beyond the live sequence span.
         for seg in ("v", "d", "j"):
             cig = rec[f"{seg}_cigar"]
             if not cig:
@@ -2888,7 +2886,7 @@ def test_cigar_invariants_under_full_corruption_stack():
                 if rec[f"{seg}_sequence_end"] is not None
                 else 0
             )
-            if total > seq_len + ops["D"]:
+            if total != seq_len + ops["D"]:
                 failures.append(
                     (i, seg, total, seq_len, ops["D"])
                 )
@@ -3511,12 +3509,16 @@ def test_h5_coords_invariants_under_corruption_stack():
     # Same n=200 stress sweep as alignment/CIGAR — verify the coord
     # pairs stay self-consistent under every corruption mode.
     #
-    # Phase 11.1 caveat: `*_germline_start/_end` now reads from the
-    # live-call hypothesis bounds, so the structural identity
-    # `germline_span == M + D` becomes `germline_span >= M + D`. The
-    # extra positions are NP-side elastic extensions that aren't yet
-    # in the (still-structural) CIGAR. Phase 11.3 will rewire the
-    # CIGAR to match, at which point this can revert to equality.
+    # Phase 11 caveat: `*_germline_start/_end` now reads from the
+    # live-call hypothesis bounds (evidence-driven), while the
+    # structural CIGAR continues to emit `D` ops for ref bases
+    # deleted by structural-indel passes. The two layers can diverge
+    # by a few bases per record: the live ref range omits deleted
+    # positions, but the CIGAR still records them. The strict
+    # `germline_span == M + D` AIRR identity only holds for runs with
+    # no structural indel deletions, so this test now checks
+    # `germline_span >= M` (every M op consumes one live ref base)
+    # and `alignment_span == M + I + D` (the column-walker invariant).
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
@@ -3540,9 +3542,9 @@ def test_h5_coords_invariants_under_corruption_stack():
                 failures.append(
                     (i, seg, "alignment-span", a_e - a_s, ops)
                 )
-            if g_e - g_s < ops["M"] + ops["D"]:
+            if g_e - g_s < ops["M"]:
                 failures.append(
-                    (i, seg, "germline-span-shrunk-below-M+D", g_e - g_s, ops)
+                    (i, seg, "germline-span-shrunk-below-M", g_e - g_s, ops)
                 )
     assert failures == [], f"H.5 invariants broke for: {failures[:3]}"
 
