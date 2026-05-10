@@ -1,9 +1,15 @@
 # Build pre-compiled wheels for all platforms and publish to PyPI.
-# Triggered on tag push (v*) or manual dispatch.
 #
 # Architecture: a single GenAIRR wheel bundles both the Python wrappers
 # and the Rust simulation kernel as the private `GenAIRR._engine` PyO3
 # extension. abi3-py39 means one wheel per (OS, arch) covers Python 3.9+.
+#
+# Triggers:
+#   - push: tags 'v*'   → full pipeline including PyPI publish + GitHub Release
+#   - workflow_dispatch → DRY RUN: test + build + verify, but never publishes.
+#                         Use this to rehearse a release end-to-end before
+#                         tagging. The publish job is hard-gated by an
+#                         `if:` clause to refs/tags/v*.
 #
 # Version flow: the tag (e.g. v1.2.3) drives the wheel version. A
 # pre-build step rewrites pyproject.toml and engine_rs/Cargo.toml so
@@ -261,10 +267,14 @@ jobs:
           "
 
   # ── Publish to PyPI + create the GitHub Release ────────────────
+  # Hard-gated to tag pushes only. workflow_dispatch runs everything
+  # else (test → build → verify) but never reaches this job, so the
+  # manual button is always a safe dry-run.
   publish:
     name: Publish to PyPI + GitHub Release
     needs: [resolve_version, build_wheels, build_sdist, verify_wheels]
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - name: Download all wheels
@@ -283,6 +293,25 @@ jobs:
       - name: List artifacts
         run: ls -la dist/
 
+      # Pre-flight check: refuse to upload if the version is already on
+      # PyPI. Twine would reject the duplicate too, but its failure mode
+      # is mid-upload — this surfaces the problem before any wheel
+      # leaves the runner.
+      - name: Check PyPI for existing version
+        env:
+          VERSION: ${{ needs.resolve_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/GenAIRR/${VERSION}/json")
+          if [ "$STATUS" = "200" ]; then
+            echo "::error::GenAIRR ${VERSION} already exists on PyPI. PyPI does not permit re-uploading the same version. Bump the tag (e.g. ${VERSION}.post1 or the next version) and try again."
+            exit 1
+          elif [ "$STATUS" = "404" ]; then
+            echo "PyPI does not have GenAIRR ${VERSION} yet — safe to publish."
+          else
+            echo "::warning::Unexpected HTTP ${STATUS} from PyPI; proceeding cautiously."
+          fi
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -291,7 +320,6 @@ jobs:
           packages-dir: dist
 
       - name: Create GitHub Release
-        if: github.event_name == 'push'  # only auto-create on tag push
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
