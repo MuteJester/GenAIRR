@@ -864,7 +864,22 @@ class Experiment:
 
         ``count=0`` is a no-op (the pass runs but applies zero
         mutations).
+
+        **TCR guard (G4):** somatic hypermutation is a B-cell
+        phenomenon — T-cells do not undergo SHM in the periphery.
+        Calling ``.mutate()`` on a TCR-configured experiment raises
+        ``ValueError`` to prevent silent biological misuse. Use
+        ``corrupt_pcr`` / ``corrupt_quality`` for sequencing-error
+        realism on TCR data instead.
         """
+        if self._is_tcr_refdata():
+            raise ValueError(
+                "mutate(): somatic hypermutation does not occur in TCR "
+                "sequences (T-cells lack AID and the SHM machinery). The "
+                "configured refdata is a TCR locus. For sequencing-error "
+                "realism on TCR data, use corrupt_pcr / corrupt_quality / "
+                "corrupt_indels instead."
+            )
         model_lc = model.lower()
         if model_lc not in ("uniform", "s5f"):
             raise ValueError(
@@ -879,6 +894,20 @@ class Experiment:
             )
         )
         return self
+
+    def _is_tcr_refdata(self) -> bool:
+        """G4: detect whether the bound refdata is a TCR locus.
+
+        TCR allele names are prefixed with ``TR`` (TRA, TRB, TRG,
+        TRD); BCR with ``IG``. Inspecting the first V allele is
+        enough — locus is uniform across the pool. Returns ``False``
+        when the V pool is empty (defensive — let downstream errors
+        surface that condition).
+        """
+        if self._refdata.v_pool_size() == 0:
+            return False
+        first_v_name = self._refdata.v_allele(0).name
+        return first_v_name.upper().startswith("TR")
 
     def using(
         self,

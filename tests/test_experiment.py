@@ -1576,6 +1576,37 @@ def test_to_fastq_rejects_out_of_range_q(tmp_path):
             raise AssertionError(f"expected error for q={bad!r}")
 
 
+def test_g4_mutate_rejected_on_tcr_chain():
+    # SHM is biologically B-cell only. The DSL must error rather
+    # than silently producing biologically-false TCR records.
+    with pytest.raises(ValueError, match="somatic hypermutation does not occur in TCR"):
+        ga.Experiment.on("human_tcrb").recombine().mutate(count=5)
+
+
+def test_g4_mutate_allowed_on_bcr_chain():
+    # Sanity: BCR loci accept mutate() unchanged.
+    for cfg in ("human_igh", "human_igk", "human_igl"):
+        exp = ga.Experiment.on(cfg).recombine().mutate(count=3)
+        records = exp.run_records(n=2, seed=0)
+        assert len(records) == 2
+
+
+def test_g4_tcr_pipeline_with_corrupt_passes_works():
+    # Confirms the recommended TCR pipeline (corrupt_pcr / corrupt_
+    # quality / corrupt_indels) still works end-to-end.
+    exp = (
+        ga.Experiment.on("human_tcrb")
+        .recombine()
+        .corrupt_pcr(count=3)
+        .corrupt_quality(count=2)
+        .corrupt_indels(count=1, insertion_prob=0.5)
+    )
+    records = exp.run_records(n=5, seed=0)
+    assert len(records) == 5
+    for rec in records:
+        assert rec["locus"] == "TRB"
+
+
 def test_g3b_allele_weights_boost_listed_v():
     # Boosting a single V allele's weight by 1000x should make it
     # dominate sampling over a 200-record batch.
@@ -2803,15 +2834,13 @@ def test_alignment_invariants_under_full_corruption_stack():
 
 def test_alignment_invariants_across_loci():
     # IGH / IGK / IGL / TCRB all need to produce sane alignment
-    # strings under heavy corruption.
+    # strings under heavy corruption. SHM is BCR-only (G4), so the
+    # TCR pipeline drops the mutate step.
     for cfg in ("human_igh", "human_igk", "human_igl", "human_tcrb"):
-        exp = (
-            ga.Experiment.on(cfg)
-            .recombine()
-            .mutate(count=5)
-            .corrupt_pcr(count=2)
-            .corrupt_indels(count=2)
-        )
+        exp = ga.Experiment.on(cfg).recombine()
+        if not cfg.startswith("human_tcr"):
+            exp = exp.mutate(count=5)
+        exp = exp.corrupt_pcr(count=2).corrupt_indels(count=2)
         result = exp.run_records(n=50, seed=0)
         failures = [
             (i, _alignment_invariants_hold(rec))
@@ -3486,10 +3515,12 @@ def test_to_tsv_passes_airr_validation_for_vj_chain(tmp_path):
 def test_to_tsv_passes_airr_validation_for_tcrb(tmp_path):
     airr = pytest.importorskip("airr")
     path = tmp_path / "tcrb.tsv"
+    # G4: TCR doesn't undergo SHM; use PCR errors for sequencing
+    # realism instead.
     (
         ga.Experiment.on("human_tcrb")
         .recombine()
-        .mutate(count=3)
+        .corrupt_pcr(count=3)
         .run_records(n=5, seed=0)
         .to_tsv(str(path))
     )
@@ -3852,11 +3883,12 @@ def test_phase12_locus_falls_back_to_refdata_under_heavy_corruption():
         "human_tcrb": "TRB",
     }
     for cfg, want in expected.items():
+        # G4: SHM is BCR-only; drop mutate for TCR.
+        exp = ga.Experiment.on(cfg).recombine()
+        if not cfg.startswith("human_tcr"):
+            exp = exp.mutate(count=15)
         exp = (
-            ga.Experiment.on(cfg)
-            .recombine()
-            .mutate(count=15)
-            .corrupt_pcr(count=5)
+            exp.corrupt_pcr(count=5)
             .corrupt_quality(count=8)
             .corrupt_indels(count=4, insertion_prob=0.5)
         )
@@ -3887,11 +3919,12 @@ def test_phase12_per_segment_ga_slice_matches_called_allele():
     ]
     failures = []
     for cfg, _kind in pipelines:
+        # G4: SHM is BCR-only; drop mutate for TCR.
+        exp = ga.Experiment.on(cfg).recombine()
+        if not cfg.startswith("human_tcr"):
+            exp = exp.mutate(count=8)
         exp = (
-            ga.Experiment.on(cfg)
-            .recombine()
-            .mutate(count=8)
-            .corrupt_pcr(count=2)
+            exp.corrupt_pcr(count=2)
             .corrupt_quality(count=4)
             .corrupt_indels(count=2, insertion_prob=0.5)
         )
