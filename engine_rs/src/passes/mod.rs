@@ -32,7 +32,8 @@ pub(crate) mod test_support;
 
 pub use assemble_segment::AssembleSegmentPass;
 pub use corrupt::{
-    ContaminantPass, EndLossPass, IndelPass, LossEnd, PCRErrorPass, QualityErrorPass, RevCompPass,
+    ContaminantPass, EndLossPass, IndelPass, LossEnd, NCorruptionPass, PCRErrorPass,
+    QualityErrorPass, RevCompPass,
 };
 pub use echo::EchoPass;
 pub use generate_np::GenerateNPPass;

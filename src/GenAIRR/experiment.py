@@ -376,6 +376,7 @@ _CORRUPT_KIND_CONTAMINANT = "contaminant"
 _CORRUPT_KIND_REV_COMP = "rev_comp"
 _CORRUPT_KIND_5PRIME_LOSS = "5prime_loss"
 _CORRUPT_KIND_3PRIME_LOSS = "3prime_loss"
+_CORRUPT_KIND_NS = "ns"
 
 
 @dataclass(frozen=True)
@@ -418,6 +419,8 @@ class _CorruptStep:
             plan.push_corrupt_5prime_loss(count_list)
         elif self.kind == _CORRUPT_KIND_3PRIME_LOSS:
             plan.push_corrupt_3prime_loss(count_list)
+        elif self.kind == _CORRUPT_KIND_NS:
+            plan.push_corrupt_ns(count_list)
         else:  # pragma: no cover — guarded at builder time.
             raise ValueError(f"unsupported corruption kind {self.kind!r}")
 
@@ -789,6 +792,37 @@ class Experiment:
         self._steps.append(
             _CorruptStep(
                 kind=_CORRUPT_KIND_3PRIME_LOSS,
+                count_pairs=pairs,
+                insertion_prob=0.0,
+                apply_prob=0.0,
+            )
+        )
+        return self
+
+    def corrupt_ns(
+        self,
+        *,
+        count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+    ) -> "Experiment":
+        """Append an N-substitution corruption step (G7).
+
+        With the per-simulation count drawn from ``count``, replace
+        that many uniform-random pool positions with the ambiguous
+        base ``N``. Models the low-quality positions that real
+        sequencers emit when the base caller cannot commit.
+
+        ``count`` accepts the same shapes as other corruption ops:
+        - ``count=10`` — fixed.
+        - ``count=(0, 20)`` — uniform integer range.
+        - ``count=[(5, 1.0), (10, 1.0)]`` — empirical (count, weight).
+
+        Sampled sites are with-replacement, so ``count`` is the
+        upper bound on resulting `N` count (collisions reduce it).
+        """
+        pairs = _normalize_count(count)
+        self._steps.append(
+            _CorruptStep(
+                kind=_CORRUPT_KIND_NS,
                 count_pairs=pairs,
                 insertion_prob=0.0,
                 apply_prob=0.0,

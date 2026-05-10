@@ -25,8 +25,8 @@ use crate::ir::Segment;
 use crate::pass::PassPlan;
 use crate::passes::{
     AssembleSegmentPass, ContaminantPass, EndLossPass, GenerateNPPass, IndelPass, LossEnd,
-    PCRErrorPass, QualityErrorPass, RevCompPass, S5FMutationPass, SampleAllelePass, TrimPass,
-    UniformMutationPass,
+    NCorruptionPass, PCRErrorPass, QualityErrorPass, RevCompPass, S5FMutationPass,
+    SampleAllelePass, TrimPass, UniformMutationPass,
 };
 use crate::s5f::{S5FKernel, S5F_NUM_CONTEXTS, S5F_SUBSTITUTION_LEN};
 
@@ -384,6 +384,24 @@ impl PyPassPlan {
         self.inner_mut()?.push(Box::new(ContaminantPass::new(
             apply_prob,
             Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
+    /// Append an `NCorruptionPass` (G7). ``count_pairs`` gives the
+    /// per-simulation distribution over the number of `N`
+    /// substitutions. Each substitution picks a uniform pool
+    /// position and overwrites the base with `N`.
+    ///
+    /// Errors: ``ValueError`` when ``count_pairs`` is empty.
+    fn push_corrupt_ns(&mut self, count_pairs: Vec<(i64, f64)>) -> PyResult<()> {
+        if count_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "count_pairs must contain at least one (count, weight) entry",
+            ));
+        }
+        self.inner_mut()?.push(Box::new(NCorruptionPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
         )));
         Ok(())
     }

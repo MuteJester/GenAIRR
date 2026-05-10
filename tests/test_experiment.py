@@ -1576,6 +1576,61 @@ def test_to_fastq_rejects_out_of_range_q(tmp_path):
             raise AssertionError(f"expected error for q={bad!r}")
 
 
+def test_g7_corrupt_ns_writes_uppercase_n():
+    # corrupt_ns(count=10) should sprinkle ~10 N's per record
+    # (collisions reduce the count slightly).
+    exp = ga.Experiment.on("human_igh").recombine().corrupt_ns(count=10)
+    for rec in exp.run_records(n=5, seed=0):
+        n_count = rec["sequence"].upper().count("N")
+        # With pool length ~370 and 10 random sites, collisions are
+        # rare; expect 8-10 inclusive.
+        assert 6 <= n_count <= 10, (
+            f"expected 6-10 Ns, got {n_count} (sequence len={len(rec['sequence'])})"
+        )
+
+
+def test_g7_corrupt_ns_zero_count_is_no_op():
+    base = ga.Experiment.on("human_igh").recombine()
+    flipped = ga.Experiment.on("human_igh").recombine().corrupt_ns(count=0)
+    for fwd, ns in zip(base.run_records(n=5, seed=0), flipped.run_records(n=5, seed=0)):
+        assert fwd["sequence"] == ns["sequence"]
+
+
+def test_g7_corrupt_ns_count_distribution_shape():
+    # Variable-count distribution: count=(5, 15) → uniform integer
+    # in [5, 15]. Across many records, the N-count distribution
+    # should have all entries in approximately that range.
+    exp = ga.Experiment.on("human_igh").recombine().corrupt_ns(count=(5, 15))
+    counts = [r["sequence"].upper().count("N") for r in exp.run_records(n=50, seed=0)]
+    assert min(counts) >= 4, f"min N count too low: {counts}"
+    assert max(counts) <= 15, f"max N count too high: {counts}"
+
+
+def test_g7_corrupt_ns_compose_with_other_passes():
+    # Stack with PCR + indels — N's should still appear and the
+    # alignment-string invariants should hold.
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .mutate(count=5)
+        .corrupt_pcr(count=2)
+        .corrupt_indels(count=1)
+        .corrupt_ns(count=8)
+    )
+    failures = []
+    for i, rec in enumerate(exp.run_records(n=30, seed=0)):
+        issues = _alignment_invariants_hold(rec)
+        if issues:
+            failures.append((i, issues))
+        # At least some records should carry Ns.
+    n_with_ns = sum(
+        1 for r in exp.run_records(n=30, seed=0)
+        if "N" in r["sequence"].upper()
+    )
+    assert n_with_ns >= 25, f"only {n_with_ns}/30 records had Ns"
+    assert failures == [], f"alignment invariants broke: {failures[:3]}"
+
+
 def test_g5_clonal_structure_total_record_count():
     # n_clones × size = total records.
     exp = (
