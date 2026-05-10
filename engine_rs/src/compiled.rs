@@ -5420,6 +5420,71 @@ mod tests {
     }
 
     #[test]
+    fn phase11_7_germline_span_equals_m_plus_d() {
+        // Phase 11.7 invariant: AIRR `*_germline_start/_end` come
+        // from the column walker's `ref_ranges` (the union of ref
+        // positions consumed by `M` and `D` ops), so the strict
+        // identity `germline_span == M + D` holds by construction.
+        //
+        // The curated default plan is no-op trims, no NP, no
+        // corruption — V/D/J each contribute a clean structural
+        // CIGAR (12M / 12M / 9M) over their full allele span, and
+        // germline coords reflect that 1:1.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        for (cig, g_s, g_e) in [
+            (rec.v_cigar.as_str(), rec.v_germline_start, rec.v_germline_end),
+            (rec.d_cigar.as_str(), rec.d_germline_start, rec.d_germline_end),
+            (rec.j_cigar.as_str(), rec.j_germline_start, rec.j_germline_end),
+        ] {
+            let m_count: u32 = cig
+                .split_terminator(|c: char| c.is_ascii_alphabetic())
+                .filter_map(|s| s.parse::<u32>().ok())
+                .zip(cig.matches(|c: char| c.is_ascii_alphabetic()))
+                .filter(|(_, op)| *op == "M" || *op == "D")
+                .map(|(n, _)| n)
+                .sum();
+            let span = g_e.unwrap() - g_s.unwrap();
+            assert_eq!(
+                span, m_count as i64,
+                "germline_span ({span}) != M+D ({m_count}) for cigar {cig:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn phase11_7_germline_span_under_v_indel_deletion() {
+        // V_3 trim 3 + NP1="AAA" extends V to ref 12 via NP1 claim,
+        // then a structural deletion at pool 1 removes one V base
+        // (germline_pos=1). CIGAR walks the structural region and
+        // emits a D op for the missing ref=1 — `ref_ranges` covers
+        // [0, 12) (NP1 claim at ref=9..12, structural at ref=0..9
+        // including the D-fill at ref=1). M+D == 12 == germline_span.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let mut plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
+        plan.push(Box::new(DeleteAtPass::new(1)));
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        let v_span = rec.v_germline_end.unwrap() - rec.v_germline_start.unwrap();
+        let cig = rec.v_cigar.as_str();
+        let m_count: u32 = cig
+            .split_terminator(|c: char| c.is_ascii_alphabetic())
+            .filter_map(|s| s.parse::<u32>().ok())
+            .zip(cig.matches(|c: char| c.is_ascii_alphabetic()))
+            .filter(|(_, op)| *op == "M" || *op == "D")
+            .map(|(n, _)| n)
+            .sum();
+        assert_eq!(
+            v_span, m_count as i64,
+            "germline_span {v_span} != M+D {m_count} for v_cigar {cig:?}",
+        );
+    }
+
+    #[test]
     fn curated_full_corruption_stack_keeps_metadata_self_consistent() {
         // Stack a mutation, an insertion, and a deletion across V's
         // region. All metadata (sequence, alignments, CIGAR, identity)

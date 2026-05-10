@@ -381,40 +381,36 @@ pub fn build_airr_record(
 
     // Germline coord pairs.
     //
-    // Phase 11.1: prefer the live-call hypothesis bounds (which can
-    // grow past the structural trim range when NP bases extend the
-    // allele's reference). Fall back to the structural trim-derived
-    // values when no live call is present (raw RefDataConfig with
-    // no reference index, or the segment is `Unsupported`).
-    if let Some(allele) = lookup_allele(refdata, Segment::V, v_id) {
-        if rec.v_alignment_start.is_some() {
-            let (g_start, g_end) = live_germline_range(sim, Segment::V).unwrap_or((
-                rec.v_trim_5,
-                allele.seq.len() as i64 - rec.v_trim_3,
-            ));
-            rec.v_germline_start = Some(g_start);
-            rec.v_germline_end = Some(g_end);
-        }
+    // Phase 11.7: read from the column walker's `ref_ranges` output
+    // — the union of ref positions consumed by `M` and `D` ops on
+    // each segment. This guarantees `germline_span == M + D` by
+    // construction, closing the H.5 invariant gap that a raw
+    // live-call-hypothesis read had (the hypothesis can extend past
+    // what the column walker actually claims when an adjacent segment
+    // wins an NP-position tiebreak).
+    //
+    // Fall back to the structural trim-derived range when there is
+    // no allele assigned (raw RefDataConfig runs).
+    if let Some((g_start, g_end)) = walk.ref_ranges[0] {
+        rec.v_germline_start = Some(g_start);
+        rec.v_germline_end = Some(g_end);
+    } else if let Some(allele) = lookup_allele(refdata, Segment::V, v_id) {
+        rec.v_germline_start = Some(rec.v_trim_5);
+        rec.v_germline_end = Some(allele.seq.len() as i64 - rec.v_trim_3);
     }
-    if let Some(allele) = lookup_allele(refdata, Segment::D, d_id) {
-        if rec.d_alignment_start.is_some() {
-            let (g_start, g_end) = live_germline_range(sim, Segment::D).unwrap_or((
-                rec.d_trim_5,
-                allele.seq.len() as i64 - rec.d_trim_3,
-            ));
-            rec.d_germline_start = Some(g_start);
-            rec.d_germline_end = Some(g_end);
-        }
+    if let Some((g_start, g_end)) = walk.ref_ranges[1] {
+        rec.d_germline_start = Some(g_start);
+        rec.d_germline_end = Some(g_end);
+    } else if let Some(allele) = lookup_allele(refdata, Segment::D, d_id) {
+        rec.d_germline_start = Some(rec.d_trim_5);
+        rec.d_germline_end = Some(allele.seq.len() as i64 - rec.d_trim_3);
     }
-    if let Some(allele) = lookup_allele(refdata, Segment::J, j_id) {
-        if rec.j_alignment_start.is_some() {
-            let (g_start, g_end) = live_germline_range(sim, Segment::J).unwrap_or((
-                rec.j_trim_5,
-                allele.seq.len() as i64 - rec.j_trim_3,
-            ));
-            rec.j_germline_start = Some(g_start);
-            rec.j_germline_end = Some(g_end);
-        }
+    if let Some((g_start, g_end)) = walk.ref_ranges[2] {
+        rec.j_germline_start = Some(g_start);
+        rec.j_germline_end = Some(g_end);
+    } else if let Some(allele) = lookup_allele(refdata, Segment::J, j_id) {
+        rec.j_germline_start = Some(rec.j_trim_5);
+        rec.j_germline_end = Some(allele.seq.len() as i64 - rec.j_trim_3);
     }
 
     rec.v_identity = walk.identities[0];
@@ -444,6 +440,13 @@ struct AlignmentWalk {
     /// the sequence that this segment "owns" after live-call overlap
     /// resolution. Used for `*_sequence_start/end`.
     seq_ranges: [Option<(i64, i64)>; 3],
+    /// Per-segment allele-position spans `(start, end)` (0-based
+    /// half-open). Mirrors `seq_ranges` but in reference space —
+    /// the union of ref positions consumed by `M` and `D` ops on
+    /// the segment. Used for `*_germline_start/end` so the AIRR
+    /// record's germline span matches the CIGAR exactly:
+    /// `germline_span == M + D` by construction.
+    ref_ranges: [Option<(i64, i64)>; 3],
     /// Per-segment identity (matches / total), or `None` when no
     /// columns. Indexed V=0, D=1, J=2.
     identities: [Option<f64>; 3],
@@ -475,6 +478,11 @@ fn walk_alignment_columns(
     // Per-segment pool-position spans. Mirrors `align_ranges`, but
     // in pool coordinates so it's usable for AIRR `*_sequence_*`.
     let mut seq_ranges: [Option<(i64, i64)>; 3] = [None, None, None];
+
+    // Per-segment ref-position spans. Mirrors `seq_ranges` but in
+    // allele coordinates — the union of ref positions consumed by
+    // `M` and `D` ops on the segment. Used for `*_germline_*`.
+    let mut ref_ranges: [Option<(i64, i64)>; 3] = [None, None, None];
 
     // Per-segment identity counters [matches, total].
     let mut id_counts: [[u64; 2]; 3] = [[0, 0], [0, 0], [0, 0]];
@@ -550,6 +558,7 @@ fn walk_alignment_columns(
                                 push_dmask_for_seg(&mut dmask, seg, g);
                                 push_cigar_op(&mut cigar_runs[seg_idx], b'D');
                                 id_counts[seg_idx][1] += 1;
+                                extend_ref_range(&mut ref_ranges, seg_idx, expected_pos as i64);
                                 expected_pos += 1;
                             }
                             // Emit the matched/mismatched column.
@@ -562,6 +571,7 @@ fn walk_alignment_columns(
                             if eq_ascii_case_insensitive(base_char, g) {
                                 id_counts[seg_idx][0] += 1;
                             }
+                            extend_ref_range(&mut ref_ranges, seg_idx, germ_pos as i64);
                             expected_pos = germ_pos + 1;
                         }
                     }
@@ -575,6 +585,7 @@ fn walk_alignment_columns(
                         push_dmask_for_seg(&mut dmask, seg, g);
                         push_cigar_op(&mut cigar_runs[seg_idx], b'D');
                         id_counts[seg_idx][1] += 1;
+                        extend_ref_range(&mut ref_ranges, seg_idx, expected_pos as i64);
                         expected_pos += 1;
                     }
                 } else {
@@ -618,16 +629,35 @@ fn walk_alignment_columns(
                 // segment's CIGAR, contributes to its identity counter,
                 // and extends its `align_ranges`. Unclaimed positions
                 // remain plain NP columns.
+                //
+                // Phase 11.7: a structural-indel deletion inside V/D/J
+                // breaks the hypothesis's `pool_pos → ref_pos` linear
+                // projection. When that projection points at a ref
+                // position the structural walker already counted, we
+                // drop the claim — and lock the segment out for the
+                // rest of this NP region, since later positions in
+                // the same projection would be similarly inconsistent.
+                let mut np_blocked: [bool; 3] = [false; 3];
                 for i in r_start..r_end {
                     let base_char = bases[i];
                     sa.push(base_char);
-                    if let Some((claim_seg, allele_byte)) = np_claim_owner(sim, refdata, i) {
+                    if let Some((claim_seg, allele_byte, ref_pos)) =
+                        np_claim_owner(sim, refdata, i)
+                    {
                         let claim_idx = match claim_seg {
                             Segment::V => 0,
                             Segment::D => 1,
                             Segment::J => 2,
                             _ => unreachable!(),
                         };
+                        if np_blocked[claim_idx]
+                            || ref_pos_already_covered(&ref_ranges, claim_idx, ref_pos as i64)
+                        {
+                            np_blocked[claim_idx] = true;
+                            galn.push(b'N');
+                            dmask.push(b'N');
+                            continue;
+                        }
                         galn.push(allele_byte);
                         push_dmask_for_seg(&mut dmask, claim_seg, allele_byte);
                         push_cigar_op(&mut cigar_runs[claim_idx], b'M');
@@ -635,6 +665,7 @@ fn walk_alignment_columns(
                         if eq_ascii_case_insensitive(base_char, allele_byte) {
                             id_counts[claim_idx][0] += 1;
                         }
+                        extend_ref_range(&mut ref_ranges, claim_idx, ref_pos as i64);
                         let col = (sa.len() as i64) - 1;
                         align_ranges[claim_idx] = Some(match align_ranges[claim_idx] {
                             Some((s, _)) => (s, col + 1),
@@ -699,6 +730,7 @@ fn walk_alignment_columns(
         cigars,
         align_ranges,
         seq_ranges,
+        ref_ranges,
         identities,
     }
 }
@@ -858,23 +890,6 @@ fn projected_call_name(
     .unwrap_or_else(|| lookup_name(refdata, segment, origin_id))
 }
 
-/// Phase 11.1: pull `(ref_start, ref_end)` from the first live-call
-/// hypothesis for a V / D / J segment. Returns `None` when there is
-/// no live-call layer attached to the simulation, when the call has
-/// no allele assigned, or when the call is `Unsupported` (no
-/// hypotheses).
-///
-/// This is the seam through which the AIRR projection becomes
-/// evidence-driven: when an NP-side extension grew the hypothesis's
-/// reference span past the trim-derived structural range, the AIRR
-/// `*_germline_start` / `*_germline_end` reflect that growth instead
-/// of the trim values.
-fn live_germline_range(sim: &Simulation, segment: Segment) -> Option<(i64, i64)> {
-    let call = sim.live_calls.as_ref()?.get(segment)?;
-    let h = call.hypotheses.first()?;
-    Some((h.ref_start as i64, h.ref_end as i64))
-}
-
 /// Phase 11.3 / 11.4: figure out which V/D/J segment (if any) has
 /// an extension hypothesis that claims this NP pool position.
 ///
@@ -892,13 +907,44 @@ fn np_claim_owner(
     sim: &Simulation,
     refdata: &RefDataConfig,
     pool_pos: usize,
-) -> Option<(Segment, u8)> {
+) -> Option<(Segment, u8, u32)> {
     for seg in [Segment::V, Segment::D, Segment::J] {
         if let Some(claim) = check_segment_claim(sim, refdata, seg, pool_pos) {
             return Some(claim);
         }
     }
     None
+}
+
+/// Extend `ranges[idx]` so it covers the (single) ref position
+/// `ref_pos`. Used for `ref_ranges` in the column walker — every
+/// `M` and `D` op consumes one ref position; this helper folds that
+/// into the per-segment span.
+fn extend_ref_range(ranges: &mut [Option<(i64, i64)>; 3], idx: usize, ref_pos: i64) {
+    ranges[idx] = Some(match ranges[idx] {
+        Some((s, e)) => (s.min(ref_pos), e.max(ref_pos + 1)),
+        None => (ref_pos, ref_pos + 1),
+    });
+}
+
+/// Phase 11.7: returns true when `ref_pos` is already inside
+/// `ranges[idx]`. Used by the NP-claim path to detect when a
+/// hypothesis's `pool_pos → ref_pos` projection collides with a
+/// ref position the structural walker already accounted for. This
+/// happens when the segment contains a structural-indel deletion
+/// (the live-call hypothesis tracks pool↔ref linearly, but a
+/// deletion breaks that mapping). When detected, the NP claim is
+/// skipped — structural CIGAR ops take precedence over extension
+/// ops on overlap.
+fn ref_pos_already_covered(
+    ranges: &[Option<(i64, i64)>; 3],
+    idx: usize,
+    ref_pos: i64,
+) -> bool {
+    match ranges[idx] {
+        Some((s, e)) => ref_pos >= s && ref_pos < e,
+        None => false,
+    }
 }
 
 /// Phase 11.4: build the AIRR `np1` / `np2` string from an NP
@@ -929,7 +975,7 @@ fn check_segment_claim(
     refdata: &RefDataConfig,
     seg: Segment,
     pool_pos: usize,
-) -> Option<(Segment, u8)> {
+) -> Option<(Segment, u8, u32)> {
     let call = sim.live_calls.as_ref()?.get(seg)?;
     let h = call.hypotheses.first()?;
     let allele_id = match seg {
@@ -964,7 +1010,7 @@ fn check_segment_claim(
     if ref_pos >= allele.seq.len() {
         return None;
     }
-    Some((seg, allele.seq[ref_pos]))
+    Some((seg, allele.seq[ref_pos], ref_pos as u32))
 }
 
 fn live_call_name(

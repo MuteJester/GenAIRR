@@ -3509,16 +3509,12 @@ def test_h5_coords_invariants_under_corruption_stack():
     # Same n=200 stress sweep as alignment/CIGAR — verify the coord
     # pairs stay self-consistent under every corruption mode.
     #
-    # Phase 11 caveat: `*_germline_start/_end` now reads from the
-    # live-call hypothesis bounds (evidence-driven), while the
-    # structural CIGAR continues to emit `D` ops for ref bases
-    # deleted by structural-indel passes. The two layers can diverge
-    # by a few bases per record: the live ref range omits deleted
-    # positions, but the CIGAR still records them. The strict
-    # `germline_span == M + D` AIRR identity only holds for runs with
-    # no structural indel deletions, so this test now checks
-    # `germline_span >= M` (every M op consumes one live ref base)
-    # and `alignment_span == M + I + D` (the column-walker invariant).
+    # Phase 11.7 restored the strict identities: `*_germline_start/end`
+    # are now derived from the column walker's `ref_ranges` (the
+    # union of ref positions consumed by `M` and `D` ops), which by
+    # construction enforces `germline_span == M + D`. Combined with
+    # the alignment-span identity `alignment_span == M + I + D`, the
+    # AIRR coord triples are fully self-consistent again.
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
@@ -3542,9 +3538,9 @@ def test_h5_coords_invariants_under_corruption_stack():
                 failures.append(
                     (i, seg, "alignment-span", a_e - a_s, ops)
                 )
-            if g_e - g_s < ops["M"]:
+            if g_e - g_s != ops["M"] + ops["D"]:
                 failures.append(
-                    (i, seg, "germline-span-shrunk-below-M", g_e - g_s, ops)
+                    (i, seg, "germline-span", g_e - g_s, ops)
                 )
     assert failures == [], f"H.5 invariants broke for: {failures[:3]}"
 
