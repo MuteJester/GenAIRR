@@ -604,7 +604,7 @@ class Experiment:
     different seeds.
     """
 
-    __slots__ = ("_refdata", "_steps", "_dataconfig", "_locks")
+    __slots__ = ("_refdata", "_steps", "_dataconfig", "_locks", "_metadata")
 
     def __init__(
         self,
@@ -622,6 +622,10 @@ class Experiment:
             "D": None,
             "J": None,
         }
+        # G10: sample-level metadata to inject as columns on every
+        # AIRR record (e.g. ``sample_id``, ``donor``,
+        # ``repertoire_id``, ``cell_id``). Empty by default.
+        self._metadata: Dict[str, Any] = {}
 
     @classmethod
     def on(cls, source: ExperimentInput) -> "Experiment":
@@ -884,6 +888,40 @@ class Experiment:
                 apply_prob=float(prob),
             )
         )
+        return self
+
+    def with_metadata(self, **fields: Any) -> "Experiment":
+        """G10: attach sample-level metadata to every AIRR record.
+
+        Standard AIRR Repertoire fields like ``sample_id``,
+        ``donor``, ``repertoire_id``, and ``cell_id`` are commonly
+        used by multi-sample analysis tools — Change-O, scirpy,
+        immcantation pipelines all expect them populated. Custom
+        keys are also accepted and pass through unchanged.
+
+        Subsequent ``with_metadata()`` calls **merge** with the
+        prior set (per-key replacement). Pass ``key=None`` to clear
+        a single key. Values are stored as-is and serialised via
+        the standard CSV/TSV writers; non-string values are
+        converted with ``str()`` on output.
+
+        Example::
+
+            (Experiment.on("human_igh")
+             .with_metadata(sample_id="P1", donor="D001",
+                            repertoire_id="R-001-IGH")
+             .recombine().mutate(count=8))
+        """
+        for key, value in fields.items():
+            if not isinstance(key, str):
+                raise TypeError(
+                    f"with_metadata: keys must be strings, got "
+                    f"{type(key).__name__}"
+                )
+            if value is None:
+                self._metadata.pop(key, None)
+            else:
+                self._metadata[key] = value
         return self
 
     def with_clonal_structure(
@@ -1399,18 +1437,24 @@ class Experiment:
         """
         compiled = self.compile(respect=respect)
         if isinstance(compiled, CompiledClonalExperiment):
-            return compiled.run_records(
+            result = compiled.run_records(
                 n=n,
                 seed=seed,
                 strict=strict,
                 expose_provenance=expose_provenance,
             )
-        return compiled.run_records(
-            n=1 if n is None else n,
-            seed=seed,
-            strict=strict,
-            expose_provenance=expose_provenance,
-        )
+        else:
+            result = compiled.run_records(
+                n=1 if n is None else n,
+                seed=seed,
+                strict=strict,
+                expose_provenance=expose_provenance,
+            )
+        if self._metadata:
+            for rec in result.records:
+                for key, value in self._metadata.items():
+                    rec[key] = value
+        return result
 
     def run(
         self,
