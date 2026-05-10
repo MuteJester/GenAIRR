@@ -281,6 +281,63 @@ class SimulationResult:
                 fh.write(f">{prefix}{i}|v_call={v_call}|j_call={j_call}\n")
                 fh.write(f"{seq}\n")
 
+    def to_fastq(
+        self,
+        path: str,
+        *,
+        quality: str = "illumina",
+        prefix: str = "seq",
+        **quality_kwargs,
+    ) -> None:
+        """Write the assembled sequences as FASTQ (Phase 12.E / G1).
+
+        Each record produces:
+
+        ::
+
+            @{prefix}{i}|v_call=...|j_call=...
+            <sequence (uppercase)>
+            +
+            <Phred+33 quality string>
+
+        Parameters:
+            path: output file path.
+            quality: name of the quality model — ``"illumina"``
+                (smoothed trapezoid, default) or ``"constant"``
+                (single Q value across the read).
+            prefix: per-read header prefix (default ``"seq"``).
+            **quality_kwargs: forwarded to the quality model
+                constructor. ``ConstantQualityModel`` accepts
+                ``q`` (default 30), ``low_q`` (default 10),
+                ``n_q`` (default 2). ``IlluminaQualityModel``
+                accepts ``peak_q``, ``start_q``, ``end_q``,
+                ``ramp_len``, ``tail_len``, ``low_q``, ``n_q``.
+
+        FASTQ uppercases the sequence bases — GenAIRR's lowercase
+        corruption-marker convention is preserved by routing
+        lowercase positions to ``low_q`` in the quality string,
+        the standard FASTQ way of conveying low-confidence bases.
+        """
+        from ._qmodel import phred_to_ascii, resolve_quality_model
+
+        model = resolve_quality_model(quality, **quality_kwargs)
+        with open(path, "w", encoding="utf-8") as fh:
+            for i, rec in enumerate(self._records):
+                seq = rec.get("sequence", "")
+                v_call = rec.get("v_call") or ""
+                j_call = rec.get("j_call") or ""
+                q_array = model.quality_array(seq)
+                if len(q_array) != len(seq):
+                    raise RuntimeError(
+                        f"quality model returned {len(q_array)} scores for "
+                        f"{len(seq)}-base sequence"
+                    )
+                q_string = phred_to_ascii(q_array)
+                fh.write(f"@{prefix}{i}|v_call={v_call}|j_call={j_call}\n")
+                fh.write(f"{seq.upper()}\n")
+                fh.write("+\n")
+                fh.write(f"{q_string}\n")
+
     # ── internals ───────────────────────────────────────────────────
 
     def _column_order(self) -> List[str]:

@@ -1477,6 +1477,123 @@ def test_to_fasta_respects_custom_prefix(tmp_path):
     assert first.startswith(">read_0|")
 
 
+# ──────────────────────────────────────────────────────────────────
+# G1 — FASTQ output with Phred Q-scores
+# ──────────────────────────────────────────────────────────────────
+
+
+def test_to_fastq_constant_quality_writes_q30(tmp_path):
+    # Constant-Q model writes the same Q for every (non-N) base.
+    # Q30 → Phred+33 ASCII '?' (33 + 30 = 63).
+    result = _human_igh_records(n=2)
+    path = tmp_path / "out.fastq"
+    result.to_fastq(str(path), quality="constant", q=30)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 8  # 2 records × 4 lines
+    # First record: @-header / SEQ / + / Q-string
+    assert lines[0].startswith("@seq0|v_call=")
+    assert lines[1] == result[0]["sequence"].upper()
+    assert lines[2] == "+"
+    seq = result[0]["sequence"]
+    expected_q = "".join(
+        "#" if c in ("N", "n") else "?" for c in seq
+    )
+    assert lines[3] == expected_q
+
+
+def test_to_fastq_illumina_quality_shape(tmp_path):
+    # Illumina model: ramp up over 10 bases, hold peak, taper over
+    # 30 bases.
+    result = _human_igh_records(n=1)
+    path = tmp_path / "out.fastq"
+    result.to_fastq(str(path), quality="illumina")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    q_string = lines[3]
+    seq = result[0]["sequence"]
+    # All ASCII ≥ 33 (printable).
+    for ch in q_string:
+        assert 33 <= ord(ch) <= 126
+    # Same length as the sequence.
+    assert len(q_string) == len(seq)
+    # Ramp-up: position 0 is Q26 (≈ start_q+1 from interpolation),
+    # position 9 is Q35 (peak).
+    assert ord(q_string[0]) - 33 < ord(q_string[9]) - 33
+    # Tail: position -1 is Q18 (end_q), strictly less than peak.
+    assert ord(q_string[-1]) - 33 < ord(q_string[len(seq) // 2]) - 33
+
+
+def test_to_fastq_n_bases_get_low_quality(tmp_path):
+    # Manually construct a result where one record has N in the
+    # sequence and verify that position gets Q2 (`#` ASCII 35).
+    result = _human_igh_records(n=1)
+    # Mutate the result's first record's sequence to inject an N.
+    rec = result[0]
+    seq = rec["sequence"]
+    rec["sequence"] = seq[:5] + "N" + seq[6:]
+    path = tmp_path / "out.fastq"
+    result.to_fastq(str(path), quality="constant", q=30)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    q_string = lines[3]
+    # Position 5 should be the n_q (Q2 default → '#').
+    assert q_string[5] == "#"
+    # Other positions should be the full Q (Q30 → '?').
+    assert q_string[0] == "?"
+
+
+def test_to_fastq_uppercase_sequence(tmp_path):
+    # FASTQ convention: uppercase bases regardless of GenAIRR's
+    # internal lowercase germline marking.
+    result = _human_igh_records(n=1)
+    path = tmp_path / "out.fastq"
+    result.to_fastq(str(path), quality="constant", q=30)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    seq_line = lines[1]
+    assert seq_line == seq_line.upper(), (
+        f"FASTQ sequence should be uppercase: {seq_line[:40]}"
+    )
+
+
+def test_to_fastq_rejects_unknown_model(tmp_path):
+    result = _human_igh_records(n=1)
+    path = tmp_path / "out.fastq"
+    try:
+        result.to_fastq(str(path), quality="bogus")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for unknown model")
+
+
+def test_to_fastq_rejects_out_of_range_q(tmp_path):
+    result = _human_igh_records(n=1)
+    path = tmp_path / "out.fastq"
+    for bad in (-1, 100, "high"):
+        try:
+            result.to_fastq(str(path), quality="constant", q=bad)
+        except (ValueError, TypeError):
+            pass
+        else:
+            raise AssertionError(f"expected error for q={bad!r}")
+
+
+def test_to_fastq_pairs_with_constant_q_is_decodable(tmp_path):
+    # Round-trip check: write FASTQ, parse it back, confirm record
+    # count and length match. Uses Python stdlib (no biopython) to
+    # keep the test dep-light.
+    result = _human_igh_records(n=5)
+    path = tmp_path / "out.fastq"
+    result.to_fastq(str(path), quality="constant", q=25)
+    text = path.read_text(encoding="utf-8")
+    records = text.split("@seq")[1:]  # split keeps records starting with header tail
+    assert len(records) == 5
+    for i, blob in enumerate(records):
+        lines = blob.splitlines()
+        # Layout: "{i}|...", seq, "+", q_string
+        seq = lines[1]
+        q = lines[3]
+        assert len(seq) == len(q), f"record {i}: seq/q length mismatch"
+
+
 def test_to_dataframe_returns_dataframe_with_record_rows():
     pd = pytest.importorskip("pandas")
 
