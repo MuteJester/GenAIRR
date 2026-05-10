@@ -13,32 +13,37 @@ This page gets you from install to your first simulated sequences in under two m
 pip install GenAIRR
 ```
 
-Pre-built wheels are available for Linux, macOS, and Windows (Python 3.9+). No compiler required.
+Pre-built wheels are available for **Linux**, **macOS**, and **Windows** (Python 3.9+). No compiler required. 
+
+Installing `GenAIRR` pulls both the pure-Python wrapper and the high-performance Rust simulation kernel `genairr_engine`.
 
 Verify the installation:
 
 ```python
 import GenAIRR
-print(GenAIRR.__version__)  # 1.0.0
+print(GenAIRR.__version__)
 ```
 
 ## Your first simulation
 
-Generate 1,000 unmutated human heavy-chain sequences:
+Generate 1,000 human heavy-chain sequences using standard V(D)J recombination:
 
 ```python
-from GenAIRR import Experiment
+import GenAIRR as ga
 
-result = Experiment.on("human_igh").run(n=1000, seed=42)
+# 1. Start an experiment on a specific species/chain config
+# 2. Add a recombination step
+# 3. Run for 1,000 iterations with a fixed seed
+result = ga.Experiment.on("human_igh").recombine().run(n=1000, seed=42)
 ```
 
-That's it. `result` is a `SimulationResult` containing 1,000 AIRR-format records. Each record is a dictionary with 47 ground-truth fields:
+`result` is a `SimulationResult` containing 1,000 outcomes. Each outcome produces an AIRR-format record with **~70 ground-truth fields**:
 
 ```python
 rec = result[0]
 rec["sequence"]        # full nucleotide sequence
-rec["v_call"]          # e.g. "IGHVF10-G50*04"
-rec["d_call"]          # e.g. "IGHD2-21*02"
+rec["v_call"]          # e.g. "IGHV3-23*01"
+rec["d_call"]          # e.g. "IGHD3-10*01"
 rec["j_call"]          # e.g. "IGHJ4*02"
 rec["productive"]      # True / False
 rec["sequence_length"] # e.g. 365
@@ -46,119 +51,115 @@ rec["sequence_length"] # e.g. 365
 
 ## Add somatic hypermutation
 
-Chain a `.mutate()` phase to introduce SHM:
+Chain a `.mutate()` step to introduce context-aware SHM using the built-in S5F model:
 
 ```python
-from GenAIRR import Experiment
-from GenAIRR.ops import rate
-
-result = Experiment.on("human_igh").mutate(rate(0.02, 0.08)).run(n=1000, seed=42)
-
-rec = result[0]
-rec["mutation_rate"]  # e.g. 0.054
-rec["n_mutations"]    # e.g. 19
-rec["mutations"]      # e.g. "13:a>T,30:g>A,..."
-```
-
-The `rate(0.02, 0.08)` op tells GenAIRR to draw a mutation rate uniformly between 2% and 8% for each sequence.
-
-## Add sequencing artifacts
-
-Model what happens during a real sequencing experiment by adding more phases:
-
-```python
-from GenAIRR import Experiment
-from GenAIRR.ops import (
-    rate, model,
-    with_5prime_loss, with_3prime_loss,
-    with_indels, with_ns,
-)
+import GenAIRR as ga
 
 result = (
-    Experiment.on("human_igh")
+    ga.Experiment.on("human_igh")
+    .recombine()
+    .mutate(model="s5f", count=(5, 25))
+    .run(n=1000, seed=42)
+)
 
-    # Somatic hypermutation
-    .mutate(
-        model("s5f"),
-        rate(0.02, 0.08),
-    )
+rec = result[0]
+rec["n_mutations"]    # e.g. 14
+rec["mutation_rate"]  # e.g. 0.038
+```
 
-    # Sequencing artifacts
-    .sequence(
-        with_5prime_loss(min_remove=5, max_remove=30),
-        with_3prime_loss(min_remove=5, max_remove=20),
-    )
+The `count=(5, 25)` argument tells the engine to draw a uniform integer number of mutations between 5 and 25 for every sequence.
 
-    # Post-sequencing noise
-    .observe(
-        with_indels(prob=0.01),
-        with_ns(prob=0.005),
-    )
+## Model sequencing realism
+
+Simulate real-world artifacts like primer trimming, sequencing errors, and ambiguous bases:
+
+```python
+import GenAIRR as ga
+
+result = (
+    ga.Experiment.on("human_igh")
+    .recombine()
+
+    # Somatic hypermutation (5 to 25 mutations)
+    .mutate(count=(5, 25))
+
+    # Sequencing artifacts: 5' and 3' end loss
+    .corrupt_5prime_loss(length=(5, 30))
+    .corrupt_3prime_loss(length=(5, 20))
+
+    # Post-sequencing noise: Indels and N-bases
+    .corrupt_indels(count=(0, 2), insertion_prob=0.5)
+    .corrupt_ns(count=5)
 
     .run(n=1000, seed=42)
 )
 ```
 
-Each phase is optional — include only what you need. Calling `.run()` on a bare `Experiment.on(...)` gives you clean, unmutated rearrangements.
+Each method appends a "pass" to the simulation pipeline. You only include the stages you need.
 
 ## Export results
 
 ```python
-# AIRR-compliant TSV
+# Save as AIRR-compliant TSV (standard)
 result.to_csv("repertoire.tsv")
 
-# FASTA
+# Save as FASTA
 result.to_fasta("repertoire.fasta")
 
-# pandas DataFrame (requires pandas)
+# Convert to pandas DataFrame
 df = result.to_dataframe()
 ```
 
 ## Switch species or chain
 
-GenAIRR ships with 106 built-in configurations covering 23 species:
+GenAIRR ships with **106 built-in configurations** covering 23 species:
 
 ```python
-from GenAIRR import Experiment, list_configs
+import GenAIRR as ga
 
 # See all available configs
-print(list_configs())
+print(ga.list_configs())
 
-# Use any config by name
-Experiment.on("mouse_igh").run(n=500, seed=1)
-Experiment.on("rabbit_tcrb").run(n=500, seed=1)
-Experiment.on("rhesus_igk").run(n=500, seed=1)
+# Use any config by name (species_chain)
+ga.Experiment.on("mouse_igh").recombine().run(n=500)
+ga.Experiment.on("rabbit_tcrb").recombine().run(n=500)
+ga.Experiment.on("rhesus_igk").recombine().run(n=500)
 ```
 
-Config names follow the pattern `species_chain` (lowercase). See [Choosing a Config](/docs/getting-started/choosing-config) for the full list and naming conventions.
+See [Choosing a Config](/docs/getting-started/choosing-config) for the full list and naming conventions.
 
 ## Streaming (memory-efficient)
 
-For large datasets, use `.compile()` + `.stream()` to process one record at a time without accumulating them in memory:
+For large datasets (millions of sequences), use `.stream_records()` to process one record at a time without loading the entire batch into RAM:
 
 ```python
-from GenAIRR import Experiment
-from GenAIRR.ops import rate
+import GenAIRR as ga
 
-sim = Experiment.on("human_igh").mutate(rate(0.05, 0.15)).compile(seed=42)
+exp = ga.Experiment.on("human_igh").recombine().mutate(count=10)
 
-for record in sim.stream():
-    print(record["v_call"])  # process one at a time
-    break                    # infinite iterator — break when done
+# Stream 1,000,000 records
+for record in exp.stream_records(n=1_000_000, seed=42):
+    process(record) # record is a dict
 ```
 
 ## Reproducibility
 
-Pass a `seed` to get identical results across runs and platforms:
+GenAIRR is bit-for-bit deterministic. The same seed produces identical results across Linux, macOS, and Windows:
 
 ```python
-r1 = Experiment.on("human_igh").run(n=100, seed=42)
-r2 = Experiment.on("human_igh").run(n=100, seed=42)
-assert r1[0]["sequence"] == r2[0]["sequence"]  # always True
+import GenAIRR as ga
+
+exp = ga.Experiment.on("human_igh").recombine()
+
+r1 = exp.run(n=100, seed=42)
+r2 = exp.run(n=100, seed=42)
+
+assert r1[0].final_simulation().bases() == r2[0].final_simulation().bases()
 ```
 
 ## Next steps
 
 - [Choosing a Config](/docs/getting-started/choosing-config) — pick the right species and chain type
-- [Understanding Output](/docs/getting-started/interpreting-results) — what each of the 47 fields means
-- [Guides](/docs/guides/) — recipes for SHM, artifacts, biological events, export, and more
+- [Understanding Output](/docs/getting-started/interpreting-results) — what each of the ~70 fields means
+- [Guides](/docs/guides/) — recipes for clonal families, antigen selection, and advanced workflows

@@ -2,9 +2,9 @@
 //!
 //! Currently houses two mutation models:
 //! - [`UniformMutationPass`] — position-independent uniform-base
-//!   substitution (Phase E.1).
+//!   substitution.
 //! - [`S5FMutationPass`] — context-dependent S5F kernel substitution
-//!   (Yaari et al. 2013, Phase E.3).
+//!   (Yaari et al. 2013).
 
 pub mod s5f;
 pub mod uniform;

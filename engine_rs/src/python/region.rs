@@ -10,7 +10,7 @@ use crate::ir::{Region, Segment};
 /// Carries the segment role (V/D/J/Np1/Np2/C), the half-open
 /// `[start, end)` pool index range, and the codon-rail metadata
 /// (`frame_phase` + `amino_acids`).
-#[pyclass(name = "Region", module = "genairr_engine", frozen)]
+#[pyclass(name = "Region", module = "GenAIRR._engine", frozen)]
 pub struct PyRegion {
     pub(crate) inner: Region,
 }

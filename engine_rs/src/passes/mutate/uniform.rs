@@ -1,4 +1,4 @@
-//! `UniformMutationPass` — simplest SHM model (Phase E.1).
+//! `UniformMutationPass` — simplest SHM model.
 
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
@@ -11,7 +11,7 @@ use crate::trace::ChoiceValue;
 /// `base_dist`.
 ///
 /// Models position-independent point mutations. Real biology uses
-/// the context-dependent S5F model (Phase E.3); this pass is the
+/// the context-dependent S5F model; this pass is the
 /// architectural reference for any SHM-like pass — establishes the
 /// trace-address shape, the per-mutation IR-revision flow, and the
 /// integration with constraint-aware sampling.

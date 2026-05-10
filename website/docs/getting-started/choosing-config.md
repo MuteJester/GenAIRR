@@ -10,30 +10,36 @@ Every GenAIRR simulation starts with a **config** — a pre-built germline refer
 ## Listing available configs
 
 ```python
-from GenAIRR import list_configs
+import GenAIRR as ga
 
-print(list_configs())
+# Returns a list of all 106 built-in configuration names
+print(ga.list_configs())
 # ['ALPACA_IGH_IMGT', 'CAT_IGK_IMGT', ..., 'ZEBRAFISH_TCRD_IMGT']
 ```
 
-GenAIRR ships with **106 built-in configs** covering **23 species**, sourced from IMGT and OGRDB.
+GenAIRR ships with **106 built-in configs** covering **23 species and strains**, sourced from IMGT and OGRDB.
 
-## Config naming
+## Config naming and aliases
 
-Configs follow the pattern `SPECIES_CHAIN_IMGT`. When passed to `Experiment.on()`, you can use a lowercase shorthand without the `_IMGT` suffix:
+Configs follow the pattern `SPECIES_CHAIN_SOURCE` (e.g., `HUMAN_IGH_OGRDB`). When passed to `Experiment.on()`, you can use a lowercase shorthand. 
+
+For many species, the shorthand points to the `IMGT` version by default. However, for **Human BCR** (IGH, IGK, IGL), the shorthand points to the **OGRDB** versions, which are generally more accurate for population-level simulations.
 
 ```python
-from GenAIRR import Experiment
+import GenAIRR as ga
 
-# These are equivalent:
-Experiment.on("human_igh")         # lowercase shorthand
-Experiment.on("HUMAN_IGH_IMGT")   # full config name
+# These use the OGRDB version for Human IGH:
+ga.Experiment.on("human_igh")        # Preferred alias
+ga.Experiment.on("HUMAN_IGH_OGRDB")  # Explicit name
+
+# This uses the IMGT version:
+ga.Experiment.on("HUMAN_IGH_IMGT")
 ```
 
 For the Mouse C57BL/6J strain:
 
 ```python
-Experiment.on("mouse_c57bl6j_igh")
+ga.Experiment.on("mouse_c57bl6j_igh")
 ```
 
 ## Chain types
@@ -48,7 +54,7 @@ Experiment.on("mouse_c57bl6j_igh")
 | `TCRD` | T-cell receptor delta | Yes |
 | `TCRG` | T-cell receptor gamma | No |
 
-Chains without a D gene produce two-segment (VJ) rearrangements with a single NP region. Chains with a D gene produce three-segment (VDJ) rearrangements with NP1 (V–D) and NP2 (D–J) regions.
+Chains without a D gene produce two-segment (VJ) rearrangements. Chains with a D gene produce three-segment (VDJ) rearrangements with two NP regions (NP1 and NP2).
 
 ## Full species coverage
 
@@ -85,22 +91,22 @@ Available chains per species depend on what germline data is published in IMGT a
 ## Quick examples
 
 ```python
-from GenAIRR import Experiment
+import GenAIRR as ga
 
-# Human BCR heavy chain
-Experiment.on("human_igh").run(n=1000, seed=42)
+# Human BCR heavy chain (using OGRDB default)
+ga.Experiment.on("human_igh").recombine().run(n=1000)
 
 # Mouse kappa light chain
-Experiment.on("mouse_igk").run(n=1000, seed=42)
+ga.Experiment.on("mouse_igk").recombine().run(n=1000)
 
 # Rabbit TCR beta
-Experiment.on("rabbit_tcrb").run(n=1000, seed=42)
+ga.Experiment.on("rabbit_tcrb").recombine().run(n=1000)
 
 # Mouse C57BL/6J strain heavy chain
-Experiment.on("mouse_c57bl6j_igh").run(n=1000, seed=42)
+ga.Experiment.on("mouse_c57bl6j_igh").recombine().run(n=1000)
 ```
 
 ## Next steps
 
 - [Quick Start](/docs/getting-started/quick-start) — install and run your first simulation
-- [Understanding Output](/docs/getting-started/interpreting-results) — what each output field means
+- [Understanding Output](/docs/getting-started/interpreting-results) — what each of the ~70 fields means

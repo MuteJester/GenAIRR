@@ -1,11 +1,10 @@
 """Extract empirical distributions from a :class:`DataConfig` into the
-``[(value, weight), ...]`` shape that ``genairr_engine.PassPlan`` expects.
+``[(value, weight), ...]`` shape that ``GenAIRR._engine.PassPlan`` expects.
 
-A :class:`DataConfig` carries per-species reference distributions
-that the V5 simulation used directly. V6's `recombine()` reads these
-through the helpers in this module so simulations default to the
-species' empirical NP lengths and trim amounts instead of the uniform
-``[0..6]`` placeholder.
+A :class:`DataConfig` carries per-species reference distributions.
+``recombine()`` reads these through the helpers in this module so
+simulations default to the species' empirical NP lengths and trim
+amounts instead of the uniform ``[0..6]`` placeholder.
 
 Two layers of granularity:
 
@@ -19,7 +18,7 @@ Two layers of granularity:
   segment-level distribution by averaging the per-gene
   ``{trim: prob}`` dicts. That loses per-gene precision but gives
   us biologically reasonable defaults without needing a per-gene
-  dispatch in the engine. Per-gene trims land in a follow-up phase.
+  dispatch in the engine.
 """
 from __future__ import annotations
 
@@ -28,9 +27,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 # Per-segment trim-dict keys in `DataConfig.trim_dicts`. Maps the
-# Rust trace-address fragment ``(segment, end)`` to the V5
-# DataConfig key. Keep the mapping explicit so readers don't have to
-# infer the V5 naming convention.
+# Rust trace-address fragment ``(segment, end)`` to the DataConfig
+# key. Keep the mapping explicit so readers don't have to infer the
+# naming convention.
 _TRIM_DICT_KEYS: Dict[Tuple[str, str], str] = {
     ("V", "3"): "V_3",
     ("D", "5"): "D_5",
@@ -121,17 +120,15 @@ def extract_trim_distribution(
     (e.g. ``("V", "3")``) as a ``[(trim, weight), ...]`` list, or
     ``None`` if not present.
 
-    The DataConfig stores trims as
-    ``{family: {gene: {trim: prob}}}`` keyed by the V5 string form
-    (``"V_3"`` / ``"D_5"`` / ``"D_3"`` / ``"J_5"``). We marginalize
-    by averaging the per-gene distributions: for each trim amount,
-    weight = sum-over-genes(prob[trim]) / number-of-genes.
+    The DataConfig stores trims as ``{family: {gene: {trim: prob}}}``
+    keyed by the segment+end string (``"V_3"`` / ``"D_5"`` / ``"D_3"``
+    / ``"J_5"``). We marginalize by averaging the per-gene
+    distributions: for each trim amount, weight =
+    sum-over-genes(prob[trim]) / number-of-genes.
 
     ``cap`` (optional) clamps the support so trims past that value
     are filtered out. Used to keep the marginalized distribution
-    safe against short alleles in the pool (V5's per-gene runtime
-    filter is reduced to a compile-time cap here — see
-    :func:`_trim_cap`).
+    safe against short alleles in the pool — see :func:`_trim_cap`.
     """
     key = _TRIM_DICT_KEYS.get((segment, end))
     if key is None:

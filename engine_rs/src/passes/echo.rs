@@ -187,9 +187,9 @@ mod tests {
     #[test]
     fn echo_pass_declares_no_choices() {
         // Transform passes (no RNG draws) inherit the default empty
-        // declared_choices(). Phase D's validator + upstream-bound
-        // propagation will skip them by virtue of getting an empty
-        // address list.
+        // declared_choices(). The build-time validator and
+        // upstream-bound propagation skip them by virtue of getting
+        // an empty address list.
         let p = EchoPass::new(b'A', 0, Segment::V);
         assert!(p.declared_choices().is_empty());
     }

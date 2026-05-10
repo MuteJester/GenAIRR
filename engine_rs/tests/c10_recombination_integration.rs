@@ -1,6 +1,6 @@
-//! Phase C.10 — End-to-end heavy-chain recombination integration test.
+//! End-to-end heavy-chain recombination integration test.
 //!
-//! Composes the full Phase-C pass family into a single VDJ
+//! Composes the full recombination pass family into a single VDJ
 //! recombination plan and verifies the result has the expected
 //! structure: V → NP1 → D → NP2 → J regions in order, correct
 //! pool length, correct germline_pos provenance on V/D/J bases,

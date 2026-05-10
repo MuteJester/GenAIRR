@@ -8,22 +8,16 @@
 //! returns `i64`, a base distribution returns `u8`, an allele-pool
 //! distribution returns an `AlleleId`. Trait-object dispatch costs
 //! one indirection per `sample` call (~5–10 ns), dwarfed by the
-//! per-pass overhead from D2 — acceptable at this phase.
+//! per-pass overhead from D2 — acceptable.
 //!
-//! ## Phase B.3 scope
+//! ## Scope
 //!
-//! Just the trait + two concrete implementations:
+//! The trait + two concrete implementations:
 //!
 //! - [`UniformBase`] — uniform over `{b'A', b'C', b'G', b'T'}`. Used
-//!   by Phase B.5's first sampling pass and by future NP-base passes
-//!   when no empirical model is configured.
+//!   by sampling passes when no empirical model is configured.
 //! - [`UniformInt`] — uniform over a half-open integer range
-//!   `[min, max)`. Foundation for trim / NP-length sampling once
-//!   real empirical distributions land in Phase E.
-//!
-//! `filter()` and `support_summary()` (D4 trait surface) are
-//! deliberately omitted here — they get added when contracts arrive
-//! in Phase D and have something to filter against.
+//!   `[min, max)`. Foundation for trim / NP-length sampling.
 
 use crate::refdata::{AlleleId, AllelePool};
 use crate::rng::Rng;
@@ -53,8 +47,8 @@ pub trait Distribution {
     /// asks the contract set which candidate values are admissible,
     /// filters the support to those, and renormalizes for sampling.
     /// This is what makes "no retries, just sample admissible
-    /// values" work — the architectural pivot from V5's retry-and-
-    /// reject to V6's filter-before-sample.
+    /// values" work — filter-before-sample rather than
+    /// retry-and-reject.
     ///
     /// `None` (the default) means the support is too large or
     /// continuous to enumerate practically. Sampling passes that
@@ -140,9 +134,8 @@ where
 
 /// Permissive filtered sampling helper.
 ///
-/// This preserves the original Phase D.6 behaviour: callers get a
-/// filtered value when possible and `None` when filtering cannot be
-/// performed. Strict runtime paths should call
+/// Callers get a filtered value when possible and `None` when
+/// filtering cannot be performed. Strict runtime paths should call
 /// [`sample_filtered_result`] so they can surface structured errors
 /// instead of silently falling back.
 pub fn sample_filtered<T, D, F>(rng: &mut Rng, dist: &D, predicate: F) -> Option<T>
@@ -163,8 +156,8 @@ where
 /// 0.25.
 ///
 /// This is the default fallback when no empirical TdT / NP-base
-/// model is configured. Real biology will override with empirical
-/// transition matrices in Phase E; the trait surface is unchanged.
+/// model is configured. Empirical transition matrices override at
+/// runtime through the same trait surface.
 #[derive(Clone, Debug, Default)]
 pub struct UniformBase;
 
@@ -288,8 +281,8 @@ impl Distribution for UniformInt {
 ///
 /// Used for NP lengths, trim amounts, indel counts — anything where
 /// a real-world distribution from the literature or per-allele
-/// empirical data needs to be reproduced. Phase E will add empirical
-/// per-allele trim distributions on top of this primitive.
+/// empirical data needs to be reproduced. Empirical per-allele trim
+/// distributions are layered on top of this primitive.
 ///
 /// **Sampling:** inverse-CDF via binary search over cumulative
 /// weights. `O(log N)` per draw where `N` is the number of distinct

@@ -3,7 +3,7 @@
 Loads the empirical S5F mutability + substitution tables from the
 bundled ``data/mutation_model_parameters/*.pkl`` pickles and
 reshapes them into the flat ``(mutability, substitution)`` lists
-that ``genairr_engine.PassPlan.push_mutate_s5f`` expects.
+that ``GenAIRR._engine.PassPlan.push_mutate_s5f`` expects.
 
 The bundled pickles are 3-tuples of ``(mutability, substitution,
 combined)`` dicts keyed by 5-mer strings. ``mutability[5mer]`` is a
@@ -97,7 +97,7 @@ def load_builtin_s5f_kernel(name: str) -> Tuple[List[float], List[float]]:
 
     Returns ``(mutability, substitution)`` flat lists of length 1024
     and 4096 respectively, ready for
-    ``genairr_engine.PassPlan.push_mutate_s5f``.
+    ``GenAIRR._engine.PassPlan.push_mutate_s5f``.
     """
     key = name.lower().strip()
     if key not in _BUILTIN_S5F_MODELS:

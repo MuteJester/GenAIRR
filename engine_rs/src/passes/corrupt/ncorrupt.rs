@@ -1,4 +1,4 @@
-//! `NCorruptionPass` — sprinkle ambiguous `N` bases (G7).
+//! `NCorruptionPass` — sprinkle ambiguous `N` bases.
 //!
 //! Real sequencing reads contain `N` nucleotides at low-quality
 //! positions where the base caller could not commit to a definite

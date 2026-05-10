@@ -17,7 +17,7 @@ use super::simulation::PySimulation;
 use super::outcome::PyOutcome;
 use super::plan::PyPassPlan;
 
-#[pyclass(name = "CompiledSimulator", module = "genairr_engine", unsendable)]
+#[pyclass(name = "CompiledSimulator", module = "GenAIRR._engine", unsendable)]
 pub struct PyCompiledSimulator {
     inner: OwnedCompiledSimulator,
 }
@@ -130,10 +130,10 @@ impl PyCompiledSimulator {
         Ok(outcomes)
     }
 
-    /// Run one simulation starting from `initial` (G5 — clonal
-    /// expansion). The plan executes against the supplied parent IR
-    /// rather than `Simulation::new()`, letting Python orchestrate
-    /// "fork from a parent" semantics for clonal-family generation.
+    /// Run one simulation starting from `initial` (clonal expansion).
+    /// The plan executes against the supplied parent IR rather than
+    /// `Simulation::new()`, letting Python orchestrate "fork from a
+    /// parent" semantics for clonal-family generation.
     #[pyo3(signature = (initial, seed, *, strict=None))]
     fn run_from(
         &self,

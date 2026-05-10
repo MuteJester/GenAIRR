@@ -19,7 +19,7 @@ it produces. Verifies:
 """
 from __future__ import annotations
 
-import genairr_engine as ge
+from GenAIRR import _engine as ge
 import pytest
 
 from GenAIRR import CompiledExperiment, Experiment
@@ -90,7 +90,7 @@ def test_experiment_on_resolves_known_config_name():
 
 
 def test_experiment_on_accepts_dataconfig_object():
-    # A loaded DataConfig (V5-style) is also a valid input.
+    # A loaded DataConfig is also a valid input.
     import GenAIRR
 
     cfg = GenAIRR.HUMAN_IGK_OGRDB
@@ -427,7 +427,7 @@ def test_run_accepts_respect_as_single_contract_set():
 
 
 def test_run_accepts_respect_as_length_one_list():
-    # V5 muscle-memory form — same effect as the bare ContractSet.
+    # List form — same effect as the bare ContractSet.
     cfg = _vj_refdata()
     a = Experiment.on(cfg).recombine().run(n=2, seed=0, respect=ge.productive())
     b = Experiment.on(cfg).recombine().run(n=2, seed=0, respect=[ge.productive()])
@@ -1024,8 +1024,8 @@ def test_corruption_step_count_increments_step_count():
 def test_corruption_under_productive_contract_runs():
     # The PCR/contaminant base draws are filtered by `productive()`.
     # Quality and indel passes don't use contract-aware filtering
-    # (intentionally — see Phase F.6 contract bridge); they just run
-    # and the engine relies on post-hoc verify if anyone checks.
+    # (intentionally); they just run and the engine relies on
+    # post-hoc verify if anyone checks.
     exp = (
         _human_igh_exp()
         .corrupt_pcr(count=3)
@@ -1121,14 +1121,14 @@ def test_recombine_explicit_np1_lengths_overrides_empirical_default():
     # (which would otherwise draw from human_igh's empirical NP1
     # distribution).
     #
-    # The earlier version of this test chained `_human_igh_exp().recombine(...)`
+    # An earlier version of this test chained `_human_igh_exp().recombine(...)`
     # to verify the second recombine's NP1 distribution overrode the first.
-    # That pattern became invalid under Phase 5's compile-time
-    # trim-after-assembly check (the second recombine's trim passes land
-    # after the first recombine's assemble passes). The real intent —
-    # "explicit np1_lengths makes the recorded NP1 length match the
-    # supplied distribution" — is independent of chaining, so we use a
-    # single recombine with the explicit override.
+    # That pattern is invalid under the compile-time trim-after-assembly
+    # check (the second recombine's trim passes land after the first
+    # recombine's assemble passes). The real intent — "explicit np1_lengths
+    # makes the recorded NP1 length match the supplied distribution" — is
+    # independent of chaining, so we use a single recombine with the
+    # explicit override.
     out = (
         Experiment.on("human_igh")
         .recombine(np1_lengths=[(0, 1.0)])
@@ -1478,7 +1478,7 @@ def test_to_fasta_respects_custom_prefix(tmp_path):
 
 
 # ──────────────────────────────────────────────────────────────────
-# G1 — FASTQ output with Phred Q-scores
+# FASTQ output with Phred Q-scores
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -2329,7 +2329,7 @@ def test_stream_matches_run_for_same_seed():
 
 
 def test_stream_yields_engine_outcomes():
-    import genairr_engine as ge
+    from GenAIRR import _engine as ge
 
     out = list(_human_igh_exp().stream(n=2, seed=0))
     assert all(isinstance(o, ge.Outcome) for o in out)
@@ -2502,7 +2502,7 @@ def test_records_use_airr_field_names_for_renames():
     assert "junction" in rec
     assert "np1" in rec
     assert "np2" in rec
-    # Old V5 names no longer exist.
+    # Legacy non-canonical names are not present.
     assert "junction_nt" not in rec
     assert "np1_region" not in rec
     assert "np2_region" not in rec
@@ -2698,7 +2698,7 @@ def test_sequence_aa_length_matches_codon_count():
 def test_sequence_aa_empty_when_junction_uncomputable():
     # A bare RefDataConfig has no anchors → no junction → sequence_aa
     # falls back to empty.
-    import genairr_engine as ge
+    from GenAIRR import _engine as ge
 
     cfg = ge.RefDataConfig.vdj()
     cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG")  # no anchor
@@ -3035,7 +3035,7 @@ def test_alignment_strings_for_vj_chain():
 
 def test_alignment_strings_empty_when_no_assembly():
     # Pre-recombine experiments yield empty sequences → empty strings.
-    import genairr_engine as ge
+    from GenAIRR import _engine as ge
 
     # Use a refdata with anchorless alleles so there's nothing
     # productive to anchor.
@@ -3134,7 +3134,7 @@ def test_alignment_invariants_under_full_corruption_stack():
 
 def test_alignment_invariants_across_loci():
     # IGH / IGK / IGL / TCRB all need to produce sane alignment
-    # strings under heavy corruption. SHM is BCR-only (G4), so the
+    # strings under heavy corruption. SHM is BCR-only, so the
     # TCR pipeline drops the mutate step.
     for cfg in ("human_igh", "human_igk", "human_igl", "human_tcrb"):
         exp = ga.Experiment.on(cfg).recombine()
@@ -3376,10 +3376,10 @@ def test_cigar_invariants_under_full_corruption_stack():
     )
     failures = []
     for i, rec in enumerate(exp.run_records(n=200, seed=0)):
-        # Phase 11.3 restored equality: the CIGAR walks every column
-        # in the live (extension-aware) span — `M + I + D` is the
-        # column count, `seq_len + D_ops` accounts for D-ops adding
-        # gap columns beyond the live sequence span.
+        # The CIGAR walks every column in the live (extension-aware)
+        # span — `M + I + D` is the column count, `seq_len + D_ops`
+        # accounts for D-ops adding gap columns beyond the live
+        # sequence span.
         for seg in ("v", "d", "j"):
             cig = rec[f"{seg}_cigar"]
             if not cig:
@@ -3512,13 +3512,9 @@ def test_germline_alignment_slice_matches_germline_coord_pair():
 
 def test_indel_deletion_alignment_and_sequence_spans_are_both_positive():
     # Sanity: with deletions in V/D/J, both alignment and sequence
-    # spans should be positive numbers. The structural invariant
-    # "alignment span >= sequence span" (deletions add alignment
-    # columns) held pre-Phase-11.2; Phase 11.2 lifted sequence span
-    # to live-call coords, so an NP-side extension can grow seq span
-    # past the structural alignment span. The cleaner version of
-    # this invariant lands in Phase 11.4 once the alignment string
-    # gets relabelled to include extension columns.
+    # spans should be positive numbers. Sequence span comes from
+    # live-call coords, so an NP-side extension can grow seq span
+    # past the structural alignment span.
     rec = (
         _human_igh_exp()
         .corrupt_indels(count=4, insertion_prob=0.0)
@@ -3556,11 +3552,9 @@ def test_alignment_span_equals_cigar_op_total():
 
 def test_germline_span_at_least_cigar_m_plus_d():
     # The number of source-allele bases the alignment + live-extension
-    # account for is at least M + D. Phase 11.1 lifted germline coords
-    # to read from the live-call hypothesis bounds, so when an NP-side
-    # extension grew the hypothesis's ref range the germline span can
-    # exceed M + D (which still counts only the structural alignment
-    # columns until Phase 11.3 rewires the CIGAR to match).
+    # account for is at least M + D. Germline coords come from the
+    # live-call hypothesis bounds, so when an NP-side extension grew
+    # the hypothesis's ref range the germline span can exceed M + D.
     rec = (
         _human_igh_exp()
         .corrupt_indels(count=5, insertion_prob=0.5)
@@ -3815,7 +3809,7 @@ def test_to_tsv_passes_airr_validation_for_vj_chain(tmp_path):
 def test_to_tsv_passes_airr_validation_for_tcrb(tmp_path):
     airr = pytest.importorskip("airr")
     path = tmp_path / "tcrb.tsv"
-    # G4: TCR doesn't undergo SHM; use PCR errors for sequencing
+    # TCR doesn't undergo SHM; use PCR errors for sequencing
     # realism instead.
     (
         ga.Experiment.on("human_tcrb")
@@ -4019,7 +4013,7 @@ def _reverse_complement(s: str) -> str:
     return s.translate(_RC_COMPLEMENT)[::-1]
 
 
-def test_phase12d_5prime_loss_drops_leading_bases():
+def test_5prime_loss_drops_leading_bases():
     # Fixed-length 5' loss: every record's sequence is shorter by
     # exactly the requested amount, and the V segment's CIGAR starts
     # with that many `D` ops (the lost ref positions).
@@ -4036,7 +4030,7 @@ def test_phase12d_5prime_loss_drops_leading_bases():
         assert lr["v_cigar"].startswith("15D"), f"v_cigar={lr['v_cigar']!r}"
 
 
-def test_phase12d_3prime_loss_drops_trailing_bases():
+def test_3prime_loss_drops_trailing_bases():
     base = ga.Experiment.on("human_igh").recombine()
     lost = ga.Experiment.on("human_igh").recombine().corrupt_3prime_loss(length=10)
     for fwd, lr in zip(base.run_records(n=10, seed=0), lost.run_records(n=10, seed=0)):
@@ -4045,7 +4039,7 @@ def test_phase12d_3prime_loss_drops_trailing_bases():
         assert lr["j_cigar"].endswith("10D"), f"j_cigar={lr['j_cigar']!r}"
 
 
-def test_phase12d_loss_zero_is_no_op():
+def test_loss_zero_is_no_op():
     base = ga.Experiment.on("human_igh").recombine()
     lost_5 = ga.Experiment.on("human_igh").recombine().corrupt_5prime_loss(length=0)
     lost_3 = ga.Experiment.on("human_igh").recombine().corrupt_3prime_loss(length=0)
@@ -4058,7 +4052,7 @@ def test_phase12d_loss_zero_is_no_op():
         assert l3["sequence"] == fwd["sequence"]
 
 
-def test_phase12d_loss_preserves_alignment_invariants():
+def test_loss_preserves_alignment_invariants():
     # 5'/3' loss extends the CIGAR with leading/trailing `D` ops.
     # The H.3 alignment-string invariants (sa.replace('-')==seq, etc.)
     # should still hold — the column walker accounts for the extra
@@ -4079,7 +4073,7 @@ def test_phase12d_loss_preserves_alignment_invariants():
     assert failures == [], f"alignment invariants broke under 5'/3' loss: {failures[:3]}"
 
 
-def test_phase12d_loss_rejects_invalid_length():
+def test_loss_rejects_invalid_length():
     exp = ga.Experiment.on("human_igh").recombine()
     for bad in (-1, "ten", True):
         try:
@@ -4090,7 +4084,7 @@ def test_phase12d_loss_rejects_invalid_length():
             raise AssertionError(f"expected error for length={bad!r}")
 
 
-def test_phase12d_rev_comp_flips_sequence_and_flag():
+def test_rev_comp_flips_sequence_and_flag():
     # prob=1.0: every record should have rev_comp=True and the
     # `sequence` should be the reverse-complement of the same record
     # without rev_comp applied.
@@ -4105,7 +4099,7 @@ def test_phase12d_rev_comp_flips_sequence_and_flag():
         assert rc["sequence"] == _reverse_complement(fwd["sequence"])
 
 
-def test_phase12d_rev_comp_flips_per_segment_sequence_coords():
+def test_rev_comp_flips_per_segment_sequence_coords():
     # When the sequence is flipped, V (at the forward 5' end) ends up
     # at the antisense 3' end. So new_v_sequence_start = seq_len -
     # old_v_sequence_end, and the v slice of the new sequence equals
@@ -4127,7 +4121,7 @@ def test_phase12d_rev_comp_flips_per_segment_sequence_coords():
             assert rc["sequence"][rs:re] == _reverse_complement(fwd["sequence"][fs:fe])
 
 
-def test_phase12d_rev_comp_keeps_alignment_strings_in_forward_orientation():
+def test_rev_comp_keeps_alignment_strings_in_forward_orientation():
     # AIRR-spec: `sequence_alignment` and `germline_alignment` stay
     # forward-oriented even when `rev_comp=True`. The CIGAR and the
     # `*_alignment_start/end` and `*_germline_start/end` coords are
@@ -4147,7 +4141,7 @@ def test_phase12d_rev_comp_keeps_alignment_strings_in_forward_orientation():
             assert rc[f"{seg}_germline_end"] == fwd[f"{seg}_germline_end"]
 
 
-def test_phase12d_rev_comp_zero_prob_is_no_op():
+def test_rev_comp_zero_prob_is_no_op():
     base = ga.Experiment.on("human_igh").recombine()
     flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=0.0)
     for fwd, rc in zip(base.run_records(n=20, seed=0), flipped.run_records(n=20, seed=0)):
@@ -4157,7 +4151,7 @@ def test_phase12d_rev_comp_zero_prob_is_no_op():
         assert rc["sequence"] == fwd["sequence"]
 
 
-def test_phase12d_rev_comp_rejects_invalid_prob():
+def test_rev_comp_rejects_invalid_prob():
     exp = ga.Experiment.on("human_igh").recombine()
     import math
     for bad in (-0.1, 1.5, math.nan, float("inf")):
@@ -4169,13 +4163,13 @@ def test_phase12d_rev_comp_rejects_invalid_prob():
             raise AssertionError(f"expected ValueError for prob={bad}")
 
 
-def test_phase12_locus_falls_back_to_refdata_under_heavy_corruption():
-    # Phase 12.C follow-up: under heavy SHM the live-call layer can
-    # narrow every V/D/J call to the empty set (no allele supports
-    # the corrupted sequence). Pre-fix `derive_locus` then had
-    # nothing to parse and returned `""`. The fix walks the refdata
-    # pool's first allele names as a fallback so the AIRR record
-    # always carries a meaningful locus.
+def test_locus_falls_back_to_refdata_under_heavy_corruption():
+    # Under heavy SHM the live-call layer can narrow every V/D/J
+    # call to the empty set (no allele supports the corrupted
+    # sequence). When that happens `derive_locus` has nothing to
+    # parse and would return `""`. Walk the refdata pool's first
+    # allele names as a fallback so the AIRR record always carries
+    # a meaningful locus.
     expected = {
         "human_igh": "IGH",
         "human_igk": "IGK",
@@ -4183,7 +4177,7 @@ def test_phase12_locus_falls_back_to_refdata_under_heavy_corruption():
         "human_tcrb": "TRB",
     }
     for cfg, want in expected.items():
-        # G4: SHM is BCR-only; drop mutate for TCR.
+        # SHM is BCR-only; drop mutate for TCR.
         exp = ga.Experiment.on(cfg).recombine()
         if not cfg.startswith("human_tcr"):
             exp = exp.mutate(count=15)
@@ -4199,18 +4193,18 @@ def test_phase12_locus_falls_back_to_refdata_under_heavy_corruption():
             )
 
 
-def test_phase12_per_segment_ga_slice_matches_called_allele():
-    # Phase 12.C — discovered audit invariant: when SHM mutations
-    # narrow the live call to a different allele than the one
-    # originally sampled, `germline_alignment[v_align_start:v_align_end]
-    # ].replace('-','')` must equal the *called* allele's bytes at
+def test_per_segment_ga_slice_matches_called_allele():
+    # Audit invariant: when SHM mutations narrow the live call to a
+    # different allele than the one originally sampled,
+    # `germline_alignment[v_align_start:v_align_end].replace('-','')`
+    # must equal the *called* allele's bytes at
     # `[v_germline_start, v_germline_end)`. Same for D and J.
     #
-    # Pre-Phase-12.C the column walker emitted `nuc.germline` (the
-    # provenance byte from AssembleSegmentPass), causing a divergence
-    # in ~1% of records under heavy corruption. The fix routes the
-    # column-walker germline byte through the projected (live-call's
-    # first) allele.
+    # The column-walker germline byte is routed through the
+    # projected (live-call's first) allele rather than the original
+    # `nuc.germline` provenance byte from AssembleSegmentPass — the
+    # latter caused a divergence in ~1% of records under heavy
+    # corruption.
     pipelines = [
         ("human_igh", "vdj"),
         ("human_igk", "vj"),
@@ -4219,7 +4213,7 @@ def test_phase12_per_segment_ga_slice_matches_called_allele():
     ]
     failures = []
     for cfg, _kind in pipelines:
-        # G4: SHM is BCR-only; drop mutate for TCR.
+        # SHM is BCR-only; drop mutate for TCR.
         exp = ga.Experiment.on(cfg).recombine()
         if not cfg.startswith("human_tcr"):
             exp = exp.mutate(count=8)
@@ -4263,12 +4257,12 @@ def test_h5_coords_invariants_under_corruption_stack():
     # Same n=200 stress sweep as alignment/CIGAR — verify the coord
     # pairs stay self-consistent under every corruption mode.
     #
-    # Phase 11.7 restored the strict identities: `*_germline_start/end`
-    # are now derived from the column walker's `ref_ranges` (the
-    # union of ref positions consumed by `M` and `D` ops), which by
-    # construction enforces `germline_span == M + D`. Combined with
-    # the alignment-span identity `alignment_span == M + I + D`, the
-    # AIRR coord triples are fully self-consistent again.
+    # Strict identities: `*_germline_start/end` are derived from the
+    # column walker's `ref_ranges` (the union of ref positions
+    # consumed by `M` and `D` ops), which enforces `germline_span ==
+    # M + D`. Combined with the alignment-span identity
+    # `alignment_span == M + I + D`, the AIRR coord triples are
+    # fully self-consistent.
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
@@ -4344,9 +4338,9 @@ def test_germline_alignment_byte_matches_source_allele():
     # corresponding source allele base (post-trim, pre-mutation).
     # The "source allele" is the originally-sampled provenance
     # allele, not whatever set ``rec['v_call']`` projects to today —
-    # under Phase 4 the call is a live-call view that can become a
-    # multi-allele string after a mutation pass refreshes it (Phase 6).
-    # We pull provenance from the simulation IR directly.
+    # the call is a live-call view that can become a multi-allele
+    # string after a mutation pass refreshes it. We pull provenance
+    # from the simulation IR directly.
     result = (
         _human_igh_exp()
         .mutate(count=8)

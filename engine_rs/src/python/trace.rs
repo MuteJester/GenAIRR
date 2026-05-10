@@ -22,7 +22,7 @@ fn choice_value_to_py(py: Python<'_>, v: &ChoiceValue) -> PyObject {
 
 /// One entry in the addressed trace: an `address` string and the
 /// `value` that was sampled there.
-#[pyclass(name = "ChoiceRecord", module = "genairr_engine", frozen)]
+#[pyclass(name = "ChoiceRecord", module = "GenAIRR._engine", frozen)]
 pub struct PyChoiceRecord {
     pub(crate) inner: ChoiceRecord,
 }
@@ -58,7 +58,7 @@ impl PyChoiceRecord {
 
 /// The append-only record of every addressed choice made during one
 /// simulation run.
-#[pyclass(name = "Trace", module = "genairr_engine", frozen)]
+#[pyclass(name = "Trace", module = "GenAIRR._engine", frozen)]
 pub struct PyTrace {
     pub(crate) inner: Trace,
 }

@@ -137,8 +137,8 @@ _DEFAULT_COLUMN_ORDER = [
 
 
 def _allele_name_or_empty(refdata: Any, segment: str, allele_id: Optional[int]) -> str:
-    """G8: look up an allele name from refdata by id; return ``""``
-    when the id is None or the lookup fails (defensive).
+    """Look up an allele name from refdata by id; return ``""`` when
+    the id is None or the lookup fails (defensive).
     """
     if allele_id is None:
         return ""
@@ -155,7 +155,7 @@ def _allele_name_or_empty(refdata: Any, segment: str, allele_id: Optional[int]) 
 
 
 def _inject_truth_columns(outcome: Any, refdata: Any, record: Dict[str, Any]) -> None:
-    """G8: append `truth_v_call` / `truth_d_call` / `truth_j_call`
+    """Append `truth_v_call` / `truth_d_call` / `truth_j_call`
     columns to ``record`` from the originally-sampled allele ids
     stored in the simulation's `assignments`. Distinct from
     `v_call` / `d_call` / `j_call`, which are evidence-driven and
@@ -209,7 +209,7 @@ class SimulationResult:
         (e.g. ``seq0``, ``seq1``, …) so AIRR-format consumers see a
         unique per-row identifier out of the box.
 
-        ``expose_provenance=True`` (G8) adds ``truth_v_call``,
+        ``expose_provenance=True`` adds ``truth_v_call``,
         ``truth_d_call``, ``truth_j_call`` columns containing the
         *originally-sampled* allele names — distinct from the
         evidence-driven ``v_call`` / ``d_call`` / ``j_call`` fields,
@@ -332,7 +332,7 @@ class SimulationResult:
         prefix: str = "seq",
         **quality_kwargs,
     ) -> None:
-        """Write the assembled sequences as FASTQ (Phase 12.E / G1).
+        """Write the assembled sequences as FASTQ.
 
         Each record produces:
 

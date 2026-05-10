@@ -1,9 +1,9 @@
-//! Phase E.8 — Property-based tests over key engine invariants.
+//! Property-based tests over key engine invariants.
 //!
 //! These tests sweep many seeds (typically 100+) through realistic
-//! pipelines — full V(D)J recombination plus Phase E corruption /
-//! mutation passes — and assert structural invariants that must hold
-//! across **every** run. They are the architectural soundness gate:
+//! pipelines — full V(D)J recombination plus corruption / mutation
+//! passes — and assert structural invariants that must hold across
+//! **every** run. They are the architectural soundness gate:
 //! if any pass silently breaks codon-rail consistency, persistent IR,
 //! trace faithfulness, or determinism, a property test fires.
 //!
@@ -192,8 +192,9 @@ fn assert_frame_phases_consistent(sim: &Simulation, label: &str) {
 
 #[test]
 fn property_persistent_ir_uniform_mutation() {
-    // Every Phase E pass must respect the persistent IR contract:
-    // running the pass on a clone leaves the original byte-identical.
+    // Every corruption / mutation pass must respect the persistent
+    // IR contract: running the pass on a clone leaves the original
+    // byte-identical.
     for seed in 0..SEED_RANGE {
         let sim = assembled_v_sim();
         let pre_len = sim.pool.len();
@@ -238,7 +239,7 @@ fn property_persistent_ir_indel_pass() {
 }
 
 // ──────────────────────────────────────────────────────────────────
-// Property 2: Codon-rail consistency across every Phase E pass
+// Property 2: Codon-rail consistency across every corruption pass
 // ──────────────────────────────────────────────────────────────────
 
 #[test]
@@ -341,9 +342,9 @@ fn property_codon_rail_consistency_indel() {
 #[test]
 fn property_codon_rail_consistency_full_corruption_stack() {
     // Compound pass: SHM + PCR + quality + indel + contaminant. The
-    // compound is the realistic V6 corruption pipeline shape, and
-    // every intermediate IR must keep the rail consistent so the
-    // next pass reads accurate amino_acids.
+    // compound is the realistic corruption pipeline shape, and every
+    // intermediate IR must keep the rail consistent so the next pass
+    // reads accurate amino_acids.
     let mut plan = PassPlan::new();
     plan.push(Box::new(S5FMutationPass::new(
         uniform_s5f(),

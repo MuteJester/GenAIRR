@@ -23,10 +23,10 @@
 //! targeting and substitution based on synonymous mutations from
 //! high-throughput immunoglobulin sequencing data." Front. Immunol.
 //!
-//! ## Phase E.2 scope
+//! ## Scope
 //!
 //! Just the data structure plus accessors and context encoding.
-//! Phase E.3 builds the actual `S5FMutationPass` on top.
+//! `S5FMutationPass` is built on top of this.
 
 use crate::ir::encode_base;
 

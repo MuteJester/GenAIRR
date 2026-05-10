@@ -1,14 +1,12 @@
-//! Phase D.7 — End-to-end PRODUCTIVE_ONLY integration test.
+//! End-to-end PRODUCTIVE_ONLY integration test.
 //!
-//! The architectural payoff of V6: under `respect=[productive()]`,
-//! the simulation produces 100% in-frame junctions **by
-//! construction** — no retries, no after-the-fact filtering.
-//! Every random choice the engine makes is constrained at
-//! sampling time by the active `ContractSet`, so the output
-//! stream contains only admissible sequences.
+//! Under `respect=[productive()]`, the simulation produces 100%
+//! in-frame junctions **by construction** — no retries, no
+//! after-the-fact filtering. Every random choice the engine makes
+//! is constrained at sampling time by the active `ContractSet`,
+//! so the output stream contains only admissible sequences.
 //!
-//! This integration test exercises the full Phase-A through
-//! Phase-D stack:
+//! This integration test exercises the full architecture stack:
 //! - persistent IR (D1) carrying every revision
 //! - addressed traces (D3) recording every choice
 //! - the four-pattern architecture (passes + queries + traces +
@@ -17,9 +15,8 @@
 //! - the canonical `productive()` bundle (D.5)
 //!
 //! Both VJ (light chain) and VDJ (heavy chain) cases run, since
-//! the joint NP1+NP2 constraint in VDJ (with NP2 compensating)
-//! is the more sophisticated case and is the one that V5's
-//! constraint-aware sampling effort was working toward.
+//! the joint NP1+NP2 constraint in VDJ (with NP2 compensating) is
+//! the more sophisticated case.
 
 use genairr_engine::contract::productive;
 use genairr_engine::dist::{AllelePoolDist, Distribution, EmpiricalLengthDist, UniformBase};

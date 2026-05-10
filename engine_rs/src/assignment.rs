@@ -24,7 +24,7 @@
 //!   `simulation.assignments.get(region.segment)` rather than
 //!   carrying a redundant copy.
 //!
-//! ## Phase C.4 scope
+//! ## Scope
 //!
 //! Just the instance / assignments / trim-end types and their
 //! persistent `with_*` API. No sampling pass, no assembly — those

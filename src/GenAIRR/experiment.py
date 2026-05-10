@@ -1,9 +1,9 @@
 """GenAIRR — fluent DSL for receptor-sequence simulation.
 
 The :class:`Experiment` builder lowers a chain of fluent steps into a
-Rust ``PassPlan`` (via :mod:`genairr_engine`), compiles that IR into an
+Rust ``PassPlan`` (via :mod:`GenAIRR._engine`), compiles that IR into an
 owning ``CompiledSimulator``, and runs it to produce a list of
-:class:`genairr_engine.Outcome` objects.
+:class:`GenAIRR._engine.Outcome` objects.
 
 Typical usage::
 
@@ -15,24 +15,18 @@ Typical usage::
 - a config-name string (``"human_igh"``, ``"mouse_tcrb"``, …) — resolved
   through the builtin :mod:`GenAIRR.data` registry,
 - a :class:`GenAIRR.DataConfig` object (already-loaded reference data),
-- a :class:`genairr_engine.RefDataConfig` (the engine-native form, used
+- a :class:`GenAIRR._engine.RefDataConfig` (the engine-native form, used
   primarily by tests and advanced callers).
 
 In all three cases the input is normalised to a
-:class:`genairr_engine.RefDataConfig` before any pass is appended.
-
-This file replaces the V5 ``protocol.py`` + ``experiment.py`` pair.
-The V5 fluent surface (``.mutate(...)``, ``.sequence(...)``,
-``.observe(...)``) has not yet been ported to V6 — only
-:meth:`Experiment.recombine` is wired today. Subsequent phases of
-the V6 migration add mutation / corruption / observation steps.
+:class:`GenAIRR._engine.RefDataConfig` before any pass is appended.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
 
-import genairr_engine as _engine
+from GenAIRR import _engine  # private Rust extension submodule
 
 from .dataconfig import DataConfig
 from .dataconfig.enums import ChainType
@@ -40,9 +34,9 @@ from .dataconfig.enums import ChainType
 
 # Anything :meth:`Experiment.compile` (or the one-shot
 # :meth:`Experiment.run`) accepts as ``respect=``. The Rust compiler
-# ultimately needs a single :class:`genairr_engine.ContractSet`; the
+# ultimately needs a single :class:`GenAIRR._engine.ContractSet`; the
 # helpers below normalise the convenient list-form ``[productive()]``
-# (V5 muscle-memory) to that single value.
+# to that single value.
 RespectInput = Union["_engine.ContractSet", Sequence["_engine.ContractSet"], None]
 
 
@@ -169,7 +163,7 @@ def _resolve_config_name(name: str) -> DataConfig:
 
 
 # ──────────────────────────────────────────────────────────────────
-# DataConfig → genairr_engine.RefDataConfig translator
+# DataConfig → GenAIRR._engine.RefDataConfig translator
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -214,13 +208,13 @@ def _push_alleles(alleles_by_gene, add_method) -> int:
 
 
 def dataconfig_to_refdata(cfg: DataConfig) -> "_engine.RefDataConfig":
-    """Translate a :class:`DataConfig` (V5-style species pickle) into
-    an engine-native :class:`genairr_engine.RefDataConfig`.
+    """Translate a :class:`DataConfig` species pickle into an
+    engine-native :class:`GenAIRR._engine.RefDataConfig`.
 
-    All V / D / J alleles are copied; the C segment is dropped (V6 has
-    no C-segment passes yet). Anchorless alleles are preserved with
-    ``anchor=None`` — they pass through but cannot satisfy the
-    ``AnchorPreserved`` contract (matches V5's behaviour).
+    All V / D / J alleles are copied; the C segment is dropped (the
+    engine has no C-segment passes). Anchorless alleles are preserved
+    with ``anchor=None`` — they pass through but cannot satisfy the
+    ``AnchorPreserved`` contract.
     """
     chain = _chain_type_label(cfg.metadata.chain_type if cfg.metadata else None)
     refdata = _engine.RefDataConfig(chain)
@@ -355,10 +349,10 @@ class _MutateStep:
 # kwarg name on the `Experiment` builder.
 @dataclass(frozen=True)
 class _ClonalForkStep:
-    """G5: marks the boundary between "per-clone" passes (run once
-    per clonal family — typically `recombine`) and "per-descendant"
-    passes (run once per read inside the family — typically
-    `mutate`, `corrupt_*`).
+    """Marks the boundary between "per-clone" passes (run once per
+    clonal family — typically `recombine`) and "per-descendant" passes
+    (run once per read inside the family — typically `mutate`,
+    `corrupt_*`).
 
     The compile pipeline splits the experiment's step list at this
     marker, builds two `CompiledExperiment`s, and the runtime
@@ -530,11 +524,11 @@ def _coerce_respect(respect: RespectInput) -> Optional["_engine.ContractSet"]:
     - ``None`` → no contracts active.
     - a single ``ContractSet`` → used directly.
     - a length-1 sequence containing one ``ContractSet`` → unwrapped
-      (the V5 ``respect=[productive()]`` muscle-memory case).
+      (the ``respect=[productive()]`` form).
 
     Sequences with multiple bundles raise ``NotImplementedError`` —
-    contract composition will land in a later phase. Anything else
-    raises ``TypeError``.
+    contract composition is not yet supported. Anything else raises
+    ``TypeError``.
     """
     if respect is None:
         return None
@@ -547,7 +541,7 @@ def _coerce_respect(respect: RespectInput) -> Optional["_engine.ContractSet"]:
             item = respect[0]
             if not isinstance(item, _engine.ContractSet):
                 raise TypeError(
-                    f"respect[0]: expected genairr_engine.ContractSet, "
+                    f"respect[0]: expected GenAIRR._engine.ContractSet, "
                     f"got {type(item).__name__}"
                 )
             return item
@@ -556,7 +550,7 @@ def _coerce_respect(respect: RespectInput) -> Optional["_engine.ContractSet"]:
             "Compose contracts inside a single bundle for now."
         )
     raise TypeError(
-        f"respect=: expected genairr_engine.ContractSet or sequence of one, "
+        f"respect=: expected GenAIRR._engine.ContractSet or sequence of one, "
         f"got {type(respect).__name__}"
     )
 
@@ -585,7 +579,7 @@ def _coerce_to_refdata_and_dataconfig(
         return dataconfig_to_refdata(source), source
     raise TypeError(
         f"Experiment.on(...): expected a config-name string, "
-        f"GenAIRR.DataConfig, or genairr_engine.RefDataConfig, "
+        f"GenAIRR.DataConfig, or GenAIRR._engine.RefDataConfig, "
         f"got {type(source).__name__}"
     )
 
@@ -594,7 +588,7 @@ class Experiment:
     """Fluent builder for a simulation pipeline.
 
     Build an ``Experiment`` from a config name, a :class:`DataConfig`,
-    or a :class:`genairr_engine.RefDataConfig` via :meth:`Experiment.on`,
+    or a :class:`GenAIRR._engine.RefDataConfig` via :meth:`Experiment.on`,
     chain configuration steps (currently just :meth:`recombine`), then
     call :meth:`run` (or :meth:`compile` for explicit two-stage flow).
 
@@ -622,7 +616,7 @@ class Experiment:
             "D": None,
             "J": None,
         }
-        # G10: sample-level metadata to inject as columns on every
+        # sample-level metadata to inject as columns on every
         # AIRR record (e.g. ``sample_id``, ``donor``,
         # ``repertoire_id``, ``cell_id``). Empty by default.
         self._metadata: Dict[str, Any] = {}
@@ -634,7 +628,7 @@ class Experiment:
         ``source`` is one of:
         - a config-name string (e.g. ``"human_igh"``),
         - a :class:`GenAIRR.DataConfig` instance,
-        - a :class:`genairr_engine.RefDataConfig`.
+        - a :class:`GenAIRR._engine.RefDataConfig`.
 
         When ``source`` is a config name or a ``DataConfig``, the
         underlying empirical distributions (NP lengths, per-gene
@@ -700,7 +694,7 @@ class Experiment:
 
         Same shape as :meth:`corrupt_pcr` but each substitution
         writes the destination base in **lowercase** to mark the
-        position as corrupted (the V5 sequencing-error convention).
+        position as corrupted (the sequencing-error convention).
         """
         pairs = _normalize_count(count)
         self._steps.append(
@@ -808,7 +802,7 @@ class Experiment:
         *,
         count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
     ) -> "Experiment":
-        """Append an N-substitution corruption step (G7).
+        """Append an N-substitution corruption step.
 
         With the per-simulation count drawn from ``count``, replace
         that many uniform-random pool positions with the ambiguous
@@ -891,7 +885,7 @@ class Experiment:
         return self
 
     def with_metadata(self, **fields: Any) -> "Experiment":
-        """G10: attach sample-level metadata to every AIRR record.
+        """Attach sample-level metadata to every AIRR record.
 
         Standard AIRR Repertoire fields like ``sample_id``,
         ``donor``, ``repertoire_id``, and ``cell_id`` are commonly
@@ -930,7 +924,7 @@ class Experiment:
         n_clones: int,
         size: int,
     ) -> "Experiment":
-        """G5: split the pipeline into per-clone (parent) and
+        """Split the pipeline into per-clone (parent) and
         per-descendant phases for clonal-family generation.
 
         Steps appended *before* this call run **once per clone** —
@@ -1011,7 +1005,7 @@ class Experiment:
         ``count=0`` is a no-op (the pass runs but applies zero
         mutations).
 
-        **TCR guard (G4):** somatic hypermutation is a B-cell
+        **TCR guard:** somatic hypermutation is a B-cell
         phenomenon — T-cells do not undergo SHM in the periphery.
         Calling ``.mutate()`` on a TCR-configured experiment raises
         ``ValueError`` to prevent silent biological misuse. Use
@@ -1042,7 +1036,7 @@ class Experiment:
         return self
 
     def _is_tcr_refdata(self) -> bool:
-        """G4: detect whether the bound refdata is a TCR locus.
+        """Detect whether the bound refdata is a TCR locus.
 
         TCR allele names are prefixed with ``TR`` (TRA, TRB, TRG,
         TRD); BCR with ``IG``. Inspecting the first V allele is
@@ -1201,7 +1195,7 @@ class Experiment:
         distributions from.
 
         ``v_allele_weights`` / ``d_allele_weights`` /
-        ``j_allele_weights`` (G3b) — optional ``{allele_name:
+        ``j_allele_weights`` — optional ``{allele_name:
         weight}`` dicts that bias allele sampling. Listed alleles
         get the supplied positive weight; unlisted alleles default
         to 1.0, so e.g. ``v_allele_weights={"IGHV3-23*01": 100}``
@@ -1254,7 +1248,7 @@ class Experiment:
         segment: str,
         user_weights: Optional[Dict[str, float]],
     ) -> Optional[Tuple[float, ...]]:
-        """G3b: build a dense pool-aligned weight vector from the
+        """Build a dense pool-aligned weight vector from the
         user-supplied ``{name: weight}`` dict. Listed alleles get the
         supplied weight; everything else gets ``1.0``. Returns
         ``None`` when no weights were supplied (preserving the
@@ -1338,13 +1332,13 @@ class Experiment:
         """Compile the recorded steps into a reusable
         :class:`CompiledExperiment` (or :class:`CompiledClonalExperiment`
         when the pipeline contains a :meth:`with_clonal_structure`
-        fork — G5).
+        fork).
 
         Idempotent: calling ``compile()`` twice produces two distinct
         compiled instances with structurally-equal simulators.
 
         ``respect`` accepts ``None`` (no contracts), a single
-        :class:`genairr_engine.ContractSet`, or a length-1 sequence
+        :class:`GenAIRR._engine.ContractSet`, or a length-1 sequence
         containing one. Contracts are compile-time inputs: the
         resulting compiled simulator owns the active contract bundle
         and reuses it for every run.
@@ -1354,7 +1348,7 @@ class Experiment:
         contracts = _coerce_respect(respect)
         any_lock = any(self._locks[seg] is not None for seg in ("V", "D", "J"))
 
-        # G5: if a `_ClonalForkStep` is present, split the step list
+        # if a `_ClonalForkStep` is present, split the step list
         # at it and compile two simulators (pre-fork = per-clone,
         # post-fork = per-descendant).
         fork_idx = next(
@@ -1388,7 +1382,7 @@ class Experiment:
         *,
         replace_fn,
     ):
-        """Compile a list of steps into a `genairr_engine.CompiledSimulator`.
+        """Compile a list of steps into a `GenAIRR._engine.CompiledSimulator`.
         Lifted out of `compile()` so the clonal-fork branch can build
         two simulators from sub-step-lists with a shared body."""
         plan = _engine.PassPlan()
@@ -1425,7 +1419,7 @@ class Experiment:
         be omitted; passing ``n`` explicitly is allowed only if it
         matches that product.
 
-        ``expose_provenance=True`` (G8) appends ``truth_v_call``,
+        ``expose_provenance=True`` appends ``truth_v_call``,
         ``truth_d_call``, ``truth_j_call`` columns containing the
         originally-sampled allele names — distinct from the
         evidence-driven ``v_call`` / ``d_call`` / ``j_call`` fields
@@ -1468,7 +1462,7 @@ class Experiment:
 
         Equivalent to
         ``self.compile(respect=respect).run(n=n, seed=seed, strict=strict)``.
-        Returns a list of :class:`genairr_engine.Outcome` objects in
+        Returns a list of :class:`GenAIRR._engine.Outcome` objects in
         clone-major order for clonal experiments.
 
         Pass ``respect=productive()`` (or any other ``ContractSet``) to
@@ -1482,7 +1476,7 @@ class Experiment:
         ``strict=False`` (default) lets a pass fall back to
         unconstrained sampling when no admissible candidate exists;
         ``strict=True`` raises
-        :class:`genairr_engine.StrictSamplingError` instead.
+        :class:`GenAIRR._engine.StrictSamplingError` instead.
         """
         compiled = self.compile(respect=respect)
         if isinstance(compiled, CompiledClonalExperiment):
@@ -1497,7 +1491,7 @@ class Experiment:
         respect: RespectInput = None,
         strict: bool = False,
     ) -> Iterator["_engine.Outcome"]:
-        """Compile and lazily yield :class:`genairr_engine.Outcome`
+        """Compile and lazily yield :class:`GenAIRR._engine.Outcome`
         objects. See :meth:`CompiledExperiment.stream` for full
         semantics."""
         return self.compile(respect=respect).stream(n=n, seed=seed, strict=strict)
@@ -1527,7 +1521,7 @@ class Experiment:
 class CompiledExperiment:
     """A frozen ``Experiment`` ready for execution.
 
-    Holds the owning :class:`genairr_engine.CompiledSimulator` and the
+    Holds the owning :class:`GenAIRR._engine.CompiledSimulator` and the
     refdata it was built against. Contracts are captured at compile
     time; ``run()`` only accepts execution parameters.
     """
@@ -1564,7 +1558,7 @@ class CompiledExperiment:
 
     @property
     def refdata(self) -> "_engine.RefDataConfig":
-        """The :class:`genairr_engine.RefDataConfig` the plan was built against."""
+        """The :class:`GenAIRR._engine.RefDataConfig` the plan was built against."""
         return self._refdata
 
     def run(
@@ -1584,7 +1578,7 @@ class CompiledExperiment:
         - ``False`` (default, **permissive**) — fall back to
           unconstrained sampling and continue.
         - ``True`` (**strict**) — raise
-          :class:`genairr_engine.StrictSamplingError` carrying the
+          :class:`GenAIRR._engine.StrictSamplingError` carrying the
           failing pass name, trace address, and failure reason.
 
         Raises ``ValueError`` for ``n < 1``.
@@ -1606,8 +1600,8 @@ class CompiledExperiment:
         ``.to_fasta`` / ``.to_dataframe`` export.
 
         Same arguments as :meth:`run`. ``expose_provenance=True``
-        appends G8 `truth_v_call/d_call/j_call` columns reflecting
-        the originally-sampled allele names.
+        appends `truth_v_call/d_call/j_call` columns reflecting the
+        originally-sampled allele names.
         """
         from .result import SimulationResult
 
@@ -1623,7 +1617,7 @@ class CompiledExperiment:
         seed: int = 0,
         strict: bool = False,
     ) -> Iterator["_engine.Outcome"]:
-        """Lazily yield :class:`genairr_engine.Outcome` objects one at
+        """Lazily yield :class:`GenAIRR._engine.Outcome` objects one at
         a time, without materialising the full batch in memory.
 
         Useful for large simulations where holding ``n`` outcomes
@@ -1685,9 +1679,9 @@ class CompiledExperiment:
 
 
 class CompiledClonalExperiment:
-    """G5: a compiled experiment with a clonal-fork structure.
+    """A compiled experiment with a clonal-fork structure.
 
-    Wraps two :class:`genairr_engine.CompiledSimulator`s — the
+    Wraps two :class:`GenAIRR._engine.CompiledSimulator`s — the
     pre-fork plan (run once per clone, typically the recombine
     step) and the post-fork plan (run once per descendant inside
     the clone, typically mutate / corrupt_*).
@@ -1776,7 +1770,7 @@ class CompiledClonalExperiment:
     ) -> "SimulationResult":
         """Same as :meth:`run` but returns a :class:`SimulationResult`
         with each record dict carrying an integer ``clone_id`` field
-        in ``[0, n_clones)``. ``expose_provenance=True`` (G8) also
+        in ``[0, n_clones)``. ``expose_provenance=True`` also
         appends `truth_v_call` / `truth_d_call` / `truth_j_call`
         columns from the originally-sampled allele names.
         """

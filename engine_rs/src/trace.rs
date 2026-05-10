@@ -19,7 +19,7 @@
 //! trace separate also matches Gen.jl's separation of "the generative
 //! function's IR" from "the trace of choices made during one run."
 //!
-//! ## Phase B.1 scope
+//! ## Scope
 //!
 //! Just the data structures. No pass integration yet (that's B.2).
 //! No serialization — trace is in-memory only at this stage.
@@ -46,7 +46,7 @@ pub enum ChoiceValue {
     Bases(Vec<u8>),
 
     /// An allele identifier, indexed into the `RefDataConfig`'s
-    /// allele table. Concrete shape arrives in Phase C.
+    /// allele table.
     AlleleId(u32),
 
     /// A boolean choice (e.g., D inversion: yes/no, receptor
@@ -90,8 +90,8 @@ impl Trace {
     }
 
     /// Empty trace pre-allocated for an expected number of choices.
-    /// Phase E will know the rough count from the active pass plan
-    /// and call this to avoid reallocations.
+    /// Used to avoid reallocations when the rough count is known
+    /// from the active pass plan.
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             choices: Vec::with_capacity(cap),

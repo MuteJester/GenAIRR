@@ -6,11 +6,10 @@
 //! Python side is now a thin wrapper around the PyO3 method this
 //! module backs.
 //!
-//! Field semantics match exactly what the Python code produced (the
-//! Phase H tests are the regression suite). Convention is **0-based
-//! half-open** for every coordinate field; the `airr_strict=True`
-//! export flag in `result.py` does the 1-based-inclusive conversion
-//! at TSV/CSV/DataFrame time.
+//! Field semantics match exactly what the Python code produced.
+//! Convention is **0-based half-open** for every coordinate field;
+//! the `airr_strict=True` export flag in `result.py` does the
+//! 1-based-inclusive conversion at TSV/CSV/DataFrame time.
 //!
 //! Walks the IR exactly once, accumulating all per-column data
 //! (alignment strings, CIGAR ops, identity counts, segment spans)
@@ -173,13 +172,12 @@ pub fn build_airr_record(
     rec.j_call = projected_call_name(refdata, sim, Segment::J, j_id);
     rec.locus = derive_locus(&rec.v_call, &rec.j_call, &rec.d_call);
     if rec.locus.is_empty() {
-        // Phase 12.C follow-up: under heavy corruption the live-call
-        // layer can wipe every V/D/J call (no allele supports the
-        // mutated sequence), leaving `derive_locus` with nothing to
-        // parse. Fall back to the refdata's pool — any allele name
-        // gives us a locus prefix, which is still meaningful AIRR
-        // output (the chain didn't change, only the call evidence
-        // is absent).
+        // Under heavy corruption the live-call layer can wipe every
+        // V/D/J call (no allele supports the mutated sequence),
+        // leaving `derive_locus` with nothing to parse. Fall back
+        // to the refdata's pool — any allele name gives us a locus
+        // prefix, which is still meaningful AIRR output (the chain
+        // didn't change, only the call evidence is absent).
         rec.locus = locus_from_refdata(refdata);
     }
 
@@ -210,7 +208,7 @@ pub fn build_airr_record(
         .iter()
         .find(|r| r.segment == Segment::Np2);
 
-    // Phase 11.4: sequence coords come from the column-walker's
+    // sequence coords come from the column-walker's
     // pool-range output, which honours the same overlap-resolution
     // rule the column relabel uses. The fallback is the structural
     // region (raw RefDataConfig runs, no live calls). Note: the
@@ -232,7 +230,7 @@ pub fn build_airr_record(
 
     // NP region nucleotide strings.
     //
-    // Phase 11.4: when a V/D/J live-call extension claims one or more
+    // when a V/D/J live-call extension claims one or more
     // NP positions (e.g. NP1[0..3] reabsorbed back into V), those
     // positions are no longer "non-templated" — they belong to a
     // segment. The AIRR `np1` / `np2` strings drop them.
@@ -259,15 +257,13 @@ pub fn build_airr_record(
     rec.n_indels = trace_int(trace, "corrupt.indel.count");
     rec.is_contaminant = trace_bool(trace, "corrupt.contaminant.applied");
 
-    // Junction window: mirror the Python builder's permissive
-    // semantics — compute as long as both V/J anchors and regions
-    // exist, even when ``j_trim_5 > j_anchor`` (which the strict
-    // `compute_junction` rejects). Keeping bit-parity with the
-    // Phase H Python builder means accepting possibly-unphysical
-    // coordinates here; the AnchorPreserved contract is the place
-    // to enforce strictness.
+    // Junction window: permissive semantics — compute as long as
+    // both V/J anchors and regions exist, even when ``j_trim_5 >
+    // j_anchor`` (which the strict `compute_junction` rejects).
+    // Accept possibly-unphysical coordinates here; the
+    // AnchorPreserved contract is the place to enforce strictness.
     //
-    // Phase 11.6: anchor pool positions come from a `germline_pos`
+    // anchor pool positions come from a `germline_pos`
     // scan over each segment's structural region rather than from
     // a `region.start + anchor` arithmetic offset. The scan finds
     // the actual pool position of the anchor codon's first base,
@@ -372,7 +368,7 @@ pub fn build_airr_record(
     rec.j_alignment_start = walk.align_ranges[2].map(|(s, _)| s);
     rec.j_alignment_end = walk.align_ranges[2].map(|(_, e)| e);
 
-    // Phase 11.4: refine sequence coords from the walker output.
+    // refine sequence coords from the walker output.
     // The walker resolved any overlap between V/D/J live-call
     // hypotheses, so its `seq_ranges` reflects each segment's
     // *effective* span — guaranteeing CIGAR M+I+D == seq_len + D_ops.
@@ -391,7 +387,7 @@ pub fn build_airr_record(
 
     // Germline coord pairs.
     //
-    // Phase 11.7: read from the column walker's `ref_ranges` output
+    // read from the column walker's `ref_ranges` output
     // — the union of ref positions consumed by `M` and `D` ops on
     // each segment. This guarantees `germline_span == M + D` by
     // construction, closing the H.5 invariant gap that a raw
@@ -427,7 +423,7 @@ pub fn build_airr_record(
     rec.d_identity = walk.identities[1];
     rec.j_identity = walk.identities[2];
 
-    // Phase 12.D: reverse-complement projection. The RevCompPass
+    // reverse-complement projection. The RevCompPass
     // records `corrupt.rev_comp.applied` in the trace without
     // touching the IR (subsequent passes still see the forward
     // sequence). Here, *after* the forward record is fully built,
@@ -596,7 +592,7 @@ fn walk_alignment_columns(
 
         match seg {
             Segment::V | Segment::D | Segment::J => {
-                // Phase 12.C: pick the canonical allele from the live
+                // pick the canonical allele from the live
                 // call (with a provenance fallback). All `germline_*`
                 // outputs in this branch read from this allele's
                 // bytes, so they match the `*_call` field the AIRR
@@ -629,7 +625,7 @@ fn walk_alignment_columns(
                 let span_start = sa.len() as i64;
 
                 if let Some(allele_seq) = allele_seq {
-                    // Phase 12.C: NP1 left-extension might have already
+                    // NP1 left-extension might have already
                     // claimed ref positions up to (or past) `trim_5`.
                     // Start `expected_pos` past whatever NP claims
                     // covered, so a structural-indel deletion at the
@@ -719,7 +715,7 @@ fn walk_alignment_columns(
 
                 let span_end = sa.len() as i64;
                 if span_end > span_start {
-                    // Phase 11.4: a prior NP-side claim (e.g. J's
+                    // a prior NP-side claim (e.g. J's
                     // left-extension into NP2) may have already set
                     // `align_ranges[seg_idx]` to a span that begins
                     // *before* this structural region. Preserve that
@@ -740,15 +736,15 @@ fn walk_alignment_columns(
                 }
             }
             Segment::Np1 | Segment::Np2 => {
-                // Phase 11.3 + 11.4 + 11.5: NP positions claimed by an
-                // adjacent V/D/J live-call extension are relabelled.
-                // The claimed column emits the source allele's germline
-                // byte (instead of `N`), pushes an `M` op onto that
-                // segment's CIGAR, contributes to its identity counter,
-                // and extends its `align_ranges`. Unclaimed positions
-                // remain plain NP columns.
+                // NP positions claimed by an adjacent V/D/J live-call
+                // extension are relabelled. The claimed column emits
+                // the source allele's germline byte (instead of `N`),
+                // pushes an `M` op onto that segment's CIGAR,
+                // contributes to its identity counter, and extends its
+                // `align_ranges`. Unclaimed positions remain plain NP
+                // columns.
                 //
-                // Phase 11.7: a structural-indel deletion inside V/D/J
+                // a structural-indel deletion inside V/D/J
                 // breaks the hypothesis's `pool_pos → ref_pos` linear
                 // projection. When that projection points at a ref
                 // position the structural walker already counted, we
@@ -768,7 +764,7 @@ fn walk_alignment_columns(
                             Segment::J => 2,
                             _ => unreachable!(),
                         };
-                        // Phase 12.C: pick the canonical ref_pos for
+                        // pick the canonical ref_pos for
                         // this claim. For an NP2-side extension (the
                         // segment's structural region has already been
                         // walked, so `ref_ranges[claim_idx]` is set),
@@ -890,7 +886,7 @@ fn bytes_to_string(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
-/// Phase 11.6: locate the pool position where an allele's anchor
+/// locate the pool position where an allele's anchor
 /// codon resides in the assembled sequence. Scans the segment's
 /// structural region for the first node whose `germline_pos`
 /// matches the anchor's allele coordinate. Returns `None` when
@@ -941,7 +937,7 @@ fn anchor_amino_acid_preserved(
         return false;
     }
 
-    // Phase 11.6: locate the anchor by `germline_pos`, not by a
+    // locate the anchor by `germline_pos`, not by a
     // structural offset. Same rationale as the junction-window
     // scanner — a structural offset miscomputes the anchor pool
     // position when indels disturb V/J's coding region.
@@ -1018,7 +1014,7 @@ fn lookup_name(
         .unwrap_or_default()
 }
 
-/// Phase 12.C: pick the canonical allele id for AIRR projection on
+/// pick the canonical allele id for AIRR projection on
 /// a V/D/J segment. The first allele in the live-call's narrowed
 /// `allele_call` set wins; fall back to the originally-sampled
 /// allele (provenance) when the live layer is absent or the call
@@ -1062,8 +1058,8 @@ fn projected_call_name(
     .unwrap_or_else(|| lookup_name(refdata, segment, origin_id))
 }
 
-/// Phase 11.3 / 11.4: figure out which V/D/J segment (if any) has
-/// an extension hypothesis that claims this NP pool position.
+/// Figure out which V/D/J segment (if any) has an extension
+/// hypothesis that claims this NP pool position.
 ///
 /// Returns `Some((segment, germline_byte))` when an adjacent V/D/J
 /// live-call hypothesis extended past its structural region into
@@ -1099,7 +1095,7 @@ fn extend_ref_range(ranges: &mut [Option<(i64, i64)>; 3], idx: usize, ref_pos: i
     });
 }
 
-/// Phase 11.7: returns true when `ref_pos` is already inside
+/// returns true when `ref_pos` is already inside
 /// `ranges[idx]`. Used by the NP-claim path to detect when a
 /// hypothesis's `pool_pos → ref_pos` projection collides with a
 /// ref position the structural walker already accounted for. This
@@ -1121,7 +1117,7 @@ fn ref_pos_already_covered(
 
 
 
-/// Phase 11.4: build the AIRR `np1` / `np2` string from an NP
+/// build the AIRR `np1` / `np2` string from an NP
 /// structural region by skipping any pool position that has been
 /// claimed by a V/D/J live-call extension. The resulting string is
 /// the "true" non-templated insertion as the evidence layer sees it.
@@ -1152,7 +1148,7 @@ fn check_segment_claim(
 ) -> Option<(Segment, u8, u32)> {
     let call = sim.live_calls.as_ref()?.get(seg)?;
     let h = call.hypotheses.first()?;
-    // Phase 12.C: NP-claim germline byte comes from the projected
+    // NP-claim germline byte comes from the projected
     // allele (live-call's first allele, fallback to provenance) so
     // it matches `*_call`. See `projected_allele_id` for rationale.
     let allele_id = projected_allele_id(sim, seg)?;
@@ -1243,7 +1239,7 @@ fn mutation_count(trace: &Trace) -> i64 {
 
 const AIRR_LOCI: [&str; 7] = ["IGH", "IGK", "IGL", "TRA", "TRB", "TRG", "TRD"];
 
-/// Phase 12.C: refdata-driven locus fallback. Walks each pool's
+/// refdata-driven locus fallback. Walks each pool's
 /// first allele in turn and returns the locus prefix when the name
 /// starts with one of the AIRR loci. Used when live-call evidence
 /// has wiped every `*_call` (heavy SHM under corruption stack) but
@@ -1488,7 +1484,7 @@ mod tests {
 
     #[test]
     fn locus_from_refdata_falls_back_to_pool_allele_names() {
-        // Phase 12.C: when every live call has been wiped, the
+        // when every live call has been wiped, the
         // refdata's pool allele names still tell us the locus.
         let mut cfg = RefDataConfig::empty(ChainType::Vdj);
         let _ = cfg.v_pool.push(Allele {

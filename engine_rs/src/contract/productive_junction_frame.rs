@@ -102,11 +102,11 @@ impl Contract for ProductiveJunctionFrame {
         // must NOT be assembled yet. The hypothetical-J-start math
         // below assumes `sim.pool.len() + length` is where J will
         // start; that's only true if J hasn't already been pushed
-        // into the pool. Phase A-D plans honor this by always
-        // running NP generation before J assembly. A future plan
-        // (e.g., a Phase E pass that pushes contaminant or adapter
-        // bases into the pool before J assembly) that violates this
-        // invariant would silently produce wrong frame predictions.
+        // into the pool. Standard plans honor this by always running
+        // NP generation before J assembly. A future plan (e.g., one
+        // that pushes contaminant or adapter bases into the pool
+        // before J assembly) that violates this invariant would
+        // silently produce wrong frame predictions.
         // The debug assertion catches that drift in dev builds; in
         // release builds the contract may produce an over-eager
         // rejection (false-negative admits) but never a hidden

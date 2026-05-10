@@ -74,8 +74,8 @@ impl Pass for SampleBasePass {
 
     fn declared_choices(&self) -> Vec<String> {
         // SampleBasePass makes exactly one draw per execution at its
-        // configured address. Phase D's upstream-bound propagation
-        // and build-time validator both consume this list.
+        // configured address. Upstream-bound propagation and the
+        // build-time validator both consume this list.
         vec![self.address.clone()]
     }
 
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn sample_base_pass_declares_its_address() {
         // Sampling passes override declared_choices() to report the
-        // address(es) they will draw at. The runtime + Phase D
+        // address(es) they will draw at. The runtime + the build-time
         // validator depend on this introspection.
         let pass = SampleBasePass::new(
             "test.np1.bases[0]",
@@ -191,7 +191,7 @@ mod tests {
         }
     }
 
-    // ── Phase B milestone: replay determinism ──────────────────────
+    // ── Replay determinism ─────────────────────────────────────────
 
     /// Build a representative mixed plan: alternating EchoPass (no
     /// RNG) and SampleBasePass (RNG-consuming). Used by the replay
@@ -212,9 +212,9 @@ mod tests {
 
     #[test]
     fn replay_determinism_same_seed_same_trace_same_ir() {
-        // The Phase B success criterion: two independent runs of the
-        // same plan with the same seed must produce identical traces
-        // and identical final IR revisions, byte for byte.
+        // Determinism invariant: two independent runs of the same
+        // plan with the same seed must produce identical traces and
+        // identical final IR revisions, byte for byte.
         let oa = PassRuntime::execute(&mixed_plan(), Simulation::new(), 0xc0ff_ee);
         let ob = PassRuntime::execute(&mixed_plan(), Simulation::new(), 0xc0ff_ee);
 

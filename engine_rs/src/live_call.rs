@@ -1,9 +1,7 @@
 //! Live V/D/J call evidence state.
 //!
-//! This module is the Phase 1 foundation for dynamic allele calls.
-//! It deliberately contains only data structures and small, testable
-//! operations. No runtime pass updates or AIRR projection changes happen
-//! here yet.
+//! Data structures plus small, testable operations that back the
+//! dynamic allele-call layer.
 
 use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
 use crate::refdata::{Allele, AlleleId, AllelePool, RefDataConfig};
@@ -321,9 +319,9 @@ impl SegmentRefIndex {
 /// Return a simulation with the live call for an assembled V/D/J
 /// structural region refreshed from exact current-base evidence.
 ///
-/// Phase 3 intentionally restricts discovery to the existing
-/// structural region. It does not extend into NP evidence, repair
-/// indel-shifted hypotheses, or alter AIRR projection.
+/// Discovery is restricted to the existing structural region. It
+/// does not extend into NP evidence, repair indel-shifted
+/// hypotheses, or alter AIRR projection.
 pub fn with_assembled_segment_live_call(
     sim: &Simulation,
     reference_index: &ReferenceMatchIndex,
@@ -373,8 +371,8 @@ fn latest_region_for_segment(sim: &Simulation, segment: Segment) -> Option<&Regi
 /// Pick the NP region (if any) whose bases sit immediately to the right
 /// of `segment`'s assembled region.
 ///
-/// - V → NP1 (Phase 7.1).
-/// - D → NP2 (Phase 7.5).
+/// - V → NP1.
+/// - D → NP2.
 /// - J never has a right neighbour in either VJ or VDJ chain layouts.
 fn right_extension_region_for<'a>(
     sim: &'a Simulation,
@@ -404,7 +402,7 @@ fn right_extension_region_for<'a>(
 ///   VDJ chains (… → NP2 → J). Both cases collapse to "the NP region
 ///   whose `end` equals `region.start`", so we don't need to know the
 ///   chain type.
-/// - D → NP1 (Phase 7.5).
+/// - D → NP1.
 /// - V never has a left neighbour in our DSL (V is always the first
 ///   region).
 fn left_extension_region_for<'a>(
@@ -452,7 +450,7 @@ fn call_from_region(
             .get(NucHandle::new(seq_pos))
             .expect("region range must point into the nucleotide pool");
 
-        // Phase 8: an indel-inserted nucleotide ends up inside V/D/J's
+        // an indel-inserted nucleotide ends up inside V/D/J's
         // region with `germline_pos == NO_GERMLINE_POS`. It carries
         // no allele evidence (no germline byte to compare), so we
         // skip it without failing the call. The candidate set is
@@ -474,7 +472,7 @@ fn call_from_region(
         };
 
         match next_ref_pos {
-            // Phase 8: ref_pos may *jump forward* if a base was
+            // ref_pos may *jump forward* if a base was
             // deleted between this position and the previous one.
             // We allow gap-up but still reject backwards motion,
             // which would indicate a genuinely-broken IR.
@@ -509,20 +507,19 @@ fn call_from_region(
     let mut seq_end = region.end.index();
     let mut flags = HypothesisFlags::EMPTY;
 
-    // ── Phase 7.4 left-side extension + Phase 9 overlap walk ────────
+    // ── Left-side extension + overlap walk ───────────────────────────
     //
     // If `left_extension` (NP1 for J on a VJ chain, NP2 for J on a
     // VDJ chain — or NP1 for D) sits immediately to the left of
-    // `region`, walk backward through it (and, per Phase 9, beyond
-    // it into earlier coding territory) as long as each base extends
-    // some candidate allele's reference *prefix*.
+    // `region`, walk backward through it (and beyond it into
+    // earlier coding territory) as long as each base extends some
+    // candidate allele's reference *prefix*.
     //
-    // Phase 7 marks `BOUNDARY_ELASTIC` whenever any extension occurs.
-    // Phase 9 additionally marks `OVERLAPS_OTHER_SEGMENT` when the
-    // walker crosses past `np_region.start` into the next-earlier
-    // region's bases — that's the live-graph overlap signal the
-    // design doc calls out (V/D and D/J overlap when bases support
-    // both).
+    // Mark `BOUNDARY_ELASTIC` whenever any extension occurs.
+    // Additionally mark `OVERLAPS_OTHER_SEGMENT` when the walker
+    // crosses past `np_region.start` into the next-earlier region's
+    // bases — that's the live-graph overlap signal the design doc
+    // calls out (V/D and D/J overlap when bases support both).
     //
     // Halt semantics unchanged: stop when the candidate set empties,
     // when ref_pos would go below 0, or when we run out of pool
@@ -539,9 +536,9 @@ fn call_from_region(
             let mut crossed_into_overlap = false;
 
             // Walk pool positions in REVERSE order from `np_region.end`
-            // down to 0. Phase 7 stopped at `np_region.start`; Phase 9
-            // continues past that point so V's left can reach into an
-            // earlier coding region's bases when evidence supports it.
+            // down to 0, continuing past `np_region.start` so V's left
+            // can reach into an earlier coding region's bases when
+            // evidence supports it.
             for seq_pos in (0..np_region.end.index()).rev() {
                 if extended_ref_start == 0 {
                     break;
@@ -589,15 +586,13 @@ fn call_from_region(
         }
     }
 
-    // ── Phase 7.1 right-side extension + Phase 9 overlap walk ──────
+    // ── Right-side extension + overlap walk ──────────────────────────
     //
     // Walk forward from `region.end` as long as each base extends
-    // some allele's reference suffix. Phase 7 bounded the walk at
-    // `right_extension.end` (the NP region's end). Phase 9 lifts
-    // that bound: the walker continues into the next-later coding
-    // region's bases (D for V, J for D) when evidence supports both
-    // placements simultaneously, marking `OVERLAPS_OTHER_SEGMENT`
-    // on the resulting hypothesis.
+    // some allele's reference suffix. The walker continues into the
+    // next-later coding region's bases (D for V, J for D) when
+    // evidence supports both placements simultaneously, marking
+    // `OVERLAPS_OTHER_SEGMENT` on the resulting hypothesis.
     if let Some(np_region) = right_extension {
         if np_region.start.index() == seq_end {
             let np_end = np_region.end.index();

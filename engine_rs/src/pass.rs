@@ -17,7 +17,7 @@
 //!   corresponds to exactly one `Pass::execute` call. The history
 //!   length equals the plan length plus one (for the initial IR).
 //!
-//! ## Phase B.2 scope
+//! ## Scope
 //!
 //! Just the orchestration plumbing. No real biology yet — the only
 //! pass implementations come in B.4 (`EchoPass`) and B.5
@@ -193,14 +193,14 @@ pub enum PassCompileFact {
 ///   via `dist::sample_filtered` to draw only admissible
 ///   candidates. `None` means no contracts active (MIXED mode).
 ///
-/// **Forward-compatibility (`#[non_exhaustive]`):** Phase E will
-/// almost certainly add fields (S5F kernel state, SHM mutation
-/// rate, indel position buffers, …). The non-exhaustive marker
-/// means *external* construction of `PassContext` is impossible,
-/// so future field additions are non-breaking for any consumer
-/// outside this crate. Internal construction (in `PassRuntime`)
-/// still uses struct-literal syntax and will need to acknowledge
-/// each new field — which has audit value.
+/// **Forward-compatibility (`#[non_exhaustive]`):** future SHM /
+/// corruption work will likely add fields (S5F kernel state, SHM
+/// mutation rate, indel position buffers, …). The non-exhaustive
+/// marker means *external* construction of `PassContext` is
+/// impossible, so future field additions are non-breaking for any
+/// consumer outside this crate. Internal construction (in
+/// `PassRuntime`) still uses struct-literal syntax and will need
+/// to acknowledge each new field — which has audit value.
 #[non_exhaustive]
 pub struct PassContext<'a> {
     pub trace: &'a mut Trace,
@@ -462,12 +462,10 @@ impl std::error::Error for PassError {}
 /// be recorded via `ctx.trace.record(...)` so the trace stays
 /// faithful.
 ///
-/// **Forward-compatibility (D6 + D7):** the trait will grow as
-/// contracts arrive in Phase D. To minimise churn for existing
-/// implementations, all future additions land as **defaulted
+/// **Forward-compatibility (D6 + D7):** to minimise churn for
+/// existing implementations, additions land as **defaulted
 /// methods** — concrete passes only override what's relevant. The
-/// current defaulted method is `declared_choices()`; expect
-/// contract-related additions later.
+/// current defaulted method is `declared_choices()`.
 pub trait Pass {
     /// Stable, human-readable identifier for this pass. Used in the
     /// `History` API for `revision_after(name)` queries (D9) and in
@@ -498,14 +496,14 @@ pub trait Pass {
     /// during a typical execution.
     ///
     /// Used by:
-    /// - **Phase D — contract upstream-bound propagation:** a
-    ///   contract that needs to know what addresses will be drawn at
-    ///   in the future of the plan can call this on each remaining
-    ///   pass to gather the address universe.
-    /// - **Phase D — build-time validator (D7 Phase 1):** the
-    ///   validator walks the plan, asks each pass what addresses it
-    ///   declares, and checks every contract against that universe
-    ///   to detect statically-impossible configurations.
+    /// - **Contract upstream-bound propagation:** a contract that
+    ///   needs to know what addresses will be drawn at in the future
+    ///   of the plan can call this on each remaining pass to gather
+    ///   the address universe.
+    /// - **Build-time validator:** the validator walks the plan,
+    ///   asks each pass what addresses it declares, and checks every
+    ///   contract against that universe to detect statically-
+    ///   impossible configurations.
     /// - **Future tooling:** trace-completeness audits, replay
     ///   shape verification.
     ///

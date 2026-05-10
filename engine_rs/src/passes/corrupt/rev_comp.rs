@@ -1,4 +1,4 @@
-//! `RevCompPass` — flag-recording reverse-complement pass (Phase 12.D).
+//! `RevCompPass` — flag-recording reverse-complement pass.
 //!
 //! Models the fact that ~50% of immune-seq reads come from the
 //! antisense strand. With probability `apply_prob` this pass records

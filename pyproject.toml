@@ -1,20 +1,80 @@
+# GenAIRR — unified Rust + Python package.
+#
+# The simulation kernel (Rust crate at engine_rs/) and the Python
+# wrappers under src/GenAIRR/ ship together as a single wheel built by
+# maturin. The Rust extension is exposed as the private submodule
+# GenAIRR._engine; users import the public API from `GenAIRR`.
+#
+# Version is derived from the git tag at release time by a CI step that
+# rewrites this file and engine_rs/Cargo.toml. For local development the
+# values below are used as-is.
+
 [build-system]
-requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
 
-# The simulation kernel ships separately as `genairr_engine` (built
-# with maturin from `engine_rs/`). End-users typically install both
-# wheels; in CI we build them in two passes.
+[project]
+name = "GenAIRR"
+version = "1.0.0"
+description = "Synthetic immune-receptor-sequence simulator for benchmarking alignment models and sequence analysis."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "GPL-3.0-or-later" }
+authors = [
+    { name = "Thomas Konstantinovsky", email = "thomaskon90@gmail.com" },
+    { name = "Ayelet Peres" },
+]
+keywords = ["immunogenetics", "sequence simulation", "bioinformatics", "alignment benchmarking"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+]
 
-[tool.cibuildwheel]
-# Skip PyPy, 32-bit, and musl i686.
-skip = "pp* *-musllinux_i686 *-win32"
+[project.optional-dependencies]
+dataconfig = ["numpy>=1.24", "scipy>=1.10"]
+viz = ["graphviz>=0.20"]
+all = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "graphviz>=0.20",
+    "tqdm>=4.60",
+]
 
-[tool.cibuildwheel.linux]
-archs = ["x86_64", "aarch64"]
+[project.urls]
+Homepage = "https://github.com/MuteJester/GenAIRR"
+"Bug Tracker" = "https://github.com/MuteJester/GenAIRR/issues"
 
-[tool.cibuildwheel.macos]
-archs = ["arm64"]
-
-[tool.cibuildwheel.windows]
-archs = ["AMD64"]
+[tool.maturin]
+# Mixed Rust + Python layout: maturin builds the Rust extension defined
+# in engine_rs/Cargo.toml and bundles it next to the Python sources from
+# src/GenAIRR/ in the same wheel.
+manifest-path = "engine_rs/Cargo.toml"
+python-source = "src"
+module-name = "GenAIRR._engine"
+features = ["pyo3/extension-module"]
+strip = true
+# Include reference data shipped inside the GenAIRR package. maturin
+# would pick up most of this automatically since it lives under the
+# python-source tree, but listing the globs explicitly guarantees the
+# files end up in both the wheel and the sdist.
+include = [
+    { path = "src/GenAIRR/data/*.pkl", format = ["sdist", "wheel"] },
+    { path = "src/GenAIRR/data/*.json", format = ["sdist", "wheel"] },
+    { path = "src/GenAIRR/data/builtin_dataconfigs/*.pkl", format = ["sdist", "wheel"] },
+    { path = "src/GenAIRR/data/builtin_dataconfigs/*.json", format = ["sdist", "wheel"] },
+    { path = "src/GenAIRR/data/mutation_model_parameters/*.pkl", format = ["sdist", "wheel"] },
+    { path = "src/GenAIRR/data/mutation_model_parameters/*.json", format = ["sdist", "wheel"] },
+    { path = "engine_rs/**/*", format = "sdist" },
+    { path = "README.md", format = "sdist" },
+    { path = "LICENSE", format = "sdist" },
+]

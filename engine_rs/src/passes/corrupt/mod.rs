@@ -2,13 +2,13 @@
 //! after the biology has been simulated.
 //!
 //! - [`PCRErrorPass`] — random base substitutions modeling PCR
-//!   amplification errors (Phase E.4).
+//!   amplification errors.
 //! - [`QualityErrorPass`] — sequencing errors written in lowercase
-//!   to mark the position as corrupted (Phase E.5).
+//!   to mark the position as corrupted.
 //! - [`ContaminantPass`] — wholesale read-level contamination
-//!   driven by a Bernoulli switch (Phase E.6).
+//!   driven by a Bernoulli switch.
 //! - [`IndelPass`] — insertions and deletions that change pool
-//!   length (Phase E.7).
+//!   length.
 
 pub mod contaminant;
 pub mod end_loss;

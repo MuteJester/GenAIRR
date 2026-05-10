@@ -1,13 +1,10 @@
 # GenAIRR — developer Makefile.
 #
-# Two packages live in this repo:
-#   - engine_rs/   Rust simulation kernel, built via maturin into the
-#                  active venv as the `genairr_engine` extension wheel.
-#   - src/GenAIRR/ Pure-Python wrappers around `genairr_engine`,
-#                  installed editable.
-#
-# `make build` rebuilds both. Run it whenever Rust sources change;
-# pure-Python edits hot-reload through the editable install.
+# GenAIRR ships as a single wheel that bundles the Rust simulation
+# kernel (built into `GenAIRR/_engine`) with the Python wrappers under
+# `src/GenAIRR/`. `make build` runs maturin in develop mode so the Rust
+# extension lands in your active venv and the Python sources are
+# editable.
 
 PYTHON ?= python
 PIP    ?= $(PYTHON) -m pip
@@ -16,7 +13,7 @@ PIP    ?= $(PYTHON) -m pip
 
 help:
 	@echo "GenAIRR developer targets:"
-	@echo "  make build       Rebuild Rust engine + reinstall Python package"
+	@echo "  make build       Build Rust extension + install GenAIRR (editable)"
 	@echo "  make rebuild     clean + build"
 	@echo "  make clean       Remove build artifacts"
 	@echo "  make test        Run the Python test suite (pytest)"
@@ -26,9 +23,8 @@ help:
 # --- Build ---------------------------------------------------------
 
 build:
-	$(PIP) install --upgrade maturin
-	maturin develop --release -m engine_rs/Cargo.toml
-	$(PIP) install -e . --no-build-isolation
+	$(PIP) install --upgrade "maturin>=1.5,<2.0"
+	maturin develop --release
 
 rebuild: clean build
 

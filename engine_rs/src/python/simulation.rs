@@ -12,7 +12,7 @@ use super::region::PyRegion;
 /// Exposes the assembled nucleotide pool (as `bytes`) and the
 /// region structure. V/D/J/NP/C metadata sits behind accessor
 /// methods so the Python surface stays narrow and stable.
-#[pyclass(name = "Simulation", module = "genairr_engine", frozen)]
+#[pyclass(name = "Simulation", module = "GenAIRR._engine", frozen)]
 pub struct PySimulation {
     pub(crate) inner: Simulation,
 }

@@ -8,10 +8,10 @@ on:
 
 jobs:
   # ── Python test matrix ─────────────────────────────────────────
-  # Builds the Rust `genairr_engine` via maturin into the current
-  # virtualenv, then installs the pure-Python `GenAIRR` package and
-  # runs the pytest suite. Stable Rust + abi3-py39 means one engine
-  # wheel covers every Python version we test.
+  # Builds the unified GenAIRR wheel via maturin (Rust kernel as the
+  # private GenAIRR._engine submodule + Python wrappers in one wheel)
+  # and runs the pytest suite. abi3-py39 means one wheel covers every
+  # Python version we test.
   test:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
       - uses: actions/checkout@v4
@@ -38,22 +38,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             engine_rs/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('engine_rs/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('engine_rs/Cargo.toml', 'engine_rs/Cargo.lock') }}
 
       - name: Install maturin + test deps
         run: |
           python -m pip install --upgrade pip
-          pip install maturin pytest pandas
+          pip install "maturin>=1.5,<2.0" pytest pandas
 
-      - name: Build genairr_engine wheel
-        run: maturin build --release --out dist -m engine_rs/Cargo.toml
-
-      - name: Install genairr_engine wheel
+      - name: Build & install GenAIRR wheel
+        run: maturin build --release --out dist
+      - name: Install built wheel
         shell: bash
-        run: pip install dist/genairr_engine-*.whl
-
-      - name: Install GenAIRR (pure-Python)
-        run: pip install -e .
+        run: pip install dist/genairr-*.whl
 
       - name: Run pytest
         run: pytest tests/ -x -q
@@ -79,7 +75,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             engine_rs/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('engine_rs/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('engine_rs/Cargo.toml', 'engine_rs/Cargo.lock') }}
 
       - name: cargo test
         working-directory: engine_rs

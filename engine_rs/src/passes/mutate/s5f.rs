@@ -1,4 +1,4 @@
-//! `S5FMutationPass` — context-dependent SHM model (Phase E.3).
+//! `S5FMutationPass` — context-dependent SHM model.
 
 use crate::contract::ChoiceContext;
 use crate::dist::{Distribution, FilteredSampleError};

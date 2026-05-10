@@ -7,15 +7,15 @@
 //! Submodule layout:
 //! - [`echo`] — `EchoPass`, the deterministic transform reference.
 //! - [`sample_base`] — `SampleBasePass`, the sampling reference.
-//! - [`sample_allele`] — V/D/J allele sampling (Phase C.5).
-//! - [`trim`] — recombination trim sampling (Phase C.6).
+//! - [`sample_allele`] — V/D/J allele sampling.
+//! - [`trim`] — recombination trim sampling.
 //! - [`assemble_segment`] — copy a germline allele slice into
-//!   the pool (Phase C.8).
+//!   the pool.
 //! - [`generate_np`] — TdT-like N-nucleotide region generation
-//!   (Phase C.7).
-//! - [`mutate`] — SHM passes (uniform + S5F, Phase E.1 / E.3).
+//!  .
+//! - [`mutate`] — SHM passes (uniform + S5F).
 //! - [`corrupt`] — observation-stage perturbations (PCR error,
-//!   quality error, contamination, indels — Phase E.4–E.7).
+//!   quality error, contamination, indels).
 
 pub mod assemble_segment;
 pub(crate) mod constrained;

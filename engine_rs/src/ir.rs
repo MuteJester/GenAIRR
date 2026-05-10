@@ -1,28 +1,19 @@
-//! Intermediate-representation (IR) type definitions for the V6
+//! Intermediate-representation (IR) type definitions for the
 //! simulation engine.
 //!
-//! This module defines the typed data shapes from §3 of the V6 design
-//! document. It deliberately contains **no biological logic** — only the
-//! structural definitions of the entities. Logic lives in later modules
-//! (passes, contracts, queries) that will be added in Phase B onwards.
+//! This module defines the typed data shapes from §3 of the design
+//! document. It deliberately contains **no biological logic** — only
+//! the structural definitions of the entities. Logic lives in
+//! sibling modules (passes, contracts, queries).
 //!
 //! ## Architectural commitments reflected here
 //!
 //! - **Arena allocation (D-§9):** `NucleotidePool` is a flat `Vec<Nucleotide>`.
 //!   Cross-entity references are typed `u32` newtype handles, not pointers.
 //! - **Persistent IR (D1):** all top-level entities derive `Clone` and have
-//!   no interior mutability. Structure sharing is implemented in Phase A.3
-//!   on top of these definitions.
+//!   no interior mutability.
 //! - **Entity-attached metadata (D5):** derived state lives on the entity
-//!   that owns it. Phase A.2 lays out the slots; Phase A.4 wires the
-//!   computation (codon rail / amino acids).
-//!
-//! ## What is intentionally absent in A.2
-//!
-//! - No `impl` of mutation methods on `NucleotidePool` (those are in A.3).
-//! - No amino-acid / codon computation on `Region` (that's A.4).
-//! - No junction / productive computation on `Sequence` (later phases).
-//! - No allele references or distributions (Phase B+).
+//!   that owns it (codon rail / amino acids).
 //!
 //! ## Performance / cost model (be honest about this)
 //!
@@ -38,16 +29,16 @@
 //! - For a typical simulation (~400 nucleotides × ~50–60 revisions)
 //!   the clone overhead is ~192 KB live history per active sim —
 //!   acceptable for development.
-//! - Branching (Phase D contracts that retry) multiplies this
-//!   linearly with branch depth. Phase C+D should measure before
-//!   committing to the naive path long-term.
+//! - Branching (contracts that retry) multiplies this linearly
+//!   with branch depth. We should measure before committing to the
+//!   naive path long-term.
 //! - The structural-sharing optimization (`Arc<Vec<Nucleotide>>` +
 //!   copy-on-write at the whole-vector granularity, or an HAMT-based
 //!   persistent vector via the `im` crate) is a forward-compatible
 //!   change — it preserves the existing `with_*` API surface and
 //!   tightens the cost model to ~O(1) for unchanged regions.
 //!
-//! When the contract test suite (Phase D) starts driving real
+//! When the contract test suite starts driving real
 //! simulation patterns we'll measure the cost and decide whether to
 //! land structure sharing. Until then, the API is honest about the
 //! contract; this comment is honest about the cost.
@@ -245,8 +236,6 @@ impl Nucleotide {
 // NucleotidePool — flat arena of nucleotides
 //
 // Owned by the Simulation. NucHandles index into `nucleotides`.
-// In Phase A.2 the pool exposes only construction and read-only
-// access; Phase A.3 adds persistent-update methods.
 // ──────────────────────────────────────────────────────────────────
 
 /// Arena of all nucleotides in a `Simulation`. `NucHandle` indexes
@@ -295,15 +284,15 @@ impl NucleotidePool {
     /// Append a nucleotide to the pool, returning its handle.
     /// Internal — the user-facing path goes through the persistent
     /// `Simulation::with_*` API. Kept `pub` for use during initial
-    /// construction (Phase B passes will build a fresh sim and push
-    /// nucleotides directly into a fresh pool before sealing it).
+    /// construction (passes build a fresh sim and push nucleotides
+    /// directly into a fresh pool before sealing it).
     pub fn push(&mut self, n: Nucleotide) -> NucHandle {
         let h = NucHandle::new(self.nucleotides.len() as u32);
         self.nucleotides.push(n);
         h
     }
 
-    // ── Persistent update API (Phase A.3) ──────────────────────────
+    // ── Persistent update API ──────────────────────────
     //
     // Each `with_*` method takes `&self`, returns a new `NucleotidePool`,
     // and never mutates the receiver. This is the persistent-IR
@@ -342,8 +331,8 @@ impl NucleotidePool {
     }
 
     /// Return a new pool with the nucleotide at `handle` replaced by
-    /// `new_n`. Panics if `handle` is out of bounds — Phase A.3
-    /// callers are responsible for handle validity.
+    /// `new_n`. Panics if `handle` is out of bounds — callers are
+    /// responsible for handle validity.
     pub fn with_nucleotide_changed(&self, handle: NucHandle, new_n: Nucleotide) -> Self {
         let mut next = self.clone();
         next.nucleotides[handle.as_usize()] = new_n;
@@ -360,7 +349,7 @@ impl NucleotidePool {
         next
     }
 
-    // ── Indel API (Phase E.7) ──────────────────────────────────────
+    // ── Indel API ──────────────────────────────────────
     //
     // Insertions and deletions change pool length and *shift* the
     // positional handles of all nucleotides at-or-after the indel
@@ -418,7 +407,7 @@ impl NucleotidePool {
 /// T=3). Returns `None` for any other byte (N, gap, ambiguity codes,
 /// etc.). Case-insensitive. U is treated as T (RNA-tolerant).
 ///
-/// Public so the S5F kernel (Phase E.2) can reuse the same encoding
+/// Public so the S5F kernel can reuse the same encoding
 /// to build 5-mer context indices.
 pub const fn encode_base(b: u8) -> Option<u8> {
     match b.to_ascii_uppercase() {
@@ -563,7 +552,7 @@ impl Region {
         self.start.index() == self.end.index()
     }
 
-    // ── Persistent update API (Phase A.3) ──────────────────────────
+    // ── Persistent update API ──────────────────────────
 
     /// Return a new region with `end` advanced by one nucleotide.
     /// Used when a pass appends to the underlying pool.
@@ -583,7 +572,7 @@ impl Region {
         }
     }
 
-    // ── Codon-rail metadata (Phase A.4) ─────────────────────────────
+    // ── Codon-rail metadata ─────────────────────────────
 
     /// Return a new region with `amino_acids` and
     /// `stop_codon_positions` recomputed from `pool`. Receiver
@@ -670,9 +659,6 @@ impl Region {
 
 /// The assembled sequence — the root structural entity at the
 /// "biological product" level.
-///
-/// Phase A.2 holds only the regions list; junction and productive
-/// status are added in later phases as derived metadata.
 #[derive(Clone, Debug, Default)]
 pub struct Sequence {
     /// Regions in biological assembly order.
@@ -689,7 +675,7 @@ impl Sequence {
         self.regions.len()
     }
 
-    // ── Persistent update API (Phase A.3) ──────────────────────────
+    // ── Persistent update API ──────────────────────────
 
     /// Return a new sequence with `region` appended; receiver unchanged.
     pub fn with_region_added(&self, region: Region) -> Self {
@@ -729,7 +715,7 @@ impl Sequence {
         Self { regions }
     }
 
-    // ── Indel adjustment (Phase E.7) ───────────────────────────────
+    // ── Indel adjustment ───────────────────────────────
 
     /// Return a new sequence with every region's range adjusted for
     /// an indel at pool position `pos` with the given `delta`
@@ -807,9 +793,8 @@ fn shift_pos(pos: u32, delta: i32) -> u32 {
 /// Internal helper for `Simulation::with_base_changed` and
 /// `with_nucleotide_changed`. Without this, those methods would
 /// produce IR revisions whose `Region.amino_acids` lies about
-/// the pool's actual content — a subtle staleness bug that
-/// would surface the moment SHM mutations enter the picture in
-/// Phase E.
+/// the pool's actual content — a subtle staleness bug that would
+/// surface the moment SHM mutations enter the picture.
 fn refresh_regions_covering(seq: &Sequence, pool: &NucleotidePool, handle: NucHandle) -> Sequence {
     let h = handle.index();
     let new_regions: Vec<Region> = seq
@@ -889,12 +874,12 @@ impl Simulation {
         }
     }
 
-    // ── Persistent update API (Phase A.3) ──────────────────────────
+    // ── Persistent update API ──────────────────────────
     //
     // Every method here takes `&self`, returns a new `Simulation`, and
     // never mutates the receiver. This is the public surface that
-    // future passes (Phase B+) will use to evolve the simulation
-    // without ever mutating an existing IR revision.
+    // passes use to evolve the simulation without ever mutating an
+    // existing IR revision.
 
     /// Return a new simulation with `n` pushed onto the pool. The
     /// returned tuple gives the issued `NucHandle` so the caller can
@@ -945,7 +930,7 @@ impl Simulation {
     /// Return a new simulation with only the base of the nucleotide
     /// at `handle` changed to `new_base`. Panics if `handle` is out
     /// of bounds. This is the canonical mutation primitive that
-    /// SHM passes will compose against in Phase E.
+    /// SHM passes compose against.
     ///
     /// **Codon-rail consistency (D5 invariant):** the affected
     /// region (if any contains `handle`) has its codon rail
@@ -1003,7 +988,7 @@ impl Simulation {
         }
     }
 
-    // ── Indel API (Phase E.7) ──────────────────────────────────────
+    // ── Indel API ──────────────────────────────────────
 
     /// Return a new simulation with `n` inserted at pool position
     /// `at`. The pool grows by 1; every existing nucleotide at
@@ -1261,9 +1246,7 @@ mod tests {
 
     #[test]
     fn simulation_clone_is_deep_at_value_level() {
-        // Phase A.2: simple Clone is a real deep copy. Phase A.3 will
-        // replace this with structure-sharing where unchanged parts
-        // are shared between revisions.
+        // simple Clone is a real deep copy.
         let mut a = Simulation::new();
         a.pool.push(Nucleotide::germline(b'A', 0, Segment::V));
         a.sequence.regions.push(Region::new(
@@ -1282,7 +1265,7 @@ mod tests {
         assert_eq!(b.pool.len(), 1);
     }
 
-    // ── Phase A.3 — persistent update API tests ─────────────────────
+    // ── Persistent update API tests ─────────────────────────────────
 
     #[test]
     fn pool_with_pushed_returns_new_pool_old_unchanged() {
@@ -1502,8 +1485,8 @@ mod tests {
 
     #[test]
     fn simulation_with_base_changed_refreshes_overlapping_region_codon_rail() {
-        // Pre-Phase-E audit finding: `with_base_changed` previously
-        // updated the pool but cloned the sequence verbatim, leaving
+        // Audit finding: `with_base_changed` previously updated the
+        // pool but cloned the sequence verbatim, leaving
         // `Region.amino_acids` stale against the new pool. This
         // would silently desync any future SHM/uniform pass that
         // mutates a base inside an assembled region.
@@ -1587,7 +1570,7 @@ mod tests {
         assert_eq!(mutated.sequence.regions[1].amino_acids, b"E");
     }
 
-    // ── Phase E.7 — indel IR API tests ─────────────────────────────
+    // ── Indel IR API tests ─────────────────────────────────────────
 
     #[test]
     fn pool_with_inserted_grows_and_shifts() {
@@ -1956,7 +1939,7 @@ mod tests {
         assert_eq!(branch_right.pool.get(h).unwrap().base, b'G');
     }
 
-    // ── Phase A.4 — codon-rail metadata tests ───────────────────────
+    // ── Codon-rail metadata tests ───────────────────────────────────
 
     /// Helper: build a pool from a base string with all nucleotides in
     /// segment V, germline_pos = position within the string. Returns
@@ -2160,9 +2143,8 @@ mod tests {
     fn region_codon_rail_malformed_end_less_than_start_is_safe() {
         // Defensive contract: a region constructed with end < start
         // (which `len()` already saturates to 0) produces empty
-        // codon rail metadata, not a panic. Phase C builders should
-        // not produce such regions, but the recompute should be
-        // robust.
+        // codon rail metadata, not a panic. Builders should not
+        // produce such regions, but the recompute should be robust.
         let mut pool = NucleotidePool::new();
         for i in 0..6 {
             pool.push(Nucleotide::germline(b'A', i, Segment::V));
@@ -2186,7 +2168,7 @@ mod tests {
         assert!(r.stop_codon_positions.is_empty());
     }
 
-    // ── Phase A.5 — stress test for the persistent IR + codon rail ──
+    // ── Stress test for the persistent IR + codon rail ──────────────
 
     /// Tiny deterministic PRNG (xorshift32) for the stress test. We
     /// avoid bringing in `rand` here so the test has zero external
@@ -2210,7 +2192,7 @@ mod tests {
 
     /// Apply 1000 random base mutations through the persistent API,
     /// keeping every IR revision in memory. Verifies four properties
-    /// that together pin the Phase A architectural commitments:
+    /// that together pin the IR's architectural commitments:
     ///
     ///   1. Persistent contract (D1): the initial revision retains its
     ///      original amino-acid sequence after all 1000 mutations have

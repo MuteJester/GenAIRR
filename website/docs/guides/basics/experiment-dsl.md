@@ -5,150 +5,140 @@ sidebar_label: Experiment DSL
 
 # The Experiment DSL
 
-GenAIRR uses a fluent builder called `Experiment` that models the stages of a real sequencing experiment. You configure what you want, then call `.run()` to generate sequences.
+GenAIRR uses a fluent builder called `Experiment` that models the stages of a real adaptive immune receptor experiment. You configure the biological and technical stages of your simulation by chaining methods, then call `.run()` to generate your data.
 
 ## Minimal example
 
 ```python
-from GenAIRR import Experiment
+import GenAIRR as ga
 
-result = Experiment.on("human_igh").run(n=1000, seed=42)
+# Generate 1,000 human heavy-chain rearrangements
+result = ga.Experiment.on("human_igh").recombine().run(n=1000, seed=42)
 ```
 
-This produces 1,000 unmutated, uncorrupted human heavy-chain rearrangements. Every phase is optional — you only add what you need.
+This produces 1,000 unmutated, uncorrupted human heavy-chain rearrangements. The `.recombine()` step is mandatory if you want V(D)J rearrangement; without it, you'd be simulating an empty sequence.
 
-## The five phases
+## Building a Pipeline
 
-The Experiment DSL has five biological phases. Each corresponds to a stage of a real sequencing experiment:
+The `Experiment` object allows you to build a sophisticated simulation pipeline by chaining methods in their natural biological and technical order.
 
 ```python
-from GenAIRR import Experiment
-from GenAIRR.ops import (
-    with_d_inversion, with_receptor_revision, using,
-    rate, model, with_isotype_rates, with_antigen_selection,
-    with_primer_mask, with_umi, with_pcr,
-    with_5prime_loss, with_3prime_loss, with_quality_profile,
-    with_reverse_complement,
-    with_indels, with_ns, with_contaminants,
-)
+import GenAIRR as ga
 
 result = (
-    Experiment.on("human_igh")
+    ga.Experiment.on("human_igh")
+    
+    # 1. Biological V(D)J recombination
+    # You can restrict alleles via .using()
+    .using(v="IGHV3-23*01", j=["IGHJ4*02", "IGHJ6*01"])
+    .recombine()
 
-    # 1. V(D)J recombination
-    .recombine(
-        with_d_inversion(0.15),
-        with_receptor_revision(0.05),
-    )
+    # 2. Somatic hypermutation (B-cells)
+    .mutate(model="s5f", count=(5, 25))
 
-    # 2. Somatic hypermutation
-    .mutate(
-        model("s5f"),
-        rate(0.01, 0.05),
-        with_isotype_rates(),
-        with_antigen_selection(0.5),
-    )
+    # 3. Sequencing artifacts (5'/3' loss)
+    .corrupt_5prime_loss(length=(5, 30))
+    .corrupt_3prime_loss(length=(5, 20))
 
-    # 3. Library preparation
-    .prepare(
-        with_primer_mask(),
-        with_umi(12),
-        with_pcr(error_rate=1e-4, cycles=30),
-    )
+    # 4. Post-sequencing noise (Indels and N-bases)
+    .corrupt_indels(count=(0, 2), insertion_prob=0.5)
+    .corrupt_ns(count=5)
 
-    # 4. Sequencing
-    .sequence(
-        with_5prime_loss(min_remove=5, max_remove=30),
-        with_3prime_loss(min_remove=5, max_remove=20),
-        with_quality_profile(base=0.001, peak=0.02),
-    )
-
-    # 5. Post-sequencing observation
-    .observe(
-        with_indels(prob=0.005),
-        with_ns(prob=0.005),
-        with_contaminants(rate=0.01),
-    )
+    # 5. Add AIRR-compliant metadata to every record
+    .with_metadata(sample_id="P1", donor="D001")
 
     .run(n=1000, seed=42)
 )
 ```
 
-### Phase summary
+### Key Methods
 
-| Phase | Method | What it models | Available ops |
-|-------|--------|----------------|---------------|
-| Recombination | `.recombine()` | Biological events during V(D)J joining | `with_d_inversion`, `with_receptor_revision`, `using` |
-| Mutation | `.mutate()` | Somatic hypermutation and maturation | `model`, `rate`, `with_isotype_rates`, `with_antigen_selection` |
-| Preparation | `.prepare()` | Wet-lab sample processing | `with_primer_mask`, `with_umi`, `with_pcr` |
-| Sequencing | `.sequence()` | Instrument-level effects | `with_5prime_loss`, `with_3prime_loss`, `with_quality_profile`, `with_reverse_complement`, `long_read`, `paired_end` |
-| Observation | `.observe()` | Post-sequencing noise | `with_indels`, `with_ns`, `with_contaminants` |
+| Method | Purpose | Key Arguments |
+|-------|---------|---------------|
+| `.recombine()` | Standard V(D)J joining | `trim` (bool), `v_allele_weights` (dict) |
+| `.mutate()` | Somatic hypermutation | `model` ("s5f" or "uniform"), `count` |
+| `.corrupt_5prime_loss()` | Primer/signal loss at 5' end | `length` |
+| `.corrupt_3prime_loss()` | Read-end degradation | `length` |
+| `.corrupt_indels()` | Sequencing insertions/deletions | `count`, `insertion_prob` |
+| `.corrupt_ns()` | Ambiguous base calls | `count` |
+| `.corrupt_pcr()` | PCR amplification errors | `count` |
+| `.corrupt_quality()` | Sequencing quality errors | `count` |
+| `.with_metadata()` | Inject AIRR sample columns | `sample_id`, `donor`, etc. |
+| `.using()` | Lock specific alleles | `v`, `d`, `j` (names or lists) |
 
-## Phase order matters
+## Customizing Recombination
 
-Phases must be called in biological order: `.recombine()` before `.mutate()` before `.prepare()` before `.sequence()` before `.observe()`. You can skip any phase, but you cannot reorder them:
-
-```python
-# Valid — skip recombine and prepare
-Experiment.on("human_igh").mutate(rate(0.05, 0.1)).sequence(with_5prime_loss()).run(n=100)
-
-# Valid — just mutation
-Experiment.on("human_igh").mutate(rate(0.02, 0.08)).run(n=100)
-
-# Valid — just artifacts, no mutation
-Experiment.on("human_igh").observe(with_indels(prob=0.01)).run(n=100)
-```
-
-## Ops are validated at construction
-
-Each op function validates its parameters when called, not at run time. This means errors are caught early:
+The `.recombine()` method can be biased by providing specific allele weights. This is useful for simulating specific repertoire biases without completely locking out other alleles.
 
 ```python
-from GenAIRR.ops import rate
+# Bias toward a specific V gene family
+v_weights = {"IGHV3-23*01": 50.0, "IGHV3-7*01": 10.0}
 
-rate(0.02, 0.08)   # valid
-rate(-0.1, 0.5)    # raises ValueError immediately
-rate(0.5, 0.02)    # raises ValueError (min > max)
+exp = ga.Experiment.on("human_igh").recombine(v_allele_weights=v_weights)
 ```
 
-## `.run()` vs `.compile()`
+## Adding Custom Metadata
 
-`.run(n=..., seed=...)` is the simple path — it compiles and simulates in one call, returning a `SimulationResult`:
+You can attach sample-level metadata (like donor ID or sample name) that will be included in every generated AIRR record. This is essential for integrating synthetic data into multi-sample analysis pipelines.
 
 ```python
-result = Experiment.on("human_igh").mutate(rate(0.02, 0.08)).run(n=1000, seed=42)
-print(len(result))  # 1000
+exp = (
+    ga.Experiment.on("human_igh")
+    .with_metadata(donor="D123", sample_id="S001", custom_tag="Synthetic_v1")
+    .recombine()
+)
 ```
 
-`.compile(seed=...)` returns a `CompiledSimulator` for streaming or repeated use:
+## The `count` and `length` Arguments
+
+Most mutation and corruption methods take a `count` or `length` argument that defines how many events to apply per sequence. This argument is highly flexible:
+
+*   **Fixed Integer:** `count=10` — every sequence gets exactly 10 events.
+*   **Uniform Range:** `count=(5, 15)` — every sequence gets a uniform random integer between 5 and 15.
+*   **Empirical Distribution:** `count=[(5, 1.0), (10, 2.0)]` — a list of `(value, weight)` tuples. In this example, 10 events are twice as likely as 5.
+
+## Clonal Structure
+
+To simulate clonal families (multiple descendants from the same parent rearrangement), use `.with_clonal_structure()`:
 
 ```python
-sim = Experiment.on("human_igh").mutate(rate(0.02, 0.08)).compile(seed=42)
+exp = (
+    ga.Experiment.on("human_igh")
+    .recombine() # Runs once per parent
+    .with_clonal_structure(n_clones=10, size=20)
+    .mutate(count=(5, 15)) # Runs once per descendant
+)
 
-# Stream one record at a time (infinite iterator)
-for record in sim.stream():
-    process(record)
-    if done:
-        break
+# 10 clones * 20 descendants = 200 records
+result = exp.run()
 ```
 
-## Productive filtering
+Steps before `.with_clonal_structure()` are shared by all members of the clone; steps after it introduce divergence.
 
-Pass `productive=True` to `.run()` to bias the simulation toward productive sequences (in-frame, no stop codons in the junction):
+## Running the Experiment
+
+### `.run(n=..., seed=...)`
+The simplest way to get results. Returns a `SimulationResult` containing `n` records.
+
+### `.run_records(n=..., seed=..., expose_provenance=True)`
+Returns a list of raw dictionaries. Use `expose_provenance=True` to include `truth_v_call` and other absolute truth fields.
+
+### `.compile(seed=...)`
+Returns a `CompiledSimulator` that can be used for streaming:
 
 ```python
-result = Experiment.on("human_igh").run(n=1000, seed=42, productive=True)
-
-productive_count = sum(1 for rec in result if rec["productive"])
-print(f"{productive_count}/{len(result)} productive")  # nearly all
+sim = exp.compile(seed=42)
+for outcome in sim.stream(n=10000):
+    # Process GenAIRR._engine.Outcome objects
+    pass
 ```
 
-:::note
-The productive filter uses a retry loop with a maximum attempt limit. The vast majority of sequences will be productive, but a small number may slip through if the retry budget is exhausted. Always check the `productive` field if you need a strict guarantee.
-:::
+## Reproducibility
+
+GenAIRR is bit-for-bit deterministic. The same pipeline and same seed will produce identical sequences and metadata every time, regardless of whether you are running on Linux, macOS, or Windows.
 
 ## Next steps
 
-- [Somatic Hypermutation](/docs/guides/options/shm) — mutation models, rates, and selection
-- [Sequencing Artifacts](/docs/guides/options/artifacts) — 5'/3' loss, PCR, quality profiles
-- [Biological Events](/docs/guides/options/biology) — D-inversion, receptor revision, allele locking
+- [Chain Types](/docs/guides/basics/chain-types) — VDJ vs VJ chains and species coverage
+- [Somatic Hypermutation](/docs/guides/options/shm) — Deep dive into SHM models
+- [Sequencing Artifacts](/docs/guides/options/artifacts) — Modeling realistic noise

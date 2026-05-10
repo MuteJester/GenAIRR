@@ -13,12 +13,12 @@ fn lowercase_base(base: u8) -> u8 {
 /// Models sequencing errors as random base substitutions written
 /// in **lowercase** to mark the position as corrupted.
 ///
-/// **Biological convention preserved from V5:** uppercase bases
-/// are germline-derived; lowercase bases were mutated or corrupted
-/// at some point (SHM, NP-derived, sequencing error, etc.). This
-/// pass writes lowercase substitutions so downstream queries can
-/// distinguish "this position was hit by a sequencing error" from
-/// "this position was germline."
+/// **Biological convention:** uppercase bases are germline-derived;
+/// lowercase bases were mutated or corrupted at some point (SHM,
+/// NP-derived, sequencing error, etc.). This pass writes lowercase
+/// substitutions so downstream queries can distinguish "this
+/// position was hit by a sequencing error" from "this position was
+/// germline."
 ///
 /// Mechanically identical to `PCRErrorPass` and
 /// `UniformMutationPass` (count + per-error site + per-error

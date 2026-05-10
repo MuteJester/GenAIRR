@@ -6,8 +6,7 @@ The user-facing API is the fluent :class:`Experiment` builder:
     >>> outcomes = ga.Experiment.on("human_igh").recombine().run(n=100, seed=42)
 
 Internally, ``Experiment`` compiles to a Rust ``PassPlan`` (via
-:mod:`genairr_engine`) and runs it through the V6 simulation kernel.
-The legacy V5 C engine has been retired in favour of the Rust kernel.
+:mod:`GenAIRR._engine`) and runs it through the simulation kernel.
 """
 from importlib.metadata import (
     PackageNotFoundError as _PackageNotFoundError,
@@ -31,8 +30,8 @@ from .experiment import CompiledExperiment, Experiment, dataconfig_to_refdata
 from .result import SimulationResult
 
 # Canonical contract bundle. Re-exported here so users write
-# ``GenAIRR.productive()`` without reaching into ``genairr_engine``.
-from genairr_engine import StrictSamplingError, productive
+# ``GenAIRR.productive()`` without reaching into ``GenAIRR._engine``.
+from GenAIRR._engine import StrictSamplingError, productive
 
 # Reference data — DataConfig + species pickles.
 from .data import list_configs

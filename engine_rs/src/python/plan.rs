@@ -41,7 +41,7 @@ use super::refdata::PyRefDataConfig;
 /// `unsendable` because the `Pass` trait isn't `Send` — the
 /// boxed-dyn passes inside the plan can't be moved between
 /// threads. Plain Python use is single-threaded so this is fine.
-#[pyclass(name = "PassPlan", module = "genairr_engine", unsendable)]
+#[pyclass(name = "PassPlan", module = "GenAIRR._engine", unsendable)]
 pub struct PyPassPlan {
     inner: Option<PassPlan>,
 }
@@ -123,7 +123,7 @@ impl PyPassPlan {
             )));
         }
 
-        // G3b: `allowed_ids` and `weights` are mutually exclusive.
+        // `allowed_ids` and `weights` are mutually exclusive.
         // The Python DSL never combines them; reject the combination
         // explicitly so a future caller doesn't silently ignore one.
         if allowed_ids.is_some() && weights.is_some() {
@@ -319,7 +319,7 @@ impl PyPassPlan {
 
     /// Append a `QualityErrorPass`. Same shape as PCR but each
     /// substitution writes the destination base as **lowercase** to
-    /// preserve the V5 sequencing-error convention (uppercase =
+    /// preserve the sequencing-error convention (uppercase =
     /// germline, lowercase = corrupted).
     fn push_corrupt_quality(&mut self, count_pairs: Vec<(i64, f64)>) -> PyResult<()> {
         if count_pairs.is_empty() {
@@ -388,7 +388,7 @@ impl PyPassPlan {
         Ok(())
     }
 
-    /// Append an `NCorruptionPass` (G7). ``count_pairs`` gives the
+    /// Append an `NCorruptionPass`. ``count_pairs`` gives the
     /// per-simulation distribution over the number of `N`
     /// substitutions. Each substitution picks a uniform pool
     /// position and overwrites the base with `N`.
@@ -406,7 +406,7 @@ impl PyPassPlan {
         Ok(())
     }
 
-    /// Append a `EndLossPass` for the 5' end (Phase 12.D). The
+    /// Append a `EndLossPass` for the 5' end. The
     /// `length_pairs` distribution gives the number of bases to
     /// strip from the start of the assembled sequence; the actual
     /// loss is clamped to the pool length.
@@ -425,7 +425,7 @@ impl PyPassPlan {
         Ok(())
     }
 
-    /// Append a `EndLossPass` for the 3' end (Phase 12.D).
+    /// Append a `EndLossPass` for the 3' end.
     ///
     /// Errors: ``ValueError`` when ``length_pairs`` is empty.
     fn push_corrupt_3prime_loss(&mut self, length_pairs: Vec<(i64, f64)>) -> PyResult<()> {
@@ -441,7 +441,7 @@ impl PyPassPlan {
         Ok(())
     }
 
-    /// Append a `RevCompPass` (Phase 12.D). With probability
+    /// Append a `RevCompPass`. With probability
     /// ``apply_prob`` the AIRR record-builder will reverse-complement
     /// the `sequence`, `np1`, `np2`, `junction` fields and flip
     /// the corresponding pool-position coords; alignment / germline

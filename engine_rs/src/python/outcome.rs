@@ -15,7 +15,7 @@ use super::trace::PyTrace;
 /// The result of executing a `PassPlan`: the IR revision history,
 /// the per-revision pass names, the addressed-choice trace, and the
 /// committed event ledger.
-#[pyclass(name = "Outcome", module = "genairr_engine", frozen)]
+#[pyclass(name = "Outcome", module = "GenAIRR._engine", frozen)]
 pub struct PyOutcome {
     pub(crate) inner: Outcome,
 }
@@ -101,11 +101,11 @@ impl PyOutcome {
     /// Build a fully-populated AIRR Rearrangement record dict from
     /// this outcome and the reference data it ran against.
     ///
-    /// Returns a Python `dict` matching the field shape the Phase H
-    /// Python builder produced — same ~50 columns, same coordinate
-    /// convention (0-based half-open). The Python `SimulationResult`
-    /// layer adds the AIRR-strict 1-based-inclusive transformation
-    /// at TSV/CSV/DataFrame export time.
+    /// Returns a Python `dict` with the AIRR Rearrangement field
+    /// shape — ~50 columns, 0-based half-open coordinates. The
+    /// Python `SimulationResult` layer adds the AIRR-strict
+    /// 1-based-inclusive transformation at TSV/CSV/DataFrame export
+    /// time.
     ///
     /// `sequence_id` defaults to an empty string when omitted.
     #[pyo3(signature = (refdata, *, sequence_id = ""))]

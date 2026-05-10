@@ -25,7 +25,7 @@ use crate::dist::FilteredSampleError;
 use crate::pass::PassError;
 
 create_exception!(
-    genairr_engine,
+    _engine,
     StrictSamplingError,
     PyException,
     "Raised by strict-mode runs when a pass cannot execute safely.\n\
@@ -111,7 +111,7 @@ pub(crate) fn pass_error_to_pyerr(err: PassError) -> PyErr {
 /// runners as the `respect=` argument; the compiled simulator
 /// threads it through each pass so sampling can filter candidates
 /// and strict execution can verify post-pass state.
-#[pyclass(name = "ContractSet", module = "genairr_engine", unsendable)]
+#[pyclass(name = "ContractSet", module = "GenAIRR._engine", unsendable)]
 pub struct PyContractSet {
     pub(crate) inner: ContractSet,
 }
@@ -157,7 +157,7 @@ impl PyContractSet {
 /// 4. `AnchorPreserved::J` — J W/F codon retained after J trim
 ///
 /// Pass this to ``Experiment.run(respect=...)`` (or to
-/// ``genairr_engine.run(plan, seed, respect=...)``) to constrain
+/// ``GenAIRR._engine.run(plan, seed, respect=...)``) to constrain
 /// every NP-base draw, every length sample, and every mutation /
 /// corruption substitution to admissible values. In strict mode, the
 /// compiled simulator also verifies the bundle after each pass.

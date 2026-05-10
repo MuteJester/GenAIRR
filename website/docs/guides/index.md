@@ -7,16 +7,14 @@ sidebar_label: Overview
 
 Practical recipes for common GenAIRR tasks. Each guide is self-contained — pick the one that matches what you need to do.
 
-## Basics
-
-- [The Experiment DSL](/docs/guides/basics/experiment-dsl) — how the fluent builder and five biological phases work
-- [Chain Types](/docs/guides/basics/chain-types) — VDJ vs VJ chains, BCR vs TCR
-- [Export Formats](/docs/guides/basics/export) — CSV, FASTA, DataFrame, and streaming
-
-## Simulation Options
-
-- [Somatic Hypermutation](/docs/guides/options/shm) — mutation models, rates, CSR, and selection pressure
-- [Sequencing Artifacts](/docs/guides/options/artifacts) — 5'/3' loss, PCR errors, quality profiles, indels, Ns
-- [Biological Events](/docs/guides/options/biology) — D-inversion, receptor revision, allele locking
-- [Productive Sequences](/docs/guides/options/productive) — filtering for in-frame, stop-codon-free output
-- [Reproducibility](/docs/guides/options/reproducibility) — deterministic seeds and cross-platform consistency
+| Section | Guide | Description |
+|---------|-------|-------------|
+| **Simulation Basics** | [The Experiment DSL](/docs/guides/basics/experiment-dsl) | How to build simulation pipelines using the fluent `Experiment` API. |
+| | [Chain Types](/docs/guides/basics/chain-types) | Understanding the structural differences between VDJ and VJ rearrangements. |
+| | [Export Formats](/docs/guides/basics/export) | Saving results as AIRR TSV, FASTA, or pandas DataFrames, and memory-efficient streaming. |
+| **Biological Variation** | [Somatic Hypermutation](/docs/guides/options/shm) | Deep dive into context-dependent S5F and uniform mutation models. |
+| | [Biological Events](/docs/guides/options/biology) | Controlling biological sampling via Allele Locking and Weighting. |
+| | [Clonal Families](/docs/guides/options/clonal-families) | Simulating hierarchical lineages and shared mutation history. |
+| **Technical Realism** | [Sequencing Artifacts](/docs/guides/options/artifacts) | Modeling technical noise like primer trimming, PCR errors, and indels. |
+| | [Reproducibility](/docs/guides/options/reproducibility) | Ensuring bit-for-bit identity across platforms using seeded PRNGs and the **Addressed Trace**. |
+| **Safety & Constraints** | [Productive Sequences](/docs/guides/options/productive) | Using **Contracts** to ensure functional, in-frame rearrangements by construction. |

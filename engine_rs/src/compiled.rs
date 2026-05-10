@@ -601,7 +601,7 @@ fn apply_live_call_updates(
         match effect {
             PassEffect::AssembleSegment(segment) => {
                 sim = with_assembled_segment_live_call(&sim, reference_index, *segment);
-                // Phase 9: assembling a downstream segment introduces
+                // assembling a downstream segment introduces
                 // new bases that an earlier segment's right-extension
                 // walker can reach into when its allele suffix happens
                 // to match. Retrigger the upstream segment's refresh
@@ -613,8 +613,8 @@ fn apply_live_call_updates(
                 //
                 // No symmetric upstream hook for V right-into-J (we
                 // never assemble J without D in VDJ chains, and the
-                // walker would have to traverse D's region first
-                // — Phase 9 keeps the targeted hops conservative).
+                // walker would have to traverse D's region first;
+                // the targeted hops stay conservative).
                 match segment {
                     Segment::D => {
                         sim = with_assembled_segment_live_call(
@@ -633,26 +633,25 @@ fn apply_live_call_updates(
                     _ => {}
                 }
             }
-            // Phase 6: any base edit (SHM, uniform mutation, PCR, quality
+            // any base edit (SHM, uniform mutation, PCR, quality
             // / N injection, contaminant overwrite) can change which
             // alleles the assembled bases support. We do a conservative
             // refresh — every assembled V/D/J segment is recomputed from
             // the current pool. Segments without an assembled region are
             // a no-op inside `with_assembled_segment_live_call`.
             //
-            // Phase 10 evaluated a dirty-window optimization that scanned
-            // the trace delta for edited positions and skipped segments
-            // outside the dirty range. Benchmarking showed the trace-scan
-            // cost (~5 µs/record) cancelled the refresh savings: net change
-            // was 0-2 µs/record on typical loads, sometimes a small loss.
-            // The simpler full-refresh policy is kept for clarity. See the
-            // Phase 10 design-doc entry for the data.
+            // A dirty-window optimization (scanning the trace delta for
+            // edited positions and skipping segments outside the dirty
+            // range) was evaluated. The trace-scan cost (~5 µs/record)
+            // cancelled the refresh savings — net change was 0-2
+            // µs/record on typical loads, sometimes a small loss. The
+            // simpler full-refresh policy is kept for clarity.
             PassEffect::EditBases => {
                 for segment in [Segment::V, Segment::D, Segment::J] {
                     sim = with_assembled_segment_live_call(&sim, reference_index, segment);
                 }
             }
-            // Phase 7.1: an NP region appearing right-adjacent to V
+            // an NP region appearing right-adjacent to V
             // can extend V's right boundary if the NP bases happen to
             // continue exactly into a V allele's suffix. The walker
             // inside `with_assembled_segment_live_call` does the
@@ -661,7 +660,7 @@ fn apply_live_call_updates(
             PassEffect::AppendRegion(Segment::Np1) => {
                 sim = with_assembled_segment_live_call(&sim, reference_index, Segment::V);
             }
-            // Phase 7.5: NP2 appears AFTER D is assembled (the typical
+            // NP2 appears AFTER D is assembled (the typical
             // VDJ pipeline order is `... → assemble(D) → np2 → ...`),
             // so D's right boundary cannot pick up NP2 bases at
             // assembly time. Retrigger D refresh once NP2 exists so
@@ -675,14 +674,13 @@ fn apply_live_call_updates(
             PassEffect::AppendRegion(Segment::Np2) => {
                 sim = with_assembled_segment_live_call(&sim, reference_index, Segment::D);
             }
-            // Phase 8: structural indels (insertions / deletions) shift
+            // structural indels (insertions / deletions) shift
             // the pool layout under V/D/J coding regions. Indel-inserted
             // nucleotides have NO_GERMLINE_POS so the walker skips them;
             // deletions show up as forward jumps in `germline_pos` which
             // the walker now tolerates. Refresh every assembled V/D/J
             // segment from the post-indel pool so the live calls reflect
-            // the new evidence layout. The narrower per-indel dirty
-            // window is Phase 10's optimization.
+            // the new evidence layout.
             PassEffect::StructuralIndel => {
                 for segment in [Segment::V, Segment::D, Segment::J] {
                     sim = with_assembled_segment_live_call(&sim, reference_index, segment);
@@ -2490,18 +2488,19 @@ mod tests {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Phase 6: Base edit live-call refresh fixtures.
+    // Base edit live-call refresh fixtures.
     //
     // Each fixture builds a tiny VDJ refdata, samples a chosen V
     // allele, assembles V, then runs a deterministic test-only base
     // edit pass to surface one of the four shrink / widen / switch /
-    // unsupported behaviours the design doc calls out for Phase 6.
+    // unsupported behaviours the design doc calls out for base
+    // edits.
     // ──────────────────────────────────────────────────────────────
 
     /// Test-only deterministic base distribution. Always samples the
     /// configured byte; reports it as the only point in `support()`.
-    /// Used by Phase 6 (UniformMutationPass) and Phase 7 (GenerateNPPass)
-    /// fixtures to produce known base sequences without seed-pinning.
+    /// Used by mutation- and NP-pass fixtures to produce known base
+    /// sequences without seed-pinning.
     #[derive(Clone, Debug)]
     struct ConstBaseDist(u8);
 
@@ -2555,7 +2554,7 @@ mod tests {
     /// V-only refdata where every allele has a unique 9-base sequence
     /// (no shared prefix). Used by the widen / switch / unsupported
     /// fixtures where each ref position cleanly distinguishes alleles.
-    fn phase6_distinct_v_refdata(seqs: &[(&str, &[u8])]) -> RefDataConfig {
+    fn distinct_v_refdata(seqs: &[(&str, &[u8])]) -> RefDataConfig {
         let mut cfg = RefDataConfig::empty(ChainType::Vdj);
         for (name, seq) in seqs {
             let _ = cfg.v_pool.push(Allele {
@@ -2572,7 +2571,7 @@ mod tests {
     /// Drive a fixture: sample-allele(V) → assemble(V) → edit(pool, base).
     /// Returns the final `Outcome` and the V live call extracted from the
     /// final revision.
-    fn phase6_run_edit(
+    fn run_edit(
         cfg: &RefDataConfig,
         sampled_id: AlleleId,
         edits: Vec<(u32, u8)>,
@@ -2595,8 +2594,8 @@ mod tests {
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 6 fixture plan should compile");
-        let outcome = compiled.run_one(0).expect("phase 6 plan should run");
+                .expect("fixture plan should compile");
+        let outcome = compiled.run_one(0).expect("plan should run");
         let final_sim = outcome.final_simulation().clone();
         let v_call = final_sim
             .live_calls
@@ -2609,7 +2608,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_mutation_widens_live_call_when_distinguishing_base_is_lost() {
+    fn mutation_widens_live_call_when_distinguishing_base_is_lost() {
         // Three alleles whose only difference is at position 3:
         //   A1: A A A G A A A A A
         //   A2: A A A C A A A A A
@@ -2618,7 +2617,7 @@ mod tests {
         // Sampling A1 produces an assembled "AAAGAAAAA" → live call {A1}.
         // Mutating position 3 from G→C makes the assembled bases match
         // both A2 and A3 exactly → live call widens to {A2, A3}.
-        let cfg = phase6_distinct_v_refdata(&[
+        let cfg = distinct_v_refdata(&[
             ("V*01", b"AAAGAAAAA"),
             ("V*02", b"AAACAAAAA"),
             ("V*03", b"AAACAAAAA"),
@@ -2627,7 +2626,7 @@ mod tests {
         let v02 = AlleleId::new(1);
         let v03 = AlleleId::new(2);
 
-        let (_outcome, v_call) = phase6_run_edit(&cfg, v01, vec![(3, b'C')]);
+        let (_outcome, v_call) = run_edit(&cfg, v01, vec![(3, b'C')]);
         let mut expected = vec![v02, v03];
         expected.sort_by_key(|id| id.index());
         let mut actual = v_call.allele_call.to_ids();
@@ -2637,7 +2636,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_mutation_switches_live_call_to_a_different_singleton() {
+    fn mutation_switches_live_call_to_a_different_singleton() {
         // Two alleles differing at position 3 only:
         //   A1: A A A G A A A A A   (sampled)
         //   A2: A A A C A A A A A
@@ -2645,19 +2644,19 @@ mod tests {
         // Pre-edit live call = {A1}. After editing position 3 G→C, the
         // assembled bases match A2 exactly → live call = {A2}. Same
         // size, but the membership has switched.
-        let cfg = phase6_distinct_v_refdata(&[
+        let cfg = distinct_v_refdata(&[
             ("V*01", b"AAAGAAAAA"),
             ("V*02", b"AAACAAAAA"),
         ]);
         let v01 = AlleleId::new(0);
         let v02 = AlleleId::new(1);
 
-        let (_outcome, v_call) = phase6_run_edit(&cfg, v01, vec![(3, b'C')]);
+        let (_outcome, v_call) = run_edit(&cfg, v01, vec![(3, b'C')]);
         assert_eq!(v_call.allele_call.to_ids(), vec![v02]);
     }
 
     #[test]
-    fn phase6_mutation_shrinks_live_call_from_three_to_one() {
+    fn mutation_shrinks_live_call_from_three_to_one() {
         // Four alleles. The first three are identical (perfect ambiguity),
         // the fourth differs at position 2:
         //   A1: A A A C C C   (sampled — identical to A2 / A3)
@@ -2669,7 +2668,7 @@ mod tests {
         // live call {A1, A2, A3} (size 3). After editing position 2
         // A→T the assembled becomes "AATCCC" which only matches A4 →
         // live call shrinks to {A4} (size 1).
-        let cfg = phase6_distinct_v_refdata(&[
+        let cfg = distinct_v_refdata(&[
             ("V*01", b"AAACCC"),
             ("V*02", b"AAACCC"),
             ("V*03", b"AAACCC"),
@@ -2678,7 +2677,7 @@ mod tests {
         let v01 = AlleleId::new(0);
         let v04 = AlleleId::new(3);
 
-        let (_outcome, v_call) = phase6_run_edit(&cfg, v01, vec![(2, b'T')]);
+        let (_outcome, v_call) = run_edit(&cfg, v01, vec![(2, b'T')]);
         assert_eq!(
             v_call.allele_call.len(),
             1,
@@ -2689,16 +2688,16 @@ mod tests {
     }
 
     #[test]
-    fn phase6_mutation_to_orphan_base_marks_live_call_unsupported() {
+    fn mutation_to_orphan_base_marks_live_call_unsupported() {
         // Single allele with a fully-determined sequence. Mutating any
         // assembled base to a value no allele has at that ref position
         // pushes the live call into the unsupported state. We use a
         // single allele (V*01) so there is no fallback to compare
         // against.
-        let cfg = phase6_distinct_v_refdata(&[("V*01", b"AAAAAA")]);
+        let cfg = distinct_v_refdata(&[("V*01", b"AAAAAA")]);
         let v01 = AlleleId::new(0);
 
-        let (_outcome, v_call) = phase6_run_edit(&cfg, v01, vec![(2, b'T')]);
+        let (_outcome, v_call) = run_edit(&cfg, v01, vec![(2, b'T')]);
         assert!(
             v_call.allele_call.is_empty(),
             "expected unsupported call (empty allele set), got {:?}",
@@ -2711,21 +2710,20 @@ mod tests {
     }
 
     #[test]
-    fn phase6_pre_edit_live_call_visible_in_intermediate_revision() {
+    fn pre_edit_live_call_visible_in_intermediate_revision() {
         // The compiled runtime stores a revision after every committed
-        // pass. Phase 6 must not regress that history: the pre-edit
-        // live call should be reachable via revisions[2] (after
-        // assemble) while the final revision shows the post-edit
-        // (widened) call. This guards against accidentally rewriting
-        // earlier revisions when refreshing live calls.
-        let cfg = phase6_distinct_v_refdata(&[
+        // pass. The pre-edit live call should be reachable via
+        // revisions[2] (after assemble) while the final revision shows
+        // the post-edit (widened) call. This guards against accidentally
+        // rewriting earlier revisions when refreshing live calls.
+        let cfg = distinct_v_refdata(&[
             ("V*01", b"AAAGAAAAA"),
             ("V*02", b"AAACAAAAA"),
             ("V*03", b"AAACAAAAA"),
         ]);
         let v01 = AlleleId::new(0);
 
-        let (outcome, post_edit_call) = phase6_run_edit(&cfg, v01, vec![(3, b'C')]);
+        let (outcome, post_edit_call) = run_edit(&cfg, v01, vec![(3, b'C')]);
 
         // revisions: [initial, post-sample, post-assemble, post-edit].
         assert_eq!(outcome.revisions.len(), 4);
@@ -2744,7 +2742,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_real_uniform_mutation_pass_increments_live_call_version() {
+    fn real_uniform_mutation_pass_increments_live_call_version() {
         // Integration-style coverage: confirm the live-call refresh
         // path also fires when the real `UniformMutationPass` runs,
         // not just our synthetic `EditBaseAtPass`. UniformMutationPass
@@ -2756,7 +2754,7 @@ mod tests {
         // version.
         use crate::passes::UniformMutationPass;
 
-        let cfg = phase6_distinct_v_refdata(&[("V*01", b"AAAAAAAAA")]);
+        let cfg = distinct_v_refdata(&[("V*01", b"AAAAAAAAA")]);
         let v01 = AlleleId::new(0);
 
         let mut plan = PassPlan::new();
@@ -2775,7 +2773,7 @@ mod tests {
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 6 integration plan should compile");
+                .expect("integration plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         // revisions: [initial, post-sample, post-assemble, post-mutate].
@@ -2797,7 +2795,7 @@ mod tests {
     }
 
     #[test]
-    fn phase6_edit_outside_assembled_segment_leaves_live_call_unchanged() {
+    fn edit_outside_assembled_segment_leaves_live_call_unchanged() {
         // Sanity: editing a pool position that is NOT inside V's
         // assembled region must not invent extra hypotheses or break
         // the existing one. The test allele has length 6; we run two
@@ -2809,7 +2807,7 @@ mod tests {
         // We use this fixture to confirm that two consecutive
         // EditBases passes both trigger refresh and the final state
         // matches a manual recomputation from the post-edit bases.
-        let cfg = phase6_distinct_v_refdata(&[
+        let cfg = distinct_v_refdata(&[
             ("V*01", b"AAAAAA"),
             ("V*02", b"AAAAAA"),
         ]);
@@ -2819,7 +2817,7 @@ mod tests {
         // Both alleles are identical; the call remains {V*01, V*02}
         // through every base edit because every position has the same
         // base across alleles.
-        let (_outcome, v_call) = phase6_run_edit(
+        let (_outcome, v_call) = run_edit(
             &cfg,
             v01,
             vec![(0, b'A'), (5, b'A')], // no-ops in terms of base change
@@ -2832,7 +2830,7 @@ mod tests {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Phase 7.1: V right-boundary extension into NP1.
+    // V right-boundary extension into NP1.
     //
     // The acceptance criterion from the design doc: a trimmed V suffix
     // can be recreated by NP1 bases, and when that happens the live
@@ -2845,7 +2843,7 @@ mod tests {
     /// minimal stub (the fixture stops after NP1 generation, so D / J
     /// pools are unused at runtime). Returns the refdata and the two
     /// V allele ids in declaration order.
-    fn phase7_v_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
+    fn v_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         let mut cfg = RefDataConfig::empty(ChainType::Vdj);
         let v01 = cfg.v_pool.push(Allele {
             name: "V*01".into(),
@@ -2874,11 +2872,11 @@ mod tests {
         (cfg, v01, v02)
     }
 
-    /// Build the standard Phase 7.1 plan:
+    /// Build the standard V-extension plan:
     ///   sample(V) → trim(V_3, by) → assemble(V) → generate(NP1, len, base)
     /// `np_len` and `np_base` control the NP1 region's content
     /// deterministically.
-    fn phase7_v_extension_plan(
+    fn v_extension_plan(
         cfg: &RefDataConfig,
         sampled_v: AlleleId,
         v_trim_3: i64,
@@ -2908,7 +2906,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_v_call_shrinks_when_np1_recreates_trimmed_suffix() {
+    fn v_call_shrinks_when_np1_recreates_trimmed_suffix() {
         // V*01 = AAACCCGGG TTT (suffix TTT distinguishes it).
         // V*02 = AAACCCGGG AAA (suffix AAA distinguishes it).
         // Sample V*01, trim 3' by 3 → assembled V is AAACCCGGG.
@@ -2918,12 +2916,12 @@ mod tests {
         // V right-extension into NP1 walks T → matches V*01 ref pos 9
         // (V*01[9]='T'); V*02[9]='A' → V*02 drops out. After 3 NP1
         // bases the call has shrunk back to {V*01}.
-        let (cfg, v01, _v02) = phase7_v_extension_refdata();
+        let (cfg, v01, _v02) = v_extension_refdata();
 
-        let plan = phase7_v_extension_plan(&cfg, v01, 3, 3, b'T');
+        let plan = v_extension_plan(&cfg, v01, 3, 3, b'T');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.1 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         // revisions: [initial, post-sample, post-trim, post-assemble,
@@ -2985,17 +2983,17 @@ mod tests {
     }
 
     #[test]
-    fn phase7_v_call_stays_widened_when_np1_does_not_match_any_allele() {
+    fn v_call_stays_widened_when_np1_does_not_match_any_allele() {
         // Same fixture as above but NP1 emits 'C', which is NOT the
         // next ref base for either allele (V*01[9]='T', V*02[9]='A').
         // The extension walk halts immediately — the live call should
         // remain the post-assemble widened {V*01, V*02}.
-        let (cfg, v01, v02) = phase7_v_extension_refdata();
+        let (cfg, v01, v02) = v_extension_refdata();
 
-        let plan = phase7_v_extension_plan(&cfg, v01, 3, 3, b'C');
+        let plan = v_extension_plan(&cfg, v01, 3, 3, b'C');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.1 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let post_np1_call = outcome
@@ -3021,7 +3019,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_v_call_partially_extends_when_np1_matches_only_a_prefix() {
+    fn v_call_partially_extends_when_np1_matches_only_a_prefix() {
         // V*01 = AAACCCGGG TTT, V*02 = AAACCCGGG AAA. Trim V_3 by 3 →
         // assembled V is AAACCCGGG. NP1 emits 'T' for length 5 → bases
         // T-T-T-?-?. The first 3 NP1 bases match V*01's suffix exactly
@@ -3029,12 +3027,12 @@ mod tests {
         // in V*01 (ref length is 12) so the extension halts at
         // ref_pos=12 / seq_end = (V end) + 3 = 12. The remaining NP1
         // bases stay outside the V hypothesis.
-        let (cfg, v01, _v02) = phase7_v_extension_refdata();
+        let (cfg, v01, _v02) = v_extension_refdata();
 
-        let plan = phase7_v_extension_plan(&cfg, v01, 3, 5, b'T');
+        let plan = v_extension_plan(&cfg, v01, 3, 5, b'T');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.1 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let post_np1_call = outcome
@@ -3066,17 +3064,17 @@ mod tests {
     }
 
     #[test]
-    fn phase7_v_call_extension_no_op_when_no_trim() {
+    fn v_call_extension_no_op_when_no_trim() {
         // Sanity: with no V_3 trim, V's region already covers the
         // whole allele. There is no ref position past V's end, so the
         // extension walk has nothing to do — the call should remain a
         // singleton {sampled} and BOUNDARY_ELASTIC should NOT be set.
-        let (cfg, v01, _v02) = phase7_v_extension_refdata();
+        let (cfg, v01, _v02) = v_extension_refdata();
 
-        let plan = phase7_v_extension_plan(&cfg, v01, 0, 3, b'T');
+        let plan = v_extension_plan(&cfg, v01, 0, 3, b'T');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.1 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let post_np1_call = outcome
@@ -3098,18 +3096,18 @@ mod tests {
     }
 
     #[test]
-    fn phase7_append_region_np1_bumps_live_call_version() {
+    fn append_region_np1_bumps_live_call_version() {
         // Plumbing check: every successful refresh bumps the live-call
         // evidence_version. AppendRegion(Np1) must trigger a V refresh
         // and therefore advance the version past the post-assemble
         // value. (Used to guard against accidentally removing the
         // hook from `apply_live_call_updates`.)
-        let (cfg, v01, _v02) = phase7_v_extension_refdata();
-        let plan = phase7_v_extension_plan(&cfg, v01, 3, 3, b'T');
+        let (cfg, v01, _v02) = v_extension_refdata();
+        let plan = v_extension_plan(&cfg, v01, 3, 3, b'T');
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.1 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let post_assemble_version = outcome.revisions[3]
@@ -3130,11 +3128,12 @@ mod tests {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Phase 7.4: J left-boundary extension into the immediately-
+    // J left-boundary extension into the immediately-
     // preceding NP region (NP1 in VJ chains, NP2 in VDJ chains).
     //
-    // Mirrors Phase 7.1 but for the left side of J: the chosen NP
-    // bases must extend backward into the J allele's reference prefix.
+    // Mirrors the V right-boundary case but for the left side of J:
+    // the chosen NP bases must extend backward into the J allele's
+    // reference prefix.
     // Acceptance: trim J 5' so live j_call widens, then have NP bases
     // happen to recreate the trimmed J prefix → j_call shrinks back.
     // ──────────────────────────────────────────────────────────────
@@ -3142,7 +3141,7 @@ mod tests {
     /// Build a VJ-chain refdata with two J alleles that share a 9-base
     /// suffix and differ in their 3-base 5' prefix. V is a minimal
     /// stub used only so the J assembly pass has a chain context.
-    fn phase7_j_extension_vj_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
+    fn j_extension_vj_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         let mut cfg = RefDataConfig::empty(ChainType::Vj);
         // Stub V — never sampled in the fixture plan.
         let _ = cfg.v_pool.push(Allele {
@@ -3182,7 +3181,7 @@ mod tests {
     /// `np_len` and `np_base` control NP1 contents deterministically;
     /// `j_trim_5` controls how many J prefix bases are stripped before
     /// J is assembled.
-    fn phase7_j_extension_plan(
+    fn j_extension_plan(
         cfg: &RefDataConfig,
         sampled_j: AlleleId,
         j_trim_5: i64,
@@ -3221,7 +3220,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_j_call_shrinks_when_np1_recreates_trimmed_prefix_vj() {
+    fn j_call_shrinks_when_np1_recreates_trimmed_prefix_vj() {
         // J*01 = TTT ACGTACGTA, J*02 = GGG ACGTACGTA.
         // Sample J*01, trim 5' by 3 → assembled J ref window starts at
         // pos 3 (covering ACGTACGTA).
@@ -3231,12 +3230,12 @@ mod tests {
         // RIGHTMOST base first against ref pos 2 (J*01[2]='T'). Then
         // pos 1 (J*01[1]='T'). Then pos 0 (J*01[0]='T'). All match
         // J*01 only → j_call shrinks back to {J*01}.
-        let (cfg, j01, _j02) = phase7_j_extension_vj_refdata();
+        let (cfg, j01, _j02) = j_extension_vj_refdata();
 
-        let plan = phase7_j_extension_plan(&cfg, j01, 3, 3, b'T');
+        let plan = j_extension_plan(&cfg, j01, 3, 3, b'T');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.4 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         // J refresh fires on AssembleSegment(J) which is the last pass.
@@ -3265,16 +3264,16 @@ mod tests {
     }
 
     #[test]
-    fn phase7_j_call_stays_widened_when_np1_does_not_recreate_prefix_vj() {
+    fn j_call_stays_widened_when_np1_does_not_recreate_prefix_vj() {
         // Same fixture as above, but NP1 emits 'C' which is not the
         // expected base for either allele's prefix at any position.
         // The extension halts immediately; j_call stays widened.
-        let (cfg, j01, j02) = phase7_j_extension_vj_refdata();
+        let (cfg, j01, j02) = j_extension_vj_refdata();
 
-        let plan = phase7_j_extension_plan(&cfg, j01, 3, 3, b'C');
+        let plan = j_extension_plan(&cfg, j01, 3, 3, b'C');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.4 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let final_call = outcome
@@ -3298,7 +3297,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_j_call_partially_extends_when_np1_matches_only_a_suffix_of_prefix() {
+    fn j_call_partially_extends_when_np1_matches_only_a_suffix_of_prefix() {
         // J*01 = TTT ACGTACGTA, J*02 = GGG ACGTACGTA.
         // Trim J_5 by 3, NP1 length 5, base 'T'. NP1 = T-T-T-T-T.
         // Walker checks rightmost NP1 byte vs ref_start - 1 = 2 first.
@@ -3307,12 +3306,12 @@ mod tests {
         //   NP1[2]='T' vs J*01[0]='T' ✓.
         //   NP1[1]: ref_start now 0, can't go further → halt.
         // Two of the five NP1 bases stay outside the J hypothesis.
-        let (cfg, j01, _j02) = phase7_j_extension_vj_refdata();
+        let (cfg, j01, _j02) = j_extension_vj_refdata();
 
-        let plan = phase7_j_extension_plan(&cfg, j01, 3, 5, b'T');
+        let plan = j_extension_plan(&cfg, j01, 3, 5, b'T');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.4 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let final_call = outcome
@@ -3347,16 +3346,16 @@ mod tests {
     }
 
     #[test]
-    fn phase7_j_call_extension_no_op_when_no_trim() {
+    fn j_call_extension_no_op_when_no_trim() {
         // No J_5 trim → J's ref_start is already 0 → there is no ref
         // position to the left to extend into. The walker halts on
         // the very first iteration because `extended_ref_start == 0`.
-        let (cfg, j01, _j02) = phase7_j_extension_vj_refdata();
+        let (cfg, j01, _j02) = j_extension_vj_refdata();
 
-        let plan = phase7_j_extension_plan(&cfg, j01, 0, 3, b'T');
+        let plan = j_extension_plan(&cfg, j01, 0, 3, b'T');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.4 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let final_call = outcome
@@ -3378,7 +3377,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_j_left_extension_works_for_vdj_chain_via_np2() {
+    fn j_left_extension_works_for_vdj_chain_via_np2() {
         // Verify the chain-agnostic neighbour lookup: in a VDJ chain,
         // J's left neighbour is NP2 (not NP1). Build a minimal VDJ
         // refdata, plan V→NP1→D→NP2→trim(J_5)→J, and check that NP2
@@ -3456,7 +3455,7 @@ mod tests {
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("VDJ phase 7.4 plan should compile");
+                .expect("VDJ plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
         let final_call = outcome
             .final_simulation()
@@ -3483,7 +3482,7 @@ mod tests {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Phase 7.5: D both-side extension into NP1 / NP2.
+    // D both-side extension into NP1 / NP2.
     //
     // D is the "hardest segment" per the design doc — it has elastic
     // boundaries on both sides. We test both directions independently
@@ -3506,7 +3505,7 @@ mod tests {
     ///
     /// V and J pools are minimal stubs — needed so the chain can
     /// assemble end-to-end but irrelevant to the D-call assertions.
-    fn phase7_d_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
+    fn d_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         let mut cfg = RefDataConfig::empty(ChainType::Vdj);
         let _ = cfg.v_pool.push(Allele {
             name: "V*01".into(),
@@ -3539,7 +3538,7 @@ mod tests {
         (cfg, d01, d02)
     }
 
-    /// Build the standard Phase 7.5 D-extension plan:
+    /// Build the standard D-extension plan:
     ///
     ///   sample(V, stub) → sample(D, sampled_d) → assemble(V) →
     ///   np1(np1_len, np1_base) → trim(D_5, by) → trim(D_3, by) →
@@ -3547,7 +3546,7 @@ mod tests {
     ///   assemble(J)
     ///
     /// V and J are stubs; the assertions only inspect the D live call.
-    fn phase7_d_extension_plan(
+    fn d_extension_plan(
         cfg: &RefDataConfig,
         sampled_d: AlleleId,
         d_trim_5: i64,
@@ -3608,7 +3607,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_d_call_shrinks_when_np1_recreates_trimmed_prefix() {
+    fn d_call_shrinks_when_np1_recreates_trimmed_prefix() {
         // Sample D*01 (TTTCCCCCAAA), trim D_5 by 3, D_3 by 0.
         // Assembled D ref window starts at pos 3, covers 3..11 (CCCCCAAA).
         // BOTH D alleles match the assembled bases at those positions →
@@ -3617,12 +3616,12 @@ mod tests {
         // RIGHTMOST base first against ref pos 2 (D*01[2]='T',
         // D*02[2]='G'). D*02 drops out. Two more 'T's match D*01[1]
         // and D*01[0] respectively → d_call shrinks to {D*01}.
-        let (cfg, d01, _d02) = phase7_d_extension_refdata();
+        let (cfg, d01, _d02) = d_extension_refdata();
 
-        let plan = phase7_d_extension_plan(&cfg, d01, 3, 0, 3, b'T', 0, b'A');
+        let plan = d_extension_plan(&cfg, d01, 3, 0, 3, b'T', 0, b'A');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.5 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let final_call = outcome
@@ -3649,7 +3648,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_d_call_shrinks_when_np2_recreates_trimmed_suffix() {
+    fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
         // Sample D*01 (TTTCCCCCAAA), trim D_5 by 0, D_3 by 3.
         // Assembled D covers 0..8 (TTTCCCCC). Both alleles match the
         // assembled bases at those positions only after first checking
@@ -3696,10 +3695,10 @@ mod tests {
         // vs ref pos 8 (D*01[8]='T' ✓, D*02[8]='G' ✗) → D*02 out.
         // Continue: NP2[1] vs pos 9 (D*01[9]='T' ✓), NP2[2] vs pos 10
         // (D*01[10]='T' ✓). Final d_call = {D*01}.
-        let plan = phase7_d_extension_plan(&cfg, d01, 0, 3, 0, b'A', 3, b'T');
+        let plan = d_extension_plan(&cfg, d01, 0, 3, 0, b'A', 3, b'T');
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.5 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let final_call = outcome
@@ -3726,7 +3725,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_d_call_shrinks_via_both_sides_simultaneously() {
+    fn d_call_shrinks_via_both_sides_simultaneously() {
         // D*01 = TTT CCCCC AAA, D*02 = GGG CCCCC TGT. Trim D_5 = 3,
         // D_3 = 3. Assembled D = CCCCC (ref pos 3..8). Both match
         // → d_call = {D*01, D*02}.
@@ -3739,12 +3738,12 @@ mod tests {
         //
         // Final state: d_call = {D*01}, BOUNDARY_ELASTIC flag set,
         // ref_start = 0, ref_end = 11.
-        let (cfg, d01, _d02) = phase7_d_extension_refdata();
-        let plan = phase7_d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 3, b'A');
+        let (cfg, d01, _d02) = d_extension_refdata();
+        let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 3, b'A');
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.5 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let final_call = outcome
@@ -3770,16 +3769,16 @@ mod tests {
     }
 
     #[test]
-    fn phase7_d_call_stays_widened_when_neither_np_matches() {
+    fn d_call_stays_widened_when_neither_np_matches() {
         // NP1 emits 'C' which is neither D*01[2]='T' nor D*02[2]='G'.
         // NP2 emits 'C' which is neither D*01[8]='A' nor D*02[8]='T'.
         // Both extension walks halt immediately; d_call stays widened.
-        let (cfg, d01, d02) = phase7_d_extension_refdata();
-        let plan = phase7_d_extension_plan(&cfg, d01, 3, 3, 3, b'C', 3, b'C');
+        let (cfg, d01, d02) = d_extension_refdata();
+        let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'C', 3, b'C');
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.5 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let final_call = outcome
@@ -3803,16 +3802,16 @@ mod tests {
     }
 
     #[test]
-    fn phase7_append_region_np2_bumps_d_live_call_version() {
+    fn append_region_np2_bumps_d_live_call_version() {
         // Plumbing check: AppendRegion(Np2) must trigger D refresh,
         // bumping the live-call evidence_version. Catches accidental
         // removal of the hook from `apply_live_call_updates`.
-        let (cfg, d01, _d02) = phase7_d_extension_refdata();
-        let plan = phase7_d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 3, b'A');
+        let (cfg, d01, _d02) = d_extension_refdata();
+        let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 3, b'A');
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 7.5 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         // Find indices of the AssembleSegment(D) and AppendRegion(Np2)
@@ -3850,7 +3849,7 @@ mod tests {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Phase 8: Structural indel local recomputation.
+    // Structural indel local recomputation.
     //
     // Indels (insertions / deletions) shift the pool layout under
     // V/D/J regions. The walker now tolerates:
@@ -3934,7 +3933,7 @@ mod tests {
 
     /// V-only refdata holding alleles where the differing position is
     /// known and predictable.
-    fn phase8_v_refdata(seqs: &[(&str, &[u8])]) -> RefDataConfig {
+    fn v_refdata(seqs: &[(&str, &[u8])]) -> RefDataConfig {
         let mut cfg = RefDataConfig::empty(ChainType::Vdj);
         for (name, seq) in seqs {
             let _ = cfg.v_pool.push(Allele {
@@ -3950,7 +3949,7 @@ mod tests {
 
     /// Build a sample(V) → assemble(V) → indel plan and run it. Returns
     /// the final V live call.
-    fn phase8_run_indel_plan(
+    fn run_indel_plan(
         cfg: &RefDataConfig,
         sampled: AlleleId,
         indels: Vec<Box<dyn Pass>>,
@@ -3972,7 +3971,7 @@ mod tests {
         }
         let compiled =
             CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 8 fixture plan should compile");
+                .expect("fixture plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
         let v_call = outcome
             .final_simulation()
@@ -3986,7 +3985,7 @@ mod tests {
     }
 
     #[test]
-    fn phase8_deletion_inside_v_widens_live_call_when_distinguishing_base_removed() {
+    fn deletion_inside_v_widens_live_call_when_distinguishing_base_removed() {
         // V*01 = AAAGAAAA (position 3 = G distinguishes it).
         // V*02 = AAACAAAA (position 3 = C distinguishes it).
         // Sample V*01 → assembled "AAAGAAAA" → live call {V*01} (the
@@ -3995,14 +3994,14 @@ mod tests {
         // covering germline positions 0,1,2,4,5,6,7. With pos 3 absent
         // the alleles are pairwise indistinguishable at the remaining
         // positions → live call widens to {V*01, V*02}.
-        let cfg = phase8_v_refdata(&[
+        let cfg = v_refdata(&[
             ("V*01", b"AAAGAAAA"),
             ("V*02", b"AAACAAAA"),
         ]);
         let v01 = AlleleId::new(0);
         let v02 = AlleleId::new(1);
 
-        let (_outcome, v_call) = phase8_run_indel_plan(
+        let (_outcome, v_call) = run_indel_plan(
             &cfg,
             v01,
             vec![Box::new(DeleteAtPass::new(3))],
@@ -4013,17 +4012,17 @@ mod tests {
     }
 
     #[test]
-    fn phase8_deletion_preserves_call_when_distinguishing_base_remains() {
+    fn deletion_preserves_call_when_distinguishing_base_remains() {
         // Same fixture as above, but delete a SHARED base (position 0,
         // both alleles have 'A'). The distinguishing position 3 is
         // still there → live call stays singleton {V*01}.
-        let cfg = phase8_v_refdata(&[
+        let cfg = v_refdata(&[
             ("V*01", b"AAAGAAAA"),
             ("V*02", b"AAACAAAA"),
         ]);
         let v01 = AlleleId::new(0);
 
-        let (_outcome, v_call) = phase8_run_indel_plan(
+        let (_outcome, v_call) = run_indel_plan(
             &cfg,
             v01,
             vec![Box::new(DeleteAtPass::new(0))],
@@ -4032,19 +4031,19 @@ mod tests {
     }
 
     #[test]
-    fn phase8_insertion_inside_v_does_not_fail_the_call() {
+    fn insertion_inside_v_does_not_fail_the_call() {
         // Sample V*01 → assembled "AAAGAAAA" → live call {V*01}.
         // Insert a synthetic 'C' at pool position 3 (inside V's
         // region). The walker should SKIP the inserted nucleotide
         // (it has NO_GERMLINE_POS) without failing the call. The
         // remaining positions still uniquely identify V*01.
-        let cfg = phase8_v_refdata(&[
+        let cfg = v_refdata(&[
             ("V*01", b"AAAGAAAA"),
             ("V*02", b"AAACAAAA"),
         ]);
         let v01 = AlleleId::new(0);
 
-        let (_outcome, v_call) = phase8_run_indel_plan(
+        let (_outcome, v_call) = run_indel_plan(
             &cfg,
             v01,
             vec![Box::new(InsertAtPass::new(3, b'C', Segment::V))],
@@ -4064,7 +4063,7 @@ mod tests {
     }
 
     #[test]
-    fn phase8_combined_insertion_and_deletion_recomputes_correctly() {
+    fn combined_insertion_and_deletion_recomputes_correctly() {
         // Sample V*01 → live call {V*01} via the distinguishing G at
         // position 3. Then:
         //   1. Insert a synthetic 'C' at pool position 5 (a benign
@@ -4074,14 +4073,14 @@ mod tests {
         //      the insertion at 5 didn't shift pos 0..4).
         // Expected post-state: live call widens to {V*01, V*02}
         // because the distinguishing germline position 3 is gone.
-        let cfg = phase8_v_refdata(&[
+        let cfg = v_refdata(&[
             ("V*01", b"AAAGAAAA"),
             ("V*02", b"AAACAAAA"),
         ]);
         let v01 = AlleleId::new(0);
         let v02 = AlleleId::new(1);
 
-        let (_outcome, v_call) = phase8_run_indel_plan(
+        let (_outcome, v_call) = run_indel_plan(
             &cfg,
             v01,
             vec![
@@ -4095,17 +4094,17 @@ mod tests {
     }
 
     #[test]
-    fn phase8_structural_indel_bumps_live_call_version() {
+    fn structural_indel_bumps_live_call_version() {
         // Plumbing check: every refresh fired by `PassEffect::StructuralIndel`
         // bumps `evidence_version`. Catches accidental removal of the
         // hook from `apply_live_call_updates`.
-        let cfg = phase8_v_refdata(&[
+        let cfg = v_refdata(&[
             ("V*01", b"AAAGAAAA"),
             ("V*02", b"AAACAAAA"),
         ]);
         let v01 = AlleleId::new(0);
 
-        let (outcome, _final_call) = phase8_run_indel_plan(
+        let (outcome, _final_call) = run_indel_plan(
             &cfg,
             v01,
             vec![Box::new(DeleteAtPass::new(3))],
@@ -4137,7 +4136,7 @@ mod tests {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Phase 9: Overlap hypotheses.
+    // Overlap hypotheses.
     //
     // When V's allele suffix happens to match D's leading bases (or
     // D's allele suffix matches J's leading bases, or symmetric
@@ -4153,7 +4152,7 @@ mod tests {
     /// "TTT" coincides with D*01's leading 3 bases. With V trimmed
     /// 3' by 3 and an empty NP1, V's right-extension can reach into
     /// D's region for an exact-equivalent overlap placement.
-    fn phase9_v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId) {
+    fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId) {
         let mut cfg = RefDataConfig::empty(ChainType::Vdj);
         // Two V alleles sharing AAACCCGGG and differing in their 3'
         // trinucleotide. After V_3 trim of 3, both match the
@@ -4195,7 +4194,7 @@ mod tests {
 
     /// Plan that ends right after assembling D, so the V live call
     /// reflects the post-D state including any overlap.
-    fn phase9_v_overlap_plan(
+    fn v_overlap_plan(
         cfg: &RefDataConfig,
         sampled_v: AlleleId,
         sampled_d: AlleleId,
@@ -4233,11 +4232,11 @@ mod tests {
     }
 
     #[test]
-    fn phase9_v_right_overlaps_d_when_d_starts_with_v_suffix() {
+    fn v_right_overlaps_d_when_d_starts_with_v_suffix() {
         // V*01 trimmed 3' by 3 → V region = AAACCCGGG (ref 0..9).
         // V live call after AssembleSegment(V) = {V*01, V*02}.
         // After GenerateNP(NP1, length=0), nothing changes (NP1 empty).
-        // After AssembleSegment(D): the new Phase 9 hook retriggers V.
+        // After AssembleSegment(D): the cross-segment hook retriggers V.
         //   V right-extension walker enters with NP1 [9, 9), empty,
         //   loops `9..pool_len`. seq_pos = 9 is D's first base 'T'.
         //   compatible_alleles_at(ref_pos=9, base=T) → V*01[9]='T' ✓,
@@ -4250,12 +4249,12 @@ mod tests {
         // ref_end=12, BOUNDARY_ELASTIC + OVERLAPS_OTHER_SEGMENT set.
         // D's region.start = 9. V hypothesis seq_end (12) > D start
         // (9) → 3 bases of overlap.
-        let (cfg, v01, _v02, d01) = phase9_v_d_overlap_refdata();
-        let plan = phase9_v_overlap_plan(&cfg, v01, d01, 3, 0);
+        let (cfg, v01, _v02, d01) = v_d_overlap_refdata();
+        let plan = v_overlap_plan(&cfg, v01, d01, 3, 0);
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-                .expect("phase 9 plan should compile");
+                .expect("plan should compile");
         let outcome = compiled.run_one(0).expect("plan should run");
 
         let final_sim = outcome.final_simulation();
@@ -4316,7 +4315,7 @@ mod tests {
     }
 
     #[test]
-    fn phase9_v_right_does_not_overlap_when_d_does_not_match_v_suffix() {
+    fn v_right_does_not_overlap_when_d_does_not_match_v_suffix() {
         // Same V refdata, but D*01 starts with non-matching bases:
         let mut cfg = RefDataConfig::empty(ChainType::Vdj);
         let v01 = cfg.v_pool.push(Allele {
@@ -4349,7 +4348,7 @@ mod tests {
             segment: Segment::J,
             anchor: None,
         });
-        let plan = phase9_v_overlap_plan(&cfg, v01, d01, 3, 0);
+        let plan = v_overlap_plan(&cfg, v01, d01, 3, 0);
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
@@ -4379,7 +4378,7 @@ mod tests {
     }
 
     #[test]
-    fn phase9_d_left_overlaps_v_when_v_ends_with_d_prefix() {
+    fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         // Mirror of the V→D overlap, but for D's left-extension
         // walker reaching backward into V's region.
         //
@@ -4501,7 +4500,7 @@ mod tests {
     }
 
     #[test]
-    fn phase9_overlap_walker_halts_at_pool_end() {
+    fn overlap_walker_halts_at_pool_end() {
         // Sanity: even if D's bases continue to match V's allele's
         // continuation, the walker must halt at pool_len (no
         // out-of-bounds reads). Construct a fixture where V's allele
@@ -4539,7 +4538,7 @@ mod tests {
         // 5 bases. V right-extension can extend up to 95 ref positions
         // — but D has only 5 bases of pool. Walker should halt at
         // pool_len after extending into all 5 D bases.
-        let plan = phase9_v_overlap_plan(&cfg, v01, d01, 95, 0);
+        let plan = v_overlap_plan(&cfg, v01, d01, 95, 0);
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
@@ -4577,11 +4576,11 @@ mod tests {
     }
 
     #[test]
-    fn phase9_v_overlap_into_d_bumps_v_live_call_version() {
+    fn v_overlap_into_d_bumps_v_live_call_version() {
         // Plumbing check: AssembleSegment(D) must trigger a V
-        // refresh under the Phase 9 cross-segment hook.
-        let (cfg, v01, _v02, d01) = phase9_v_d_overlap_refdata();
-        let plan = phase9_v_overlap_plan(&cfg, v01, d01, 3, 0);
+        // refresh under the cross-segment hook.
+        let (cfg, v01, _v02, d01) = v_d_overlap_refdata();
+        let plan = v_overlap_plan(&cfg, v01, d01, 3, 0);
 
         let compiled =
             CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
@@ -4610,7 +4609,7 @@ mod tests {
         assert!(
             post_assemble_d_version > post_assemble_v_version,
             "AssembleSegment(D) must bump the version (refreshing V) for \
-             Phase 9 overlap detection: {post_assemble_d_version} should be > \
+             overlap detection: {post_assemble_d_version} should be > \
              {post_assemble_v_version}"
         );
     }
@@ -4918,11 +4917,11 @@ mod tests {
         // V right-extension walker reaches into NP1 and narrows
         // the call back to {V1}.
         //
-        // Phase 11.1+11.3: AIRR `v_germline_end` reads from the live-
-        // call hypothesis bounds (12, the full V allele length after
-        // NP1 extension claimed 3 bases), and `v_cigar` covers the
-        // extended span (12M = 9 structural + 3 NP1 columns claimed
-        // by V's right extension).
+        // AIRR `v_germline_end` reads from the live-call hypothesis
+        // bounds (12, the full V allele length after NP1 extension
+        // claimed 3 bases), and `v_cigar` covers the extended span
+        // (12M = 9 structural + 3 NP1 columns claimed by V's right
+        // extension).
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
@@ -4930,7 +4929,7 @@ mod tests {
 
         assert_eq!(rec.v_call, "V1*01");
         assert_eq!(rec.v_germline_end, Some(12));
-        // CIGAR runs 12M after Phase 11.3 column-relabelling.
+        // CIGAR runs 12M after column-relabelling claims the NP bases.
         assert_eq!(rec.v_cigar, "12M");
     }
 
@@ -5013,10 +5012,10 @@ mod tests {
         // distinguishing prefix). J left-extension reaches backward
         // into NP2 and narrows j_call back to {J1}.
         //
-        // Phase 11.1+11.3: `j_germline_start` reads from live-call
-        // hypothesis (0 — extension into NP2 dragged ref_start from
-        // 3 back to 0), and `j_cigar` is 9M (3 claimed NP2 columns +
-        // 6 structural J columns).
+        // `j_germline_start` reads from the live-call hypothesis (0 —
+        // extension into NP2 dragged ref_start from 3 back to 0), and
+        // `j_cigar` is 9M (3 claimed NP2 columns + 6 structural J
+        // columns).
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
@@ -5024,7 +5023,7 @@ mod tests {
 
         assert_eq!(rec.j_call, "J1*01");
         assert_eq!(rec.j_germline_start, Some(0));
-        // CIGAR runs 9M after Phase 11.3 column-relabelling.
+        // CIGAR runs 9M after column-relabelling claims the NP bases.
         assert_eq!(rec.j_cigar, "9M");
     }
 
@@ -5105,10 +5104,10 @@ mod tests {
     }
 
     #[test]
-    fn phase11_1_v_germline_end_reflects_np_extension() {
-        // Phase 11.1 invariant: `v_germline_end` reads from the live-
-        // call hypothesis instead of the trim-derived structural
-        // range. Trim V_3 by 3 (structural end = 9), then NP1 = "AAA"
+    fn v_germline_end_reflects_np_extension() {
+        // Invariant: `v_germline_end` reads from the live-call
+        // hypothesis instead of the trim-derived structural range.
+        // Trim V_3 by 3 (structural end = 9), then NP1 = "AAA"
         // recovers V1's allele bases at ref pos 9, 10, 11 → live
         // ref_end advances to 12. AIRR `v_germline_end` should be 12.
         let cfg = curated_v_d_j_refdata();
@@ -5117,13 +5116,13 @@ mod tests {
         let (_outcome, rec) = curated_run(&cfg, plan);
 
         // Trim says structural V end is 9; live extension says 12.
-        // Phase 11.1 prefers live.
+        // The live value wins.
         assert_eq!(rec.v_trim_3, 3);
         assert_eq!(rec.v_germline_end, Some(12));
     }
 
     #[test]
-    fn phase11_1_d_germline_bounds_reflect_np_extension() {
+    fn d_germline_bounds_reflect_np_extension() {
         // Trim D_5 = 3, NP1 = "C" (single base) → D's left-extension
         // walker checks ref pos 2; D1[2]='C' matches → ref_start
         // moves from 3 → 2. AIRR `d_germline_start` should be 2.
@@ -5140,12 +5139,12 @@ mod tests {
     }
 
     #[test]
-    fn phase11_2_v_sequence_end_reflects_np_extension() {
-        // Phase 11.2 invariant: `v_sequence_end` reads from the
-        // live-call hypothesis seq_end, so when NP1 bases extend V's
-        // right boundary the AIRR sequence coord grows past the
-        // structural V-region end. Concrete: V_3 trim 3 + NP1="AAA"
-        // (V1 suffix) → live seq_end = 12 (3 NP1 bases claimed).
+    fn v_sequence_end_reflects_np_extension() {
+        // Invariant: `v_sequence_end` reads from the live-call
+        // hypothesis seq_end, so when NP1 bases extend V's right
+        // boundary the AIRR sequence coord grows past the structural
+        // V-region end. Concrete: V_3 trim 3 + NP1="AAA" (V1 suffix)
+        // → live seq_end = 12 (3 NP1 bases claimed).
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
@@ -5157,7 +5156,7 @@ mod tests {
     }
 
     #[test]
-    fn phase11_2_j_sequence_start_reflects_np_extension() {
+    fn j_sequence_start_reflects_np_extension() {
         // Symmetric: J_5 trim 3 + NP2="AAA" (J1 prefix) → J's
         // live seq_start moves left into NP2.
         //
@@ -5176,7 +5175,7 @@ mod tests {
     }
 
     #[test]
-    fn phase11_1_no_extension_preserves_structural_germline_bounds() {
+    fn no_extension_preserves_structural_germline_bounds() {
         // Sanity: when NO extension fires (no NP, or NP doesn't
         // match), AIRR germline bounds match the structural trim
         // range. (Live-call hypothesis ref_start/ref_end match the
@@ -5195,8 +5194,8 @@ mod tests {
     }
 
     #[test]
-    fn phase11_3_v_cigar_extends_into_claimed_np1_columns() {
-        // Phase 11.3: V's CIGAR includes claimed NP1 columns. With
+    fn v_cigar_extends_into_claimed_np1_columns() {
+        // V's CIGAR includes claimed NP1 columns. With
         // V_3 trim 3 and NP1="AAA" (V1's distinguishing suffix), V
         // right-extends 3 bases into NP1 → CIGAR runs 12 M ops total.
         let cfg = curated_v_d_j_refdata();
@@ -5208,8 +5207,8 @@ mod tests {
     }
 
     #[test]
-    fn phase11_3_j_cigar_extends_into_claimed_np2_columns() {
-        // Phase 11.3 mirror: J left-extends 3 bases into NP2.
+    fn j_cigar_extends_into_claimed_np2_columns() {
+        // Mirror case: J left-extends 3 bases into NP2.
         // Structural J = 6M; with extension J's CIGAR = 9M.
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
@@ -5220,8 +5219,8 @@ mod tests {
     }
 
     #[test]
-    fn phase11_4_np1_string_drops_columns_claimed_by_v() {
-        // Phase 11.4: when V's right extension reabsorbs NP1 bases,
+    fn np1_string_drops_columns_claimed_by_v() {
+        // when V's right extension reabsorbs NP1 bases,
         // those bases are no longer "non-templated" — np1 / np1_length
         // must drop them. With V_3 trim 3 and NP1="AAA" all three NP1
         // bases are claimed by V → np1 is empty.
@@ -5235,7 +5234,7 @@ mod tests {
     }
 
     #[test]
-    fn phase11_4_np2_string_drops_columns_claimed_by_j() {
+    fn np2_string_drops_columns_claimed_by_j() {
         // Mirror of 11.4 for NP2. With J_5 trim 3 and NP2="AAA"
         // all three NP2 bases get claimed by J's left extension.
         let cfg = curated_v_d_j_refdata();
@@ -5248,8 +5247,8 @@ mod tests {
     }
 
     #[test]
-    fn phase11_4_v_alignment_end_extends_with_np_claim() {
-        // Phase 11.4: `v_alignment_end` covers the claimed NP columns
+    fn v_alignment_end_extends_with_np_claim() {
+        // `v_alignment_end` covers the claimed NP columns
         // too. Without extension v_alignment_end = 12 (full V region);
         // with V_3 trim 3 + NP1="AAA" the structural V region is 9
         // columns long but V claims 3 NP1 columns → v_alignment_end
@@ -5265,7 +5264,7 @@ mod tests {
     }
 
     #[test]
-    fn phase11_4_j_alignment_start_extends_with_np_claim() {
+    fn j_alignment_start_extends_with_np_claim() {
         // Mirror: when J left-extends into NP2, j_alignment_start
         // moves leftward. Pool layout is V(12)+NP1(0)+D(12)+NP2(3)+J(6).
         // Structural J spans columns [24, 30); with NP2 claimed,
@@ -5281,8 +5280,8 @@ mod tests {
     }
 
     #[test]
-    fn phase11_5_v_identity_counts_extended_columns() {
-        // Phase 11.5: V's identity reflects matches over the full
+    fn v_identity_counts_extended_columns() {
+        // V's identity reflects matches over the full
         // claimed span. With V_3 trim 3 + NP1="AAA" (which match V1
         // exactly at pos 9-11), every column in V's extended span is
         // a match → identity = 1.0.
@@ -5295,10 +5294,10 @@ mod tests {
     }
 
     #[test]
-    fn phase11_6_junction_locates_anchors_via_germline_pos() {
-        // Phase 11.6 baseline: the curated default plan places V's
-        // Cys anchor at pool position 6 (V allele anchor=6, V at
-        // pool[0..12]) and J's W anchor at pool position 27
+    fn junction_locates_anchors_via_germline_pos() {
+        // Baseline: the curated default plan places V's Cys anchor
+        // at pool position 6 (V allele anchor=6, V at pool[0..12])
+        // and J's W anchor at pool position 27
         // (J allele anchor=3, J at pool[24..33]). Junction =
         // pool[6..30], length 24 = the 3bp Cys + (V tail 3) +
         // (D 12) + (J head 3) + 3bp W.
@@ -5324,16 +5323,12 @@ mod tests {
     }
 
     #[test]
-    fn phase11_6_junction_shifts_with_v_insertion_before_anchor() {
+    fn junction_shifts_with_v_insertion_before_anchor() {
         // Insert a synthetic 'C' at pool position 3 (inside V, BEFORE
-        // the anchor codon at pool 6). Phase 11.6: the junction must
-        // follow the anchor's actual pool position — anchor germline
-        // position 6 now resides at pool index 7, so junction_start
-        // shifts from 6 → 7.
-        //
-        // The pre-Phase-11.6 implementation used `region.start + va`
-        // and would have left junction_start at 6 (pointing at an
-        // 'A' base, not the Cys codon).
+        // the anchor codon at pool 6). The junction must follow the
+        // anchor's actual pool position — anchor germline position 6
+        // now resides at pool index 7, so junction_start shifts from
+        // 6 → 7.
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
@@ -5349,7 +5344,7 @@ mod tests {
     }
 
     #[test]
-    fn phase11_6_junction_shifts_with_v_deletion_before_anchor() {
+    fn junction_shifts_with_v_deletion_before_anchor() {
         // Symmetric: delete at pool position 3 (inside V, before the
         // anchor codon). Anchor germline_pos=6 now sits at pool 5
         // (one earlier). junction_start should follow.
@@ -5368,7 +5363,7 @@ mod tests {
     }
 
     #[test]
-    fn phase11_6_junction_shifts_with_j_insertion_before_anchor() {
+    fn junction_shifts_with_j_insertion_before_anchor() {
         // J side mirror: inserting a base inside J (before its W
         // anchor at allele pos 3) pushes J's anchor pool position
         // rightward, so junction_end grows accordingly.
@@ -5394,18 +5389,18 @@ mod tests {
     }
 
     #[test]
-    fn phase11_6_productive_uses_germline_pos_anchor_after_indels() {
+    fn productive_uses_germline_pos_anchor_after_indels() {
         // Insert a synthetic 'C' at pool position 3 (inside V, before
         // the anchor). Both V and J anchors shift right by 1, so
         // junction_start = 7, junction_end = 31, junction_length = 24
         // — same length as baseline, still in-frame.
         //
-        // The biological invariant Phase 11.6 enforces: the anchor
-        // codon is still recognised as Cys (germline pos 6,7,8 still
-        // map to T,G,T in the IR). Pre-Phase-11.6 the structural-
-        // offset reader would have read pool[6..9] (now AAC after
-        // shift) and rejected the codon, marking productive=false
-        // even though the underlying allele is intact.
+        // The biological invariant: the anchor codon is still
+        // recognised as Cys (germline pos 6,7,8 still map to T,G,T
+        // in the IR). A structural-offset reader would have read
+        // pool[6..9] (now AAC after shift) and rejected the codon,
+        // marking productive=false even though the underlying allele
+        // is intact.
         let cfg = curated_v_d_j_refdata();
         let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
         let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
@@ -5420,11 +5415,11 @@ mod tests {
     }
 
     #[test]
-    fn phase11_7_germline_span_equals_m_plus_d() {
-        // Phase 11.7 invariant: AIRR `*_germline_start/_end` come
-        // from the column walker's `ref_ranges` (the union of ref
-        // positions consumed by `M` and `D` ops), so the strict
-        // identity `germline_span == M + D` holds by construction.
+    fn germline_span_equals_m_plus_d() {
+        // Invariant: AIRR `*_germline_start/_end` come from the
+        // column walker's `ref_ranges` (the union of ref positions
+        // consumed by `M` and `D` ops), so the strict identity
+        // `germline_span == M + D` holds by construction.
         //
         // The curated default plan is no-op trims, no NP, no
         // corruption — V/D/J each contribute a clean structural
@@ -5456,7 +5451,7 @@ mod tests {
     }
 
     #[test]
-    fn phase11_7_germline_span_under_v_indel_deletion() {
+    fn germline_span_under_v_indel_deletion() {
         // V_3 trim 3 + NP1="AAA" extends V to ref 12 via NP1 claim,
         // then a structural deletion at pool 1 removes one V base
         // (germline_pos=1). CIGAR walks the structural region and

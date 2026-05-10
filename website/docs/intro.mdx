@@ -6,25 +6,37 @@ slug: /
 
 # GenAIRR Documentation
 
-**GenAIRR** is a high-performance simulator for adaptive immune receptor sequences (BCR and TCR).
-It produces synthetic sequences in AIRR format with **absolute ground-truth annotations** — every
-V/D/J call, every mutation position, every trimming length is known exactly because the simulator
-constructed the sequence from scratch.
+**GenAIRR** is a high-performance simulator for adaptive immune receptor sequences — the **B-cell Receptors (BCR)** and **T-cell Receptors (TCR)** that make up your immune system.
+
+It produces synthetic sequences in the industry-standard **AIRR format**. Because the simulator builds every sequence from scratch, it provides **absolute ground-truth annotations**. This means you know the exact "answer" for every sequence: which gene segments were used, where every mutation is located, and exactly how much was trimmed from the ends.
 
 ```python
-from GenAIRR import Experiment
-from GenAIRR.ops import rate
+import GenAIRR as ga
 
-result = Experiment.on("human_igh").mutate(rate(0.02, 0.08)).run(n=1000, seed=42)
+# Generate 1,000 human heavy-chain sequences via standard V(D)J recombination.
+outcomes = ga.Experiment.on("human_igh").recombine().run(n=1000, seed=42)
 ```
 
 ## Why GenAIRR?
 
-- **Ground truth** — Every output field reflects what actually happened during simulation, not what an aligner inferred. This makes GenAIRR data ideal for training and benchmarking alignment tools.
-- **Fast** — A C simulation engine produces 15,000–30,000 sequences per second on a single core.
-- **Broad coverage** — 106 built-in configurations across 23 species, sourced from IMGT and OGRDB.
-- **Realistic** — Context-aware S5F somatic hypermutation, D-gene inversion, receptor revision, class switch recombination, sequencing artifacts, and more.
-- **Zero mandatory dependencies** — Pure Python + compiled C extension. Pre-built wheels for Linux, macOS, and Windows.
+GenAIRR is designed for researchers who need high-quality synthetic data to train machine learning models or test analysis tools.
+
+*   **Absolute Ground Truth** — Most tools try to "guess" (infer) how a sequence was made. GenAIRR *knows* because it is the creator. This makes it the perfect gold standard for benchmarking.
+*   **Biologically Valid** — Through its unique **Contract System**, GenAIRR ensures every sequence it builds is functional and realistic from the very first step, rather than generating random noise and filtering it later.
+*   **Consistent Results** — GenAIRR is bit-for-bit identical across **Linux**, **macOS**, and **Windows**. The same "seed" number will always produce the exact same sequences, no matter what computer you use.
+*   **High Performance** — Built with a high-speed Rust kernel, GenAIRR can produce tens of thousands of sequences per second. You can generate a repertoire of millions of sequences in just a few minutes.
+
+## How it Works: The Simulation Lifecycle
+
+GenAIRR works by taking biological reference data and passing it through a series of "stages" to build a final sequence:
+
+```mermaid
+flowchart LR
+    Ref["1. Reference Data\n(Gene Libraries)"] --> DSL["2. Experiment API\n(Your Python Script)"]
+    DSL -- Translates --> Plan["3. Execution Plan\n(List of Stages)"]
+    Plan -- Builds --> IR["4. Sequence History\n(Internal State)"]
+    IR -- Exports --> Record["5. AIRR Record\n(Final Data)"]
+```
 
 ## Where to start
 
@@ -36,7 +48,7 @@ import Link from '@docusaurus/Link';
 
 ### Quick Start
 
-Install GenAIRR, run your first simulation, and inspect the output.
+Install GenAIRR, run your first simulation, and see the results.
 
 <Link to="/docs/getting-started/quick-start">Get started →</Link>
 
@@ -46,7 +58,7 @@ Install GenAIRR, run your first simulation, and inspect the output.
 
 ### Choosing a Config
 
-Pick the right species and chain type for your experiment.
+Learn how to pick the right species (Human, Mouse, etc.) and receptor type for your study.
 
 <Link to="/docs/getting-started/choosing-config">Choose a config →</Link>
 
@@ -56,7 +68,7 @@ Pick the right species and chain type for your experiment.
 
 ### Understanding Output
 
-Learn what each of the 47 output fields means and how coordinates work.
+Learn what each of the ~70 data fields means and how to read the results.
 
 <Link to="/docs/getting-started/interpreting-results">Read the guide →</Link>
 
@@ -66,42 +78,33 @@ Learn what each of the 47 output fields means and how coordinates work.
 
 ## The Experiment DSL
 
-GenAIRR uses a fluent builder called `Experiment` with five biological phases:
+GenAIRR uses a "fluent" builder called `Experiment`. Think of it as a recipe where you chain together the biological and technical steps you want to simulate:
 
 ```python
-from GenAIRR import Experiment
-from GenAIRR.ops import (
-    rate, model,
-    with_5prime_loss, with_3prime_loss,
-    with_indels, with_ns,
-)
+import GenAIRR as ga
 
 result = (
-    Experiment.on("human_igh")
+    ga.Experiment.on("human_igh")
+    
+    # 1. Biological V(D)J recombination (joining the gene segments)
+    .recombine()
 
-    # Somatic hypermutation
-    .mutate(
-        model("s5f"),
-        rate(0.02, 0.08),
-    )
+    # 2. Somatic hypermutation (adding biological mutations)
+    .mutate(model="s5f", count=(5, 25))
 
-    # Sequencing artifacts
-    .sequence(
-        with_5prime_loss(min_remove=5, max_remove=30),
-        with_3prime_loss(min_remove=5, max_remove=20),
-    )
+    # 3. Sequencing artifacts (simulating data loss at the ends)
+    .corrupt_5prime_loss(length=(5, 30))
+    .corrupt_3prime_loss(length=(5, 20))
 
-    # Post-sequencing noise
-    .observe(
-        with_indels(prob=0.01),
-        with_ns(prob=0.005),
-    )
+    # 4. Technical noise (adding random errors and 'N' bases)
+    .corrupt_indels(prob=0.01)
+    .corrupt_ns(prob=0.005)
 
     .run(n=1000, seed=42)
 )
 ```
 
-Each phase maps to a stage of a real sequencing experiment. You only include the phases you need — calling `.run()` on a bare `Experiment.on(...)` produces unmutated, uncorrupted rearrangements.
+Each method adds a "pass" to the simulation. You only include the steps you need — for example, if you just want clean, unmutated sequences, you only need `.recombine()`.
 
 ## Site map
 
@@ -109,6 +112,6 @@ Each phase maps to a stage of a real sequencing experiment. You only include the
 |---------|-----------------|
 | [**Start Here**](/docs/getting-started/quick-start) | Installation, first simulation, output interpretation |
 | [**Guides**](/docs/guides/) | Recipes for common tasks — SHM, artifacts, export, workflows |
-| [**Concepts**](/docs/concepts/) | Biology background, system architecture, DataConfig internals |
-| [**Reference**](/docs/reference/) | Full API docs, ops catalog, output fields, species coverage |
-| [**Help**](/docs/help/) | FAQ, troubleshooting, migration from v0.6.x |
+| [**Concepts**](/docs/concepts/) | Deep dives into how the engine works internally |
+| [**Reference**](/docs/reference/) | Full catalog of all Python methods and parameters |
+| [**Help**](/docs/help/) | FAQ and troubleshooting |

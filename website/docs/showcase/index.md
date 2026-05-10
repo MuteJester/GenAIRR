@@ -13,7 +13,7 @@ GenAIRR doesn't just simulate sequences — it helps you **see** and **understan
 
 ### Sequence Visualization
 
-Generate standalone HTML files with a full **exploding view** of any simulated sequence — color-coded segments, mutation sparklines, junction brackets, nucleotide detail.
+Generate standalone HTML files with a full **exploding view** of any simulated sequence — color-coded segments, mutation sparklines, junction brackets, and detailed alignments.
 
 [**visualize_sequence** →](/docs/showcase/visualize-sequence)
 
@@ -21,11 +21,11 @@ Generate standalone HTML files with a full **exploding view** of any simulated s
 
 <div style={{background: 'var(--ifm-card-background-color)', border: '1px solid var(--ifm-toc-border-color)', borderRadius: '8px', padding: '1.25rem'}}>
 
-### Narration
+### Simulation Introspection
 
-Get a **human-readable narrative** of how a sequence was built — every allele choice, trim, mutation, and artifact explained step by step.
+Query the **Addressed Trace** to see the "story" of how a sequence was built — every allele choice, trim, mutation, and artifact recorded step by step.
 
-[**narrate** →](/docs/showcase/narrate)
+[**Introspection** →](/docs/showcase/narrate)
 
 </div>
 

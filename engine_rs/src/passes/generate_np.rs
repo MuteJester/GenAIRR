@@ -23,10 +23,11 @@ use crate::trace::ChoiceValue;
 ///   Empirical NP length distribution. Negative or oversized
 ///   lengths are caller bugs and panic at execute time.
 /// - **base_dist** — `Box<dyn Distribution<Output = u8>>`.
-///   Per-base distribution (typically `UniformBase` until empirical
-///   TdT models arrive in Phase E). When contracts are active and the
-///   distribution exposes finite support, each base draw is filtered
-///   through `ContractSet::admits` before being recorded.
+///   Per-base distribution (typically `UniformBase` when no
+///   empirical TdT model is configured). When contracts are active
+///   and the distribution exposes finite support, each base draw
+///   is filtered through `ContractSet::admits` before being
+///   recorded.
 ///
 /// On execute:
 /// 1. Sample length L from `length_dist`. Validate `0 <= L <= u32::MAX`.
@@ -205,8 +206,8 @@ impl GenerateNPPass {
         // is set, we filter the length distribution's support to
         // values that the contract set admits at this address. In
         // strict mode, inability to draw an admissible value is a
-        // structured error. In permissive mode, we preserve the
-        // original Phase D.6 fallback behavior.
+        // structured error. In permissive mode, we silently fall
+        // back to an unfiltered draw.
         let address = self.length_address();
         let length = self.sample_length(sim, ctx, address, strict)?;
         if strict && length < 0 {

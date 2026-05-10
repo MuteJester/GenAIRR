@@ -1,4 +1,4 @@
-//! `EndLossPass` — strip bases from the 5' or 3' end (Phase 12.D).
+//! `EndLossPass` — strip bases from the 5' or 3' end.
 //!
 //! Models primer-region trimming and read-end degradation, both
 //! standard sources of length variation in real immune-seq data.

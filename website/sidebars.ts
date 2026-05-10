@@ -5,12 +5,23 @@ const sidebars: SidebarsConfig = {
     'intro',
     {
       type: 'category',
-      label: 'Start Here',
-      collapsible: false,
+      label: 'Getting Started',
+      collapsed: false,
       items: [
         'getting-started/quick-start',
         'getting-started/choosing-config',
         'getting-started/interpreting-results',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Core Concepts',
+      items: [
+        'concepts/index',
+        'concepts/persistent-ir',
+        'concepts/simulation-pipeline',
+        'concepts/sampling-mechanics',
+        'concepts/metadata-accuracy',
       ],
     },
   ],
@@ -18,7 +29,7 @@ const sidebars: SidebarsConfig = {
     'guides/index',
     {
       type: 'category',
-      label: 'Basics',
+      label: 'Simulation Basics',
       collapsed: false,
       items: [
         'guides/basics/experiment-dsl',
@@ -28,27 +39,42 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Simulation Options',
+      label: 'Biological Variation',
       collapsed: false,
       items: [
         'guides/options/shm',
-        'guides/options/artifacts',
         'guides/options/biology',
-        'guides/options/productive',
+        'guides/options/clonal-families',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Technical Realism',
+      collapsed: false,
+      items: [
+        'guides/options/artifacts',
         'guides/options/reproducibility',
       ],
     },
-  ],
-  concepts: [
-    'concepts/index',
-    'concepts/aseq-linked-list',
-    'concepts/simulation-pipeline',
-    'concepts/metadata-accuracy',
+    {
+      type: 'category',
+      label: 'Safety & Constraints',
+      collapsed: false,
+      items: [
+        'guides/options/productive',
+      ],
+    },
   ],
   showcase: [
     'showcase/index',
     'showcase/visualize-sequence',
     'showcase/narrate',
+  ],
+  reference: [
+    'reference/index',
+  ],
+  help: [
+    'help/index',
   ],
 };
 

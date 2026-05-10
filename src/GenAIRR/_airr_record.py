@@ -1,14 +1,12 @@
 """Convert a Rust ``Outcome`` into an AIRR-format record dict.
 
-In Phase I.5 the body of the builder moved into the Rust kernel
+The body of the builder lives in the Rust kernel
 (`engine_rs/src/airr_record.rs` → exposed as `Outcome.airr_record()`)
-for a >5× speedup at scale. This module is now a thin Python
-wrapper that delegates to that PyO3 method, plus a few legacy
-helpers kept around for tests and any direct importers.
+for a >5× speedup at scale. This module is a thin Python wrapper
+that delegates to that PyO3 method, plus a few helpers kept around
+for tests and any direct importers.
 
-Field names follow the AIRR Rearrangement schema (MiAIRR). The
-Phase H sub-phases that landed each chunk of fields are documented
-in `airr_record.rs`.
+Field names follow the AIRR Rearrangement schema (MiAIRR).
 """
 from __future__ import annotations
 
@@ -270,9 +268,8 @@ def _coord_pairs_from_columns(
 
     All coordinates are **0-based half-open** for consistency with
     the existing ``v_sequence_start`` / ``v_sequence_end`` fields.
-    The H.7 phase will add an ``airr_strict`` export flag that
-    converts to the 1-based-inclusive convention the AIRR spec
-    requires.
+    An ``airr_strict`` export flag (in :mod:`result`) converts to
+    the 1-based-inclusive convention the AIRR spec requires.
 
     - ``alignment_start`` / ``alignment_end`` are positions in the
       gap-aware alignment string (``sa`` / ``ga``). With deletion

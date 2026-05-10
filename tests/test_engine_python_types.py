@@ -1,17 +1,15 @@
-"""V6 engine — Phase F.1 PyO3 wrapper smoke tests.
+"""PyO3 wrapper smoke tests for the engine.
 
 Exercises every read-only Python wrapper exposed by the Rust kernel
 (`Outcome`, `Simulation`, `Region`, `Trace`, `ChoiceRecord`) by
 running the built-in `run_smoke_plan(seed)` and reading every
 accessor on the returned `Outcome`.
 
-The wrappers are pure read-only views — there's no Python API yet
-for *building* a plan. F.2 onwards plugs in the runners that
-external callers will actually use.
+The wrappers are pure read-only views.
 """
 from __future__ import annotations
 
-import genairr_engine
+from GenAIRR import _engine as genairr_engine
 import pytest
 
 

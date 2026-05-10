@@ -3,20 +3,19 @@
 //! ## What lives here
 //!
 //! Allele sequences, gene metadata, chain configuration. Loaded once
-//! at simulator construction (Phase F: from `*.v6dat` files per D10),
-//! shared across every simulation that uses it. *Never mutated* by the
-//! simulator; the per-simulation state lives on `AlleleInstance`
-//! (Phase C.4).
+//! at simulator construction (from `*.v6dat` files per D10), shared
+//! across every simulation that uses it. *Never mutated* by the
+//! simulator; the per-simulation state lives on `AlleleInstance`.
 //!
 //! Empirical distributions over alleles (frequencies) and trim/NP
 //! distributions live in `dist.rs` rather than here — they are sampled
 //! against the reference data, not part of it.
 //!
-//! ## Phase C.1 scope
+//! ## Scope
 //!
 //! Just the typed data shapes plus construction / lookup helpers.
-//! No biology, no PyO3, no serde. Phase F will add `serde` derives so
-//! the types round-trip through `bincode` (D10).
+//! No biology, no PyO3, no serde. `serde` derives let the types
+//! round-trip through `bincode` (D10).
 
 use crate::ir::Segment;
 
@@ -81,7 +80,7 @@ impl ChainType {
 ///
 /// Immutable once constructed. Per-simulation state (which allele was
 /// sampled, what trim was applied, what ambiguity set the post-trim
-/// retained bases project to) lives on `AlleleInstance` (Phase C.4).
+/// retained bases project to) lives on `AlleleInstance`.
 ///
 /// **Field discipline:**
 /// - `seq` is uppercase (`b'A'`, `b'C'`, `b'G'`, `b'T'`). Mixed case
@@ -90,7 +89,7 @@ impl ChainType {
 ///   into reference data.
 /// - `anchor` is `Some(pos)` when the allele has a conserved codon
 ///   (Cys for V, W/F for J) at position `pos` (0-indexed within
-///   `seq`). `None` for anchorless / partial alleles. Phase C.9's
+///   `seq`). `None` for anchorless / partial alleles. The
 ///   `AnchorPreserved` contract reads this field.
 /// - `name` is the canonical allele identifier (e.g.,
 ///   `"IGHV1-2*01"`). `gene` is the truncation to the gene level
@@ -124,7 +123,7 @@ impl Allele {
 ///
 /// Indexed by `AlleleId`. The pool is the reference data; *which*
 /// allele a particular simulation sampled is recorded by an
-/// `AlleleInstance` referring to a stable `AlleleId` (Phase C.4).
+/// `AlleleInstance` referring to a stable `AlleleId`.
 #[derive(Clone, Debug, Default)]
 pub struct AllelePool {
     alleles: Vec<Allele>,
@@ -172,9 +171,8 @@ impl AllelePool {
         self.alleles.get(id.as_usize())
     }
 
-    /// Read-only slice of all alleles in pool order. Phase C's
-    /// `AllelePoolDist` (C.3) iterates this to build cumulative
-    /// frequency tables.
+    /// Read-only slice of all alleles in pool order. Iterated by
+    /// `AllelePoolDist` to build cumulative frequency tables.
     pub fn as_slice(&self) -> &[Allele] {
         &self.alleles
     }

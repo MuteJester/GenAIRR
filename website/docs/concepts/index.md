@@ -11,6 +11,7 @@ You don't need to read this to use GenAIRR. But if you want to understand why th
 
 | Page | What it covers |
 |------|---------------|
-| [The ASeq Linked List](/docs/concepts/aseq-linked-list) | The core data structure — each nucleotide is a node carrying its own segment identity, germline origin, mutation flags, and reading frame position |
-| [The Simulation Pipeline](/docs/concepts/simulation-pipeline) | How a sequence flows through assembly → functionality → mutation → corruption → serialization, and what each stage does to the linked list |
-| [Metadata Accuracy](/docs/concepts/metadata-accuracy) | How coordinates, germline alignment, mutation strings, and allele calls remain correct through every transformation — including boundary ambiguity resolution |
+| [Persistent IR Architecture](/docs/concepts/persistent-ir) | The heart of the engine — a persistent, immutable data structure that tracks the nucleotide pool, segment regions, and allele assignments across a complete simulation history. |
+| [The Simulation Pipeline](/docs/concepts/simulation-pipeline) | How the engine executes a modular **PassPlan** — from recombination and somatic hypermutation to sequencing artifacts — ensuring every step is tracked and reproducible. |
+| [How Sampling Works](/docs/concepts/sampling-mechanics) | Transparency into the engine's internal sampling logic: empirical weights, Markov-chain trimming, and TdT transition matrices. |
+| [Metadata Accuracy](/docs/concepts/metadata-accuracy) | How the engine derives ~70 ground-truth fields (coordinates, CIGARs, alignments) through its single-pass builder, maintaining perfect consistency even under extreme mutation and corruption. |

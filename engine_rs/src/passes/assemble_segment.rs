@@ -31,9 +31,9 @@ use crate::pass::{Pass, PassContext, PassEffect, PassError, PassRequirement};
 /// **Frame phase:** computed as `(cumulative prior region length)
 /// % 3`. This anchors the codon frame at the start of the *first*
 /// region. Real biology anchors at the V Cys; that anchor-aware
-/// offset is a future refinement (Phase D / E). For C.8 the raw
-/// cumulative-length-mod-3 is correct as long as the user isn't
-/// reading frame-relative properties yet.
+/// offset is a future refinement. The raw cumulative-length-mod-3
+/// is correct as long as the user isn't reading frame-relative
+/// properties yet.
 pub struct AssembleSegmentPass {
     segment: Segment,
 }
@@ -132,7 +132,7 @@ impl AssembleSegmentPass {
 
         // Frame phase: cumulative length of prior regions, mod 3.
         // The frame is implicitly anchored at the start of the first
-        // assembled region. Anchor-aware framing arrives in Phase D/E.
+        // assembled region.
         let cumulative_len: u32 = sim.sequence.regions.iter().map(|r| r.len()).sum();
         let frame_phase = (cumulative_len % 3) as u8;
 

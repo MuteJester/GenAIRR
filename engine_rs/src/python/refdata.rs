@@ -18,7 +18,7 @@ use crate::ir::Segment;
 use crate::refdata::{Allele, AlleleId, AllelePool, ChainType, RefDataConfig};
 
 /// A read-only view of one V / D / J allele.
-#[pyclass(name = "Allele", module = "genairr_engine", frozen)]
+#[pyclass(name = "Allele", module = "GenAIRR._engine", frozen)]
 pub struct PyAllele {
     pub(crate) inner: Allele,
 }
@@ -100,7 +100,7 @@ impl PyAllele {
 /// cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
 /// cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
 /// ```
-#[pyclass(name = "RefDataConfig", module = "genairr_engine")]
+#[pyclass(name = "RefDataConfig", module = "GenAIRR._engine")]
 pub struct PyRefDataConfig {
     pub(crate) inner: RefDataConfig,
 }

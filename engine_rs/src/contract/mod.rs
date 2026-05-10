@@ -10,15 +10,13 @@
 //!    reference data), decide whether the contract holds. Returns
 //!    `Ok(())` if satisfied, `Err(ContractViolation)` with a
 //!    structured reason if not. Used at any point where invariants
-//!    need to be checked: build-time validation (D7 Phase 1),
-//!    debug introspection, post-pipeline assertions.
+//!    need to be checked: build-time validation, debug
+//!    introspection, post-pipeline assertions.
 //!
 //! 2. **Filter** — given a candidate sampling action and the
 //!    current state, decide whether the action is admissible
 //!    *before* sampling. This is what makes constraint-aware
-//!    sampling work (D6 — `respect=[productive()]`). Filter mode
-//!    arrives in Phase D when contracts get wired into the
-//!    `Distribution` trait surface.
+//!    sampling work (D6 — `respect=[productive()]`).
 //!
 //! ## Module layout
 //!
@@ -57,8 +55,7 @@ pub use set::ContractSet;
 ///
 /// Carries a stable contract identifier (`contract_name`) for
 /// programmatic dispatch and a human-readable `reason` string for
-/// diagnostics. Phase D's strict-mode failure shape (D7) builds
-/// on this.
+/// diagnostics. The strict-mode failure shape (D7) builds on this.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractViolation {
     pub contract_name: String,
@@ -205,9 +202,9 @@ pub enum ContractKind {
 
 /// A predicate over the simulation IR.
 ///
-/// Phase C.9 surfaces only `verify`. Phase D will add filter
-/// methods (and possibly an `upstream_bound` for backward
-/// constraint propagation) as defaulted trait methods so existing
+/// Currently only `verify` is surfaced. Filter methods (and
+/// possibly an `upstream_bound` for backward constraint
+/// propagation) will land as defaulted trait methods so existing
 /// contract implementations continue to compile.
 pub trait Contract {
     /// Stable, human-readable identifier for this contract.
@@ -252,7 +249,7 @@ pub trait Contract {
     /// a transform applies (e.g., `NoStopCodonInJunction` looking
     /// at codons that don't exist yet) keep the default; their
     /// constraints get enforced via `verify` post-hoc, or by
-    /// future contract-aware base-sampling passes (Phase E).
+    /// future contract-aware base-sampling passes.
     ///
     /// **Returning `Err` is not a fatal failure** — it's "this
     /// specific candidate is inadmissible." The caller (the
@@ -324,7 +321,7 @@ pub trait Contract {
 ///
 /// All four must hold for a sequence to be considered productive
 /// in the standard biological sense. The DSL `respect=[productive()]`
-/// (Phase F) compiles to this bundle internally.
+/// compiles to this bundle internally.
 pub fn productive() -> ContractSet {
     ContractSet::new()
         .with(Box::new(ProductiveJunctionFrame::new()))

@@ -2,10 +2,10 @@
 //!
 //! ## Why we don't use `rand`
 //!
-//! For reproducibility (D11) we need a PRNG whose output is locked
-//! down to *our* implementation, not whatever happens to be the
-//! current default in the `rand` crate. We also want zero external
-//! dependencies in the V6 kernel until something genuinely needs one.
+//! For reproducibility we need a PRNG whose output is locked down
+//! to *our* implementation, not whatever happens to be the current
+//! default in the `rand` crate. We also want zero external
+//! dependencies in the kernel until something genuinely needs one.
 //!
 //! ## SplitMix64
 //!
@@ -25,11 +25,11 @@
 //!
 //! ## Future
 //!
-//! When we need parallel batches across rayon worker threads (D7
-//! and §10.7), we'll add `Rng::split() -> Rng` for sub-stream
-//! generation. Not needed yet.
+//! When we need parallel batches across rayon worker threads we'll
+//! add `Rng::split() -> Rng` for sub-stream generation. Not needed
+//! yet.
 
-/// Deterministic PRNG for the V6 engine.
+/// Deterministic PRNG for the engine.
 ///
 /// State is a single u64. Each `next_*` call advances the stream by
 /// one word. Reseeding via `Rng::new(seed)` is idempotent — the same

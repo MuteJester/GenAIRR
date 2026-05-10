@@ -9,7 +9,7 @@
 //! computed on demand from the assigned alleles + their assemblies.
 //!
 //! Productivity contracts in D.2 / D.3 read the junction. Future
-//! AIRR projection (Phase F) will read it to populate the
+//! AIRR projection will read it to populate the
 //! `junction_*` fields of the output record.
 //!
 //! ## D.1 scope
@@ -413,9 +413,9 @@ mod tests {
         // window.
         //
         // This invariant is what makes constraint-aware sampling
-        // stable through SHM in Phase E: a mutation pass that
-        // changes bases inside the junction shouldn't shift the
-        // junction's position.
+        // stable through SHM: a mutation pass that changes bases
+        // inside the junction shouldn't shift the junction's
+        // position.
         let cfg = make_vj_refdata(Some(6), Some(0));
         let v_inst = AlleleInstance::new(AlleleId::new(0));
         let j_inst = AlleleInstance::new(AlleleId::new(0));

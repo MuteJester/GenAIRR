@@ -1,4 +1,4 @@
-//! Python bindings for the V6 engine.
+//! Python bindings for the engine.
 //!
 //! Registers PyO3 wrapper types around the Rust IR and runtime
 //! output: read-only views of `Simulation`, `Region`, `Trace`,

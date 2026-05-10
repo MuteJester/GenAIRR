@@ -1,4 +1,4 @@
-"""Quality-score models for FASTQ output (Phase 12.E / G1).
+"""Quality-score models for FASTQ output.
 
 This module provides quality models that synthesise per-base Phred
 scores from the assembled sequence. The models are deliberately

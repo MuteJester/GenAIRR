@@ -5,75 +5,92 @@ sidebar_label: Export Formats
 
 # Export Formats
 
-GenAIRR's `SimulationResult` can be exported to several formats.
+GenAIRR's `SimulationResult` provides several helpers for exporting your simulated sequences and their metadata to industry-standard formats.
 
-## AIRR TSV
+## AIRR-Compliant TSV
+
+The most common way to save your results is as an AIRR-compliant tab-separated file.
 
 ```python
-from GenAIRR import Experiment
+import GenAIRR as ga
 
-result = Experiment.on("human_igh").run(n=1000, seed=42)
+# Run a simulation
+result = ga.Experiment.on("human_igh").recombine().run(n=1000, seed=42)
+
+# Save as TSV (default)
 result.to_csv("repertoire.tsv")
+
+# Save as CSV
+result.to_csv("repertoire.csv", sep=",")
 ```
 
-This writes a tab-separated file with all 47 fields, following the AIRR Community standard.
+This writes a file with **~70 ground-truth fields** per sequence.
+
+### 1-Based Coordinates (AIRR Strict)
+
+By default, GenAIRR uses **0-based half-open** coordinates (Python convention). To export using the **1-based inclusive** coordinates required by the AIRR Rearrangement specification, pass `airr_strict=True`:
+
+```python
+# Convert all coordinate fields to 1-based inclusive for AIRR tooling
+result.to_csv("repertoire.tsv", airr_strict=True)
+```
 
 ## FASTA
+
+To export just the nucleotide sequences for use with tools like BLAST or IgBLAST:
 
 ```python
 result.to_fasta("repertoire.fasta")
 ```
 
-Writes sequences in FASTA format with the record index as the header.
+The sequence ID in the FASTA header will match the `sequence_id` field in the AIRR metadata (e.g., `>seq0`).
 
 ## pandas DataFrame
 
+If you have `pandas` installed, you can convert the entire result set into a DataFrame for easy analysis:
+
 ```python
 df = result.to_dataframe()
-print(df.shape)    # (1000, 47)
-print(df.columns)  # all 47 field names
+
+print(df.shape)     # (1000, 69)
+print(df["v_call"].value_counts())
 ```
 
 :::note
-`to_dataframe()` requires pandas to be installed. Install it with `pip install pandas` or `pip install GenAIRR[all]`.
+`to_dataframe()` requires pandas. Install it via `pip install pandas` or `pip install GenAIRR[all]`.
 :::
 
-## Accessing records directly
+## Accessing Records Directly
 
-`SimulationResult` is list-like — you can index, iterate, and check length:
+`SimulationResult` is a list-like container. You can index it, iterate over it, and check its length. Each record is returned as a plain Python `dict`:
 
 ```python
-result = Experiment.on("human_igh").run(n=100, seed=42)
-
-# Index
+# Get the first record
 rec = result[0]
-print(rec["v_call"])
+print(rec["sequence"])
 
-# Length
-print(len(result))  # 100
-
-# Iterate
+# Iterate through results
 for rec in result:
     if rec["productive"]:
-        print(rec["junction_aa"])
+        print(f"Productive junction: {rec['junction_aa']}")
 ```
 
-## Streaming (no accumulation)
+## Memory-Efficient Streaming
 
-For very large datasets, use `.compile()` + `.stream()` to avoid holding all records in memory:
+For very large datasets (e.g., millions of sequences), you should avoid loading all results into memory. Use `.stream_records()` to lazily generate sequences one at a time:
 
 ```python
-from GenAIRR import Experiment
-from GenAIRR.ops import rate
+exp = ga.Experiment.on("human_igh").recombine().mutate(count=10)
 
-sim = Experiment.on("human_igh").mutate(rate(0.05, 0.15)).compile(seed=42)
-
-count = 0
-for record in sim.stream():
-    # Process one record at a time
-    count += 1
-    if count >= 10000:
-        break
+# Stream 1,000,000 records without using massive amounts of RAM
+for record in exp.stream_records(n=1_000_000, seed=42):
+    # 'record' is a dict containing the AIRR fields
+    process(record)
 ```
 
-The stream is an infinite iterator — you control when to stop.
+The stream will yield exactly `n` records (if provided) and then stop.
+
+## Next steps
+
+- [Understanding Output](/docs/getting-started/interpreting-results) — Detailed guide to the ~70 output fields
+- [Experiment DSL](/docs/guides/basics/experiment-dsl) — Learn how to customize your simulation pipeline
