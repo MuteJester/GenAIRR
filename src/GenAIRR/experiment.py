@@ -352,6 +352,8 @@ _CORRUPT_KIND_QUALITY = "quality"
 _CORRUPT_KIND_INDEL = "indel"
 _CORRUPT_KIND_CONTAMINANT = "contaminant"
 _CORRUPT_KIND_REV_COMP = "rev_comp"
+_CORRUPT_KIND_5PRIME_LOSS = "5prime_loss"
+_CORRUPT_KIND_3PRIME_LOSS = "3prime_loss"
 
 
 @dataclass(frozen=True)
@@ -390,6 +392,10 @@ class _CorruptStep:
             plan.push_corrupt_contaminant(self.apply_prob)
         elif self.kind == _CORRUPT_KIND_REV_COMP:
             plan.push_corrupt_rev_comp(self.apply_prob)
+        elif self.kind == _CORRUPT_KIND_5PRIME_LOSS:
+            plan.push_corrupt_5prime_loss(count_list)
+        elif self.kind == _CORRUPT_KIND_3PRIME_LOSS:
+            plan.push_corrupt_3prime_loss(count_list)
         else:  # pragma: no cover — guarded at builder time.
             raise ValueError(f"unsupported corruption kind {self.kind!r}")
 
@@ -709,6 +715,60 @@ class Experiment:
                 kind=_CORRUPT_KIND_INDEL,
                 count_pairs=pairs,
                 insertion_prob=float(insertion_prob),
+                apply_prob=0.0,
+            )
+        )
+        return self
+
+    def corrupt_5prime_loss(
+        self,
+        *,
+        length: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+    ) -> "Experiment":
+        """Append a 5'-end loss corruption step.
+
+        Drops bases from the start of the assembled sequence to model
+        primer-region trimming. ``length`` accepts the same shapes as
+        ``count`` on other corrupt ops:
+
+        - ``length=10`` — strip exactly 10 bases.
+        - ``length=(0, 20)`` — strip a uniform integer in ``[0, 20]``.
+        - ``length=[(5, 1.0), (10, 1.0), (15, 1.0)]`` — empirical
+          (length, weight) distribution.
+
+        The actual loss is clamped to the pool length (so a sample
+        larger than the sequence drops the whole pool). The loss is
+        permanent for downstream passes — subsequent corruption
+        operates on the shorter pool.
+        """
+        pairs = _normalize_count(length)
+        self._steps.append(
+            _CorruptStep(
+                kind=_CORRUPT_KIND_5PRIME_LOSS,
+                count_pairs=pairs,
+                insertion_prob=0.0,
+                apply_prob=0.0,
+            )
+        )
+        return self
+
+    def corrupt_3prime_loss(
+        self,
+        *,
+        length: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+    ) -> "Experiment":
+        """Append a 3'-end loss corruption step.
+
+        Drops bases from the end of the assembled sequence to model
+        read-end degradation. Same ``length`` shapes as
+        :meth:`corrupt_5prime_loss`.
+        """
+        pairs = _normalize_count(length)
+        self._steps.append(
+            _CorruptStep(
+                kind=_CORRUPT_KIND_3PRIME_LOSS,
+                count_pairs=pairs,
+                insertion_prob=0.0,
                 apply_prob=0.0,
             )
         )

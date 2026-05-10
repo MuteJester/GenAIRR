@@ -24,8 +24,8 @@ use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
 use crate::ir::Segment;
 use crate::pass::PassPlan;
 use crate::passes::{
-    AssembleSegmentPass, ContaminantPass, GenerateNPPass, IndelPass, PCRErrorPass,
-    QualityErrorPass, RevCompPass, S5FMutationPass, SampleAllelePass, TrimPass,
+    AssembleSegmentPass, ContaminantPass, EndLossPass, GenerateNPPass, IndelPass, LossEnd,
+    PCRErrorPass, QualityErrorPass, RevCompPass, S5FMutationPass, SampleAllelePass, TrimPass,
     UniformMutationPass,
 };
 use crate::s5f::{S5FKernel, S5F_NUM_CONTEXTS, S5F_SUBSTITUTION_LEN};
@@ -352,6 +352,41 @@ impl PyPassPlan {
         self.inner_mut()?.push(Box::new(ContaminantPass::new(
             apply_prob,
             Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
+    /// Append a `EndLossPass` for the 5' end (Phase 12.D). The
+    /// `length_pairs` distribution gives the number of bases to
+    /// strip from the start of the assembled sequence; the actual
+    /// loss is clamped to the pool length.
+    ///
+    /// Errors: ``ValueError`` when ``length_pairs`` is empty.
+    fn push_corrupt_5prime_loss(&mut self, length_pairs: Vec<(i64, f64)>) -> PyResult<()> {
+        if length_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "length_pairs must contain at least one (length, weight) entry",
+            ));
+        }
+        self.inner_mut()?.push(Box::new(EndLossPass::new(
+            LossEnd::Five,
+            Box::new(EmpiricalLengthDist::from_pairs(length_pairs)),
+        )));
+        Ok(())
+    }
+
+    /// Append a `EndLossPass` for the 3' end (Phase 12.D).
+    ///
+    /// Errors: ``ValueError`` when ``length_pairs`` is empty.
+    fn push_corrupt_3prime_loss(&mut self, length_pairs: Vec<(i64, f64)>) -> PyResult<()> {
+        if length_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "length_pairs must contain at least one (length, weight) entry",
+            ));
+        }
+        self.inner_mut()?.push(Box::new(EndLossPass::new(
+            LossEnd::Three,
+            Box::new(EmpiricalLengthDist::from_pairs(length_pairs)),
         )));
         Ok(())
     }

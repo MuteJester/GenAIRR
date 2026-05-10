@@ -3512,6 +3512,77 @@ def _reverse_complement(s: str) -> str:
     return s.translate(_RC_COMPLEMENT)[::-1]
 
 
+def test_phase12d_5prime_loss_drops_leading_bases():
+    # Fixed-length 5' loss: every record's sequence is shorter by
+    # exactly the requested amount, and the V segment's CIGAR starts
+    # with that many `D` ops (the lost ref positions).
+    base = ga.Experiment.on("human_igh").recombine()
+    lost = ga.Experiment.on("human_igh").recombine().corrupt_5prime_loss(length=15)
+    base_recs = list(base.run_records(n=10, seed=0))
+    lost_recs = list(lost.run_records(n=10, seed=0))
+    for fwd, lr in zip(base_recs, lost_recs):
+        # Sequence shrinks by exactly 15.
+        assert lr["sequence_length"] == fwd["sequence_length"] - 15, (
+            f"len={lr['sequence_length']} vs {fwd['sequence_length']} - 15"
+        )
+        # V's CIGAR begins with `15D` (the lost prefix of V).
+        assert lr["v_cigar"].startswith("15D"), f"v_cigar={lr['v_cigar']!r}"
+
+
+def test_phase12d_3prime_loss_drops_trailing_bases():
+    base = ga.Experiment.on("human_igh").recombine()
+    lost = ga.Experiment.on("human_igh").recombine().corrupt_3prime_loss(length=10)
+    for fwd, lr in zip(base.run_records(n=10, seed=0), lost.run_records(n=10, seed=0)):
+        assert lr["sequence_length"] == fwd["sequence_length"] - 10
+        # J's CIGAR ends with `10D` (the lost suffix of J).
+        assert lr["j_cigar"].endswith("10D"), f"j_cigar={lr['j_cigar']!r}"
+
+
+def test_phase12d_loss_zero_is_no_op():
+    base = ga.Experiment.on("human_igh").recombine()
+    lost_5 = ga.Experiment.on("human_igh").recombine().corrupt_5prime_loss(length=0)
+    lost_3 = ga.Experiment.on("human_igh").recombine().corrupt_3prime_loss(length=0)
+    for fwd, l5, l3 in zip(
+        base.run_records(n=5, seed=0),
+        lost_5.run_records(n=5, seed=0),
+        lost_3.run_records(n=5, seed=0),
+    ):
+        assert l5["sequence"] == fwd["sequence"]
+        assert l3["sequence"] == fwd["sequence"]
+
+
+def test_phase12d_loss_preserves_alignment_invariants():
+    # 5'/3' loss extends the CIGAR with leading/trailing `D` ops.
+    # The H.3 alignment-string invariants (sa.replace('-')==seq, etc.)
+    # should still hold — the column walker accounts for the extra
+    # D ops in the trailing-D-fill loop.
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .mutate(count=8)
+        .corrupt_5prime_loss(length=(0, 25))
+        .corrupt_3prime_loss(length=(0, 20))
+        .corrupt_pcr(count=3)
+    )
+    failures = []
+    for i, rec in enumerate(exp.run_records(n=100, seed=0)):
+        issues = _alignment_invariants_hold(rec)
+        if issues:
+            failures.append((i, issues))
+    assert failures == [], f"alignment invariants broke under 5'/3' loss: {failures[:3]}"
+
+
+def test_phase12d_loss_rejects_invalid_length():
+    exp = ga.Experiment.on("human_igh").recombine()
+    for bad in (-1, "ten", True):
+        try:
+            exp.corrupt_5prime_loss(length=bad)
+        except (ValueError, TypeError):
+            pass
+        else:
+            raise AssertionError(f"expected error for length={bad!r}")
+
+
 def test_phase12d_rev_comp_flips_sequence_and_flag():
     # prob=1.0: every record should have rev_comp=True and the
     # `sequence` should be the reverse-complement of the same record
