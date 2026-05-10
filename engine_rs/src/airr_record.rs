@@ -172,6 +172,16 @@ pub fn build_airr_record(
     rec.d_call = projected_call_name(refdata, sim, Segment::D, d_id);
     rec.j_call = projected_call_name(refdata, sim, Segment::J, j_id);
     rec.locus = derive_locus(&rec.v_call, &rec.j_call, &rec.d_call);
+    if rec.locus.is_empty() {
+        // Phase 12.C follow-up: under heavy corruption the live-call
+        // layer can wipe every V/D/J call (no allele supports the
+        // mutated sequence), leaving `derive_locus` with nothing to
+        // parse. Fall back to the refdata's pool — any allele name
+        // gives us a locus prefix, which is still meaningful AIRR
+        // output (the chain didn't change, only the call evidence
+        // is absent).
+        rec.locus = locus_from_refdata(refdata);
+    }
 
     // Sequence-coord regions (raw pool start/end).
     let v_region = sim
@@ -1149,20 +1159,51 @@ fn mutation_count(trace: &Trace) -> i64 {
 
 const AIRR_LOCI: [&str; 7] = ["IGH", "IGK", "IGL", "TRA", "TRB", "TRG", "TRD"];
 
+/// Phase 12.C: refdata-driven locus fallback. Walks each pool's
+/// first allele in turn and returns the locus prefix when the name
+/// starts with one of the AIRR loci. Used when live-call evidence
+/// has wiped every `*_call` (heavy SHM under corruption stack) but
+/// the chain is still well-defined by the source data.
+fn locus_from_refdata(refdata: &RefDataConfig) -> String {
+    for entry in [
+        refdata.v_pool.iter().next(),
+        refdata.j_pool.iter().next(),
+        refdata.d_pool.iter().next(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let candidate = locus_prefix(&entry.1.name);
+        if !candidate.is_empty() {
+            return candidate;
+        }
+    }
+    String::new()
+}
+
+fn locus_prefix(name: &str) -> String {
+    if name.len() < 3 {
+        return String::new();
+    }
+    let mut prefix = String::with_capacity(3);
+    for c in name.chars().take(3) {
+        prefix.push(c.to_ascii_uppercase());
+    }
+    if AIRR_LOCI.contains(&prefix.as_str()) {
+        prefix
+    } else {
+        String::new()
+    }
+}
+
 fn derive_locus(v_call: &str, j_call: &str, d_call: &str) -> String {
     for name in [v_call, j_call, d_call] {
         if name.is_empty() {
             continue;
         }
-        if name.len() < 3 {
-            continue;
-        }
-        let mut prefix = String::with_capacity(3);
-        for c in name.chars().take(3) {
-            prefix.push(c.to_ascii_uppercase());
-        }
-        if AIRR_LOCI.contains(&prefix.as_str()) {
-            return prefix;
+        let candidate = locus_prefix(name);
+        if !candidate.is_empty() {
+            return candidate;
         }
     }
     String::new()
@@ -1359,6 +1400,37 @@ mod tests {
         assert_eq!(derive_locus("ighv1-2*01", "", ""), "IGH"); // case-insensitive
         assert_eq!(derive_locus("", "", ""), "");
         assert_eq!(derive_locus("XYZ1*01", "", ""), "");
+    }
+
+    #[test]
+    fn locus_from_refdata_falls_back_to_pool_allele_names() {
+        // Phase 12.C: when every live call has been wiped, the
+        // refdata's pool allele names still tell us the locus.
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        let _ = cfg.v_pool.push(Allele {
+            name: "IGHV1-2*01".into(),
+            gene: "IGHV1-2".into(),
+            seq: b"AAA".to_vec(),
+            segment: Segment::V,
+            anchor: None,
+        });
+        assert_eq!(locus_from_refdata(&cfg), "IGH");
+
+        // Non-AIRR-prefixed names should yield empty (the helper
+        // requires a recognisable AIRR locus).
+        let mut alien = RefDataConfig::empty(ChainType::Vdj);
+        let _ = alien.v_pool.push(Allele {
+            name: "XYZV1*01".into(),
+            gene: "XYZV1".into(),
+            seq: b"AAA".to_vec(),
+            segment: Segment::V,
+            anchor: None,
+        });
+        assert_eq!(locus_from_refdata(&alien), "");
+
+        // Empty pool → empty locus.
+        let empty = RefDataConfig::empty(ChainType::Vj);
+        assert_eq!(locus_from_refdata(&empty), "");
     }
 
     #[test]

@@ -3505,6 +3505,35 @@ def test_identity_helper_from_columns():
     assert identities["J"] == rec["j_identity"]
 
 
+def test_phase12_locus_falls_back_to_refdata_under_heavy_corruption():
+    # Phase 12.C follow-up: under heavy SHM the live-call layer can
+    # narrow every V/D/J call to the empty set (no allele supports
+    # the corrupted sequence). Pre-fix `derive_locus` then had
+    # nothing to parse and returned `""`. The fix walks the refdata
+    # pool's first allele names as a fallback so the AIRR record
+    # always carries a meaningful locus.
+    expected = {
+        "human_igh": "IGH",
+        "human_igk": "IGK",
+        "human_igl": "IGL",
+        "human_tcrb": "TRB",
+    }
+    for cfg, want in expected.items():
+        exp = (
+            ga.Experiment.on(cfg)
+            .recombine()
+            .mutate(count=15)
+            .corrupt_pcr(count=5)
+            .corrupt_quality(count=8)
+            .corrupt_indels(count=4, insertion_prob=0.5)
+        )
+        for i, rec in enumerate(exp.run_records(n=200, seed=0)):
+            assert rec["locus"] == want, (
+                f"{cfg} rec {i}: locus={rec['locus']!r} expected {want!r} "
+                f"(v_call={rec['v_call']!r} j_call={rec['j_call']!r})"
+            )
+
+
 def test_phase12_per_segment_ga_slice_matches_called_allele():
     # Phase 12.C — discovered audit invariant: when SHM mutations
     # narrow the live call to a different allele than the one
