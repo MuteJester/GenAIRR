@@ -1576,6 +1576,116 @@ def test_to_fastq_rejects_out_of_range_q(tmp_path):
             raise AssertionError(f"expected error for q={bad!r}")
 
 
+def test_g5_clonal_structure_total_record_count():
+    # n_clones × size = total records.
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .with_clonal_structure(n_clones=5, size=4)
+        .mutate(count=3)
+    )
+    result = exp.run_records(seed=0)
+    assert len(result) == 20
+
+
+def test_g5_clonal_descendants_identical_without_post_fork_passes():
+    # No mutate / corrupt after the fork → every descendant in a
+    # clone is literally identical (same V/D/J + trim + NP).
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .with_clonal_structure(n_clones=3, size=4)
+    )
+    by_clone = {}
+    for rec in exp.run_records(seed=0):
+        by_clone.setdefault(rec["clone_id"], []).append(rec)
+    assert sorted(by_clone) == [0, 1, 2]
+    for cid, recs in by_clone.items():
+        seqs = {r["sequence"] for r in recs}
+        v_calls = {r["v_call"] for r in recs}
+        assert len(seqs) == 1, f"clone {cid} descendants diverged without post-fork passes"
+        assert len(v_calls) == 1
+
+
+def test_g5_clonal_descendants_share_junction_diverge_via_mutate():
+    # With mutate after the fork, descendants share the junction
+    # backbone (same V/D/J + trim + NP) but diverge in mutated bases.
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .with_clonal_structure(n_clones=2, size=8)
+        .mutate(count=8)
+    )
+    by_clone = {}
+    for rec in exp.run_records(seed=0):
+        by_clone.setdefault(rec["clone_id"], []).append(rec)
+    for cid, recs in by_clone.items():
+        v_calls = {r["v_call"] for r in recs if r["v_call"]}
+        seqs = {r["sequence"] for r in recs}
+        # Sequences diverge under SHM…
+        assert len(seqs) > 1, f"clone {cid} descendants didn't diverge under mutate"
+        # …but the V allele backbone is shared (when live evidence
+        # didn't get wiped). All V calls should reference the same
+        # provenance — rejecting empty calls (heavy-SHM noise).
+        non_empty = [c for c in v_calls if c]
+        if non_empty:
+            assert len(set(non_empty)) == 1, (
+                f"clone {cid} V calls differ across descendants: {non_empty}"
+            )
+
+
+def test_g5_clonal_explicit_n_must_match_total():
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .with_clonal_structure(n_clones=4, size=5)
+    )
+    # n=20 matches → ok.
+    result = exp.run_records(n=20, seed=0)
+    assert len(result) == 20
+    # n=10 mismatched → error.
+    with pytest.raises(ValueError, match="inconsistent"):
+        exp.run_records(n=10, seed=0)
+
+
+def test_g5_with_clonal_structure_rejects_double_call():
+    exp = ga.Experiment.on("human_igh").recombine()
+    exp = exp.with_clonal_structure(n_clones=3, size=2)
+    with pytest.raises(ValueError, match="only be called once"):
+        exp.with_clonal_structure(n_clones=2, size=2)
+
+
+def test_g5_with_clonal_structure_rejects_invalid_args():
+    exp = ga.Experiment.on("human_igh").recombine()
+    with pytest.raises(ValueError, match="positive int"):
+        exp.with_clonal_structure(n_clones=0, size=5)
+    with pytest.raises(ValueError, match="positive int"):
+        exp.with_clonal_structure(n_clones=5, size=-1)
+
+
+def test_g5_clonal_record_to_tsv(tmp_path):
+    # The clone_id column should round-trip through to_tsv output.
+    import csv as _csv
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .with_clonal_structure(n_clones=3, size=4)
+        .mutate(count=2)
+    )
+    path = tmp_path / "clones.tsv"
+    exp.run_records(seed=0).to_tsv(str(path))
+    with open(path, "r") as fh:
+        reader = _csv.DictReader(fh, delimiter="\t")
+        rows = list(reader)
+    assert len(rows) == 12
+    clone_ids = sorted({int(r["clone_id"]) for r in rows})
+    assert clone_ids == [0, 1, 2]
+    # Each clone has 4 descendants.
+    from collections import Counter
+    counts = Counter(int(r["clone_id"]) for r in rows)
+    assert counts == Counter({0: 4, 1: 4, 2: 4})
+
+
 def test_g4_mutate_rejected_on_tcr_chain():
     # SHM is biologically B-cell only. The DSL must error rather
     # than silently producing biologically-false TCR records.

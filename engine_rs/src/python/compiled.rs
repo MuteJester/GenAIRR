@@ -13,6 +13,7 @@ use crate::contract::ContractSet;
 use crate::refdata::RefDataConfig;
 
 use super::contract::pass_error_to_pyerr;
+use super::simulation::PySimulation;
 use super::outcome::PyOutcome;
 use super::plan::PyPassPlan;
 
@@ -127,6 +128,25 @@ impl PyCompiledSimulator {
             outcomes.push(PyOutcome::new(result.map_err(pass_error_to_pyerr)?));
         }
         Ok(outcomes)
+    }
+
+    /// Run one simulation starting from `initial` (G5 — clonal
+    /// expansion). The plan executes against the supplied parent IR
+    /// rather than `Simulation::new()`, letting Python orchestrate
+    /// "fork from a parent" semantics for clonal-family generation.
+    #[pyo3(signature = (initial, seed, *, strict=None))]
+    fn run_from(
+        &self,
+        initial: &PySimulation,
+        seed: u64,
+        strict: Option<bool>,
+    ) -> PyResult<PyOutcome> {
+        let policy = policy_from_strict_override(self.inner.policy(), strict);
+        let outcome = self
+            .inner
+            .run_one_from_with_policy(initial.inner.clone(), seed, policy)
+            .map_err(pass_error_to_pyerr)?;
+        Ok(PyOutcome::new(outcome))
     }
 
     fn __repr__(&self) -> String {

@@ -353,6 +353,22 @@ class _MutateStep:
 # Names of the four corruption passes the Rust kernel exposes. Used
 # both as a discriminator on `_CorruptStep` and as the Python-facing
 # kwarg name on the `Experiment` builder.
+@dataclass(frozen=True)
+class _ClonalForkStep:
+    """G5: marks the boundary between "per-clone" passes (run once
+    per clonal family — typically `recombine`) and "per-descendant"
+    passes (run once per read inside the family — typically
+    `mutate`, `corrupt_*`).
+
+    The compile pipeline splits the experiment's step list at this
+    marker, builds two `CompiledExperiment`s, and the runtime
+    forks the parent IR into descendants for each clone.
+    """
+
+    n_clones: int
+    size: int
+
+
 _CORRUPT_KIND_PCR = "pcr"
 _CORRUPT_KIND_QUALITY = "quality"
 _CORRUPT_KIND_INDEL = "indel"
@@ -836,6 +852,64 @@ class Experiment:
         )
         return self
 
+    def with_clonal_structure(
+        self,
+        *,
+        n_clones: int,
+        size: int,
+    ) -> "Experiment":
+        """G5: split the pipeline into per-clone (parent) and
+        per-descendant phases for clonal-family generation.
+
+        Steps appended *before* this call run **once per clone** —
+        typically just :meth:`recombine`, which establishes the
+        parent V/D/J + trim + NP + assembled IR for the clonal
+        family. Steps appended *after* this call run **once per
+        read inside the family** — typically :meth:`mutate` and the
+        ``corrupt_*`` ops, which introduce per-read divergence
+        within the clone.
+
+        Concrete shape::
+
+            exp = (Experiment.on("human_igh")
+                   .recombine()
+                   .with_clonal_structure(n_clones=10, size=20)
+                   .mutate(count=8)
+                   .corrupt_pcr(count=2))
+            result = exp.run_records(seed=0)
+            # 10 clones × 20 descendants = 200 records.
+            # Each record carries a ``clone_id`` integer in [0, 10).
+
+        ``n`` can be omitted from :meth:`run_records` for a clonal
+        experiment — the runtime expands ``n_clones * size``
+        records automatically. Passing ``n`` is allowed only when
+        ``n == n_clones * size``.
+
+        Constraints:
+        - Both ``n_clones`` and ``size`` must be positive ints.
+        - At most one fork per pipeline; calling this method twice
+          raises ``ValueError``.
+
+        Implementation note: the runtime forks the parent's IR
+        (final ``Simulation`` after the pre-fork plan) into
+        descendants by running the post-fork plan from that IR
+        with distinct seeds. Within a clone, every descendant
+        shares the same recombination provenance (V allele, trim,
+        NP bases) and only diverges through the post-fork passes.
+        """
+        if not isinstance(n_clones, int) or isinstance(n_clones, bool) or n_clones < 1:
+            raise ValueError(
+                f"n_clones must be a positive int, got {n_clones!r}"
+            )
+        if not isinstance(size, int) or isinstance(size, bool) or size < 1:
+            raise ValueError(f"size must be a positive int, got {size!r}")
+        if any(isinstance(s, _ClonalForkStep) for s in self._steps):
+            raise ValueError(
+                "with_clonal_structure() can only be called once per pipeline"
+            )
+        self._steps.append(_ClonalForkStep(n_clones=n_clones, size=size))
+        return self
+
     def mutate(
         self,
         *,
@@ -1188,13 +1262,14 @@ class Experiment:
                 return tuple(empirical)
         return tuple(_DEFAULT_NP_LENGTHS)
 
-    def compile(self, *, respect: RespectInput = None) -> "CompiledExperiment":
+    def compile(self, *, respect: RespectInput = None):
         """Compile the recorded steps into a reusable
-        :class:`CompiledExperiment`.
+        :class:`CompiledExperiment` (or :class:`CompiledClonalExperiment`
+        when the pipeline contains a :meth:`with_clonal_structure`
+        fork — G5).
 
         Idempotent: calling ``compile()`` twice produces two distinct
-        ``CompiledExperiment`` instances with structurally-equal
-        compiled simulators.
+        compiled instances with structurally-equal simulators.
 
         ``respect`` accepts ``None`` (no contracts), a single
         :class:`genairr_engine.ContractSet`, or a length-1 sequence
@@ -1206,26 +1281,63 @@ class Experiment:
 
         contracts = _coerce_respect(respect)
         any_lock = any(self._locks[seg] is not None for seg in ("V", "D", "J"))
+
+        # G5: if a `_ClonalForkStep` is present, split the step list
+        # at it and compile two simulators (pre-fork = per-clone,
+        # post-fork = per-descendant).
+        fork_idx = next(
+            (i for i, s in enumerate(self._steps) if isinstance(s, _ClonalForkStep)),
+            None,
+        )
+        if fork_idx is not None:
+            fork_step: _ClonalForkStep = self._steps[fork_idx]
+            pre_steps = self._steps[:fork_idx]
+            post_steps = self._steps[fork_idx + 1 :]
+            pre_simulator = self._build_simulator(
+                pre_steps, contracts, any_lock, replace_fn=_replace
+            )
+            post_simulator = self._build_simulator(
+                post_steps, contracts, any_lock=False, replace_fn=_replace
+            )
+            return CompiledClonalExperiment(
+                pre_simulator, post_simulator, fork_step, self._refdata
+            )
+
+        simulator = self._build_simulator(
+            self._steps, contracts, any_lock, replace_fn=_replace
+        )
+        return CompiledExperiment(simulator, self._refdata)
+
+    def _build_simulator(
+        self,
+        steps,
+        contracts,
+        any_lock: bool,
+        *,
+        replace_fn,
+    ):
+        """Compile a list of steps into a `genairr_engine.CompiledSimulator`.
+        Lifted out of `compile()` so the clonal-fork branch can build
+        two simulators from sub-step-lists with a shared body."""
         plan = _engine.PassPlan()
-        for step in self._steps:
+        for step in steps:
             # Inject any allele-locks set via ``.using(...)`` into the
             # recombine step at compile time. Other step types ignore
             # locks.
             if any_lock and isinstance(step, _RecombineStep):
-                step = _replace(
+                step = replace_fn(
                     step,
                     locks_v=self._locks["V"],
                     locks_d=self._locks["D"],
                     locks_j=self._locks["J"],
                 )
             step.apply(plan, self._refdata)
-        simulator = plan.compile(refdata=self._refdata, respect=contracts)
-        return CompiledExperiment(simulator, self._refdata)
+        return plan.compile(refdata=self._refdata, respect=contracts)
 
     def run_records(
         self,
         *,
-        n: int = 1,
+        n: Optional[int] = None,
         seed: int = 0,
         respect: RespectInput = None,
         strict: bool = False,
@@ -1234,19 +1346,26 @@ class Experiment:
         :class:`SimulationResult` ready for ``.to_csv`` / ``.to_fasta``
         / ``.to_dataframe`` export.
 
-        Same arguments as :meth:`run`. Returns a
-        :class:`GenAIRR.SimulationResult` instead of a raw list of
-        ``Outcome`` objects.
-        """
-        from .result import SimulationResult
+        For non-clonal experiments ``n`` defaults to 1. For clonal
+        experiments (when the pipeline contains :meth:`with_clonal
+        _structure`) ``n`` defaults to ``n_clones * size`` and may
+        be omitted; passing ``n`` explicitly is allowed only if it
+        matches that product.
 
-        outcomes = self.run(n=n, seed=seed, respect=respect, strict=strict)
-        return SimulationResult.from_outcomes(outcomes, self._refdata)
+        Returns a :class:`SimulationResult`; clonal records carry
+        an integer ``clone_id`` field per row.
+        """
+        compiled = self.compile(respect=respect)
+        if isinstance(compiled, CompiledClonalExperiment):
+            return compiled.run_records(n=n, seed=seed, strict=strict)
+        return compiled.run_records(
+            n=1 if n is None else n, seed=seed, strict=strict
+        )
 
     def run(
         self,
         *,
-        n: int = 1,
+        n: Optional[int] = None,
         seed: int = 0,
         respect: RespectInput = None,
         strict: bool = False,
@@ -1255,7 +1374,8 @@ class Experiment:
 
         Equivalent to
         ``self.compile(respect=respect).run(n=n, seed=seed, strict=strict)``.
-        Returns a list of :class:`genairr_engine.Outcome` objects.
+        Returns a list of :class:`genairr_engine.Outcome` objects in
+        clone-major order for clonal experiments.
 
         Pass ``respect=productive()`` (or any other ``ContractSet``) to
         constrain every random draw to admissible values; the runtime
@@ -1270,7 +1390,10 @@ class Experiment:
         ``strict=True`` raises
         :class:`genairr_engine.StrictSamplingError` instead.
         """
-        return self.compile(respect=respect).run(n=n, seed=seed, strict=strict)
+        compiled = self.compile(respect=respect)
+        if isinstance(compiled, CompiledClonalExperiment):
+            return compiled.run(n=n, seed=seed, strict=strict)
+        return compiled.run(n=1 if n is None else n, seed=seed, strict=strict)
 
     def stream(
         self,
@@ -1459,4 +1582,137 @@ class CompiledExperiment:
             f"<CompiledExperiment plan_len={len(self.pass_plan)} "
             f"chain={self._refdata.chain_type} "
             f"contracts={len(self.active_contracts)}>"
+        )
+
+
+class CompiledClonalExperiment:
+    """G5: a compiled experiment with a clonal-fork structure.
+
+    Wraps two :class:`genairr_engine.CompiledSimulator`s — the
+    pre-fork plan (run once per clone, typically the recombine
+    step) and the post-fork plan (run once per descendant inside
+    the clone, typically mutate / corrupt_*).
+
+    :meth:`run_records` orchestrates the parent → descendants loop
+    and tags every record with a ``clone_id`` integer so downstream
+    clonotype-clustering tools can be benchmarked against the true
+    clonal structure.
+    """
+
+    __slots__ = ("_pre", "_post", "_fork", "_refdata")
+
+    def __init__(
+        self,
+        pre_simulator: "_engine.CompiledSimulator",
+        post_simulator: "_engine.CompiledSimulator",
+        fork: "_ClonalForkStep",
+        refdata: "_engine.RefDataConfig",
+    ) -> None:
+        self._pre = pre_simulator
+        self._post = post_simulator
+        self._fork = fork
+        self._refdata = refdata
+
+    @property
+    def n_clones(self) -> int:
+        return self._fork.n_clones
+
+    @property
+    def size(self) -> int:
+        return self._fork.size
+
+    @property
+    def total_records(self) -> int:
+        """Number of records produced per :meth:`run_records` call."""
+        return self._fork.n_clones * self._fork.size
+
+    @property
+    def refdata(self) -> "_engine.RefDataConfig":
+        return self._refdata
+
+    def run(
+        self,
+        *,
+        n: Optional[int] = None,
+        seed: int = 0,
+        strict: bool = False,
+    ) -> List["_engine.Outcome"]:
+        """Run all clonal descendants and return their outcomes in
+        clone-major order (clone 0's descendants 0..size-1, clone 1's
+        descendants 0..size-1, …).
+
+        ``n`` is optional: when omitted the runtime expands
+        ``n_clones * size`` outcomes. Passing ``n`` is allowed only
+        when ``n == n_clones * size`` (otherwise raises).
+        """
+        total = self.total_records
+        if n is not None and n != total:
+            raise ValueError(
+                f"clonal pipeline produces n_clones * size = "
+                f"{self._fork.n_clones} * {self._fork.size} = {total} "
+                f"records; passing n={n} is inconsistent. Drop the n "
+                f"argument or pass n={total}."
+            )
+
+        outcomes: List["_engine.Outcome"] = []
+        for clone_idx in range(self._fork.n_clones):
+            clone_seed = int(seed) + clone_idx * 1_000_000
+            parent = self._pre.run(seed=clone_seed, strict=strict)
+            parent_sim = parent.final_simulation()
+            for desc_idx in range(self._fork.size):
+                desc_seed = clone_seed + 1 + desc_idx
+                desc = self._post.run_from(
+                    parent_sim, desc_seed, strict=strict
+                )
+                outcomes.append(desc)
+        return outcomes
+
+    def run_records(
+        self,
+        *,
+        n: Optional[int] = None,
+        seed: int = 0,
+        strict: bool = False,
+    ) -> "SimulationResult":
+        """Same as :meth:`run` but returns a :class:`SimulationResult`
+        with each record dict carrying an integer ``clone_id`` field
+        in ``[0, n_clones)``.
+        """
+        from ._airr_record import outcome_to_airr_record
+        from .result import SimulationResult
+
+        total = self.total_records
+        if n is not None and n != total:
+            raise ValueError(
+                f"clonal pipeline produces n_clones * size = "
+                f"{self._fork.n_clones} * {self._fork.size} = {total} "
+                f"records; passing n={n} is inconsistent. Drop the n "
+                f"argument or pass n={total}."
+            )
+
+        records: List[Dict[str, Any]] = []
+        outcomes: List["_engine.Outcome"] = []
+        for clone_idx in range(self._fork.n_clones):
+            clone_seed = int(seed) + clone_idx * 1_000_000
+            parent = self._pre.run(seed=clone_seed, strict=strict)
+            parent_sim = parent.final_simulation()
+            for desc_idx in range(self._fork.size):
+                desc_seed = clone_seed + 1 + desc_idx
+                desc = self._post.run_from(
+                    parent_sim, desc_seed, strict=strict
+                )
+                outcomes.append(desc)
+                rec = outcome_to_airr_record(
+                    desc,
+                    self._refdata,
+                    sequence_id=f"clone{clone_idx}_desc{desc_idx}",
+                )
+                rec["clone_id"] = clone_idx
+                records.append(rec)
+        return SimulationResult(records, outcomes=outcomes)
+
+    def __repr__(self) -> str:
+        return (
+            f"<CompiledClonalExperiment n_clones={self._fork.n_clones} "
+            f"size={self._fork.size} chain={self._refdata.chain_type}>"
         )
