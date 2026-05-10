@@ -351,6 +351,7 @@ _CORRUPT_KIND_PCR = "pcr"
 _CORRUPT_KIND_QUALITY = "quality"
 _CORRUPT_KIND_INDEL = "indel"
 _CORRUPT_KIND_CONTAMINANT = "contaminant"
+_CORRUPT_KIND_REV_COMP = "rev_comp"
 
 
 @dataclass(frozen=True)
@@ -387,6 +388,8 @@ class _CorruptStep:
             plan.push_corrupt_indel(count_list, insertion_prob=self.insertion_prob)
         elif self.kind == _CORRUPT_KIND_CONTAMINANT:
             plan.push_corrupt_contaminant(self.apply_prob)
+        elif self.kind == _CORRUPT_KIND_REV_COMP:
+            plan.push_corrupt_rev_comp(self.apply_prob)
         else:  # pragma: no cover — guarded at builder time.
             raise ValueError(f"unsupported corruption kind {self.kind!r}")
 
@@ -707,6 +710,36 @@ class Experiment:
                 count_pairs=pairs,
                 insertion_prob=float(insertion_prob),
                 apply_prob=0.0,
+            )
+        )
+        return self
+
+    def corrupt_reverse_complement(self, *, prob: float = 0.5) -> "Experiment":
+        """Append a reverse-complement corruption step.
+
+        With probability ``prob`` the AIRR record-builder reverse-
+        complements the ``sequence``, ``np1``, ``np2``, and
+        ``junction`` fields and flips the corresponding pool-position
+        coords (``*_sequence_start/end``, ``junction_start/end``).
+        Alignment / germline / CIGAR / identity fields stay in
+        forward orientation per the AIRR Rearrangement spec.
+        ``prob=0.0`` is a no-op (coin flip recorded but never fires);
+        ``prob=1.0`` always flips. The biological model is the ~50%
+        of antisense reads in real immune-seq libraries.
+
+        Raises ``ValueError`` if ``prob`` is outside ``[0.0, 1.0]``
+        or non-finite.
+        """
+        if prob != prob or not (0.0 <= prob <= 1.0):
+            raise ValueError(
+                f"prob must be a finite number in [0.0, 1.0], got {prob}"
+            )
+        self._steps.append(
+            _CorruptStep(
+                kind=_CORRUPT_KIND_REV_COMP,
+                count_pairs=(),
+                insertion_prob=0.0,
+                apply_prob=float(prob),
             )
         )
         return self

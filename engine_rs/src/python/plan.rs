@@ -25,7 +25,8 @@ use crate::ir::Segment;
 use crate::pass::PassPlan;
 use crate::passes::{
     AssembleSegmentPass, ContaminantPass, GenerateNPPass, IndelPass, PCRErrorPass,
-    QualityErrorPass, S5FMutationPass, SampleAllelePass, TrimPass, UniformMutationPass,
+    QualityErrorPass, RevCompPass, S5FMutationPass, SampleAllelePass, TrimPass,
+    UniformMutationPass,
 };
 use crate::s5f::{S5FKernel, S5F_NUM_CONTEXTS, S5F_SUBSTITUTION_LEN};
 
@@ -352,6 +353,26 @@ impl PyPassPlan {
             apply_prob,
             Box::new(UniformBase),
         )));
+        Ok(())
+    }
+
+    /// Append a `RevCompPass` (Phase 12.D). With probability
+    /// ``apply_prob`` the AIRR record-builder will reverse-complement
+    /// the `sequence`, `np1`, `np2`, `junction` fields and flip
+    /// the corresponding pool-position coords; alignment / germline
+    /// fields stay in forward orientation per the AIRR spec.
+    ///
+    /// Errors: ``ValueError`` when ``apply_prob`` is outside
+    /// ``[0.0, 1.0]`` or non-finite.
+    fn push_corrupt_rev_comp(&mut self, apply_prob: f64) -> PyResult<()> {
+        if !apply_prob.is_finite() || !(0.0..=1.0).contains(&apply_prob) {
+            return Err(PyValueError::new_err(format!(
+                "apply_prob must be a finite number in [0.0, 1.0], got {}",
+                apply_prob
+            )));
+        }
+        self.inner_mut()?
+            .push(Box::new(RevCompPass::new(apply_prob)));
         Ok(())
     }
 

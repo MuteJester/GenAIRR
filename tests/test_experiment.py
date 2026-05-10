@@ -3505,6 +3505,92 @@ def test_identity_helper_from_columns():
     assert identities["J"] == rec["j_identity"]
 
 
+_RC_COMPLEMENT = str.maketrans("ACGTacgtNnUu", "TGCAtgcaNnAa")
+
+
+def _reverse_complement(s: str) -> str:
+    return s.translate(_RC_COMPLEMENT)[::-1]
+
+
+def test_phase12d_rev_comp_flips_sequence_and_flag():
+    # prob=1.0: every record should have rev_comp=True and the
+    # `sequence` should be the reverse-complement of the same record
+    # without rev_comp applied.
+    base = ga.Experiment.on("human_igh").recombine()
+    flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=1.0)
+    base_recs = list(base.run_records(n=20, seed=0))
+    flipped_recs = list(flipped.run_records(n=20, seed=0))
+    assert len(base_recs) == len(flipped_recs) == 20
+    for fwd, rc in zip(base_recs, flipped_recs):
+        assert fwd["rev_comp"] is False
+        assert rc["rev_comp"] is True
+        assert rc["sequence"] == _reverse_complement(fwd["sequence"])
+
+
+def test_phase12d_rev_comp_flips_per_segment_sequence_coords():
+    # When the sequence is flipped, V (at the forward 5' end) ends up
+    # at the antisense 3' end. So new_v_sequence_start = seq_len -
+    # old_v_sequence_end, and the v slice of the new sequence equals
+    # the reverse-complement of the old v slice.
+    base = ga.Experiment.on("human_igh").recombine()
+    flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=1.0)
+    for fwd, rc in zip(base.run_records(n=20, seed=0), flipped.run_records(n=20, seed=0)):
+        seq_len = fwd["sequence_length"]
+        for seg in ("v", "d", "j"):
+            fs, fe = fwd[f"{seg}_sequence_start"], fwd[f"{seg}_sequence_end"]
+            if fs is None:
+                continue
+            rs, re = rc[f"{seg}_sequence_start"], rc[f"{seg}_sequence_end"]
+            assert rs == seq_len - fe, f"{seg}_sequence_start: {rs} vs {seq_len - fe}"
+            assert re == seq_len - fs, f"{seg}_sequence_end: {re} vs {seq_len - fs}"
+            # The slice of the flipped sequence at the new coords
+            # equals the reverse-complement of the forward segment's
+            # sequence slice.
+            assert rc["sequence"][rs:re] == _reverse_complement(fwd["sequence"][fs:fe])
+
+
+def test_phase12d_rev_comp_keeps_alignment_strings_in_forward_orientation():
+    # AIRR-spec: `sequence_alignment` and `germline_alignment` stay
+    # forward-oriented even when `rev_comp=True`. The CIGAR and the
+    # `*_alignment_start/end` and `*_germline_start/end` coords are
+    # also forward.
+    base = ga.Experiment.on("human_igh").recombine()
+    flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=1.0)
+    for fwd, rc in zip(base.run_records(n=10, seed=0), flipped.run_records(n=10, seed=0)):
+        assert rc["sequence_alignment"] == fwd["sequence_alignment"]
+        assert rc["germline_alignment"] == fwd["germline_alignment"]
+        assert rc["v_cigar"] == fwd["v_cigar"]
+        assert rc["d_cigar"] == fwd["d_cigar"]
+        assert rc["j_cigar"] == fwd["j_cigar"]
+        for seg in ("v", "d", "j"):
+            assert rc[f"{seg}_alignment_start"] == fwd[f"{seg}_alignment_start"]
+            assert rc[f"{seg}_alignment_end"] == fwd[f"{seg}_alignment_end"]
+            assert rc[f"{seg}_germline_start"] == fwd[f"{seg}_germline_start"]
+            assert rc[f"{seg}_germline_end"] == fwd[f"{seg}_germline_end"]
+
+
+def test_phase12d_rev_comp_zero_prob_is_no_op():
+    base = ga.Experiment.on("human_igh").recombine()
+    flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=0.0)
+    for fwd, rc in zip(base.run_records(n=20, seed=0), flipped.run_records(n=20, seed=0)):
+        # The coin is flipped (records always present in trace) but
+        # never fires when prob=0.
+        assert rc["rev_comp"] is False
+        assert rc["sequence"] == fwd["sequence"]
+
+
+def test_phase12d_rev_comp_rejects_invalid_prob():
+    exp = ga.Experiment.on("human_igh").recombine()
+    import math
+    for bad in (-0.1, 1.5, math.nan, float("inf")):
+        try:
+            exp.corrupt_reverse_complement(prob=bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for prob={bad}")
+
+
 def test_phase12_locus_falls_back_to_refdata_under_heavy_corruption():
     # Phase 12.C follow-up: under heavy SHM the live-call layer can
     # narrow every V/D/J call to the empty set (no allele supports

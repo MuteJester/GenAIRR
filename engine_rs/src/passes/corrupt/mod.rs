@@ -14,8 +14,10 @@ pub mod contaminant;
 pub mod indel;
 pub mod pcr;
 pub mod quality;
+pub mod rev_comp;
 
 pub use contaminant::ContaminantPass;
 pub use indel::IndelPass;
 pub use pcr::PCRErrorPass;
 pub use quality::QualityErrorPass;
+pub use rev_comp::RevCompPass;
