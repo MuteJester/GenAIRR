@@ -1576,6 +1576,65 @@ def test_to_fastq_rejects_out_of_range_q(tmp_path):
             raise AssertionError(f"expected error for q={bad!r}")
 
 
+def test_g3b_allele_weights_boost_listed_v():
+    # Boosting a single V allele's weight by 1000x should make it
+    # dominate sampling over a 200-record batch.
+    from collections import Counter
+    target = "IGHVF1-G1*01"
+    exp = ga.Experiment.on("human_igh").recombine(v_allele_weights={target: 1000.0})
+    counts = Counter()
+    for r in exp.run_records(n=200, seed=0):
+        first = (r["v_call"] or "").split(",")[0]
+        counts[first] += 1
+    # The boosted allele should be at least 50% of calls (typically
+    # >80% with weight=1000 against ~60 alleles each at 1.0).
+    assert counts[target] >= 100, (
+        f"boosted allele was sampled {counts[target]} / 200 times; "
+        f"top counts: {counts.most_common(3)}"
+    )
+
+
+def test_g3b_allele_weights_unspecified_keeps_default_uniform():
+    # When v_allele_weights is None, the distribution should match
+    # the un-weighted run (allowing for stochastic variation across
+    # 100 records with the same seed).
+    exp_a = ga.Experiment.on("human_igh").recombine()
+    exp_b = ga.Experiment.on("human_igh").recombine(v_allele_weights=None)
+    a = [r["v_call"] for r in exp_a.run_records(n=20, seed=0)]
+    b = [r["v_call"] for r in exp_b.run_records(n=20, seed=0)]
+    assert a == b
+
+
+def test_g3b_allele_weights_rejects_unknown_name():
+    with pytest.raises(ValueError, match="no V allele named"):
+        ga.Experiment.on("human_igh").recombine(
+            v_allele_weights={"IGHV-NOT-A-REAL-ALLELE*99": 5.0}
+        )
+
+
+def test_g3b_allele_weights_rejects_non_positive_weight():
+    with pytest.raises(ValueError, match="finite positive number"):
+        ga.Experiment.on("human_igh").recombine(
+            v_allele_weights={"IGHVF1-G1*01": 0.0}
+        )
+    with pytest.raises(ValueError, match="finite positive number"):
+        ga.Experiment.on("human_igh").recombine(
+            v_allele_weights={"IGHVF1-G1*01": -1.0}
+        )
+
+
+def test_g3b_allele_weights_d_on_vj_chain_errors():
+    with pytest.raises(ValueError, match="cannot weight D alleles"):
+        ga.Experiment.on("human_igk").recombine(
+            d_allele_weights={"X*01": 1.0}
+        )
+
+
+def test_g3b_allele_weights_empty_dict_errors():
+    with pytest.raises(ValueError, match="at least one"):
+        ga.Experiment.on("human_igh").recombine(v_allele_weights={})
+
+
 def test_to_fastq_pairs_with_constant_q_is_decodable(tmp_path):
     # Round-trip check: write FASTQ, parse it back, confirm record
     # count and length match. Uses Python stdlib (no biopython) to

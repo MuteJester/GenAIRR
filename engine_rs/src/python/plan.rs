@@ -101,12 +101,13 @@ impl PyPassPlan {
     /// - `ValueError` when the corresponding pool in `refdata` is empty.
     /// - `ValueError` when `allowed_ids` is empty, contains
     ///   out-of-range IDs, or contains duplicates.
-    #[pyo3(signature = (segment, refdata, allowed_ids = None))]
+    #[pyo3(signature = (segment, refdata, allowed_ids = None, weights = None))]
     fn push_sample_allele(
         &mut self,
         segment: &str,
         refdata: &PyRefDataConfig,
         allowed_ids: Option<Vec<u32>>,
+        weights: Option<Vec<f64>>,
     ) -> PyResult<()> {
         use crate::refdata::AlleleId;
 
@@ -122,33 +123,64 @@ impl PyPassPlan {
             )));
         }
 
-        let dist: Box<AllelePoolDist> = match allowed_ids {
-            None => Box::new(AllelePoolDist::uniform(pool)),
-            Some(ids) => {
-                if ids.is_empty() {
+        // G3b: `allowed_ids` and `weights` are mutually exclusive.
+        // The Python DSL never combines them; reject the combination
+        // explicitly so a future caller doesn't silently ignore one.
+        if allowed_ids.is_some() && weights.is_some() {
+            return Err(PyValueError::new_err(format!(
+                "{} push_sample_allele: pass either allowed_ids OR weights, not both",
+                segment
+            )));
+        }
+
+        let dist: Box<AllelePoolDist> = if let Some(w) = weights {
+            if w.len() != pool.len() {
+                return Err(PyValueError::new_err(format!(
+                    "{} weights length ({}) must match pool size ({})",
+                    segment,
+                    w.len(),
+                    pool.len()
+                )));
+            }
+            for (i, weight) in w.iter().enumerate() {
+                if !weight.is_finite() || *weight <= 0.0 {
                     return Err(PyValueError::new_err(format!(
-                        "{} allowed_ids must contain at least one id",
-                        segment
+                        "{} weight at index {} must be finite and > 0, got {}",
+                        segment, i, weight
                     )));
                 }
-                let pool_len = pool.len() as u32;
-                let mut seen = std::collections::HashSet::with_capacity(ids.len());
-                for raw in &ids {
-                    if *raw >= pool_len {
+            }
+            Box::new(AllelePoolDist::from_weights(pool, w))
+        } else {
+            match allowed_ids {
+                None => Box::new(AllelePoolDist::uniform(pool)),
+                Some(ids) => {
+                    if ids.is_empty() {
                         return Err(PyValueError::new_err(format!(
-                            "{} allowed_id {} out of range (pool size {})",
-                            segment, raw, pool_len
+                            "{} allowed_ids must contain at least one id",
+                            segment
                         )));
                     }
-                    if !seen.insert(*raw) {
-                        return Err(PyValueError::new_err(format!(
-                            "{} allowed_id {} appears more than once",
-                            segment, raw
-                        )));
+                    let pool_len = pool.len() as u32;
+                    let mut seen = std::collections::HashSet::with_capacity(ids.len());
+                    for raw in &ids {
+                        if *raw >= pool_len {
+                            return Err(PyValueError::new_err(format!(
+                                "{} allowed_id {} out of range (pool size {})",
+                                segment, raw, pool_len
+                            )));
+                        }
+                        if !seen.insert(*raw) {
+                            return Err(PyValueError::new_err(format!(
+                                "{} allowed_id {} appears more than once",
+                                segment, raw
+                            )));
+                        }
                     }
+                    let allele_ids: Vec<AlleleId> =
+                        ids.into_iter().map(AlleleId::new).collect();
+                    Box::new(AllelePoolDist::restricted_uniform(pool, allele_ids))
                 }
-                let allele_ids: Vec<AlleleId> = ids.into_iter().map(AlleleId::new).collect();
-                Box::new(AllelePoolDist::restricted_uniform(pool, allele_ids))
             }
         };
 

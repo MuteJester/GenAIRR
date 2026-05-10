@@ -264,6 +264,9 @@ class _RecombineStep:
     locks_v: Optional[Tuple[int, ...]] = None
     locks_d: Optional[Tuple[int, ...]] = None
     locks_j: Optional[Tuple[int, ...]] = None
+    weights_v: Optional[Tuple[float, ...]] = None
+    weights_d: Optional[Tuple[float, ...]] = None
+    weights_j: Optional[Tuple[float, ...]] = None
 
     def apply(
         self,
@@ -277,10 +280,13 @@ class _RecombineStep:
         v_ids = list(self.locks_v) if self.locks_v is not None else None
         d_ids = list(self.locks_d) if self.locks_d is not None else None
         j_ids = list(self.locks_j) if self.locks_j is not None else None
+        v_weights = list(self.weights_v) if self.weights_v is not None else None
+        d_weights = list(self.weights_d) if self.weights_d is not None else None
+        j_weights = list(self.weights_j) if self.weights_j is not None else None
 
         if chain == "vj":
-            plan.push_sample_allele("V", refdata, allowed_ids=v_ids)
-            plan.push_sample_allele("J", refdata, allowed_ids=j_ids)
+            plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
+            plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
             if self.trim_v_3:
                 plan.push_trim("V", "3", list(self.trim_v_3))
             if self.trim_j_5:
@@ -289,9 +295,9 @@ class _RecombineStep:
             plan.push_generate_np("NP1", np1)
             plan.push_assemble("J")
         elif chain == "vdj":
-            plan.push_sample_allele("V", refdata, allowed_ids=v_ids)
-            plan.push_sample_allele("D", refdata, allowed_ids=d_ids)
-            plan.push_sample_allele("J", refdata, allowed_ids=j_ids)
+            plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
+            plan.push_sample_allele("D", refdata, allowed_ids=d_ids, weights=d_weights)
+            plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
             if self.trim_v_3:
                 plan.push_trim("V", "3", list(self.trim_v_3))
             if self.trim_d_5:
@@ -987,6 +993,9 @@ class Experiment:
         np1_lengths: Optional[Iterable[Tuple[int, float]]] = None,
         np2_lengths: Optional[Iterable[Tuple[int, float]]] = None,
         trim: bool = True,
+        v_allele_weights: Optional[Dict[str, float]] = None,
+        d_allele_weights: Optional[Dict[str, float]] = None,
+        j_allele_weights: Optional[Dict[str, float]] = None,
     ) -> "Experiment":
         """Append a standard V(D)J recombination step.
 
@@ -1015,6 +1024,16 @@ class Experiment:
         Raw-RefDataConfig experiments always have ``trim`` as a
         no-op since there's no DataConfig to source the
         distributions from.
+
+        ``v_allele_weights`` / ``d_allele_weights`` /
+        ``j_allele_weights`` (G3b) — optional ``{allele_name:
+        weight}`` dicts that bias allele sampling. Listed alleles
+        get the supplied positive weight; unlisted alleles default
+        to 1.0, so e.g. ``v_allele_weights={"IGHV3-23*01": 100}``
+        boosts that allele while keeping every other V allele
+        possible at 1/100th the rate. Mutually exclusive with the
+        per-segment ``.using(...)`` lock. Raises ``ValueError`` for
+        unknown allele names or non-positive weights.
         """
         defaults = self._recombine_defaults() if trim or self._dataconfig else None
 
@@ -1037,6 +1056,10 @@ class Experiment:
         else:
             trim_v_3 = trim_d_5 = trim_d_3 = trim_j_5 = None
 
+        weights_v = self._resolve_allele_weights("V", v_allele_weights)
+        weights_d = self._resolve_allele_weights("D", d_allele_weights)
+        weights_j = self._resolve_allele_weights("J", j_allele_weights)
+
         step = _RecombineStep(
             np1_lengths=np1,
             np2_lengths=np2,
@@ -1044,9 +1067,72 @@ class Experiment:
             trim_d_5=trim_d_5,
             trim_d_3=trim_d_3,
             trim_j_5=trim_j_5,
+            weights_v=weights_v,
+            weights_d=weights_d,
+            weights_j=weights_j,
         )
         self._steps.append(step)
         return self
+
+    def _resolve_allele_weights(
+        self,
+        segment: str,
+        user_weights: Optional[Dict[str, float]],
+    ) -> Optional[Tuple[float, ...]]:
+        """G3b: build a dense pool-aligned weight vector from the
+        user-supplied ``{name: weight}`` dict. Listed alleles get the
+        supplied weight; everything else gets ``1.0``. Returns
+        ``None`` when no weights were supplied (preserving the
+        upstream uniform-default behavior).
+
+        Raises ``ValueError`` for unknown allele names, non-positive
+        weights, or D weights on a VJ chain.
+        """
+        if user_weights is None:
+            return None
+        if not user_weights:
+            raise ValueError(
+                f"recombine: {segment.lower()}_allele_weights must contain "
+                "at least one (name, weight) entry"
+            )
+        if segment == "D" and self._refdata.chain_type != "vdj":
+            raise ValueError(
+                f"recombine: cannot weight D alleles on a "
+                f"{self._refdata.chain_type!r} chain"
+            )
+
+        index = self._allele_name_index(segment)
+        if not index:
+            return None  # No alleles for this segment (e.g. VJ + D).
+
+        # Dense vector indexed by allele_id; default 1.0.
+        pool_size = max(index.values()) + 1
+        weights: List[float] = [1.0] * pool_size
+        for name, w in user_weights.items():
+            if not isinstance(name, str):
+                raise TypeError(
+                    f"recombine: {segment.lower()}_allele_weights keys must "
+                    f"be allele-name strings, got {type(name).__name__}"
+                )
+            if isinstance(w, bool) or not isinstance(w, (int, float)):
+                raise TypeError(
+                    f"recombine: {segment.lower()}_allele_weights['{name}'] "
+                    f"must be numeric, got {type(w).__name__}"
+                )
+            wf = float(w)
+            if not (wf > 0.0 and wf == wf and wf != float("inf")):
+                raise ValueError(
+                    f"recombine: {segment.lower()}_allele_weights['{name}'] "
+                    f"must be a finite positive number, got {wf}"
+                )
+            if name not in index:
+                raise ValueError(
+                    f"recombine: no {segment} allele named {name!r} in "
+                    "refdata (check spelling against `list_alleles` or the "
+                    "loaded config)"
+                )
+            weights[index[name]] = wf
+        return tuple(weights)
 
     def _recombine_defaults(self):
         """Lazy-extract the empirical distributions for this
