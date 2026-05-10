@@ -1576,6 +1576,70 @@ def test_to_fastq_rejects_out_of_range_q(tmp_path):
             raise AssertionError(f"expected error for q={bad!r}")
 
 
+def test_g8_truth_columns_present_when_opted_in():
+    exp = ga.Experiment.on("human_igh").recombine()
+    result = exp.run_records(n=3, seed=0, expose_provenance=True)
+    for r in result:
+        assert "truth_v_call" in r
+        assert "truth_d_call" in r
+        assert "truth_j_call" in r
+        # Provenance is always populated for a successful recombine.
+        assert r["truth_v_call"], f"missing truth_v_call: {r}"
+        assert r["truth_j_call"], f"missing truth_j_call: {r}"
+
+
+def test_g8_truth_columns_absent_by_default():
+    exp = ga.Experiment.on("human_igh").recombine()
+    result = exp.run_records(n=2, seed=0)
+    for r in result:
+        assert "truth_v_call" not in r
+        assert "truth_d_call" not in r
+        assert "truth_j_call" not in r
+
+
+def test_g8_truth_diverges_from_live_under_heavy_shm():
+    # Heavy SHM wipes the live evidence (v_call empty), but
+    # truth_v_call is set from provenance so benchmark tools can
+    # still recover the originally sampled allele.
+    exp = ga.Experiment.on("human_igh").recombine().mutate(count=25)
+    result = exp.run_records(n=20, seed=0, expose_provenance=True)
+    n_diverged = 0
+    for r in result:
+        live = (r["v_call"] or "").split(",")[0]
+        truth = r["truth_v_call"]
+        assert truth, "truth_v_call should always be populated"
+        if live != truth:
+            n_diverged += 1
+    # At count=25 most live calls should differ from (or be empty
+    # vs) truth.
+    assert n_diverged >= 10, (
+        f"expected most records to diverge live-vs-truth under heavy SHM, "
+        f"got {n_diverged}/20"
+    )
+
+
+def test_g8_truth_columns_via_clonal_pipeline():
+    # Clonal pipeline should also accept expose_provenance.
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .with_clonal_structure(n_clones=2, size=3)
+        .mutate(count=15)
+    )
+    result = exp.run_records(seed=0, expose_provenance=True)
+    assert len(result) == 6
+    by_clone = {}
+    for r in result:
+        by_clone.setdefault(r["clone_id"], []).append(r)
+    # All descendants of a clone must share the SAME truth_v_call
+    # (they shared the parent recombination).
+    for cid, recs in by_clone.items():
+        truth_v = {r["truth_v_call"] for r in recs}
+        assert len(truth_v) == 1, (
+            f"clone {cid} has divergent truth_v_call: {truth_v}"
+        )
+
+
 def test_g7_corrupt_ns_writes_uppercase_n():
     # corrupt_ns(count=10) should sprinkle ~10 N's per record
     # (collisions reduce the count slightly).

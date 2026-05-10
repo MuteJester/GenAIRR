@@ -136,6 +136,37 @@ _DEFAULT_COLUMN_ORDER = [
 ]
 
 
+def _allele_name_or_empty(refdata: Any, segment: str, allele_id: Optional[int]) -> str:
+    """G8: look up an allele name from refdata by id; return ``""``
+    when the id is None or the lookup fails (defensive).
+    """
+    if allele_id is None:
+        return ""
+    try:
+        if segment == "V":
+            return refdata.v_allele(int(allele_id)).name
+        if segment == "D":
+            return refdata.d_allele(int(allele_id)).name
+        if segment == "J":
+            return refdata.j_allele(int(allele_id)).name
+    except Exception:
+        return ""
+    return ""
+
+
+def _inject_truth_columns(outcome: Any, refdata: Any, record: Dict[str, Any]) -> None:
+    """G8: append `truth_v_call` / `truth_d_call` / `truth_j_call`
+    columns to ``record`` from the originally-sampled allele ids
+    stored in the simulation's `assignments`. Distinct from
+    `v_call` / `d_call` / `j_call`, which are evidence-driven and
+    can change under heavy SHM.
+    """
+    sim = outcome.final_simulation()
+    record["truth_v_call"] = _allele_name_or_empty(refdata, "V", sim.v_allele_id())
+    record["truth_d_call"] = _allele_name_or_empty(refdata, "D", sim.d_allele_id())
+    record["truth_j_call"] = _allele_name_or_empty(refdata, "J", sim.j_allele_id())
+
+
 class SimulationResult:
     """List-like wrapper around a batch of AIRR records.
 
@@ -169,6 +200,7 @@ class SimulationResult:
         refdata: Any,
         *,
         id_prefix: str = "seq",
+        expose_provenance: bool = False,
     ) -> "SimulationResult":
         """Build a :class:`SimulationResult` from a list of Rust
         ``Outcome`` objects + the refdata they ran against.
@@ -176,6 +208,14 @@ class SimulationResult:
         Each record's ``sequence_id`` is set to ``f"{id_prefix}{i}"``
         (e.g. ``seq0``, ``seq1``, …) so AIRR-format consumers see a
         unique per-row identifier out of the box.
+
+        ``expose_provenance=True`` (G8) adds ``truth_v_call``,
+        ``truth_d_call``, ``truth_j_call`` columns containing the
+        *originally-sampled* allele names — distinct from the
+        evidence-driven ``v_call`` / ``d_call`` / ``j_call`` fields,
+        which reflect what an aligner would see. Pair them at the
+        Python level to compute aligner-vs-truth accuracy without a
+        side truth file.
         """
         from ._airr_record import outcome_to_airr_record
 
@@ -185,6 +225,9 @@ class SimulationResult:
             )
             for i, o in enumerate(outcomes)
         ]
+        if expose_provenance:
+            for outcome, rec in zip(outcomes, records):
+                _inject_truth_columns(outcome, refdata, rec)
         return cls(records, outcomes=outcomes)
 
     # ── list-like access ────────────────────────────────────────────

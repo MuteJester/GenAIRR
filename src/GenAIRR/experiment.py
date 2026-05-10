@@ -1375,6 +1375,7 @@ class Experiment:
         seed: int = 0,
         respect: RespectInput = None,
         strict: bool = False,
+        expose_provenance: bool = False,
     ) -> "SimulationResult":
         """Compile and run, then return the batch as a
         :class:`SimulationResult` ready for ``.to_csv`` / ``.to_fasta``
@@ -1386,14 +1387,29 @@ class Experiment:
         be omitted; passing ``n`` explicitly is allowed only if it
         matches that product.
 
+        ``expose_provenance=True`` (G8) appends ``truth_v_call``,
+        ``truth_d_call``, ``truth_j_call`` columns containing the
+        originally-sampled allele names — distinct from the
+        evidence-driven ``v_call`` / ``d_call`` / ``j_call`` fields
+        an aligner would produce. Useful for benchmarking aligners
+        against ground truth without keeping a side truth file.
+
         Returns a :class:`SimulationResult`; clonal records carry
         an integer ``clone_id`` field per row.
         """
         compiled = self.compile(respect=respect)
         if isinstance(compiled, CompiledClonalExperiment):
-            return compiled.run_records(n=n, seed=seed, strict=strict)
+            return compiled.run_records(
+                n=n,
+                seed=seed,
+                strict=strict,
+                expose_provenance=expose_provenance,
+            )
         return compiled.run_records(
-            n=1 if n is None else n, seed=seed, strict=strict
+            n=1 if n is None else n,
+            seed=seed,
+            strict=strict,
+            expose_provenance=expose_provenance,
         )
 
     def run(
@@ -1539,17 +1555,22 @@ class CompiledExperiment:
         n: int = 1,
         seed: int = 0,
         strict: bool = False,
+        expose_provenance: bool = False,
     ) -> "SimulationResult":
         """Run the compiled simulator ``n`` times and return the batch as
         a :class:`SimulationResult` ready for ``.to_csv`` /
         ``.to_fasta`` / ``.to_dataframe`` export.
 
-        Same arguments as :meth:`run`.
+        Same arguments as :meth:`run`. ``expose_provenance=True``
+        appends G8 `truth_v_call/d_call/j_call` columns reflecting
+        the originally-sampled allele names.
         """
         from .result import SimulationResult
 
         outcomes = self.run(n=n, seed=seed, strict=strict)
-        return SimulationResult.from_outcomes(outcomes, self._refdata)
+        return SimulationResult.from_outcomes(
+            outcomes, self._refdata, expose_provenance=expose_provenance
+        )
 
     def stream(
         self,
@@ -1707,13 +1728,16 @@ class CompiledClonalExperiment:
         n: Optional[int] = None,
         seed: int = 0,
         strict: bool = False,
+        expose_provenance: bool = False,
     ) -> "SimulationResult":
         """Same as :meth:`run` but returns a :class:`SimulationResult`
         with each record dict carrying an integer ``clone_id`` field
-        in ``[0, n_clones)``.
+        in ``[0, n_clones)``. ``expose_provenance=True`` (G8) also
+        appends `truth_v_call` / `truth_d_call` / `truth_j_call`
+        columns from the originally-sampled allele names.
         """
         from ._airr_record import outcome_to_airr_record
-        from .result import SimulationResult
+        from .result import SimulationResult, _inject_truth_columns
 
         total = self.total_records
         if n is not None and n != total:
@@ -1742,6 +1766,8 @@ class CompiledClonalExperiment:
                     sequence_id=f"clone{clone_idx}_desc{desc_idx}",
                 )
                 rec["clone_id"] = clone_idx
+                if expose_provenance:
+                    _inject_truth_columns(desc, self._refdata, rec)
                 records.append(rec)
         return SimulationResult(records, outcomes=outcomes)
 
