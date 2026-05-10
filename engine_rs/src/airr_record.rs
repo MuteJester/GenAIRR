@@ -502,12 +502,13 @@ fn walk_alignment_columns(
 
         match seg {
             Segment::V | Segment::D | Segment::J => {
-                let allele_id = match seg {
-                    Segment::V => sim.assignments.v.map(|i| i.allele_id),
-                    Segment::D => sim.assignments.d.map(|i| i.allele_id),
-                    Segment::J => sim.assignments.j.map(|i| i.allele_id),
-                    _ => unreachable!(),
-                };
+                // Phase 12.C: pick the canonical allele from the live
+                // call (with a provenance fallback). All `germline_*`
+                // outputs in this branch read from this allele's
+                // bytes, so they match the `*_call` field the AIRR
+                // record reports — even when SHM narrowed the live
+                // call to a different allele than originally sampled.
+                let allele_id = projected_allele_id(sim, seg);
                 let allele_seq: Option<&[u8]> = allele_id
                     .and_then(|aid| refdata.get(seg, aid))
                     .map(|a| a.seq.as_slice());
@@ -534,7 +535,17 @@ fn walk_alignment_columns(
                 let span_start = sa.len() as i64;
 
                 if let Some(allele_seq) = allele_seq {
-                    let mut expected_pos: usize = trim_5.max(0) as usize;
+                    // Phase 12.C: NP1 left-extension might have already
+                    // claimed ref positions up to (or past) `trim_5`.
+                    // Start `expected_pos` past whatever NP claims
+                    // covered, so a structural-indel deletion at the
+                    // leftmost germline_pos doesn't trigger a D-fill
+                    // at a ref position the NP claim already counted.
+                    let np_covered_end = ref_ranges[seg_idx]
+                        .map(|(_, e)| e as usize)
+                        .unwrap_or(0);
+                    let mut expected_pos: usize =
+                        (trim_5.max(0) as usize).max(np_covered_end);
                     let end_germ: usize = (allele_seq.len() as i64 - trim_3).max(0) as usize;
                     for i in r_start..r_end {
                         let nuc: &Nucleotide = &sim.pool.as_slice()[i];
@@ -561,9 +572,22 @@ fn walk_alignment_columns(
                                 extend_ref_range(&mut ref_ranges, seg_idx, expected_pos as i64);
                                 expected_pos += 1;
                             }
-                            // Emit the matched/mismatched column.
+                            // Emit the matched/mismatched column. Phase
+                            // 12.C: read the germline byte from the
+                            // projected allele's sequence (matching
+                            // `*_call`), not from `nuc.germline` which
+                            // captures the originally-sampled byte and
+                            // can diverge when the live-call narrowed
+                            // to a different allele. Bounds-fall-back
+                            // to `nuc.germline` if `germ_pos` exceeds
+                            // the projected allele length (defensive,
+                            // shouldn't happen in well-formed data).
                             sa.push(base_char);
-                            let g = nuc.germline;
+                            let g = if germ_pos < allele_seq.len() {
+                                allele_seq[germ_pos]
+                            } else {
+                                nuc.germline
+                            };
                             galn.push(g);
                             push_dmask_for_seg(&mut dmask, seg, g);
                             push_cigar_op(&mut cigar_runs[seg_idx], b'M');
@@ -641,7 +665,7 @@ fn walk_alignment_columns(
                 for i in r_start..r_end {
                     let base_char = bases[i];
                     sa.push(base_char);
-                    if let Some((claim_seg, allele_byte, ref_pos)) =
+                    if let Some((claim_seg, allele_byte_proj, ref_pos_proj)) =
                         np_claim_owner(sim, refdata, i)
                     {
                         let claim_idx = match claim_seg {
@@ -649,6 +673,30 @@ fn walk_alignment_columns(
                             Segment::D => 1,
                             Segment::J => 2,
                             _ => unreachable!(),
+                        };
+                        // Phase 12.C: pick the canonical ref_pos for
+                        // this claim. For an NP2-side extension (the
+                        // segment's structural region has already been
+                        // walked, so `ref_ranges[claim_idx]` is set),
+                        // use `ref_ranges.end` as the next ref slot —
+                        // this sidesteps the hypothesis's linear
+                        // pool→ref projection, which mis-shifts under
+                        // synthetic insertions in the structural
+                        // region. For NP1-side extensions
+                        // (`ref_ranges[claim_idx]` is still empty),
+                        // keep the hypothesis projection — NP regions
+                        // themselves don't carry indels, so the linear
+                        // formula is exact there.
+                        let (ref_pos, allele_byte) = match ref_ranges[claim_idx] {
+                            Some((_, e)) => {
+                                let alid = projected_allele_id(sim, claim_seg);
+                                let allele = alid.and_then(|aid| refdata.get(claim_seg, aid));
+                                let byte = allele
+                                    .and_then(|a| a.seq.get(e as usize).copied())
+                                    .unwrap_or(b'N');
+                                (e as u32, byte)
+                            }
+                            None => (ref_pos_proj, allele_byte_proj),
                         };
                         if np_blocked[claim_idx]
                             || ref_pos_already_covered(&ref_ranges, claim_idx, ref_pos as i64)
@@ -876,6 +924,36 @@ fn lookup_name(
         .unwrap_or_default()
 }
 
+/// Phase 12.C: pick the canonical allele id for AIRR projection on
+/// a V/D/J segment. The first allele in the live-call's narrowed
+/// `allele_call` set wins; fall back to the originally-sampled
+/// allele (provenance) when the live layer is absent or the call
+/// is `Unsupported` (empty candidate set).
+///
+/// This is the seam through which `germline_alignment` becomes
+/// evidence-driven: when SHM mutations narrow the live call to a
+/// different allele than the one originally sampled, the column
+/// walker emits *that* allele's bytes (matching the `*_call` field
+/// the record reports) instead of the historical provenance bytes.
+fn projected_allele_id(
+    sim: &Simulation,
+    segment: Segment,
+) -> Option<crate::refdata::AlleleId> {
+    if let Some(state) = &sim.live_calls {
+        if let Some(call) = state.get(segment) {
+            if let Some(id) = call.allele_call.iter_ids().next() {
+                return Some(id);
+            }
+        }
+    }
+    match segment {
+        Segment::V => sim.assignments.v.map(|i| i.allele_id),
+        Segment::D => sim.assignments.d.map(|i| i.allele_id),
+        Segment::J => sim.assignments.j.map(|i| i.allele_id),
+        _ => None,
+    }
+}
+
 fn projected_call_name(
     refdata: &RefDataConfig,
     sim: &Simulation,
@@ -947,6 +1025,8 @@ fn ref_pos_already_covered(
     }
 }
 
+
+
 /// Phase 11.4: build the AIRR `np1` / `np2` string from an NP
 /// structural region by skipping any pool position that has been
 /// claimed by a V/D/J live-call extension. The resulting string is
@@ -978,12 +1058,10 @@ fn check_segment_claim(
 ) -> Option<(Segment, u8, u32)> {
     let call = sim.live_calls.as_ref()?.get(seg)?;
     let h = call.hypotheses.first()?;
-    let allele_id = match seg {
-        Segment::V => sim.assignments.v.map(|i| i.allele_id),
-        Segment::D => sim.assignments.d.map(|i| i.allele_id),
-        Segment::J => sim.assignments.j.map(|i| i.allele_id),
-        _ => None,
-    }?;
+    // Phase 12.C: NP-claim germline byte comes from the projected
+    // allele (live-call's first allele, fallback to provenance) so
+    // it matches `*_call`. See `projected_allele_id` for rationale.
+    let allele_id = projected_allele_id(sim, seg)?;
     let allele = refdata.get(seg, allele_id)?;
     let region = sim
         .sequence

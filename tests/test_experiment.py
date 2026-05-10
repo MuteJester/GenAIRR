@@ -3505,6 +3505,65 @@ def test_identity_helper_from_columns():
     assert identities["J"] == rec["j_identity"]
 
 
+def test_phase12_per_segment_ga_slice_matches_called_allele():
+    # Phase 12.C — discovered audit invariant: when SHM mutations
+    # narrow the live call to a different allele than the one
+    # originally sampled, `germline_alignment[v_align_start:v_align_end]
+    # ].replace('-','')` must equal the *called* allele's bytes at
+    # `[v_germline_start, v_germline_end)`. Same for D and J.
+    #
+    # Pre-Phase-12.C the column walker emitted `nuc.germline` (the
+    # provenance byte from AssembleSegmentPass), causing a divergence
+    # in ~1% of records under heavy corruption. The fix routes the
+    # column-walker germline byte through the projected (live-call's
+    # first) allele.
+    pipelines = [
+        ("human_igh", "vdj"),
+        ("human_igk", "vj"),
+        ("human_igl", "vj"),
+        ("human_tcrb", "vdj"),
+    ]
+    failures = []
+    for cfg, _kind in pipelines:
+        exp = (
+            ga.Experiment.on(cfg)
+            .recombine()
+            .mutate(count=8)
+            .corrupt_pcr(count=2)
+            .corrupt_quality(count=4)
+            .corrupt_indels(count=2, insertion_prob=0.5)
+        )
+        refdata = exp.refdata
+        alleles = {"V": {}, "D": {}, "J": {}}
+        for seg, n_attr, get in [
+            ("V", refdata.v_pool_size, refdata.v_allele),
+            ("D", refdata.d_pool_size, refdata.d_allele),
+            ("J", refdata.j_pool_size, refdata.j_allele),
+        ]:
+            for i in range(n_attr()):
+                a = get(i)
+                alleles[seg][a.name] = a.seq().decode("ascii").upper()
+        for i, rec in enumerate(exp.run_records(n=300, seed=0)):
+            for seg in ("V", "D", "J"):
+                calls = rec[f"{seg.lower()}_call"]
+                if not calls:
+                    continue
+                a_s = rec[f"{seg.lower()}_alignment_start"]
+                a_e = rec[f"{seg.lower()}_alignment_end"]
+                g_s = rec[f"{seg.lower()}_germline_start"]
+                g_e = rec[f"{seg.lower()}_germline_end"]
+                if a_s is None:
+                    continue
+                first_call = calls.split(",")[0]
+                ref = alleles[seg].get(first_call)
+                if ref is None:
+                    continue
+                ga_str = rec["germline_alignment"][a_s:a_e].replace("-", "")
+                if ga_str.upper() != ref[g_s:g_e].upper():
+                    failures.append((cfg, i, seg, first_call, ga_str, ref[g_s:g_e]))
+    assert failures == [], f"per-segment ga slice mismatches: {failures[:3]}"
+
+
 def test_h5_coords_invariants_under_corruption_stack():
     # Same n=200 stress sweep as alignment/CIGAR — verify the coord
     # pairs stay self-consistent under every corruption mode.
