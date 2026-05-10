@@ -256,11 +256,23 @@ pub fn build_airr_record(
     // Phase H Python builder means accepting possibly-unphysical
     // coordinates here; the AnchorPreserved contract is the place
     // to enforce strictness.
+    //
+    // Phase 11.6: anchor pool positions come from a `germline_pos`
+    // scan over each segment's structural region rather than from
+    // a `region.start + anchor` arithmetic offset. The scan finds
+    // the actual pool position of the anchor codon's first base,
+    // which is correct under indel passes (insertions / deletions
+    // between region.start and the anchor shift the offset, but
+    // each surviving germline node still carries its original
+    // `germline_pos`).
     let v_anchor = lookup_allele(refdata, Segment::V, v_id).and_then(|a| a.anchor);
     let j_anchor = lookup_allele(refdata, Segment::J, j_id).and_then(|a| a.anchor);
     if let (Some(vr), Some(jr), Some(va), Some(ja)) = (v_region, j_region, v_anchor, j_anchor) {
-        let v_anchor_in_pool: i64 = vr.start.index() as i64 + (va as i64 - 0); // v_trim_5 always 0 in our DSL
-        let j_anchor_in_pool: i64 = jr.start.index() as i64 + (ja as i64 - rec.j_trim_5);
+        let v_anchor_pool = anchor_pool_position(sim, vr, va as u32);
+        let j_anchor_pool = anchor_pool_position(sim, jr, ja as u32);
+        if let (Some(vap), Some(jap)) = (v_anchor_pool, j_anchor_pool) {
+        let v_anchor_in_pool: i64 = vap as i64;
+        let j_anchor_in_pool: i64 = jap as i64;
         if j_anchor_in_pool + 3 > v_anchor_in_pool {
             let jstart = v_anchor_in_pool;
             let jend = j_anchor_in_pool + 3;
@@ -304,6 +316,7 @@ pub fn build_airr_record(
                 rec.junction_aa = String::new();
                 rec.productive = Some(false);
             }
+        }
         }
     }
 
@@ -703,13 +716,44 @@ fn bytes_to_string(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
+/// Phase 11.6: locate the pool position where an allele's anchor
+/// codon resides in the assembled sequence. Scans the segment's
+/// structural region for the first node whose `germline_pos`
+/// matches the anchor's allele coordinate. Returns `None` when
+/// the anchor was trimmed off, deleted by a structural-indel
+/// pass, or otherwise not present in the live data.
+///
+/// Biologically correct under indels: each surviving germline
+/// node carries its original `germline_pos`, so the anchor codon
+/// can be found wherever the actual base ended up — even after
+/// insertions or deletions shifted things around inside the
+/// segment.
+fn anchor_pool_position(
+    sim: &Simulation,
+    region: &Region,
+    anchor_ref: u32,
+) -> Option<u32> {
+    let r_start = region.start.index();
+    let r_end = region.end.index();
+    let pool = sim.pool.as_slice();
+    for i in r_start..r_end {
+        let nuc = &pool[i as usize];
+        if nuc.germline_pos != Nucleotide::NO_GERMLINE_POS
+            && nuc.germline_pos as u32 == anchor_ref
+        {
+            return Some(i);
+        }
+    }
+    None
+}
+
 fn anchor_amino_acid_preserved(
     sim: &Simulation,
     refdata: &RefDataConfig,
     segment: Segment,
     region: &Region,
     allele_id: Option<crate::refdata::AlleleId>,
-    trim_5: i64,
+    _trim_5: i64,
 ) -> bool {
     let Some(allele) = lookup_allele(refdata, segment, allele_id) else {
         return true;
@@ -719,16 +763,21 @@ fn anchor_amino_acid_preserved(
     };
 
     let anchor = anchor as i64;
-    if trim_5 < 0 || anchor < trim_5 || anchor + 3 > allele.seq.len() as i64 {
+    if anchor < 0 || anchor + 3 > allele.seq.len() as i64 {
         return false;
     }
 
-    let pool_start = region.start.index() as i64 + (anchor - trim_5);
-    if pool_start < region.start.index() as i64 || pool_start + 3 > region.end.index() as i64 {
+    // Phase 11.6: locate the anchor by `germline_pos`, not by a
+    // structural offset. Same rationale as the junction-window
+    // scanner — a structural offset miscomputes the anchor pool
+    // position when indels disturb V/J's coding region.
+    let Some(pool_start) = anchor_pool_position(sim, region, anchor as u32) else {
+        return false;
+    };
+    if pool_start + 3 > region.end.index() {
         return false;
     }
 
-    let pool_start = pool_start as u32;
     let mut live = [b'N'; 3];
     for offset in 0..3 {
         let Some(nuc) = sim.pool.get(NucHandle::new(pool_start + offset)) else {

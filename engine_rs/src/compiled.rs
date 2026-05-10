@@ -5295,6 +5295,131 @@ mod tests {
     }
 
     #[test]
+    fn phase11_6_junction_locates_anchors_via_germline_pos() {
+        // Phase 11.6 baseline: the curated default plan places V's
+        // Cys anchor at pool position 6 (V allele anchor=6, V at
+        // pool[0..12]) and J's W anchor at pool position 27
+        // (J allele anchor=3, J at pool[24..33]). Junction =
+        // pool[6..30], length 24 = the 3bp Cys + (V tail 3) +
+        // (D 12) + (J head 3) + 3bp W.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.junction_start, Some(6));
+        assert_eq!(rec.junction_end, Some(30));
+        assert_eq!(rec.junction_length, Some(24));
+        // The anchor codons frame the junction.
+        assert!(
+            rec.junction.starts_with("TGT"),
+            "junction should start with V Cys codon, got {:?}",
+            rec.junction,
+        );
+        assert!(
+            rec.junction.ends_with("TGG"),
+            "junction should end with J W codon, got {:?}",
+            rec.junction,
+        );
+    }
+
+    #[test]
+    fn phase11_6_junction_shifts_with_v_insertion_before_anchor() {
+        // Insert a synthetic 'C' at pool position 3 (inside V, BEFORE
+        // the anchor codon at pool 6). Phase 11.6: the junction must
+        // follow the anchor's actual pool position — anchor germline
+        // position 6 now resides at pool index 7, so junction_start
+        // shifts from 6 → 7.
+        //
+        // The pre-Phase-11.6 implementation used `region.start + va`
+        // and would have left junction_start at 6 (pointing at an
+        // 'A' base, not the Cys codon).
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
+        plan.push(Box::new(InsertAtPass::new(3, b'C', Segment::V)));
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.junction_start, Some(7));
+        assert!(
+            rec.junction.starts_with("TGT"),
+            "junction should still frame the V Cys codon after V insertion, got {:?}",
+            rec.junction,
+        );
+    }
+
+    #[test]
+    fn phase11_6_junction_shifts_with_v_deletion_before_anchor() {
+        // Symmetric: delete at pool position 3 (inside V, before the
+        // anchor codon). Anchor germline_pos=6 now sits at pool 5
+        // (one earlier). junction_start should follow.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
+        plan.push(Box::new(DeleteAtPass::new(3)));
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.junction_start, Some(5));
+        assert!(
+            rec.junction.starts_with("TGT"),
+            "junction should still frame the V Cys codon after V deletion, got {:?}",
+            rec.junction,
+        );
+    }
+
+    #[test]
+    fn phase11_6_junction_shifts_with_j_insertion_before_anchor() {
+        // J side mirror: inserting a base inside J (before its W
+        // anchor at allele pos 3) pushes J's anchor pool position
+        // rightward, so junction_end grows accordingly.
+        //
+        // Pool layout: V(12) + NP1(0) + D(12) + NP2(0) + J(9) = 33.
+        //   J at pool[24..33]; anchor germline_pos=3 sits at pool 27.
+        //   junction_end = 27 + 3 = 30 baseline.
+        // After inserting at pool 25 (within J, before anchor), the
+        // anchor germline_pos=3 node shifts to pool 28, so
+        // junction_end = 28 + 3 = 31.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
+        plan.push(Box::new(InsertAtPass::new(25, b'C', Segment::J)));
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.junction_end, Some(31));
+        assert!(
+            rec.junction.ends_with("TGG"),
+            "junction should still frame the J W codon after J insertion, got {:?}",
+            rec.junction,
+        );
+    }
+
+    #[test]
+    fn phase11_6_productive_uses_germline_pos_anchor_after_indels() {
+        // Insert a synthetic 'C' at pool position 3 (inside V, before
+        // the anchor). Both V and J anchors shift right by 1, so
+        // junction_start = 7, junction_end = 31, junction_length = 24
+        // — same length as baseline, still in-frame.
+        //
+        // The biological invariant Phase 11.6 enforces: the anchor
+        // codon is still recognised as Cys (germline pos 6,7,8 still
+        // map to T,G,T in the IR). Pre-Phase-11.6 the structural-
+        // offset reader would have read pool[6..9] (now AAC after
+        // shift) and rejected the codon, marking productive=false
+        // even though the underlying allele is intact.
+        let cfg = curated_v_d_j_refdata();
+        let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
+        let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
+        plan.push(Box::new(InsertAtPass::new(3, b'C', Segment::V)));
+        let (_outcome, rec) = curated_run(&cfg, plan);
+
+        assert_eq!(rec.junction_start, Some(7));
+        assert_eq!(rec.junction_end, Some(31));
+        assert_eq!(rec.junction_length, Some(24));
+        assert_eq!(rec.vj_in_frame, Some(true));
+        assert_eq!(rec.productive, Some(true));
+    }
+
+    #[test]
     fn curated_full_corruption_stack_keeps_metadata_self_consistent() {
         // Stack a mutation, an insertion, and a deletion across V's
         // region. All metadata (sequence, alignments, CIGAR, identity)
