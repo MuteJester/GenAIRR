@@ -252,10 +252,11 @@ jobs:
         shell: bash
         run: |
           ls dist/
-          # Pick the wheel matching the host arch. abi3 means any cp3X
-          # wheel on this OS works; the simplest is to let pip resolve.
-          pip install --upgrade pip
-          pip install --no-index --find-links dist GenAIRR
+          # `python -m pip` (not bare `pip`) — the pip shim on Windows
+          # Python 3.13 refuses to upgrade itself.
+          # abi3 means any cp3X wheel on this OS works; let pip resolve.
+          python -m pip install --upgrade pip
+          python -m pip install --no-index --find-links dist GenAIRR
 
       - name: Smoke import + simulate
         shell: bash
@@ -266,8 +267,9 @@ jobs:
           from GenAIRR._engine import productive
           print('engine OK:', productive)
           out = GenAIRR.Experiment.on('human_igh').recombine().run(n=5, seed=42)
-          assert len(out.records) == 5, f'expected 5 records, got {len(out.records)}'
-          print('simulated', len(out.records), 'records')
+          assert len(out) == 5, f'expected 5 outcomes, got {len(out)}'
+          assert len(out[0].final_simulation().bases()) > 100, 'sequence too short'
+          print('simulated', len(out), 'outcomes, first seq', len(out[0].final_simulation().bases()), 'bp')
           "
 
   # ── Publish to PyPI + create the GitHub Release ────────────────
