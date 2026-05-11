@@ -2688,24 +2688,22 @@ mod tests {
     }
 
     #[test]
-    fn mutation_to_orphan_base_marks_live_call_unsupported() {
-        // Single allele with a fully-determined sequence. Mutating any
+    fn mutation_to_orphan_base_keeps_truth_in_tie_set() {
+        // Single allele with a fully-determined sequence. Mutating one
         // assembled base to a value no allele has at that ref position
-        // pushes the live call into the unsupported state. We use a
-        // single allele (V*01) so there is no fallback to compare
-        // against.
+        // simply leaves that position non-informative (its evidence
+        // contributes zero to every allele's score). The remaining
+        // five positions still score the truth allele uniquely highest,
+        // so the tie-set keeps V*01 — exactly the evidence-resilient
+        // behavior the score-and-tie caller is designed to deliver.
         let cfg = distinct_v_refdata(&[("V*01", b"AAAAAA")]);
         let v01 = AlleleId::new(0);
 
         let (_outcome, v_call) = run_edit(&cfg, v01, vec![(2, b'T')]);
-        assert!(
-            v_call.allele_call.is_empty(),
-            "expected unsupported call (empty allele set), got {:?}",
-            v_call.allele_call.to_ids()
-        );
         assert_eq!(
-            v_call.confidence,
-            crate::live_call::LiveCallConfidence::Unsupported
+            v_call.allele_call.to_ids(),
+            vec![v01],
+            "truth allele should remain at max score (5/6 positions still match)"
         );
     }
 

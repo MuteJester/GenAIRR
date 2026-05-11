@@ -438,7 +438,17 @@ fn call_from_region(
         return SegmentLiveCall::unresolved(segment, allele_universe_len);
     }
 
-    let mut candidates = segment_index.all_alleles.clone();
+    // Per-allele score: how many positions (structural + extensions) have a
+    // current base that matches this allele's germline byte at the projected
+    // reference position. The candidate `allele_call` is the strict tie-set
+    // of alleles at the maximum score after all three walks complete.
+    //
+    // Under this scheme `v_call` is the set of alleles the current evidence
+    // cannot rule out: alleles with strictly more matches win, alleles tied
+    // at the maximum share the call. Mutations, PCR errors, quality drift,
+    // and N corruption all contribute to the scores whichever way they
+    // happen to point — the truth allele has no special standing.
+    let mut scores: Vec<u32> = vec![0; allele_universe_len];
     let mut informative_matches = 0u32;
     let mut wildcard_matches = 0u32;
     let mut ref_start: Option<u32> = None;
@@ -453,9 +463,7 @@ fn call_from_region(
         // an indel-inserted nucleotide ends up inside V/D/J's
         // region with `germline_pos == NO_GERMLINE_POS`. It carries
         // no allele evidence (no germline byte to compare), so we
-        // skip it without failing the call. The candidate set is
-        // unchanged; downstream walkers see one fewer "evidence
-        // position" but otherwise behave normally.
+        // skip it without failing the call.
         if nucleotide.germline_pos == Nucleotide::NO_GERMLINE_POS {
             // Sanity: only same-segment synthetic bases (e.g. indel
             // insertions placed inside V's region) belong here.
@@ -484,62 +492,145 @@ fn call_from_region(
         }
         next_ref_pos = Some(ref_pos.saturating_add(1));
 
-        let Some(evidence) = segment_index.compatible_alleles_at(ref_pos as usize, nucleotide.base)
+        // Score increment: every allele whose germline at this ref_pos
+        // matches the observed (current) base picks up +1. If no allele
+        // matches at this position, no scores change — we simply advance
+        // and keep walking. We never abort the call on a single
+        // unmatched position; only an explicitly malformed IR (above)
+        // produces `unsupported_call`.
+        let Some(evidence) =
+            segment_index.compatible_alleles_at(ref_pos as usize, nucleotide.base)
         else {
-            return unsupported_call(segment, allele_universe_len, evidence_version);
+            continue;
         };
-
+        for id in evidence.allele_ids.iter_ids() {
+            scores[id.as_usize()] = scores[id.as_usize()].saturating_add(1);
+        }
         if evidence.informative {
             informative_matches = informative_matches.saturating_add(1);
         } else {
             wildcard_matches = wildcard_matches.saturating_add(1);
         }
-
-        candidates.intersect_with(&evidence.allele_ids);
-        if candidates.is_empty() {
-            return unsupported_call(segment, allele_universe_len, evidence_version);
-        }
     }
 
-    let mut ref_start = ref_start.expect("non-empty region should set ref_start");
+    let Some(ref_start_initial) = ref_start else {
+        // Every position in the region was an indel-insert (no
+        // germline_pos). Defer to the unresolved state — there is no
+        // structural evidence to anchor a hypothesis.
+        return SegmentLiveCall::unresolved(segment, allele_universe_len);
+    };
+    let mut ref_start = ref_start_initial;
     let mut ref_end = next_ref_pos.expect("non-empty region should set ref_end");
     let mut seq_start = region.start.index();
     let mut seq_end = region.end.index();
     let mut flags = HypothesisFlags::EMPTY;
+
+    // Trim-bounded extension caps. The sampled allele had `trim_5`
+    // bases removed from its 5' end and `trim_3` from its 3' end
+    // during recombination. The right extension can walk at most
+    // `trim_3` ref positions past `ref_end` (no further than the
+    // sampled allele's original 3' edge); the left extension can
+    // reach at most `trim_5` ref positions before `ref_start`.
+    //
+    // When the segment has no assignment (test fixtures that build a
+    // simulation directly without going through recombination), the
+    // cap is unset and the walker uses the pre-existing
+    // halt-on-empty-evidence semantics. This keeps unit-level live-call
+    // tests backwards-compatible while real pipeline runs always have
+    // the trim metadata available.
+    let trim_cap_3: Option<u32> = sim
+        .assignments
+        .get(segment)
+        .map(|a| a.trim_3 as u32);
+    let trim_cap_5: Option<u32> = sim
+        .assignments
+        .get(segment)
+        .map(|a| a.trim_5 as u32);
+
+    // Structural-boundary caps for the extension walkers.
+    //
+    // Overlap into the immediately-adjacent structural region is fine
+    // (e.g. J's left walker overlapping into D's bases when those bases
+    // happen to fit J's projected ref_pos). Crossing *past* that
+    // structural region into a more-distant region's territory is not:
+    // it produces score noise from coincidental matches in a region the
+    // segment cannot plausibly occupy, and breaks the AIRR coordinate
+    // invariant that `*_alignment_start..*_alignment_end` is a single
+    // contiguous span containing the segment's own bytes only.
+    //
+    // For a left walker (J/D), the boundary is the structural region
+    // immediately before the adjacent NP region; the walker may claim
+    // positions inside that structural region, but stops at its left
+    // edge. For a right walker (V/D), it is the structural region
+    // immediately after the adjacent NP region; the walker may claim
+    // inside it but stops at its right edge.
+    let left_boundary: Option<u32> = left_extension.and_then(|np_region| {
+        sim.sequence
+            .regions
+            .iter()
+            .find(|r| {
+                matches!(r.segment, Segment::V | Segment::D | Segment::J)
+                    && r.end == np_region.start
+            })
+            .map(|r| r.start.index())
+    });
+    let right_boundary: Option<u32> = right_extension.and_then(|np_region| {
+        sim.sequence
+            .regions
+            .iter()
+            .find(|r| {
+                matches!(r.segment, Segment::V | Segment::D | Segment::J)
+                    && r.start == np_region.end
+            })
+            .map(|r| r.end.index())
+    });
 
     // ── Left-side extension + overlap walk ───────────────────────────
     //
     // If `left_extension` (NP1 for J on a VJ chain, NP2 for J on a
     // VDJ chain — or NP1 for D) sits immediately to the left of
     // `region`, walk backward through it (and beyond it into
-    // earlier coding territory) as long as each base extends some
-    // candidate allele's reference *prefix*.
+    // earlier coding territory). Each position contributes a score
+    // increment to every allele whose germline at the projected
+    // ref_pos matches the observed base.
     //
-    // Mark `BOUNDARY_ELASTIC` whenever any extension occurs.
-    // Additionally mark `OVERLAPS_OTHER_SEGMENT` when the walker
+    // Mark `BOUNDARY_ELASTIC` whenever any extension position
+    // produced an evidence record at all (whether or not it shifted
+    // the tie-set). Mark `OVERLAPS_OTHER_SEGMENT` when the walker
     // crosses past `np_region.start` into the next-earlier region's
-    // bases — that's the live-graph overlap signal the design doc
-    // calls out (V/D and D/J overlap when bases support both).
+    // bases.
     //
-    // Halt semantics unchanged: stop when the candidate set empties,
-    // when ref_pos would go below 0, or when we run out of pool
-    // positions; never fail the call.
+    // Halt: when ref_pos would go below 0, when the projected ref_pos
+    // has no allele covering it (compatible_alleles_at returns None),
+    // or when we run out of pool positions; never fail the call.
     if let Some(np_region) = left_extension {
         if np_region.end.index() == seq_start {
             let np_start = np_region.start.index();
             let mut extended_seq_start = seq_start;
             let mut extended_ref_start = ref_start;
-            let mut extended_candidates = candidates.clone();
             let mut extended_inform = informative_matches;
             let mut extended_wildcard = wildcard_matches;
             let mut extension_added = false;
             let mut crossed_into_overlap = false;
+            let mut steps_taken: u32 = 0;
 
             // Walk pool positions in REVERSE order from `np_region.end`
-            // down to 0, continuing past `np_region.start` so V's left
-            // can reach into an earlier coding region's bases when
-            // evidence supports it.
-            for seq_pos in (0..np_region.end.index()).rev() {
+            // down to the structural-boundary cap (the start of the
+            // structural region immediately before this NP region) so
+            // the walker can overlap into that prior structural region
+            // when evidence supports it, but never cross past it.
+            let lower_bound: u32 = left_boundary.unwrap_or(0);
+            for seq_pos in (lower_bound..np_region.end.index()).rev() {
+                // Cap by the sampled allele's 5' trim — the walker can
+                // reach at most `trim_5` ref positions before the
+                // structural region's start, since that's the only
+                // territory the sampled allele could have originally
+                // covered.
+                if let Some(cap) = trim_cap_5 {
+                    if steps_taken >= cap {
+                        break;
+                    }
+                }
                 if extended_ref_start == 0 {
                     break;
                 }
@@ -553,12 +644,16 @@ fn call_from_region(
                 else {
                     break;
                 };
-                let mut next_candidates = extended_candidates.clone();
-                next_candidates.intersect_with(&evidence.allele_ids);
-                if next_candidates.is_empty() {
+                // No allele has this base at the projected ref_pos. The
+                // extension has lost its anchor — halt rather than walk
+                // into territory where the only thing we could find is a
+                // single random later match polluting the tie-set.
+                if evidence.allele_ids.is_empty() {
                     break;
                 }
-                extended_candidates = next_candidates;
+                for id in evidence.allele_ids.iter_ids() {
+                    scores[id.as_usize()] = scores[id.as_usize()].saturating_add(1);
+                }
                 extended_seq_start = seq_pos;
                 extended_ref_start = candidate_ref_pos;
                 if evidence.informative {
@@ -570,10 +665,10 @@ fn call_from_region(
                     crossed_into_overlap = true;
                 }
                 extension_added = true;
+                steps_taken = steps_taken.saturating_add(1);
             }
 
             if extension_added {
-                candidates = extended_candidates;
                 seq_start = extended_seq_start;
                 ref_start = extended_ref_start;
                 informative_matches = extended_inform;
@@ -588,24 +683,40 @@ fn call_from_region(
 
     // ── Right-side extension + overlap walk ──────────────────────────
     //
-    // Walk forward from `region.end` as long as each base extends
-    // some allele's reference suffix. The walker continues into the
-    // next-later coding region's bases (D for V, J for D) when
-    // evidence supports both placements simultaneously, marking
-    // `OVERLAPS_OTHER_SEGMENT` on the resulting hypothesis.
+    // Walk forward from `region.end`. Each position contributes a
+    // score increment to every allele whose germline at the projected
+    // ref_pos matches the observed base. The walker continues into the
+    // next-later coding region's bases (D for V, J for D) until the
+    // projected ref_pos no longer has any covering allele, marking
+    // `OVERLAPS_OTHER_SEGMENT` when it crosses past `np_region.end`.
     if let Some(np_region) = right_extension {
         if np_region.start.index() == seq_end {
             let np_end = np_region.end.index();
             let pool_len = sim.pool.len() as u32;
             let mut extended_seq_end = seq_end;
             let mut extended_ref_pos = ref_end;
-            let mut extended_candidates = candidates.clone();
             let mut extended_inform = informative_matches;
             let mut extended_wildcard = wildcard_matches;
             let mut extension_added = false;
             let mut crossed_into_overlap = false;
+            let mut steps_taken: u32 = 0;
 
-            for seq_pos in np_region.start.index()..pool_len {
+            // Cap walker forward by the structural region immediately
+            // after the adjacent NP region (e.g. D for V's right walker,
+            // J for D's right walker). Overlap into that region is fine;
+            // crossing past it into more-distant territory is not.
+            let upper_bound: u32 = right_boundary.unwrap_or(pool_len).min(pool_len);
+            for seq_pos in np_region.start.index()..upper_bound {
+                // Cap by the sampled allele's 3' trim — the walker can
+                // reach at most `trim_3` ref positions past the
+                // structural region's end, since that's the only
+                // territory the sampled allele could have originally
+                // covered.
+                if let Some(cap) = trim_cap_3 {
+                    if steps_taken >= cap {
+                        break;
+                    }
+                }
                 let nucleotide = sim
                     .pool
                     .get(NucHandle::new(seq_pos))
@@ -615,12 +726,16 @@ fn call_from_region(
                 else {
                     break;
                 };
-                let mut next_candidates = extended_candidates.clone();
-                next_candidates.intersect_with(&evidence.allele_ids);
-                if next_candidates.is_empty() {
+                // No allele has this base at the projected ref_pos. The
+                // extension has lost its anchor — halt rather than walk
+                // into territory where the only thing we could find is a
+                // single random later match polluting the tie-set.
+                if evidence.allele_ids.is_empty() {
                     break;
                 }
-                extended_candidates = next_candidates;
+                for id in evidence.allele_ids.iter_ids() {
+                    scores[id.as_usize()] = scores[id.as_usize()].saturating_add(1);
+                }
                 extended_seq_end = seq_pos.saturating_add(1);
                 extended_ref_pos = extended_ref_pos.saturating_add(1);
                 if evidence.informative {
@@ -632,10 +747,10 @@ fn call_from_region(
                     crossed_into_overlap = true;
                 }
                 extension_added = true;
+                steps_taken = steps_taken.saturating_add(1);
             }
 
             if extension_added {
-                candidates = extended_candidates;
                 seq_end = extended_seq_end;
                 ref_end = extended_ref_pos;
                 informative_matches = extended_inform;
@@ -652,13 +767,35 @@ fn call_from_region(
         flags.insert(HypothesisFlags::HAS_WILDCARD_EVIDENCE);
     }
 
+    // ── Build the tie-set ────────────────────────────────────────────
+    //
+    // The candidate allele_call is the strict tie-set at max score —
+    // alleles with strictly more matches win, alleles tied at the
+    // maximum share the call. If no allele matched any position
+    // (max_score == 0, e.g. an extreme-corruption simulation where
+    // every base has been edited away from every allele's germline),
+    // every allele is equally consistent with the absence of
+    // evidence — return the full pool.
+    let max_score = scores.iter().copied().max().unwrap_or(0);
+    let allele_call = if max_score == 0 {
+        segment_index.all_alleles.clone()
+    } else {
+        let mut bitset = AlleleBitSet::empty(allele_universe_len);
+        for (idx, &score) in scores.iter().enumerate() {
+            if score == max_score {
+                bitset.insert(AlleleId::new(idx as u32));
+            }
+        }
+        bitset
+    };
+
     let hypothesis = PlacementHypothesis::new(
         segment,
         seq_start,
         seq_end,
         ref_start,
         ref_end,
-        candidates,
+        allele_call,
         EvidenceScore::exact(informative_matches, wildcard_matches),
         flags,
     );
@@ -1249,6 +1386,171 @@ mod tests {
         assert_eq!(call.allele_call.to_ids(), vec![id1]);
         assert_eq!(call.confidence, LiveCallConfidence::ExactSingle);
         assert_eq!(call.hypotheses[0].score, EvidenceScore::exact(4, 0));
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Y6 score-and-tie behavior tests.
+    //
+    // These four tests pin down the score-and-tie caller's contract:
+    //   1. Mutation can't silently drop the truth allele if other
+    //      positions still favor it.
+    //   2. A mutation that flips bases toward a different allele can
+    //      legitimately divert the call away from truth — the aligner
+    //      drift narrative.
+    //   3. Trim-induced ambiguity gets resolved when extension into NP
+    //      bases finds evidence for one of the tied alleles.
+    //   4. When no allele matches any position (max_score == 0), the
+    //      call is the full pool — never empty.
+    // ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn y6_truth_allele_retained_under_single_position_mutation() {
+        // Pool of three alleles, each distinguishable from v0 at a
+        // position OTHER than the one we mutate. Sequence matches v0
+        // exactly except for position 2 mutated to a base no allele has
+        // at ref_pos 2 — this position becomes non-informative. The
+        // other un-mutated positions still single out v0 as the unique
+        // best match.
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        // v0 = ACGTAC (truth)
+        // v1 differs from v0 at pos 5 only (C vs G)
+        // v2 differs from v0 at pos 1 only (C vs G)
+        let v0 = cfg.v_pool.push(allele(Segment::V, "v*01", b"ACGTAC"));
+        let v1 = cfg.v_pool.push(allele(Segment::V, "v*02", b"ACGTAG"));
+        let v2 = cfg.v_pool.push(allele(Segment::V, "v*03", b"AGGTAC"));
+        let index = ReferenceMatchIndex::build(&cfg);
+
+        let sim = simulation_with_region(Segment::V, b"ACGTAC", 0);
+        // Mutate position 2 (G→T): no allele has T at ref_pos 2.
+        let sim = sim.with_base_changed(NucHandle::new(2), b'T');
+
+        let call = assembled_segment_live_call(&sim, &index, Segment::V, 1)
+            .expect("V region should produce a call");
+
+        // Per-position scoring with pool bases ACTTAC after the edit:
+        //   pos 0 (A) → v0, v1, v2 all +1
+        //   pos 1 (C) → v0, v1 +1 (v2 has G at pos 1)
+        //   pos 2 (T) → no allele has T at ref_pos 2 → 0 update
+        //   pos 3 (T) → v0, v1, v2 all +1
+        //   pos 4 (A) → v0, v1, v2 all +1
+        //   pos 5 (C) → v0, v2 +1 (v1 has G at pos 5)
+        // Scores: v0=5, v1=4, v2=4. Tie-set = {v0}.
+        assert_eq!(call.allele_call.to_ids(), vec![v0]);
+        let _unused = (v1, v2);
+    }
+
+    #[test]
+    fn y6_v_call_diverges_from_truth_when_mutations_flip_toward_another_allele() {
+        // Two alleles that disagree on three positions. The pool bases
+        // start matching v0 exactly, then three edits flip them toward
+        // v1's germline. v1 now scores strictly higher — the call
+        // genuinely diverges from the originally-sampled v0.
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        let v0 = cfg.v_pool.push(allele(Segment::V, "v*01", b"ACGTAC"));
+        let v1 = cfg.v_pool.push(allele(Segment::V, "v*02", b"AGGTGA"));
+        let index = ReferenceMatchIndex::build(&cfg);
+
+        // Region built from v0's sequence...
+        let sim = simulation_with_region(Segment::V, b"ACGTAC", 0);
+        // ...with three positions flipped to v1's bases.
+        let sim = sim.with_base_changed(NucHandle::new(1), b'G');
+        let sim = sim.with_base_changed(NucHandle::new(4), b'G');
+        let sim = sim.with_base_changed(NucHandle::new(5), b'A');
+
+        let call = assembled_segment_live_call(&sim, &index, Segment::V, 1)
+            .expect("V region should produce a call");
+
+        // Current pool bases: A G G T G A → matches v1 entirely (6).
+        //                                  → matches v0 at pos {0,2,3} (3).
+        // Tie-set = {v1}. v_call diverges from truth_v_call (v0).
+        assert_eq!(call.allele_call.to_ids(), vec![v1]);
+        let _unused = v0;
+    }
+
+    #[test]
+    fn y6_trim_ambiguity_narrows_via_np_extension() {
+        // Three alleles share their first 4 bases (AACC) but diverge on
+        // bytes 4-5. The structural region holds only the first 4
+        // bases (trim ate the last 2) — all three score 4 there. An
+        // adjacent NP region holds bases that match v1's continuation
+        // at ref_pos 4 and 5. The extension walker scores v1 twice and
+        // the tie-set narrows to {v1}.
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        let v0 = cfg.v_pool.push(allele(Segment::V, "v*01", b"AACCAA"));
+        let v1 = cfg.v_pool.push(allele(Segment::V, "v*02", b"AACCTG"));
+        let v2 = cfg.v_pool.push(allele(Segment::V, "v*03", b"AACCGG"));
+        let index = ReferenceMatchIndex::build(&cfg);
+
+        // Build V region (first 4 bases), then NP1 region with bases
+        // matching v1's bytes at ref_pos 4 and 5 (T, G).
+        let mut sim = Simulation::new();
+        for (i, &b) in b"AACC".iter().enumerate() {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
+            sim = next;
+        }
+        sim = sim.with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(4),
+        ));
+        // NP region holding T, G. NP bases use NO_GERMLINE_POS so the
+        // structural walker won't try to score them; the extension
+        // walker uses them as evidence for v1's continuation.
+        for &b in &[b'T', b'G'] {
+            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::synthetic(
+                b,
+                Segment::Np1,
+                crate::ir::NucFlags::empty(),
+            ));
+            sim = next;
+        }
+        sim = sim.with_region_added(Region::new(
+            Segment::Np1,
+            NucHandle::new(4),
+            NucHandle::new(6),
+        ));
+
+        let call = assembled_segment_live_call(&sim, &index, Segment::V, 1)
+            .expect("V region should produce a call");
+
+        // Structural: all 3 score 4. Right-extension into NP1:
+        //   ref_pos 4 with 'T' → only v1 has T → v1 += 1
+        //   ref_pos 5 with 'G' → v1 and v2 both have G → both += 1
+        // Final scores: v0=4, v1=6, v2=5. Tie-set = {v1}.
+        assert_eq!(call.allele_call.to_ids(), vec![v1]);
+        let _unused = (v0, v2);
+    }
+
+    #[test]
+    fn y6_full_pool_returned_when_no_allele_matches_any_position() {
+        // Pool of two alleles. Region bases are mutated to a base
+        // (X — non-canonical) that no allele has at any ref_pos. No
+        // scores accumulate → max_score == 0 → tie-set is the full pool
+        // (every allele is equally consistent with the absence of
+        // evidence).
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        let v0 = cfg.v_pool.push(allele(Segment::V, "v*01", b"AACT"));
+        let v1 = cfg.v_pool.push(allele(Segment::V, "v*02", b"GGCA"));
+        let index = ReferenceMatchIndex::build(&cfg);
+
+        let sim = simulation_with_region(Segment::V, b"AACT", 0);
+        // Hit every position with a base no allele has at that ref_pos.
+        // v0 = AACT, v1 = GGCA — flipping every position to 'X' (any
+        // canonical base that mismatches both) gives a zero-score walk.
+        let sim = sim.with_base_changed(NucHandle::new(0), b'T'); // v0 has A, v1 has G
+        let sim = sim.with_base_changed(NucHandle::new(1), b'T'); // v0 has A, v1 has G
+        let sim = sim.with_base_changed(NucHandle::new(2), b'A'); // v0 has C, v1 has C
+        let sim = sim.with_base_changed(NucHandle::new(3), b'G'); // v0 has T, v1 has A
+
+        let call = assembled_segment_live_call(&sim, &index, Segment::V, 1)
+            .expect("V region should produce a call");
+
+        let mut ids = call.allele_call.to_ids();
+        ids.sort_by_key(|i| i.index());
+        // Full pool returned — v_call is honest about having no
+        // distinguishing evidence rather than empty-string lying.
+        assert_eq!(ids, vec![v0, v1]);
     }
 
     #[test]

@@ -327,24 +327,26 @@ pub fn build_airr_record(
     }
 
     // sequence_aa / np_aa: V-anchor reading frame.
+    //
+    // `np1_aa` / `np2_aa` cover only the *unclaimed* span of the NP
+    // region — the contiguous interior left after V's right-extension
+    // and (for NP1) D's left-extension claim adjacent positions as
+    // their own segment. Translating that span via `aa_slice_for_region`
+    // gives an in-frame slice of `sequence_aa`, keeping `np2_aa`
+    // consistent with both `np2_length` (unclaimed byte count) and
+    // the codon-aligned position of NP inside the full sequence.
     if let Some(jstart) = rec.junction_start {
         let frame_offset = (jstart % 3) as usize;
         rec.sequence_aa = translate_seq(&rec.sequence[frame_offset..]);
         if let Some(r) = np1_region {
-            rec.np1_aa = aa_slice_for_region(
-                r.start.index() as usize,
-                r.end.index() as usize,
-                frame_offset,
-                &rec.sequence_aa,
-            );
+            if let Some((s, e)) = unclaimed_np_bounds(sim, refdata, r) {
+                rec.np1_aa = aa_slice_for_region(s, e, frame_offset, &rec.sequence_aa);
+            }
         }
         if let Some(r) = np2_region {
-            rec.np2_aa = aa_slice_for_region(
-                r.start.index() as usize,
-                r.end.index() as usize,
-                frame_offset,
-                &rec.sequence_aa,
-            );
+            if let Some((s, e)) = unclaimed_np_bounds(sim, refdata, r) {
+                rec.np2_aa = aa_slice_for_region(s, e, frame_offset, &rec.sequence_aa);
+            }
         }
     }
 
@@ -1029,19 +1031,37 @@ fn projected_allele_id(
     sim: &Simulation,
     segment: Segment,
 ) -> Option<crate::refdata::AlleleId> {
+    // The sampled allele from recombination — used both as the
+    // fallback when no live-call exists and as a preference among
+    // alleles tied in the live-call's score-and-tie set. Several
+    // alleles may share the same per-position score (the live-call
+    // honestly reports the ambiguity in `v_call`) but for downstream
+    // projection (germline_alignment, identity, CIGAR) we prefer the
+    // truth allele when it sits inside the tie-set: it's the only
+    // allele whose germline bytes really do match the pool bases. If
+    // the truth isn't in the tie-set (mutations have shifted evidence
+    // toward a different allele), fall back to the first tied id —
+    // that's the genuine aligner-drift case the divergence narrative
+    // captures.
+    let truth_id = match segment {
+        Segment::V => sim.assignments.v.map(|i| i.allele_id),
+        Segment::D => sim.assignments.d.map(|i| i.allele_id),
+        Segment::J => sim.assignments.j.map(|i| i.allele_id),
+        _ => None,
+    };
     if let Some(state) = &sim.live_calls {
         if let Some(call) = state.get(segment) {
+            if let Some(tid) = truth_id {
+                if call.allele_call.contains(tid) {
+                    return Some(tid);
+                }
+            }
             if let Some(id) = call.allele_call.iter_ids().next() {
                 return Some(id);
             }
         }
     }
-    match segment {
-        Segment::V => sim.assignments.v.map(|i| i.allele_id),
-        Segment::D => sim.assignments.d.map(|i| i.allele_id),
-        Segment::J => sim.assignments.j.map(|i| i.allele_id),
-        _ => None,
-    }
+    truth_id
 }
 
 fn projected_call_name(
@@ -1050,10 +1070,18 @@ fn projected_call_name(
     segment: Segment,
     origin_id: Option<crate::refdata::AlleleId>,
 ) -> String {
+    // When the truth allele is inside the tie-set, list it FIRST in
+    // the comma-separated `v_call` string. This keeps the first
+    // allele in `v_call` aligned with `projected_allele_id`'s
+    // truth-preference, so downstream consumers that read
+    // `v_call.split(",")[0]` see the same allele that
+    // `germline_alignment`, `v_identity`, and `v_cigar` are computed
+    // against.
     live_call_name(
         refdata,
         sim.live_calls.as_ref().and_then(|state| state.get(segment)),
         segment,
+        origin_id,
     )
     .unwrap_or_else(|| lookup_name(refdata, segment, origin_id))
 }
@@ -1121,6 +1149,37 @@ fn ref_pos_already_covered(
 /// structural region by skipping any pool position that has been
 /// claimed by a V/D/J live-call extension. The resulting string is
 /// the "true" non-templated insertion as the evidence layer sees it.
+/// pool-position bounds (`[start, end)`) of the contiguous unclaimed
+/// interior of an NP region — the bytes that neither V's right
+/// extension nor the adjacent segment's left extension claimed. Returns
+/// `None` when every position in the region was claimed.
+///
+/// Used by `np1_aa` / `np2_aa` to slice `sequence_aa` at the codon
+/// positions inside the unclaimed span, keeping the AA fields aligned
+/// with `np_length` (which also counts only unclaimed bytes).
+fn unclaimed_np_bounds(
+    sim: &Simulation,
+    refdata: &RefDataConfig,
+    region: &Region,
+) -> Option<(usize, usize)> {
+    let r_start = region.start.index() as usize;
+    let r_end = region.end.index() as usize;
+    let mut first: Option<usize> = None;
+    let mut last: Option<usize> = None;
+    for i in r_start..r_end {
+        if np_claim_owner(sim, refdata, i).is_none() {
+            if first.is_none() {
+                first = Some(i);
+            }
+            last = Some(i);
+        }
+    }
+    match (first, last) {
+        (Some(s), Some(e)) => Some((s, e + 1)),
+        _ => None,
+    }
+}
+
 fn unclaimed_np_string(
     sim: &Simulation,
     refdata: &RefDataConfig,
@@ -1185,13 +1244,42 @@ fn live_call_name(
     refdata: &RefDataConfig,
     call: Option<&SegmentLiveCall>,
     segment: Segment,
+    truth_id: Option<crate::refdata::AlleleId>,
 ) -> Option<String> {
     let call = call?;
-    let names: Vec<String> = call
-        .allele_call
-        .iter_ids()
+    // Order the tie-set so the truth allele appears first when it is
+    // a member. The remaining alleles follow in iter_ids() (ascending
+    // bitset) order. The first comma-separated entry of the resulting
+    // string therefore matches `projected_allele_id`'s pick, which is
+    // what `germline_alignment`, identity, and CIGAR are computed
+    // against.
+    let truth_in_tie = truth_id
+        .map(|tid| call.allele_call.contains(tid))
+        .unwrap_or(false);
+    let mut ordered_ids: Vec<crate::refdata::AlleleId> = Vec::new();
+    if let (Some(tid), true) = (truth_id, truth_in_tie) {
+        ordered_ids.push(tid);
+    }
+    for id in call.allele_call.iter_ids() {
+        if Some(id) == truth_id && truth_in_tie {
+            continue;
+        }
+        ordered_ids.push(id);
+    }
+    let names: Vec<String> = ordered_ids
+        .into_iter()
         .filter_map(|id| refdata.get(segment, id).map(|allele| allele.name.clone()))
         .collect();
+    // Defensive fallback: under the score-and-tie caller, the bitset
+    // should always have at least one allele (max=0 returns the full
+    // pool). An empty bitset only arises today when an upstream
+    // constructor builds an unsupported live-call directly. Treat
+    // that as "no evidence-based call available" so projected_call_name's
+    // unwrap_or_else fires and v_call falls back to the truth assignment,
+    // staying consistent with projected_allele_id's existing fallback.
+    if names.is_empty() {
+        return None;
+    }
     Some(names.join(","))
 }
 
@@ -1648,7 +1736,16 @@ mod tests {
     }
 
     #[test]
-    fn airr_call_projection_uses_empty_call_when_live_call_is_unsupported() {
+    fn airr_call_projection_falls_back_to_truth_when_live_call_is_unsupported() {
+        // An "unsupported" live call carries zero hypotheses and so
+        // produces an empty `allele_call`. Under the score-and-tie
+        // caller this state cannot arise from a real run (max=0
+        // returns the full pool); it can only be constructed manually
+        // as in this test. When it does arise, `projected_call_name`
+        // falls through to the originally-sampled allele name, keeping
+        // `v_call` consistent with `projected_allele_id`'s existing
+        // fallback and ensuring the field is never silently empty when
+        // a truth assignment exists.
         let (cfg, sim, _v0, _v1) = call_projection_fixture();
         let call = SegmentLiveCall::from_hypotheses(Segment::V, cfg.v_pool.len(), Vec::new(), 1);
         let live = LiveCallState::empty().with_segment_call(call);
@@ -1656,7 +1753,7 @@ mod tests {
 
         let rec = build_airr_record(&outcome, &cfg, "unsupported");
 
-        assert_eq!(rec.v_call, "");
+        assert_eq!(rec.v_call, "IGHV1-1*01");
     }
 
     #[test]
