@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lesson 4 — Sequencing artifacts, dialed in · GenAIRR</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html" class="active">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<article class="page lesson-page">
+  <div class="lesson-crumbs"><a href="learn.html">Learn</a><span class="sep">›</span> Lesson 04</div>
+  <span class="eyebrow">Lesson 04 · ~3 min</span>
+  <h1>Sequencing artifacts, dialed in</h1>
+  <p class="deck">Real reads are noisy. 5'/3' loss eats segments. Indels shift frames. Base-callers fail. GenAIRR can dial each one independently — and the truth fields stay correct.</p>
+  <div class="lesson-progress">
+    <span class="seg-bar done"></span><span class="seg-bar done"></span><span class="seg-bar done"></span><span class="seg-bar active"></span><span class="seg-bar"></span>
+    <span class="meta">04 / 05</span>
+  </div>
+
+  <h2>The intuition</h2>
+  <p class="intuition">A simulator that only models clean sequences is benchmarking your aligner's best case. The interesting case — the one your benchmark actually needs to cover — is when the molecule is half-eaten and the base-caller is guessing. Dial in each artifact and see how each one bites.</p>
+
+  <h2>Live corruption</h2>
+  <p>The top line is the clean post-mutation sequence. The bottom line is what your aligner would actually receive. Move the sliders.</p>
+
+  <div class="corruption" id="lesson-corruption">
+    <div class="corruption-stage">
+      <div class="corruption-line">
+        <div class="lab">CLEAN (truth)</div>
+        <div class="seq corruption-baseline"></div>
+      </div>
+      <div class="corruption-line">
+        <div class="lab">CORRUPTED</div>
+        <div class="seq corruption-output"></div>
+      </div>
+      <div class="corruption-stats" style="margin-top: 12px; display: flex; gap: 18px; font-size: 12px; font-family: var(--font-mono); color: var(--ink-soft);"></div>
+    </div>
+    <div class="corruption-controls">
+      <div class="toggle">
+        <span class="t-name">5' LOSS</span>
+        <input type="range" min="0" max="20" value="6" />
+        <span class="t-val"></span>
+      </div>
+      <div class="toggle">
+        <span class="t-name">3' LOSS</span>
+        <input type="range" min="0" max="20" value="4" />
+        <span class="t-val"></span>
+      </div>
+      <div class="toggle">
+        <span class="t-name">INDEL %</span>
+        <input type="range" min="0" max="10" value="2" />
+        <span class="t-val"></span>
+      </div>
+      <div class="toggle">
+        <span class="t-name">N-BASE %</span>
+        <input type="range" min="0" max="10" value="3" />
+        <span class="t-val"></span>
+      </div>
+    </div>
+  </div>
+
+  <p class="mute" style="font-size:13px;">Even with all artifacts cranked, the V/D/J coloring tells you exactly which base belongs to which segment. That mapping is the truth GenAIRR preserves through every transformation.</p>
+
+  <h2>The corresponding code</h2>
+  <p>Each artifact is its own pass on the pipeline. <code>length=</code> ranges feed 5'/3' loss; <code>count=</code> ranges feed indels and N-bases. Drop a pass to skip that artifact entirely.</p>
+
+  <div class="code-window" style="margin: 16px 0;">
+    <div class="code-window-head"><div class="traffic"><span></span><span></span><span></span></div><span>lesson_4.py</span></div>
+<pre class="code-window-body"><code><span class="kw">import</span> GenAIRR <span class="kw">as</span> ga
+
+result = (
+    ga.<span class="fn">Experiment</span>.<span class="fn">on</span>(<span class="str">"human_igh"</span>)
+       .<span class="fn">recombine</span>()
+       .<span class="fn">mutate</span>(<span class="at">model</span>=<span class="str">"s5f"</span>, <span class="at">count</span>=(<span class="num">5</span>, <span class="num">25</span>))
+       .<span class="fn">corrupt_5prime_loss</span>(<span class="at">length</span>=(<span class="num">0</span>, <span class="num">20</span>))
+       .<span class="fn">corrupt_3prime_loss</span>(<span class="at">length</span>=(<span class="num">0</span>, <span class="num">20</span>))
+       .<span class="fn">corrupt_indels</span>(<span class="at">count</span>=(<span class="num">0</span>, <span class="num">2</span>), <span class="at">insertion_prob</span>=<span class="num">0.5</span>)
+       .<span class="fn">corrupt_ns</span>(<span class="at">count</span>=(<span class="num">0</span>, <span class="num">5</span>))
+       .<span class="fn">run_records</span>(<span class="at">n</span>=<span class="num">1000</span>, <span class="at">seed</span>=<span class="num">42</span>, <span class="at">expose_provenance</span>=<span class="kw">True</span>)
+)</code></pre>
+  </div>
+
+  <div class="try">
+    <div class="try-head">Try it now</div>
+    <div class="try-body">
+      <p>Run the snippet above, then run it again without the two <code>corrupt_*_loss</code> calls. Compare the mean <code>sequence_length</code> across the two runs — the loss-on version is measurably shorter. The corruption changed the sequence, but every <code>truth_v_call</code>, <code>truth_d_call</code>, and <code>truth_j_call</code> stays correct in both runs.</p>
+    </div>
+  </div>
+
+  <div class="exercise">
+    <span class="ex-tag">Exercise</span>
+    <p>Take the snippet above and crank corruption up: <code>corrupt_5prime_loss(length=(20, 60))</code>, <code>corrupt_3prime_loss(length=(5, 25))</code>, <code>corrupt_ns(count=(0, 8))</code>. Generate 1,000 records and confirm <code>truth_v_call</code>, <code>truth_d_call</code>, <code>truth_j_call</code> are non-empty in 100% of them. That's the ground-truth guarantee: the alleles were captured at construction time, and no amount of downstream chewing can erase them.</p>
+  </div>
+
+  <nav class="lesson-nav">
+    <a href="lesson-3.html"><div class="ln-label">← Previous</div><div class="ln-title">03 · S5F mutation heatmap</div></a>
+    <a href="lesson-5.html" class="next"><div class="ln-label">Next →</div><div class="ln-title">05 · The ground-truth payoff</div></a>
+  </nav>
+</article>
+
+<footer class="foot"><div class="foot-inner"><div>© 2026 GenAIRR contributors</div><div><a href="#">GitHub</a></div></div></footer>
+
+<script src="genairr.js"></script>
+<script>setupCorruption('#lesson-corruption');</script>
+</body>
+</html>

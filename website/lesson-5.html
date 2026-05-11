@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lesson 5 — The ground-truth payoff · GenAIRR</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links"><a href="index.html">Home</a><a href="learn.html" class="active">Learn</a><a href="guides.html">Guides</a><a href="concepts.html">Concepts</a><a href="reference.html">Reference</a></div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<article class="page lesson-page">
+  <div class="lesson-crumbs"><a href="learn.html">Learn</a><span class="sep">›</span> Lesson 05</div>
+  <span class="eyebrow">Lesson 05 · ~3 min</span>
+  <h1>The ground-truth payoff</h1>
+  <p class="deck">Same molecule. Two annotation paths. One guesses. One knows. The whole reason GenAIRR exists is on the right.</p>
+  <div class="lesson-progress">
+    <span class="seg-bar done"></span><span class="seg-bar done"></span><span class="seg-bar done"></span><span class="seg-bar done"></span><span class="seg-bar active"></span>
+    <span class="meta">05 / 05</span>
+  </div>
+
+  <h2>The intuition</h2>
+  <p class="intuition">When you benchmark an aligner against real sequencing data, you're benchmarking it against another aligner — the one that produced your "ground truth." That's a circular reference. GenAIRR breaks the loop: simulate, corrupt, then ask <em>any</em> aligner what it thinks. The truth is right there, by construction.</p>
+
+  <h2>Side by side</h2>
+  <p>Below: the same simulated heavy-chain sequence (post-corruption: 5' loss = 12, indels, N-bases). On the left, what an off-the-shelf aligner reports. On the right, what GenAIRR knows for certain.</p>
+
+  <div class="compare">
+    <div class="compare-side">
+      <div class="compare-head">
+        aligner output
+        <span class="badge real">inferred</span>
+      </div>
+      <pre class="compare-body"><span class="key">v_call         </span> IGHV3-23*01 <span class="qm">(or *04?)</span>
+<span class="key">d_call         </span> <span class="qm">IGHD3-10 / IGHD2-21 — ambiguous</span>
+<span class="key">j_call         </span> IGHJ4*02
+<span class="key">v_sequence_start </span> <span class="qm">~0  (lost leader, can't tell)</span>
+<span class="key">v_sequence_end   </span> 38
+<span class="key">np1_length       </span> <span class="qm">unknown — N's hide it</span>
+<span class="key">d_sequence_start </span> <span class="qm">~43</span>
+<span class="key">junction_length  </span> 39
+<span class="key">n_mutations      </span> <span class="qm">~5  (vs N's, vs indels — flagged)</span>
+<span class="key">productive       </span> <span class="qm">unsure (frame uncertain)</span></pre>
+    </div>
+    <div class="compare-side">
+      <div class="compare-head">
+        GenAIRR record
+        <span class="badge gt">truth</span>
+      </div>
+      <pre class="compare-body"><span class="key">v_call         </span> <span class="ok">IGHV3-23*04</span>
+<span class="key">d_call         </span> <span class="ok">IGHD3-10*01</span>
+<span class="key">j_call         </span> <span class="ok">IGHJ4*02</span>
+<span class="key">v_sequence_start </span> <span class="ok">0</span>
+<span class="key">v_sequence_end   </span> <span class="ok">38</span>
+<span class="key">np1_length       </span> <span class="ok">5</span>
+<span class="key">d_sequence_start </span> <span class="ok">43</span>
+<span class="key">junction_length  </span> <span class="ok">39</span>
+<span class="key">n_mutations      </span> <span class="ok">7  (exact — N's distinguished)</span>
+<span class="key">productive       </span> <span class="ok">True</span></pre>
+    </div>
+  </div>
+
+  <h2>Why this matters for benchmarking</h2>
+  <p>Run any aligner on the GenAIRR sequence. Compare its output to the GenAIRR record. The diff <em>is</em> the error rate — there's no other reference frame to argue about. This makes GenAIRR the right substrate for:</p>
+  <ul>
+    <li><strong>Aligner accuracy benchmarks</strong> — V/D/J call concordance, junction localization, mutation recall.</li>
+    <li><strong>Training data for ML</strong> — every record carries 47 labels with no annotation noise.</li>
+    <li><strong>Method development</strong> — design new corruption scenarios and stress-test how each tool degrades.</li>
+  </ul>
+
+  <h2>What you've built</h2>
+  <p>You now have intuition for the five phases, the S5F model, the corruption pipeline, and what makes GenAIRR's metadata trustworthy. The rest of the docs are recipes — go pick one.</p>
+
+  <div class="code-window" style="margin: 16px 0;">
+    <div class="code-window-head"><div class="traffic"><span></span><span></span><span></span></div><span>benchmark_pattern.py</span></div>
+<pre class="code-window-body"><code><span class="cm"># A common benchmarking pattern</span>
+result = experiment.<span class="fn">run</span>(<span class="at">n</span>=<span class="num">10_000</span>, <span class="at">seed</span>=<span class="num">42</span>)
+result.<span class="fn">to_fasta</span>(<span class="str">"corrupted.fasta"</span>)        <span class="cm"># feed to aligner X</span>
+truth = result.<span class="fn">to_dataframe</span>()              <span class="cm"># keep truth</span>
+
+<span class="cm"># run aligner X → predictions.tsv → join on sequence_id</span>
+v_recall = (truth.v_call == predictions.v_call).<span class="fn">mean</span>()</code></pre>
+  </div>
+
+  <nav class="lesson-nav">
+    <a href="lesson-4.html"><div class="ln-label">← Previous</div><div class="ln-title">04 · Sequencing artifacts</div></a>
+    <a href="learn.html" class="next"><div class="ln-label">Done →</div><div class="ln-title">Back to all lessons</div></a>
+  </nav>
+</article>
+
+<footer class="foot"><div class="foot-inner"><div>© 2026 GenAIRR contributors</div><div><a href="#">GitHub</a></div></div></footer>
+</body>
+</html>

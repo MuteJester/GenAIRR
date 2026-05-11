@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stream millions of sequences without OOM — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">D · Operate</span>
+  </nav>
+
+  <span class="eyebrow">Recipe D · 02 · ~15 min · intermediate</span>
+  <h1>Stream millions of sequences without OOM.</h1>
+  <p class="lead">
+    At 10M records, holding the whole result in memory is no longer free. The streaming API
+    yields records one at a time — you process or write each as it arrives, and only the current
+    record (plus your batch buffer) ever sits in RAM. Combine with chunked TSV writes and you
+    can pin memory at any size you like, on any machine.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Use stream_records()</span>
+        <span class="ctl-sub">iterator API · one at a time</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Buffer and flush</span>
+        <span class="ctl-sub">chunk_size = N · write incremental</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Measure</span>
+        <span class="ctl-sub">memory profile · throughput</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>When to switch from <code>run()</code> to <code>stream_records()</code>.</h2>
+    <p class="ph-lead">
+      Rule of thumb: under 100k records, <code>run()</code> is fine. Above that, switch to
+      <code>stream_records()</code> and stop holding the whole result in memory. The CPU cost
+      is the same — you're paying the simulation time either way — but the memory profile flips
+      from O(n) to O(1).
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">run() — eager</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">memory</span><span class="pass-note">O(n) — all records live in a single list</span></li>
+        <li><span class="pass-name">ergonomic</span><span class="pass-note">indexing, slicing, len(), to_dataframe()</span></li>
+        <li><span class="pass-name">use when</span><span class="pass-note">n ≤ 100k, doing interactive exploration</span></li>
+      </ul>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">stream_records() — lazy</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">memory</span><span class="pass-note">O(1) per record — generator yields one at a time</span></li>
+        <li><span class="pass-name">ergonomic</span><span class="pass-note">for-loop only; no indexing or random access</span></li>
+        <li><span class="pass-name">use when</span><span class="pass-note">n ≥ 100k, or writing to disk as you go</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>The streaming loop.</h2>
+    <p class="ph-lead">
+      Build your <code>Experiment</code> as you normally would, then call
+      <code>stream_records()</code> instead of <code>run()</code>. The return value is a
+      generator — iterate it with a for-loop and process each record before discarding it.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">10M records, constant memory</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+exp = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+       .<span class="c-f">corrupt_5prime_loss</span>(length=(<span class="c-n">5</span>, <span class="c-n">30</span>))
+)
+
+n_productive = <span class="c-n">0</span>
+<span class="c-k">for</span> rec <span class="c-k">in</span> exp.<span class="c-f">stream_records</span>(n=<span class="c-n">10_000_000</span>, seed=<span class="c-n">42</span>):
+    <span class="c-k">if</span> rec[<span class="c-s">"productive"</span>]:
+        n_productive += <span class="c-n">1</span>
+<span class="c-f">print</span>(n_productive)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Chunked TSV writes.</h2>
+    <p class="ph-lead">
+      Process records one at a time, write to disk in chunks. A 100k-record buffer keeps memory
+      tiny while amortizing the TSV-formatting cost across many records.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Write 10M records to a single TSV — bounded memory</div>
+      <pre class="code"><code><span class="c-k">import</span> csv
+
+CHUNK = <span class="c-n">100_000</span>
+
+<span class="c-k">with</span> <span class="c-f">open</span>(<span class="c-s">"panel_10m.tsv"</span>, <span class="c-s">"w"</span>, newline=<span class="c-s">""</span>) <span class="c-k">as</span> fh:
+    writer = <span class="c-n">None</span>
+    buf = []
+    <span class="c-k">for</span> rec <span class="c-k">in</span> exp.<span class="c-f">stream_records</span>(n=<span class="c-n">10_000_000</span>, seed=<span class="c-n">42</span>):
+        <span class="c-k">if</span> writer <span class="c-k">is</span> <span class="c-n">None</span>:
+            writer = csv.<span class="c-f">DictWriter</span>(fh, fieldnames=rec.<span class="c-f">keys</span>(),
+                                    delimiter=<span class="c-s">"\t"</span>)
+            writer.<span class="c-f">writeheader</span>()
+        buf.<span class="c-f">append</span>(rec)
+        <span class="c-k">if</span> <span class="c-f">len</span>(buf) &gt;= CHUNK:
+            writer.<span class="c-f">writerows</span>(buf); buf.<span class="c-f">clear</span>()
+    <span class="c-k">if</span> buf:
+        writer.<span class="c-f">writerows</span>(buf)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Memory profile — what to expect.</h2>
+    <p class="ph-lead">
+      With a 100k-record buffer, total resident-set is roughly your buffer plus the engine's
+      working state (a few MB). The number doesn't grow with <code>n</code>.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">100k records</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">stream + chunk=100k</span><span class="pass-note">~110 MB peak — dominated by the buffer</span></li>
+        <li><span class="pass-name">run()</span><span class="pass-note">~95 MB — comparable; streaming overhead is small</span></li>
+      </ul>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">1M records</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">stream + chunk=100k</span><span class="pass-note">~110 MB peak — same as 100k case</span></li>
+        <li><span class="pass-name">run()</span><span class="pass-note">~950 MB — linear in n</span></li>
+      </ul>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">10M records</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">stream + chunk=100k</span><span class="pass-note">~110 MB peak — flat</span></li>
+        <li><span class="pass-name">run()</span><span class="pass-note">won't fit on most machines</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 05</span>
+    <h2>Throughput.</h2>
+    <p class="ph-lead">
+      Single-threaded throughput is between 10k and 30k records per second depending on the
+      complexity of the pipeline (more passes = more time per record). Streaming adds negligible
+      overhead — the simulation itself is the bottleneck, not the iteration.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Quick benchmark</div>
+      <pre class="code"><code><span class="c-k">import</span> time
+
+start = time.<span class="c-f">monotonic</span>()
+n = <span class="c-n">0</span>
+<span class="c-k">for</span> _ <span class="c-k">in</span> exp.<span class="c-f">stream_records</span>(n=<span class="c-n">100_000</span>, seed=<span class="c-n">42</span>):
+    n += <span class="c-n">1</span>
+dt = time.<span class="c-f">monotonic</span>() - start
+
+<span class="c-f">print</span>(<span class="c-s">f"{n / dt:.0f} records/sec"</span>)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-export.html">
+      <div class="ph-card-head">D · 01 · Export to AIRR TSV, Parquet, FASTA →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">The three writers when your dataset does fit in memory.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-reproduce.html">
+      <div class="ph-card-head">D · 03 · Reproduce a published dataset →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Streaming is the workflow that scales reproduction to paper-sized datasets.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

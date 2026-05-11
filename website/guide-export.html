@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Export to AIRR TSV, Parquet, or FASTA — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">D · Operate</span>
+  </nav>
+
+  <span class="eyebrow">Recipe D · 01 · ~5 min · beginner</span>
+  <h1>Export to AIRR TSV, Parquet, or FASTA.</h1>
+  <p class="lead">
+    Once <code>run()</code> returns a result, getting it out of GenAIRR is a single method call.
+    Three formats cover almost every downstream use case: <b>AIRR TSV</b> for tool
+    compatibility, <b>FASTA</b> for blinded handoff to aligners or BLAST, and <b>pandas</b> for
+    interactive analysis. Each comes with one important detail — whether the
+    <code>truth_*</code> columns survive the trip.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Pick the format</span>
+        <span class="ctl-sub">TSV · FASTA · DataFrame</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Truth or blinded</span>
+        <span class="ctl-sub">expose_provenance · airr_strict</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Write</span>
+        <span class="ctl-sub">one method call</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>Which writer for which job.</h2>
+    <p class="ph-lead">
+      Each format trades off something. TSV is verbose but tool-native. FASTA is minimal but
+      strips everything except the sequence. DataFrame keeps everything in memory but lets you
+      filter, group, and join in seconds.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">TSV — for tools</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <code>result.to_csv("out.tsv", sep="\t")</code>. AIRR-schema column names, all ~70 fields
+        (including <code>truth_*</code> if you ran with <code>expose_provenance=True</code>).
+        Set <code>airr_strict=True</code> to convert coordinates to 1-based inclusive for
+        IMGT-style downstream tools.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">FASTA — for blinded handoff</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <code>result.to_fasta("out.fasta")</code>. Just the headers and sequence. Use this when
+        the next stage is an aligner that should not have access to the truth fields — e.g. a
+        benchmark, see <a href="guide-benchmark-aligner.html">B · 01</a>.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">DataFrame — for analysis</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <code>df = result.to_dataframe()</code>. Full pandas DataFrame; one row per record, one
+        column per AIRR field. Ideal for in-notebook exploration or feeding into the audit
+        workflows in <a href="guide-audit-realism.html">B · 03</a>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>One call, three writers.</h2>
+    <p class="ph-lead">
+      The same <code>result</code> can be dumped to all three. Pick what each downstream step
+      actually needs.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">All three writers from one run</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+       .<span class="c-f">run_records</span>(n=<span class="c-n">10_000</span>, seed=<span class="c-n">42</span>,
+                    expose_provenance=<span class="c-n">True</span>)
+)
+
+<span class="c-c"># 1. AIRR TSV — coordinates already 0-based</span>
+result.<span class="c-f">to_csv</span>(<span class="c-s">"panel.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+
+<span class="c-c"># 2. AIRR TSV — 1-based coords for IMGT-shaped tools</span>
+result.<span class="c-f">to_csv</span>(<span class="c-s">"panel_imgt.tsv"</span>, sep=<span class="c-s">"\t"</span>, airr_strict=<span class="c-n">True</span>)
+
+<span class="c-c"># 3. FASTA — blinded; only sequence_id + sequence</span>
+result.<span class="c-f">to_fasta</span>(<span class="c-s">"panel.fasta"</span>)
+
+<span class="c-c"># 4. DataFrame — for inline analysis</span>
+df = result.<span class="c-f">to_dataframe</span>()
+df[<span class="c-s">"v_call"</span>].<span class="c-f">value_counts</span>().<span class="c-f">head</span>()</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Strip <code>truth_*</code> from a TSV.</h2>
+    <p class="ph-lead">
+      For a truly blinded benchmark you want the AIRR TSV columns (sequence, sequence_id,
+      maybe a few metadata columns) without the provenance. Two options.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Drop the columns post-hoc</div>
+      <pre class="code"><code><span class="c-k">import</span> pandas <span class="c-k">as</span> pd
+
+df = pd.<span class="c-f">read_csv</span>(<span class="c-s">"panel.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+df.<span class="c-f">drop</span>(columns=[c <span class="c-k">for</span> c <span class="c-k">in</span> df.columns <span class="c-k">if</span> c.<span class="c-f">startswith</span>(<span class="c-s">"truth_"</span>)],
+        inplace=<span class="c-n">True</span>)
+df.<span class="c-f">to_csv</span>(<span class="c-s">"panel_blinded.tsv"</span>, sep=<span class="c-s">"\t"</span>, index=<span class="c-n">False</span>)</code></pre>
+    </div>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Or just don't expose them</div>
+      <pre class="code"><code><span class="c-c"># run without expose_provenance=True</span>
+result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">run_records</span>(n=<span class="c-n">10_000</span>, seed=<span class="c-n">42</span>)
+)
+result.<span class="c-f">to_csv</span>(<span class="c-s">"panel.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+<span class="c-c"># no truth_* columns at all — clean blinded panel</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>FASTA header shape.</h2>
+    <p class="ph-lead">
+      By default FASTA headers are the <code>sequence_id</code> — typically just <code>seq0</code>,
+      <code>seq1</code>, etc. If you need richer headers (e.g. embedding metadata for a tool
+      that doesn't read the TSV), generate them yourself from the DataFrame.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Custom FASTA with metadata-embedded headers</div>
+      <pre class="code"><code><span class="c-k">with</span> <span class="c-f">open</span>(<span class="c-s">"panel_rich.fasta"</span>, <span class="c-s">"w"</span>) <span class="c-k">as</span> fh:
+    <span class="c-k">for</span> _, row <span class="c-k">in</span> df.<span class="c-f">iterrows</span>():
+        meta = <span class="c-s">f"locus={row['locus']}|prod={row['productive']}"</span>
+        fh.<span class="c-f">write</span>(<span class="c-s">f"&gt;{row['sequence_id']}|{meta}\n"</span>)
+        fh.<span class="c-f">write</span>(row[<span class="c-s">"sequence"</span>] + <span class="c-s">"\n"</span>)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-streaming.html">
+      <div class="ph-card-head">D · 02 · Stream millions without OOM →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">For datasets that don't fit in memory, write to disk as the engine produces records.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-benchmark-aligner.html">
+      <div class="ph-card-head">B · 01 · Benchmark an aligner →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">The classic export pattern: TSV for truth, FASTA for the aligner, join later.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

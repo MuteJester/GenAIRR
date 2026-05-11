@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Persistent IR — GenAIRR Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html" class="active">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HEADER ================= -->
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="concepts.html">Concepts</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">Persistent IR</span>
+  </nav>
+
+  <span class="eyebrow">Chapter 02 · The architecture</span>
+  <h1>Persistent IR — every base remembers.</h1>
+  <p class="lead">
+    Most simulators store a sequence as a string and mutate it in place. GenAIRR stores it as a
+    <em>persistent intermediate representation</em>: an immutable snapshot per phase, where every
+    nucleotide carries its own provenance. The result is <b>Git for DNA</b> — a complete, replayable
+    history of how the sequence came to be, with mathematically guaranteed coordinates.
+  </p>
+</section>
+
+<!-- ================= TIMELINE — revisions ================= -->
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">R0</span>
+        <span class="ctl-name">Empty</span>
+        <span class="ctl-sub">pool length 0 · no regions</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">R1</span>
+        <span class="ctl-name">Recombined</span>
+        <span class="ctl-sub">V·NP1·D·NP2·J in the pool</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">R2</span>
+        <span class="ctl-name">Mutated</span>
+        <span class="ctl-sub">SHM substitutions flagged</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PHASE — Nucleotide Pool ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>The Nucleotide Pool — every base carries a passport.</h2>
+    <p class="ph-lead">
+      Instead of a flat <code>"ACGT…"</code> string, GenAIRR stores the sequence as a pool of
+      nucleotide records. Each base is a small package: what it is right now, what it was
+      originally, which segment it came from, which gene position it occupied, and a set of
+      flags marking mutations, insertions, or ambiguous calls.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <!-- What every base knows -->
+    <div class="ph-card">
+      <div class="ph-card-head">A base, unpacked</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">current_base</span><span class="pass-note">A · C · G · T · N — the base as it stands today</span></li>
+        <li><span class="pass-name">germline_base</span><span class="pass-note">the original base before any mutation or error</span></li>
+        <li><span class="pass-name">germline_position</span><span class="pass-note">where this base lived in its source allele</span></li>
+        <li><span class="pass-name">segment</span><span class="pass-note">V · D · J · NP1 · NP2 — the structural role</span></li>
+        <li><span class="pass-name">flags</span><span class="pass-note">MUTATED · INDEL_INS · N_CORRUPTION · …</span></li>
+      </ul>
+    </div>
+
+    <!-- Why -->
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">Why per-base provenance</div>
+      <pre class="code"><code><span class="c-c"># A mutation arrives. The base flips A → G.</span>
+nuc.current_base   = <span class="c-s">"G"</span>      <span class="c-c"># new value</span>
+nuc.germline_base  = <span class="c-s">"A"</span>      <span class="c-c"># preserved</span>
+nuc.flags         |= MUTATED        <span class="c-c"># marked</span>
+
+<span class="c-c"># Later, an indel inserts a base nearby.</span>
+inserted.germline_base = <span class="c-s">"\0"</span>  <span class="c-c"># no germline origin</span>
+inserted.flags        |= INDEL_INS
+
+<span class="c-c"># A coordinate query at the end still works:</span>
+<span class="c-c"># "where did v_germline_end land after all this?"</span>
+<span class="c-c"># the pool answers — no manual bookkeeping needed.</span></code></pre>
+    </div>
+  </div>
+
+  <!-- Visual: a single base, expanded -->
+  <div class="ph-recorded">
+    <div class="phr-head">One nucleotide, fully described</div>
+    <div class="phr-fields">
+      <span class="phr-field"><span class="phr-k">pool_index</span> <span class="phr-v">187</span></span>
+      <span class="phr-field"><span class="phr-k">current_base</span> <span class="phr-v">G</span></span>
+      <span class="phr-field"><span class="phr-k">germline_base</span> <span class="phr-v">A</span></span>
+      <span class="phr-field"><span class="phr-k">germline_position</span> <span class="phr-v">187</span></span>
+      <span class="phr-field"><span class="phr-k">segment</span> <span class="phr-v">V</span></span>
+      <span class="phr-field"><span class="phr-k">allele_id</span> <span class="phr-v">IGHV3-23*01</span></span>
+      <span class="phr-field"><span class="phr-k">flags</span> <span class="phr-v">MUTATED</span></span>
+      <span class="phr-field phr-more">+ codon_phase, region_offset, edit_history</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PHASE — Regions vs Bases ================= -->
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Structure is separate from content.</h2>
+    <p class="ph-lead">
+      Alongside the nucleotide pool, the IR carries a structural overlay: <b>regions</b>
+      (segment spans), <b>assignments</b> (which alleles were picked), and the <b>trace</b>
+      (every random draw, keyed by address). Bases live in one layer; structure lives in another.
+      You can substitute an allele, retrim a segment, or pivot the junction without disturbing the
+      surrounding pool — because the two layers compose, they don't entangle.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Layers</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">Nucleotide pool</span><span class="pass-note">the bases themselves, each with provenance</span></li>
+        <li><span class="pass-name">Regions</span><span class="pass-note">V · NP1 · D · NP2 · J spans on the pool</span></li>
+        <li><span class="pass-name">Assignments</span><span class="pass-note">which V·D·J alleles were sampled</span></li>
+        <li><span class="pass-name">Trace</span><span class="pass-note">every random draw, addressed and replayable</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">The layers, observed</div>
+      <pre class="code"><code>sim = outcome.final_simulation()
+
+<span class="c-c"># layer 1 — the bases (pool)</span>
+sim.bases()              <span class="c-c"># b'gag...gtg'</span>
+
+<span class="c-c"># layer 2 — regions (structure)</span>
+[ r.segment <span class="c-k">for</span> r <span class="c-k">in</span> sim.regions() ]
+<span class="c-c"># ['V', 'NP1', 'D', 'NP2', 'J']</span>
+
+<span class="c-c"># layer 3 — assignments (identity)</span>
+sim.v_allele_id()        <span class="c-c"># 146 → 'IGHV3-23*01'</span>
+
+<span class="c-c"># layer 4 — trace (history)</span>
+outcome.trace().find(<span class="c-s">"sample_allele.v"</span>).value
+<span class="c-c"># 146 — the actual draw that produced this record</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PHASE — Transformation Workflow ================= -->
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Every pass writes a new revision.</h2>
+    <p class="ph-lead">
+      A pass never mutates a previous revision in place. It reads the latest snapshot,
+      computes its changes, and commits a new revision pointing back at the old one. The result
+      is an append-only history of the simulation — every intermediate state is preserved and
+      queryable.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Three steps, every pass</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">Analyze</span><span class="pass-note">read the latest revision — where can changes apply?</span></li>
+        <li><span class="pass-name">Plan</span><span class="pass-note">decide the edits — sample positions, draw substitutes, etc.</span></li>
+        <li><span class="pass-name">Commit</span><span class="pass-note">emit a new revision; previous revision is preserved</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">Stepping through revisions</div>
+      <pre class="code"><code>outcome = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
+
+<span class="c-c"># every pass that ran, in order</span>
+outcome.pass_names()
+<span class="c-c"># ['sample_allele.v', 'sample_allele.d', 'sample_allele.j',</span>
+<span class="c-c">#  'trim.v_3', 'generate_np.np1', 'assemble.v', ..., 'mutate.s5f']</span>
+
+<span class="c-c"># the IR snapshot after the i-th pass</span>
+outcome.revision(<span class="c-n">5</span>).bases()         <span class="c-c"># mid-recombination state</span>
+outcome.revision(-<span class="c-n">1</span>).bases()        <span class="c-c"># final state (alias)</span>
+
+<span class="c-c"># the first snapshot a named pass produced</span>
+outcome.revision_after(<span class="c-s">"mutate.s5f"</span>)
+<span class="c-c"># Simulation — pool + regions immediately after SHM</span></code></pre>
+    </div>
+  </div>
+
+  <!-- Revisions visual -->
+  <div class="ph-ribbons">
+    <div class="ph-ribbon">
+      <div class="phr-label">R0 · empty</div>
+      <div class="phr-track phr-empty">
+        <span class="phr-note">pool length 0</span>
+      </div>
+    </div>
+    <div class="ph-arrow">→</div>
+    <div class="ph-ribbon">
+      <div class="phr-label">R<sub>k</sub> · recombined</div>
+      <div class="phr-track">
+        <div class="phr-seg phr-v"   style="width: 80.5%;">V</div>
+        <div class="phr-seg phr-np"  style="width: 1.4%;"></div>
+        <div class="phr-seg phr-d"   style="width: 3.9%;">D</div>
+        <div class="phr-seg phr-np"  style="width: 1.1%;"></div>
+        <div class="phr-seg phr-j"   style="width: 13.1%;">J</div>
+      </div>
+    </div>
+    <div class="ph-arrow">→</div>
+    <div class="ph-ribbon">
+      <div class="phr-label">R<sub>n</sub> · mutated</div>
+      <div class="phr-track">
+        <div class="phr-seg phr-v"   style="width: 80.5%;">V</div>
+        <div class="phr-seg phr-np"  style="width: 1.4%;"></div>
+        <div class="phr-seg phr-d"   style="width: 3.9%;">D</div>
+        <div class="phr-seg phr-np"  style="width: 1.1%;"></div>
+        <div class="phr-seg phr-j"   style="width: 13.1%;">J</div>
+        <span class="phr-mut" style="left: 12%;"></span>
+        <span class="phr-mut" style="left: 28%;"></span>
+        <span class="phr-mut" style="left: 44%;"></span>
+        <span class="phr-mut" style="left: 60%;"></span>
+        <span class="phr-mut" style="left: 76%;"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PHASE — Why ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>What you get because of this.</h2>
+    <p class="ph-lead">
+      Persistent IR isn't an academic flourish. Three concrete properties fall out of it,
+      and every claim GenAIRR makes about correctness rests on at least one of them.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Audit-ready output</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Every truth field, every coordinate, every CIGAR character traces back to a specific
+        random draw in the trace. You don't have to trust the result — you can replay the
+        decision that produced it.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Coordinate correctness by construction</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Coordinates are derived from the final pool, not maintained incrementally. An indel
+        can't desynchronize anything — there's no separate counter to fall out of step with.
+        Off-by-one bugs become categorically impossible.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">A real answer key</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Because every base remembers its origin, GenAIRR can tell you exactly which call an
+        aligner got wrong — not approximately, not statistically. A perfect ground-truth
+        comparison for benchmarking annotation tools.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NEXT ================= -->
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Continue</span>
+    <h2>Next chapter.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="concept-pipeline.html">
+      <div class="ph-card-head">Chapter 01 · Simulation Pipeline</div>
+      <p class="phr-note" style="margin: 6px 0 0;">How the three biological phases compose into a flat list of passes.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="concept-airr-record.html">
+      <div class="ph-card-head">Chapter 04 · AIRR Record →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">How GenAIRR derives ~70 ground-truth fields from a single pool snapshot.</p>
+    </a>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand">
+        <span class="brand-mark">G</span>
+        <span>GenAIRR</span>
+      </div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

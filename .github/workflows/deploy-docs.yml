@@ -1,5 +1,8 @@
 name: Deploy Documentation
 
+# Deploys the static HTML site under `website/` to GitHub Pages.
+# No build step — the site is plain HTML/CSS/JS and ships as-is.
+
 on:
   push:
     branches:
@@ -14,32 +17,20 @@ permissions:
 
 jobs:
   build:
-    name: Build Docusaurus
+    name: Package site
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./website
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build website
-        run: npm run build
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
       - name: Upload Build Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: website/build
+          path: website
 
   deploy:
     name: Deploy to GitHub Pages

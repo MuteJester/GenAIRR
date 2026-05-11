@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Audit a simulation for biological realism — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">B · Validate</span>
+  </nav>
+
+  <span class="eyebrow">Recipe B · 03 · ~20 min · intermediate</span>
+  <h1>Audit a simulation for biological realism.</h1>
+  <p class="lead">
+    A simulation can be technically correct (truth columns consistent, contracts respected) and
+    biologically unrealistic at the same time — V usage flat, CDR3 lengths the wrong shape,
+    mutation hotspots in the wrong places. This recipe runs four standard marginal checks
+    against an empirical reference panel so you find that gap before you publish from it.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Reference panel</span>
+        <span class="ctl-sub">an OAS subset · your own data</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Sim panel</span>
+        <span class="ctl-sub">same locus · same size</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Diff marginals</span>
+        <span class="ctl-sub">V-usage · CDR3 · codon · productive</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>What "realistic" means here.</h2>
+    <p class="ph-lead">
+      A simulator's job is not to be indistinguishable from the wet lab — it can't be. But the
+      marginal distributions of fields that downstream analyses depend on should align with
+      empirical observations of the same locus. Four marginals catch ~90% of the issues you'd
+      actually want to know about.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">V-gene usage distribution</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Empirical V usage is famously skewed — IGHV3-23, IGHV4-39, IGHV4-59 dominate. A uniform
+        distribution from your sim is a red flag; reweight with the empirical frequencies
+        (see <a href="guide-v-usage.html">C · 02</a>).
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">CDR3 length histogram</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Empirical CDR3 lengths are roughly log-normal, centred ~15 amino acids. NP-length
+        priors that produce a flat or bimodal distribution distort downstream diversity metrics.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Junction codon usage</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Codon usage in the NP regions reflects TdT activity. Deviations (over-representation
+        of G/C, or hard symmetry between NP1 and NP2) indicate a mis-calibrated NP sampler.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Productive rate</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Without contracts, natural productive rate is ~30–50%. If your sim sits outside that
+        band, either contracts are silently on or your junction-frame sampling is biased.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>The audit script.</h2>
+    <p class="ph-lead">
+      Generate a simulation panel of the same shape as your reference (same locus, same size).
+      Pull both into pandas, compute the four marginals, and compare.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Sim panel matching your reference</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+<span class="c-k">import</span> pandas <span class="c-k">as</span> pd
+
+empirical = pd.<span class="c-f">read_csv</span>(<span class="c-s">"oas_subset.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+
+sim = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">0</span>, <span class="c-n">30</span>))
+       .<span class="c-f">run_records</span>(
+           n=<span class="c-f">len</span>(empirical),
+           seed=<span class="c-n">42</span>,
+           expose_provenance=<span class="c-n">True</span>,
+       )
+).<span class="c-f">to_dataframe</span>()</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>The four checks.</h2>
+    <p class="ph-lead">
+      Each check is a one-liner. Compute it on both panels, then compare with KL divergence,
+      KS statistic, or just an eyeball overlay.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">V-usage diff</div>
+      <pre class="code"><code><span class="c-k">def</span> <span class="c-f">v_family</span>(s): <span class="c-k">return</span> s.<span class="c-f">str</span>.<span class="c-f">split</span>(<span class="c-s">"*"</span>).<span class="c-f">str</span>[<span class="c-n">0</span>]
+
+emp_usage = <span class="c-f">v_family</span>(empirical[<span class="c-s">"v_call"</span>]).<span class="c-f">value_counts</span>(normalize=<span class="c-n">True</span>)
+sim_usage = <span class="c-f">v_family</span>(sim[<span class="c-s">"truth_v_call"</span>]).<span class="c-f">value_counts</span>(normalize=<span class="c-n">True</span>)
+
+diff = (emp_usage - sim_usage).<span class="c-f">abs</span>().<span class="c-f">nlargest</span>(<span class="c-n">10</span>)
+<span class="c-f">print</span>(<span class="c-s">"largest V-family mismatches:"</span>)
+<span class="c-f">print</span>(diff)</code></pre>
+    </div>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">CDR3 length, codon usage, productive rate</div>
+      <pre class="code"><code><span class="c-k">from</span> scipy.stats <span class="c-k">import</span> ks_2samp
+
+<span class="c-c"># CDR3 length</span>
+ks = ks_2samp(empirical[<span class="c-s">"cdr3_aa"</span>].<span class="c-f">str</span>.<span class="c-f">len</span>(),
+              sim[<span class="c-s">"cdr3_aa"</span>].<span class="c-f">str</span>.<span class="c-f">len</span>())
+<span class="c-f">print</span>(<span class="c-s">"CDR3 length KS:"</span>, ks.statistic, ks.pvalue)
+
+<span class="c-c"># productive rate</span>
+<span class="c-f">print</span>(<span class="c-s">"empirical productive:"</span>, empirical[<span class="c-s">"productive"</span>].<span class="c-f">mean</span>())
+<span class="c-f">print</span>(<span class="c-s">"sim productive:"</span>, sim[<span class="c-s">"productive"</span>].<span class="c-f">mean</span>())
+
+<span class="c-c"># junction codon usage (top 10 trinucleotides)</span>
+<span class="c-k">def</span> <span class="c-f">trinuc_freq</span>(s):
+    <span class="c-k">from</span> collections <span class="c-k">import</span> Counter
+    counts = <span class="c-f">Counter</span>()
+    <span class="c-k">for</span> j <span class="c-k">in</span> s.<span class="c-f">dropna</span>():
+        <span class="c-k">for</span> i <span class="c-k">in</span> <span class="c-f">range</span>(<span class="c-n">0</span>, <span class="c-f">len</span>(j) - <span class="c-n">2</span>, <span class="c-n">3</span>):
+            counts[j[i:i+<span class="c-n">3</span>]] += <span class="c-n">1</span>
+    <span class="c-k">return</span> pd.<span class="c-f">Series</span>(counts).<span class="c-f">sort_values</span>(ascending=<span class="c-n">False</span>)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>If you fail a check.</h2>
+    <p class="ph-lead">
+      Each marginal points at a specific knob in the simulation. Mismatch ≠ broken sim — it
+      means your sim doesn't yet model whatever shaped the empirical distribution.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">V usage off → reweight allele sampling</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Recipe <a href="guide-v-usage.html">C · 02</a> shows how to feed a target frequency table
+        to the V-allele sampler.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">CDR3 length off → tune NP priors</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Pass <code>np1_lengths=</code> / <code>np2_lengths=</code> to <code>recombine()</code>
+        with a list of <code>(length, weight)</code> tuples matching your empirical histogram.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Productive rate too high → contracts left on</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Check that you're not passing <code>respect=ga.productive()</code> unintentionally. The
+        natural rate without contracts is well below 99%.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-v-usage.html">
+      <div class="ph-card-head">C · 02 · Match empirical V-gene usage →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Reweight allele sampling so V usage matches your reference panel.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-smoke-test.html">
+      <div class="ph-card-head">B · 04 · Smoke-test a config change →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Drop this audit into CI so a marginal regression fails loudly.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

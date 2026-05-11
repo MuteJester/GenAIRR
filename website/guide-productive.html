@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sample only productive sequences — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">A · Build</span>
+  </nav>
+
+  <span class="eyebrow">Recipe A · 03 · ~5 min · beginner</span>
+  <h1>Sample only productive sequences.</h1>
+  <p class="lead">
+    Add one keyword argument and every record GenAIRR emits will be a functional receptor — in
+    frame, no stop codons, anchors intact. No reject-and-retry loop; the engine prunes the
+    candidate distribution at sample time so productive sequences fall out by construction.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Pass respect=</span>
+        <span class="ctl-sub">ga.productive() bundle</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Pick mode</span>
+        <span class="ctl-sub">permissive · strict</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Verify rate</span>
+        <span class="ctl-sub">99%+ with bundle</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>The one-line change.</h2>
+    <p class="ph-lead">
+      The contract bundle <code>ga.productive()</code> combines four predicates: V anchor
+      preserved, J anchor preserved, junction length divisible by three, no stop codons in the
+      junction. Pass it as <code>respect=</code> and the engine refuses to pick any draw that
+      would break those invariants.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Drop the bundle into run()</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">run</span>(n=<span class="c-n">1000</span>, seed=<span class="c-n">42</span>,
+            respect=ga.<span class="c-f">productive</span>())
+)
+
+<span class="c-c"># every record is productive by construction</span>
+<span class="c-c"># productive = True · vj_in_frame = True · stop_codon = False</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Strict vs permissive — pick a failure mode.</h2>
+    <p class="ph-lead">
+      For most allele pairs the admissible support is plenty wide. But some configurations are
+      over-constrained: a particular V-J combination may simply have no NP length that keeps the
+      junction in frame. Default is to relax and continue (you get a record, possibly
+      non-productive). Pass <code>strict=True</code> if you'd rather catch the failure loudly.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Permissive (default)</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">strict=False</span><span class="pass-note">if the admissible support is empty, fall back to the unconstrained distribution</span></li>
+        <li><span class="pass-name">trace shows</span><span class="pass-note">a fallback marker on the affected draw — you can audit what happened</span></li>
+        <li><span class="pass-name">use when</span><span class="pass-note">you want a steady stream of records and the occasional non-productive sequence is fine</span></li>
+      </ul>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Strict</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">strict=True</span><span class="pass-note">raise StrictSamplingError carrying pass name + trace address + reason</span></li>
+        <li><span class="pass-name">recovery</span><span class="pass-note">catch the exception, log it, surface the failing constraint to the caller</span></li>
+        <li><span class="pass-name">use when</span><span class="pass-note">100% contract compliance is required — formal benchmarks, validation suites</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Catching a strict failure</div>
+      <pre class="code"><code><span class="c-k">try</span>:
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>).<span class="c-f">recombine</span>().<span class="c-f">run</span>(
+        n=<span class="c-n">100</span>, seed=<span class="c-n">42</span>,
+        respect=ga.<span class="c-f">productive</span>(),
+        strict=<span class="c-n">True</span>,
+    )
+<span class="c-k">except</span> ga.StrictSamplingError <span class="c-k">as</span> e:
+    pass_name, address, reason = e.args
+    <span class="c-c"># pass_name = "generate_np.np1"</span>
+    <span class="c-c"># address   = "np.np1.length"</span>
+    <span class="c-c"># reason    = "empty_admissible_support"</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Verify the rate.</h2>
+    <p class="ph-lead">
+      Sanity-check a small batch before committing to a large run. Without contracts, natural
+      productive rate ranges from ~30% (no constraint) to ~50% (with implicit anchor checks).
+      With <code>ga.productive()</code> in permissive mode you should see 99%+; in strict mode
+      it's 100% by definition (or an exception).
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">A 5-line sanity check</div>
+      <pre class="code"><code>result = ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>).<span class="c-f">recombine</span>().<span class="c-f">run</span>(
+    n=<span class="c-n">1000</span>, seed=<span class="c-n">42</span>, respect=ga.<span class="c-f">productive</span>(),
+)
+rate = <span class="c-f">sum</span>(<span class="c-n">1</span> <span class="c-k">for</span> o <span class="c-k">in</span> result
+           <span class="c-k">if</span> o.<span class="c-f">final_simulation</span>().productive) / <span class="c-f">len</span>(result)
+
+<span class="c-k">assert</span> rate &gt;= <span class="c-n">0.99</span>, <span class="c-s">f"productive rate too low: {rate:.3f}"</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>When you should NOT use it.</h2>
+    <p class="ph-lead">
+      The productive bundle is a tool for sampling, not a default to leave on. Some studies need
+      the full distribution of natural outcomes — productive and not — and turning the bundle on
+      silently distorts your input.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Training an aligner / annotation model</div>
+      <p class="phr-note" style="margin: 8px 0 0;"><b>Use it.</b> You want clean, biology-shaped data so the model learns the signal, not the artifact distribution of broken receptors.</p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Benchmarking a productivity classifier</div>
+      <p class="phr-note" style="margin: 8px 0 0;"><b>Drop it.</b> You want both productive and non-productive sequences so the classifier sees the full discrimination problem.</p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Studying natural repertoire composition</div>
+      <p class="phr-note" style="margin: 8px 0 0;"><b>Drop it.</b> The natural productive : non-productive ratio is itself a biological signal you may want to measure or perturb.</p>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="concept-contracts.html">
+      <div class="ph-card-head">Concept · Contracts →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">The full architecture: how the four predicates compose and how the runtime prunes distributions at sample time.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-benchmark-aligner.html">
+      <div class="ph-card-head">B · 01 · Benchmark an aligner against truth →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">The flagship recipe — pair the productive bundle with truth columns and score an aligner.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

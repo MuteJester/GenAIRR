@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reference — GenAIRR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html" class="active">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HEADER ================= -->
+<section class="page ref-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">Reference</span>
+  </nav>
+
+  <div class="rh-grid">
+    <div>
+      <span class="eyebrow">Catalogue · v1.0.4</span>
+      <h1>Reference.</h1>
+      <p class="lead">
+        Every public symbol, every config key, every AIRR field. Reference is
+        exhaustive — Concepts explain why, Guides walk you through how, and this is the
+        page you grep when you already know what you're looking for.
+      </p>
+    </div>
+    <div class="rh-stats">
+      <div class="rh-stat"><span class="rh-stat-n">38</span><span class="rh-stat-l">Public classes</span></div>
+      <div class="rh-stat"><span class="rh-stat-n">182</span><span class="rh-stat-l">Public functions</span></div>
+      <div class="rh-stat"><span class="rh-stat-n">~70</span><span class="rh-stat-l">AIRR truth fields</span></div>
+      <div class="rh-stat"><span class="rh-stat-n">6</span><span class="rh-stat-l">CLI commands</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TABS ================= -->
+<section class="page ref-tabs">
+  <div class="rt-bar">
+    <a class="rt-tab rt-tab-on" href="#python">
+      <span class="rt-tab-icon">{ }</span>
+      <span class="rt-tab-name">Python API</span>
+      <span class="rt-tab-n">220</span>
+    </a>
+    <a class="rt-tab" href="#configs">
+      <span class="rt-tab-icon">⌗</span>
+      <span class="rt-tab-name">Configs</span>
+      <span class="rt-tab-n">14</span>
+    </a>
+    <a class="rt-tab" href="#airr">
+      <span class="rt-tab-icon">▦</span>
+      <span class="rt-tab-name">AIRR fields</span>
+      <span class="rt-tab-n">70</span>
+    </a>
+    <a class="rt-tab" href="#cli">
+      <span class="rt-tab-icon">›_</span>
+      <span class="rt-tab-name">CLI</span>
+      <span class="rt-tab-n">6</span>
+    </a>
+    <div class="rt-search">
+      <span class="rt-search-icon">⌕</span>
+      <input class="rt-search-input" type="text" placeholder="search symbols, fields, configs…" />
+      <span class="rt-search-key">/</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PYTHON API ================= -->
+<section class="page ref-section" id="python">
+  <div class="rs-head">
+    <span class="rs-ord">01</span>
+    <div>
+      <h2>Python API.</h2>
+      <p>Everything importable from <code>genairr</code>. Grouped by module, sorted by what
+      you'll touch first.</p>
+    </div>
+  </div>
+
+  <!-- group: experiment -->
+  <div class="rs-group">
+    <div class="rs-group-head">
+      <code class="rs-mod">genairr.experiment</code>
+      <span class="rs-group-tag">core</span>
+    </div>
+    <div class="rs-rows">
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-cls">class</span>
+        <span class="rsr-sig"><b>Experiment</b>(config: <i>str | Config</i>, seed: <i>int</i> = <i>None</i>)</span>
+        <span class="rsr-desc">The DSL entrypoint. Chain <code>.recombine()</code>, <code>.mutate()</code>, <code>.corrupt_*()</code> and <code>.run(n)</code>.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>Experiment.recombine</b>(<i>productive_only</i>: bool = True)</span>
+        <span class="rsr-desc">Append the recombination phase (sample · trim · assemble · NP).</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>Experiment.mutate</b>(<i>model</i>: <i>str</i> = <i>"s5f"</i>, <i>count</i>: <i>tuple[int,int]</i> = None, <i>rate</i>: <i>float</i> = None)</span>
+        <span class="rsr-desc">Append the somatic-hypermutation phase. Pass <code>count</code> or <code>rate</code>, not both.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>Experiment.corrupt_5prime_loss</b>(<i>p</i>: <i>float</i>, <i>max_loss</i>: <i>int</i> = 60)</span>
+        <span class="rsr-desc">Probabilistically truncate the 5′ end up to <code>max_loss</code> bp.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>Experiment.corrupt_indels</b>(<i>rate</i>: <i>float</i>)</span>
+        <span class="rsr-desc">Insert low-rate ins/del events; uniform over positions.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>Experiment.run</b>(<i>n</i>: <i>int</i>) → <i>list[Record]</i></span>
+        <span class="rsr-desc">Execute the chain and return <code>n</code> AIRR records.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>Experiment.iter</b>(<i>n</i>: <i>int</i>) → <i>Iterator[Record]</i></span>
+        <span class="rsr-desc">Streaming variant for large n — never materializes the full batch.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>Experiment.add_pass</b>(<i>p</i>: <i>Pass</i>, <i>at</i>: <i>str</i> = <i>"end"</i>)</span>
+        <span class="rsr-desc">Insert a custom <code>Pass</code> into the pipeline. <code>at</code> may be <code>"start" / "end" / "after:&lt;name&gt;"</code>.</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- group: pipeline -->
+  <div class="rs-group">
+    <div class="rs-group-head">
+      <code class="rs-mod">genairr.pipeline</code>
+      <span class="rs-group-tag">extending</span>
+    </div>
+    <div class="rs-rows">
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-trait">trait</span>
+        <span class="rsr-sig"><b>Pass</b>.apply(<i>ir</i>: <i>Simulation</i>, <i>rt</i>: <i>PassRuntime</i>) → <i>Simulation</i></span>
+        <span class="rsr-desc">The one method every pass must implement. Pure: in goes IR, out comes IR.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-cls">class</span>
+        <span class="rsr-sig"><b>SampleAllelePass</b>(<i>weights</i>: <i>str</i> = <i>"uniform"</i>)</span>
+        <span class="rsr-desc">Draws V·D·J alleles from the reference; supports empirical weight tables.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-cls">class</span>
+        <span class="rsr-sig"><b>TrimPass</b>(<i>distributions</i>: <i>TrimDistributions</i>)</span>
+        <span class="rsr-desc">Samples 3′ V / 5′ D / 3′ D / 5′ J trim lengths.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-cls">class</span>
+        <span class="rsr-sig"><b>S5FMutationPass</b>(<i>count</i>: <i>tuple</i>, <i>kernel</i>: <i>str</i> = <i>"yaari_2013"</i>)</span>
+        <span class="rsr-desc">5-mer-conditioned SHM substitutions. Built-in kernels: <code>yaari_2013</code>, <code>cui_2016</code>.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-cls">class</span>
+        <span class="rsr-sig"><b>EndLossPass</b>(<i>p_5prime</i>: float, <i>p_3prime</i>: float, <i>max_loss</i>: int = 60)</span>
+        <span class="rsr-desc">End truncation model for short-read library prep.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-cls">class</span>
+        <span class="rsr-sig"><b>NCorruptionPass</b>(<i>rate</i>: <i>float</i>)</span>
+        <span class="rsr-desc">Scatters N-bases at the given per-position rate.</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- group: contracts -->
+  <div class="rs-group">
+    <div class="rs-group-head">
+      <code class="rs-mod">genairr.contracts</code>
+      <span class="rs-group-tag">predicates</span>
+    </div>
+    <div class="rs-rows">
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>productive</b>(<i>strict</i>: bool = True) → <i>Contract</i></span>
+        <span class="rsr-desc">Bundle of <code>anchor_preserved</code> + <code>productive_junction_frame</code> + <code>no_stop_codon_in_junction</code>.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>anchor_preserved</b>() → <i>Contract</i></span>
+        <span class="rsr-desc">Cys-104 (V) and Trp/Phe (J) anchor codons survive trimming.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>productive_junction_frame</b>() → <i>Contract</i></span>
+        <span class="rsr-desc">CDR3 length divisible by 3.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>no_stop_codon_in_junction</b>() → <i>Contract</i></span>
+        <span class="rsr-desc">No TAA/TAG/TGA inside CDR3.</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- group: io -->
+  <div class="rs-group">
+    <div class="rs-group-head">
+      <code class="rs-mod">genairr.io</code>
+      <span class="rs-group-tag">export</span>
+    </div>
+    <div class="rs-rows">
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>write_airr_tsv</b>(<i>records</i>, <i>path</i>, <i>truth</i>: <i>bool</i> = True)</span>
+        <span class="rsr-desc">Write to AIRR-spec TSV. Set <code>truth=False</code> to strip <code>truth_*</code> fields.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>write_parquet</b>(<i>records</i>, <i>path</i>, <i>compression</i>: <i>str</i> = <i>"zstd"</i>)</span>
+        <span class="rsr-desc">Columnar export. ~10× smaller than TSV at default compression.</span>
+      </a>
+      <a class="rsr" href="#">
+        <span class="rsr-kind rsr-kind-fn">fn</span>
+        <span class="rsr-sig"><b>write_fasta</b>(<i>records</i>, <i>path</i>, <i>header</i>: <i>str</i> = <i>"{seq_id}"</i>)</span>
+        <span class="rsr-desc">Plain FASTA. Header template is f-string over record fields.</span>
+      </a>
+      <a class="rsr rsr-more" href="#">
+        <span class="rsr-kind rsr-kind-more">+</span>
+        <span class="rsr-sig"><b>Show all 28 io symbols →</b></span>
+        <span class="rsr-desc">readers, schema validators, AIRR↔IMGT mappers</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CONFIGS ================= -->
+<section class="page ref-section" id="configs">
+  <div class="rs-head">
+    <span class="rs-ord">02</span>
+    <div>
+      <h2>Configs.</h2>
+      <p>14 built-in configs. Drop a name into <code>Experiment("…")</code> or fork the YAML
+      and pass a path. Schema is documented per-key.</p>
+    </div>
+  </div>
+
+  <div class="rs-cfg-grid">
+    <div class="rs-cfg-col">
+      <span class="rs-cfg-fam">Human IGH</span>
+      <a class="rs-cfg" href="#"><b>human_igh_naive</b><span>Pre-GC repertoire, low SHM, default V-usage</span></a>
+      <a class="rs-cfg" href="#"><b>human_igh_memory</b><span>High SHM, biased toward IGHV3 / IGHV4</span></a>
+      <a class="rs-cfg" href="#"><b>human_igh_plasmablast</b><span>Hypermutated, class-switched isotype distribution</span></a>
+    </div>
+    <div class="rs-cfg-col">
+      <span class="rs-cfg-fam">Human TCR</span>
+      <a class="rs-cfg" href="#"><b>human_trb_naive</b></a>
+      <a class="rs-cfg" href="#"><b>human_tra_naive</b></a>
+      <a class="rs-cfg" href="#"><b>human_trg_naive</b></a>
+      <a class="rs-cfg" href="#"><b>human_trd_naive</b></a>
+    </div>
+    <div class="rs-cfg-col">
+      <span class="rs-cfg-fam">Mouse</span>
+      <a class="rs-cfg" href="#"><b>mouse_igh_c57bl6</b></a>
+      <a class="rs-cfg" href="#"><b>mouse_igk</b></a>
+      <a class="rs-cfg" href="#"><b>mouse_igl</b></a>
+      <a class="rs-cfg" href="#"><b>mouse_trb</b></a>
+    </div>
+    <div class="rs-cfg-col">
+      <span class="rs-cfg-fam">Synthetic / testing</span>
+      <a class="rs-cfg" href="#"><b>minimal_igh</b><span>3 V · 1 D · 2 J — for unit tests</span></a>
+      <a class="rs-cfg" href="#"><b>synthetic_uniform</b><span>Pathological uniform priors</span></a>
+      <a class="rs-cfg" href="#"><b>custom (template)</b><span>Copy-paste starter YAML</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= AIRR FIELDS ================= -->
+<section class="page ref-section" id="airr">
+  <div class="rs-head">
+    <span class="rs-ord">03</span>
+    <div>
+      <h2>AIRR fields.</h2>
+      <p>~70 fields per record. <span class="rs-pill rs-pill-truth">truth_*</span>
+      is the simulator's ground-truth answer. <span class="rs-pill rs-pill-evid">evidence</span>
+      is what an aligner would output. Use the former to score the latter.</p>
+    </div>
+  </div>
+
+  <div class="rs-field-toolbar">
+    <span class="rs-pill rs-pill-truth">truth · 18</span>
+    <span class="rs-pill rs-pill-evid">evidence · 22</span>
+    <span class="rs-pill rs-pill-seg">segments · 14</span>
+    <span class="rs-pill rs-pill-corr">corruption · 9</span>
+    <span class="rs-pill rs-pill-meta">meta · 7</span>
+    <span class="rs-field-info">Showing first 16. <a href="#">Open the full table →</a></span>
+  </div>
+
+  <div class="rs-table">
+    <div class="rs-thead">
+      <span>Field</span>
+      <span>Type</span>
+      <span>Group</span>
+      <span>Source pass</span>
+      <span>Description</span>
+    </div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">sequence</span><span>str</span><span class="rs-tg rs-tg-meta">meta</span><span class="rs-tsrc">io</span><span>Final nucleotide sequence as written to the AIRR file.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">sequence_length</span><span>int</span><span class="rs-tg rs-tg-meta">meta</span><span class="rs-tsrc">EndLossPass</span><span>Length after all corruption passes.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">v_call</span><span>str</span><span class="rs-tg rs-tg-evid">evidence</span><span class="rs-tsrc">aligner stub</span><span>Best-match V allele the aligner would call.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">truth_v_call</span><span>str</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">SampleAllelePass</span><span>The V allele the simulator actually sampled.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">truth_d_call</span><span>str</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">SampleAllelePass</span><span>The D allele actually sampled.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">truth_j_call</span><span>str</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">SampleAllelePass</span><span>The J allele actually sampled.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">junction</span><span>str</span><span class="rs-tg rs-tg-seg">segments</span><span class="rs-tsrc">AssembleSegmentPass</span><span>CDR3 nucleotide sequence inclusive of anchors.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">junction_aa</span><span>str</span><span class="rs-tg rs-tg-seg">segments</span><span class="rs-tsrc">AssembleSegmentPass</span><span>CDR3 amino-acid translation.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">productive</span><span>bool</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">contracts.productive</span><span>True if in-frame, no stop codon, anchors preserved.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">truth_n_mutations</span><span>int</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">S5FMutationPass</span><span>Total SHM substitution count.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">mutation_rate</span><span>float</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">S5FMutationPass</span><span><code>truth_n_mutations / sequence_length</code>.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">mutation_pos</span><span>list[int]</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">S5FMutationPass</span><span>Per-substitution position, 0-indexed.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">v_identity</span><span>float</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">derived</span><span>Fraction of V positions identical to germline.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">corruption_added</span><span>bool</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">EndLossPass+</span><span>True if any corruption pass modified the sequence.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">n_count</span><span>int</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">NCorruptionPass</span><span>Number of ambiguous N bases.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">5_prime_loss</span><span>int</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">EndLossPass</span><span>Bases truncated from the 5′ end.</span></div>
+  </div>
+</section>
+
+<!-- ================= CLI ================= -->
+<section class="page ref-section" id="cli">
+  <div class="rs-head">
+    <span class="rs-ord">04</span>
+    <div>
+      <h2>CLI.</h2>
+      <p>Six commands installed alongside the Python package. For one-off simulations and CI.</p>
+    </div>
+  </div>
+
+  <div class="rs-cli">
+    <div class="rs-cli-row">
+      <code class="rs-cli-cmd">genairr simulate</code>
+      <span class="rs-cli-desc">Run a config and write AIRR output. The 90% command.</span>
+      <code class="rs-cli-ex">genairr simulate human_igh_naive -n 50000 -o out.tsv</code>
+    </div>
+    <div class="rs-cli-row">
+      <code class="rs-cli-cmd">genairr inspect</code>
+      <span class="rs-cli-desc">Print a single sequence's full trace — every pass, every event.</span>
+      <code class="rs-cli-ex">genairr inspect human_igh_naive --seed 42</code>
+    </div>
+    <div class="rs-cli-row">
+      <code class="rs-cli-cmd">genairr validate</code>
+      <span class="rs-cli-desc">Run marginal QC on a TSV against an empirical reference panel.</span>
+      <code class="rs-cli-ex">genairr validate out.tsv --against oas_human_b</code>
+    </div>
+    <div class="rs-cli-row">
+      <code class="rs-cli-cmd">genairr configs</code>
+      <span class="rs-cli-desc">List built-in configs with their key parameters.</span>
+      <code class="rs-cli-ex">genairr configs --filter human</code>
+    </div>
+    <div class="rs-cli-row">
+      <code class="rs-cli-cmd">genairr benchmark</code>
+      <span class="rs-cli-desc">Plug-and-play aligner benchmark against simulated truth.</span>
+      <code class="rs-cli-ex">genairr benchmark igblast --n 10000</code>
+    </div>
+    <div class="rs-cli-row">
+      <code class="rs-cli-cmd">genairr export</code>
+      <span class="rs-cli-desc">Convert a saved run between TSV / Parquet / FASTA.</span>
+      <code class="rs-cli-ex">genairr export out.tsv -o out.parquet</code>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div>
+      <div class="brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <p class="footer-tag">Synthetic AIRR with ground truth.</p>
+    </div>
+    <div class="footer-cols">
+      <div>
+        <h4>Learn</h4>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div>
+        <h4>Reference</h4>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

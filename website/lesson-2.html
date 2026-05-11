@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lesson 2 — The pipeline scrubber · GenAIRR</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html" class="active">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<article class="page lesson-page">
+  <div class="lesson-crumbs"><a href="learn.html">Learn</a><span class="sep">›</span> Lesson 02</div>
+  <span class="eyebrow">Lesson 02 · ~3 min</span>
+  <h1>The pipeline scrubber</h1>
+  <p class="deck">A GenAIRR experiment is three biological phases that run in a fixed order. Click through them to see exactly what each one does to your molecule.</p>
+  <div class="lesson-progress">
+    <span class="seg-bar done"></span><span class="seg-bar active"></span><span class="seg-bar"></span><span class="seg-bar"></span><span class="seg-bar"></span>
+    <span class="meta">02 / 05</span>
+  </div>
+
+  <h2>Why order matters</h2>
+  <p class="intuition">Biology first, lab second. Recombine before mutate — naive B cells acquire a receptor in the bone marrow before they meet antigen. Mutate before corrupt — somatic hypermutation happens in the germinal center, long before you stick the cell on a sequencer. Get the order wrong and your simulator is fiction.</p>
+  <p>Each phase corresponds to a real step. <code>.recombine()</code> builds the receptor in the bone marrow. <code>.mutate()</code> evolves it in the germinal center. <code>.corrupt_*()</code> models everything that happens once you've extracted the DNA and put it through wet-lab and sequencing — library prep, PCR, the sequencer itself, base calling. Order is biology.</p>
+
+  <h2>Scrub through the pipeline</h2>
+  <p>Click any node on the timeline. The same molecule, transformed by everything up to that point. Watch how the metadata at the bottom updates with each phase.</p>
+
+  <div class="scrubber" id="lesson-scrubber">
+    <div class="scrubber-stage">
+      <div class="scrubber-seq"></div>
+      <div class="scrubber-meta"></div>
+    </div>
+    <div class="scrubber-controls">
+      <div class="scrubber-track">
+        <div class="scrubber-line"></div>
+        <div class="scrubber-stops">
+          <div class="scrubber-stop"></div>
+          <div class="scrubber-stop"></div>
+          <div class="scrubber-stop"></div>
+          <div class="scrubber-stop"></div>
+        </div>
+      </div>
+      <div class="scrubber-labels">
+        <span>empty</span><span>recombine</span><span>mutate</span><span>corrupt</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="mute" style="font-size: 13px; margin-top: 8px;">Legend: <span style="color: var(--seg-v); font-weight:600;">V</span> · <span style="color: var(--seg-np); font-weight:600;">NP</span> · <span style="color: var(--seg-d); font-weight:600;">D</span> · <span style="color: var(--seg-j); font-weight:600;">J</span> · <span style="color: var(--seg-mut); font-weight:600;">mutation</span> · <span style="color: var(--seg-n); font-weight:600;">N-base</span> · <span style="color: var(--seg-del); font-weight:600;">trimmed</span></p>
+
+  <h2>The corresponding code</h2>
+  <p>The phases you scrubbed through map directly to method calls. Add only what you need — leave a phase off and that step never runs. Click any stop above to see the chain rebuild itself.</p>
+
+  <div class="code-window scrubber-code" style="margin: 16px 0;">
+    <div class="code-window-head"><div class="traffic"><span></span><span></span><span></span></div><span>lesson_2.py</span></div>
+<pre class="code-window-body"><span class="kw">import</span> GenAIRR <span class="kw">as</span> ga
+
+result = (
+    ga.<span class="fn">Experiment</span>.<span class="fn">on</span>(<span class="str">"human_igh"</span>)
+<code></code>
+       .<span class="fn">run_records</span>(<span class="at">n</span>=<span class="num">1000</span>, <span class="at">seed</span>=<span class="num">42</span>)
+)</pre>
+  </div>
+
+  <div class="try">
+    <div class="try-head">Try it now</div>
+    <div class="try-body">
+      <p>Run with <code>.recombine().mutate(model="s5f", count=(5, 15))</code> only — every record should have <code>n_mutations &gt; 0</code> but <code>n_pcr_errors == 0</code>. Add <code>.corrupt_pcr(count=(1, 10))</code> and rerun: PCR errors should now appear in <code>n_pcr_errors</code>, and <code>mutation_rate</code> stays the same. The two corruption sources are tracked as independent fields on the record.</p>
+    </div>
+  </div>
+
+  <div class="exercise">
+    <span class="ex-tag">Exercise</span>
+    <p>Build the same molecule three times: (a) <code>.recombine()</code> only, (b) <code>+ .mutate(model="s5f", count=(5, 15))</code>, (c) <code>+ .corrupt_5prime_loss(length=(10, 30))</code>. Compare <code>sequence_length</code> across the three. Which phases preserve length, which change it, and why?</p>
+  </div>
+
+  <nav class="lesson-nav">
+    <a href="lesson-1.html"><div class="ln-label">← Previous</div><div class="ln-title">01 · V(D)J recombination</div></a>
+    <a href="lesson-3.html" class="next"><div class="ln-label">Next →</div><div class="ln-title">03 · S5F: mutation isn't uniform</div></a>
+  </nav>
+</article>
+
+<footer class="foot"><div class="foot-inner"><div>© 2026 GenAIRR contributors</div><div><a href="#">GitHub</a></div></div></footer>
+
+<script src="genairr.js"></script>
+<script>setupScrubber('#lesson-scrubber');</script>
+</body>
+</html>

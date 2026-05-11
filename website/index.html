@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GenAIRR — Simulate immune receptor sequences with absolute ground truth</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">G</span>
+      <span>GenAIRR</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="active">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#install">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HERO ================= -->
+<section class="page specimen-page">
+  <div class="specimen-meta">
+    <div class="specimen-meta-l">
+      <span class="specimen-tag">SPECIMEN <span id="spec-id">00042</span></span>
+      <span class="specimen-loc" id="spec-locus">human_igh · seed=42</span>
+      <span class="specimen-level" id="spec-level">★ baseline</span>
+    </div>
+    <div class="specimen-meta-r">
+      <button class="specimen-btn" id="spec-prev" aria-label="Previous specimen">◀</button>
+      <span class="specimen-progress">
+        <span class="sp-dot" data-i="0"></span>
+        <span class="sp-dot" data-i="1"></span>
+        <span class="sp-dot" data-i="2"></span>
+        <span class="sp-dot" data-i="3"></span>
+      </span>
+      <button class="specimen-btn" id="spec-next" aria-label="Next specimen">▶</button>
+      <button class="specimen-btn specimen-btn-regen" id="spec-regen">⟳ regenerate</button>
+    </div>
+  </div>
+
+  <div class="specimen-narration">
+    <span class="spec-headline" id="spec-headline">Recombination</span>
+    <span class="spec-narrate" id="spec-narrate">A clean V–D–J rearrangement.</span>
+  </div>
+
+  <div class="specimen-card" id="specimen">
+    <!-- top callouts -->
+    <div class="callouts callouts-top" id="callouts-top"></div>
+    <div class="drift-line" id="drift-line" aria-hidden="true"></div>
+
+    <!-- the ribbon (sequence under glass) -->
+    <div class="specimen-stage">
+      <div class="ribbon-ruler" id="ribbon-ruler"></div>
+      <div class="ribbon" id="ribbon"></div>
+      <div class="ribbon-bases" id="ribbon-bases"></div>
+    </div>
+
+    <!-- bottom callouts -->
+    <div class="callouts callouts-bot" id="callouts-bot"></div>
+  </div>
+
+  <div class="specimen-caption">
+    <p>
+      Above is one record from a single <code>Experiment.run()</code>. Every annotation
+      is <em>ground truth</em> — placed by the simulator at the moment of construction, not
+      inferred by an aligner. Cycle through the specimens to watch a clean rearrangement
+      pick up mutations, then sequencing artifacts, then reveal its full provenance.
+    </p>
+    <div class="specimen-cta">
+      <a class="btn btn-primary" href="learn.html">Open the 5-lesson tutorial →</a>
+      <a class="btn btn-ghost" href="#install">pip install GenAIRR</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WHY ================= -->
+<section class="page section">
+  <div class="section-head">
+    <span class="eyebrow">What it's for</span>
+    <h2>A DSL for AIRR. An engine that knows the answer.</h2>
+    <p>GenAIRR pairs a fluent simulation language with an engine that records every decision it makes. The result: realistic synthetic repertoires whose ground truth is surgically precise — usable as benchmark datasets, principled null models, or experimental sandboxes for any phenomenon you can encode.</p>
+  </div>
+
+  <div class="feat-grid">
+    <div class="feat">
+      <div class="num">01 / BENCHMARK</div>
+      <h3>Tools, models, and pipelines against absolute truth</h3>
+      <p>Test annotation pipelines, aligners, and ML models on data where every V/D/J call, mutation, and trimming length is known by construction. Stable evaluation at any scale, across 23 species and 106 built-in configs.</p>
+    </div>
+    <div class="feat">
+      <div class="num">02 / NULL MODEL</div>
+      <h3>Principled controls for repertoire analyses</h3>
+      <p>Generate matched controls for clonal expansion, diversity metrics, lineage inference, and convergent-selection studies. Hold biology fixed, vary one phase at a time, and watch the downstream signal change.</p>
+    </div>
+    <div class="feat">
+      <div class="num">03 / PHENOMENA</div>
+      <h3>A composable lab for what shapes a repertoire</h3>
+      <p>Compose biological mechanisms (S5F mutation, antigen selection, class switch, receptor revision) and lab effects (5'/3' loss, indels, N-bases) in isolation. The persistent IR keeps every decision traceable across phases.</p>
+    </div>
+  </div>
+
+  <div class="engine-strip">
+    <span class="engine-tag">ENGINE</span>
+    <span><b>~15K–30K seq/sec</b> compiled core</span>
+    <span class="sep"></span>
+    <span><b>~70</b> ground-truth fields per record</span>
+    <span class="sep"></span>
+    <span><b>persistent IR</b> — every base knows its origin</span>
+    <span class="sep"></span>
+    <span><b>bit-identical</b> across Linux · macOS · Windows</span>
+  </div>
+</section>
+
+<!-- ================= DSL ================= -->
+<section class="page section" id="dsl">
+  <div class="section-head">
+    <span class="eyebrow">What GenAIRR does</span>
+    <h2>Six capabilities. One composable engine.</h2>
+    <p>The DSL is a thin surface on top of an engine that does more than chain biological phases. Compose recombination, maturation, and lab effects on the fluent side; the engine layer underneath enforces constraints at sample time, branches into clonal families on demand, and remembers every base's origin and every random draw it made.</p>
+  </div>
+
+  <div class="cap-grid">
+    <!-- 01 — Recombine -->
+    <div class="cap-card cap-recombine">
+      <div class="cap-head">
+        <span class="cap-num">01</span>
+        <span class="cap-tag">DSL · .recombine()</span>
+      </div>
+      <h3>Recombine</h3>
+      <p>Sample V · D · J alleles from the reference, draw biologically-plausible trim lengths, synthesize NP regions, assemble the rearrangement. The whole V(D)J ceremony in one call.</p>
+    </div>
+
+    <!-- 02 — Mutate -->
+    <div class="cap-card cap-mutate">
+      <div class="cap-head">
+        <span class="cap-num">02</span>
+        <span class="cap-tag">DSL · .mutate()</span>
+      </div>
+      <h3>Mutate</h3>
+      <p>Somatic hypermutation via S5F (motif-aware, Yaari et al. 2013) or a uniform null model. BCR-only by design — TCR configs reject the call so the simulation stays biologically honest.</p>
+    </div>
+
+    <!-- 03 — Clone -->
+    <div class="cap-card cap-clone">
+      <div class="cap-head">
+        <span class="cap-num">03</span>
+        <span class="cap-tag">DSL · .with_clonal_structure()</span>
+      </div>
+      <h3>Clone</h3>
+      <p>Fork after recombination — <em>N</em> parents × <em>K</em> descendants each. Clonal families with shared V(D)J ancestry and divergent mutation histories. Every record carries a <code>clone_id</code>.</p>
+    </div>
+
+    <!-- 04 — Corrupt -->
+    <div class="cap-card cap-corrupt">
+      <div class="cap-head">
+        <span class="cap-num">04</span>
+        <span class="cap-tag">DSL · .corrupt_*()</span>
+      </div>
+      <h3>Corrupt</h3>
+      <p>Eight independent passes for wet-lab and sequencing reality: PCR errors, quality decay, indels, 5′/3′ loss, N-bases, reverse-complement, contaminants. Compose only what your platform actually does.</p>
+    </div>
+
+    <!-- 05 — Constrain -->
+    <div class="cap-card cap-constrain">
+      <div class="cap-head">
+        <span class="cap-num">05</span>
+        <span class="cap-tag">ENGINE · respect=ga.productive()</span>
+      </div>
+      <h3>Constrain</h3>
+      <p>Pruning-aware sampling: pass a contract bundle and the engine filters every draw's candidate distribution so productive sequences fall out by construction. No reject-and-retry. Strict mode for hard guarantees.</p>
+    </div>
+
+    <!-- 06 — Replay & Audit -->
+    <div class="cap-card cap-replay">
+      <div class="cap-head">
+        <span class="cap-num">06</span>
+        <span class="cap-tag">ENGINE · persistent IR + trace</span>
+      </div>
+      <h3>Replay &amp; Audit</h3>
+      <p>Every pass writes a new IR snapshot, every base carries its provenance, every random draw is addressed (<code>np.np1.bases[3]</code>). Fork from any phase, replay any draw, derive ~70 truth fields on demand.</p>
+    </div>
+  </div>
+
+  <div class="code-window code-window-wide">
+    <div class="code-window-head">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span>simulate.py — every capability in one chain</span>
+    </div>
+<pre class="code-window-body"><code><span class="kw">import</span> GenAIRR <span class="kw">as</span> ga
+
+result = (
+    ga.<span class="fn">Experiment</span>.<span class="fn">on</span>(<span class="str">"human_igh"</span>)
+
+      <span class="cm"># Optional — attach sample metadata to every record</span>
+      .<span class="fn">with_metadata</span>(<span class="at">donor</span>=<span class="str">"D001"</span>, <span class="at">protocol</span>=<span class="str">"MiSeq-v3"</span>)
+
+      <span class="cm"># 01 — V(D)J recombination</span>
+      .<span class="fn">recombine</span>()
+
+      <span class="cm"># 02 — somatic hypermutation (BCR-only)</span>
+      .<span class="fn">mutate</span>(<span class="at">model</span>=<span class="str">"s5f"</span>, <span class="at">count</span>=(<span class="num">5</span>, <span class="num">25</span>))
+
+      <span class="cm"># 03 — clonal family fork is also a single call:</span>
+      <span class="cm">#       .with_clonal_structure(n_clones=50, size=20)</span>
+      <span class="cm">#       (skipped here: incompatible with productive contracts below)</span>
+
+      <span class="cm"># 04 — lab effects · compose what your platform actually does</span>
+      .<span class="fn">corrupt_5prime_loss</span>(<span class="at">length</span>=(<span class="num">5</span>, <span class="num">30</span>))
+      .<span class="fn">corrupt_3prime_loss</span>(<span class="at">length</span>=(<span class="num">0</span>, <span class="num">15</span>))
+      .<span class="fn">corrupt_indels</span>(<span class="at">count</span>=(<span class="num">0</span>, <span class="num">2</span>), <span class="at">insertion_prob</span>=<span class="num">0.5</span>)
+      .<span class="fn">corrupt_ns</span>(<span class="at">count</span>=(<span class="num">0</span>, <span class="num">5</span>))
+      .<span class="fn">corrupt_pcr</span>(<span class="at">count</span>=(<span class="num">0</span>, <span class="num">10</span>))
+      .<span class="fn">corrupt_quality</span>(<span class="at">count</span>=(<span class="num">0</span>, <span class="num">8</span>))
+      .<span class="fn">corrupt_reverse_complement</span>(<span class="at">prob</span>=<span class="num">0.5</span>)
+
+      .<span class="fn">run_records</span>(
+          <span class="at">n</span>=<span class="num">1000</span>, <span class="at">seed</span>=<span class="num">42</span>,
+          <span class="cm"># 05 — productive contract bundle (strict=True to enforce)</span>
+          <span class="at">respect</span>=ga.<span class="fn">productive</span>(),
+          <span class="cm"># 06 — ground-truth columns alongside the evidence calls</span>
+          <span class="at">expose_provenance</span>=<span class="kw">True</span>,
+      )
+)</code></pre>
+  </div>
+</section>
+
+<!-- ================= LEARN CTA ================= -->
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 36px;">
+    <span class="eyebrow">Learn by doing</span>
+    <h2>Build intuition in 5 lessons.</h2>
+    <p style="margin: 14px auto 0;">Each lesson takes ~3 minutes, ends with a runnable code snippet, and an exercise you can drop straight into your own analysis.</p>
+  </div>
+  <div style="text-align:center;">
+    <a class="btn btn-amber" href="learn.html">Open the tutorial →</a>
+  </div>
+</section>
+
+<!-- ================= INSTALL ================= -->
+<section class="page section" id="install">
+  <div class="section-head">
+    <span class="eyebrow">Install</span>
+    <h2>One command. No compiler.</h2>
+  </div>
+  <div class="card card-pad" style="display:flex; align-items:center; gap: 18px; flex-wrap:wrap;">
+    <code style="font-size:15px; flex:1; min-width:260px;">$ pip install GenAIRR</code>
+    <span class="mute" style="font-size:13px;">Python 3.9+ · pre-built wheels: Linux, macOS, Windows · zero mandatory dependencies</span>
+  </div>
+  <p class="mute mt-3" style="font-size:13px;">If you use GenAIRR in your research, please cite: GenAIRR — <em>Briefings in Bioinformatics</em>, 2024. <a href="https://academic.oup.com/bib/article/25/6/bbae556/7863770">DOI: 10.1093/bib/bbae556</a></p>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>© 2026 GenAIRR contributors · MIT License</div>
+    <div><a href="#">GitHub</a> · <a href="#">Issues</a> · <a href="#">Citation</a></div>
+  </div>
+</footer>
+
+<script src="genairr.js?v=4"></script>
+<script>
+  setupSpecimen('#specimen');
+</script>
+</body>
+</html>

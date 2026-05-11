@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Concepts — GenAIRR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html" class="active">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HEADER ================= -->
+<section class="page concepts-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">Concepts</span>
+  </nav>
+
+  <span class="eyebrow">The architecture · how it works inside</span>
+  <h1>How GenAIRR&nbsp;thinks.</h1>
+  <p class="lead">
+    Four ideas describe the engine. A <em>persistent IR</em> that records every decision.
+    A <em>composable pipeline</em> of passes that transform it. <em>Contracts</em> that
+    refuse to let it lie. And a flat <em>AIRR record</em> that hands you the truth, by name,
+    in a format every aligner already speaks.
+  </p>
+  <p class="lead-sub">
+    Read these in order if you want the architecture; skip ahead if you came for a specific
+    mechanism. Each chapter is self-contained.
+  </p>
+</section>
+
+<!-- ================= CONCEPT GRID ================= -->
+<section class="page concept-grid-wrap">
+  <div class="concept-grid">
+
+    <!-- 01 — Pipeline -->
+    <a class="concept-card" href="concept-pipeline.html">
+      <div class="concept-num">01</div>
+      <div class="concept-meta">
+        <span class="concept-tag">Architecture</span>
+        <span class="concept-time">~8 min read</span>
+      </div>
+      <h2>The Simulation Pipeline</h2>
+      <p>
+        Three phases — <b>recombine</b>, <b>mutate</b>, <b>corrupt</b> — built from
+        small composable <em>passes</em>. Each pass takes an IR, returns a new one.
+        Re-order them, swap them, add your own.
+      </p>
+
+      <!-- mini visual: three dots on a line -->
+      <div class="concept-diagram diagram-pipeline" aria-hidden="true">
+        <div class="dp-track"></div>
+        <div class="dp-node dp-node-1">
+          <span class="dp-label">recombine</span>
+          <span class="dp-passes">SampleAllele · Trim · GenerateNP</span>
+        </div>
+        <div class="dp-node dp-node-2">
+          <span class="dp-label">mutate</span>
+          <span class="dp-passes">S5F · Uniform</span>
+        </div>
+        <div class="dp-node dp-node-3">
+          <span class="dp-label">corrupt</span>
+          <span class="dp-passes">EndLoss · Indel · NCorruption · PCRError</span>
+        </div>
+      </div>
+
+      <span class="concept-go">Read chapter →</span>
+    </a>
+
+    <!-- 02 — Persistent IR -->
+    <a class="concept-card" href="concept-persistent-ir.html">
+      <div class="concept-num">02</div>
+      <div class="concept-meta">
+        <span class="concept-tag">Data model</span>
+        <span class="concept-time">~6 min read</span>
+      </div>
+      <h2>The Persistent IR</h2>
+      <p>
+        Every nucleotide lives in an arena pool. Every entity references it by a typed
+        <code>u32</code> handle. Every <code>with_*</code> method returns a new IR, leaving
+        the old one intact — so any pass, any contract, any retry is reversible by design.
+      </p>
+
+      <!-- mini visual: stacked layers -->
+      <div class="concept-diagram diagram-ir" aria-hidden="true">
+        <div class="dir-stack">
+          <div class="dir-layer dir-layer-3">
+            <span class="dir-tag">t = 3</span>
+            <span class="dir-payload">+ N corruption</span>
+          </div>
+          <div class="dir-layer dir-layer-2">
+            <span class="dir-tag">t = 2</span>
+            <span class="dir-payload">+ S5F mutation</span>
+          </div>
+          <div class="dir-layer dir-layer-1">
+            <span class="dir-tag">t = 1</span>
+            <span class="dir-payload">recombined V–D–J</span>
+          </div>
+          <div class="dir-layer dir-layer-0">
+            <span class="dir-tag">t = 0</span>
+            <span class="dir-payload">empty pool</span>
+          </div>
+        </div>
+        <div class="dir-arrow">↓ each <code>with_*</code> writes a layer</div>
+      </div>
+
+      <span class="concept-go">Read chapter →</span>
+    </a>
+
+    <!-- 03 — Contracts -->
+    <a class="concept-card" href="concept-contracts.html">
+      <div class="concept-num">03</div>
+      <div class="concept-meta">
+        <span class="concept-tag">Invariants</span>
+        <span class="concept-time">~5 min read</span>
+      </div>
+      <h2>Ground-Truth Contracts</h2>
+      <p>
+        Predicates over the IR with two modes: <b>verify</b> after the fact, or
+        <b>filter</b> sampling choices before they happen. The
+        <code>productive()</code> bundle composes three: anchor preserved,
+        junction frame divisible by three, no stop codons inside.
+      </p>
+
+      <!-- mini visual: 3 checked rows -->
+      <div class="concept-diagram diagram-contracts" aria-hidden="true">
+        <ul class="dc-list">
+          <li class="dc-row">
+            <span class="dc-name">anchor_preserved</span>
+            <span class="dc-detail">V/D/J anchor codon survives trim</span>
+            <span class="dc-mark">✓</span>
+          </li>
+          <li class="dc-row">
+            <span class="dc-name">productive_junction_frame</span>
+            <span class="dc-detail">junction length mod 3 = 0</span>
+            <span class="dc-mark">✓</span>
+          </li>
+          <li class="dc-row">
+            <span class="dc-name">no_stop_codon_in_junction</span>
+            <span class="dc-detail">no TAA / TAG / TGA inside CDR3</span>
+            <span class="dc-mark">✓</span>
+          </li>
+        </ul>
+        <div class="dc-foot">→ <code>productive()</code></div>
+      </div>
+
+      <span class="concept-go">Read chapter →</span>
+    </a>
+
+    <!-- 04 — The AIRR record -->
+    <a class="concept-card" href="concept-airr-record.html">
+      <div class="concept-num">04</div>
+      <div class="concept-meta">
+        <span class="concept-tag">Output schema</span>
+        <span class="concept-time">~4 min read</span>
+      </div>
+      <h2>The AIRR Record</h2>
+      <p>
+        Each <code>.run()</code> emits one flat record per sequence — ~70 fields,
+        AIRR-compatible names, every truth side-by-side with its evidence-based
+        twin (<code>truth_v_call</code> vs <code>v_call</code>). One CSV away from any
+        aligner benchmark.
+      </p>
+
+      <!-- mini visual: schema rows -->
+      <div class="concept-diagram diagram-record" aria-hidden="true">
+        <table class="dr-table">
+          <tr>
+            <td class="dr-k">sequence_id</td>
+            <td class="dr-v">str</td>
+            <td class="dr-note">unique</td>
+          </tr>
+          <tr>
+            <td class="dr-k">sequence</td>
+            <td class="dr-v">str</td>
+            <td class="dr-note">320 bp</td>
+          </tr>
+          <tr class="dr-truth">
+            <td class="dr-k">truth_v_call</td>
+            <td class="dr-v">str</td>
+            <td class="dr-note">sampled allele</td>
+          </tr>
+          <tr>
+            <td class="dr-k">v_call</td>
+            <td class="dr-v">str</td>
+            <td class="dr-note">best match</td>
+          </tr>
+          <tr class="dr-truth">
+            <td class="dr-k">truth_n_mutations</td>
+            <td class="dr-v">int</td>
+            <td class="dr-note">11</td>
+          </tr>
+          <tr class="dr-rest">
+            <td class="dr-k" colspan="3">… 65 more fields</td>
+          </tr>
+        </table>
+      </div>
+
+      <span class="concept-go">Read chapter →</span>
+    </a>
+
+  </div>
+</section>
+
+<!-- ================= FURTHER ================= -->
+<section class="page concept-further">
+  <div class="cf-rule"></div>
+  <div class="cf-grid">
+    <div class="cf-col">
+      <span class="eyebrow">Then</span>
+      <h3>Walk a real example end&#8209;to&#8209;end.</h3>
+      <p>The 5-lesson tutorial follows a single molecule through every pass and shows
+      the AIRR record fill in field by field. Recommended after Chapter 01.</p>
+      <a class="btn btn-primary" href="learn.html">Open the tutorial →</a>
+    </div>
+    <div class="cf-col">
+      <span class="eyebrow">Or skip to</span>
+      <h3>Task-shaped guides.</h3>
+      <p>How to benchmark an aligner, how to build a null model, how to compose a custom
+      pass, how to wire GenAIRR into an existing ML training loop.</p>
+      <a class="btn btn-ghost" href="#">Browse guides →</a>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div>
+      <div class="brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <p class="footer-tag">Synthetic AIRR with ground truth.</p>
+    </div>
+    <div class="footer-cols">
+      <div>
+        <h4>Learn</h4>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div>
+        <h4>Reference</h4>
+        <a href="#">Python API</a>
+        <a href="#">Configs</a>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

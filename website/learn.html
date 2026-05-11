@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Learn GenAIRR — A 5-lesson hands-on tutorial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html" class="active">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page track-hero">
+  <span class="eyebrow">Hands-on tutorial · ~15 min total</span>
+  <h1>Learn GenAIRR by simulating one molecule.</h1>
+  <p class="lead">
+    Five short lessons follow a single human IGH sequence as it's recombined, mutated, prepared,
+    sequenced, and observed. Every concept ends with code you can run and an exercise to make it stick.
+  </p>
+</section>
+
+<section class="page" style="padding-bottom: 96px;">
+  <div class="lesson-list">
+    <a class="lesson" href="lesson-1.html">
+      <div class="l-num">01</div>
+      <div>
+        <h3 class="l-title">V(D)J recombination, from bases up</h3>
+        <p class="l-desc">Build a heavy-chain rearrangement segment by segment. Why NP regions exist, what trimming does, and what your first <code>Experiment.run()</code> actually returns.</p>
+      </div>
+      <div class="l-meta"><span class="l-time">~3 min</span><span>visual + code</span></div>
+    </a>
+    <a class="lesson" href="lesson-2.html">
+      <div class="l-num">02</div>
+      <div>
+        <h3 class="l-title">The pipeline scrubber</h3>
+        <p class="l-desc">Drag through the three pipeline phases — recombine, mutate, corrupt — and watch your sequence transform. Build a mental model of which ops belong where and why order matters.</p>
+      </div>
+      <div class="l-meta"><span class="l-time">~3 min</span><span>interactive</span></div>
+    </a>
+    <a class="lesson" href="lesson-3.html">
+      <div class="l-num">03</div>
+      <div>
+        <h3 class="l-title">S5F: mutation isn't uniform</h3>
+        <p class="l-desc">A heatmap of where mutations actually land. Why CDRs hyper-mutate, why context matters, and how to tune <code>rate()</code> to match an empirical SHM range.</p>
+      </div>
+      <div class="l-meta"><span class="l-time">~3 min</span><span>visual + code</span></div>
+    </a>
+    <a class="lesson" href="lesson-4.html">
+      <div class="l-num">04</div>
+      <div>
+        <h3 class="l-title">Sequencing artifacts, dialed in</h3>
+        <p class="l-desc">Live sliders for 5'/3' loss, indels, and N-bases. See exactly how each artifact distorts the molecule and which ground-truth fields stay correct anyway.</p>
+      </div>
+      <div class="l-meta"><span class="l-time">~3 min</span><span>interactive</span></div>
+    </a>
+    <a class="lesson" href="lesson-5.html">
+      <div class="l-num">05</div>
+      <div>
+        <h3 class="l-title">The ground-truth payoff</h3>
+        <p class="l-desc">Side-by-side comparison: aligner output on real data vs. GenAIRR output on the same molecule. The case for benchmarking against truth.</p>
+      </div>
+      <div class="l-meta"><span class="l-time">~3 min</span><span>compare</span></div>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div>© 2026 GenAIRR contributors · MIT License</div>
+    <div><a href="#">GitHub</a> · <a href="#">Issues</a> · <a href="#">Citation</a></div>
+  </div>
+</footer>
+</body>
+</html>

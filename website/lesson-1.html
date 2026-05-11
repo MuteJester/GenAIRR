@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lesson 1 — V(D)J recombination, from bases up · GenAIRR</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html" class="active">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<article class="page lesson-page">
+  <div class="lesson-crumbs"><a href="learn.html">Learn</a><span class="sep">›</span> Lesson 01</div>
+  <span class="eyebrow">Lesson 01 · ~3 min</span>
+  <h1>V(D)J recombination, from bases up</h1>
+  <p class="deck">Before we touch the API, let's watch a single human IGH heavy-chain sequence get assembled in front of us — segment by segment, base by base.</p>
+  <div class="lesson-progress">
+    <span class="seg-bar active"></span><span class="seg-bar"></span><span class="seg-bar"></span><span class="seg-bar"></span><span class="seg-bar"></span>
+    <span class="meta">01 / 05</span>
+  </div>
+
+  <h2>The intuition</h2>
+  <p class="intuition">A receptor isn't sampled from a vocabulary — it's <em>built</em>. One V allele, then a few random nucleotides, then a D, then more random nucleotides, then a J. Trimming chews bases off each end. The result is unique to that B cell.</p>
+  <p>Every BCR/TCR begins with the same recipe: pick gene segments from a germline pool, trim their ends with exonuclease, and stitch them together with a few non-templated bases (the NP regions). GenAIRR mirrors this process exactly — when it tells you a base belongs to V, it's because GenAIRR <em>placed</em> it there.</p>
+
+  <h2>Watch one being assembled</h2>
+  <p>Each row below shows a step. The bottom row is the final assembled sequence — the persistent IR remembers which segment every base came from, so any downstream query about provenance already knows the answer by construction.</p>
+
+  <div class="assembly" id="lesson-assembly" style="margin: 18px 0 8px;">
+    <div class="assembly-head">
+      <span class="label">Experiment.on("human_igh") · seed=42</span>
+      <span class="live">live</span>
+    </div>
+    <div class="assembly-stage">
+      <div class="assembly-track">
+        <div class="assembly-row is-pending" data-stage="v"><div class="stage-label">V gene</div><div class="seq"></div></div>
+        <div class="assembly-row is-pending" data-stage="np1"><div class="stage-label">+ NP1</div><div class="seq"></div></div>
+        <div class="assembly-row is-pending" data-stage="d"><div class="stage-label">+ D gene</div><div class="seq"></div></div>
+        <div class="assembly-row is-pending" data-stage="np2"><div class="stage-label">+ NP2</div><div class="seq"></div></div>
+        <div class="assembly-row is-pending" data-stage="j"><div class="stage-label">+ J gene</div><div class="seq"></div></div>
+        <div class="assembly-row is-pending" data-stage="final"><div class="stage-label">final</div><div class="seq"></div></div>
+      </div>
+    </div>
+    <div class="assembly-controls">
+      <span class="step-name">running…</span>
+      <span class="legend">
+        <span class="chip"><span class="sw sw-v"></span>V</span>
+        <span class="chip"><span class="sw sw-np"></span>NP</span>
+        <span class="chip"><span class="sw sw-d"></span>D</span>
+        <span class="chip"><span class="sw sw-j"></span>J</span>
+      </span>
+    </div>
+  </div>
+
+  <h2>What this looks like in code</h2>
+  <p>Reproducing the assembly above is a single fluent chain. <code>.recombine()</code> runs the V(D)J ceremony; <code>.run_records()</code> hands you the records as plain dictionaries you can index by AIRR-schema field name.</p>
+
+  <div class="code-window" style="margin: 16px 0;">
+    <div class="code-window-head"><div class="traffic"><span></span><span></span><span></span></div><span>lesson_1.py</span></div>
+<pre class="code-window-body"><code><span class="kw">import</span> GenAIRR <span class="kw">as</span> ga
+
+result = (
+    ga.<span class="fn">Experiment</span>.<span class="fn">on</span>(<span class="str">"human_igh"</span>)
+       .<span class="fn">recombine</span>()
+       .<span class="fn">run_records</span>(<span class="at">n</span>=<span class="num">1</span>, <span class="at">seed</span>=<span class="num">42</span>)
+)
+rec = result.records[<span class="num">0</span>]
+
+<span class="fn">print</span>(rec[<span class="str">"v_call"</span>])             <span class="cm"># 'IGHVF10-G38*04'</span>
+<span class="fn">print</span>(rec[<span class="str">"d_call"</span>])             <span class="cm"># 'IGHD2-15*01'</span>
+<span class="fn">print</span>(rec[<span class="str">"j_call"</span>])             <span class="cm"># 'IGHJ2*01'</span>
+<span class="fn">print</span>(rec[<span class="str">"v_sequence_start"</span>],
+      rec[<span class="str">"v_sequence_end"</span>])    <span class="cm"># 0 296</span>
+<span class="fn">print</span>(rec[<span class="str">"np1_length"</span>])         <span class="cm"># 13</span>
+<span class="fn">print</span>(rec[<span class="str">"sequence_length"</span>])    <span class="cm"># 388</span></code></pre>
+  </div>
+
+  <div class="try">
+    <div class="try-head">Try it now</div>
+    <div class="try-body">
+      <p>Paste the snippet into a Python REPL. Then change <code>seed=42</code> to <code>seed=7</code>: the V allele changes, NP regions change length, but the structure — V, NP1, D, NP2, J — stays the same. That's the rearrangement skeleton you'll learn to layer biology on top of.</p>
+    </div>
+  </div>
+
+  <div class="exercise">
+    <span class="ex-tag">Exercise</span>
+    <p>Generate <code>n=10</code> sequences with <code>seed=42</code>. Confirm <code>d_call</code> is non-empty for every record (heavy chains always have a D). Then run the same with <code>"human_igk"</code> — what's <code>d_call</code> now, and why?</p>
+  </div>
+
+  <nav class="lesson-nav">
+    <a href="learn.html"><div class="ln-label">← Back to track</div><div class="ln-title">All lessons</div></a>
+    <a href="lesson-2.html" class="next"><div class="ln-label">Next →</div><div class="ln-title">02 · The pipeline scrubber</div></a>
+  </nav>
+</article>
+
+<footer class="foot"><div class="foot-inner"><div>© 2026 GenAIRR contributors</div><div><a href="#">GitHub</a></div></div></footer>
+
+<script src="genairr.js"></script>
+<script>setupAssembly('#lesson-assembly');</script>
+</body>
+</html>

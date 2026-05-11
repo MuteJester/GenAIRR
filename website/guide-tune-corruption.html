@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tune corruption rates — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">C · Customize</span>
+  </nav>
+
+  <span class="eyebrow">Recipe C · 01 · ~20 min · intermediate</span>
+  <h1>Tune corruption rates to match your sequencer.</h1>
+  <p class="lead">
+    Different sequencing platforms break sequences in different ways: MiSeq adds quality noise
+    at the 3′ end, NovaSeq drops bases uniformly with a 5′ bias, PacBio HiFi inserts homopolymer
+    indels. Tune the <code>corrupt_*</code> passes to match a Q-score profile from your platform
+    and your sim will look like real wet-lab data — same artefact distribution your aligner sees
+    in production.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Pick a profile</span>
+        <span class="ctl-sub">MiSeq · NovaSeq · HiFi · custom</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Map to rates</span>
+        <span class="ctl-sub">Q-score → corruption rate</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Calibrate</span>
+        <span class="ctl-sub">verify n_count + indel distributions match</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>What each corruption pass actually models.</h2>
+    <p class="ph-lead">
+      The corruption phase is composed of independent passes. You pick the ones whose
+      mechanisms match your platform and skip the rest. The set you choose <em>is</em> the
+      profile.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">5′ / 3′ end loss</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <code>corrupt_5prime_loss(length=(min, max))</code> · <code>corrupt_3prime_loss(...)</code>
+        — models library-prep truncation. Independent draws per record, uniform within range.
+        Set both for amplicon assays.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">N-corruption</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <code>corrupt_ns(prob=...)</code> — models low-quality base calls, written as
+        <code>N</code>. Per-base Bernoulli. Use a rate that matches the per-base
+        <code>N</code>-density in your empirical reads.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Indels</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <code>corrupt_indels(prob=...)</code> — models homopolymer drift and library prep
+        artefacts. Per-record Bernoulli with random length and position.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">PCR + quality</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <code>corrupt_pcr(...)</code> for substitution drift from amplification cycles;
+        <code>corrupt_quality(...)</code> for the platform-shaped Q-score decay. Lowercase bases
+        in the output mark quality-degraded positions.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Three calibrated profiles.</h2>
+    <p class="ph-lead">
+      Starting points for the three platforms researchers most often ask about. Each profile
+      is a small dictionary you spread into <code>Experiment</code> via the
+      <code>corrupt_*</code> methods.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">MiSeq · NovaSeq · HiFi profiles</div>
+      <pre class="code"><code>PROFILES = {
+    <span class="c-s">"miseq_300pe"</span>: {
+        <span class="c-s">"loss_5"</span>: (<span class="c-n">5</span>, <span class="c-n">25</span>),
+        <span class="c-s">"loss_3"</span>: (<span class="c-n">8</span>, <span class="c-n">45</span>),    <span class="c-c"># 3' decay heavier than 5'</span>
+        <span class="c-s">"ns"</span>: <span class="c-n">0.001</span>,
+        <span class="c-s">"indels"</span>: <span class="c-n">0.0005</span>,
+    },
+    <span class="c-s">"novaseq_150pe"</span>: {
+        <span class="c-s">"loss_5"</span>: (<span class="c-n">3</span>, <span class="c-n">15</span>),
+        <span class="c-s">"loss_3"</span>: (<span class="c-n">3</span>, <span class="c-n">15</span>),
+        <span class="c-s">"ns"</span>: <span class="c-n">0.0003</span>,
+        <span class="c-s">"indels"</span>: <span class="c-n">0.0001</span>,
+    },
+    <span class="c-s">"pacbio_hifi"</span>: {
+        <span class="c-s">"loss_5"</span>: (<span class="c-n">0</span>, <span class="c-n">5</span>),
+        <span class="c-s">"loss_3"</span>: (<span class="c-n">0</span>, <span class="c-n">5</span>),
+        <span class="c-s">"ns"</span>: <span class="c-n">0.00005</span>,
+        <span class="c-s">"indels"</span>: <span class="c-n">0.002</span>,    <span class="c-c"># HiFi: low subs, higher indels</span>
+    },
+}
+
+<span class="c-k">def</span> <span class="c-f">profile</span>(name):
+    p = PROFILES[name]
+    <span class="c-k">return</span> <span class="c-k">lambda</span> exp: (
+        exp.<span class="c-f">corrupt_5prime_loss</span>(length=p[<span class="c-s">"loss_5"</span>])
+           .<span class="c-f">corrupt_3prime_loss</span>(length=p[<span class="c-s">"loss_3"</span>])
+           .<span class="c-f">corrupt_ns</span>(prob=p[<span class="c-s">"ns"</span>])
+           .<span class="c-f">corrupt_indels</span>(prob=p[<span class="c-s">"indels"</span>])
+    )
+
+result = <span class="c-f">profile</span>(<span class="c-s">"miseq_300pe"</span>)(
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>).<span class="c-f">recombine</span>().<span class="c-f">mutate</span>(count=(<span class="c-n">5</span>, <span class="c-n">20</span>))
+).<span class="c-f">run</span>(n=<span class="c-n">5000</span>, seed=<span class="c-n">42</span>)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Calibrate from your own data.</h2>
+    <p class="ph-lead">
+      Don't trust a preset blindly. Run a small panel with the profile and compare two
+      distributions against a sample of real reads from your sequencer.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Match the N-density</div>
+      <pre class="code"><code>n_rate_real = (
+    real_reads.<span class="c-f">str</span>.<span class="c-f">count</span>(<span class="c-s">"N"</span>) /
+    real_reads.<span class="c-f">str</span>.<span class="c-f">len</span>()
+).<span class="c-f">mean</span>()
+
+n_rate_sim = (
+    sim[<span class="c-s">"n_count"</span>] /
+    sim[<span class="c-s">"sequence_length"</span>]
+).<span class="c-f">mean</span>()
+<span class="c-c"># adjust corrupt_ns prob until these match</span></code></pre>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Match the length distribution</div>
+      <pre class="code"><code><span class="c-c"># end-loss is the dominant driver of read-length variance</span>
+sim_lens  = sim[<span class="c-s">"sequence_length"</span>]
+real_lens = real_reads.<span class="c-f">str</span>.<span class="c-f">len</span>()
+
+<span class="c-c"># match means and variances by widening</span>
+<span class="c-c"># or tightening the (min, max) ranges</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-audit-realism.html">
+      <div class="ph-card-head">B · 03 · Audit for biological realism →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Run the marginal audit against your real reads to confirm the corruption profile holds up.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-benchmark-aligner.html">
+      <div class="ph-card-head">B · 01 · Benchmark an aligner →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Use the calibrated profile to benchmark aligners under realistic platform noise.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

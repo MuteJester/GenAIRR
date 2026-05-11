@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Compare two SHM models — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">B · Validate</span>
+  </nav>
+
+  <span class="eyebrow">Recipe B · 02 · ~15 min · intermediate</span>
+  <h1>Compare two SHM models.</h1>
+  <p class="lead">
+    Hold the recombination seed fixed, vary only the mutation pass, and you have a clean A/B
+    isolation of how your SHM choice shapes the downstream identity and motif distributions.
+    Useful when picking between S5F variants, calibrating a custom model, or stress-testing
+    an aligner against non-canonical mutation patterns.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Fix recombination</span>
+        <span class="ctl-sub">shared seed · shared V·D·J pool</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Vary the mutate pass</span>
+        <span class="ctl-sub">S5F · uniform · custom</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Diff the marginals</span>
+        <span class="ctl-sub">v_identity · motif counts</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>Why isolating the mutation pass matters.</h2>
+    <p class="ph-lead">
+      Naively comparing two simulations end-to-end mixes confounds: different recombination
+      draws, different NP regions, different trim lengths. Any of those can swing downstream
+      metrics. To attribute a difference to <em>the mutation model</em>, you have to keep
+      everything upstream identical and only swap the model.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Three models worth comparing</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">S5F (hh_s5f)</span><span class="pass-note">canonical for human heavy chains — motif-aware, AID-shaped</span></li>
+        <li><span class="pass-name">Uniform</span><span class="pass-note">flat per-base rate — useful as a null model for "did the motif matter?"</span></li>
+        <li><span class="pass-name">Custom</span><span class="pass-note">your own table — see <a href="guide-custom-shm.html">A · 04</a></span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">What to compare on</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">v_identity</span><span class="pass-note">summary statistic — how much SHM ended up in the V region</span></li>
+        <li><span class="pass-name">motif counts at mutated positions</span><span class="pass-note">does the chosen model produce the expected hotspot distribution?</span></li>
+        <li><span class="pass-name">CDR vs FWR ratio</span><span class="pass-note">are mutations concentrated where biology expects?</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Recipe — shared seed, swapped model.</h2>
+    <p class="ph-lead">
+      Two runs at the same seed produce <em>bit-identical</em> recombination — same V allele,
+      same trims, same NP1/NP2. Only the bases that the mutation pass touches differ.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Two panels, matched recombination</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+<span class="c-k">def</span> <span class="c-f">panel</span>(model: <span class="c-f">str</span>):
+    <span class="c-k">return</span> (
+        ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+          .<span class="c-f">recombine</span>()
+          .<span class="c-f">mutate</span>(model=model, count=(<span class="c-n">10</span>, <span class="c-n">20</span>))
+          .<span class="c-f">run_records</span>(
+              n=<span class="c-n">5_000</span>,
+              seed=<span class="c-n">42</span>,                <span class="c-c"># &lt;-- identical across runs</span>
+              expose_provenance=<span class="c-n">True</span>,
+          )
+    )
+
+a = <span class="c-f">panel</span>(<span class="c-s">"s5f"</span>).<span class="c-f">to_dataframe</span>()
+b = <span class="c-f">panel</span>(<span class="c-s">"uniform"</span>).<span class="c-f">to_dataframe</span>()
+
+<span class="c-c"># sanity-check: every row pairs by sequence_id with the same truth_v_call</span>
+<span class="c-k">assert</span> (a[<span class="c-s">"truth_v_call"</span>] == b[<span class="c-s">"truth_v_call"</span>]).<span class="c-f">all</span>()</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Side-by-side density plot.</h2>
+    <p class="ph-lead">
+      <code>v_identity</code> is the single most informative axis — every record produces one
+      value in [0, 1], and the distribution shape is sensitive to whether the model concentrates
+      mutations in motifs or scatters them.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Two-density plot</div>
+      <pre class="code"><code><span class="c-k">import</span> matplotlib.pyplot <span class="c-k">as</span> plt
+<span class="c-k">import</span> seaborn <span class="c-k">as</span> sns
+
+fig, ax = plt.<span class="c-f">subplots</span>()
+sns.<span class="c-f">kdeplot</span>(data=a[<span class="c-s">"v_identity"</span>], label=<span class="c-s">"S5F"</span>,     ax=ax)
+sns.<span class="c-f">kdeplot</span>(data=b[<span class="c-s">"v_identity"</span>], label=<span class="c-s">"uniform"</span>, ax=ax)
+ax.<span class="c-f">set_xlabel</span>(<span class="c-s">"V identity"</span>)
+ax.<span class="c-f">legend</span>()</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Motif-level diagnostic.</h2>
+    <p class="ph-lead">
+      A density plot can hide the structural difference. Bucket every mutated position by its
+      5-mer motif (centred on the mutated base) and the gap between the two models becomes
+      obvious: S5F over-represents AID hotspots like <code>WRC</code> · <code>GYW</code>.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Counting motifs across mutated positions</div>
+      <pre class="code"><code><span class="c-k">from</span> collections <span class="c-k">import</span> Counter
+
+<span class="c-k">def</span> <span class="c-f">motif_counts</span>(df, k=<span class="c-n">5</span>):
+    counts = <span class="c-f">Counter</span>()
+    <span class="c-k">for</span> _, row <span class="c-k">in</span> df.<span class="c-f">iterrows</span>():
+        germ = row[<span class="c-s">"germline_alignment"</span>]
+        <span class="c-k">for</span> p <span class="c-k">in</span> row[<span class="c-s">"mutation_pos"</span>]:
+            lo, hi = p - k // <span class="c-n">2</span>, p + k // <span class="c-n">2</span> + <span class="c-n">1</span>
+            <span class="c-k">if</span> lo &gt;= <span class="c-n">0</span> <span class="c-k">and</span> hi &lt;= <span class="c-f">len</span>(germ):
+                counts[germ[lo:hi]] += <span class="c-n">1</span>
+    <span class="c-k">return</span> counts
+
+ma = <span class="c-f">motif_counts</span>(a)
+mb = <span class="c-f">motif_counts</span>(b)
+<span class="c-c"># diff the top 20 motifs — S5F should over-represent WRC, GYW</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-custom-shm.html">
+      <div class="ph-card-head">A · 04 · Wire a custom SHM model →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Build your own model and feed it into this comparison harness.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-benchmark-aligner.html">
+      <div class="ph-card-head">B · 01 · Benchmark an aligner against truth →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Re-run the aligner benchmark under each mutation model — does aligner accuracy vary with SHM shape?</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

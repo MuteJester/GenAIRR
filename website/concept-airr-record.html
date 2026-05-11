@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AIRR Record — GenAIRR Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html" class="active">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HEADER ================= -->
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="concepts.html">Concepts</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">AIRR Record</span>
+  </nav>
+
+  <span class="eyebrow">Chapter 04 · The answer key</span>
+  <h1>The AIRR record — ~70 fields, all derived.</h1>
+  <p class="lead">
+    A GenAIRR record is not an accumulator of fields filled in across the pipeline. It's
+    <em>computed once</em>, at the end, by reading the final IR snapshot. Coordinates, CIGARs,
+    junctions, identities, calls — everything is derived from a single source of truth, so
+    nothing can drift out of sync. And alongside the conventional AIRR schema, GenAIRR carries
+    a parallel set of <code>truth_*</code> fields that record what <em>actually happened</em>
+    during simulation — independent of what an aligner would later infer.
+  </p>
+</section>
+
+<!-- ================= TIMELINE — record assembly ================= -->
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Read pool</span>
+        <span class="ctl-sub">final nucleotide pool · regions · assignments</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Locate anchors</span>
+        <span class="ctl-sub">V Cys · J anchor · junction span</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Derive fields</span>
+        <span class="ctl-sub">coordinates · CIGARs · calls · truth columns</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 01 — derive at the end ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>Derived, not accumulated.</h2>
+    <p class="ph-lead">
+      Many simulators carry an AIRR record alongside the sequence and update fields as the
+      pipeline progresses. An indel happens, and you scramble to decrement coordinates downstream;
+      a trim arrives, and you bookkeep the gene end. Every update is a chance to introduce a
+      desynchronization bug.
+    </p>
+    <p class="ph-lead">
+      GenAIRR keeps no such running record. Coordinates exist only on the final pool. CIGARs are
+      walked once at the end. <code>productive</code> is decided by reading the junction codons
+      from the final state. There is no parallel state to fall out of sync — there is nothing to
+      fall out of sync <em>with</em>.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Most simulators</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">incremental</span><span class="pass-note">each phase updates AIRR fields in place</span></li>
+        <li><span class="pass-name">brittle</span><span class="pass-note">indels and trims cascade through coordinates</span></li>
+        <li><span class="pass-name">silent drift</span><span class="pass-note">an off-by-one survives until much later</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">GenAIRR</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">terminal</span><span class="pass-note">record is computed once from the final IR</span></li>
+        <li><span class="pass-name">single source</span><span class="pass-note">every field reads the same pool snapshot</span></li>
+        <li><span class="pass-name">guaranteed</span><span class="pass-note">desynchronization is categorically impossible</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 02 — truth vs evidence ================= -->
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Birth certificate <span class="mute">vs</span> lookalike.</h2>
+    <p class="ph-lead">
+      Two questions sit at the heart of every AIRR record: <em>what gene did this come from?</em>
+      and <em>what gene does this sequence look like?</em> Most of the time these agree. Under
+      heavy somatic hypermutation they don't — and the disagreement is exactly the signal you want
+      to study when benchmarking an aligner. GenAIRR records both, always, in parallel columns.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Sampled truth — the birth certificate</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">truth_v_call</span><span class="pass-note">the V allele GenAIRR sampled at recombination</span></li>
+        <li><span class="pass-name">truth_d_call</span><span class="pass-note">the D allele sampled — fixed at the source</span></li>
+        <li><span class="pass-name">truth_j_call</span><span class="pass-note">the J allele sampled — fixed at the source</span></li>
+      </ul>
+      <p class="phr-note" style="margin: 12px 0 0;">
+        These are the names of the alleles drawn from the reference library at the moment of
+        recombination. They don't change. They're the ground truth.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Evidence-based call — what the sequence looks like now</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">v_call</span><span class="pass-note">the V allele the final sequence best matches</span></li>
+        <li><span class="pass-name">d_call</span><span class="pass-note">D allele best matching the (often short) middle region</span></li>
+        <li><span class="pass-name">j_call</span><span class="pass-note">J allele best matching the final 3′ region</span></li>
+      </ul>
+      <p class="phr-note" style="margin: 12px 0 0;">
+        These are computed at record time by aligning the final sequence against the reference.
+        After heavy SHM, they may diverge from <code>truth_*</code> — exactly the case where an
+        aligner could be misled.
+      </p>
+    </div>
+  </div>
+
+  <!-- Truth vs evidence ribbon -->
+  <div class="ph-ribbons">
+    <div class="ph-ribbon">
+      <div class="phr-label">truth (sampled)</div>
+      <div class="phr-track">
+        <div class="phr-seg phr-v" style="width: 100%;">IGHV3-23*01</div>
+      </div>
+    </div>
+    <div class="ph-arrow">≠</div>
+    <div class="ph-ribbon">
+      <div class="phr-label">evidence (best match after SHM)</div>
+      <div class="phr-track">
+        <div class="phr-seg phr-d" style="width: 100%;">IGHV3-23*04</div>
+      </div>
+    </div>
+  </div>
+  <p class="phr-note" style="text-align: center; margin: 10px auto 0; max-width: 720px;">
+    Same record. Two correct answers. The aligner says <code>*04</code> because the post-SHM
+    sequence happens to match it better; GenAIRR remembers that the actual draw was <code>*01</code>.
+  </p>
+</section>
+
+<!-- ================= PART 03 — anchors ================= -->
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Locating the junction by landmarks.</h2>
+    <p class="ph-lead">
+      The junction is the most important region of an immune receptor — and the most likely to
+      shift around as trims and mutations accumulate. To find it on the final sequence, GenAIRR
+      doesn't measure offsets from the start. It looks for biological <em>anchors</em>: the
+      conserved Cysteine codon at the 3′ end of V, and the Tryptophan (heavy / κ / TR) or
+      Phenylalanine (λ) codon at the 5′ end of J. Both anchors are baked into the per-base
+      provenance, so the lookup survives any amount of mutation, trim, or sequencing loss.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Anchor-driven coordinate fields</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">junction_start / junction_end</span><span class="pass-note">first base of Cys codon · last base of anchor codon</span></li>
+        <li><span class="pass-name">junction · junction_aa</span><span class="pass-note">nucleotide and amino-acid sequence between anchors</span></li>
+        <li><span class="pass-name">cdr3_start / cdr3_end</span><span class="pass-note">junction minus the flanking anchor codons</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">Survives even heavy trim and SHM</div>
+      <pre class="code"><code>rec = exp.<span class="c-f">run</span>(<span class="c-n">1</span>)[<span class="c-n">0</span>]
+
+<span class="c-c"># the final sequence has been:</span>
+<span class="c-c">#   - mutated at 11 positions in V</span>
+<span class="c-c">#   - 5'-corrupted (lost the first 28 bp)</span>
+<span class="c-c">#   - has an indel insert at position 142</span>
+<span class="c-c"># the junction is STILL found correctly:</span>
+
+rec.<span class="c-f">final_simulation</span>().<span class="c-f">junction_span</span>()
+<span class="c-c"># (267, 309) — Cys-codon start, anchor-codon end</span>
+
+rec.junction_aa
+<span class="c-c"># 'CARDVPYAFDIW'  — anchor + payload + anchor</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 04 — the field families ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>The ~70 fields, by family.</h2>
+    <p class="ph-lead">
+      Every record is the same shape regardless of what passes ran. Unused phases simply leave
+      their fields at sentinel defaults — there's no schema branching. The fields fall into six
+      families, each derived from the same pool snapshot.
+    </p>
+  </div>
+
+  <div class="ph-recorded">
+    <div class="phr-head">Identity & truth</div>
+    <div class="phr-fields">
+      <span class="phr-field"><span class="phr-k">sequence_id</span> <span class="phr-v">str</span></span>
+      <span class="phr-field"><span class="phr-k">truth_v_call</span> <span class="phr-v">IGHV3-23*01</span></span>
+      <span class="phr-field"><span class="phr-k">truth_d_call</span> <span class="phr-v">IGHD3-10*01</span></span>
+      <span class="phr-field"><span class="phr-k">truth_j_call</span> <span class="phr-v">IGHJ4*02</span></span>
+      <span class="phr-field"><span class="phr-k">v_call · d_call · j_call</span> <span class="phr-v">best-match</span></span>
+      <span class="phr-field"><span class="phr-k">locus · chain</span> <span class="phr-v">IGH · heavy</span></span>
+    </div>
+  </div>
+
+  <div class="ph-recorded" style="margin-top: 14px;">
+    <div class="phr-head">Sequence & coordinates</div>
+    <div class="phr-fields">
+      <span class="phr-field"><span class="phr-k">sequence</span> <span class="phr-v">bytes</span></span>
+      <span class="phr-field"><span class="phr-k">sequence_length</span> <span class="phr-v">320</span></span>
+      <span class="phr-field"><span class="phr-k">v_sequence_start / end</span> <span class="phr-v">0 · 258</span></span>
+      <span class="phr-field"><span class="phr-k">d_sequence_start / end</span> <span class="phr-v">263 · 276</span></span>
+      <span class="phr-field"><span class="phr-k">j_sequence_start / end</span> <span class="phr-v">281 · 320</span></span>
+      <span class="phr-field"><span class="phr-k">v_germline_start / end</span> <span class="phr-v">0 · 286</span></span>
+      <span class="phr-field phr-more">+ d_germline_*, j_germline_*, np1_*, np2_*</span>
+    </div>
+  </div>
+
+  <div class="ph-recorded" style="margin-top: 14px;">
+    <div class="phr-head">Junction & productivity</div>
+    <div class="phr-fields">
+      <span class="phr-field"><span class="phr-k">junction</span> <span class="phr-v">TGT…TGG</span></span>
+      <span class="phr-field"><span class="phr-k">junction_aa</span> <span class="phr-v">CARDVPYAFDIW</span></span>
+      <span class="phr-field"><span class="phr-k">junction_length</span> <span class="phr-v">42</span></span>
+      <span class="phr-field"><span class="phr-k">cdr3_aa</span> <span class="phr-v">ARDVPYAFDI</span></span>
+      <span class="phr-field"><span class="phr-k">productive</span> <span class="phr-v">True</span></span>
+      <span class="phr-field"><span class="phr-k">stop_codon</span> <span class="phr-v">False</span></span>
+      <span class="phr-field"><span class="phr-k">vj_in_frame</span> <span class="phr-v">True</span></span>
+    </div>
+  </div>
+
+  <div class="ph-recorded" style="margin-top: 14px;">
+    <div class="phr-head">Alignment & CIGAR</div>
+    <div class="phr-fields">
+      <span class="phr-field"><span class="phr-k">v_cigar</span> <span class="phr-v">3S280M</span></span>
+      <span class="phr-field"><span class="phr-k">d_cigar</span> <span class="phr-v">12M</span></span>
+      <span class="phr-field"><span class="phr-k">j_cigar</span> <span class="phr-v">35M4S</span></span>
+      <span class="phr-field"><span class="phr-k">v_identity</span> <span class="phr-v">0.962</span></span>
+      <span class="phr-field"><span class="phr-k">d_identity · j_identity</span> <span class="phr-v">float · float</span></span>
+    </div>
+  </div>
+
+  <div class="ph-recorded" style="margin-top: 14px;">
+    <div class="phr-head">Mutation</div>
+    <div class="phr-fields">
+      <span class="phr-field"><span class="phr-k">truth_n_mutations</span> <span class="phr-v">11</span></span>
+      <span class="phr-field"><span class="phr-k">mutation_rate</span> <span class="phr-v">0.031</span></span>
+      <span class="phr-field"><span class="phr-k">shm_model</span> <span class="phr-v">s5f</span></span>
+      <span class="phr-field"><span class="phr-k">mutation_pos / ref / alt</span> <span class="phr-v">list[int] · list[str]</span></span>
+    </div>
+  </div>
+
+  <div class="ph-recorded" style="margin-top: 14px;">
+    <div class="phr-head">Corruption (lab effects)</div>
+    <div class="phr-fields">
+      <span class="phr-field"><span class="phr-k">corruption_added</span> <span class="phr-v">True</span></span>
+      <span class="phr-field"><span class="phr-k">corrupted_5prime · _3prime</span> <span class="phr-v">28 · 12</span></span>
+      <span class="phr-field"><span class="phr-k">n_count</span> <span class="phr-v">3</span></span>
+      <span class="phr-field"><span class="phr-k">indels_added</span> <span class="phr-v">1</span></span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 05 — the trace ================= -->
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 05</span>
+    <h2>The trace — every decision, addressable.</h2>
+    <p class="ph-lead">
+      Beyond the AIRR record, every random draw the engine made is logged in an addressed
+      <em>trace</em>. Think of it as the black-box flight recorder for one simulation. If a record
+      looks surprising, you don't have to guess why — you can look up the exact draw that
+      produced it.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Trace addresses, by example</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">sample_allele.v</span><span class="pass-note">the V pool index that was drawn</span></li>
+        <li><span class="pass-name">trim.v_3</span><span class="pass-note">the 3′ V trim length</span></li>
+        <li><span class="pass-name">np.np1.length</span><span class="pass-note">the N1 region length</span></li>
+        <li><span class="pass-name">np.np1.bases[3]</span><span class="pass-note">the 4th NP1 base drawn</span></li>
+        <li><span class="pass-name">mutate.s5f.position[7]</span><span class="pass-note">the 8th SHM mutation location</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">Querying the trace</div>
+      <pre class="code"><code>trace = outcome.<span class="c-f">trace</span>()
+
+<span class="c-c"># single draw, by exact address</span>
+trace.<span class="c-f">find</span>(<span class="c-s">"sample_allele.v"</span>).value
+<span class="c-c"># 146 — pool index of the V allele drawn</span>
+
+<span class="c-c"># every draw under a prefix</span>
+trace.<span class="c-f">prefix_query</span>(<span class="c-s">"np.np1"</span>)
+<span class="c-c"># [length=5, bases[0]='A', bases[1]='C', ...]</span>
+
+<span class="c-c"># count the draws below a prefix</span>
+trace.<span class="c-f">prefix_count</span>(<span class="c-s">"mutate.s5f"</span>)
+<span class="c-c"># 11 — number of SHM substitutions in this record</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NEXT ================= -->
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Continue</span>
+    <h2>Next chapter.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="concept-contracts.html">
+      <div class="ph-card-head">← Chapter 03 · Contracts</div>
+      <p class="phr-note" style="margin: 6px 0 0;">How GenAIRR enforces biology by pruning the candidate distribution at sample time.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="concepts.html">
+      <div class="ph-card-head">Back to Concepts overview</div>
+      <p class="phr-note" style="margin: 6px 0 0;">All four chapters in one place.</p>
+    </a>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand">
+        <span class="brand-mark">G</span>
+        <span>GenAIRR</span>
+      </div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

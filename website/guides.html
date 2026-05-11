@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guides — GenAIRR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HEADER ================= -->
+<section class="page guides-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">Guides</span>
+  </nav>
+
+  <div class="gh-grid">
+    <div class="gh-text">
+      <span class="eyebrow">Field manual · 14 recipes</span>
+      <h1>Guides.</h1>
+      <p class="lead">
+        Short, task-oriented recipes. Each one starts with an outcome and ends with a
+        runnable snippet — no theory, no detours. If you already know which knob you're
+        looking for, this is the section to skim.
+      </p>
+    </div>
+    <aside class="gh-aside">
+      <div class="gh-aside-row">
+        <span class="gh-aside-k">Different from Concepts</span>
+        <span class="gh-aside-v">Concepts explain <em>why</em>. Guides give you the
+          shortest path to a thing that runs.</span>
+      </div>
+      <div class="gh-aside-row">
+        <span class="gh-aside-k">Different from Reference</span>
+        <span class="gh-aside-v">Reference is exhaustive. Guides are opinionated — one
+          path, with footnotes.</span>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= FILTER BAR ================= -->
+<section class="page guides-filter">
+  <div class="gf-bar">
+    <div class="gf-group">
+      <span class="gf-label">Filter</span>
+      <button class="gf-chip gf-chip-on">All <span class="gf-chip-n">14</span></button>
+      <button class="gf-chip">Build <span class="gf-chip-n">4</span></button>
+      <button class="gf-chip">Validate <span class="gf-chip-n">4</span></button>
+      <button class="gf-chip">Customize <span class="gf-chip-n">3</span></button>
+      <button class="gf-chip">Operate <span class="gf-chip-n">3</span></button>
+    </div>
+    <div class="gf-search">
+      <span class="gf-search-icon">⌕</span>
+      <input class="gf-search-input" type="text" placeholder="search recipes…" />
+      <span class="gf-search-key">⌘ K</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= GROUP: BUILD ================= -->
+<section class="page guide-group">
+  <div class="gg-head">
+    <span class="gg-ord">A</span>
+    <div>
+      <h2>Build.</h2>
+      <p>Construct a simulation that produces the sequences you actually need.</p>
+    </div>
+  </div>
+
+  <div class="gg-list">
+    <a class="gc" href="guide-build-config.html">
+      <div class="gc-num">A·01</div>
+      <div class="gc-body">
+        <h3>Build a config for your locus or species.</h3>
+        <p>Point the engine at a custom germline reference and a custom anchor map. Works
+        for any V(D)J locus — human, mouse, zebrafish, or your own annotation.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~15 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">config</span><span class="gc-tag">germline</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-custom-pass.html">
+      <div class="gc-num">A·02</div>
+      <div class="gc-body">
+        <h3>Compose a custom Pass.</h3>
+        <p>Implement the <code>Pass</code> trait, emit your events into the trace, and
+        slot it anywhere in the pipeline. Includes the boilerplate and three worked examples.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~20 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●● advanced</span>
+          <span class="gc-tags"><span class="gc-tag">pipeline</span><span class="gc-tag">python</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-productive.html">
+      <div class="gc-num">A·03</div>
+      <div class="gc-body">
+        <h3>Sample only productive sequences.</h3>
+        <p>Two modes: <em>filter</em> (retry until productive) and <em>verify</em> (let
+        unproductive draws through, mark them). When to use each, with timing data.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~5 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●○○ beginner</span>
+          <span class="gc-tags"><span class="gc-tag">contracts</span><span class="gc-tag">productive</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-custom-shm.html">
+      <div class="gc-num">A·04</div>
+      <div class="gc-body">
+        <h3>Wire a custom SHM model.</h3>
+        <p>Replace the built-in S5F with your own substitution distribution — per-base,
+        per-motif, or fully position-aware. Plug it in via the <code>MutationModel</code> port.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~25 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●● advanced</span>
+          <span class="gc-tags"><span class="gc-tag">mutation</span><span class="gc-tag">model</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+  </div>
+</section>
+
+<!-- ================= GROUP: VALIDATE ================= -->
+<section class="page guide-group">
+  <div class="gg-head">
+    <span class="gg-ord">B</span>
+    <div>
+      <h2>Validate.</h2>
+      <p>Use ground truth the way it was meant to be used — to score things and find drift.</p>
+    </div>
+  </div>
+
+  <div class="gg-list">
+    <a class="gc" href="guide-benchmark-aligner.html">
+      <div class="gc-num">B·01</div>
+      <div class="gc-body">
+        <h3>Benchmark an aligner against truth.</h3>
+        <p>The flagship recipe. Simulate 50k sequences, run IgBLAST / MiXCR / your tool,
+        compute <code>v_call</code> accuracy by mutation level, plot the curve.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~30 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">benchmark</span><span class="gc-tag">aligner</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-compare-shm.html">
+      <div class="gc-num">B·02</div>
+      <div class="gc-body">
+        <h3>Compare two SHM models.</h3>
+        <p>S5F vs uniform vs your custom — same recombination seed, only the mutation
+        pass varies. Builds a side-by-side density plot of <code>v_identity</code>.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~15 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">mutation</span><span class="gc-tag">analysis</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-audit-realism.html">
+      <div class="gc-num">B·03</div>
+      <div class="gc-body">
+        <h3>Audit a simulation for biological realism.</h3>
+        <p>Marginal checks: V-usage distribution, CDR3 length histogram, junction codon
+        usage, productive-rate. Compares your sim to an OAS reference panel.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~20 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">validation</span><span class="gc-tag">qc</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-smoke-test.html">
+      <div class="gc-num">B·04</div>
+      <div class="gc-body">
+        <h3>Smoke-test a config change.</h3>
+        <p>Two-minute sanity loop: generate 1k sequences, diff key marginals against the
+        previous run, fail loudly if a contract regresses. Drops into CI as a pytest fixture.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~10 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●○○ beginner</span>
+          <span class="gc-tags"><span class="gc-tag">ci</span><span class="gc-tag">testing</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+  </div>
+</section>
+
+<!-- ================= GROUP: CUSTOMIZE ================= -->
+<section class="page guide-group">
+  <div class="gg-head">
+    <span class="gg-ord">C</span>
+    <div>
+      <h2>Customize.</h2>
+      <p>Shape the simulation toward your specific sequencer, panel, or empirical reference.</p>
+    </div>
+  </div>
+
+  <div class="gg-list">
+    <a class="gc" href="guide-tune-corruption.html">
+      <div class="gc-num">C·01</div>
+      <div class="gc-body">
+        <h3>Tune corruption rates to match your sequencer.</h3>
+        <p>Map an empirical Q-score profile to <code>NCorruptionPass</code> +
+        <code>PCRErrorPass</code> rates. Covers MiSeq, NovaSeq, PacBio HiFi presets.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~20 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">corruption</span><span class="gc-tag">platform</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-v-usage.html">
+      <div class="gc-num">C·02</div>
+      <div class="gc-body">
+        <h3>Match an empirical V-gene usage distribution.</h3>
+        <p>Reweight the allele sampler so your output matches a target frequency table
+        — your panel, an OAS subset, or any AIRR TSV.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~15 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">sampling</span><span class="gc-tag">priors</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-replay.html">
+      <div class="gc-num">C·03</div>
+      <div class="gc-body">
+        <h3>Replay a simulation with one knob changed.</h3>
+        <p>Pin a seed, fork the IR at any phase, swap a single pass, re-run from that
+        point. Built on the persistent-IR layers — no full re-execution needed.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~10 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●● advanced</span>
+          <span class="gc-tags"><span class="gc-tag">ir</span><span class="gc-tag">determinism</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+  </div>
+</section>
+
+<!-- ================= GROUP: OPERATE ================= -->
+<section class="page guide-group">
+  <div class="gg-head">
+    <span class="gg-ord">D</span>
+    <div>
+      <h2>Operate.</h2>
+      <p>Run it at scale, get it out of GenAIRR, and into whatever comes next.</p>
+    </div>
+  </div>
+
+  <div class="gg-list">
+    <a class="gc" href="guide-export.html">
+      <div class="gc-num">D·01</div>
+      <div class="gc-body">
+        <h3>Export to AIRR TSV, Parquet, or FASTA.</h3>
+        <p>Each writer in one line. When to pick which. How to keep the
+        <code>truth_*</code> fields versus stripping them for a blinded benchmark.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~5 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●○○ beginner</span>
+          <span class="gc-tags"><span class="gc-tag">io</span><span class="gc-tag">airr</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-streaming.html">
+      <div class="gc-num">D·02</div>
+      <div class="gc-body">
+        <h3>Stream millions of sequences without OOM.</h3>
+        <p>Use the iterator API. Chunked writes. Memory profile of a 10M-sequence run.
+        Worked timing on 8 / 16 / 32 cores.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~15 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">performance</span><span class="gc-tag">streaming</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-reproduce.html">
+      <div class="gc-num">D·03</div>
+      <div class="gc-body">
+        <h3>Reproduce a published dataset.</h3>
+        <p>Walk-through of recreating the figure-2 dataset from the GenAIRR paper —
+        every seed, every config, every plot. Bring your own GPU not required.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~45 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">reproducibility</span><span class="gc-tag">paper</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+  </div>
+</section>
+
+<!-- ================= MISSING ================= -->
+<section class="page guides-missing">
+  <div class="gm-rule"></div>
+  <div class="gm-grid">
+    <div>
+      <span class="eyebrow">Can't find your recipe?</span>
+      <h2>Tell us what you tried to do.</h2>
+      <p>
+        Every guide here started as a question on an issue thread. If you tried to
+        accomplish something with GenAIRR and the docs didn't get you there, open a
+        discussion — most turn into a recipe within a week.
+      </p>
+    </div>
+    <div class="gm-actions">
+      <a class="btn btn-primary" href="#">Ask on GitHub Discussions →</a>
+      <a class="btn btn-ghost" href="#">Browse open guide requests</a>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div>
+      <div class="brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <p class="footer-tag">Synthetic AIRR with ground truth.</p>
+    </div>
+    <div class="footer-cols">
+      <div>
+        <h4>Learn</h4>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div>
+        <h4>Reference</h4>
+        <a href="#">Python API</a>
+        <a href="#">Configs</a>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Benchmark an aligner against truth — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">B · Validate</span>
+  </nav>
+
+  <span class="eyebrow">Recipe B · 01 · ~30 min · intermediate · <b>flagship</b></span>
+  <h1>Benchmark an aligner against truth.</h1>
+  <p class="lead">
+    GenAIRR's signature pitch is <em>absolute</em> ground truth — you know what every V/D/J
+    call <em>should</em> be, regardless of what the aligner reports. This is the recipe that
+    cashes that pitch. Simulate 50k sequences, run an aligner against them, compute V-call
+    accuracy stratified by mutation level, and plot the curve where the aligner starts to drift.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Simulate with truth</span>
+        <span class="ctl-sub">expose_provenance=True</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Export blinded FASTA</span>
+        <span class="ctl-sub">sequences only · no truth fields</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Score</span>
+        <span class="ctl-sub">join · accuracy · curve</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>Why ground truth makes this benchmark different.</h2>
+    <p class="ph-lead">
+      Real-world aligner benchmarks usually compare two tools to each other and call the
+      agreement signal. That's better than nothing, but it tells you about <em>agreement</em>,
+      not <em>correctness</em>. With GenAIRR's <code>truth_v_call</code> field you know the
+      answer the moment the sequence is born — every disagreement between truth and the
+      aligner's report is, by construction, an aligner mistake.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">What the truth gives you</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">truth_v_call · truth_d_call · truth_j_call</span><span class="pass-note">the alleles sampled at recombination — fixed, by construction</span></li>
+        <li><span class="pass-name">truth_n_mutations</span><span class="pass-note">stratify accuracy by mutation load to find the drift threshold</span></li>
+        <li><span class="pass-name">corrupted_5prime · _3prime</span><span class="pass-note">stratify by how much sequence the aligner is missing</span></li>
+        <li><span class="pass-name">junction_aa</span><span class="pass-note">cross-check CDR3 reconstruction independently of V/D/J calls</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">What you're testing for</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">V-call accuracy</span><span class="pass-note">does the aligner pick the right V allele?</span></li>
+        <li><span class="pass-name">Drift under SHM</span><span class="pass-note">at what mutation rate does accuracy fall below threshold?</span></li>
+        <li><span class="pass-name">Robustness to corruption</span><span class="pass-note">does 5′ trim eat the aligner's information?</span></li>
+        <li><span class="pass-name">Family vs allele resolution</span><span class="pass-note">does it get the family right even when the exact allele is wrong?</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Step 1 — simulate the panel.</h2>
+    <p class="ph-lead">
+      50k sequences is a healthy panel size: large enough to slice by mutation level with stable
+      sample counts per bucket, small enough to fit in memory for a quick analysis. Vary mutation
+      load across the panel so you have rows to stratify by later.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">A standard benchmark panel</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       <span class="c-c"># wide SHM range — gives you the curve, not just one point</span>
+       .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">0</span>, <span class="c-n">40</span>))
+       <span class="c-c"># realistic lab effects — what the aligner actually sees</span>
+       .<span class="c-f">corrupt_5prime_loss</span>(length=(<span class="c-n">5</span>, <span class="c-n">60</span>))
+       .<span class="c-f">corrupt_3prime_loss</span>(length=(<span class="c-n">0</span>, <span class="c-n">30</span>))
+       .<span class="c-f">corrupt_ns</span>(prob=<span class="c-n">0.001</span>)
+       .<span class="c-f">run_records</span>(
+            n=<span class="c-n">50_000</span>,
+            seed=<span class="c-n">42</span>,
+            respect=ga.<span class="c-f">productive</span>(),
+            expose_provenance=<span class="c-n">True</span>,    <span class="c-c"># &lt;-- truth_* columns</span>
+       )
+)
+
+result.<span class="c-f">to_csv</span>(<span class="c-s">"panel_truth.tsv"</span>, sep=<span class="c-s">"\t"</span>)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Step 2 — export a blinded FASTA.</h2>
+    <p class="ph-lead">
+      Aligners take raw sequence and a reference. Hand them a FASTA with just <code>sequence_id</code>
+      and the nucleotide string — no truth fields, no V/D/J hints. Keep the full TSV as your
+      private answer key.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Blinded FASTA</div>
+      <pre class="code"><code><span class="c-c"># strips every truth_* column — only sequence + sequence_id ship</span>
+result.<span class="c-f">to_fasta</span>(<span class="c-s">"panel.fasta"</span>)
+
+<span class="c-c"># run your aligner of choice — IgBLAST, MiXCR, your tool —</span>
+<span class="c-c"># producing an AIRR TSV with v_call / d_call / j_call</span>
+<span class="c-c">$</span> igblastn \
+    -germline_db_V human_V \
+    -germline_db_D human_D \
+    -germline_db_J human_J \
+    -query panel.fasta \
+    -outfmt <span class="c-s">"19"</span> &gt; panel.aligner.tsv</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Step 3 — score.</h2>
+    <p class="ph-lead">
+      Join the aligner's report with your truth TSV on <code>sequence_id</code>. Three accuracy
+      tiers, each measuring something different.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Join + accuracy</div>
+      <pre class="code"><code><span class="c-k">import</span> pandas <span class="c-k">as</span> pd
+
+truth   = pd.<span class="c-f">read_csv</span>(<span class="c-s">"panel_truth.tsv"</span>,    sep=<span class="c-s">"\t"</span>)
+called  = pd.<span class="c-f">read_csv</span>(<span class="c-s">"panel.aligner.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+df = truth.<span class="c-f">merge</span>(called, on=<span class="c-s">"sequence_id"</span>, suffixes=(<span class="c-s">"_t"</span>, <span class="c-s">"_a"</span>))
+
+<span class="c-c"># exact allele (IGHV3-23*01 == IGHV3-23*01)</span>
+df[<span class="c-s">"v_allele_ok"</span>] = df[<span class="c-s">"truth_v_call"</span>] == df[<span class="c-s">"v_call_a"</span>]
+
+<span class="c-c"># family-only (IGHV3-23 == IGHV3-23, ignore the *N suffix)</span>
+df[<span class="c-s">"v_family_ok"</span>] = (
+    df[<span class="c-s">"truth_v_call"</span>].<span class="c-f">str</span>.<span class="c-f">split</span>(<span class="c-s">"*"</span>).<span class="c-f">str</span>[<span class="c-n">0</span>] ==
+    df[<span class="c-s">"v_call_a"</span>].<span class="c-f">str</span>.<span class="c-f">split</span>(<span class="c-s">"*"</span>).<span class="c-f">str</span>[<span class="c-n">0</span>]
+)
+
+<span class="c-f">print</span>(<span class="c-s">"V allele accuracy:"</span>, df[<span class="c-s">"v_allele_ok"</span>].<span class="c-f">mean</span>())
+<span class="c-f">print</span>(<span class="c-s">"V family accuracy:"</span>, df[<span class="c-s">"v_family_ok"</span>].<span class="c-f">mean</span>())</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 05</span>
+    <h2>Step 4 — plot the drift curve.</h2>
+    <p class="ph-lead">
+      The single most useful chart from this recipe: aligner accuracy as a function of mutation
+      load. Real samples have a range of SHM rates; the curve tells you at which range your
+      aligner is reliable.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Stratify by mutation bucket</div>
+      <pre class="code"><code><span class="c-k">import</span> numpy <span class="c-k">as</span> np
+<span class="c-k">import</span> matplotlib.pyplot <span class="c-k">as</span> plt
+
+df[<span class="c-s">"mut_bucket"</span>] = pd.<span class="c-f">cut</span>(
+    df[<span class="c-s">"truth_n_mutations"</span>],
+    bins=[<span class="c-n">0</span>, <span class="c-n">5</span>, <span class="c-n">10</span>, <span class="c-n">15</span>, <span class="c-n">20</span>, <span class="c-n">25</span>, <span class="c-n">30</span>, <span class="c-n">40</span>],
+)
+
+curve = df.<span class="c-f">groupby</span>(<span class="c-s">"mut_bucket"</span>)[<span class="c-s">"v_allele_ok"</span>].<span class="c-f">mean</span>()
+fam   = df.<span class="c-f">groupby</span>(<span class="c-s">"mut_bucket"</span>)[<span class="c-s">"v_family_ok"</span>].<span class="c-f">mean</span>()
+
+fig, ax = plt.<span class="c-f">subplots</span>()
+ax.<span class="c-f">plot</span>(curve.index.<span class="c-f">astype</span>(<span class="c-f">str</span>), curve.values, label=<span class="c-s">"allele"</span>)
+ax.<span class="c-f">plot</span>(fam.index.<span class="c-f">astype</span>(<span class="c-f">str</span>),   fam.values,   label=<span class="c-s">"family"</span>)
+ax.<span class="c-f">set_xlabel</span>(<span class="c-s">"SHM load (mutations)"</span>)
+ax.<span class="c-f">set_ylabel</span>(<span class="c-s">"V accuracy"</span>)
+ax.<span class="c-f">legend</span>()</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 06</span>
+    <h2>Reading the curve.</h2>
+    <p class="ph-lead">
+      Three patterns to watch for. None of them are bugs — they're real properties of allele
+      callers under SHM stress.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Family stays high, allele drops</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        The aligner identifies the family correctly (IGHV3-23) but picks the wrong allele
+        (*04 instead of *01). Common above ~10 SHM events. Family-level downstream analyses are
+        still trustworthy; allele-level repertoire diversity reports are not.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">Both drop at high SHM</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Above ~25 SHM events the sequence diverges enough that even the family call slips.
+        This is the working ceiling of any allele caller; the aligner isn't broken, the
+        information just isn't recoverable.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">5′ corruption flattens the curve early</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Stratify also by <code>corrupted_5prime</code>. The V family signal lives in the 5′
+        FWR1/CDR1 region; if you trim it, allele resolution collapses well before SHM would
+        otherwise cost you.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-compare-shm.html">
+      <div class="ph-card-head">B · 02 · Compare two SHM models →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Apply the same workflow with the mutation model varied — does your aligner cope with non-S5F SHM patterns?</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="concept-airr-record.html">
+      <div class="ph-card-head">Concept · The AIRR Record →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">All ~70 fields, including the full set of <code>truth_*</code> columns you can score against.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

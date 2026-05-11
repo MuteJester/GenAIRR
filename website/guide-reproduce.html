@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reproduce a published dataset — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">D · Operate</span>
+  </nav>
+
+  <span class="eyebrow">Recipe D · 03 · ~25 min · intermediate</span>
+  <h1>Reproduce a published dataset.</h1>
+  <p class="lead">
+    GenAIRR results are bit-identical across Linux, macOS, and Windows for the same seed and
+    config. That guarantee turns "the figure-2 dataset from the paper" into a reproducible
+    artifact: pull the seeds and configs, run the recipe, get the same bytes. This recipe walks
+    through what you need to capture, what to publish alongside your figures, and how a future
+    collaborator regenerates the data.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Capture inputs</span>
+        <span class="ctl-sub">seed · config name · package version</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Publish recipe</span>
+        <span class="ctl-sub">repro.py · pinned dependencies</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Verify hash</span>
+        <span class="ctl-sub">byte-identical · plot identical</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>What you need to capture for full reproduction.</h2>
+    <p class="ph-lead">
+      Five pieces of information uniquely determine a GenAIRR dataset. Capture all five and a
+      collaborator on any OS can produce byte-identical sequences. Miss one and the
+      reproduction drifts — sometimes silently.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">The five inputs</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">seed</span><span class="pass-note">the integer passed to run() / stream_records()</span></li>
+        <li><span class="pass-name">config</span><span class="pass-note">"human_igh" or your custom RefDataConfig serialized to JSON</span></li>
+        <li><span class="pass-name">pipeline</span><span class="pass-note">the exact chain of <code>.recombine()</code>, <code>.mutate(...)</code>, <code>.corrupt_*(...)</code> calls</span></li>
+        <li><span class="pass-name">contracts</span><span class="pass-note">the <code>respect=</code> bundle and <code>strict=</code> flag (or absence)</span></li>
+        <li><span class="pass-name">GenAIRR version</span><span class="pass-note">the package version on PyPI — pin it</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">What you don't need</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Hardware. OS. Python version (within a minor range). The Rust kernel is deterministic
+        across all platforms GenAIRR ships wheels for. <code>numpy</code> seed state, system
+        time, RNG entropy — none of those play a role.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>The repro script — what to publish alongside the paper.</h2>
+    <p class="ph-lead">
+      A single Python file your readers run. <code>genairr==X.Y.Z</code> in a requirements.txt
+      next to it. The script generates the exact dataset that produced your figure — no other
+      machine state matters.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">repro.py — alongside requirements.txt with pinned version</div>
+      <pre class="code"><code><span class="c-c">"""</span>
+<span class="c-c">Figure 2 dataset for "Title of My Paper" (Author et al., 2026).</span>
+<span class="c-c"></span>
+<span class="c-c">Run: python repro.py</span>
+<span class="c-c">Pin: pip install -r requirements.txt  (GenAIRR == 1.1.0)</span>
+<span class="c-c">"""</span>
+<span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+<span class="c-c"># five inputs that uniquely determine the dataset</span>
+SEED       = <span class="c-n">42</span>
+CONFIG     = <span class="c-s">"human_igh"</span>
+N_RECORDS  = <span class="c-n">50_000</span>
+STRICT     = <span class="c-n">False</span>
+
+result = (
+    ga.Experiment.<span class="c-f">on</span>(CONFIG)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">0</span>, <span class="c-n">40</span>))
+       .<span class="c-f">corrupt_5prime_loss</span>(length=(<span class="c-n">5</span>, <span class="c-n">60</span>))
+       .<span class="c-f">corrupt_3prime_loss</span>(length=(<span class="c-n">0</span>, <span class="c-n">30</span>))
+       .<span class="c-f">run_records</span>(
+           n=N_RECORDS,
+           seed=SEED,
+           respect=ga.<span class="c-f">productive</span>(),
+           strict=STRICT,
+           expose_provenance=<span class="c-n">True</span>,
+       )
+)
+
+result.<span class="c-f">to_csv</span>(<span class="c-s">"figure2.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+<span class="c-f">print</span>(<span class="c-s">f"wrote {len(result)} records"</span>)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Verify the reproduction.</h2>
+    <p class="ph-lead">
+      A bit-identical guarantee is only useful if you check it. Hash the TSV; commit the hash
+      to your repo alongside the recipe. Any future run that produces a different hash signals
+      a version mismatch, an environment problem, or — rare but important — a real upstream
+      change in the engine.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Hash + assert</div>
+      <pre class="code"><code><span class="c-k">import</span> hashlib, pathlib
+
+EXPECTED = <span class="c-s">"a7c3f9e2..."</span>  <span class="c-c"># commit alongside repro.py</span>
+
+actual = hashlib.<span class="c-f">sha256</span>(
+    pathlib.<span class="c-f">Path</span>(<span class="c-s">"figure2.tsv"</span>).<span class="c-f">read_bytes</span>()
+).<span class="c-f">hexdigest</span>()
+
+<span class="c-k">assert</span> actual == EXPECTED, (
+    <span class="c-s">f"hash mismatch — expected {EXPECTED}, got {actual}"</span>
+)
+<span class="c-f">print</span>(<span class="c-s">"reproduction verified"</span>)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Common reproduction failures.</h2>
+    <p class="ph-lead">
+      Two patterns account for ~90% of reproduction failures. Catch them early.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">1 · Unpinned GenAIRR version</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        A user runs <code>pip install GenAIRR</code> without a version pin and gets a newer
+        engine. Sampling order may have changed for legitimate reasons; output drifts. Always
+        publish a <code>requirements.txt</code> with <code>genairr==X.Y.Z</code>.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">2 · Custom RefDataConfig not serialized</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        If you built a custom config in Python (<code>RefDataConfig.vdj()</code> + add_v_allele
+        calls), the allele set is in the script — but if you loaded one from a private file,
+        ship the file. Otherwise the reader can't reach the same V/D/J pool.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">3 · Different number of records</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Records at <code>n=50_000</code> are <em>not</em> the first 50k of <code>n=100_000</code>
+        unless the per-record seed math lines up. <code>seed=42, n=N</code> draws the same
+        sequence at the same index for any N — but only as long as N is fixed at simulate time.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 05</span>
+    <h2>What an audit trail buys you.</h2>
+    <p class="ph-lead">
+      Beyond reproduction, every record carries the addressed trace — the full history of
+      random draws that produced it. If a future reviewer asks "why does record 4732 have a
+      24-mer NP1?", you can answer with the exact draws, not a hand-wave.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Inspecting a single record's trace</div>
+      <pre class="code"><code><span class="c-c"># trace lookup for the record at position 4732</span>
+out = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">run</span>(n=<span class="c-n">5000</span>, seed=<span class="c-n">42</span>)
+)
+trace = out[<span class="c-n">4732</span>].<span class="c-f">trace</span>()
+
+<span class="c-f">print</span>(trace.<span class="c-f">find</span>(<span class="c-s">"sample_allele.v"</span>).value)
+<span class="c-f">print</span>(trace.<span class="c-f">find</span>(<span class="c-s">"np.np1.length"</span>).value)
+<span class="c-f">print</span>(trace.<span class="c-f">prefix_count</span>(<span class="c-s">"mutate.s5f"</span>))</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-streaming.html">
+      <div class="ph-card-head">D · 02 · Stream millions without OOM →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">For paper-sized datasets, switch the repro script to the streaming API.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="concept-airr-record.html">
+      <div class="ph-card-head">Concept · The AIRR Record →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">All ~70 fields the repro will reproduce, including the truth columns that anchor the audit.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

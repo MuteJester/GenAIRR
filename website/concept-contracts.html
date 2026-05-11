@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Contracts — GenAIRR Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html" class="active">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HEADER ================= -->
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="concepts.html">Concepts</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">Contracts</span>
+  </nav>
+
+  <span class="eyebrow">Chapter 03 · The discipline</span>
+  <h1>Contracts — sample inside the rules.</h1>
+  <p class="lead">
+    A <em>contract</em> is a predicate over the simulation state. Pass <code>respect=…</code> to
+    <code>run()</code> and the engine prunes the candidate distribution at every sampling step so
+    only choices that satisfy the contract are eligible. No reject-and-retry. No post-hoc
+    filtering. The constraint is enforced at the moment a decision is made — biology comes
+    out of the engine valid by construction.
+  </p>
+</section>
+
+<!-- ================= TIMELINE — productive() = 4 predicates ================= -->
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">AnchorPreserved (V)</span>
+        <span class="ctl-sub">V Cys anchor present after trim</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">AnchorPreserved (J)</span>
+        <span class="ctl-sub">J Trp/Phe anchor present after trim</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">ProductiveJunctionFrame</span>
+        <span class="ctl-sub">junction length ≡ 0 (mod 3)</span>
+      </div>
+    </div>
+  </div>
+  <p class="phr-note" style="text-align: center; margin: 8px auto 0; max-width: 720px;">
+    A fourth predicate — <b>NoStopCodonInJunction</b> — runs at the codon walk and is included
+    in the bundle below. Together these four compose <code>productive()</code>.
+  </p>
+</section>
+
+<!-- ================= PART 01 — what a contract is ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>Constraint-aware sampling, not reject-and-retry.</h2>
+    <p class="ph-lead">
+      Most simulators build a sequence first and check it afterwards. If it's broken, they
+      discard and resample. That's slow, statistically biased toward weakly-constrained edges
+      of the distribution, and offers no way to reason about <em>which</em> draws are admissible.
+      GenAIRR inverts the order: the contract is consulted <em>before</em> each random draw, and
+      only candidates that keep the contract intact stay in the support.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">A contract, mechanically</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">admits(state, choice)</span><span class="pass-note">would this choice keep the contract satisfied?</span></li>
+        <li><span class="pass-name">verify(state)</span><span class="pass-note">does the current state satisfy the contract?</span></li>
+        <li><span class="pass-name">name</span><span class="pass-note">stable string for trace + error messages</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">The bumpers, in practice</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+result = (
+    ga.<span class="c-f">Experiment</span>.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">run</span>(n=<span class="c-n">1000</span>, seed=<span class="c-n">42</span>,
+            respect=ga.<span class="c-f">productive</span>())
+)
+
+<span class="c-c"># every record is functional by construction</span>
+<span class="c-c"># productive = True · in-frame · no stops · anchors intact</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 02 — the four predicates ================= -->
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>The four predicates of <code>productive()</code>.</h2>
+    <p class="ph-lead">
+      <code>ga.productive()</code> is not a black box. It's an explicit composition of four small
+      predicates, each enforcing one biological invariant. You can use the bundle as-is, drop a
+      predicate to relax the rules, or stack additional contracts on top.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">AnchorPreserved (V)</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        The V segment's conserved Cysteine codon — the 5′ junction landmark — must survive
+        whatever 3′ trim the engine draws. If a trim length would remove the Cys, that trim is
+        not in the admissible set.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">AnchorPreserved (J)</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        The J segment's conserved Tryptophan (heavy / IGK / TR) or Phenylalanine (IGL) codon —
+        the 3′ junction landmark — must survive the J's 5′ trim. Same admissibility logic,
+        opposite end.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">ProductiveJunctionFrame</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Junction length — Cys-codon start through anchor-codon end — must be divisible by 3.
+        Enforced at NP-region length sampling, where the candidate lengths that produce an
+        in-frame junction are the only ones drawn from.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">NoStopCodonInJunction</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        After segments and NP regions are assembled, the junction is read codon-by-codon.
+        If a candidate NP base would form a stop codon (TAA · TAG · TGA), it's pruned from the
+        base distribution before the draw.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 03 — strict vs permissive ================= -->
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>What happens when a contract can't be satisfied?</h2>
+    <p class="ph-lead">
+      Some configurations are over-constrained — a particular allele pair simply has no
+      admissible NP length that keeps the junction in-frame. You get to choose what GenAIRR
+      does in that case: relax and continue, or stop and complain.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Permissive (default)</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">strict=False</span><span class="pass-note">if the admissible support is empty, fall back to the unconstrained distribution and continue</span></li>
+        <li><span class="pass-name">use when</span><span class="pass-note">you want a steady stream of records and can tolerate the occasional non-productive sequence</span></li>
+        <li><span class="pass-name">trace shows</span><span class="pass-note">a fallback marker on the affected draw — fully observable</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Strict</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">strict=True</span><span class="pass-note">raise StrictSamplingError with the pass name, trace address, and reason</span></li>
+        <li><span class="pass-name">use when</span><span class="pass-note">100% contract compliance is required — training data, validation, formal benchmarks</span></li>
+        <li><span class="pass-name">recovery</span><span class="pass-note">catch the error, log it, and surface the failing constraint to the caller</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">Catching a strict failure</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+<span class="c-k">try</span>:
+    ga.<span class="c-f">Experiment</span>.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>).<span class="c-f">recombine</span>().<span class="c-f">run</span>(
+        n=<span class="c-n">100</span>, seed=<span class="c-n">42</span>,
+        respect=ga.<span class="c-f">productive</span>(),
+        strict=<span class="c-n">True</span>,
+    )
+<span class="c-k">except</span> ga.StrictSamplingError <span class="c-k">as</span> e:
+    pass_name, address, reason = e.args
+    <span class="c-c"># pass_name → "generate_np.np1"</span>
+    <span class="c-c"># address   → "np.np1.length"</span>
+    <span class="c-c"># reason    → "empty_admissible_support"</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 04 — when to use ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>When to switch contracts on or off.</h2>
+    <p class="ph-lead">
+      Contracts shape <em>what</em> you simulate. The right setting depends on what you're
+      doing with the records downstream.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Training an aligner / annotation model</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <b>Use <code>productive()</code>.</b> You want clean, biology-shaped data so the model
+        learns the signal, not the artifact distribution of broken receptors.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Benchmarking a productivity classifier</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <b>Drop the contracts.</b> You want both productive and non-productive sequences so the
+        classifier sees the full distribution it has to discriminate.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Studying natural repertoire composition</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <b>Drop the contracts.</b> The natural productive : non-productive ratio is itself a
+        biological signal you may want to measure or perturb.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NEXT ================= -->
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Continue</span>
+    <h2>Next chapter.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="concept-persistent-ir.html">
+      <div class="ph-card-head">← Chapter 02 · Persistent IR</div>
+      <p class="phr-note" style="margin: 6px 0 0;">How GenAIRR stores the sequence as an immutable snapshot per phase, with per-base provenance.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="concept-airr-record.html">
+      <div class="ph-card-head">Chapter 04 · AIRR Record →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">How GenAIRR derives ~70 ground-truth fields from a single pool snapshot.</p>
+    </a>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand">
+        <span class="brand-mark">G</span>
+        <span>GenAIRR</span>
+      </div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

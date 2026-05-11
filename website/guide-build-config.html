@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Build a config for your locus or species — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HEADER ================= -->
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">A · Build</span>
+  </nav>
+
+  <span class="eyebrow">Recipe A · 01 · ~15 min · intermediate</span>
+  <h1>Build a config for your locus or species.</h1>
+  <p class="lead">
+    GenAIRR ships with 106 built-in configs covering 23 species. But if you're working with a
+    panel-specific reference, an in-house annotation, or a non-stock locus, you can hand the
+    engine a <code>RefDataConfig</code> directly. This recipe walks you through the smallest
+    valid VJ config, scales up to a heavy-chain VDJ config, and points at the things you'll get
+    wrong the first time.
+  </p>
+</section>
+
+<!-- ================= TIMELINE ================= -->
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Construct</span>
+        <span class="ctl-sub">RefDataConfig.vj() · .vdj()</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Add alleles</span>
+        <span class="ctl-sub">name · family · sequence · anchor</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Verify</span>
+        <span class="ctl-sub">run, inspect, validate</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 01 — When to do this ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>When you actually need a custom config.</h2>
+    <p class="ph-lead">
+      Before you build one, check whether the engine already has what you need.
+      <code>GenAIRR.list_configs()</code> returns all 106 built-ins; if your species or locus is
+      in there, point <code>Experiment.on(name)</code> at it and skip the rest of this recipe.
+      Build a custom config when the answer to any of the following is yes:
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Reasons to build your own</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">Custom germline pull</span><span class="pass-note">a newer IMGT release, an OGRDB-curated set, or an in-house annotation</span></li>
+        <li><span class="pass-name">Panel-specific reference</span><span class="pass-note">a subset matched to the alleles your wet-lab assay actually amplifies</span></li>
+        <li><span class="pass-name">Non-stock species or locus</span><span class="pass-note">something not in the 23-species shipped pool</span></li>
+        <li><span class="pass-name">Designed allele</span><span class="pass-note">synthetic or modified V/J alleles for engineering experiments</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">What you'll need</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">Allele sequences</span><span class="pass-note">FASTA-style nucleotide strings for every V, D (if VDJ), and J allele</span></li>
+        <li><span class="pass-name">Anchor positions</span><span class="pass-note">0-based offset of the V Cys codon · J Trp/Phe codon (first base of the codon)</span></li>
+        <li><span class="pass-name">Family labels</span><span class="pass-note">a coarse grouping per allele — IGHV3-23*01 and *02 share family "IGHV3-23"</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 02 — Minimal VJ config ================= -->
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>The smallest valid config — VJ.</h2>
+    <p class="ph-lead">
+      A VJ config has just two pools (V and J). Build it with
+      <code>RefDataConfig.vj()</code>, populate the pools with <code>add_v_allele</code> and
+      <code>add_j_allele</code>, and you're ready to simulate. Anchors are 0-based positions of
+      the codon's first base — that's the field GenAIRR uses to locate the junction on the final
+      sequence, regardless of trim or mutation.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">A 2-allele light-chain config</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+cfg = ga.RefDataConfig.<span class="c-f">vj</span>()
+
+<span class="c-c"># V alleles — family, sequence, Cys-codon position</span>
+cfg.<span class="c-f">add_v_allele</span>(
+    <span class="c-s">"IGKV1-39*01"</span>, <span class="c-s">"IGKV1-39"</span>,
+    <span class="c-s">b"GACATCCAGATGACCCAGTCTCCATCCT..."</span>,
+    anchor=<span class="c-n">288</span>,
+)
+cfg.<span class="c-f">add_v_allele</span>(
+    <span class="c-s">"IGKV3-20*01"</span>, <span class="c-s">"IGKV3-20"</span>,
+    <span class="c-s">b"GAAATTGTGTTGACGCAGTCTCCAGGCA..."</span>,
+    anchor=<span class="c-n">285</span>,
+)
+
+<span class="c-c"># J alleles — Trp/Phe-codon position</span>
+cfg.<span class="c-f">add_j_allele</span>(
+    <span class="c-s">"IGKJ1*01"</span>, <span class="c-s">"IGKJ1"</span>,
+    <span class="c-s">b"GTGGACGTTCGGCCAAGGGACCAAGGT..."</span>,
+    anchor=<span class="c-n">3</span>,
+)
+cfg.<span class="c-f">add_j_allele</span>(
+    <span class="c-s">"IGKJ2*01"</span>, <span class="c-s">"IGKJ2"</span>,
+    <span class="c-s">b"TGTACACTTTTGGCCAGGGGACCAAGCT..."</span>,
+    anchor=<span class="c-n">4</span>,
+)
+
+<span class="c-c"># simulate from the custom config</span>
+result = ga.Experiment.<span class="c-f">on</span>(cfg).<span class="c-f">recombine</span>().<span class="c-f">run</span>(n=<span class="c-n">100</span>, seed=<span class="c-n">42</span>)</code></pre>
+    </div>
+  </div>
+
+  <p class="phr-note" style="text-align: center; margin: 8px auto 0; max-width: 720px;">
+    <b>VJ has no D segment and no NP2.</b> Light chains (IGK, IGL) and the α / γ T-cell chains are
+    all VJ. If you need <em>three</em> segments (heavy chain, β, δ), use <code>.vdj()</code> below.
+  </p>
+</section>
+
+<!-- ================= PART 03 — VDJ config ================= -->
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Adding a D pool for heavy chains.</h2>
+    <p class="ph-lead">
+      For VDJ loci, swap <code>.vj()</code> for <code>.vdj()</code> and populate the D pool with
+      <code>add_d_allele</code>. D alleles have no anchor — they're short and entirely contained
+      between NP1 and NP2 — so the third argument is just the sequence.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Heavy-chain config sketch</div>
+      <pre class="code"><code>cfg = ga.RefDataConfig.<span class="c-f">vdj</span>()
+
+cfg.<span class="c-f">add_v_allele</span>(<span class="c-s">"IGHV3-23*01"</span>, <span class="c-s">"IGHV3-23"</span>,
+                  <span class="c-s">b"GAGGTGCAGCTGGTGGAGTCT..."</span>, anchor=<span class="c-n">288</span>)
+cfg.<span class="c-f">add_v_allele</span>(<span class="c-s">"IGHV1-69*01"</span>, <span class="c-s">"IGHV1-69"</span>,
+                  <span class="c-s">b"CAGGTGCAGCTGGTGCAGTCT..."</span>, anchor=<span class="c-n">288</span>)
+
+cfg.<span class="c-f">add_d_allele</span>(<span class="c-s">"IGHD3-10*01"</span>, <span class="c-s">"IGHD3-10"</span>,
+                  <span class="c-s">b"GTATTACTATGGTTCGGGGAGTTATTATAAC"</span>)
+
+cfg.<span class="c-f">add_j_allele</span>(<span class="c-s">"IGHJ4*02"</span>, <span class="c-s">"IGHJ4"</span>,
+                  <span class="c-s">b"ACTACTTTGACTACTGGGGCCAGGGAACCCTG..."</span>,
+                  anchor=<span class="c-n">2</span>)
+
+<span class="c-c"># productive() works against custom configs the same way</span>
+result = ga.Experiment.<span class="c-f">on</span>(cfg).<span class="c-f">recombine</span>().<span class="c-f">run</span>(
+    n=<span class="c-n">100</span>, seed=<span class="c-n">42</span>, respect=ga.<span class="c-f">productive</span>(),
+)</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 04 — Verify ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Verify it works.</h2>
+    <p class="ph-lead">
+      A custom config can be plausible-looking and still subtly wrong — an anchor off by one base
+      breaks every junction call. Run a small batch and check three things before you trust the
+      output.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">1 · Pool sizes match expectation</div>
+      <pre class="code"><code><span class="c-c"># did every add_* land?</span>
+cfg.<span class="c-f">v_pool_size</span>()  <span class="c-c"># expected: number you added</span>
+cfg.<span class="c-f">d_pool_size</span>()  <span class="c-c"># 0 for vj()</span>
+cfg.<span class="c-f">j_pool_size</span>()</code></pre>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">2 · Junction sits where the anchor says</div>
+      <pre class="code"><code>sim = result[<span class="c-n">0</span>].<span class="c-f">final_simulation</span>()
+junc = sim.<span class="c-f">bases</span>()[
+    sim.<span class="c-f">junction_span</span>()[<span class="c-n">0</span>] : sim.<span class="c-f">junction_span</span>()[<span class="c-n">1</span>]
+]
+<span class="c-c"># junc should start with Cys-codon (TGT/TGC)</span>
+<span class="c-c"># and end with Trp (TGG) or Phe (TTT/TTC)</span></code></pre>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">3 · Productivity rate is sane</div>
+      <pre class="code"><code>productive_rate = <span class="c-f">sum</span>(
+    <span class="c-n">1</span> <span class="c-k">for</span> o <span class="c-k">in</span> result
+    <span class="c-k">if</span> o.<span class="c-f">final_simulation</span>().productive
+) / <span class="c-f">len</span>(result)
+
+<span class="c-c"># without contracts: ~30-50% is typical</span>
+<span class="c-c"># with productive(): >99%</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NEXT ================= -->
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-productive.html">
+      <div class="ph-card-head">A · 03 · Sample only productive sequences →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Pair your new config with the <code>productive()</code> bundle for clean training data.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-v-usage.html">
+      <div class="ph-card-head">C · 02 · Match an empirical V-gene usage distribution →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Reweight allele sampling so your config matches a target frequency table.</p>
+    </a>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand">
+        <span class="brand-mark">G</span>
+        <span>GenAIRR</span>
+      </div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

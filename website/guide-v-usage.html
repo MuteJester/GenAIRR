@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Match an empirical V-gene usage distribution — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">C · Customize</span>
+  </nav>
+
+  <span class="eyebrow">Recipe C · 02 · ~15 min · intermediate</span>
+  <h1>Match an empirical V-gene usage distribution.</h1>
+  <p class="lead">
+    By default the V allele sampler draws uniformly from the reference pool. Real repertoires
+    are not uniform — IGHV3-23, IGHV4-39, and IGHV4-59 routinely make up a quarter of the
+    sample. Pass a frequency table to <code>recombine()</code> and the sampler reweights to
+    match your panel, an OAS subset, or any AIRR TSV you can read into pandas.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Frequency table</span>
+        <span class="ctl-sub">allele name → relative weight</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Pass to recombine()</span>
+        <span class="ctl-sub">v_allele_weights= · d_ · j_</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Verify</span>
+        <span class="ctl-sub">empirical KL on truth_v_call</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>What the weight table looks like.</h2>
+    <p class="ph-lead">
+      A dictionary from allele name (or family name) to a non-negative relative weight. The
+      sampler normalises the weights — you don't need probabilities that sum to one. Alleles
+      not in the dict default to weight 1.0; set them to 0 to exclude.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">A panel-specific weight dict</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+<span class="c-c"># weights are relative; you can use raw counts</span>
+v_weights = {
+    <span class="c-s">"IGHV3-23*01"</span>:  <span class="c-n">450</span>,
+    <span class="c-s">"IGHV4-39*01"</span>:  <span class="c-n">280</span>,
+    <span class="c-s">"IGHV4-59*02"</span>:  <span class="c-n">210</span>,
+    <span class="c-s">"IGHV1-69*06"</span>:  <span class="c-n">150</span>,
+    <span class="c-c"># everything else uses default weight 1.0</span>
+}
+
+result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>(v_allele_weights=v_weights)
+       .<span class="c-f">run</span>(n=<span class="c-n">10_000</span>, seed=<span class="c-n">42</span>)
+)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Building the table from an AIRR TSV.</h2>
+    <p class="ph-lead">
+      If you have a reference panel (your own data, an OAS pull, the example from any aligner
+      benchmark), you can derive the weights directly. Two grain options: by allele
+      (<code>IGHV3-23*01</code>) or by family (<code>IGHV3-23</code>). Family-level is more
+      forgiving of small reference panels.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">From counts in an AIRR TSV</div>
+      <pre class="code"><code><span class="c-k">import</span> pandas <span class="c-k">as</span> pd
+
+panel = pd.<span class="c-f">read_csv</span>(<span class="c-s">"my_repertoire.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+
+<span class="c-c"># allele-grain (use this if your reference panel is large)</span>
+v_weights = panel[<span class="c-s">"v_call"</span>].<span class="c-f">value_counts</span>().<span class="c-f">to_dict</span>()
+
+<span class="c-c"># family-grain (smoother — drop the *NN suffix)</span>
+fam_counts = (
+    panel[<span class="c-s">"v_call"</span>].<span class="c-f">str</span>.<span class="c-f">split</span>(<span class="c-s">"*"</span>).<span class="c-f">str</span>[<span class="c-n">0</span>]
+         .<span class="c-f">value_counts</span>().<span class="c-f">to_dict</span>()
+)
+<span class="c-c"># the sampler will match any allele whose family is in the dict</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>D and J too.</h2>
+    <p class="ph-lead">
+      The same mechanism applies to D and J pools. D is small enough that an even distribution
+      is usually fine; J is small enough that you should consider weighting it explicitly if
+      your reference repertoire has any asymmetry (often IGHJ4 and IGHJ6 dominate).
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">All three weight knobs</div>
+      <pre class="code"><code>result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>(
+            v_allele_weights=v_weights,
+            d_allele_weights=d_weights,
+            j_allele_weights=j_weights,
+       )
+       .<span class="c-f">run</span>(n=<span class="c-n">10_000</span>, seed=<span class="c-n">42</span>)
+)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Verify the match.</h2>
+    <p class="ph-lead">
+      After a sample, compare your <code>truth_v_call</code> distribution to your reference
+      panel. Compute a KL divergence or eyeball a bar chart — both should be close.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">KL divergence vs the reference</div>
+      <pre class="code"><code><span class="c-k">import</span> numpy <span class="c-k">as</span> np
+
+df = result.<span class="c-f">to_dataframe</span>()
+
+emp = panel[<span class="c-s">"v_call"</span>].<span class="c-f">value_counts</span>(normalize=<span class="c-n">True</span>)
+sim = df[<span class="c-s">"truth_v_call"</span>].<span class="c-f">value_counts</span>(normalize=<span class="c-n">True</span>)
+
+shared = emp.index.<span class="c-f">intersection</span>(sim.index)
+e, s = emp[shared].values, sim[shared].values
+
+kl = (e * np.<span class="c-f">log</span>(e / s)).<span class="c-f">sum</span>()
+<span class="c-f">print</span>(<span class="c-s">f"KL(empirical || simulated): {kl:.4f}"</span>)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-audit-realism.html">
+      <div class="ph-card-head">B · 03 · Audit for biological realism →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Confirm V-usage matching closes the gap on the full marginal panel.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-build-config.html">
+      <div class="ph-card-head">A · 01 · Build a config for your locus →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">If your panel uses alleles outside the built-in pool, build a custom RefDataConfig first.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

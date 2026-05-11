@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Smoke-test a config change — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">B · Validate</span>
+  </nav>
+
+  <span class="eyebrow">Recipe B · 04 · ~10 min · beginner</span>
+  <h1>Smoke-test a config change.</h1>
+  <p class="lead">
+    A 90-second CI loop: generate 1k sequences, diff their key marginals against a saved
+    baseline, fail loudly if a contract regresses or a distribution shifts beyond tolerance.
+    Drops into a pytest fixture so every PR that touches the config gets its biology rechecked
+    before merge.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Snapshot baseline</span>
+        <span class="ctl-sub">stored marginals from a good run</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Generate</span>
+        <span class="ctl-sub">small panel · fixed seed</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Assert</span>
+        <span class="ctl-sub">contracts · KS · totals</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>What a smoke-test is and isn't.</h2>
+    <p class="ph-lead">
+      A smoke test is not a science experiment. It's a guard against subtle regressions —
+      someone edits a config, you want to know the engine still produces in-frame sequences with
+      roughly the right V-usage shape. Tolerances are loose; the goal is to catch obvious
+      breakage in under two minutes.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Good smoke checks</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">productive rate</span><span class="pass-note">stable across runs at the same seed — should match baseline within 2%</span></li>
+        <li><span class="pass-name">truth_v_call top-5 set</span><span class="pass-note">the 5 most common V calls shouldn't change identity</span></li>
+        <li><span class="pass-name">junction_aa length mean</span><span class="pass-note">a single summary stat — stable to ±1 amino acid</span></li>
+        <li><span class="pass-name">contract violations</span><span class="pass-note">zero — any productive=False under <code>ga.productive()</code> is a bug</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Bad smoke checks (saved for B · 03)</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">full V-usage KL divergence</span><span class="pass-note">too sensitive to RNG; sit in the realism audit instead</span></li>
+        <li><span class="pass-name">motif distributions</span><span class="pass-note">expensive; not necessary for catching regressions</span></li>
+        <li><span class="pass-name">per-record assertions</span><span class="pass-note">slow; smoke is about marginals</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>The pytest fixture.</h2>
+    <p class="ph-lead">
+      One file in your test suite. Same seed every run — outputs are bit-identical, so any
+      change in the marginals comes from a code change, not RNG drift.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">tests/test_smoke.py</div>
+      <pre class="code"><code><span class="c-k">import</span> json, pytest
+<span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+<span class="c-k">from</span> pathlib <span class="c-k">import</span> Path
+
+BASELINE = json.<span class="c-f">loads</span>(Path(<span class="c-s">"tests/baseline.json"</span>).<span class="c-f">read_text</span>())
+
+<span class="c-k">@pytest.fixture</span>(scope=<span class="c-s">"module"</span>)
+<span class="c-k">def</span> <span class="c-f">panel</span>():
+    <span class="c-k">return</span> (
+        ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+          .<span class="c-f">recombine</span>()
+          .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">0</span>, <span class="c-n">25</span>))
+          .<span class="c-f">run_records</span>(
+              n=<span class="c-n">1000</span>,
+              seed=<span class="c-n">42</span>,
+              respect=ga.<span class="c-f">productive</span>(),
+              expose_provenance=<span class="c-n">True</span>,
+          ).<span class="c-f">to_dataframe</span>()
+    )
+
+<span class="c-k">def</span> <span class="c-f">test_no_contract_violations</span>(panel):
+    <span class="c-k">assert</span> panel[<span class="c-s">"productive"</span>].<span class="c-f">all</span>()
+
+<span class="c-k">def</span> <span class="c-f">test_v_usage_stable</span>(panel):
+    top5 = <span class="c-f">set</span>(panel[<span class="c-s">"truth_v_call"</span>]
+                .<span class="c-f">str</span>.<span class="c-f">split</span>(<span class="c-s">"*"</span>).<span class="c-f">str</span>[<span class="c-n">0</span>]
+                .<span class="c-f">value_counts</span>().<span class="c-f">head</span>(<span class="c-n">5</span>).index)
+    <span class="c-k">assert</span> top5 == <span class="c-f">set</span>(BASELINE[<span class="c-s">"v_top5"</span>])
+
+<span class="c-k">def</span> <span class="c-f">test_cdr3_length_stable</span>(panel):
+    mean = panel[<span class="c-s">"cdr3_aa"</span>].<span class="c-f">str</span>.<span class="c-f">len</span>().<span class="c-f">mean</span>()
+    <span class="c-k">assert</span> <span class="c-f">abs</span>(mean - BASELINE[<span class="c-s">"cdr3_mean"</span>]) &lt; <span class="c-n">1.0</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Capturing the baseline.</h2>
+    <p class="ph-lead">
+      First-time setup: run the panel once on a known-good build, save the summary marginals,
+      commit them. The test then asserts every subsequent run reproduces them.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">tools/capture_baseline.py</div>
+      <pre class="code"><code><span class="c-k">import</span> json, GenAIRR <span class="c-k">as</span> ga
+<span class="c-k">from</span> pathlib <span class="c-k">import</span> Path
+
+df = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">recombine</span>()
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">0</span>, <span class="c-n">25</span>))
+      .<span class="c-f">run_records</span>(n=<span class="c-n">1000</span>, seed=<span class="c-n">42</span>,
+                   respect=ga.<span class="c-f">productive</span>(),
+                   expose_provenance=<span class="c-n">True</span>)
+      .<span class="c-f">to_dataframe</span>()
+)
+
+baseline = {
+    <span class="c-s">"v_top5"</span>: <span class="c-f">list</span>(df[<span class="c-s">"truth_v_call"</span>].<span class="c-f">str</span>.<span class="c-f">split</span>(<span class="c-s">"*"</span>).<span class="c-f">str</span>[<span class="c-n">0</span>]
+                  .<span class="c-f">value_counts</span>().<span class="c-f">head</span>(<span class="c-n">5</span>).index),
+    <span class="c-s">"cdr3_mean"</span>: <span class="c-f">float</span>(df[<span class="c-s">"cdr3_aa"</span>].<span class="c-f">str</span>.<span class="c-f">len</span>().<span class="c-f">mean</span>()),
+}
+Path(<span class="c-s">"tests/baseline.json"</span>).<span class="c-f">write_text</span>(json.<span class="c-f">dumps</span>(baseline, indent=<span class="c-n">2</span>))</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>When the test fails.</h2>
+    <p class="ph-lead">
+      A failure means one of three things — and the first thing to do is figure out which.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">1 · You changed config on purpose</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Run <code>capture_baseline.py</code> again, commit the new <code>baseline.json</code>
+        alongside the config change. Test passes on the next run.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">2 · You broke RNG determinism</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Same seed should produce same output. If the test fails on a change that <em>shouldn't</em>
+        have touched sampling, you've probably altered the order of <code>rng.draw()</code> calls.
+        Bisect to find the culprit.
+      </p>
+    </div>
+    <div class="ph-card">
+      <div class="ph-card-head">3 · A contract regressed</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        If <code>test_no_contract_violations</code> trips, that's a real biology bug — a
+        non-productive record snuck past <code>ga.productive()</code>. Investigate immediately
+        before merging anything else.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-audit-realism.html">
+      <div class="ph-card-head">B · 03 · Audit a simulation for biological realism →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">When you need more than smoke — the full marginal panel against an empirical reference.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-replay.html">
+      <div class="ph-card-head">C · 03 · Replay with one knob changed →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Once the smoke test trips, replay specific records with only one parameter perturbed.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="#">GitHub</a>
+        <a href="#">Cite</a>
+        <a href="#">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

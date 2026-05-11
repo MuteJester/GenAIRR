@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lesson 3 — S5F: mutation isn't uniform · GenAIRR</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html" class="active">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="#">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<article class="page lesson-page">
+  <div class="lesson-crumbs"><a href="learn.html">Learn</a><span class="sep">›</span> Lesson 03</div>
+  <span class="eyebrow">Lesson 03 · ~3 min</span>
+  <h1>S5F: mutation isn't uniform</h1>
+  <p class="deck">If your simulator scatters point mutations uniformly across a sequence, it's giving you a fairy tale. Real SHM is concentrated in CDRs and shaped by 5-mer context.</p>
+  <div class="lesson-progress">
+    <span class="seg-bar done"></span><span class="seg-bar done"></span><span class="seg-bar active"></span><span class="seg-bar"></span><span class="seg-bar"></span>
+    <span class="meta">03 / 05</span>
+  </div>
+
+  <h2>The intuition</h2>
+  <p class="intuition">AID — the enzyme that drives somatic hypermutation — has hot spots. <code>WRC</code> motifs (where W is A/T and R is A/G) are mutated orders of magnitude more often than the surrounding bases. CDRs are enriched for hot spots; FWRs are not. The result is a heatmap, not a sprinkle.</p>
+  <p>GenAIRR uses the S5F model — a 5-mer context-aware mutability and substitution table empirically derived from human B-cell repertoires. Each position's mutation probability is a function of its two upstream and two downstream neighbors. The hotter the 5-mer, the more often it mutates.</p>
+
+  <h2>Mutation density across the V region</h2>
+  <p>Below: 1,000 simulated heavy chains, mutated at a 5% rate, summarized as positional density. Darker green = more mutations land here. Amber = hot-spot regions where the rate exceeds the average.</p>
+
+  <div class="heatmap" id="lesson-heatmap"></div>
+
+  <p class="mute" style="font-size: 13px;">CDR1 / CDR2 / CDR3 (the antigen-contact loops) are visibly enriched. FWRs (the structural scaffold) are colder — selection pressure rejects mutations that disrupt folding.</p>
+
+  <h2>The corresponding code</h2>
+  <p>S5F is the default mutation model. The <code>count=</code> argument controls how many mutations land on each sequence — a fixed integer, a <code>(min, max)</code> uniform range, or an arbitrary weighted distribution. The <code>s5f_model=</code> argument picks the empirical kernel; four ship with GenAIRR.</p>
+
+  <div class="code-window" style="margin: 16px 0;">
+    <div class="code-window-head"><div class="traffic"><span></span><span></span><span></span></div><span>lesson_3.py</span></div>
+<pre class="code-window-body"><code><span class="kw">import</span> GenAIRR <span class="kw">as</span> ga
+
+result = (
+    ga.<span class="fn">Experiment</span>.<span class="fn">on</span>(<span class="str">"human_igh"</span>)
+       .<span class="fn">recombine</span>()
+       .<span class="fn">mutate</span>(
+           <span class="at">model</span>=<span class="str">"s5f"</span>,
+           <span class="at">count</span>=(<span class="num">5</span>, <span class="num">25</span>),
+           <span class="cm"># kernels: "hh_s5f" (heavy, default), "hh_s5f_60",</span>
+           <span class="cm">#          "hh_s5f_opposite", "hkl_s5f" (kappa/lambda)</span>
+           <span class="at">s5f_model</span>=<span class="str">"hh_s5f"</span>,
+       )
+       .<span class="fn">run_records</span>(<span class="at">n</span>=<span class="num">1000</span>, <span class="at">seed</span>=<span class="num">42</span>, <span class="at">expose_provenance</span>=<span class="kw">True</span>)
+)
+
+<span class="cm"># Each record exposes mutation summaries at field level</span>
+rec = result.records[<span class="num">0</span>]
+rec[<span class="str">"n_mutations"</span>]    <span class="cm"># e.g. 10</span>
+rec[<span class="str">"mutation_rate"</span>]   <span class="cm"># e.g. 0.0258</span>
+rec[<span class="str">"v_identity"</span>]      <span class="cm"># e.g. 0.9763 (S5F concentrates here)</span></code></pre>
+  </div>
+
+  <div class="try">
+    <div class="try-head">Try it now</div>
+    <div class="try-body">
+      <p>Run the experiment above and inspect mean <code>v_identity</code>, <code>d_identity</code>, <code>j_identity</code> across the 1,000 records. You'll see the three numbers aren't equal — D drops the most (short segments are hit hardest by any mutation that lands), V drops next, and J holds the highest identity. Each region has its own SHM signature. Try swapping <code>s5f_model="hkl_s5f"</code> with a light-chain config to see the kernel matter.</p>
+    </div>
+  </div>
+
+  <div class="exercise">
+    <span class="ex-tag">Exercise</span>
+    <p>Run two experiments at the same seed and fixed <code>count=(15, 15)</code>: one with <code>model="s5f"</code>, one with <code>model="uniform"</code>. Compare mean <code>v_identity</code> against mean <code>d_identity</code> in each. With uniform they should sit near each other; with S5F there's a real gap — V is hotter than D for the same mutation budget. Why?</p>
+  </div>
+
+  <nav class="lesson-nav">
+    <a href="lesson-2.html"><div class="ln-label">← Previous</div><div class="ln-title">02 · The pipeline scrubber</div></a>
+    <a href="lesson-4.html" class="next"><div class="ln-label">Next →</div><div class="ln-title">04 · Sequencing artifacts, dialed in</div></a>
+  </nav>
+</article>
+
+<footer class="foot"><div class="foot-inner"><div>© 2026 GenAIRR contributors</div><div><a href="#">GitHub</a></div></div></footer>
+
+<script src="genairr.js"></script>
+<script>setupHeatmap('#lesson-heatmap');</script>
+</body>
+</html>
