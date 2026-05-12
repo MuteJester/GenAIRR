@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live calls — GenAIRR Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html">Guides</a>
+      <a href="concepts.html" class="active">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="https://pypi.org/project/GenAIRR/">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<!-- ================= HEADER ================= -->
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="concepts.html">Concepts</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">Live calls</span>
+  </nav>
+
+  <span class="eyebrow">Chapter 05 · Reading the evidence</span>
+  <h1>Live calls — what the corrupted bases actually say.</h1>
+  <p class="lead">
+    After every pipeline pass has finished editing the sequence, GenAIRR runs an evidence-based
+    caller against whatever bases survived. It scores every reference allele, keeps the strict
+    tie at max score, and orders the surviving truth allele first when it's in the tie. The
+    result is published in <code>v_call</code> / <code>d_call</code> / <code>j_call</code>,
+    sitting beside <code>truth_v_call</code> in the same record so an aligner-style call and the
+    sampled-at-source truth can be compared row-by-row.
+  </p>
+</section>
+
+<!-- ================= TIMELINE ================= -->
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Score every allele</span>
+        <span class="ctl-sub">+1 per matching base, structural + elastic</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">Strict tie at max</span>
+        <span class="ctl-sub">only alleles with the highest score survive</span>
+      </div>
+    </div>
+
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Truth first if it survives</span>
+        <span class="ctl-sub">keeps v_call.split(",")[0] aligned with the alignment fields</span>
+      </div>
+    </div>
+  </div>
+  <p class="phr-note" style="text-align: center; margin: 8px auto 0; max-width: 720px;">
+    Three deterministic steps. No reject-and-retry, no stochastic search — every base contributes
+    one score increment to every allele it matches, and the call falls out of arithmetic.
+  </p>
+</section>
+
+<!-- ================= PART 01 — why ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>Why GenAIRR records two call fields per segment.</h2>
+    <p class="ph-lead">
+      <code>truth_v_call</code> tells you what was sampled at recombination — fixed at the source,
+      immune to any downstream pass. <code>v_call</code> tells you what an evidence-based caller
+      can recover from the bases that survived corruption. After heavy SHM or 5′ loss the two can
+      legitimately diverge, and that divergence is itself the signal: it's a window into how
+      ambiguity grows as the molecule gets chewed.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">The pre-Y6 problem</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        The earlier caller used a strict-intersect over compatible alleles per base: as soon as one
+        base ruled out the last shared allele, <code>v_call</code> collapsed to empty. A single
+        mutation could wipe the entire call field. The caller wasn't wrong — it was honest about
+        having no consensus — but the field stopped carrying useful information.
+      </p>
+    </div>
+
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">What you see in the record now</div>
+      <pre class="code"><code><span class="c-c"># single confident call</span>
+v_call       <span class="c-s">"IGHV3-23*04"</span>
+
+<span class="c-c"># tie-set — paralogs the surviving bases can't tell apart</span>
+v_call       <span class="c-s">"IGHV3-23*04, IGHV3-23*01"</span>
+truth_v_call <span class="c-s">"IGHV3-23*01"</span>
+
+<span class="c-c"># honest drift — truth dropped out of the evidence tie</span>
+v_call       <span class="c-s">"IGHD6-13*01, IGHD6-19*01"</span>
+truth_d_call <span class="c-s">"IGHD6-25*01"</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 02 — how scoring works ================= -->
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Score every allele. Take the strict tie at max.</h2>
+    <p class="ph-lead">
+      Per segment, GenAIRR builds a score vector of length <em>N alleles</em>. It walks each base
+      the segment claims, looks up which alleles have that base at the projected reference
+      position, and increments their counts. The final call is the set of alleles tied at the
+      maximum score — nothing fancier.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">The structural walk</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Each base inside V's (or D's, or J's) own region is scored against every reference
+        allele's germline byte at that ref position. Indel-inserted bases (no ref position) are
+        skipped without failing the call.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Elastic boundary extension</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        After the structural walk, the caller steps into the adjacent NP region — and optionally
+        into the next structural neighbour — looking for bases that still fit each allele's
+        projected continuation. Each match adds to the score; the walk halts when no allele can
+        cover the projected position.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Two caps on the walker</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        <b>Trim cap:</b> the walk can reach at most <code>trim_5</code> ref positions before
+        the structural start (and <code>trim_3</code> after the end) — the sampled allele's own
+        footprint bounds the search. <b>Structural boundary cap:</b> the walk can overlap into
+        the one neighbour segment, but never skip past it into more-distant territory.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Strict tie at max</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        The call is the set of alleles whose final score equals the maximum. Alleles with
+        strictly more matches win outright. When the max score is zero (extreme corruption,
+        every base edited away from every allele's germline), the full pool ships — every
+        allele is equally consistent with the absence of evidence.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PART 03 — truth-first projection ================= -->
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Truth-first ordering keeps the row internally consistent.</h2>
+    <p class="ph-lead">
+      The AIRR row carries one <code>germline_alignment</code>, one <code>v_identity</code>, one
+      <code>v_cigar</code> — singular fields, computed against a single projected allele. When
+      the tie-set has more than one member, the call has to pick one for projection. GenAIRR
+      prefers the truth allele <em>when it sits inside the tie-set</em>: it's the only allele
+      whose germline bytes really do match the pool bases.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Two seams, one rule</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">projected_allele_id</span><span class="pass-note">picks truth from the tie-set; falls back to the first tied id; ultimately falls back to truth even when there's no live-call layer</span></li>
+        <li><span class="pass-name">live_call_name</span><span class="pass-note">orders the comma-separated string so the truth allele appears first when it's in the tie</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Fields that follow the projection</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">germline_alignment</span><span class="pass-note">filled with the projected allele's bytes at every claimed ref position</span></li>
+        <li><span class="pass-name">v_identity · d_identity · j_identity</span><span class="pass-note">matches over the alignment span vs. the projected allele's bytes</span></li>
+        <li><span class="pass-name">v_cigar · d_cigar · j_cigar</span><span class="pass-note">M / I / D ops referenced to the projected allele</span></li>
+        <li><span class="pass-name">v_germline_start / end</span><span class="pass-note">ref-position span the projection covered</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="phr-note" style="text-align: center; margin: 12px auto 0; max-width: 740px;">
+    Net effect: <code>v_call.split(",")[0]</code> always names the allele the alignment-side
+    fields were computed against. A downstream consumer that reads only the first call gets
+    coherent metadata; one that parses the whole tie-set gets the honest ambiguity envelope.
+  </p>
+</section>
+
+<!-- ================= PART 04 — reading the tie-set ================= -->
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Reading the tie-set.</h2>
+    <p class="ph-lead">
+      The shape of <code>v_call</code> across a batch carries diagnostic information about how
+      hard the simulated reads are to call. Three patterns to recognise.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Single allele — confident call</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        The surviving bases narrow the evidence to one winner. Most records under moderate
+        corruption land here; <code>v_call</code> equals <code>truth_v_call</code> verbatim. This
+        is the regime an aligner is supposed to recover the call cleanly.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Two or three alleles — paralog ambiguity</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Close paralogs (<code>*01</code> / <code>*04</code> of the same gene, sibling D genes
+        like <code>IGHD4-11</code> / <code>IGHD4-4</code>) tie when the surviving bases don't
+        cover the discriminating SNPs. D ties most often — the segment is only ~17 bp and a
+        single coincidental NP match is enough to lift another allele to truth's score.
+      </p>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Truth dropped from the tie</div>
+      <p class="phr-note" style="margin: 8px 0 0;">
+        Under heavy SHM or corruption the evidence can shift away from the originally-sampled
+        allele entirely. <code>v_call</code> reports the alleles that genuinely scored highest;
+        <code>truth_v_call</code> remembers what was really drawn. The gap is the honest
+        aligner-drift case a benchmarking pipeline wants to detect.
+      </p>
+    </div>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code">
+      <div class="ph-card-head">Walking the tie-set in Python</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+records = (
+    ga.<span class="c-f">Experiment</span>.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+       .<span class="c-f">recombine</span>()
+       .<span class="c-f">mutate</span>(count=<span class="c-n">25</span>)
+       .<span class="c-f">corrupt_pcr</span>(count=<span class="c-n">8</span>)
+       .<span class="c-f">run_records</span>(n=<span class="c-n">1000</span>, seed=<span class="c-n">42</span>, expose_provenance=<span class="c-n">True</span>)
+)
+
+<span class="c-k">for</span> rec <span class="c-k">in</span> records:
+    tie = rec[<span class="c-s">"v_call"</span>].<span class="c-f">split</span>(<span class="c-s">","</span>)
+    truth_in_tie = rec[<span class="c-s">"truth_v_call"</span>] <span class="c-k">in</span> tie
+
+    <span class="c-c"># benchmark: did an aligner's call appear anywhere in our tie?</span>
+    aligner_in_tie = predictions[rec[<span class="c-s">"sequence_id"</span>]] <span class="c-k">in</span> tie
+
+    <span class="c-c"># diagnostic: did the evidence drift off truth?</span>
+    drift = <span class="c-k">not</span> truth_in_tie</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NEXT ================= -->
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Continue</span>
+    <h2>Next chapter.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="concept-airr-record.html">
+      <div class="ph-card-head">← Chapter 04 · The AIRR Record</div>
+      <p class="phr-note" style="margin: 6px 0 0;">The 70-field schema GenAIRR writes per sequence — truth columns, evidence columns, coordinates, junction.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="concepts.html">
+      <div class="ph-card-head">Back to all concepts →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Five chapters: pipeline, persistent IR, contracts, AIRR record, live calls.</p>
+    </a>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand">
+        <span class="brand-mark">G</span>
+        <span>GenAIRR</span>
+      </div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="https://github.com/MuteJester/GenAIRR">GitHub</a>
+        <a href="https://doi.org/10.1093/bib/bbae556">Cite</a>
+        <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

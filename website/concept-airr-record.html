@@ -21,7 +21,7 @@
       <a href="concepts.html" class="active">Concepts</a>
       <a href="reference.html">Reference</a>
     </div>
-    <a class="nav-cta" href="#">pip install GenAIRR</a>
+    <a class="nav-cta" href="https://pypi.org/project/GenAIRR/">pip install GenAIRR</a>
   </div>
 </nav>
 
@@ -151,14 +151,16 @@
     <div class="ph-card">
       <div class="ph-card-head">Evidence-based call — what the sequence looks like now</div>
       <ul class="pass-list">
-        <li><span class="pass-name">v_call</span><span class="pass-note">the V allele the final sequence best matches</span></li>
-        <li><span class="pass-name">d_call</span><span class="pass-note">D allele best matching the (often short) middle region</span></li>
-        <li><span class="pass-name">j_call</span><span class="pass-note">J allele best matching the final 3′ region</span></li>
+        <li><span class="pass-name">v_call</span><span class="pass-note">V allele(s) the corrupted sequence supports — comma-separated when paralogs can't be told apart</span></li>
+        <li><span class="pass-name">d_call</span><span class="pass-note">D allele(s) the (often short) middle region supports — D ties most often</span></li>
+        <li><span class="pass-name">j_call</span><span class="pass-note">J allele(s) the final 3′ region supports</span></li>
       </ul>
       <p class="phr-note" style="margin: 12px 0 0;">
-        These are computed at record time by aligning the final sequence against the reference.
-        After heavy SHM, they may diverge from <code>truth_*</code> — exactly the case where an
-        aligner could be misled.
+        Computed at record time by scoring every reference allele against the final sequence and
+        returning the strict tie-set at max score. When the truth allele survives the tie it is
+        listed first, so <code>v_call.split(",")[0]</code> stays consistent with the alignment and
+        identity fields. After heavy SHM or corruption the tie-set may diverge from
+        <code>truth_*</code> entirely — exactly the case where an aligner could be misled.
       </p>
     </div>
   </div>
@@ -173,15 +175,16 @@
     </div>
     <div class="ph-arrow">≠</div>
     <div class="ph-ribbon">
-      <div class="phr-label">evidence (best match after SHM)</div>
+      <div class="phr-label">evidence (tie-set after SHM)</div>
       <div class="phr-track">
-        <div class="phr-seg phr-d" style="width: 100%;">IGHV3-23*04</div>
+        <div class="phr-seg phr-d" style="width: 100%;">IGHV3-23*04, IGHV3-23*01</div>
       </div>
     </div>
   </div>
   <p class="phr-note" style="text-align: center; margin: 10px auto 0; max-width: 720px;">
-    Same record. Two correct answers. The aligner says <code>*04</code> because the post-SHM
-    sequence happens to match it better; GenAIRR remembers that the actual draw was <code>*01</code>.
+    Same record. The evidence caller can't tell <code>*01</code> from <code>*04</code> after the
+    surviving bases — both score the same — so <code>v_call</code> reports both, truth first.
+    <code>truth_v_call</code> remembers that the actual draw was <code>*01</code>.
   </p>
 </section>
 
@@ -248,7 +251,7 @@ rec.junction_aa
       <span class="phr-field"><span class="phr-k">truth_v_call</span> <span class="phr-v">IGHV3-23*01</span></span>
       <span class="phr-field"><span class="phr-k">truth_d_call</span> <span class="phr-v">IGHD3-10*01</span></span>
       <span class="phr-field"><span class="phr-k">truth_j_call</span> <span class="phr-v">IGHJ4*02</span></span>
-      <span class="phr-field"><span class="phr-k">v_call · d_call · j_call</span> <span class="phr-v">best-match</span></span>
+      <span class="phr-field"><span class="phr-k">v_call · d_call · j_call</span> <span class="phr-v">evidence tie-set</span></span>
       <span class="phr-field"><span class="phr-k">locus · chain</span> <span class="phr-v">IGH · heavy</span></span>
     </div>
   </div>
@@ -366,9 +369,9 @@ trace.<span class="c-f">prefix_count</span>(<span class="c-s">"mutate.s5f"</span
       <div class="ph-card-head">← Chapter 03 · Contracts</div>
       <p class="phr-note" style="margin: 6px 0 0;">How GenAIRR enforces biology by pruning the candidate distribution at sample time.</p>
     </a>
-    <a class="ph-card" style="text-decoration: none;" href="concepts.html">
-      <div class="ph-card-head">Back to Concepts overview</div>
-      <p class="phr-note" style="margin: 6px 0 0;">All four chapters in one place.</p>
+    <a class="ph-card" style="text-decoration: none;" href="concept-live-call.html">
+      <div class="ph-card-head">Chapter 05 · Live calls →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">The evidence-based caller behind <code>v_call</code> / <code>d_call</code> / <code>j_call</code> — score-and-tie, elastic boundaries, truth-first ordering.</p>
     </a>
   </div>
 </section>
@@ -398,9 +401,9 @@ trace.<span class="c-f">prefix_count</span>(<span class="c-s">"mutate.s5f"</span
       </div>
       <div class="foot-col">
         <div class="foot-head">Project</div>
-        <a href="#">GitHub</a>
-        <a href="#">Cite</a>
-        <a href="#">License</a>
+        <a href="https://github.com/MuteJester/GenAIRR">GitHub</a>
+        <a href="https://doi.org/10.1093/bib/bbae556">Cite</a>
+        <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE">License</a>
       </div>
     </div>
   </div>

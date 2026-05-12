@@ -21,7 +21,7 @@
       <a href="concepts.html" class="active">Concepts</a>
       <a href="reference.html">Reference</a>
     </div>
-    <a class="nav-cta" href="#">pip install GenAIRR</a>
+    <a class="nav-cta" href="https://pypi.org/project/GenAIRR/">pip install GenAIRR</a>
   </div>
 </nav>
 
@@ -36,10 +36,11 @@
   <span class="eyebrow">The architecture · how it works inside</span>
   <h1>How GenAIRR&nbsp;thinks.</h1>
   <p class="lead">
-    Four ideas describe the engine. A <em>persistent IR</em> that records every decision.
+    Five ideas describe the engine. A <em>persistent IR</em> that records every decision.
     A <em>composable pipeline</em> of passes that transform it. <em>Contracts</em> that
-    refuse to let it lie. And a flat <em>AIRR record</em> that hands you the truth, by name,
-    in a format every aligner already speaks.
+    refuse to let it lie. A flat <em>AIRR record</em> that hands you the truth, by name, in a
+    format every aligner already speaks. And a <em>live-call</em> layer that reports what an
+    evidence-based caller would say about the same record — for benchmarking against.
   </p>
   <p class="lead-sub">
     Read these in order if you want the architecture; skip ahead if you came for a specific
@@ -201,7 +202,7 @@
           <tr>
             <td class="dr-k">v_call</td>
             <td class="dr-v">str</td>
-            <td class="dr-note">best match</td>
+            <td class="dr-note">evidence tie-set</td>
           </tr>
           <tr class="dr-truth">
             <td class="dr-k">truth_n_mutations</td>
@@ -212,6 +213,45 @@
             <td class="dr-k" colspan="3">… 65 more fields</td>
           </tr>
         </table>
+      </div>
+
+      <span class="concept-go">Read chapter →</span>
+    </a>
+
+    <!-- 05 — Live calls -->
+    <a class="concept-card" href="concept-live-call.html">
+      <div class="concept-num">05</div>
+      <div class="concept-meta">
+        <span class="concept-tag">Reading the evidence</span>
+        <span class="concept-time">~6 min read</span>
+      </div>
+      <h2>Live Calls</h2>
+      <p>
+        The caller behind the <code>v_call</code> / <code>d_call</code> / <code>j_call</code>
+        fields. Per-allele scoring, strict tie at max, trim-bounded elastic boundaries,
+        truth-first ordering when the sampled allele survives the tie.
+      </p>
+
+      <!-- mini visual: 3 ranked alleles, max-score band shaded -->
+      <div class="concept-diagram diagram-livecall" aria-hidden="true">
+        <ul class="dc-list">
+          <li class="dc-row">
+            <span class="dc-name">IGHV3-23*04</span>
+            <span class="dc-detail">score 286 — tied at max</span>
+            <span class="dc-mark">✓</span>
+          </li>
+          <li class="dc-row">
+            <span class="dc-name">IGHV3-23*01</span>
+            <span class="dc-detail">score 286 — tied at max</span>
+            <span class="dc-mark">✓</span>
+          </li>
+          <li class="dc-row">
+            <span class="dc-name">IGHV3-30*02</span>
+            <span class="dc-detail">score 271 — dropped</span>
+            <span class="dc-mark">·</span>
+          </li>
+        </ul>
+        <div class="dc-foot">→ <code>v_call = "*04, *01"</code></div>
       </div>
 
       <span class="concept-go">Read chapter →</span>
@@ -236,7 +276,7 @@
       <h3>Task-shaped guides.</h3>
       <p>How to benchmark an aligner, how to build a null model, how to compose a custom
       pass, how to wire GenAIRR into an existing ML training loop.</p>
-      <a class="btn btn-ghost" href="#">Browse guides →</a>
+      <a class="btn btn-ghost" href="guides.html">Browse guides →</a>
     </div>
   </div>
 </section>
@@ -256,13 +296,13 @@
       </div>
       <div>
         <h4>Reference</h4>
-        <a href="#">Python API</a>
-        <a href="#">Configs</a>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
       </div>
       <div>
         <h4>Project</h4>
-        <a href="#">GitHub</a>
-        <a href="#">Cite</a>
+        <a href="https://github.com/MuteJester/GenAIRR">GitHub</a>
+        <a href="https://doi.org/10.1093/bib/bbae556">Cite</a>
       </div>
     </div>
   </div>

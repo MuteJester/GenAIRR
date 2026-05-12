@@ -1784,8 +1784,9 @@ footer.foot {
   border-radius: 2px; font-size: 10px;
 }
 
-/* ─── diagram: contracts ─── */
-.diagram-contracts { padding: 14px 18px 14px; }
+/* ─── diagram: contracts (also reused by live-call) ─── */
+.diagram-contracts,
+.diagram-livecall { padding: 14px 18px 14px; }
 .dc-list { list-style: none; padding: 0; margin: 0; }
 .dc-row {
   display: grid;

@@ -13,7 +13,7 @@
   <div class="nav-inner">
     <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
     <div class="nav-links"><a href="index.html">Home</a><a href="learn.html" class="active">Learn</a><a href="guides.html">Guides</a><a href="concepts.html">Concepts</a><a href="reference.html">Reference</a></div>
-    <a class="nav-cta" href="#">pip install GenAIRR</a>
+    <a class="nav-cta" href="https://pypi.org/project/GenAIRR/">pip install GenAIRR</a>
   </div>
 </nav>
 
@@ -55,9 +55,9 @@
         GenAIRR record
         <span class="badge gt">truth</span>
       </div>
-      <pre class="compare-body"><span class="key">v_call         </span> <span class="ok">IGHV3-23*04</span>
-<span class="key">d_call         </span> <span class="ok">IGHD3-10*01</span>
-<span class="key">j_call         </span> <span class="ok">IGHJ4*02</span>
+      <pre class="compare-body"><span class="key">truth_v_call   </span> <span class="ok">IGHV3-23*04</span>
+<span class="key">truth_d_call   </span> <span class="ok">IGHD3-10*01</span>
+<span class="key">truth_j_call   </span> <span class="ok">IGHJ4*02</span>
 <span class="key">v_sequence_start </span> <span class="ok">0</span>
 <span class="key">v_sequence_end   </span> <span class="ok">38</span>
 <span class="key">np1_length       </span> <span class="ok">5</span>
@@ -68,8 +68,11 @@
     </div>
   </div>
 
+  <h2>Two call fields, by design</h2>
+  <p>Look closely at the record. There are actually <em>two</em> V-call columns: <code>v_call</code> is what GenAIRR's own evidence-based caller would report from the corrupted sequence (and may carry a comma-separated tie-set when the surviving bases don't distinguish close paralogs). <code>truth_v_call</code> is the allele that was sampled at recombination — exact, unambiguous, captured before any corruption could touch it. The same split exists for D and J. When you benchmark an external aligner, you compare it against <code>truth_v_call</code>: that's the only field that's guaranteed correct regardless of how heavy the corruption is.</p>
+
   <h2>Why this matters for benchmarking</h2>
-  <p>Run any aligner on the GenAIRR sequence. Compare its output to the GenAIRR record. The diff <em>is</em> the error rate — there's no other reference frame to argue about. This makes GenAIRR the right substrate for:</p>
+  <p>Run any aligner on the GenAIRR sequence. Compare its output to the truth columns. The diff <em>is</em> the error rate — there's no other reference frame to argue about. This makes GenAIRR the right substrate for:</p>
   <ul>
     <li><strong>Aligner accuracy benchmarks</strong> — V/D/J call concordance, junction localization, mutation recall.</li>
     <li><strong>Training data for ML</strong> — every record carries 47 labels with no annotation noise.</li>
@@ -81,13 +84,23 @@
 
   <div class="code-window" style="margin: 16px 0;">
     <div class="code-window-head"><div class="traffic"><span></span><span></span><span></span></div><span>benchmark_pattern.py</span></div>
-<pre class="code-window-body"><code><span class="cm"># A common benchmarking pattern</span>
-result = experiment.<span class="fn">run</span>(<span class="at">n</span>=<span class="num">10_000</span>, <span class="at">seed</span>=<span class="num">42</span>)
+<pre class="code-window-body"><code><span class="kw">import</span> GenAIRR <span class="kw">as</span> ga
+
+experiment = (
+    ga.<span class="fn">Experiment</span>.<span class="fn">on</span>(<span class="str">"human_igh"</span>)
+       .<span class="fn">recombine</span>()
+       .<span class="fn">mutate</span>(<span class="at">count</span>=(<span class="num">5</span>, <span class="num">25</span>))
+       .<span class="fn">corrupt_5prime_loss</span>(<span class="at">length</span>=(<span class="num">0</span>, <span class="num">20</span>))
+       .<span class="fn">corrupt_indels</span>(<span class="at">count</span>=(<span class="num">0</span>, <span class="num">2</span>))
+)
+
+<span class="cm"># expose_provenance=True adds truth_v/d/j_call columns to every record</span>
+result = experiment.<span class="fn">run_records</span>(<span class="at">n</span>=<span class="num">10_000</span>, <span class="at">seed</span>=<span class="num">42</span>, <span class="at">expose_provenance</span>=<span class="kw">True</span>)
 result.<span class="fn">to_fasta</span>(<span class="str">"corrupted.fasta"</span>)        <span class="cm"># feed to aligner X</span>
 truth = result.<span class="fn">to_dataframe</span>()              <span class="cm"># keep truth</span>
 
 <span class="cm"># run aligner X → predictions.tsv → join on sequence_id</span>
-v_recall = (truth.v_call == predictions.v_call).<span class="fn">mean</span>()</code></pre>
+v_recall = (truth.truth_v_call == predictions.v_call).<span class="fn">mean</span>()</code></pre>
   </div>
 
   <nav class="lesson-nav">
@@ -96,6 +109,6 @@ v_recall = (truth.v_call == predictions.v_call).<span class="fn">mean</span>()</
   </nav>
 </article>
 
-<footer class="foot"><div class="foot-inner"><div>© 2026 GenAIRR contributors</div><div><a href="#">GitHub</a></div></div></footer>
+<footer class="foot"><div class="foot-inner"><div>© 2026 GenAIRR contributors</div><div><a href="https://github.com/MuteJester/GenAIRR">GitHub</a></div></div></footer>
 </body>
 </html>
