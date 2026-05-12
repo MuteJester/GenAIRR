@@ -412,7 +412,7 @@ function setupBench(rootSelector) {
     await sleep(550);
 
     // step 8 — reveal ground truth
-    setStep(8, 'ground-truth annotations populated · 47 fields', 'SimulationContainer → AIRR record');
+    setStep(8, 'ground-truth annotations populated · ~70 fields', 'SimulationContainer → AIRR record');
     setField('productive', productive ? 'true' : 'false');
     renderProvenance(segs, total);
     await sleep(2400);
@@ -459,7 +459,7 @@ function setupBench(rootSelector) {
     track.innerHTML = '';
     renderSegments(segs, total);
     renderProvenance(segs, total);
-    setStep(8, 'ground-truth annotations populated · 47 fields', 'SimulationContainer → AIRR record');
+    setStep(8, 'ground-truth annotations populated · ~70 fields', 'SimulationContainer → AIRR record');
     setField('v_call', V_LIB[0]);
     setField('d_call', D_LIB[0]);
     setField('j_call', J_LIB[0]);
@@ -674,9 +674,9 @@ function setupSpecimen(rootSelector) {
       muts: [], ns: [], drift: false,
       callouts: {
         top: [
-          { anchor: 145, k: 'v_call',  v: 'IGHV3-23*01', klass: 'is-truth' },
-          { anchor: 302, k: 'd_call',  v: 'IGHD3-10*01', klass: 'is-cobalt' },
-          { anchor: 336, k: 'j_call',  v: 'IGHJ4*02',    klass: 'is-plum' },
+          { anchor: 145, k: 'truth_v_call',  v: 'IGHV3-23*01', klass: 'is-truth' },
+          { anchor: 302, k: 'truth_d_call',  v: 'IGHD3-10*01', klass: 'is-cobalt' },
+          { anchor: 336, k: 'truth_j_call',  v: 'IGHJ4*02',    klass: 'is-plum' },
         ],
         bot: [
           { anchor: 145, k: 'v_sequence_end', v: '290' },
@@ -765,7 +765,7 @@ function setupSpecimen(rootSelector) {
       callouts: {
         top: [
           { anchor: 145, k: 'truth_v_call',     v: 'IGHV3-23*01', klass: 'is-truth' },
-          { anchor: 200, k: 'v_call (best match)', v: 'IGHV3-30*04', klass: 'is-warn' },
+          { anchor: 200, k: 'v_call (tie-set)', v: 'IGHV3-30*04', klass: 'is-warn' },
           { anchor: 336, k: 'truth_j_call',     v: 'IGHJ4*02',    klass: 'is-truth' },
         ],
         bot: [

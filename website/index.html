@@ -96,7 +96,7 @@
     <div class="feat">
       <div class="num">01 / BENCHMARK</div>
       <h3>Tools, models, and pipelines against absolute truth</h3>
-      <p>Test annotation pipelines, aligners, and ML models on data where every V/D/J call, mutation, and trimming length is known by construction. Stable evaluation at any scale, across 23 species and 106 built-in configs.</p>
+      <p>Test annotation pipelines, aligners, and ML models on data where every V/D/J call, mutation, and trimming length is known by construction. Stable evaluation at any scale, across 22 species and 106 built-in configs.</p>
     </div>
     <div class="feat">
       <div class="num">02 / NULL MODEL</div>
@@ -112,7 +112,7 @@
 
   <div class="engine-strip">
     <span class="engine-tag">ENGINE</span>
-    <span><b>~15K–30K seq/sec</b> compiled core</span>
+    <span><b>compiled Rust kernel</b> — scales linearly per record</span>
     <span class="sep"></span>
     <span><b>~70</b> ground-truth fields per record</span>
     <span class="sep"></span>
@@ -178,7 +178,7 @@
         <span class="cap-tag">ENGINE · respect=ga.productive()</span>
       </div>
       <h3>Constrain</h3>
-      <p>Pruning-aware sampling: pass a contract bundle and the engine filters every draw's candidate distribution so productive sequences fall out by construction. No reject-and-retry. Strict mode for hard guarantees.</p>
+      <p>Pruning-aware sampling: pass a contract bundle and the engine filters every draw's candidate distribution so productive <em>recombinations</em> fall out by construction. No reject-and-retry. Downstream corruption can still degrade productivity — that's the part you're modelling. Strict mode for hard guarantees at sample time.</p>
     </div>
 
     <!-- 06 — Replay & Audit -->
