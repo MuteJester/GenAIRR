@@ -37,10 +37,10 @@
   <span class="eyebrow">Recipe C · 03 · ~10 min · advanced</span>
   <h1>Replay a simulation with one knob changed.</h1>
   <p class="lead">
-    The persistent IR makes counterfactual analysis cheap. Fix a seed, take any intermediate
-    revision (say, the post-recombination snapshot), swap a single downstream pass, and re-run
-    from that point. You isolate exactly the effect you wanted — no upstream randomness in the
-    way, no full re-execution to pay for.
+    Pin V/D/J via <code>.using(...)</code>, fix the seed, and the engine produces a bit-identical
+    recombination on every run. Vary one downstream knob — mutation model, mutation count, a
+    corruption parameter — and any difference between the two outputs is attributable to that
+    knob alone. No upstream RNG drift, no annotation noise, no other moving parts.
   </p>
 </section>
 
@@ -51,24 +51,24 @@
       <div class="ctl-dot"></div>
       <div class="ctl-label">
         <span class="ctl-num">01</span>
-        <span class="ctl-name">Run once with seed</span>
-        <span class="ctl-sub">save the outcome</span>
+        <span class="ctl-name">Pick a V/D/J anchor</span>
+        <span class="ctl-sub">from a baseline run or refdata directly</span>
       </div>
     </div>
     <div class="ctl-stop ctl-stop-2">
       <div class="ctl-dot"></div>
       <div class="ctl-label">
         <span class="ctl-num">02</span>
-        <span class="ctl-name">Pick the fork point</span>
-        <span class="ctl-sub">revision_after("recombine")</span>
+        <span class="ctl-name">Lock with .using(...)</span>
+        <span class="ctl-sub">pins V, D, J to specific alleles</span>
       </div>
     </div>
     <div class="ctl-stop ctl-stop-3">
       <div class="ctl-dot"></div>
       <div class="ctl-label">
         <span class="ctl-num">03</span>
-        <span class="ctl-name">Re-run downstream</span>
-        <span class="ctl-sub">swapped pass · fresh seed</span>
+        <span class="ctl-name">Vary one downstream knob</span>
+        <span class="ctl-sub">same seed everywhere else</span>
       </div>
     </div>
   </div>
@@ -77,32 +77,34 @@
 <section class="page chapter-phase chapter-phase-1">
   <div class="ph-head">
     <span class="ph-num">PART 01</span>
-    <h2>Why this is cheap.</h2>
+    <h2>Why this is single-variable isolation.</h2>
     <p class="ph-lead">
-      Each pass commits a new revision rather than mutating the previous one. So a snapshot
-      from any pass — recombination, mutation, the first corruption step — is a valid starting
-      point for a new pipeline. You don't have to re-recombine to test a different mutation
-      model on the same record. Persistent IR pays for itself the moment you start asking
-      counterfactuals.
+      The engine's RNG is deterministic and the <code>.using(...)</code> allele lock pins each
+      segment's candidate distribution to exactly one element. So at fixed seed, V allele
+      selection, D allele selection, J allele selection, V/D/J trims, NP1 length, NP2 length,
+      and the NP base draws all come out bit-identical across runs. The only thing that differs
+      is whichever pass you swapped — the change is causally isolated to that pass.
     </p>
   </div>
 
   <div class="ph-grid">
     <div class="ph-card">
-      <div class="ph-card-head">What you can fork at</div>
+      <div class="ph-card-head">What stays bit-identical (same lock, same seed)</div>
       <ul class="pass-list">
-        <li><span class="pass-name">After recombine</span><span class="pass-note">vary mutation or corruption while keeping V·D·J fixed</span></li>
-        <li><span class="pass-name">After mutate</span><span class="pass-note">vary corruption while keeping the mutated genome fixed</span></li>
-        <li><span class="pass-name">After any specific pass</span><span class="pass-note"><code>revision_after("pass_name")</code> gives you the IR immediately after that pass</span></li>
+        <li><span class="pass-name">V · D · J allele names</span><span class="pass-note">the locked triple, by construction</span></li>
+        <li><span class="pass-name">V/D/J trim lengths</span><span class="pass-note">deterministic from seed once alleles are pinned</span></li>
+        <li><span class="pass-name">NP1 · NP2 length and bases</span><span class="pass-note">drawn before any downstream pass, identical across runs</span></li>
+        <li><span class="pass-name">sequence_id</span><span class="pass-note">indexed deterministically</span></li>
       </ul>
     </div>
 
     <div class="ph-card">
-      <div class="ph-card-head">What this gives you</div>
+      <div class="ph-card-head">What you can vary</div>
       <ul class="pass-list">
-        <li><span class="pass-name">Single-variable isolation</span><span class="pass-note">no upstream RNG drift between conditions</span></li>
-        <li><span class="pass-name">Time savings</span><span class="pass-note">skip the phases that aren't changing</span></li>
-        <li><span class="pass-name">Causal attribution</span><span class="pass-note">any downstream difference is attributable to the changed knob</span></li>
+        <li><span class="pass-name">Mutation model</span><span class="pass-note">s5f vs uniform with the same target count</span></li>
+        <li><span class="pass-name">Mutation count or rate</span><span class="pass-note">parameter sweep against fixed germline</span></li>
+        <li><span class="pass-name">Corruption shape</span><span class="pass-note">add or drop corrupt_* passes individually</span></li>
+        <li><span class="pass-name">Productive contract</span><span class="pass-note">toggle <code>respect=ga.productive()</code> on/off</span></li>
       </ul>
     </div>
   </div>
@@ -111,42 +113,42 @@
 <section class="page chapter-phase chapter-phase-2">
   <div class="ph-head">
     <span class="ph-num">PART 02</span>
-    <h2>The fork pattern.</h2>
+    <h2>The lock-and-replay pattern.</h2>
     <p class="ph-lead">
-      Run once to materialize the IR. Pick a revision. Build a new <code>PassPlan</code> that
-      starts from that revision instead of an empty IR. Apply only the passes downstream of
-      your fork point.
+      Pick a V/D/J triple to anchor on (often by running the baseline once and reading
+      <code>truth_v_call</code> off the record you want to study). Build a small panel function
+      that hard-codes the lock and the seed; call it with whatever knob you're varying.
     </p>
   </div>
 
   <div class="ph-grid">
     <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
-      <div class="ph-card-head">Fork after recombination</div>
+      <div class="ph-card-head">S5F vs uniform on the same recombination</div>
       <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
-<span class="c-k">from</span> GenAIRR._engine <span class="c-k">import</span> PassPlan, CompiledSimulator
 
-<span class="c-c"># pass A — baseline run (recombine only)</span>
-base = (
-    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
-      .<span class="c-f">recombine</span>()
-      .<span class="c-f">run</span>(n=<span class="c-n">100</span>, seed=<span class="c-n">42</span>)
-)
+<span class="c-c"># 1. baseline run — read one record to discover a V/D/J triple to anchor on</span>
+baseline = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>).<span class="c-f">recombine</span>()
+      .<span class="c-f">run_records</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>, expose_provenance=<span class="c-n">True</span>)
+).records[<span class="c-n">0</span>]
+V, D, J = baseline[<span class="c-s">"truth_v_call"</span>], baseline[<span class="c-s">"truth_d_call"</span>], baseline[<span class="c-s">"truth_j_call"</span>]
 
-<span class="c-c"># snapshot the post-recombination IR for record 0</span>
-recombined = base[<span class="c-n">0</span>].<span class="c-f">revision_after</span>(<span class="c-s">"assemble_segment.j"</span>)
+<span class="c-c"># 2. panel function — lock V/D/J, fix the seed, vary one knob</span>
+<span class="c-k">def</span> <span class="c-f">panel</span>(model):
+    <span class="c-k">return</span> (
+        ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+          .<span class="c-f">using</span>(v=V, d=D, j=J)               <span class="c-c"># <-- the lock</span>
+          .<span class="c-f">recombine</span>()
+          .<span class="c-f">mutate</span>(model=model, count=(<span class="c-n">15</span>, <span class="c-n">15</span>))
+          .<span class="c-f">run_records</span>(n=<span class="c-n">10</span>, seed=<span class="c-n">42</span>, expose_provenance=<span class="c-n">True</span>)
+    ).records
 
-<span class="c-c"># condition 1: S5F mutation</span>
-plan_a = PassPlan.<span class="c-f">from_simulation</span>(recombined)
-plan_a.<span class="c-f">push_mutate_s5f</span>(count_pairs=[(<span class="c-n">15</span>, <span class="c-n">1.0</span>)])
-out_s5f = <span class="c-f">CompiledSimulator</span>(plan_a).<span class="c-f">run</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">100</span>)[<span class="c-n">0</span>]
+s5f = <span class="c-f">panel</span>(<span class="c-s">"s5f"</span>)
+uni = <span class="c-f">panel</span>(<span class="c-s">"uniform"</span>)
 
-<span class="c-c"># condition 2: uniform mutation, same starting point</span>
-plan_b = PassPlan.<span class="c-f">from_simulation</span>(recombined)
-plan_b.<span class="c-f">push_mutate_uniform</span>(count_pairs=[(<span class="c-n">15</span>, <span class="c-n">1.0</span>)])
-out_uni = <span class="c-f">CompiledSimulator</span>(plan_b).<span class="c-f">run</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">100</span>)[<span class="c-n">0</span>]
-
-<span class="c-c"># truth_v_call is identical between the two — only the SHM differs</span>
-<span class="c-k">assert</span> out_s5f.truth_v_call == out_uni.truth_v_call</code></pre>
+<span class="c-c"># 3. confirm the lock held — V/D/J identical, sequences differ (SHM only)</span>
+<span class="c-k">assert</span> all(a[<span class="c-s">"truth_v_call"</span>] == b[<span class="c-s">"truth_v_call"</span>] == V <span class="c-k">for</span> a, b <span class="c-k">in</span> <span class="c-f">zip</span>(s5f, uni))
+<span class="c-k">assert</span> all(a[<span class="c-s">"sequence"</span>] != b[<span class="c-s">"sequence"</span>]                <span class="c-k">for</span> a, b <span class="c-k">in</span> <span class="c-f">zip</span>(s5f, uni))</code></pre>
     </div>
   </div>
 </section>
@@ -156,26 +158,66 @@ out_uni = <span class="c-f">CompiledSimulator</span>(plan_b).<span class="c-f">r
     <span class="ph-num">PART 03</span>
     <h2>Sweeping a parameter.</h2>
     <p class="ph-lead">
-      The same fork point can drive a parameter sweep — same recombination, every value of a
-      single knob you want to study. Useful for the kind of ablation plot that goes into a paper
-      figure.
+      The same lock-and-replay shape drives a one-knob parameter sweep — fixed V/D/J, varying
+      mutation count, plot the ablation curve. The kind of figure that goes straight into a paper.
     </p>
   </div>
 
   <div class="ph-grid">
     <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
-      <div class="ph-card-head">SHM rate sweep on a single recombination</div>
-      <pre class="code"><code><span class="c-c"># 1 recombination, 5 mutation rates — all sharing V·D·J</span>
+      <div class="ph-card-head">SHM count sweep on a single recombination</div>
+      <pre class="code"><code><span class="c-c"># V/D/J locked above; sweep mutation count, all 5 panels share the recombination</span>
 records = []
 <span class="c-k">for</span> mu <span class="c-k">in</span> [<span class="c-n">5</span>, <span class="c-n">10</span>, <span class="c-n">15</span>, <span class="c-n">20</span>, <span class="c-n">25</span>]:
-    plan = PassPlan.<span class="c-f">from_simulation</span>(recombined)
-    plan.<span class="c-f">push_mutate_s5f</span>(count_pairs=[(mu, <span class="c-n">1.0</span>)])
-    out = <span class="c-f">CompiledSimulator</span>(plan).<span class="c-f">run</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">100</span>)[<span class="c-n">0</span>]
-    records.<span class="c-f">append</span>({
-        <span class="c-s">"mu"</span>:        mu,
-        <span class="c-s">"v_id"</span>:      out.<span class="c-f">final_simulation</span>().v_identity,
-        <span class="c-s">"junction"</span>:  out.<span class="c-f">final_simulation</span>().junction_aa,
-    })</code></pre>
+    rec = (
+        ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+          .<span class="c-f">using</span>(v=V, d=D, j=J)
+          .<span class="c-f">recombine</span>()
+          .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(mu, mu))
+          .<span class="c-f">run_records</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">100</span>, expose_provenance=<span class="c-n">True</span>)
+    ).records[<span class="c-n">0</span>]
+    records.<span class="c-f">append</span>({<span class="c-s">"mu"</span>: mu, <span class="c-s">"v_identity"</span>: rec[<span class="c-s">"v_identity"</span>]})
+
+<span class="c-c"># v_identity drops monotonically with mu — clean ablation curve.</span>
+<span class="c-c"># for plotting: pandas.DataFrame(records).plot(x="mu", y="v_identity")</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Inspecting an intermediate state.</h2>
+    <p class="ph-lead">
+      If you want to read the IR <em>between</em> two passes — say, to compare the pre-mutation
+      germline against the post-mutation sequence on the same record — use
+      <code>Outcome.revision_after("pass_name")</code> to retrieve the IR snapshot taken
+      immediately after that pass. This is for introspection, not for re-running a different
+      downstream from it (the engine doesn't currently support feeding a snapshot back into a new
+      PassPlan; the lock-and-replay pattern above is the supported way to compare conditions).
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Read the post-recombination IR for a single record</div>
+      <pre class="code"><code>out = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">recombine</span>()
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">15</span>, <span class="c-n">15</span>))
+      .<span class="c-f">run</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>)
+)[<span class="c-n">0</span>]
+
+<span class="c-c"># list the pass names you can snapshot at</span>
+<span class="c-f">print</span>(out.<span class="c-f">pass_names</span>())
+<span class="c-c"># ['sample_allele.v', 'sample_allele.d', 'sample_allele.j',</span>
+<span class="c-c">#  'trim.v_3', 'trim.d_5', 'trim.d_3', 'trim.j_5',</span>
+<span class="c-c">#  'assemble.v', 'generate_np.np1', 'assemble.d',</span>
+<span class="c-c">#  'generate_np.np2', 'assemble.j', 'mutate.s5f']</span>
+
+<span class="c-c"># snapshot the IR immediately after the last recombination pass</span>
+sim_after_recombine = out.<span class="c-f">revision_after</span>(<span class="c-s">"assemble.j"</span>)
+<span class="c-c"># sim_after_recombine is the pre-mutation Simulation — inspect bases, regions, etc.</span></code></pre>
     </div>
   </div>
 </section>
