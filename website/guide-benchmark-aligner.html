@@ -134,7 +134,7 @@ result = (
        <span class="c-c"># realistic lab effects — what the aligner actually sees</span>
        .<span class="c-f">corrupt_5prime_loss</span>(length=(<span class="c-n">5</span>, <span class="c-n">60</span>))
        .<span class="c-f">corrupt_3prime_loss</span>(length=(<span class="c-n">0</span>, <span class="c-n">30</span>))
-       .<span class="c-f">corrupt_ns</span>(prob=<span class="c-n">0.001</span>)
+       .<span class="c-f">corrupt_ns</span>(count=(<span class="c-n">0</span>, <span class="c-n">2</span>))
        .<span class="c-f">run_records</span>(
             n=<span class="c-n">50_000</span>,
             seed=<span class="c-n">42</span>,
@@ -143,7 +143,7 @@ result = (
        )
 )
 
-result.<span class="c-f">to_csv</span>(<span class="c-s">"panel_truth.tsv"</span>, sep=<span class="c-s">"\t"</span>)</code></pre>
+result.<span class="c-f">to_tsv</span>(<span class="c-s">"panel_truth.tsv"</span>)</code></pre>
     </div>
   </div>
 </section>

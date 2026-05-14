@@ -90,12 +90,14 @@
       <div class="ph-card-head">A panel-specific weight dict</div>
       <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
 
-<span class="c-c"># weights are relative; you can use raw counts</span>
+<span class="c-c"># weights are relative; you can use raw counts.</span>
+<span class="c-c"># allele names follow the family-gene-allele scheme baked into the</span>
+<span class="c-c"># shipped configs — check refdata.v_allele(i).name for the real list.</span>
 v_weights = {
-    <span class="c-s">"IGHV3-23*01"</span>:  <span class="c-n">450</span>,
-    <span class="c-s">"IGHV4-39*01"</span>:  <span class="c-n">280</span>,
-    <span class="c-s">"IGHV4-59*02"</span>:  <span class="c-n">210</span>,
-    <span class="c-s">"IGHV1-69*06"</span>:  <span class="c-n">150</span>,
+    <span class="c-s">"IGHVF1-G1*01"</span>: <span class="c-n">450</span>,
+    <span class="c-s">"IGHVF1-G2*01"</span>: <span class="c-n">280</span>,
+    <span class="c-s">"IGHVF1-G3*01"</span>: <span class="c-n">210</span>,
+    <span class="c-s">"IGHVF2-G4*01"</span>: <span class="c-n">150</span>,
     <span class="c-c"># everything else uses default weight 1.0</span>
 }
 
@@ -115,7 +117,7 @@ result = (
     <p class="ph-lead">
       If you have a reference panel (your own data, an OAS pull, the example from any aligner
       benchmark), you can derive the weights directly. Two grain options: by allele
-      (<code>IGHV3-23*01</code>) or by family (<code>IGHV3-23</code>). Family-level is more
+      (<code>IGHVF1-G1*01</code>) or by family (<code>IGHVF1-G1</code>). Family-level is more
       forgiving of small reference panels.
     </p>
   </div>

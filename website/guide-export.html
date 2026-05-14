@@ -90,7 +90,7 @@
     <div class="ph-card">
       <div class="ph-card-head">TSV — for tools</div>
       <p class="phr-note" style="margin: 8px 0 0;">
-        <code>result.to_csv("out.tsv", sep="\t")</code>. AIRR-schema column names, all ~70 fields
+        <code>result.to_tsv("out.tsv")</code>. AIRR-schema column names, all ~70 fields
         (including <code>truth_*</code> if you ran with <code>expose_provenance=True</code>).
         Set <code>airr_strict=True</code> to convert coordinates to 1-based inclusive for
         IMGT-style downstream tools.
@@ -139,10 +139,10 @@ result = (
 )
 
 <span class="c-c"># 1. AIRR TSV — coordinates already 0-based</span>
-result.<span class="c-f">to_csv</span>(<span class="c-s">"panel.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+result.<span class="c-f">to_tsv</span>(<span class="c-s">"panel.tsv"</span>)
 
 <span class="c-c"># 2. AIRR TSV — 1-based coords for IMGT-shaped tools</span>
-result.<span class="c-f">to_csv</span>(<span class="c-s">"panel_imgt.tsv"</span>, sep=<span class="c-s">"\t"</span>, airr_strict=<span class="c-n">True</span>)
+result.<span class="c-f">to_tsv</span>(<span class="c-s">"panel_imgt.tsv"</span>, airr_strict=<span class="c-n">True</span>)
 
 <span class="c-c"># 3. FASTA — blinded; only sequence_id + sequence</span>
 result.<span class="c-f">to_fasta</span>(<span class="c-s">"panel.fasta"</span>)
@@ -185,7 +185,7 @@ result = (
        .<span class="c-f">recombine</span>()
        .<span class="c-f">run_records</span>(n=<span class="c-n">10_000</span>, seed=<span class="c-n">42</span>)
 )
-result.<span class="c-f">to_csv</span>(<span class="c-s">"panel.tsv"</span>, sep=<span class="c-s">"\t"</span>)
+result.<span class="c-f">to_tsv</span>(<span class="c-s">"panel.tsv"</span>)
 <span class="c-c"># no truth_* columns at all — clean blinded panel</span></code></pre>
     </div>
   </div>
