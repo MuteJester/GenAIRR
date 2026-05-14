@@ -211,9 +211,8 @@ result = (
       <span class="cm"># 02 — somatic hypermutation (BCR-only)</span>
       .<span class="fn">mutate</span>(<span class="at">model</span>=<span class="str">"s5f"</span>, <span class="at">count</span>=(<span class="num">5</span>, <span class="num">25</span>))
 
-      <span class="cm"># 03 — clonal family fork is also a single call:</span>
-      <span class="cm">#       .with_clonal_structure(n_clones=50, size=20)</span>
-      <span class="cm">#       (skipped here: incompatible with productive contracts below)</span>
+      <span class="cm"># 03 — clonal family fork: 50 clones × 20 descendants each</span>
+      .<span class="fn">with_clonal_structure</span>(<span class="at">n_clones</span>=<span class="num">50</span>, <span class="at">size</span>=<span class="num">20</span>)
 
       <span class="cm"># 04 — lab effects · compose what your platform actually does</span>
       .<span class="fn">corrupt_5prime_loss</span>(<span class="at">length</span>=(<span class="num">5</span>, <span class="num">30</span>))

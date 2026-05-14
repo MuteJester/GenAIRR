@@ -1362,8 +1362,15 @@ class Experiment:
             pre_simulator = self._build_simulator(
                 pre_steps, contracts, any_lock, replace_fn=_replace
             )
+            # post-fork plan inherits the parent's V/D/J/NP backbone, so
+            # the recombination-time contracts in `respect=` have already
+            # been enforced upstream. Re-passing them here would force the
+            # compiler to look for support (np.np1.length, anchor trims)
+            # in passes the post-fork plan doesn't contain — which would
+            # fail any pipeline that combines `with_clonal_structure()`
+            # with `respect=ga.productive()`.
             post_simulator = self._build_simulator(
-                post_steps, contracts, any_lock=False, replace_fn=_replace
+                post_steps, None, any_lock=False, replace_fn=_replace
             )
             return CompiledClonalExperiment(
                 pre_simulator, post_simulator, fork_step, self._refdata
