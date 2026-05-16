@@ -176,7 +176,7 @@
             NucHandle::new(0),
             NucHandle::new(4),
         ));
-        // NP region holding T, G. NP bases use NO_GERMLINE_POS so the
+        // NP region holding T, G. NP bases use GermlinePos::NONE so the
         // structural walker won't try to score them; the extension
         // walker uses them as evidence for v1's continuation.
         for &b in &[b'T', b'G'] {

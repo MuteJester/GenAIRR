@@ -58,7 +58,7 @@
         let n = Nucleotide::germline(b'A', 12, Segment::V);
         assert_eq!(n.base, b'A');
         assert_eq!(n.germline, b'A');
-        assert_eq!(n.germline_pos, 12);
+        assert_eq!(n.germline_pos, GermlinePos::pos(12));
         assert_eq!(n.segment, Segment::V);
         assert_eq!(n.flags, NucFlags::empty());
     }
@@ -68,7 +68,7 @@
         let n = Nucleotide::synthetic(b'a', Segment::Np1, flag::N_NUC);
         assert_eq!(n.base, b'a');
         assert_eq!(n.germline, b'a');
-        assert_eq!(n.germline_pos, Nucleotide::NO_GERMLINE_POS);
+        assert!(n.germline_pos.is_none());
         assert_eq!(n.segment, Segment::Np1);
         assert!(n.flags.contains(flag::N_NUC));
     }
@@ -96,7 +96,7 @@
 
         let got = pool.get(h).expect("handle should be valid");
         assert_eq!(got.base, b'T');
-        assert_eq!(got.germline_pos, 5);
+        assert_eq!(got.germline_pos, GermlinePos::pos(5));
         assert_eq!(got.segment, Segment::J);
     }
 
@@ -224,7 +224,7 @@
         // Other fields preserved on the changed revision.
         let n2 = p2.get(h).unwrap();
         assert_eq!(n2.germline, b'A'); // germline unchanged
-        assert_eq!(n2.germline_pos, 0);
+        assert_eq!(n2.germline_pos, GermlinePos::pos(0));
         assert_eq!(n2.segment, Segment::V);
     }
 
@@ -246,7 +246,7 @@
         // New pool: target replaced, neighbours unchanged.
         assert_eq!(p2.get(h0).unwrap().base, b'A');
         assert_eq!(p2.get(h1).unwrap().base, b'T');
-        assert_eq!(p2.get(h1).unwrap().germline_pos, 99);
+        assert_eq!(p2.get(h1).unwrap().germline_pos, GermlinePos::pos(99));
         assert_eq!(p2.get(h1).unwrap().segment, Segment::J);
         assert_eq!(p2.get(h2).unwrap().base, b'G');
     }
@@ -1248,4 +1248,45 @@
             "expected ≥600 visible mutations, got {}",
             visible_mutations
         );
+    }
+
+    // ── GermlinePos newtype invariants ───────────────────────────────
+
+    #[test]
+    #[should_panic(expected = "u16::MAX is reserved for NONE")]
+    fn germline_pos_pos_rejects_max() {
+        // u16::MAX is reserved for the NONE sentinel — constructing a
+        // positioned GermlinePos with that value must panic, otherwise
+        // a caller could silently create a value that compares equal
+        // to NONE under derive(PartialEq).
+        let _ = GermlinePos::pos(u16::MAX);
+    }
+
+    #[test]
+    fn germline_pos_none_projects_to_option_none() {
+        assert_eq!(GermlinePos::NONE.get(), None);
+        assert!(GermlinePos::NONE.is_none());
+        assert!(!GermlinePos::NONE.is_some());
+    }
+
+    #[test]
+    fn germline_pos_pos_round_trips() {
+        let p = GermlinePos::pos(42);
+        assert_eq!(p.get(), Some(42));
+        assert!(p.is_some());
+        assert!(!p.is_none());
+    }
+
+    #[test]
+    fn nucleotide_size_unchanged() {
+        // Pin the layout guarantee from `#[repr(transparent)]` on
+        // GermlinePos: Nucleotide stays 6 bytes after the migration.
+        // If this fails after a future change, the newtype lost its
+        // niche / transparency and the migration regressed memory
+        // cost on the hottest data structure in the engine.
+        // (Plan's spec said 8 bytes; actual baseline was 6 — both
+        // pre- and post-migration measured 6 with the current field
+        // set: base/germline/germline_pos/segment/flags. The point
+        // of the assertion is unchangedness, not the magic number.)
+        assert_eq!(std::mem::size_of::<Nucleotide>(), 6);
     }

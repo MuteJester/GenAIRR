@@ -50,10 +50,10 @@ pub(super) fn call_from_region(
             .expect("region range must point into the nucleotide pool");
 
         // an indel-inserted nucleotide ends up inside V/D/J's
-        // region with `germline_pos == NO_GERMLINE_POS`. It carries
+        // region with `germline_pos == GermlinePos::NONE`. It carries
         // no allele evidence (no germline byte to compare), so we
         // skip it without failing the call.
-        if nucleotide.germline_pos == Nucleotide::NO_GERMLINE_POS {
+        if nucleotide.germline_pos.is_none() {
             // Sanity: only same-segment synthetic bases (e.g. indel
             // insertions placed inside V's region) belong here.
             // Cross-segment synthetic bases would be a malformed IR
@@ -398,10 +398,10 @@ pub(super) fn call_from_region(
 }
 
 fn live_ref_pos(nucleotide: &Nucleotide, segment: Segment) -> Option<u32> {
-    if nucleotide.segment != segment || nucleotide.germline_pos == Nucleotide::NO_GERMLINE_POS {
+    if nucleotide.segment != segment {
         return None;
     }
-    Some(nucleotide.germline_pos as u32)
+    nucleotide.germline_pos.get().map(|p| p as u32)
 }
 
 fn unsupported_call(

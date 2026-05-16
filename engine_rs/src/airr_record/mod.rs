@@ -17,7 +17,9 @@
 //! one of the main reasons we expect a >5× speedup at scale.
 
 use crate::codon::{translate_codon_slice, translate_seq};
-use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
+use crate::ir::{NucHandle, Region, Segment, Simulation};
+#[cfg(test)]
+use crate::ir::Nucleotide;
 use crate::live_call::SegmentLiveCall;
 use crate::pass::Outcome;
 use crate::refdata::{Allele, RefDataConfig};
@@ -556,9 +558,7 @@ fn anchor_pool_position(
     let pool = sim.pool.as_slice();
     for i in r_start..r_end {
         let nuc = &pool[i as usize];
-        if nuc.germline_pos != Nucleotide::NO_GERMLINE_POS
-            && nuc.germline_pos as u32 == anchor_ref
-        {
+        if nuc.germline_pos.get().map(|p| p as u32) == Some(anchor_ref) {
             return Some(i);
         }
     }

@@ -392,7 +392,7 @@ mod tests {
         for i in 0..5 {
             let n = sim.pool.get(NucHandle::new(i)).unwrap();
             assert_eq!(n.segment, Segment::Np1);
-            assert_eq!(n.germline_pos, Nucleotide::NO_GERMLINE_POS);
+            assert!(n.germline_pos.is_none());
             assert!(n.flags.contains(flag::N_NUC));
             assert!(matches!(n.base, b'A' | b'C' | b'G' | b'T'));
         }

@@ -459,7 +459,7 @@ fn property_indel_inserted_flag_count_at_most_traced_insertions() {
     // post-pass flagged count is bounded above by the trace's
     // insertion count — equality only holds when no event undoes
     // an earlier one. We assert the bound and additionally check
-    // every flagged nucleotide carries `NO_GERMLINE_POS` (the other
+    // every flagged nucleotide carries `GermlinePos::NONE` (the other
     // half of the insertion provenance contract).
     let mut plan = PassPlan::new();
     plan.push(Box::new(IndelPass::new(
@@ -477,13 +477,12 @@ fn property_indel_inserted_flag_count_at_most_traced_insertions() {
             let n = final_sim.pool.get(NucHandle::new(i)).unwrap();
             if n.flags.contains(flag::INDEL_INSERTED) {
                 flagged += 1;
-                assert_eq!(
-                    n.germline_pos,
-                    Nucleotide::NO_GERMLINE_POS,
-                    "seed {}: flagged nucleotide at {} has germline pos {}",
+                assert!(
+                    n.germline_pos.is_none(),
+                    "seed {}: flagged nucleotide at {} has germline pos {:?}",
                     seed,
                     i,
-                    n.germline_pos
+                    n.germline_pos.get()
                 );
             }
         }

@@ -14,7 +14,7 @@
 use genairr_engine::assignment::TrimEnd;
 use genairr_engine::contract::{AnchorPreserved, Contract};
 use genairr_engine::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
-use genairr_engine::ir::{flag, NucHandle, Nucleotide, Segment, Simulation};
+use genairr_engine::ir::{flag, GermlinePos, NucHandle, Segment, Simulation};
 use genairr_engine::pass::{PassPlan, PassRuntime};
 use genairr_engine::passes::{AssembleSegmentPass, GenerateNPPass, SampleAllelePass, TrimPass};
 use genairr_engine::refdata::{Allele, ChainType, RefDataConfig};
@@ -181,7 +181,7 @@ fn end_to_end_vdj_germline_provenance_is_preserved_for_alleles() {
     for i in 0..9 {
         let n = sim.pool.get(NucHandle::new(i)).unwrap();
         assert_eq!(n.segment, Segment::V);
-        assert_eq!(n.germline_pos, i as u16);
+        assert_eq!(n.germline_pos, GermlinePos::pos(i as u16));
         assert_eq!(n.base, b"AAACCCGGG"[i as usize]);
     }
 
@@ -189,7 +189,7 @@ fn end_to_end_vdj_germline_provenance_is_preserved_for_alleles() {
     for i in 9..12 {
         let n = sim.pool.get(NucHandle::new(i)).unwrap();
         assert_eq!(n.segment, Segment::Np1);
-        assert_eq!(n.germline_pos, Nucleotide::NO_GERMLINE_POS);
+        assert!(n.germline_pos.is_none());
         assert!(n.flags.contains(flag::N_NUC));
         assert!(matches!(n.base, b'A' | b'C' | b'G' | b'T'));
     }
@@ -199,7 +199,7 @@ fn end_to_end_vdj_germline_provenance_is_preserved_for_alleles() {
     for (offset, pool_idx) in (12..18).enumerate() {
         let n = sim.pool.get(NucHandle::new(pool_idx)).unwrap();
         assert_eq!(n.segment, Segment::D);
-        assert_eq!(n.germline_pos, offset as u16);
+        assert_eq!(n.germline_pos, GermlinePos::pos(offset as u16));
         assert_eq!(n.base, b'T');
     }
 
@@ -207,7 +207,7 @@ fn end_to_end_vdj_germline_provenance_is_preserved_for_alleles() {
     for i in 18..21 {
         let n = sim.pool.get(NucHandle::new(i)).unwrap();
         assert_eq!(n.segment, Segment::Np2);
-        assert_eq!(n.germline_pos, Nucleotide::NO_GERMLINE_POS);
+        assert!(n.germline_pos.is_none());
         assert!(n.flags.contains(flag::N_NUC));
     }
 
@@ -215,7 +215,7 @@ fn end_to_end_vdj_germline_provenance_is_preserved_for_alleles() {
     for (offset, pool_idx) in (21..27).enumerate() {
         let n = sim.pool.get(NucHandle::new(pool_idx)).unwrap();
         assert_eq!(n.segment, Segment::J);
-        assert_eq!(n.germline_pos, offset as u16);
+        assert_eq!(n.germline_pos, GermlinePos::pos(offset as u16));
         assert_eq!(n.base, b"GGGCCC"[offset]);
     }
 }
@@ -465,7 +465,7 @@ fn end_to_end_vdj_with_trims_assembles_post_trim_slices_and_chains_phases() {
     for i in 0..8 {
         let n = sim.pool.get(NucHandle::new(i)).unwrap();
         assert_eq!(n.base, v_expected[i as usize]);
-        assert_eq!(n.germline_pos, i as u16);
+        assert_eq!(n.germline_pos, GermlinePos::pos(i as u16));
     }
 }
 

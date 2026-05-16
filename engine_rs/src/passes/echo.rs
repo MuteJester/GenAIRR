@@ -75,7 +75,7 @@ impl Pass for EchoPass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::NucHandle;
+    use crate::ir::{GermlinePos, NucHandle};
     use crate::pass::{PassPlan, PassRuntime};
 
     #[test]
@@ -94,7 +94,7 @@ mod tests {
         let n = final_sim.pool.get(NucHandle::new(0)).unwrap();
         assert_eq!(n.base, b'C');
         assert_eq!(n.germline, b'C'); // germline constructor: base == germline
-        assert_eq!(n.germline_pos, 42);
+        assert_eq!(n.germline_pos, GermlinePos::pos(42));
         assert_eq!(n.segment, Segment::V);
     }
 

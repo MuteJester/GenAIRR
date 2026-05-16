@@ -2467,7 +2467,7 @@
         // Sample V*01 → assembled "AAAGAAAA" → live call {V*01}.
         // Insert a synthetic 'C' at pool position 3 (inside V's
         // region). The walker should SKIP the inserted nucleotide
-        // (it has NO_GERMLINE_POS) without failing the call. The
+        // (it has GermlinePos::NONE) without failing the call. The
         // remaining positions still uniquely identify V*01.
         let cfg = v_refdata(&[
             ("V*01", b"AAAGAAAA"),

@@ -1,6 +1,8 @@
 //! `AssembleSegmentPass` — copy a germline allele slice into the pool (C.8).
 
 use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
+#[cfg(test)]
+use crate::ir::GermlinePos;
 use crate::pass::{Pass, PassContext, PassEffect, PassError, PassRequirement};
 
 /// Assemble one germline segment (V, D, or J) from its assigned
@@ -413,7 +415,7 @@ mod tests {
             let n = sim.pool.get(NucHandle::new(i)).unwrap();
             assert_eq!(n.base, expected[i as usize]);
             assert_eq!(n.germline, expected[i as usize]);
-            assert_eq!(n.germline_pos, i as u16);
+            assert_eq!(n.germline_pos, GermlinePos::pos(i as u16));
             assert_eq!(n.segment, Segment::V);
         }
     }
@@ -449,7 +451,7 @@ mod tests {
         for i in 0..4 {
             let n = sim.pool.get(NucHandle::new(i)).unwrap();
             assert_eq!(n.base, expected[i as usize]);
-            assert_eq!(n.germline_pos, (i + 2) as u16); // shifted by trim_5
+            assert_eq!(n.germline_pos, GermlinePos::pos((i + 2) as u16)); // shifted by trim_5
         }
     }
 

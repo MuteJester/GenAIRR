@@ -170,6 +170,56 @@ pub mod flag {
 }
 
 // ──────────────────────────────────────────────────────────────────
+// GermlinePos — typed source-allele position with `NONE` for synthetic
+// ──────────────────────────────────────────────────────────────────
+
+/// Position in the source allele, or `NONE` for synthetic bases
+/// (NP, P-nuc, contaminant, indel-inserted) with no germline
+/// provenance. Replaces the previous `germline_pos: u16` field
+/// where `u16::MAX` was a magic sentinel.
+///
+/// `#[repr(transparent)]` keeps the in-memory layout identical to a
+/// raw `u16`, so this type adds zero memory cost on `Nucleotide`.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[repr(transparent)]
+pub struct GermlinePos(u16);
+
+impl GermlinePos {
+    /// Sentinel value meaning "no germline provenance".
+    pub const NONE: Self = Self(u16::MAX);
+
+    /// Construct a real allele position. Panics if `v == u16::MAX`
+    /// — that value is reserved for `NONE`.
+    pub const fn pos(v: u16) -> Self {
+        assert!(
+            v != u16::MAX,
+            "GermlinePos::pos: u16::MAX is reserved for NONE"
+        );
+        Self(v)
+    }
+
+    /// Project to `Option<u16>`. `Some(v)` for a real position,
+    /// `None` for `NONE`.
+    pub const fn get(self) -> Option<u16> {
+        if self.0 == u16::MAX {
+            None
+        } else {
+            Some(self.0)
+        }
+    }
+
+    /// Returns `true` when this is the `NONE` sentinel.
+    pub const fn is_none(self) -> bool {
+        self.0 == u16::MAX
+    }
+
+    /// Returns `true` when this carries a real allele position.
+    pub const fn is_some(self) -> bool {
+        !self.is_none()
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────
 // Nucleotide — single base with provenance metadata
 // ──────────────────────────────────────────────────────────────────
 
@@ -190,10 +240,10 @@ pub struct Nucleotide {
     /// to `base` until a mutation pass changes `base`.
     pub germline: u8,
 
-    /// Position in the source allele (0-indexed). For NP / inserted /
-    /// contaminant bases this is undefined; we use `u16::MAX` as a
-    /// sentinel meaning "no germline provenance".
-    pub germline_pos: u16,
+    /// Position in the source allele (0-indexed), or `GermlinePos::NONE`
+    /// for NP / P-nuc / contaminant / indel-inserted bases with no
+    /// germline provenance. See `GermlinePos` for the safe accessor API.
+    pub germline_pos: GermlinePos,
 
     /// Biological segment role.
     pub segment: Segment,
@@ -203,16 +253,15 @@ pub struct Nucleotide {
 }
 
 impl Nucleotide {
-    /// Sentinel `germline_pos` value for nucleotides with no germline
-    /// provenance (NP, P-nuc, contaminant, indel-inserted, etc.).
-    pub const NO_GERMLINE_POS: u16 = u16::MAX;
-
     /// Construct a germline-derived nucleotide (base == germline).
+    /// `germline_pos` must be a real allele position (`< u16::MAX`);
+    /// passing `u16::MAX` panics — use `Nucleotide::synthetic` for
+    /// bases with no germline provenance.
     pub const fn germline(base: u8, germline_pos: u16, segment: Segment) -> Self {
         Self {
             base,
             germline: base,
-            germline_pos,
+            germline_pos: GermlinePos::pos(germline_pos),
             segment,
             flags: NucFlags::empty(),
         }
@@ -225,7 +274,7 @@ impl Nucleotide {
         Self {
             base,
             germline: base,
-            germline_pos: Self::NO_GERMLINE_POS,
+            germline_pos: GermlinePos::NONE,
             segment,
             flags,
         }

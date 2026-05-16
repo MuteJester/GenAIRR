@@ -110,7 +110,7 @@ mod tests {
         let n = final_sim.pool.get(NucHandle::new(0)).unwrap();
 
         // Synthetic constructor: no germline provenance.
-        assert_eq!(n.germline_pos, Nucleotide::NO_GERMLINE_POS);
+        assert!(n.germline_pos.is_none());
         assert_eq!(n.segment, Segment::Np1);
         assert!(n.flags.contains(flag::N_NUC));
         // Base is one of A/C/G/T (UniformBase).

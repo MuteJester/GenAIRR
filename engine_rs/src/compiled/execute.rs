@@ -208,7 +208,7 @@ fn apply_live_call_updates(
             }
             // structural indels (insertions / deletions) shift
             // the pool layout under V/D/J coding regions. Indel-inserted
-            // nucleotides have NO_GERMLINE_POS so the walker skips them;
+            // nucleotides have GermlinePos::NONE so the walker skips them;
             // deletions show up as forward jumps in `germline_pos` which
             // the walker now tolerates. Refresh every assembled V/D/J
             // segment from the post-indel pool so the live calls reflect

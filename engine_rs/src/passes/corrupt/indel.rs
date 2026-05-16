@@ -33,7 +33,7 @@ enum IndelEvent {
 ///   the pool's *current* state at each step).
 /// - For insertions: a base is sampled from `base_dist`. Inserted
 ///   nucleotides are tagged with `flag::INDEL_INSERTED` and
-///   carry no germline provenance (`germline_pos = NO_GERMLINE_POS`).
+///   carry no germline provenance (`germline_pos = GermlinePos::NONE`).
 ///
 /// **Trace addresses (D3):**
 /// - `corrupt.indel.count` — total indel events
@@ -573,7 +573,7 @@ mod tests {
             let n = final_sim.pool.get(NucHandle::new(i)).unwrap();
             if n.flags.contains(flag::INDEL_INSERTED) {
                 inserted += 1;
-                assert_eq!(n.germline_pos, Nucleotide::NO_GERMLINE_POS);
+                assert!(n.germline_pos.is_none());
             } else {
                 germline += 1;
             }

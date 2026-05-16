@@ -138,7 +138,7 @@ pub(super) fn walk_alignment_columns(
                     for i in r_start..r_end {
                         let nuc: &Nucleotide = &sim.pool.as_slice()[i];
                         let base_char = bases[i];
-                        let is_synthetic = nuc.germline_pos == Nucleotide::NO_GERMLINE_POS;
+                        let is_synthetic = nuc.germline_pos.is_none();
                         if is_synthetic {
                             // Indel insertion: gap in germline.
                             sa.push(base_char);
@@ -148,7 +148,8 @@ pub(super) fn walk_alignment_columns(
                             id_counts[seg_idx][1] += 1;
                             // No match credit (germline gap).
                         } else {
-                            let germ_pos = nuc.germline_pos as usize;
+                            // SAFETY: is_synthetic == false ⇒ germline_pos.is_some().
+                            let germ_pos = nuc.germline_pos.get().expect("checked above") as usize;
                             // Fill any preceding deletion gap.
                             while expected_pos < germ_pos && expected_pos < allele_seq.len() {
                                 sa.push(b'-');

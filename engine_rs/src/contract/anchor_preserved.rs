@@ -1,7 +1,7 @@
 //! `AnchorPreserved` — anchor codon must remain in the retained slice.
 
 use crate::assignment::TrimEnd;
-use crate::ir::{translate_codon, NucHandle, Segment, Simulation};
+use crate::ir::{translate_codon, GermlinePos, NucHandle, Segment, Simulation};
 use crate::refdata::{Allele, AlleleId, RefDataConfig};
 use crate::trace::ChoiceValue;
 
@@ -388,7 +388,7 @@ impl Contract for AnchorPreserved {
         let mut live_codon = [b'N'; 3];
         for offset in 0..3 {
             let pool_pos = anchor_pool_start + offset;
-            let expected_germline_pos = (anchor + offset) as u16;
+            let expected_germline_pos = GermlinePos::pos((anchor + offset) as u16);
             let Some(nuc) = sim.pool.get(crate::ir::NucHandle::new(pool_pos)) else {
                 return Err(ContractViolation::new(
                     self.name(),
@@ -404,12 +404,12 @@ impl Contract for AnchorPreserved {
                     self.name(),
                     format!(
                         "anchor codon provenance mismatch at pool position {}: \
-                         expected {:?} germline position {}, got {:?} germline position {}",
+                         expected {:?} germline position {:?}, got {:?} germline position {:?}",
                         pool_pos,
                         self.segment,
-                        expected_germline_pos,
+                        expected_germline_pos.get(),
                         nuc.segment,
-                        nuc.germline_pos
+                        nuc.germline_pos.get()
                     ),
                 ));
             }

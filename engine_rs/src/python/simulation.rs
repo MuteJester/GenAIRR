@@ -65,11 +65,7 @@ impl PySimulation {
     /// indel-inserted) that have no germline provenance.
     fn germline_position(&self, index: u32) -> Option<u16> {
         let n = self.inner.pool.get(NucHandle::new(index))?;
-        if n.germline_pos == crate::ir::Nucleotide::NO_GERMLINE_POS {
-            None
-        } else {
-            Some(n.germline_pos)
-        }
+        n.germline_pos.get()
     }
 
     /// Number of regions assembled into this simulation.
