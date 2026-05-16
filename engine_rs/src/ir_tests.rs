@@ -4,7 +4,7 @@
     #[test]
     fn nucleotide_size_is_small() {
         // We want Nucleotide to stay tight enough for cache-friendly
-        // arena scans. 8 bytes today; lifting the cap to 16 is fine
+        // arena scans. 6 bytes today; lifting the cap to 16 is fine
         // but should be a deliberate decision documented in the design
         // doc, not silent struct growth.
         assert!(

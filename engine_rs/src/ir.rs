@@ -227,7 +227,8 @@ impl GermlinePos {
 ///
 /// Stored in a `NucleotidePool` arena and referenced via `NucHandle`.
 /// Layout is `Copy`-able for cheap snapshots — total size is currently
-/// 8 bytes, target is to keep this <= 16 bytes.
+/// 6 bytes, target is to keep this <= 16 bytes. The size is pinned by
+/// `nucleotide_size_unchanged` in `ir_tests.rs`.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Nucleotide {
     /// Current base — usually one of `b'A'`, `b'C'`, `b'G'`, `b'T'`
