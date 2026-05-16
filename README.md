@@ -39,30 +39,40 @@ Building from source needs a stable Rust toolchain (`rustup install stable`) —
 ```python
 import GenAIRR as ga
 
-# Generate 1,000 human heavy-chain sequences via standard V(D)J recombination.
-outcomes = ga.Experiment.on("human_igh").recombine().run(n=1000, seed=42)
+# Generate 1,000 productive human heavy-chain sequences. Every sequence
+# comes back with the full AIRR-format annotation block — gene calls,
+# junction, productive flag, identity, mutation counts.
+result = (
+    ga.Experiment.on("human_igh")
+      .recombine()
+      .run_records(n=1000, seed=42, respect=ga.productive())
+)
 
-# Each item is an Outcome wrapping the full pipeline state.
-o = outcomes[0]
-sim = o.final_simulation()
+# `result` is a SimulationResult — list-like over AIRR record dicts.
+# Each dict has the 50+ standard AIRR fields per row.
+len(result)                 # 1000
+rec = result[0]
 
-sim.bases()          # b'gaggtgcagctggtg...' — the assembled sequence
-sim.regions()        # [<Region V [0..296) frame_phase=0>,
-                     #  <Region NP1 [296..309) frame_phase=2>,
-                     #  <Region D [309..336) frame_phase=0>,
-                     #  <Region NP2 [336..342) frame_phase=0>,
-                     #  <Region J [342..388) frame_phase=0>]
-sim.v_allele_id()    # 146  (index into the V pool of the active refdata)
-sim.d_allele_id()    # 5
-sim.j_allele_id()    # 1
+rec["sequence"]             # 'gaggtgcagctggtggagtctgggggaggc...' (nucleotide)
+rec["sequence_aa"]          # 'EVQLVESGGGLVQPGGSLRLSCSAS...'      (translated)
+rec["locus"]                # 'IGH'
+rec["v_call"]               # 'IGHVF10-G38*04'   (comma-separated if the call ties)
+rec["d_call"]               # 'IGHD2-15*01'
+rec["j_call"]               # 'IGHJ2*01'
+rec["junction_aa"]          # 'CVKDDGNRGYCSGGSCYGRCCALDYWYFDLW'
+rec["productive"]           # True
+rec["v_identity"]           # 1.0  (matches/total over the V segment)
+rec["n_mutations"]          # 0
 
-# The trace records every random draw the engine made.
-o.trace().find("np.np1.length").value     # 13
-o.pass_names()                            # ['sample_allele.v', 'sample_allele.d',
-                                          #  'sample_allele.j', 'trim.v_3', ...]
+# Export in any of the standard formats. TSV/FASTA/FASTQ are dependency-free;
+# to_dataframe() needs pandas (pip install GenAIRR[all]).
+result.to_tsv("repertoire.tsv")        # AIRR-spec TSV (50+ columns)
+result.to_fasta("sequences.fasta")     # FASTA with v_call/j_call in the headers
+result.to_fastq("sequences.fastq")     # FASTQ with illumina-shaped quality scores
+df = result.to_dataframe()             # one row per record, AIRR columns
 ```
 
-`Experiment.on(...)` accepts **a config-name string** (e.g. `"human_igh"`, `"mouse_tcrb"`), **a `DataConfig`** loaded from the bundled species pickles, or **a `RefDataConfig`** for [custom reference data](#custom-reference-data).
+`Experiment.on(...)` accepts **a config-name string** (e.g. `"human_igh"`, `"mouse_tcrb"`), **a `DataConfig`** loaded from the bundled species pickles, or **a `RefDataConfig`** for [custom reference data](#custom-reference-data). `respect=ga.productive()` is the constraint-aware bundle — covered in the next section. Drop it to allow non-productive sequences (~30% of records will then have stop codons in the junction).
 
 > See the full walkthrough in the docs: [Quick Start](https://mutejester.github.io/GenAIRR/docs/getting-started/quick-start) · [Interpreting Results](https://mutejester.github.io/GenAIRR/docs/getting-started/interpreting-results)
 
@@ -78,11 +88,12 @@ import GenAIRR as ga
 # Every sequence is productive by construction. No retry loops, no
 # post-hoc filtering — the engine only ever picks NP lengths, NP bases,
 # and mutation substitutions that satisfy the bundle.
-outcomes = (
+result = (
     ga.Experiment.on("human_igh")
       .recombine()
-      .run(n=1000, seed=42, respect=ga.productive())
+      .run_records(n=1000, seed=42, respect=ga.productive())
 )
+assert all(rec["productive"] for rec in result)
 ```
 
 > Docs: [Productive sequences](https://mutejester.github.io/GenAIRR/docs/guides/options/productive)
@@ -95,7 +106,7 @@ By default, if a contract can't admit any candidate at a sampling step the runti
 import GenAIRR as ga
 
 try:
-    ga.Experiment.on("human_igh").recombine().run(
+    ga.Experiment.on("human_igh").recombine().run_records(
         n=10, seed=42, respect=ga.productive(), strict=True
     )
 except ga.StrictSamplingError as e:
@@ -112,15 +123,15 @@ except ga.StrictSamplingError as e:
 ```python
 import GenAIRR as ga
 
-# Same seed → byte-identical outcomes across runs and platforms.
-a = ga.Experiment.on("human_igh").recombine().run(n=100, seed=42)
-b = ga.Experiment.on("human_igh").recombine().run(n=100, seed=42)
-assert a[0].final_simulation().bases() == b[0].final_simulation().bases()
+# Same seed → byte-identical records across runs and platforms.
+a = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=42)
+b = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=42)
+assert a[0]["sequence"] == b[0]["sequence"]
 
 # `n` runs use seeds [seed, seed+1, ..., seed+n-1] so consecutive
 # batches stitch together by offsetting the starting seed.
-batch_a = ga.Experiment.on("human_igh").recombine().run(n=100, seed=0)
-batch_b = ga.Experiment.on("human_igh").recombine().run(n=100, seed=100)
+batch_a = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=0)
+batch_b = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=100)
 # batch_a[50] is byte-equal to a one-off run at seed=50.
 ```
 
@@ -143,26 +154,62 @@ compiled = (
 
 # Run 10 batches of 100, seeded so they don't overlap.
 for batch in range(10):
-    outcomes = compiled.run(n=100, seed=batch * 100)
+    result = compiled.run_records(n=100, seed=batch * 100)
+    result.to_tsv(f"batch_{batch:02d}.tsv")
 ```
 
 ---
 
 ## What you get back
 
-Every `outcome` in the returned list is an `Outcome` with:
+`.run_records(...)` returns a `SimulationResult` — a list-like wrapper around a batch of AIRR record dicts:
+
+| Method / attribute | Returns | Description |
+|-----|-----|-----|
+| `len(result)` | `int` | Number of records in the batch. |
+| `result[i]` | `dict` | The i-th AIRR record. Standard 0-based indexing + slicing. |
+| `for rec in result:` | iterates `dict`s | Records in `[seed, seed+1, …, seed+n-1]` order. |
+| `result.records` | `list[dict]` | The underlying list. Mutate-through is fine. |
+| `result.to_tsv(path, *, airr_strict=False)` | — | AIRR-format TSV. `airr_strict=True` converts coordinates to 1-based-inclusive per spec. |
+| `result.to_csv(path, *, airr_strict=False)` | — | Comma-separated. Same options as `to_tsv`. |
+| `result.to_fasta(path, *, prefix="seq")` | — | FASTA. Headers include `v_call` and `j_call`. |
+| `result.to_fastq(path, *, quality="illumina", **kw)` | — | FASTQ. Quality models: `"illumina"` (smoothed trapezoid) or `"constant"`. |
+| `result.to_dataframe(*, airr_strict=False)` | `pandas.DataFrame` | One row per record. Requires pandas (`pip install GenAIRR[all]`). |
+| `result.outcomes` | `list[Outcome] \| None` | The underlying `Outcome` objects, for advanced introspection (see below). |
+
+Each record dict has 50+ AIRR fields. The most commonly used:
+
+| Field | Example value | Description |
+|-----|-----|-----|
+| `sequence` | `'gaggtgcagctggtg…'` | Assembled nucleotide sequence (uppercase + lowercase corruption markers). |
+| `sequence_aa` | `'EVQLVESGGG…'` | Codon-rail translation. Stops emit `*`, ambiguous codons emit `X`. |
+| `locus` | `'IGH'` | Locus code derived from `v_call` / `j_call`. |
+| `v_call` / `d_call` / `j_call` | `'IGHV3-23*01'` | Gene calls. Comma-separated tie set when the evidence walker can't disambiguate. |
+| `junction` / `junction_aa` | `'TGC…GAC'` / `'CAR…D'` | Junction nucleotide + AA. AA includes the V Cys (anchor) through J W/F+3. |
+| `productive` | `True` / `False` / `None` | In-frame junction AND no stop codons AND anchors preserved. `None` when undefined (e.g. junction not present). |
+| `v_identity` / `d_identity` / `j_identity` | `0.987` | Match rate over each segment's CIGAR M/D ops. |
+| `v_cigar` / `d_cigar` / `j_cigar` | `'17D279M'` | CIGAR strings. Only M/I/D ops are emitted — no soft-clips. |
+| `n_mutations` / `n_pcr_errors` / `n_quality_errors` / `n_indels` | `4` / `0` / `2` / `1` | Per-record error counts from the trace. |
+
+The full schema (plus the `*_sequence_start/end`, `*_alignment_start/end`, `*_germline_start/end` coordinate fields, `vj_in_frame`, `stop_codon`, `rev_comp`, and others) is documented at [Interpreting Results](https://mutejester.github.io/GenAIRR/docs/getting-started/interpreting-results).
+
+### Advanced: full pipeline state via `Outcome`
+
+When you need step-by-step IR history or the raw trace of every random draw — debugging an engine bug, building a custom alignment tool, replaying a specific seed — use `.run()` instead of `.run_records()`. It returns a list of `Outcome` objects that carry the full pipeline state:
 
 | Accessor | Returns | Description |
 |----------|---------|-------------|
-| `outcome.final_simulation()` | `Simulation` | The end-of-pipeline IR snapshot. |
-| `outcome.revision(i)` | `Simulation` | The IR after the i-th pass — full step-by-step history. |
+| `outcome.final_simulation()` | `Simulation` | End-of-pipeline IR snapshot. |
+| `outcome.revision(i)` | `Simulation` | IR after the i-th pass — full step-by-step history. |
 | `outcome.revision_after(name)` | `Simulation \| None` | First revision produced by the named pass. |
 | `outcome.pass_names()` | `list[str]` | Names of every pass that ran, in order. |
 | `outcome.trace()` | `Trace` | Addressed log of every random draw. |
 
 Each `Simulation` exposes `len(sim)` (pool length), `sim.bases() → bytes`, `sim.regions() → list[Region]`, `sim.germline_position(i)`, `sim.v_allele_id() / .d_allele_id() / .j_allele_id()`. Each `Region` carries `segment` (`"V"`/`"D"`/`"J"`/`"NP1"`/`"NP2"`), `start`/`end`/`len()`, `frame_phase`, and `amino_acids() → bytes` (codon-rail translation, including stop markers and ambiguous codons).
 
-`outcome.trace()` supports `find(address)`, `prefix_query(prefix)`, and `prefix_count(prefix)` — every random draw the engine made is keyed by a hierarchical address (`"sample_allele.v"`, `"np.np1.length"`, `"np.np1.bases[3]"`, ...). This is the same trace the engine uses internally for replay determinism, so your downstream tooling sees exactly what the kernel saw.
+`outcome.trace()` supports `find(address)`, `prefix_query(prefix)`, and `prefix_count(prefix)` — every random draw is keyed by a hierarchical address (`"sample_allele.v"`, `"np.np1.length"`, `"np.np1.bases[3]"`, …). This is the same trace the engine uses internally for replay determinism.
+
+`.run_records(...)` also exposes these via `result.outcomes[i]` — so you can have both the AIRR records *and* the deep introspection from a single call.
 
 > Docs: [Simulation Pipeline](https://mutejester.github.io/GenAIRR/docs/concepts/simulation-pipeline) · [Metadata Accuracy](https://mutejester.github.io/GenAIRR/docs/concepts/metadata-accuracy) · [Interpreting Results](https://mutejester.github.io/GenAIRR/docs/getting-started/interpreting-results)
 
@@ -199,9 +246,9 @@ Salmon, Sheep, Trout, Zebrafish.
 ```python
 import GenAIRR as ga
 
-ga.Experiment.on("mouse_igh").recombine().run(n=500)
-ga.Experiment.on("rabbit_tcrb").recombine().run(n=500)
-ga.Experiment.on("rhesus_igk").recombine().run(n=500)
+ga.Experiment.on("mouse_igh").recombine().run_records(n=500)
+ga.Experiment.on("rabbit_tcrb").recombine().run_records(n=500)
+ga.Experiment.on("rhesus_igk").recombine().run_records(n=500)
 ```
 
 > Docs: [Choosing a config](https://mutejester.github.io/GenAIRR/docs/getting-started/choosing-config) · [Chain types](https://mutejester.github.io/GenAIRR/docs/guides/basics/chain-types)
@@ -220,7 +267,7 @@ cfg.add_v_allele("v_custom*01", "v_custom", b"GAAGTACAGCTGGTGCAG...", anchor=288
 cfg.add_v_allele("v_custom*02", "v_custom", b"GAAGTACAGCTAGTGCAG...", anchor=288)
 cfg.add_j_allele("j_custom*01", "j_custom", b"TGGGGCCAAGGG...",       anchor=10)
 
-outcomes = ga.Experiment.on(cfg).recombine().run(n=100, seed=42)
+result = ga.Experiment.on(cfg).recombine().run_records(n=100, seed=42)
 ```
 
 `RefDataConfig.vdj()` builds a heavy-chain-shaped refdata (with a D pool); `add_d_allele(...)` populates it. Anchors are 0-based offsets of the V Cys / J W or F codon's first base, used to keep the junction frame-aligned during recombination.
