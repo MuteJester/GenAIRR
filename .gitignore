@@ -11,6 +11,7 @@ __pycache__/
 /build/
 /dist/
 *.whl
+/docs/
 
 # ── Rust build artifacts ─────────────────────────────────────
 engine_rs/target/
@@ -51,6 +52,7 @@ debug.py
 _old_docs/
 .mcp.json
 .claude/
+.docs/
 
 # Keep release tools tracked but ignore local secrets file
 !/tools/
