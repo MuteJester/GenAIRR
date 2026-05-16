@@ -170,21 +170,21 @@
     <div class="ph-ribbon">
       <div class="phr-label">truth (sampled)</div>
       <div class="phr-track">
-        <div class="phr-seg phr-v" style="width: 100%;">IGHV3-23*01</div>
+        <div class="phr-seg phr-v" style="width: 100%;">IGHVF10-G38*04</div>
       </div>
     </div>
     <div class="ph-arrow">≠</div>
     <div class="ph-ribbon">
       <div class="phr-label">evidence (tie-set after SHM)</div>
       <div class="phr-track">
-        <div class="phr-seg phr-d" style="width: 100%;">IGHV3-23*04, IGHV3-23*01</div>
+        <div class="phr-seg phr-d" style="width: 100%;">IGHVF10-G38*02, IGHVF10-G38*04</div>
       </div>
     </div>
   </div>
   <p class="phr-note" style="text-align: center; margin: 10px auto 0; max-width: 720px;">
-    Same record. The evidence caller can't tell <code>*01</code> from <code>*04</code> after the
+    Same record. The evidence caller can't tell <code>*02</code> from <code>*04</code> after the
     surviving bases — both score the same — so <code>v_call</code> reports both, truth first.
-    <code>truth_v_call</code> remembers that the actual draw was <code>*01</code>.
+    <code>truth_v_call</code> remembers that the actual draw was <code>*04</code>.
   </p>
 </section>
 
@@ -207,27 +207,32 @@
     <div class="ph-card">
       <div class="ph-card-head">Anchor-driven coordinate fields</div>
       <ul class="pass-list">
-        <li><span class="pass-name">junction_start / junction_end</span><span class="pass-note">first base of Cys codon · last base of anchor codon</span></li>
-        <li><span class="pass-name">junction · junction_aa</span><span class="pass-note">nucleotide and amino-acid sequence between anchors</span></li>
-        <li><span class="pass-name">cdr3_start / cdr3_end</span><span class="pass-note">junction minus the flanking anchor codons</span></li>
+        <li><span class="pass-name">junction_start / junction_end</span><span class="pass-note">first base of Cys codon · last base of anchor codon (0-based, end-exclusive)</span></li>
+        <li><span class="pass-name">junction · junction_aa</span><span class="pass-note">nucleotide and amino-acid sequence including both anchor codons</span></li>
+        <li><span class="pass-name">cdr3_aa</span><span class="pass-note">amino-acid sequence without the flanking anchor codons (populated when productive)</span></li>
+        <li><span class="pass-name">junction_length</span><span class="pass-note">junction_end − junction_start</span></li>
       </ul>
     </div>
 
     <div class="ph-card ph-card-code">
       <div class="ph-card-head">Survives even heavy trim and SHM</div>
-      <pre class="code"><code>rec = exp.<span class="c-f">run</span>(<span class="c-n">1</span>)[<span class="c-n">0</span>]
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
 
-<span class="c-c"># the final sequence has been:</span>
-<span class="c-c">#   - mutated at 11 positions in V</span>
-<span class="c-c">#   - 5'-corrupted (lost the first 28 bp)</span>
-<span class="c-c">#   - has an indel insert at position 142</span>
-<span class="c-c"># the junction is STILL found correctly:</span>
+<span class="c-c"># even after recombination's trims have eaten into V/J,</span>
+<span class="c-c"># the anchor codons are tracked via per-base provenance,</span>
+<span class="c-c"># so junction coordinates fall out of the final pool.</span>
+rec = (ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+          .<span class="c-f">recombine</span>()
+          .<span class="c-f">run_records</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">10</span>, expose_provenance=<span class="c-n">True</span>)).records[<span class="c-n">0</span>]
 
-rec.<span class="c-f">final_simulation</span>().<span class="c-f">junction_span</span>()
-<span class="c-c"># (267, 309) — Cys-codon start, anchor-codon end</span>
+rec[<span class="c-s">"junction_start"</span>], rec[<span class="c-s">"junction_end"</span>]
+<span class="c-c"># (288, 348) — 0-based, end-exclusive</span>
 
-rec.junction_aa
-<span class="c-c"># 'CARDVPYAFDIW'  — anchor + payload + anchor</span></code></pre>
+rec[<span class="c-s">"junction_aa"</span>]
+<span class="c-c"># 'CARITYIHTAMGFQAYFQHW'  — anchor + payload + anchor</span>
+
+rec[<span class="c-s">"junction_length"</span>]
+<span class="c-c"># 60</span></code></pre>
     </div>
   </div>
 </section>
@@ -248,11 +253,11 @@ rec.junction_aa
     <div class="phr-head">Identity & truth</div>
     <div class="phr-fields">
       <span class="phr-field"><span class="phr-k">sequence_id</span> <span class="phr-v">str</span></span>
-      <span class="phr-field"><span class="phr-k">truth_v_call</span> <span class="phr-v">IGHV3-23*01</span></span>
-      <span class="phr-field"><span class="phr-k">truth_d_call</span> <span class="phr-v">IGHD3-10*01</span></span>
-      <span class="phr-field"><span class="phr-k">truth_j_call</span> <span class="phr-v">IGHJ4*02</span></span>
+      <span class="phr-field"><span class="phr-k">truth_v_call</span> <span class="phr-v">IGHVF10-G38*04</span></span>
+      <span class="phr-field"><span class="phr-k">truth_d_call</span> <span class="phr-v">IGHD2-15*01</span></span>
+      <span class="phr-field"><span class="phr-k">truth_j_call</span> <span class="phr-v">IGHJ2*01</span></span>
       <span class="phr-field"><span class="phr-k">v_call · d_call · j_call</span> <span class="phr-v">evidence tie-set</span></span>
-      <span class="phr-field"><span class="phr-k">locus · chain</span> <span class="phr-v">IGH · heavy</span></span>
+      <span class="phr-field"><span class="phr-k">locus</span> <span class="phr-v">IGH</span></span>
     </div>
   </div>
 
@@ -285,11 +290,12 @@ rec.junction_aa
   <div class="ph-recorded" style="margin-top: 14px;">
     <div class="phr-head">Alignment & CIGAR</div>
     <div class="phr-fields">
-      <span class="phr-field"><span class="phr-k">v_cigar</span> <span class="phr-v">3S280M</span></span>
-      <span class="phr-field"><span class="phr-k">d_cigar</span> <span class="phr-v">12M</span></span>
-      <span class="phr-field"><span class="phr-k">j_cigar</span> <span class="phr-v">35M4S</span></span>
+      <span class="phr-field"><span class="phr-k">v_cigar</span> <span class="phr-v">17D279M</span></span>
+      <span class="phr-field"><span class="phr-k">d_cigar</span> <span class="phr-v">20M</span></span>
+      <span class="phr-field"><span class="phr-k">j_cigar</span> <span class="phr-v">35M1I12M</span></span>
       <span class="phr-field"><span class="phr-k">v_identity</span> <span class="phr-v">0.962</span></span>
       <span class="phr-field"><span class="phr-k">d_identity · j_identity</span> <span class="phr-v">float · float</span></span>
+      <span class="phr-field phr-more">ops are M / I / D only — no S (soft-clip); 5′ loss surfaces as a leading D-run</span>
     </div>
   </div>
 
@@ -335,7 +341,7 @@ rec.junction_aa
         <li><span class="pass-name">trim.v_3</span><span class="pass-note">the 3′ V trim length</span></li>
         <li><span class="pass-name">np.np1.length</span><span class="pass-note">the N1 region length</span></li>
         <li><span class="pass-name">np.np1.bases[3]</span><span class="pass-note">the 4th NP1 base drawn</span></li>
-        <li><span class="pass-name">mutate.s5f.position[7]</span><span class="pass-note">the 8th SHM mutation location</span></li>
+        <li><span class="pass-name">mutate.s5f.site[7]</span><span class="pass-note">the 8th SHM substitution location (paired with <code>.base[7]</code> for the new base)</span></li>
       </ul>
     </div>
 
@@ -347,13 +353,16 @@ rec.junction_aa
 trace.<span class="c-f">find</span>(<span class="c-s">"sample_allele.v"</span>).value
 <span class="c-c"># 146 — pool index of the V allele drawn</span>
 
-<span class="c-c"># every draw under a prefix</span>
-trace.<span class="c-f">prefix_query</span>(<span class="c-s">"np.np1"</span>)
-<span class="c-c"># [length=5, bases[0]='A', bases[1]='C', ...]</span>
+<span class="c-c"># every draw under a prefix → iterable of ChoiceRecord objects</span>
+<span class="c-k">for</span> rec <span class="c-k">in</span> trace.<span class="c-f">prefix_query</span>(<span class="c-s">"np.np1"</span>):
+    <span class="c-f">print</span>(rec.address, rec.value)
+<span class="c-c"># np.np1.length 13</span>
+<span class="c-c"># np.np1.bases[0] b'C'</span>
+<span class="c-c"># np.np1.bases[1] b'G'</span>
 
 <span class="c-c"># count the draws below a prefix</span>
 trace.<span class="c-f">prefix_count</span>(<span class="c-s">"mutate.s5f"</span>)
-<span class="c-c"># 11 — number of SHM substitutions in this record</span></code></pre>
+<span class="c-c"># 31 — total mutate.s5f.* records (count + per-substitution site/base entries)</span></code></pre>
     </div>
   </div>
 </section>
