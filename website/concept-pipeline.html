@@ -38,11 +38,10 @@
   <span class="eyebrow">Chapter 01 · The architecture</span>
   <h1>The Simulation Pipeline.</h1>
   <p class="lead">
-    A GenAIRR simulation is a small composition of <em>passes</em> applied in a fixed order
-    to a persistent IR. The DSL surfaces them as three phases —
-    <b>recombine</b>, <b>mutate</b>, <b>corrupt</b> — because that's how biology and the lab
-    actually happen. The engine surfaces them as a flat list of pure functions, so you can
-    insert, replace, or reorder anything.
+    A GenAIRR simulation is a small composition of <em>passes</em> applied to a persistent IR.
+    The DSL surfaces them as three phases — <b>recombine</b>, <b>mutate</b>, <b>corrupt</b> —
+    because that's how biology and the lab actually happen. Call them in that order; the engine
+    trusts you on the ordering and composes whichever passes you've requested.
   </p>
 </section>
 
@@ -141,22 +140,21 @@ rec = result.records[<span class="c-n">0</span>]
     </div>
   </div>
 
-  <!-- What's recorded -->
+  <!-- What's recorded — actual seed=42 output -->
   <div class="ph-recorded">
-    <div class="phr-head">Truth fields recorded</div>
+    <div class="phr-head">Truth fields recorded (seed=42, real output)</div>
     <div class="phr-fields">
-      <span class="phr-field"><span class="phr-k">truth_v_call</span> <span class="phr-v">IGHV3-23*01</span></span>
-      <span class="phr-field"><span class="phr-k">truth_d_call</span> <span class="phr-v">IGHD3-10*01</span></span>
-      <span class="phr-field"><span class="phr-k">truth_j_call</span> <span class="phr-v">IGHJ4*02</span></span>
-      <span class="phr-field"><span class="phr-k">v_trim_3</span> <span class="phr-v">4 bp</span></span>
-      <span class="phr-field"><span class="phr-k">d_trim_5 / 3</span> <span class="phr-v">2 / 3 bp</span></span>
+      <span class="phr-field"><span class="phr-k">truth_v_call</span> <span class="phr-v">IGHVF10-G38*04</span></span>
+      <span class="phr-field"><span class="phr-k">truth_d_call</span> <span class="phr-v">IGHD2-15*01</span></span>
+      <span class="phr-field"><span class="phr-k">truth_j_call</span> <span class="phr-v">IGHJ2*01</span></span>
+      <span class="phr-field"><span class="phr-k">v_trim_3</span> <span class="phr-v">0 bp</span></span>
+      <span class="phr-field"><span class="phr-k">d_trim_5 / 3</span> <span class="phr-v">0 / 4 bp</span></span>
       <span class="phr-field"><span class="phr-k">j_trim_5</span> <span class="phr-v">1 bp</span></span>
-      <span class="phr-field"><span class="phr-k">np1_length</span> <span class="phr-v">5 bp</span></span>
-      <span class="phr-field"><span class="phr-k">np2_length</span> <span class="phr-v">4 bp</span></span>
-      <span class="phr-field"><span class="phr-k">junction</span> <span class="phr-v">TGTGCG…GGGTGG</span></span>
-      <span class="phr-field"><span class="phr-k">junction_aa</span> <span class="phr-v">CARDVPYAFDIW</span></span>
-      <span class="phr-field"><span class="phr-k">productive</span> <span class="phr-v">True</span></span>
-      <span class="phr-field phr-more">+ 16 segment-coordinate fields</span>
+      <span class="phr-field"><span class="phr-k">np1_length</span> <span class="phr-v">13 bp</span></span>
+      <span class="phr-field"><span class="phr-k">np2_length</span> <span class="phr-v">0 bp</span></span>
+      <span class="phr-field"><span class="phr-k">junction_aa</span> <span class="phr-v">CVKDDGNSRIL*…WYFDLW</span></span>
+      <span class="phr-field"><span class="phr-k">productive</span> <span class="phr-v">False</span></span>
+      <span class="phr-field phr-more">this draw is non-productive (the junction contains a stop codon); pass <code>respect=ga.productive()</code> at sample time to filter</span>
     </div>
   </div>
 </section>
@@ -380,36 +378,6 @@ rec = result.records[<span class="c-n">0</span>]
   </div>
 </section>
 
-<!-- ================= COMPOSE YOUR OWN ================= -->
-<section class="page custom-pass">
-  <div class="cp-rule"></div>
-  <div class="cp-grid">
-    <div class="cp-text">
-      <span class="eyebrow">Open at the seams</span>
-      <h2>Every pass is a function.<br>So is yours.</h2>
-      <p>
-        A pass is the <code>Pass</code> trait: it takes an IR, returns a new IR, and emits
-        zero or more events into the trace. There's no privileged status for the built-ins —
-        write your own pass, drop it into the chain, and it composes with everything else.
-        The contracts still apply. The trace still records every choice.
-      </p>
-    </div>
-
-    <div class="cp-code">
-      <pre class="code"><code><span class="c-k">class</span> <span class="c-cl">PolyaTailPass</span>(Pass):
-    <span class="c-c">"""Append a poly-A tail of variable length."""</span>
-
-    <span class="c-k">def</span> <span class="c-fn">apply</span>(<span class="c-k">self</span>, ir: Simulation, rt: PassRuntime):
-        n = rt.rng.range(<span class="c-n">20</span>, <span class="c-n">60</span>)
-        ir = ir.with_appended_bases(<span class="c-s">"A"</span> * n)
-        rt.trace.emit(<span class="c-s">"polya_added"</span>, length=n)
-        <span class="c-k">return</span> ir
-
-exp.add_pass(PolyaTailPass())   <span class="c-c"># composes with the rest</span></code></pre>
-    </div>
-  </div>
-</section>
-
 <!-- ================= NEXT ================= -->
 <section class="page chapter-next">
   <div class="cn-rule"></div>
@@ -419,7 +387,7 @@ exp.add_pass(PolyaTailPass())   <span class="c-c"># composes with the rest</span
       <h3>02 / The Persistent IR</h3>
       <p>Every base in its arena. Every revision a new layer. How "just clone the IR" makes
       branching, retries, and trace replay free.</p>
-      <a class="btn btn-primary" href="concepts.html">Back to concepts →</a>
+      <a class="btn btn-primary" href="concept-persistent-ir.html">Open chapter 02 →</a>
     </div>
     <div class="cn-item">
       <span class="eyebrow">Or run it</span>
@@ -431,28 +399,33 @@ exp.add_pass(PolyaTailPass())   <span class="c-c"># composes with the rest</span
   </div>
 </section>
 
-<footer class="footer">
-  <div class="footer-inner">
-    <div>
-      <div class="brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
-      <p class="footer-tag">Synthetic AIRR with ground truth.</p>
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand">
+        <span class="brand-mark">G</span>
+        <span>GenAIRR</span>
+      </div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
     </div>
-    <div class="footer-cols">
-      <div>
-        <h4>Learn</h4>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
         <a href="learn.html">Tutorial</a>
         <a href="concepts.html">Concepts</a>
         <a href="guides.html">Guides</a>
       </div>
-      <div>
-        <h4>Reference</h4>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
         <a href="reference.html">Python API</a>
         <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
       </div>
-      <div>
-        <h4>Project</h4>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
         <a href="https://github.com/MuteJester/GenAIRR">GitHub</a>
         <a href="https://doi.org/10.1093/bib/bbae556">Cite</a>
+        <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE">License</a>
       </div>
     </div>
   </div>
