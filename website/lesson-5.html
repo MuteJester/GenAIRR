@@ -75,12 +75,12 @@
   <p>Run any aligner on the GenAIRR sequence. Compare its output to the truth columns. The diff <em>is</em> the error rate — there's no other reference frame to argue about. This makes GenAIRR the right substrate for:</p>
   <ul>
     <li><strong>Aligner accuracy benchmarks</strong> — V/D/J call concordance, junction localization, mutation recall.</li>
-    <li><strong>Training data for ML</strong> — every record carries 47 labels with no annotation noise.</li>
+    <li><strong>Training data for ML</strong> — every record carries ~70 labels with no annotation noise.</li>
     <li><strong>Method development</strong> — design new corruption scenarios and stress-test how each tool degrades.</li>
   </ul>
 
   <h2>What you've built</h2>
-  <p>You now have intuition for the five phases, the S5F model, the corruption pipeline, and what makes GenAIRR's metadata trustworthy. The rest of the docs are recipes — go pick one.</p>
+  <p>You now have intuition for the three phases (recombine · mutate · corrupt), the S5F model, the corruption pipeline, and what makes GenAIRR's metadata trustworthy. The rest of the docs are recipes — <a href="guides.html">browse the guides hub</a>.</p>
 
   <div class="code-window" style="margin: 16px 0;">
     <div class="code-window-head"><div class="traffic"><span></span><span></span><span></span></div><span>benchmark_pattern.py</span></div>
