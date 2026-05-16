@@ -35,7 +35,7 @@
 
   <div class="gh-grid">
     <div class="gh-text">
-      <span class="eyebrow">Field manual · 14 recipes</span>
+      <span class="eyebrow">Field manual · 15 recipes</span>
       <h1>Guides.</h1>
       <p class="lead">
         Short, task-oriented recipes. Each one starts with an outcome and ends with a
@@ -63,11 +63,11 @@
   <div class="gf-bar">
     <div class="gf-group">
       <span class="gf-label">Filter</span>
-      <button class="gf-chip gf-chip-on">All <span class="gf-chip-n">14</span></button>
-      <button class="gf-chip">Build <span class="gf-chip-n">4</span></button>
+      <button class="gf-chip gf-chip-on">All <span class="gf-chip-n">15</span></button>
+      <button class="gf-chip">Build <span class="gf-chip-n">3</span></button>
       <button class="gf-chip">Validate <span class="gf-chip-n">4</span></button>
-      <button class="gf-chip">Customize <span class="gf-chip-n">3</span></button>
-      <button class="gf-chip">Operate <span class="gf-chip-n">3</span></button>
+      <button class="gf-chip">Customize <span class="gf-chip-n">4</span></button>
+      <button class="gf-chip">Operate <span class="gf-chip-n">4</span></button>
     </div>
     <div class="gf-search">
       <span class="gf-search-icon">⌕</span>
@@ -281,7 +281,7 @@
       <div class="gc-body">
         <h3>Introspect the trace.</h3>
         <p>Every random draw the engine makes is addressable: <code>sample_allele.v</code>,
-        <code>np.np1.bases[3]</code>, <code>mutate.s5f.pos[42]</code>. Query by name, by
+        <code>np.np1.bases[3]</code>, <code>mutate.s5f.site[42]</code>. Query by name, by
         prefix, or count draws per pass to audit what the engine actually did.</p>
         <div class="gc-meta">
           <span class="gc-time">~10 min</span>
@@ -309,7 +309,7 @@
     <a class="gc" href="guide-export.html">
       <div class="gc-num">D·01</div>
       <div class="gc-body">
-        <h3>Export to AIRR TSV, Parquet, or FASTA.</h3>
+        <h3>Export to AIRR TSV, FASTA, FASTQ, or pandas.</h3>
         <p>Each writer in one line. When to pick which. How to keep the
         <code>truth_*</code> fields versus stripping them for a blinded benchmark.</p>
         <div class="gc-meta">
@@ -342,8 +342,8 @@
       <div class="gc-num">D·03</div>
       <div class="gc-body">
         <h3>Reproduce a published dataset.</h3>
-        <p>Walk-through of recreating the figure-2 dataset from the GenAIRR paper —
-        every seed, every config, every plot. Bring your own GPU not required.</p>
+        <p>Pin every input (seed, config, contracts), hash the output, and ship the recipe
+        alongside the data so anyone — including future you — can rebuild it bit-for-bit.</p>
         <div class="gc-meta">
           <span class="gc-time">~45 min</span>
           <span class="gc-dot">·</span>
@@ -393,28 +393,33 @@
   </div>
 </section>
 
-<footer class="footer">
-  <div class="footer-inner">
-    <div>
-      <div class="brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
-      <p class="footer-tag">Synthetic AIRR with ground truth.</p>
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand">
+        <span class="brand-mark">G</span>
+        <span>GenAIRR</span>
+      </div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
     </div>
-    <div class="footer-cols">
-      <div>
-        <h4>Learn</h4>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
         <a href="learn.html">Tutorial</a>
         <a href="concepts.html">Concepts</a>
         <a href="guides.html">Guides</a>
       </div>
-      <div>
-        <h4>Reference</h4>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
         <a href="reference.html">Python API</a>
         <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
       </div>
-      <div>
-        <h4>Project</h4>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
         <a href="https://github.com/MuteJester/GenAIRR">GitHub</a>
         <a href="https://doi.org/10.1093/bib/bbae556">Cite</a>
+        <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE">License</a>
       </div>
     </div>
   </div>
