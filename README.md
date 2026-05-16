@@ -78,6 +78,72 @@ df = result.to_dataframe()             # one row per record, AIRR columns
 
 ---
 
+## A realistic pipeline — everything in one place
+
+The Experiment DSL is a fluent builder. Each step appends to the pipeline; the same `Experiment` is returned so calls chain. The example below uses every major feature GenAIRR offers — recombination, clonal expansion, per-descendant somatic hypermutation, primer-trimming, structural indels, PCR errors, N-base injection, custom metadata, and the productive constraint:
+
+```python
+import GenAIRR as ga
+
+result = (
+    ga.Experiment.on("human_igh")
+      # 1. V(D)J recombination — sample alleles, trim, fill NP1/NP2, assemble.
+      .recombine()
+      # 2. Clonal structure — 50 lineages × 20 sister sequences each.
+      #    Passes BEFORE this point apply to the parent rearrangement;
+      #    passes AFTER apply per-descendant. So each clone shares the
+      #    same V(D)J recombination but accumulates its own SHM + errors.
+      .with_clonal_structure(n_clones=50, size=20)
+      # 3. Somatic hypermutation per descendant — S5F context-dependent
+      #    model, 5–15 mutations per sequence sampled uniformly.
+      .mutate(model="s5f", count=(5, 15))
+      # 4. Sequencing artefacts per descendant: primer trimming, structural
+      #    indels, PCR substitution errors, quality-driven N injection.
+      .corrupt_5prime_loss(length=(0, 8))
+      .corrupt_3prime_loss(length=(0, 4))
+      .corrupt_indels(count=(0, 2), insertion_prob=0.5)
+      .corrupt_pcr(count=(0, 3))
+      .corrupt_ns(count=(0, 2))
+      # 5. Stamp arbitrary metadata onto every record.
+      .with_metadata(experiment_id="exp001", tissue="peripheral_blood")
+      # Constraint-aware sampling: the productive() bundle is enforced at
+      # rearrangement + SHM time. Corruption passes can still introduce
+      # stop codons / frameshifts post-hoc, so expect ~70% productive
+      # when aggressive corruption is in the chain — that mirrors real
+      # wet-lab data, where a productive B-cell can sequence as a
+      # non-productive read because of an indel during library prep.
+      .run_records(seed=42, respect=ga.productive())
+)
+
+len(result)                                  # 1000  (= n_clones × size)
+sum(1 for r in result if r["productive"])    # 697   (~70% under this corruption load)
+
+# Same clone, different descendants — same V(D)J recombination,
+# independent SHM + errors:
+result[0]["clone_id"], result[1]["clone_id"]              # (0, 0)
+result[0]["v_call"],   result[1]["v_call"]                # both 'IGHVF10-G38*04'
+result[0]["n_mutations"], result[1]["n_mutations"]        # (13, 15) — independent SHM
+result[0]["n_pcr_errors"], result[1]["n_pcr_errors"]      # (1, 1)   — independent errors
+
+# Custom metadata propagated:
+result[0]["experiment_id"], result[0]["tissue"]           # ('exp001', 'peripheral_blood')
+
+result.to_tsv("repertoire.tsv")
+```
+
+Other feature flags worth knowing:
+
+| Step | What it does |
+|-----|-----|
+| `.corrupt_contaminants(prob=0.02)` | Replace ~2% of records with unrelated background sequences. |
+| `.corrupt_quality(count=(0, 5))` | Lowercase 0–5 bases per sequence to mark sequencer-low-quality positions. |
+| `.corrupt_reverse_complement(prob=0.5)` | Flip ~50% of records to the reverse strand (with the `rev_comp` flag set). |
+| `.using(v=[...], d=[...], j=[...])` | Restrict allele sampling to a specific subset — useful for benchmarking against a known repertoire. |
+| `.mutate(model="uniform", count=(0, 30))` | Use a uniform-rate mutation model instead of S5F. |
+| `compile()` then `compiled.run_records(...)` | Compile the plan once, reuse it across many batches — see [Compile once](#compile-once-run-many-times). |
+
+---
+
 ## Constraint-aware sampling
 
 GenAIRR's signature feature is **constraint-aware sampling**: contracts that prune the candidate distribution at sample time, not retries after the fact. The canonical bundle is `productive()` (in-frame junction + no stop codons + V/J anchors preserved):
