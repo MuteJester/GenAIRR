@@ -138,55 +138,57 @@ pub(super) fn walk_alignment_columns(
                     for i in r_start..r_end {
                         let nuc: &Nucleotide = &sim.pool.as_slice()[i];
                         let base_char = bases[i];
-                        let is_synthetic = nuc.germline_pos.is_none();
-                        if is_synthetic {
-                            // Indel insertion: gap in germline.
+                        let Some(germ_pos) = nuc.germline_pos.get() else {
+                            // Indel insertion: gap in germline. No match
+                            // credit. The `let-Some-else` shape lets the
+                            // typed `GermlinePos::get()` accessor drive
+                            // the absence-handling structurally — the
+                            // post-`else` body sees a real `u16`, the
+                            // compiler enforces the gate.
                             sa.push(base_char);
                             galn.push(b'-');
                             push_dmask_for_seg(&mut dmask, seg, b'-');
                             push_cigar_op(&mut cigar_runs[seg_idx], b'I');
                             id_counts[seg_idx][1] += 1;
-                            // No match credit (germline gap).
-                        } else {
-                            // SAFETY: is_synthetic == false ⇒ germline_pos.is_some().
-                            let germ_pos = nuc.germline_pos.get().expect("checked above") as usize;
-                            // Fill any preceding deletion gap.
-                            while expected_pos < germ_pos && expected_pos < allele_seq.len() {
-                                sa.push(b'-');
-                                let g = allele_seq[expected_pos];
-                                galn.push(g);
-                                push_dmask_for_seg(&mut dmask, seg, g);
-                                push_cigar_op(&mut cigar_runs[seg_idx], b'D');
-                                id_counts[seg_idx][1] += 1;
-                                extend_ref_range(&mut ref_ranges, seg_idx, expected_pos as i64);
-                                expected_pos += 1;
-                            }
-                            // Emit the matched/mismatched column. Phase
-                            // 12.C: read the germline byte from the
-                            // projected allele's sequence (matching
-                            // `*_call`), not from `nuc.germline` which
-                            // captures the originally-sampled byte and
-                            // can diverge when the live-call narrowed
-                            // to a different allele. Bounds-fall-back
-                            // to `nuc.germline` if `germ_pos` exceeds
-                            // the projected allele length (defensive,
-                            // shouldn't happen in well-formed data).
-                            sa.push(base_char);
-                            let g = if germ_pos < allele_seq.len() {
-                                allele_seq[germ_pos]
-                            } else {
-                                nuc.germline
-                            };
+                            continue;
+                        };
+                        let germ_pos = germ_pos as usize;
+                        // Fill any preceding deletion gap.
+                        while expected_pos < germ_pos && expected_pos < allele_seq.len() {
+                            sa.push(b'-');
+                            let g = allele_seq[expected_pos];
                             galn.push(g);
                             push_dmask_for_seg(&mut dmask, seg, g);
-                            push_cigar_op(&mut cigar_runs[seg_idx], b'M');
+                            push_cigar_op(&mut cigar_runs[seg_idx], b'D');
                             id_counts[seg_idx][1] += 1;
-                            if eq_ascii_case_insensitive(base_char, g) {
-                                id_counts[seg_idx][0] += 1;
-                            }
-                            extend_ref_range(&mut ref_ranges, seg_idx, germ_pos as i64);
-                            expected_pos = germ_pos + 1;
+                            extend_ref_range(&mut ref_ranges, seg_idx, expected_pos as i64);
+                            expected_pos += 1;
                         }
+                        // Emit the matched/mismatched column. Phase
+                        // 12.C: read the germline byte from the
+                        // projected allele's sequence (matching
+                        // `*_call`), not from `nuc.germline` which
+                        // captures the originally-sampled byte and
+                        // can diverge when the live-call narrowed
+                        // to a different allele. Bounds-fall-back
+                        // to `nuc.germline` if `germ_pos` exceeds
+                        // the projected allele length (defensive,
+                        // shouldn't happen in well-formed data).
+                        sa.push(base_char);
+                        let g = if germ_pos < allele_seq.len() {
+                            allele_seq[germ_pos]
+                        } else {
+                            nuc.germline
+                        };
+                        galn.push(g);
+                        push_dmask_for_seg(&mut dmask, seg, g);
+                        push_cigar_op(&mut cigar_runs[seg_idx], b'M');
+                        id_counts[seg_idx][1] += 1;
+                        if eq_ascii_case_insensitive(base_char, g) {
+                            id_counts[seg_idx][0] += 1;
+                        }
+                        extend_ref_range(&mut ref_ranges, seg_idx, germ_pos as i64);
+                        expected_pos = germ_pos + 1;
                     }
                     // Trailing deletion gaps: positions in
                     // `[expected_pos, end_germ)` were trimmed off by
