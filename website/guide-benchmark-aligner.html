@@ -92,8 +92,8 @@
       <div class="ph-card-head">What the truth gives you</div>
       <ul class="pass-list">
         <li><span class="pass-name">truth_v_call · truth_d_call · truth_j_call</span><span class="pass-note">the alleles sampled at recombination — fixed, by construction</span></li>
-        <li><span class="pass-name">truth_n_mutations</span><span class="pass-note">stratify accuracy by mutation load to find the drift threshold</span></li>
-        <li><span class="pass-name">corrupted_5prime · _3prime</span><span class="pass-note">stratify by how much sequence the aligner is missing</span></li>
+        <li><span class="pass-name">n_mutations</span><span class="pass-note">stratify accuracy by mutation load to find the drift threshold</span></li>
+        <li><span class="pass-name">sequence_length · v_sequence_start</span><span class="pass-note">stratify by remaining read length and how much V leader the 5′ loss pass chewed off</span></li>
         <li><span class="pass-name">junction_aa</span><span class="pass-note">cross-check CDR3 reconstruction independently of V/D/J calls</span></li>
       </ul>
     </div>
@@ -229,7 +229,7 @@ df[<span class="c-s">"v_family_ok"</span>] = (
 <span class="c-k">import</span> matplotlib.pyplot <span class="c-k">as</span> plt
 
 df[<span class="c-s">"mut_bucket"</span>] = pd.<span class="c-f">cut</span>(
-    df[<span class="c-s">"truth_n_mutations"</span>],
+    df[<span class="c-s">"n_mutations"</span>],
     bins=[<span class="c-n">0</span>, <span class="c-n">5</span>, <span class="c-n">10</span>, <span class="c-n">15</span>, <span class="c-n">20</span>, <span class="c-n">25</span>, <span class="c-n">30</span>, <span class="c-n">40</span>],
 )
 
@@ -276,9 +276,9 @@ ax.<span class="c-f">legend</span>()</code></pre>
     <div class="ph-card">
       <div class="ph-card-head">5′ corruption flattens the curve early</div>
       <p class="phr-note" style="margin: 8px 0 0;">
-        Stratify also by <code>corrupted_5prime</code>. The V family signal lives in the 5′
-        FWR1/CDR1 region; if you trim it, allele resolution collapses well before SHM would
-        otherwise cost you.
+        Stratify also by <code>v_sequence_start</code> (= the number of bases lost off the 5′
+        end). The V family signal lives in the 5′ FWR1/CDR1 region; if you trim it, allele
+        resolution collapses well before SHM would otherwise cost you.
       </p>
     </div>
   </div>

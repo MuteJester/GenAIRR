@@ -107,14 +107,16 @@
     <!-- DSL -->
     <div class="ph-card ph-card-code">
       <div class="ph-card-head">The DSL call</div>
-      <pre class="code"><code><span class="c-c">#  one line of DSL — many passes underneath</span>
-exp = (Experiment(<span class="c-s">"human_igh_naive"</span>)
-       .recombine())   <span class="c-c"># ← all four passes above, in order</span>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+<span class="c-c">#  one line of DSL — many passes underneath</span>
+result = (ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+             .<span class="c-f">recombine</span>()                  <span class="c-c"># ← all four passes above, in order</span>
+             .<span class="c-f">run_records</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>, expose_provenance=<span class="c-n">True</span>))
 
-rec = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
-<span class="c-c"># rec.truth_v_call    → "IGHV3-23*01"</span>
-<span class="c-c"># rec.junction_aa     → "CARDVPYAFDIW"</span>
-<span class="c-c"># rec.productive      → True</span></code></pre>
+rec = result.records[<span class="c-n">0</span>]
+<span class="c-c"># rec["truth_v_call"]  → "IGHVF10-G38*04"</span>
+<span class="c-c"># rec["junction_aa"]   → "CARDVPYAFDIW"</span>
+<span class="c-c"># rec["productive"]    → True</span></code></pre>
     </div>
   </div>
 
@@ -149,8 +151,8 @@ rec = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
       <span class="phr-field"><span class="phr-k">v_trim_3</span> <span class="phr-v">4 bp</span></span>
       <span class="phr-field"><span class="phr-k">d_trim_5 / 3</span> <span class="phr-v">2 / 3 bp</span></span>
       <span class="phr-field"><span class="phr-k">j_trim_5</span> <span class="phr-v">1 bp</span></span>
-      <span class="phr-field"><span class="phr-k">n1_length</span> <span class="phr-v">5 bp</span></span>
-      <span class="phr-field"><span class="phr-k">n2_length</span> <span class="phr-v">4 bp</span></span>
+      <span class="phr-field"><span class="phr-k">np1_length</span> <span class="phr-v">5 bp</span></span>
+      <span class="phr-field"><span class="phr-k">np2_length</span> <span class="phr-v">4 bp</span></span>
       <span class="phr-field"><span class="phr-k">junction</span> <span class="phr-v">TGTGCG…GGGTGG</span></span>
       <span class="phr-field"><span class="phr-k">junction_aa</span> <span class="phr-v">CARDVPYAFDIW</span></span>
       <span class="phr-field"><span class="phr-k">productive</span> <span class="phr-v">True</span></span>
@@ -183,15 +185,18 @@ rec = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
 
     <div class="ph-card ph-card-code">
       <div class="ph-card-head">The DSL call</div>
-      <pre class="code"><code>exp = (Experiment(<span class="c-s">"human_igh_naive"</span>)
-       .recombine()
-       .mutate(model=<span class="c-s">"s5f"</span>,
-               count=(<span class="c-n">5</span>, <span class="c-n">25</span>)))   <span class="c-c"># draw # subs from uniform</span>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
 
-rec = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
-<span class="c-c"># rec.truth_n_mutations  → 11</span>
-<span class="c-c"># rec.mutation_rate      → 0.031</span>
-<span class="c-c"># rec.v_identity         → 0.962</span></code></pre>
+result = (ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+             .<span class="c-f">recombine</span>()
+             .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>,
+                     count=(<span class="c-n">5</span>, <span class="c-n">25</span>))   <span class="c-c"># draw # subs uniformly in range</span>
+             .<span class="c-f">run_records</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>))
+
+rec = result.records[<span class="c-n">0</span>]
+<span class="c-c"># rec["n_mutations"]    → 17</span>
+<span class="c-c"># rec["mutation_rate"]  → 0.046</span>
+<span class="c-c"># rec["v_identity"]     → 0.963</span></code></pre>
     </div>
   </div>
 
@@ -233,14 +238,12 @@ rec = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
   <div class="ph-recorded">
     <div class="phr-head">Truth fields recorded</div>
     <div class="phr-fields">
-      <span class="phr-field"><span class="phr-k">truth_n_mutations</span> <span class="phr-v">11</span></span>
-      <span class="phr-field"><span class="phr-k">mutation_rate</span> <span class="phr-v">0.031</span></span>
-      <span class="phr-field"><span class="phr-k">v_identity</span> <span class="phr-v">0.962</span></span>
-      <span class="phr-field"><span class="phr-k">shm_model</span> <span class="phr-v">s5f</span></span>
-      <span class="phr-field"><span class="phr-k">mutation_pos</span> <span class="phr-v">[34, 67, 92, …]</span></span>
-      <span class="phr-field"><span class="phr-k">mutation_ref</span> <span class="phr-v">[A, C, G, …]</span></span>
-      <span class="phr-field"><span class="phr-k">mutation_alt</span> <span class="phr-v">[G, T, A, …]</span></span>
-      <span class="phr-field phr-more">+ per-region mutation counts</span>
+      <span class="phr-field"><span class="phr-k">n_mutations</span> <span class="phr-v">17</span></span>
+      <span class="phr-field"><span class="phr-k">mutation_rate</span> <span class="phr-v">0.046</span></span>
+      <span class="phr-field"><span class="phr-k">v_identity</span> <span class="phr-v">0.963</span></span>
+      <span class="phr-field"><span class="phr-k">d_identity</span> <span class="phr-v">0.837</span></span>
+      <span class="phr-field"><span class="phr-k">j_identity</span> <span class="phr-v">0.948</span></span>
+      <span class="phr-field phr-more">per-base substitutions accessible via <code>trace.prefix_query("mutate.s5f.site")</code></span>
     </div>
   </div>
 </section>
@@ -272,18 +275,21 @@ rec = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
 
     <div class="ph-card ph-card-code">
       <div class="ph-card-head">The DSL call</div>
-      <pre class="code"><code>exp = (Experiment(<span class="c-s">"human_igh_naive"</span>)
-       .recombine()
-       .mutate(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
-       .corrupt_5prime_loss(p=<span class="c-n">0.30</span>, max_loss=<span class="c-n">60</span>)
-       .corrupt_3prime_loss(p=<span class="c-n">0.15</span>, max_loss=<span class="c-n">30</span>)
-       .corrupt_indels(rate=<span class="c-n">0.005</span>)
-       .corrupt_ns(rate=<span class="c-n">0.001</span>))
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
 
-rec = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
-<span class="c-c"># rec.sequence_length    → 320       (was 360 before loss)</span>
-<span class="c-c"># rec.corruption_added   → True</span>
-<span class="c-c"># rec.truth_v_call       → "IGHV3-23*01"  (still known!)</span></code></pre>
+result = (ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+             .<span class="c-f">recombine</span>()
+             .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+             .<span class="c-f">corrupt_5prime_loss</span>(length=(<span class="c-n">5</span>, <span class="c-n">30</span>))
+             .<span class="c-f">corrupt_3prime_loss</span>(length=(<span class="c-n">0</span>, <span class="c-n">15</span>))
+             .<span class="c-f">corrupt_indels</span>(count=(<span class="c-n">0</span>, <span class="c-n">2</span>))
+             .<span class="c-f">corrupt_ns</span>(count=(<span class="c-n">0</span>, <span class="c-n">5</span>))
+             .<span class="c-f">run_records</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>, expose_provenance=<span class="c-n">True</span>))
+
+rec = result.records[<span class="c-n">0</span>]
+<span class="c-c"># rec["sequence_length"] → 355       (was ~388 before loss)</span>
+<span class="c-c"># rec["n_pcr_errors"] + rec["n_indels"] + rec["n_quality_errors"]  → corruption sum</span>
+<span class="c-c"># rec["truth_v_call"]    → "IGHVF10-G38*04"  (still known!)</span></code></pre>
     </div>
   </div>
 
@@ -319,15 +325,13 @@ rec = exp.run(<span class="c-n">1</span>)[<span class="c-n">0</span>]
   <div class="ph-recorded">
     <div class="phr-head">Truth fields recorded</div>
     <div class="phr-fields">
-      <span class="phr-field"><span class="phr-k">sequence_length</span> <span class="phr-v">320 bp</span></span>
-      <span class="phr-field"><span class="phr-k">corruption_added</span> <span class="phr-v">True</span></span>
-      <span class="phr-field"><span class="phr-k">5_prime_loss</span> <span class="phr-v">28 bp</span></span>
-      <span class="phr-field"><span class="phr-k">3_prime_loss</span> <span class="phr-v">12 bp</span></span>
-      <span class="phr-field"><span class="phr-k">n_count</span> <span class="phr-v">3</span></span>
-      <span class="phr-field"><span class="phr-k">n_positions</span> <span class="phr-v">[89, 207, 275]</span></span>
-      <span class="phr-field"><span class="phr-k">indel_count</span> <span class="phr-v">1</span></span>
-      <span class="phr-field"><span class="phr-k">indel_events</span> <span class="phr-v">[ins@142]</span></span>
-      <span class="phr-field phr-more">+ per-pass corruption flags</span>
+      <span class="phr-field"><span class="phr-k">sequence_length</span> <span class="phr-v">355 bp</span></span>
+      <span class="phr-field"><span class="phr-k">n_indels</span> <span class="phr-v">1</span></span>
+      <span class="phr-field"><span class="phr-k">n_pcr_errors</span> <span class="phr-v">2</span></span>
+      <span class="phr-field"><span class="phr-k">n_quality_errors</span> <span class="phr-v">1</span></span>
+      <span class="phr-field"><span class="phr-k">rev_comp</span> <span class="phr-v">False</span></span>
+      <span class="phr-field"><span class="phr-k">is_contaminant</span> <span class="phr-v">False</span></span>
+      <span class="phr-field phr-more">N-base positions accessible via <code>sequence.count("N")</code> or alignment diff</span>
     </div>
   </div>
 </section>

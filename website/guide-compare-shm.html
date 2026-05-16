@@ -184,14 +184,17 @@ ax.<span class="c-f">legend</span>()</code></pre>
       <div class="ph-card-head">Counting motifs across mutated positions</div>
       <pre class="code"><code><span class="c-k">from</span> collections <span class="c-k">import</span> Counter
 
+<span class="c-c"># mutation positions aren't a record field — derive them by diffing</span>
+<span class="c-c"># sequence_alignment against germline_alignment, then take the 5-mer</span>
+<span class="c-c"># context around each mutated position from germline_alignment.</span>
 <span class="c-k">def</span> <span class="c-f">motif_counts</span>(df, k=<span class="c-n">5</span>):
     counts = <span class="c-f">Counter</span>()
+    half = k // <span class="c-n">2</span>
     <span class="c-k">for</span> _, row <span class="c-k">in</span> df.<span class="c-f">iterrows</span>():
-        germ = row[<span class="c-s">"germline_alignment"</span>]
-        <span class="c-k">for</span> p <span class="c-k">in</span> row[<span class="c-s">"mutation_pos"</span>]:
-            lo, hi = p - k // <span class="c-n">2</span>, p + k // <span class="c-n">2</span> + <span class="c-n">1</span>
-            <span class="c-k">if</span> lo &gt;= <span class="c-n">0</span> <span class="c-k">and</span> hi &lt;= <span class="c-f">len</span>(germ):
-                counts[germ[lo:hi]] += <span class="c-n">1</span>
+        sa, germ = row[<span class="c-s">"sequence_alignment"</span>], row[<span class="c-s">"germline_alignment"</span>]
+        <span class="c-k">for</span> p <span class="c-k">in</span> range(half, <span class="c-f">len</span>(germ) - half):
+            <span class="c-k">if</span> sa[p] != germ[p] <span class="c-k">and</span> sa[p] != <span class="c-s">"-"</span> <span class="c-k">and</span> germ[p] <span class="c-k">not in</span> (<span class="c-s">"-"</span>, <span class="c-s">"N"</span>):
+                counts[germ[p - half : p + half + <span class="c-n">1</span>]] += <span class="c-n">1</span>
     <span class="c-k">return</span> counts
 
 ma = <span class="c-f">motif_counts</span>(a)

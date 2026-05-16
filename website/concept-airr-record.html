@@ -296,20 +296,20 @@ rec.junction_aa
   <div class="ph-recorded" style="margin-top: 14px;">
     <div class="phr-head">Mutation</div>
     <div class="phr-fields">
-      <span class="phr-field"><span class="phr-k">truth_n_mutations</span> <span class="phr-v">11</span></span>
+      <span class="phr-field"><span class="phr-k">n_mutations</span> <span class="phr-v">11</span></span>
       <span class="phr-field"><span class="phr-k">mutation_rate</span> <span class="phr-v">0.031</span></span>
-      <span class="phr-field"><span class="phr-k">shm_model</span> <span class="phr-v">s5f</span></span>
-      <span class="phr-field"><span class="phr-k">mutation_pos / ref / alt</span> <span class="phr-v">list[int] · list[str]</span></span>
+      <span class="phr-field phr-more">per-substitution positions live in <code>out.trace().prefix_query("mutate.s5f.site")</code> or derive via the <code>sequence_alignment</code> vs <code>germline_alignment</code> diff</span>
     </div>
   </div>
 
   <div class="ph-recorded" style="margin-top: 14px;">
     <div class="phr-head">Corruption (lab effects)</div>
     <div class="phr-fields">
-      <span class="phr-field"><span class="phr-k">corruption_added</span> <span class="phr-v">True</span></span>
-      <span class="phr-field"><span class="phr-k">corrupted_5prime · _3prime</span> <span class="phr-v">28 · 12</span></span>
-      <span class="phr-field"><span class="phr-k">n_count</span> <span class="phr-v">3</span></span>
-      <span class="phr-field"><span class="phr-k">indels_added</span> <span class="phr-v">1</span></span>
+      <span class="phr-field"><span class="phr-k">n_indels</span> <span class="phr-v">1</span></span>
+      <span class="phr-field"><span class="phr-k">n_pcr_errors</span> <span class="phr-v">2</span></span>
+      <span class="phr-field"><span class="phr-k">n_quality_errors</span> <span class="phr-v">1</span></span>
+      <span class="phr-field"><span class="phr-k">rev_comp</span> <span class="phr-v">False</span></span>
+      <span class="phr-field"><span class="phr-k">is_contaminant</span> <span class="phr-v">False</span></span>
     </div>
   </div>
 </section>

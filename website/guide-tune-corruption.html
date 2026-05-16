@@ -69,7 +69,7 @@
       <div class="ctl-label">
         <span class="ctl-num">03</span>
         <span class="ctl-name">Calibrate</span>
-        <span class="ctl-sub">verify n_count + indel distributions match</span>
+        <span class="ctl-sub">verify N-density + n_indels distributions match</span>
       </div>
     </div>
   </div>
@@ -193,7 +193,7 @@ result = <span class="c-f">profile</span>(<span class="c-s">"miseq_300pe"</span>
 ).<span class="c-f">mean</span>()
 
 n_rate_sim = (
-    sim[<span class="c-s">"n_count"</span>] /
+    sim[<span class="c-s">"sequence"</span>].<span class="c-f">str</span>.<span class="c-f">count</span>(<span class="c-s">"N"</span>) /
     sim[<span class="c-s">"sequence_length"</span>]
 ).<span class="c-f">mean</span>()
 <span class="c-c"># adjust the corrupt_ns count range until these match</span></code></pre>

@@ -251,7 +251,7 @@
     <span class="rs-ord">02</span>
     <div>
       <h2>Configs.</h2>
-      <p>14 built-in configs. Drop a name into <code>Experiment("…")</code> or fork the YAML
+      <p>106 built-in configs. Drop a name into <code>Experiment.on("…")</code> or fork the YAML
       and pass a path. Schema is documented per-key.</p>
     </div>
   </div>
@@ -324,13 +324,14 @@
     <div class="rs-trow"><span class="rs-tcell rs-tname">junction</span><span>str</span><span class="rs-tg rs-tg-seg">segments</span><span class="rs-tsrc">AssembleSegmentPass</span><span>CDR3 nucleotide sequence inclusive of anchors.</span></div>
     <div class="rs-trow"><span class="rs-tcell rs-tname">junction_aa</span><span>str</span><span class="rs-tg rs-tg-seg">segments</span><span class="rs-tsrc">AssembleSegmentPass</span><span>CDR3 amino-acid translation.</span></div>
     <div class="rs-trow"><span class="rs-tcell rs-tname">productive</span><span>bool</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">contracts.productive</span><span>True if in-frame, no stop codon, anchors preserved.</span></div>
-    <div class="rs-trow"><span class="rs-tcell rs-tname">truth_n_mutations</span><span>int</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">S5FMutationPass</span><span>Total SHM substitution count.</span></div>
-    <div class="rs-trow"><span class="rs-tcell rs-tname">mutation_rate</span><span>float</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">S5FMutationPass</span><span><code>truth_n_mutations / sequence_length</code>.</span></div>
-    <div class="rs-trow"><span class="rs-tcell rs-tname">mutation_pos</span><span>list[int]</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">S5FMutationPass</span><span>Per-substitution position, 0-indexed.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">n_mutations</span><span>int</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">S5FMutationPass</span><span>Total SHM substitution count.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">mutation_rate</span><span>float</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">S5FMutationPass</span><span><code>n_mutations / sequence_length</code>.</span></div>
     <div class="rs-trow"><span class="rs-tcell rs-tname">v_identity</span><span>float</span><span class="rs-tg rs-tg-truth">truth</span><span class="rs-tsrc">derived</span><span>Fraction of V positions identical to germline.</span></div>
-    <div class="rs-trow"><span class="rs-tcell rs-tname">corruption_added</span><span>bool</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">EndLossPass+</span><span>True if any corruption pass modified the sequence.</span></div>
-    <div class="rs-trow"><span class="rs-tcell rs-tname">n_count</span><span>int</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">NCorruptionPass</span><span>Number of ambiguous N bases.</span></div>
-    <div class="rs-trow"><span class="rs-tcell rs-tname">5_prime_loss</span><span>int</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">EndLossPass</span><span>Bases truncated from the 5′ end.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">n_indels</span><span>int</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">IndelPass</span><span>Number of insertion/deletion events applied to this record.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">n_pcr_errors</span><span>int</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">PCRErrorPass</span><span>Number of PCR-induced substitutions.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">n_quality_errors</span><span>int</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">QualityPass</span><span>Number of quality-drift substitutions.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">rev_comp</span><span>bool</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">ReverseComplementPass</span><span>True if the sequence was reverse-complemented as an artifact.</span></div>
+    <div class="rs-trow"><span class="rs-tcell rs-tname">is_contaminant</span><span>bool</span><span class="rs-tg rs-tg-corr">corruption</span><span class="rs-tsrc">ContaminantPass</span><span>True if the sequence is a synthetic contaminant rather than a recombinant.</span></div>
   </div>
 </section>
 
