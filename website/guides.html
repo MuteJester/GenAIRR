@@ -119,6 +119,23 @@
       </div>
       <div class="gc-arrow">→</div>
     </a>
+
+    <a class="gc" href="guide-clonal-families.html">
+      <div class="gc-num">A·03</div>
+      <div class="gc-body">
+        <h3>Generate clonal families.</h3>
+        <p><code>.with_clonal_structure(n_clones, size)</code> forks the pipeline. Pre-fork
+        passes are shared (the V/D/J backbone); post-fork passes diverge per descendant
+        (the SHM history). Every record carries a <code>clone_id</code> for grouping back.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~12 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">clonal</span><span class="gc-tag">lineage</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
   </div>
 </section>
 
@@ -246,13 +263,31 @@
       <div class="gc-num">C·03</div>
       <div class="gc-body">
         <h3>Replay a simulation with one knob changed.</h3>
-        <p>Pin a seed, fork the IR at any phase, swap a single pass, re-run from that
-        point. Built on the persistent-IR layers — no full re-execution needed.</p>
+        <p>Pin V/D/J via <code>.using()</code>, fix the seed, vary one downstream knob —
+        anything that differs is attributable to that knob alone. The lock-and-replay
+        pattern for single-variable isolation.</p>
         <div class="gc-meta">
           <span class="gc-time">~10 min</span>
           <span class="gc-dot">·</span>
           <span class="gc-diff">●●● advanced</span>
-          <span class="gc-tags"><span class="gc-tag">ir</span><span class="gc-tag">determinism</span></span>
+          <span class="gc-tags"><span class="gc-tag">determinism</span><span class="gc-tag">replay</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-trace-introspection.html">
+      <div class="gc-num">C·04</div>
+      <div class="gc-body">
+        <h3>Introspect the trace.</h3>
+        <p>Every random draw the engine makes is addressable: <code>sample_allele.v</code>,
+        <code>np.np1.bases[3]</code>, <code>mutate.s5f.pos[42]</code>. Query by name, by
+        prefix, or count draws per pass to audit what the engine actually did.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~10 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●●○ intermediate</span>
+          <span class="gc-tags"><span class="gc-tag">trace</span><span class="gc-tag">debug</span></span>
         </div>
       </div>
       <div class="gc-arrow">→</div>
@@ -314,6 +349,23 @@
           <span class="gc-dot">·</span>
           <span class="gc-diff">●●○ intermediate</span>
           <span class="gc-tags"><span class="gc-tag">reproducibility</span><span class="gc-tag">paper</span></span>
+        </div>
+      </div>
+      <div class="gc-arrow">→</div>
+    </a>
+
+    <a class="gc" href="guide-with-metadata.html">
+      <div class="gc-num">D·04</div>
+      <div class="gc-body">
+        <h3>Attach sample metadata to records.</h3>
+        <p><code>.with_metadata(donor=..., sample_id=..., cell_id=...)</code> stamps every
+        record with AIRR-standard fields plus any custom user fields you pass — for
+        multi-donor batches, longitudinal samples, single-cell panels.</p>
+        <div class="gc-meta">
+          <span class="gc-time">~7 min</span>
+          <span class="gc-dot">·</span>
+          <span class="gc-diff">●○○ beginner</span>
+          <span class="gc-tags"><span class="gc-tag">metadata</span><span class="gc-tag">multi-sample</span></span>
         </div>
       </div>
       <div class="gc-arrow">→</div>

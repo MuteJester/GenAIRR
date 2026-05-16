@@ -72,10 +72,11 @@
 
   <div class="specimen-caption">
     <p>
-      Above is one record from a single <code>Experiment.run()</code>. Every annotation
-      is <em>ground truth</em> — placed by the simulator at the moment of construction, not
-      inferred by an aligner. Cycle through the specimens to watch a clean rearrangement
-      pick up mutations, then sequencing artifacts, then reveal its full provenance.
+      Above: an illustrated record schematic walking the pipeline through four representative
+      stages. Every annotation in a real run is <em>ground truth</em> — placed by the simulator
+      at the moment of construction, not inferred by an aligner. Cycle through the specimens to
+      watch a clean rearrangement pick up mutations, then sequencing artifacts, then reveal its
+      full provenance.
     </p>
     <div class="specimen-cta">
       <a class="btn btn-primary" href="learn.html">Open the 5-lesson tutorial →</a>
@@ -106,7 +107,7 @@
     <div class="feat">
       <div class="num">03 / PHENOMENA</div>
       <h3>A composable lab for what shapes a repertoire</h3>
-      <p>Compose biological mechanisms (S5F mutation, antigen selection, class switch, receptor revision) and lab effects (5'/3' loss, indels, N-bases) in isolation. The persistent IR keeps every decision traceable across phases.</p>
+      <p>Compose biological mechanisms (S5F somatic hypermutation) and lab effects (5'/3' loss, indels, N-bases, PCR errors, quality drift, reverse-complement, contaminants) in isolation. The persistent IR keeps every decision traceable across phases.</p>
     </div>
   </div>
 
@@ -188,7 +189,7 @@
         <span class="cap-tag">ENGINE · persistent IR + trace</span>
       </div>
       <h3>Replay &amp; Audit</h3>
-      <p>Every pass writes a new IR snapshot, every base carries its provenance, every random draw is addressed (<code>np.np1.bases[3]</code>). Fork from any phase, replay any draw, derive ~70 truth fields on demand.</p>
+      <p>Every pass writes a new IR snapshot, every base carries its provenance, every random draw is addressed (<code>np.np1.bases[3]</code>). Inspect any phase via <code>.revision_after()</code>, re-run with allele locks via <code>.using()</code>, derive ~70 truth fields on demand.</p>
     </div>
   </div>
 
@@ -261,10 +262,11 @@ result = (
 
 <footer class="foot">
   <div class="foot-inner">
-    <div>© 2026 GenAIRR contributors · MIT License</div>
+    <div>© 2026 GenAIRR contributors · <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE">GPL v3</a></div>
     <div><a href="https://github.com/MuteJester/GenAIRR">GitHub</a> · <a href="https://github.com/MuteJester/GenAIRR/issues">Issues</a> · <a href="https://doi.org/10.1093/bib/bbae556">Citation</a></div>
   </div>
 </footer>
+
 
 <script src="genairr.js?v=4"></script>
 <script>

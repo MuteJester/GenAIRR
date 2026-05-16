@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Generate clonal families — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="https://pypi.org/project/GenAIRR/">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">A · Build</span>
+  </nav>
+
+  <span class="eyebrow">Recipe A · 03 · ~12 min · intermediate</span>
+  <h1>Generate clonal families.</h1>
+  <p class="lead">
+    <code>.with_clonal_structure(n_clones, size)</code> forks the pipeline. Passes <em>before</em>
+    the fork are shared by every descendant of a clone (the V/D/J/NP backbone). Passes
+    <em>after</em> the fork run independently per descendant (the SHM history that makes each
+    member of the lineage unique). Every output record carries a <code>clone_id</code> so you can
+    group descendants back together for lineage analysis.
+  </p>
+</section>
+
+<section class="page chapter-timeline">
+  <div class="ctl-rail">
+    <div class="ctl-track"></div>
+    <div class="ctl-stop ctl-stop-1">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">01</span>
+        <span class="ctl-name">Pre-fork passes</span>
+        <span class="ctl-sub">recombine — runs once per clone</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-2">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">02</span>
+        <span class="ctl-name">.with_clonal_structure(n, k)</span>
+        <span class="ctl-sub">fork into k descendants</span>
+      </div>
+    </div>
+    <div class="ctl-stop ctl-stop-3">
+      <div class="ctl-dot"></div>
+      <div class="ctl-label">
+        <span class="ctl-num">03</span>
+        <span class="ctl-name">Post-fork passes</span>
+        <span class="ctl-sub">mutate · corrupt — runs per descendant</span>
+      </div>
+    </div>
+  </div>
+  <p class="phr-note" style="text-align: center; margin: 8px auto 0; max-width: 720px;">
+    Output: <code>n_clones × size</code> records total, grouped by <code>clone_id ∈ [0,
+    n_clones)</code>. Each clone's members share V/D/J/NP exactly; downstream passes diverge.
+  </p>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>Pipeline order is the whole story.</h2>
+    <p class="ph-lead">
+      Where you place <code>.with_clonal_structure(...)</code> in the chain decides what each
+      clone's descendants share and what they each draw fresh. Get this wrong and every "lineage"
+      in your output is actually identical, or every "lineage" has unrelated V/D/J.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">Shared across descendants (pre-fork)</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">.recombine()</span><span class="pass-note">always pre-fork — the shared V/D/J ancestor is the point of a clone</span></li>
+        <li><span class="pass-name">.with_metadata()</span><span class="pass-note">put pre-fork if metadata applies to the whole clone</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Divergent across descendants (post-fork)</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">.mutate(...)</span><span class="pass-note">post-fork: each descendant gets its own SHM history (the canonical pattern)</span></li>
+        <li><span class="pass-name">.corrupt_*(...)</span><span class="pass-note">post-fork: every descendant goes through the sequencer separately</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>The canonical clonal-family chain.</h2>
+    <p class="ph-lead">
+      Place <code>.with_clonal_structure(...)</code> between <code>.recombine()</code> and the
+      first divergent pass. Omit <code>n</code> from <code>run_records()</code> — for clonal
+      experiments the total record count is auto-derived as <code>n_clones × size</code>.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">10 clones × 8 descendants — shared V/D/J, divergent SHM</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">recombine</span>()                                  <span class="c-c"># shared by descendants</span>
+      .<span class="c-f">with_clonal_structure</span>(n_clones=<span class="c-n">10</span>, size=<span class="c-n">8</span>)  <span class="c-c"># fork here</span>
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))        <span class="c-c"># divergent</span>
+      .<span class="c-f">run_records</span>(seed=<span class="c-n">42</span>, expose_provenance=<span class="c-n">True</span>)
+)
+
+<span class="c-c"># 80 records total (10 clones × 8 descendants), each carrying clone_id</span>
+<span class="c-f">print</span>(len(result.records))   <span class="c-c"># 80</span>
+
+<span class="c-c"># group descendants back together by clone_id</span>
+<span class="c-k">from</span> collections <span class="c-k">import</span> defaultdict
+by_clone = defaultdict(list)
+<span class="c-k">for</span> r <span class="c-k">in</span> result.records:
+    by_clone[r[<span class="c-s">"clone_id"</span>]].<span class="c-f">append</span>(r)
+
+<span class="c-c"># within any clone: V/D/J identical, mutation count varies</span>
+clone0 = by_clone[<span class="c-n">0</span>]
+<span class="c-k">assert</span> len({r[<span class="c-s">"truth_v_call"</span>] <span class="c-k">for</span> r <span class="c-k">in</span> clone0}) == <span class="c-n">1</span>     <span class="c-c"># one V allele</span>
+<span class="c-k">assert</span> len({r[<span class="c-s">"n_mutations"</span>] <span class="c-k">for</span> r <span class="c-k">in</span> clone0}) &gt; <span class="c-n">1</span>      <span class="c-c"># varied SHM</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Common pitfalls.</h2>
+    <p class="ph-lead">
+      Two ways to get the chain wrong, both of which produce technically-valid records that look
+      wrong on inspection.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Wrong: mutation before the fork — every clone member is identical</div>
+      <pre class="code"><code><span class="c-c"># DON'T: mutate before with_clonal_structure</span>
+result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">recombine</span>()
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))         <span class="c-c"># shared by all descendants</span>
+      .<span class="c-f">with_clonal_structure</span>(n_clones=<span class="c-n">10</span>, size=<span class="c-n">8</span>)   <span class="c-c"># fork AFTER mutate</span>
+      .<span class="c-f">run_records</span>(seed=<span class="c-n">42</span>, expose_provenance=<span class="c-n">True</span>)
+)
+
+<span class="c-c"># every descendant in a clone has IDENTICAL sequence — the SHM was applied once,</span>
+<span class="c-c"># before the fork, so all 8 members of clone 0 inherit the same mutated parent.</span>
+<span class="c-c"># the records carry n_mutations=0 because each descendant added zero of its own.</span></code></pre>
+    </div>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Wrong: recombination after the fork — every member is a fresh receptor</div>
+      <pre class="code"><code><span class="c-c"># NOT SUPPORTED: recombine() can't run after with_clonal_structure —</span>
+<span class="c-c"># the engine raises at compile time. The fork is supposed to inherit a parent</span>
+<span class="c-c"># recombination, so recombine() always comes first. Mentioned for completeness.</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Clonal + productive: works as of v1.1.</h2>
+    <p class="ph-lead">
+      The <code>.with_clonal_structure(...)</code> fork composes with
+      <code>respect=ga.productive()</code>. The contract enforces at the pre-fork recombination
+      phase — every descendant inherits a parent V/D/J/NP that's in-frame, has both anchors
+      intact, and starts with a clean junction. Downstream <em>per-descendant</em> passes (SHM,
+      corruption) can still break productivity — an SHM substitution that hits the junction can
+      introduce a stop codon, an indel can shift the frame. Filter post-hoc on <code>r["productive"]</code>
+      if you need 100%.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Productive clonal lineages — measure-then-filter</div>
+      <pre class="code"><code>result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">recombine</span>()
+      .<span class="c-f">with_clonal_structure</span>(n_clones=<span class="c-n">25</span>, size=<span class="c-n">20</span>)
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+      .<span class="c-f">run_records</span>(seed=<span class="c-n">42</span>, respect=ga.<span class="c-f">productive</span>(),
+                   expose_provenance=<span class="c-n">True</span>)
+)
+
+<span class="c-c"># pre-fork enforcement: every parent is productive by construction</span>
+<span class="c-c"># post-fork: SHM in the junction can introduce stop codons → some descendants drop out</span>
+prod_rate = sum(<span class="c-n">1</span> <span class="c-k">for</span> r <span class="c-k">in</span> result.records <span class="c-k">if</span> r[<span class="c-s">"productive"</span>]) / len(result.records)
+<span class="c-f">print</span>(<span class="c-s">f"productive rate: </span>{prod_rate:.<span class="c-n">2</span>%}<span class="c-s">"</span>)   <span class="c-c"># ~85-95% typical</span>
+
+productive_only = [r <span class="c-k">for</span> r <span class="c-k">in</span> result.records <span class="c-k">if</span> r[<span class="c-s">"productive"</span>]]</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-replay.html">
+      <div class="ph-card-head">C · 03 · Replay with one knob changed →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">The lock-and-replay pattern — pin V/D/J via <code>.using(...)</code> to get the clonal-family <em>spirit</em> without the fork.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-productive.html">
+      <div class="ph-card-head">A · 02 · Sample only productive sequences →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Background on the <code>respect=ga.productive()</code> bundle that composes with clonal forks.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="https://github.com/MuteJester/GenAIRR">GitHub</a>
+        <a href="https://doi.org/10.1093/bib/bbae556">Cite</a>
+        <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

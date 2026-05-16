@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Introspect the trace — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="https://pypi.org/project/GenAIRR/">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">C · Customize</span>
+  </nav>
+
+  <span class="eyebrow">Recipe C · 04 · ~10 min · intermediate</span>
+  <h1>Introspect the trace.</h1>
+  <p class="lead">
+    Every random draw the engine makes is recorded in the trace under a stable, addressable
+    name: <code>sample_allele.v</code>, <code>trim.j_5</code>, <code>np.np1.bases[3]</code>,
+    <code>mutate.s5f.pos[42]</code>. Use <code>Outcome.trace()</code> to retrieve that record for
+    any record in a batch and ask exactly what the engine sampled — by name, by prefix, or by
+    counting how many draws a pass made.
+  </p>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>Three queries cover most use cases.</h2>
+    <p class="ph-lead">
+      <code>trace.find(address)</code> for a known exact name, <code>trace.prefix_query(prefix)</code>
+      for an enumerated subset, <code>trace.prefix_count(prefix)</code> when you just want to know
+      how many. Returns are <code>ChoiceRecord</code> objects with two fields: <code>address</code>
+      and <code>value</code>.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">The three accessors</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">trace.find(addr)</span><span class="pass-note">returns one ChoiceRecord (or None) — for a single exactly-named draw</span></li>
+        <li><span class="pass-name">trace.prefix_query(prefix)</span><span class="pass-note">iterates ChoiceRecords whose address starts with prefix</span></li>
+        <li><span class="pass-name">trace.prefix_count(prefix)</span><span class="pass-note">returns an int — how many records match this prefix</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Address scheme</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">sample_allele.v / .d / .j</span><span class="pass-note">the allele draws (value = numeric AlleleId)</span></li>
+        <li><span class="pass-name">trim.v_3 / d_5 / d_3 / j_5</span><span class="pass-note">per-segment trim lengths</span></li>
+        <li><span class="pass-name">np.np1.length · np.np2.length</span><span class="pass-note">NP region lengths</span></li>
+        <li><span class="pass-name">np.np1.bases[k] · np.np2.bases[k]</span><span class="pass-note">each NP base draw, indexed</span></li>
+        <li><span class="pass-name">mutate.s5f.pos[k]</span><span class="pass-note">each SHM substitution position (when mutate was run)</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Reading one record's trace end-to-end.</h2>
+    <p class="ph-lead">
+      Get an <code>Outcome</code> from <code>.run(...)</code>, call <code>.trace()</code> on it,
+      and query whatever you need. Below: read the V allele the engine picked, the NP1 length and
+      bases it drew, and the count of SHM substitutions it made.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Find · prefix_query · prefix_count, on one record</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+out = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">recombine</span>()
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+      .<span class="c-f">run</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>)
+)[<span class="c-n">0</span>]
+
+trace = out.<span class="c-f">trace</span>()
+
+<span class="c-c"># 1. find — one named draw, returns ChoiceRecord with .address and .value</span>
+v_id     = trace.<span class="c-f">find</span>(<span class="c-s">"sample_allele.v"</span>).value     <span class="c-c"># int AlleleId — 146</span>
+np1_len  = trace.<span class="c-f">find</span>(<span class="c-s">"np.np1.length"</span>).value       <span class="c-c"># int — 13</span>
+v3_trim  = trace.<span class="c-f">find</span>(<span class="c-s">"trim.v_3"</span>).value            <span class="c-c"># int — 0</span>
+
+<span class="c-c"># 2. prefix_query — iterate every record under a prefix</span>
+<span class="c-k">for</span> rec <span class="c-k">in</span> trace.<span class="c-f">prefix_query</span>(<span class="c-s">"np.np1.bases"</span>):
+    <span class="c-f">print</span>(rec.address, rec.value)
+<span class="c-c"># np.np1.bases[0] b'C'</span>
+<span class="c-c"># np.np1.bases[1] b'G'</span>
+<span class="c-c"># np.np1.bases[2] b'A'  ... (13 bases total)</span>
+
+<span class="c-c"># 3. prefix_count — quick total</span>
+n_shm = trace.<span class="c-f">prefix_count</span>(<span class="c-s">"mutate.s5f"</span>)            <span class="c-c"># int — 35</span></code></pre>
+    </div>
+  </div>
+
+  <p class="phr-note" style="margin: 12px 0 0;">
+    <code>sample_allele.v</code> returns the integer <code>AlleleId</code> the engine drew, not
+    the allele name. Map it back via <code>refdata.v_allele(id).name</code> — see PART 04 for the
+    full pattern.
+  </p>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Counting draws per pass — a debugging tool.</h2>
+    <p class="ph-lead">
+      <code>prefix_count</code> is the fastest way to verify "did this pass run as I expected".
+      Use it to confirm a contract didn't reject a draw, an indel pass actually fired, or a
+      mutation count is in the range you asked for.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Audit how many draws each pass made</div>
+      <pre class="code"><code>out = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">recombine</span>()
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+      .<span class="c-f">corrupt_5prime_loss</span>(length=(<span class="c-n">5</span>, <span class="c-n">30</span>))
+      .<span class="c-f">run</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>)
+)[<span class="c-n">0</span>]
+
+trace = out.<span class="c-f">trace</span>()
+<span class="c-k">for</span> prefix <span class="c-k">in</span> (<span class="c-s">"sample_allele"</span>, <span class="c-s">"trim"</span>, <span class="c-s">"np"</span>, <span class="c-s">"mutate"</span>):
+    <span class="c-f">print</span>(<span class="c-s">f"</span>{prefix}<span class="c-s">: </span>{trace.<span class="c-f">prefix_count</span>(prefix)}<span class="c-s"> draws"</span>)
+<span class="c-c"># sample_allele: 3      — V + D + J alleles drawn</span>
+<span class="c-c"># trim:          4      — V_3, D_5, D_3, J_5 trim lengths</span>
+<span class="c-c"># np:            15     — np1.length + np2.length + bases</span>
+<span class="c-c"># mutate:        35     — every SHM substitution recorded</span></code></pre>
+    </div>
+  </div>
+
+  <p class="phr-note" style="margin: 12px 0 0;">
+    Not every pass writes to the trace. Corruption passes that don't make per-base random choices
+    (some end-loss configurations, for instance) record nothing. The trace is the inventory of
+    <em>sampled</em> decisions, not a per-pass execution log.
+  </p>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 04</span>
+    <h2>Mapping AlleleId back to a name.</h2>
+    <p class="ph-lead">
+      <code>sample_allele.{v,d,j}</code> values are integer <code>AlleleId</code>s — efficient
+      handles into the reference pool. Resolve them to names via the same <code>RefDataConfig</code>
+      the experiment was built on.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">AlleleId → allele name</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+exp = ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>).<span class="c-f">recombine</span>()
+out = exp.<span class="c-f">run</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>)[<span class="c-n">0</span>]
+
+refdata = exp.refdata                            <span class="c-c"># the RefDataConfig</span>
+v_id = out.<span class="c-f">trace</span>().<span class="c-f">find</span>(<span class="c-s">"sample_allele.v"</span>).value
+v_name = refdata.<span class="c-f">v_allele</span>(v_id).name
+<span class="c-f">print</span>(v_name)                                <span class="c-c"># 'IGHVF10-G38*04'</span>
+
+<span class="c-c"># the same for D and J:</span>
+<span class="c-c">#   refdata.d_allele(out.trace().find("sample_allele.d").value).name</span>
+<span class="c-c">#   refdata.j_allele(out.trace().find("sample_allele.j").value).name</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-replay.html">
+      <div class="ph-card-head">C · 03 · Replay with one knob changed →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Read the trace, lock V/D/J via <code>.using()</code>, replay with a different downstream pass.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-reproduce.html">
+      <div class="ph-card-head">D · 03 · Reproduce a published dataset →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">The trace plus a pinned seed and config is the full recipe — anyone can recreate the exact draws.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="https://github.com/MuteJester/GenAIRR">GitHub</a>
+        <a href="https://doi.org/10.1093/bib/bbae556">Cite</a>
+        <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>

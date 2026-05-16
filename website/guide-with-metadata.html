@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Attach sample metadata to records — GenAIRR Guides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">G</span><span>GenAIRR</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="learn.html">Learn</a>
+      <a href="guides.html" class="active">Guides</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="reference.html">Reference</a>
+    </div>
+    <a class="nav-cta" href="https://pypi.org/project/GenAIRR/">pip install GenAIRR</a>
+  </div>
+</nav>
+
+<section class="page chapter-hero">
+  <nav class="crumbs">
+    <a href="index.html">Docs</a>
+    <span class="crumbs-sep">/</span>
+    <a href="guides.html">Guides</a>
+    <span class="crumbs-sep">/</span>
+    <span class="crumbs-cur">D · Operate</span>
+  </nav>
+
+  <span class="eyebrow">Recipe D · 04 · ~7 min · beginner</span>
+  <h1>Attach sample metadata to records.</h1>
+  <p class="lead">
+    <code>.with_metadata(**fields)</code> stamps every output record with arbitrary user fields
+    — donor IDs, sample IDs, sequencing batches, timepoints, anything. The AIRR-standard fields
+    <code>sample_id</code>, <code>donor</code>, and <code>cell_id</code> propagate as proper AIRR
+    columns; everything else lands as user-extension columns alongside them. Mostly useful for
+    multi-sample / multi-donor benchmarks where you need to keep panels distinguishable after
+    they're stacked.
+  </p>
+</section>
+
+<section class="page chapter-phase chapter-phase-1">
+  <div class="ph-head">
+    <span class="ph-num">PART 01</span>
+    <h2>AIRR-standard fields and arbitrary fields.</h2>
+    <p class="ph-lead">
+      <code>with_metadata</code> takes any keyword arguments. Three of them — <code>sample_id</code>,
+      <code>donor</code>, <code>cell_id</code> — are AIRR-spec column names and will be recognised
+      by downstream AIRR-aware tools. Everything else lands as a user-extension column with the
+      same name you passed.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card">
+      <div class="ph-card-head">AIRR-standard fields</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">sample_id</span><span class="pass-note">the AIRR column for distinguishing samples within a study</span></li>
+        <li><span class="pass-name">donor</span><span class="pass-note">the AIRR column for the source individual</span></li>
+        <li><span class="pass-name">cell_id</span><span class="pass-note">the AIRR column for single-cell data</span></li>
+      </ul>
+    </div>
+
+    <div class="ph-card">
+      <div class="ph-card-head">Arbitrary user fields</div>
+      <ul class="pass-list">
+        <li><span class="pass-name">protocol</span><span class="pass-note">"MiSeq-v3" — sequencer/protocol tag</span></li>
+        <li><span class="pass-name">timepoint</span><span class="pass-note">"day_14" — longitudinal label</span></li>
+        <li><span class="pass-name">replicate</span><span class="pass-note">3 — replicate index, any JSON-serialisable type</span></li>
+        <li><span class="pass-name">anything you want</span><span class="pass-note">column name = keyword name, value = the value</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Stamp one panel with both standard + custom fields</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+
+result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">with_metadata</span>(
+          sample_id=<span class="c-s">"S001"</span>,         <span class="c-c"># AIRR standard</span>
+          donor=<span class="c-s">"D-01"</span>,             <span class="c-c"># AIRR standard</span>
+          protocol=<span class="c-s">"MiSeq-v3"</span>,       <span class="c-c"># user extension</span>
+          timepoint=<span class="c-s">"day_14"</span>,       <span class="c-c"># user extension</span>
+      )
+      .<span class="c-f">recombine</span>()
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+      .<span class="c-f">run_records</span>(n=<span class="c-n">100</span>, seed=<span class="c-n">42</span>)
+)
+
+rec = result.records[<span class="c-n">0</span>]
+<span class="c-k">assert</span> rec[<span class="c-s">"sample_id"</span>] == <span class="c-s">"S001"</span>
+<span class="c-k">assert</span> rec[<span class="c-s">"donor"</span>]     == <span class="c-s">"D-01"</span>
+<span class="c-k">assert</span> rec[<span class="c-s">"protocol"</span>]  == <span class="c-s">"MiSeq-v3"</span>
+<span class="c-k">assert</span> rec[<span class="c-s">"timepoint"</span>] == <span class="c-s">"day_14"</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page chapter-phase chapter-phase-2">
+  <div class="ph-head">
+    <span class="ph-num">PART 02</span>
+    <h2>Multi-sample / multi-donor benchmarks.</h2>
+    <p class="ph-lead">
+      The typical use case: simulate several donors or batches and stack them into one panel
+      that an aligner sees as a single AIRR TSV. Loop over your donor list, stamp each run with
+      its own <code>donor</code> tag, concatenate at the dataframe layer.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">Three donors, one stacked panel</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
+<span class="c-k">import</span> pandas <span class="c-k">as</span> pd
+
+panels = []
+<span class="c-k">for</span> donor <span class="c-k">in</span> (<span class="c-s">"D001"</span>, <span class="c-s">"D002"</span>, <span class="c-s">"D003"</span>):
+    p = (
+        ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+          .<span class="c-f">with_metadata</span>(donor=donor, sample_id=<span class="c-s">f"</span>{donor}<span class="c-s">-S1"</span>)
+          .<span class="c-f">recombine</span>()
+          .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+          .<span class="c-f">run_records</span>(n=<span class="c-n">5_000</span>, seed=<span class="c-n">42</span>, expose_provenance=<span class="c-n">True</span>)
+          .<span class="c-f">to_dataframe</span>()
+    )
+    panels.<span class="c-f">append</span>(p)
+
+stacked = pd.<span class="c-f">concat</span>(panels, ignore_index=<span class="c-n">True</span>)
+<span class="c-c"># 15,000 rows, distinguishable by stacked["donor"]</span>
+
+stacked.<span class="c-f">to_csv</span>(<span class="c-s">"multidonor_panel.tsv"</span>, sep=<span class="c-s">"\t"</span>, index=<span class="c-n">False</span>)</code></pre>
+    </div>
+  </div>
+
+  <p class="phr-note" style="margin: 12px 0 0;">
+    Re-using the same <code>seed=42</code> across donors is intentional — V/D/J distributions
+    stay comparable across donors. Vary the seed if you want each donor's draws to be
+    independent.
+  </p>
+</section>
+
+<section class="page chapter-phase chapter-phase-3">
+  <div class="ph-head">
+    <span class="ph-num">PART 03</span>
+    <h2>Single-cell shape: cell_id + clonal fork.</h2>
+    <p class="ph-lead">
+      <code>cell_id</code> is AIRR's column for tying together heavy/light pairs or sister
+      receptors from the same cell. Pair it with <code>.with_clonal_structure(...)</code> to
+      stamp a single cell_id over an entire clonal lineage, useful as a synthetic single-cell
+      panel.
+    </p>
+  </div>
+
+  <div class="ph-grid">
+    <div class="ph-card ph-card-code" style="grid-column: 1 / -1;">
+      <div class="ph-card-head">cell_id propagates across clonal descendants</div>
+      <pre class="code"><code>result = (
+    ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>)
+      .<span class="c-f">with_metadata</span>(sample_id=<span class="c-s">"PBMC-batch-A"</span>, cell_id=<span class="c-s">"cell_0001"</span>)
+      .<span class="c-f">recombine</span>()
+      .<span class="c-f">with_clonal_structure</span>(n_clones=<span class="c-n">1</span>, size=<span class="c-n">12</span>)   <span class="c-c"># 12 sister receptors</span>
+      .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">25</span>))
+      .<span class="c-f">run_records</span>(seed=<span class="c-n">42</span>)
+)
+
+<span class="c-c"># every record carries the same cell_id and sample_id</span>
+<span class="c-k">assert</span> all(r[<span class="c-s">"cell_id"</span>]   == <span class="c-s">"cell_0001"</span>    <span class="c-k">for</span> r <span class="c-k">in</span> result.records)
+<span class="c-k">assert</span> all(r[<span class="c-s">"sample_id"</span>] == <span class="c-s">"PBMC-batch-A"</span> <span class="c-k">for</span> r <span class="c-k">in</span> result.records)</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="page section">
+  <div class="section-head" style="text-align:center; margin: 0 auto 28px;">
+    <span class="eyebrow">Related recipes</span>
+    <h2>Where to next.</h2>
+  </div>
+  <div class="dsl-grid">
+    <a class="ph-card" style="text-decoration: none;" href="guide-clonal-families.html">
+      <div class="ph-card-head">A · 03 · Generate clonal families →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Pre/post-fork pipeline ordering — metadata composes cleanly with clonal forks.</p>
+    </a>
+    <a class="ph-card" style="text-decoration: none;" href="guide-export.html">
+      <div class="ph-card-head">D · 01 · Export to AIRR TSV →</div>
+      <p class="phr-note" style="margin: 6px 0 0;">Once stamped, panels write out as standard AIRR TSVs with sample_id / donor / cell_id as proper columns.</p>
+    </a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-l">
+      <div class="brand foot-brand"><span class="brand-mark">G</span><span>GenAIRR</span></div>
+      <div class="foot-tag">Ground-truth AIRR simulation.</div>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-col">
+        <div class="foot-head">Learn</div>
+        <a href="learn.html">Tutorial</a>
+        <a href="concepts.html">Concepts</a>
+        <a href="guides.html">Guides</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Reference</div>
+        <a href="reference.html">Python API</a>
+        <a href="reference.html#configs">Configs</a>
+        <a href="reference.html#airr">AIRR fields</a>
+      </div>
+      <div class="foot-col">
+        <div class="foot-head">Project</div>
+        <a href="https://github.com/MuteJester/GenAIRR">GitHub</a>
+        <a href="https://doi.org/10.1093/bib/bbae556">Cite</a>
+        <a href="https://github.com/MuteJester/GenAIRR/blob/master/LICENSE">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="genairr.js"></script>
+</body>
+</html>
