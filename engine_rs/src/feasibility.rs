@@ -385,3 +385,7 @@ fn no_known_stop_for_length(v_tail: &[u8], np_len: u32, j_head: &[u8]) -> bool {
 
     true
 }
+
+#[cfg(test)]
+#[path = "feasibility_tests.rs"]
+mod tests;

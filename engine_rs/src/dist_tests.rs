@@ -1,4 +1,6 @@
     use super::*;
+    use crate::refdata::{AlleleId, AllelePool};
+    use crate::rng::Rng;
 
     // ── UniformBase ────────────────────────────────────────────────
 
