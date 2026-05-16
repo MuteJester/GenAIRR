@@ -93,48 +93,51 @@
   </div>
 
   <div class="ph-grid">
-    <!-- What every base knows -->
+    <!-- Internal Rust struct — describes the engine's data model -->
     <div class="ph-card">
-      <div class="ph-card-head">A base, unpacked</div>
+      <div class="ph-card-head">Internal nucleotide struct (Rust)</div>
       <ul class="pass-list">
-        <li><span class="pass-name">current_base</span><span class="pass-note">A · C · G · T · N — the base as it stands today</span></li>
-        <li><span class="pass-name">germline_base</span><span class="pass-note">the original base before any mutation or error</span></li>
-        <li><span class="pass-name">germline_position</span><span class="pass-note">where this base lived in its source allele</span></li>
+        <li><span class="pass-name">base</span><span class="pass-note">A · C · G · T · N — the base as it stands today</span></li>
+        <li><span class="pass-name">germline</span><span class="pass-note">the original base before any mutation; <code>base != germline</code> means "edited"</span></li>
+        <li><span class="pass-name">germline_pos</span><span class="pass-note">where this base lived in its source allele; <code>NO_GERMLINE_POS</code> for indel-inserted bases</span></li>
         <li><span class="pass-name">segment</span><span class="pass-note">V · D · J · NP1 · NP2 — the structural role</span></li>
-        <li><span class="pass-name">flags</span><span class="pass-note">MUTATED · INDEL_INS · N_CORRUPTION · …</span></li>
+        <li><span class="pass-name">flags</span><span class="pass-note">bitset of <code>P_NUC · N_NUC · JUNCTION · INVERTED · INDEL_INSERTED</code></span></li>
       </ul>
+      <p class="phr-note" style="margin: 10px 0 0;">The fields above describe the <em>internal</em> Rust representation. The Python side surfaces this via aggregate accessors — see the next card.</p>
     </div>
 
-    <!-- Why -->
+    <!-- Python aggregate accessors — what users actually call -->
     <div class="ph-card ph-card-code">
-      <div class="ph-card-head">Why per-base provenance</div>
-      <pre class="code"><code><span class="c-c"># A mutation arrives. The base flips A → G.</span>
-nuc.current_base   = <span class="c-s">"G"</span>      <span class="c-c"># new value</span>
-nuc.germline_base  = <span class="c-s">"A"</span>      <span class="c-c"># preserved</span>
-nuc.flags         |= MUTATED        <span class="c-c"># marked</span>
+      <div class="ph-card-head">Reading provenance from Python</div>
+      <pre class="code"><code><span class="c-k">import</span> GenAIRR <span class="c-k">as</span> ga
 
-<span class="c-c"># Later, an indel inserts a base nearby.</span>
-inserted.germline_base = <span class="c-s">"\0"</span>  <span class="c-c"># no germline origin</span>
-inserted.flags        |= INDEL_INS
+out = ga.Experiment.<span class="c-f">on</span>(<span class="c-s">"human_igh"</span>).<span class="c-f">recombine</span>()\
+        .<span class="c-f">mutate</span>(model=<span class="c-s">"s5f"</span>, count=(<span class="c-n">5</span>, <span class="c-n">15</span>))\
+        .<span class="c-f">run</span>(n=<span class="c-n">1</span>, seed=<span class="c-n">42</span>)[<span class="c-n">0</span>]
+sim = out.<span class="c-f">final_simulation</span>()
 
-<span class="c-c"># A coordinate query at the end still works:</span>
-<span class="c-c"># "where did v_germline_end land after all this?"</span>
-<span class="c-c"># the pool answers — no manual bookkeeping needed.</span></code></pre>
+<span class="c-c"># current sequence and pre-mutation germline, byte for byte</span>
+sim.<span class="c-f">bases</span>()              <span class="c-c"># b'gag...gtg'</span>
+sim.<span class="c-f">germline_bases</span>()     <span class="c-c"># b'gag...gtg' — pre-mutation</span>
+
+<span class="c-c"># source-allele position for any pool index</span>
+sim.<span class="c-f">germline_position</span>(<span class="c-n">187</span>)   <span class="c-c"># 187 (or NO_GERMLINE_POS for indel-inserts)</span>
+
+<span class="c-c"># a base is "edited" iff sim.bases()[i] != sim.germline_bases()[i]</span></code></pre>
     </div>
   </div>
 
-  <!-- Visual: a single base, expanded -->
+  <!-- Visual: a single base, expanded — labelled as internal model -->
   <div class="ph-recorded">
-    <div class="phr-head">One nucleotide, fully described</div>
+    <div class="phr-head">One nucleotide in the internal pool (illustrative)</div>
     <div class="phr-fields">
       <span class="phr-field"><span class="phr-k">pool_index</span> <span class="phr-v">187</span></span>
-      <span class="phr-field"><span class="phr-k">current_base</span> <span class="phr-v">G</span></span>
-      <span class="phr-field"><span class="phr-k">germline_base</span> <span class="phr-v">A</span></span>
-      <span class="phr-field"><span class="phr-k">germline_position</span> <span class="phr-v">187</span></span>
+      <span class="phr-field"><span class="phr-k">base</span> <span class="phr-v">G</span></span>
+      <span class="phr-field"><span class="phr-k">germline</span> <span class="phr-v">A</span></span>
+      <span class="phr-field"><span class="phr-k">germline_pos</span> <span class="phr-v">187</span></span>
       <span class="phr-field"><span class="phr-k">segment</span> <span class="phr-v">V</span></span>
-      <span class="phr-field"><span class="phr-k">allele_id</span> <span class="phr-v">IGHV3-23*01</span></span>
-      <span class="phr-field"><span class="phr-k">flags</span> <span class="phr-v">MUTATED</span></span>
-      <span class="phr-field phr-more">+ codon_phase, region_offset, edit_history</span>
+      <span class="phr-field"><span class="phr-k">flags</span> <span class="phr-v">P_NUC</span></span>
+      <span class="phr-field phr-more">edited bit derived from <code>base != germline</code>; allele-name resolved via <code>sim.v_allele_id()</code> + <code>refdata.v_allele(...)</code></span>
     </div>
   </div>
 </section>
@@ -176,7 +179,7 @@ sim.bases()              <span class="c-c"># b'gag...gtg'</span>
 <span class="c-c"># ['V', 'NP1', 'D', 'NP2', 'J']</span>
 
 <span class="c-c"># layer 3 — assignments (identity)</span>
-sim.v_allele_id()        <span class="c-c"># 146 → 'IGHV3-23*01'</span>
+sim.<span class="c-f">v_allele_id</span>()        <span class="c-c"># 146 → 'IGHVF10-G38*04' via refdata.v_allele(146).name</span>
 
 <span class="c-c"># layer 4 — trace (history)</span>
 outcome.trace().find(<span class="c-s">"sample_allele.v"</span>).value
@@ -218,8 +221,9 @@ outcome.pass_names()
 <span class="c-c">#  'trim.v_3', 'generate_np.np1', 'assemble.v', ..., 'mutate.s5f']</span>
 
 <span class="c-c"># the IR snapshot after the i-th pass</span>
-outcome.revision(<span class="c-n">5</span>).bases()         <span class="c-c"># mid-recombination state</span>
-outcome.revision(-<span class="c-n">1</span>).bases()        <span class="c-c"># final state (alias)</span>
+outcome.<span class="c-f">revision</span>(<span class="c-n">5</span>).<span class="c-f">bases</span>()         <span class="c-c"># mid-recombination state</span>
+last = outcome.<span class="c-f">revision_count</span>() - <span class="c-n">1</span>
+outcome.<span class="c-f">revision</span>(last).<span class="c-f">bases</span>()      <span class="c-c"># final-revision bases</span>
 
 <span class="c-c"># the first snapshot a named pass produced</span>
 outcome.revision_after(<span class="c-s">"mutate.s5f"</span>)
