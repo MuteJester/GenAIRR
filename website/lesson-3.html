@@ -74,13 +74,13 @@ rec[<span class="str">"v_identity"</span>]      <span class="cm"># e.g. 0.9763 (
   <div class="try">
     <div class="try-head">Try it now</div>
     <div class="try-body">
-      <p>Run the experiment above and inspect mean <code>v_identity</code>, <code>d_identity</code>, <code>j_identity</code> across the 1,000 records. You'll see the three numbers aren't equal — D drops the most (short segments are hit hardest by any mutation that lands), V drops next, and J holds the highest identity. Each region has its own SHM signature. Try swapping <code>s5f_model="hkl_s5f"</code> with a light-chain config to see the kernel matter.</p>
+      <p>Run the experiment above and inspect mean <code>v_identity</code>, <code>d_identity</code>, <code>j_identity</code> across the 1,000 records. You'll see the three numbers aren't equal — <code>d_identity</code> drops the most (~0.84), <code>j_identity</code> next (~0.95), <code>v_identity</code> holds the highest (~0.96). The reason is segment length: D is only ~12–25 bp, so each mutation that lands there drops <code>d_identity</code> ~10× more than the same mutation on V's ~290 bp. Try swapping <code>s5f_model="hkl_s5f"</code> with a light-chain config like <code>Experiment.on("human_igk")</code> to see the kernel matter.</p>
     </div>
   </div>
 
   <div class="exercise">
     <span class="ex-tag">Exercise</span>
-    <p>Run two experiments at the same seed and fixed <code>count=(15, 15)</code>: one with <code>model="s5f"</code>, one with <code>model="uniform"</code>. Compare mean <code>v_identity</code> against mean <code>d_identity</code> in each. With uniform they should sit near each other; with S5F there's a real gap — V is hotter than D for the same mutation budget. Why?</p>
+    <p>Run two experiments at the same seed and fixed <code>count=(15, 15)</code>: one with <code>model="s5f"</code>, one with <code>model="uniform"</code>. For each record, derive per-mutation positions by diffing <code>sequence_alignment</code> against <code>germline_alignment</code> over the V region. Bin those positions in 20-bp buckets and S5F will visibly cluster around the CDR1 (~80–100 bp) and CDR2 (~140–180 bp) hot zones with 1.4–1.8× the uniform density; uniform is flat. The S5F signature lives in <em>where</em> mutations land — not in segment-level identity counts, which are dominated by segment length. See <a href="guide-compare-shm.html">guide-compare-shm</a> for the full motif-level comparison harness.</p>
   </div>
 
   <nav class="lesson-nav">

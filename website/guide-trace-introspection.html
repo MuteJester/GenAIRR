@@ -39,7 +39,7 @@
   <p class="lead">
     Every random draw the engine makes is recorded in the trace under a stable, addressable
     name: <code>sample_allele.v</code>, <code>trim.j_5</code>, <code>np.np1.bases[3]</code>,
-    <code>mutate.s5f.pos[42]</code>. Use <code>Outcome.trace()</code> to retrieve that record for
+    <code>mutate.s5f.site[42]</code>. Use <code>Outcome.trace()</code> to retrieve that record for
     any record in a batch and ask exactly what the engine sampled — by name, by prefix, or by
     counting how many draws a pass made.
   </p>
@@ -74,7 +74,8 @@
         <li><span class="pass-name">trim.v_3 / d_5 / d_3 / j_5</span><span class="pass-note">per-segment trim lengths</span></li>
         <li><span class="pass-name">np.np1.length · np.np2.length</span><span class="pass-note">NP region lengths</span></li>
         <li><span class="pass-name">np.np1.bases[k] · np.np2.bases[k]</span><span class="pass-note">each NP base draw, indexed</span></li>
-        <li><span class="pass-name">mutate.s5f.pos[k]</span><span class="pass-note">each SHM substitution position (when mutate was run)</span></li>
+        <li><span class="pass-name">mutate.s5f.count</span><span class="pass-note">total number of substitutions applied to this record</span></li>
+        <li><span class="pass-name">mutate.s5f.site[k] · mutate.s5f.base[k]</span><span class="pass-note">the k-th SHM substitution — the position it landed on and the new base</span></li>
       </ul>
     </div>
   </div>
