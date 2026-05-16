@@ -93,6 +93,7 @@ rec = result.records[<span class="num">0</span>]
     <div class="try-head">Try it now</div>
     <div class="try-body">
       <p>Paste the snippet into a Python REPL. Then change <code>seed=42</code> to <code>seed=7</code>: the V allele changes, NP regions change length, but the structure — V, NP1, D, NP2, J — stays the same. That's the rearrangement skeleton you'll learn to layer biology on top of.</p>
+      <p class="mute" style="margin-top: 10px;">If you want every sequence to be a biologically <em>productive</em> recombination (in-frame junction, anchors intact, no stop codons), add <code>respect=ga.productive()</code> to the <code>.run_records(...)</code> call. The recipe in <a href="guide-productive.html">guide-productive</a> walks through when to use it.</p>
     </div>
   </div>
 
