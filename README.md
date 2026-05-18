@@ -356,10 +356,80 @@ result = ga.Experiment.on(cfg).recombine().run_records(n=100, seed=42)
 ## Optional Extras
 
 ```bash
-pip install GenAIRR[all]          # numpy, scipy, graphviz, tqdm
+pip install GenAIRR[all]          # numpy, scipy, graphviz, tqdm, fastmcp
 pip install GenAIRR[dataconfig]   # numpy + scipy (custom DataConfig analysis)
 pip install GenAIRR[viz]          # graphviz
+pip install GenAIRR[mcp]          # fastmcp (for the MCP server, see next section)
 ```
+
+---
+
+## MCP server — drive GenAIRR from an LLM agent
+
+GenAIRR ships an MCP server that exposes 14 tools an LLM agent (Claude, Cursor, etc.) can call to discover configs, simulate repertoires, validate AIRR records, and replay specific seeds — all without writing Python. Install the extra, then point your MCP client at `python -m GenAIRR.mcp_server`:
+
+```bash
+pip install GenAIRR[mcp]
+```
+
+### Config snippets
+
+**Claude Code** — `.mcp.json` in the project root (or `~/.claude/mcp.json` globally):
+
+```json
+{
+  "mcpServers": {
+    "genairr": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "GenAIRR.mcp_server"]
+    }
+  }
+}
+```
+
+**Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "genairr": {
+      "command": "/path/to/venv/bin/python",
+      "args": ["-m", "GenAIRR.mcp_server"]
+    }
+  }
+}
+```
+
+**Cursor** — `~/.cursor/mcp.json` or per-project:
+
+```json
+{
+  "mcpServers": {
+    "genairr": {
+      "command": "python",
+      "args": ["-m", "GenAIRR.mcp_server"]
+    }
+  }
+}
+```
+
+Use the full path to the venv's `python` if GenAIRR isn't installed in the system interpreter — the MCP server inherits the launching process's Python environment.
+
+### What you get
+
+After reloading the client, the agent has 14 tools available under the `genairr` namespace:
+
+| Category | Tools |
+|----------|-------|
+| Discovery | `list_configs`, `config_info`, `list_alleles`, `inspect_allele` |
+| Simulation | `simulate_repertoire`, `simulate_preset`, `simulate_allele` |
+| Analysis | `validate_records`, `align_to_germline`, `score_allele_calls`, `analyze_mutations`, `classify_regions`, `summarize_dataset` |
+| Reproducibility | `replay_seed` |
+
+Every tool returns a uniform `{ok, tool, elapsed_ms, result | error}` envelope; failures carry a stable error-code token (`config_not_found`, `allele_not_found`, `invalid_preset`, `invalid_parameter`, `malformed_record`, `seed_replay_mismatch`) the agent can branch on.
+
+A quick smoke-test prompt to verify the install: *"List the available GenAIRR configs, then simulate 100 productive human heavy-chain sequences with moderate SHM and summarise the V-gene usage."* — the agent should chain `list_configs` → `simulate_repertoire(config="human_igh", n=100, productive_only=true, mutation_model="s5f", mutation_count_min=5, mutation_count_max=15)` and read `v_usage_top` from the result.
 
 ---
 
