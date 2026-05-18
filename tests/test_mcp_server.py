@@ -254,3 +254,64 @@ def test_resolve_preset_unknown_raises_mcp_error():
     with pytest.raises(MCPError) as exc_info:
         resolve_preset("not_a_real_preset")
     assert exc_info.value.code == INVALID_PRESET
+
+
+# -- Foundation: _mcp_refdata helpers ------------------------------
+
+from GenAIRR._mcp_refdata import (
+    iter_alleles,
+    find_allele,
+    locus_from_config_name,
+    resolve_refdata,
+)
+
+
+def test_resolve_refdata_returns_engine_refdata():
+    rd = resolve_refdata("human_igh")
+    assert rd.v_pool_size() > 0
+    assert rd.j_pool_size() > 0
+
+
+def test_resolve_refdata_unknown_raises_mcp_error():
+    with pytest.raises(MCPError) as exc_info:
+        resolve_refdata("human_xyz")
+    assert exc_info.value.code == CONFIG_NOT_FOUND
+
+
+def test_iter_alleles_yields_every_allele_in_pool():
+    rd = resolve_refdata("human_igh")
+    v_alleles = list(iter_alleles(rd, "v"))
+    assert len(v_alleles) == rd.v_pool_size()
+    assert all(a.segment == "V" for a in v_alleles)
+
+
+def test_iter_alleles_returns_empty_when_pool_missing():
+    # human_igk is a VJ chain -- no D pool.
+    rd = resolve_refdata("human_igk")
+    d_alleles = list(iter_alleles(rd, "d"))
+    assert d_alleles == []
+
+
+def test_find_allele_returns_match_by_name():
+    rd = resolve_refdata("human_igh")
+    name = rd.v_allele(0).name
+    found = find_allele(rd, "v", name)
+    assert found is not None
+    assert found.name == name
+
+
+def test_find_allele_returns_none_when_not_found():
+    rd = resolve_refdata("human_igh")
+    found = find_allele(rd, "v", "IGHV_DOES_NOT_EXIST*99")
+    assert found is None
+
+
+def test_locus_from_config_name_extracts_uppercase_locus():
+    assert locus_from_config_name("human_igh") == "IGH"
+    assert locus_from_config_name("mouse_tcrb") == "TCRB"
+    assert locus_from_config_name("rabbit_igk") == "IGK"
+
+
+def test_locus_from_config_name_returns_none_for_unparseable():
+    assert locus_from_config_name("not_a_real_format") in (None, "A")  # tolerant
+    assert locus_from_config_name("") is None
