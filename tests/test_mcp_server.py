@@ -6,10 +6,21 @@ Layered per the spec at docs/superpowers/specs/2026-05-18-mcp-redesign-v2-design
 - Tier 3: one end-to-end agent-style chain (1 test)
 
 Plus a foundation block here for the envelope decorator itself.
+
+These tests require `fastmcp` (declared as the [mcp] optional extra). When
+fastmcp isn't installed, the whole file is skipped — `pip install GenAIRR`
+without the [mcp] extra is a valid install path that doesn't need the
+server tooling, so requiring fastmcp would break the default test run.
 """
 from __future__ import annotations
 
 import pytest
+
+# Skip the whole module when fastmcp isn't installed. The MCP server
+# imports `from fastmcp import FastMCP` at module-load time, which would
+# otherwise fail collection here. Users on the [mcp] extra get the
+# full suite; users on a bare `pip install GenAIRR` skip cleanly.
+pytest.importorskip("fastmcp")
 
 from GenAIRR.mcp_errors import (
     CONFIG_NOT_FOUND,

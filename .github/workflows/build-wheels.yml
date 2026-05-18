@@ -115,9 +115,14 @@ jobs:
 
       - name: Build & install GenAIRR wheel
         run: maturin build --release --out dist
-      - name: Install built wheel
+      - name: Install built wheel (with [mcp] extra for the test suite)
         shell: bash
-        run: pip install dist/genairr-*.whl
+        run: |
+          # Install the wheel with the [mcp] extra so the MCP test file
+          # gets fastmcp and runs in CI. Without this, tests/test_mcp_server.py
+          # would call pytest.importorskip('fastmcp') and silently skip.
+          WHEEL=$(ls dist/genairr-*.whl)
+          pip install "${WHEEL}[mcp]"
 
       - name: Run pytest
         run: pytest tests/ -x -q
