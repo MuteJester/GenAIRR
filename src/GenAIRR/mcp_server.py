@@ -1306,3 +1306,20 @@ def replay_seed(
         "record": record,
         "trace_summary": _summarize_trace(outcomes[0]),
     }
+
+
+# -- Entry point ---------------------------------------------------
+
+
+def main() -> None:
+    """Run the GenAIRR MCP server over the STDIO transport.
+
+    Called by `python -m GenAIRR.mcp_server`, which is how the Claude
+    Code / Claude Desktop / Cursor MCP client launches this process
+    per the .mcp.json config in the repo root.
+    """
+    mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()
