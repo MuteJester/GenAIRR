@@ -84,3 +84,88 @@ def test_error_code_constants_are_stable_strings():
     assert INVALID_PARAMETER == "invalid_parameter"
     assert MALFORMED_RECORD == "malformed_record"
     assert SEED_REPLAY_MISMATCH == "seed_replay_mismatch"
+
+
+# -- Foundation: _mcp_summary helpers --------------------------------
+
+from GenAIRR._mcp_summary import compute_repertoire_summary
+
+
+def _fake_record(
+    *,
+    v_call="IGHV1*01",
+    d_call="IGHD1*01",
+    j_call="IGHJ1*01",
+    productive=True,
+    junction_aa="CARDW",
+    n_mutations=0,
+    n_pcr_errors=0,
+    n_indels=0,
+    n_quality_errors=0,
+    sequence_length=300,
+):
+    return {
+        "v_call": v_call, "d_call": d_call, "j_call": j_call,
+        "productive": productive,
+        "junction_aa": junction_aa,
+        "n_mutations": n_mutations, "n_pcr_errors": n_pcr_errors,
+        "n_indels": n_indels, "n_quality_errors": n_quality_errors,
+        "sequence_length": sequence_length,
+    }
+
+
+def test_summary_v_usage_top_caps_at_top_n_and_sorts_by_count():
+    records = (
+        [_fake_record(v_call="IGHV1*01") for _ in range(10)]
+        + [_fake_record(v_call="IGHV2*01") for _ in range(5)]
+        + [_fake_record(v_call="IGHV3*01") for _ in range(3)]
+        + [_fake_record(v_call="IGHV4*01") for _ in range(1)]
+    )
+    summary = compute_repertoire_summary(records, summary_top_n=2)
+    # top 2 only, in descending count order
+    assert list(summary["v_usage_top"].items()) == [("IGHV1*01", 10), ("IGHV2*01", 5)]
+    assert summary["n_unique_v"] == 4
+
+
+def test_summary_cdr3_histogram_keys_are_stringified_ints():
+    records = [_fake_record(junction_aa="CARDW") for _ in range(3)]  # length 5
+    records += [_fake_record(junction_aa="CARDIW") for _ in range(2)]  # length 6
+    summary = compute_repertoire_summary(records, summary_top_n=10)
+    assert summary["cdr3_length_histogram"] == {"5": 3, "6": 2}
+    assert all(isinstance(k, str) for k in summary["cdr3_length_histogram"])
+
+
+def test_summary_productive_rate_counts_only_true():
+    records = (
+        [_fake_record(productive=True) for _ in range(7)]
+        + [_fake_record(productive=False) for _ in range(2)]
+        + [_fake_record(productive=None) for _ in range(1)]
+    )
+    summary = compute_repertoire_summary(records, summary_top_n=10)
+    assert summary["productive_count"] == 7
+    assert summary["productive_rate"] == 0.7
+
+
+def test_summary_mutation_quartiles_present_when_any_record_has_mutations():
+    records = [_fake_record(n_mutations=k) for k in range(0, 21)]
+    summary = compute_repertoire_summary(records, summary_top_n=10)
+    # quartiles[0,1,2,3,4] = min, q1, median, q3, max
+    assert summary["mutation_count_quartiles"][0] == 0
+    assert summary["mutation_count_quartiles"][4] == 20
+    assert summary["mutation_count_quartiles"][2] == 10  # median
+
+
+def test_summary_omits_corruption_quartiles_when_all_zero():
+    records = [_fake_record() for _ in range(5)]  # all zeros
+    summary = compute_repertoire_summary(records, summary_top_n=10)
+    assert "n_pcr_errors_quartiles" not in summary
+    assert "n_indels_quartiles" not in summary
+
+
+def test_summary_handles_empty_records():
+    summary = compute_repertoire_summary([], summary_top_n=10)
+    assert summary["productive_count"] == 0
+    assert summary["productive_rate"] == 0.0
+    assert summary["v_usage_top"] == {}
+    assert summary["n_unique_v"] == 0
+    assert summary["cdr3_length_histogram"] == {}
