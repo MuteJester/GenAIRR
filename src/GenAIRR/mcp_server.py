@@ -1,1457 +1,1308 @@
+"""GenAIRR MCP server.
+
+Exposes 14 tools targeted at an LLM agent doing immunology research. Every
+tool returns a uniform envelope:
+
+    {"ok": True,  "tool": <name>, "elapsed_ms": int, "result": {...}}
+    {"ok": False, "tool": <name>, "elapsed_ms": int, "error": {...}}
+
+The envelope is applied via the @envelope decorator from GenAIRR.mcp_errors.
+Tool implementations return only the inner `result` dict and raise MCPError
+for structured failures.
+
+Run: python -m fastmcp run src/GenAIRR/mcp_server.py
 """
-GenAIRR MCP Server — expose AIRR sequence simulation as tools for any agent.
-
-Provides 21 tools via the Model Context Protocol:
-
-Generation:
-  1. list_configs      — discover available species/chain configurations
-  2. simulate          — generate AIRR sequences with full parameter control
-  3. simulate_preset   — generate using named experimental presets
-  4. narrate           — human-readable execution trace of one simulation
-  5. config_info       — metadata about a specific configuration
-
-Introspection:
-  6. inspect_allele    — look up a specific allele's properties
-  7. list_alleles      — survey alleles in a config by segment
-  8. query_config      — deep-dive into config probability distributions
-
-Validation:
-  9. validate_record   — run 9 consistency checks on one AIRR record
- 10. validate_batch    — simulate + validate every record (audit tool)
-
-Germline Analysis:
- 11. align_to_germline — compare sequence to germline, find unreported/phantom mutations
- 12. score_allele_calls— re-score allele calls against full reference
-
-Sequence Analysis:
- 13. analyze_mutations — SHM pattern analysis (regions, Ti/Tv, hotspots)
- 14. classify_regions  — map every position to IMGT structural regions
-
-Targeted Simulation:
- 15. simulate_allele   — lock specific V/D/J alleles for focused testing
-
-Statistics:
- 16. summarize_dataset — aggregate stats without returning individual records
-
-Deep Introspection (Pipeline Hooks):
- 17. introspect_sequence — simulate with hooks to inspect ASeq at pipeline stages
- 18. inspect_flags       — batch flag audit across N sequences
- 19. inspect_codon_rail  — inspect the codon rail at a specific pipeline stage
- 20. diff_snapshots      — compare ASeq state between two pipeline stages
- 21. replay_with_trace   — full pipeline replay with trace + snapshot timeline
-
-Run with::
-
-    python -m GenAIRR.mcp_server          # STDIO transport
-    genairr-mcp                           # console entry point
-
-Connect from Claude Code (.claude/mcp.json)::
-
-    {
-        "mcpServers": [
-            {
-                "name": "genairr",
-                "type": "stdio",
-                "command": "genairr-mcp"
-            }
-        ]
-    }
-"""
-
 from __future__ import annotations
 
-import sys
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from fastmcp import FastMCP
 
-# ── C backend availability ──────────────────────────────────────
-
-_C_AVAILABLE = True
-_C_ERROR = ""
-
-try:
-    from GenAIRR._native import CSimulator  # noqa: F401
-except ImportError as _e:
-    _C_AVAILABLE = False
-    _C_ERROR = str(_e)
-
-
-def _check_backend() -> Optional[str]:
-    """Return an error message if the C backend is unavailable."""
-    if not _C_AVAILABLE:
-        return (
-            f"GenAIRR C backend not available: {_C_ERROR}\n"
-            "Build it with: cd src/GenAIRR/_native/csrc && "
-            "mkdir -p build && cd build && cmake .. && make"
-        )
-    return None
-
-
-# ── Preset definitions ──────────────────────────────────────────
-
-PRESETS: Dict[str, Dict[str, Any]] = {
-    "naive": {
-        # Clean V(D)J rearrangements, no mutation, no artifacts
-    },
-    "memory": {
-        "min_mutation_rate": 0.02,
-        "max_mutation_rate": 0.08,
-        "mutation_model": "s5f",
-        "productive": True,
-    },
-    "illumina": {
-        "min_mutation_rate": 0.02,
-        "max_mutation_rate": 0.08,
-        "mutation_model": "s5f",
-        "productive": True,
-        "corrupt_5prime": True,
-        "corrupt_3prime": True,
-        "paired_end_read_length": 300,
-        "quality_base_error": 0.001,
-        "quality_peak_error": 0.02,
-    },
-    "nanopore": {
-        "min_mutation_rate": 0.02,
-        "max_mutation_rate": 0.08,
-        "mutation_model": "s5f",
-        "productive": True,
-        "long_read_error_rate": 0.03,
-    },
-    "noisy": {
-        "min_mutation_rate": 0.02,
-        "max_mutation_rate": 0.08,
-        "mutation_model": "s5f",
-        "productive": True,
-        "corrupt_5prime": True,
-        "corrupt_3prime": True,
-        "paired_end_read_length": 300,
-        "quality_base_error": 0.001,
-        "quality_peak_error": 0.02,
-        "contaminant_rate": 0.01,
-        "indel_prob": 0.005,
-        "n_prob": 0.005,
-    },
-    "tcr": {
-        "productive": True,
-    },
-}
-
-
-# ── Helpers ─────────────────────────────────────────────────────
-
-def _build_experiment(
-    config: str,
-    *,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    mutation_model: Optional[str] = None,
-    with_isotype_rates: bool = False,
-    selection_strength: Optional[float] = None,
-    d_inversion_prob: Optional[float] = None,
-    receptor_revision_prob: Optional[float] = None,
-    corrupt_5prime: bool = False,
-    corrupt_3prime: bool = False,
-    paired_end_read_length: Optional[int] = None,
-    long_read_error_rate: Optional[float] = None,
-    reverse_complement_prob: Optional[float] = None,
-    quality_base_error: Optional[float] = None,
-    quality_peak_error: Optional[float] = None,
-    umi_length: Optional[int] = None,
-    pcr_error_rate: Optional[float] = None,
-    pcr_cycles: Optional[int] = None,
-    primer_mask_length: Optional[int] = None,
-    contaminant_rate: Optional[float] = None,
-    indel_prob: Optional[float] = None,
-    n_prob: Optional[float] = None,
-):
-    """Translate flat MCP parameters into an Experiment object."""
-    from GenAIRR.experiment import Experiment
-    from GenAIRR.ops import (
-        rate, model, with_antigen_selection, with_isotype_rates as isotype_rates,
-        with_d_inversion, with_receptor_revision,
-        with_5prime_loss, with_3prime_loss, paired_end, long_read,
-        with_quality_profile, with_reverse_complement,
-        with_umi, with_pcr, with_primer_mask,
-        with_contaminants, with_indels, with_ns,
-    )
-
-    exp = Experiment.on(config)
-
-    # ── Recombine phase ──
-    recombine_clauses = []
-    if d_inversion_prob is not None:
-        recombine_clauses.append(with_d_inversion(d_inversion_prob))
-    if receptor_revision_prob is not None:
-        recombine_clauses.append(with_receptor_revision(receptor_revision_prob))
-    if recombine_clauses:
-        exp = exp.recombine(*recombine_clauses)
-
-    # ── Mutate phase ──
-    mutate_clauses = []
-    if min_mutation_rate is not None or max_mutation_rate is not None:
-        mutate_clauses.append(rate(
-            min_mutation_rate if min_mutation_rate is not None else 0.01,
-            max_mutation_rate if max_mutation_rate is not None else 0.05,
-        ))
-        mutate_clauses.append(model(mutation_model or "s5f"))
-    if with_isotype_rates:
-        mutate_clauses.append(isotype_rates())
-    if selection_strength is not None:
-        mutate_clauses.append(with_antigen_selection(selection_strength))
-    if mutate_clauses:
-        exp = exp.mutate(*mutate_clauses)
-
-    # ── Prepare phase ──
-    prepare_clauses = []
-    if primer_mask_length is not None:
-        prepare_clauses.append(with_primer_mask(primer_mask_length))
-    if umi_length is not None:
-        prepare_clauses.append(with_umi(umi_length))
-    if pcr_error_rate is not None or pcr_cycles is not None:
-        prepare_clauses.append(with_pcr(
-            error_rate=pcr_error_rate if pcr_error_rate is not None else 1e-4,
-            cycles=pcr_cycles if pcr_cycles is not None else 30,
-        ))
-    if prepare_clauses:
-        exp = exp.prepare(*prepare_clauses)
-
-    # ── Sequence phase ──
-    sequence_clauses = []
-    if corrupt_5prime:
-        sequence_clauses.append(with_5prime_loss())
-    if corrupt_3prime:
-        sequence_clauses.append(with_3prime_loss())
-    if paired_end_read_length is not None:
-        sequence_clauses.append(paired_end(paired_end_read_length))
-    if long_read_error_rate is not None:
-        sequence_clauses.append(long_read(error_rate=long_read_error_rate))
-    if quality_base_error is not None or quality_peak_error is not None:
-        sequence_clauses.append(with_quality_profile(
-            base=quality_base_error if quality_base_error is not None else 0.001,
-            peak=quality_peak_error if quality_peak_error is not None else 0.02,
-        ))
-    if reverse_complement_prob is not None:
-        sequence_clauses.append(with_reverse_complement(reverse_complement_prob))
-    if sequence_clauses:
-        exp = exp.sequence(*sequence_clauses)
-
-    # ── Observe phase ──
-    observe_clauses = []
-    if contaminant_rate is not None:
-        observe_clauses.append(with_contaminants(contaminant_rate))
-    if indel_prob is not None:
-        observe_clauses.append(with_indels(indel_prob))
-    if n_prob is not None:
-        observe_clauses.append(with_ns(n_prob))
-    if observe_clauses:
-        exp = exp.observe(*observe_clauses)
-
-    return exp
-
-
-def _filter_fields(
-    records: List[Dict[str, Any]],
-    fields: Optional[List[str]],
-) -> List[Dict[str, Any]]:
-    """Filter AIRR records to requested fields only."""
-    if not fields:
-        return records
-    return [{k: r[k] for k in fields if k in r} for r in records]
-
-
-def _run_simulation(
-    config: str = "human_igh",
-    n: int = 10,
-    seed: Optional[int] = None,
-    productive: bool = False,
-    fields: Optional[List[str]] = None,
-    **kwargs,
-) -> Dict[str, Any]:
-    """Shared simulation logic for simulate and simulate_preset."""
-    err = _check_backend()
-    if err:
-        return {"error": err}
-
-    n = max(1, min(n, 10000))
-
-    try:
-        exp = _build_experiment(config, **kwargs)
-        result = exp.run(n=n, seed=seed, productive=productive)
-        records = [dict(r) for r in result]
-        records = _filter_fields(records, fields)
-        field_names = list(records[0].keys()) if records else []
-        return {
-            "count": len(records),
-            "fields": field_names,
-            "records": records,
-        }
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
-
-
-# ── MCP Server ──────────────────────────────────────────────────
-
-mcp = FastMCP(
-    "GenAIRR",
-    instructions=(
-        "GenAIRR simulates synthetic immune receptor sequences in AIRR format. "
-        "Use list_configs() to discover species/chains, then simulate() to "
-        "generate sequences. Use simulate_preset() for common experimental "
-        "scenarios without needing to know parameter details.\n\n"
-        "For deeper analysis: inspect_allele/list_alleles to explore germline references, "
-        "validate_record/validate_batch to audit record consistency, "
-        "align_to_germline/score_allele_calls to verify metadata accuracy, "
-        "analyze_mutations/classify_regions for SHM pattern analysis, "
-        "simulate_allele to test specific alleles, "
-        "summarize_dataset for aggregate statistics.\n\n"
-        "For deep introspection: introspect_sequence to place hooks at pipeline stages "
-        "and inspect the full ASeq linked list state, diff_snapshots to compare two "
-        "pipeline stages, inspect_flags for batch flag audits, inspect_codon_rail for "
-        "reading frame analysis, replay_with_trace for full pipeline replay."
-    ),
+import GenAIRR as ga
+from GenAIRR._mcp_refdata import (
+    find_allele,
+    iter_alleles,
+    locus_from_config_name,
+    resolve_refdata,
+)
+from GenAIRR.mcp_errors import (
+    ALLELE_NOT_FOUND,
+    INVALID_PARAMETER,
+    MALFORMED_RECORD,
+    SEED_REPLAY_MISMATCH,
+    MCPError,
+    envelope,
 )
 
 
+mcp = FastMCP("GenAIRR")
+
+
+# -- Helpers (private) ----------------------------------------------
+
+
+def _split_config_name(name: str) -> Optional[str]:
+    """Extract the species token from a config name like 'human_igh' -> 'Human'.
+
+    Returns None when the name doesn't match the species_chain shape.
+    """
+    if "_" not in name:
+        return None
+    species_token = name.split("_", 1)[0]
+    return species_token.capitalize()
+
+
+def _all_config_aliases() -> List[str]:
+    """Return the user-facing config aliases (lowercased friendly names).
+
+    These are the names accepted by ``Experiment.on(...)`` -- short forms
+    like 'human_igh' as well as long forms like 'human_igh_imgt'. The
+    engine's ``ga.list_configs()`` exposes only the uppercase technical
+    names (e.g. 'HUMAN_IGH_OGRDB'), which are not what an MCP agent should
+    be passing to the other tools. We surface the aliases instead so the
+    output of ``list_configs`` round-trips directly into every other tool.
+    """
+    from GenAIRR.experiment import _CONFIG_ALIASES
+
+    return sorted(_CONFIG_ALIASES.keys())
+
+
+# -- Discovery tools ------------------------------------------------
+
+
 @mcp.tool()
-def list_configs(
-    species_filter: Optional[str] = None,
-    chain_filter: Optional[str] = None,
-) -> List[str]:
-    """List available species/chain configurations for AIRR sequence simulation.
-
-    GenAIRR has 106+ configs across 23 species (human, mouse, rat, rabbit,
-    rhesus, cow, dog, cat, pig, sheep, etc.) and chain types (IGH, IGK, IGL,
-    TCRA, TCRB, TCRD, TCRG).
-
-    Returns config names to pass as the 'config' parameter to simulate().
-
-    Common shorthand aliases also work: "human_igh", "mouse_igk", "rabbit_tcrb".
+@envelope("list_configs")
+def list_configs(species_filter: Optional[str] = None) -> Dict[str, Any]:
+    """Enumerate available species/chain configurations.
 
     Args:
-        species_filter: Case-insensitive substring to filter by species (e.g. "mouse").
-        chain_filter: Case-insensitive substring to filter by chain type (e.g. "igh", "tcr").
-    """
-    from GenAIRR.data import list_configs as _list
+        species_filter: case-insensitive species name to narrow results
+            (e.g. "Human", "Mouse"). When None, returns every config.
 
-    configs = _list()
+    Returns:
+        {
+          "configs": List[str],            # e.g. ["human_igh", "mouse_tcrb", ...]
+          "n_total": int,
+          "by_species": Dict[str, List[str]],  # e.g. {"Human": ["human_igh", ...]}
+        }
+    """
+    all_configs = _all_config_aliases()
     if species_filter:
-        sf = species_filter.upper()
-        configs = [c for c in configs if sf in c]
-    if chain_filter:
-        cf = chain_filter.upper()
-        configs = [c for c in configs if cf in c]
-    return configs
+        norm = species_filter.lower()
+        all_configs = [c for c in all_configs if c.startswith(f"{norm}_")]
+
+    by_species: Dict[str, List[str]] = defaultdict(list)
+    for cfg in all_configs:
+        species = _split_config_name(cfg)
+        if species is not None:
+            by_species[species].append(cfg)
+
+    return {
+        "configs": all_configs,
+        "n_total": len(all_configs),
+        "by_species": dict(sorted(by_species.items())),
+    }
+
+
+# -- config_info tool ----------------------------------------------
 
 
 @mcp.tool()
-def simulate(
-    config: str = "human_igh",
-    n: int = 10,
-    seed: Optional[int] = None,
-    productive: bool = False,
-    # Mutation
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    mutation_model: Optional[str] = None,
-    with_isotype_rates: bool = False,
-    selection_strength: Optional[float] = None,
-    # Recombination
-    d_inversion_prob: Optional[float] = None,
-    receptor_revision_prob: Optional[float] = None,
-    # Sequencing
-    corrupt_5prime: bool = False,
-    corrupt_3prime: bool = False,
-    paired_end_read_length: Optional[int] = None,
-    reverse_complement_prob: Optional[float] = None,
-    quality_base_error: Optional[float] = None,
-    quality_peak_error: Optional[float] = None,
-    # Library prep
-    umi_length: Optional[int] = None,
-    pcr_error_rate: Optional[float] = None,
-    pcr_cycles: Optional[int] = None,
-    primer_mask_length: Optional[int] = None,
-    # Post-sequencing
-    contaminant_rate: Optional[float] = None,
-    indel_prob: Optional[float] = None,
-    n_prob: Optional[float] = None,
-    # Output
-    fields: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """Simulate synthetic AIRR immune receptor sequences.
-
-    Generates realistic V(D)J rearranged sequences with optional somatic
-    hypermutation, sequencing artifacts, and noise. Returns AIRR-format
-    records with full annotations.
-
-    Quick start: simulate(config="human_igh", n=10)
-
-    For mutated sequences: simulate(config="human_igh", n=100,
-        min_mutation_rate=0.02, max_mutation_rate=0.08)
-
-    For realistic Illumina: simulate(config="human_igh", n=100,
-        min_mutation_rate=0.02, max_mutation_rate=0.08,
-        corrupt_5prime=True, paired_end_read_length=300)
-
-    Args:
-        config: Species/chain config name (use list_configs() to see options).
-                Common: "human_igh", "human_igk", "mouse_igh", "human_tcrb".
-        n: Number of sequences to generate (1-10000).
-        seed: Random seed for reproducibility.
-        productive: Only return productive rearrangements (in-frame, no stop codons).
-        min_mutation_rate: Minimum SHM rate (e.g. 0.01). Setting this enables mutation.
-        max_mutation_rate: Maximum SHM rate (e.g. 0.08).
-        mutation_model: "s5f" (context-dependent, default) or "uniform".
-        with_isotype_rates: Adjust mutation rates by isotype (class-switch recombination).
-        selection_strength: Antigen selection pressure intensity (0-1).
-        d_inversion_prob: Probability of D-gene inversion during recombination (0-1).
-        receptor_revision_prob: Probability of V-gene replacement (0-1).
-        corrupt_5prime: Simulate 5' end signal loss (truncation).
-        corrupt_3prime: Simulate 3' end signal loss.
-        paired_end_read_length: Enable paired-end reads (common: 150, 250, 300).
-        reverse_complement_prob: Fraction of reads in antisense orientation (0-1).
-        quality_base_error: Base sequencing error rate at 5' end (e.g. 0.001).
-        quality_peak_error: Peak sequencing error rate at 3' end (e.g. 0.02).
-        umi_length: Prepend random UMI barcode of this length (common: 8, 12, 16).
-        pcr_error_rate: Per-base per-cycle PCR error rate (e.g. 1e-4).
-        pcr_cycles: Number of PCR amplification cycles (e.g. 30).
-        primer_mask_length: Overwrite N 5' bases with germline (0 = full FR1).
-        contaminant_rate: Per-sequence contamination probability (0-1).
-        indel_prob: Per-position indel probability (0-1).
-        n_prob: Per-position ambiguous-N probability (0-1).
-        fields: Subset of AIRR fields to return. None returns all ~47 fields.
-                Useful subsets: ["sequence", "v_call", "d_call", "j_call",
-                "junction_aa", "productive", "mutation_rate"]
-    """
-    return _run_simulation(
-        config=config, n=n, seed=seed, productive=productive,
-        fields=fields,
-        min_mutation_rate=min_mutation_rate,
-        max_mutation_rate=max_mutation_rate,
-        mutation_model=mutation_model,
-        with_isotype_rates=with_isotype_rates,
-        selection_strength=selection_strength,
-        d_inversion_prob=d_inversion_prob,
-        receptor_revision_prob=receptor_revision_prob,
-        corrupt_5prime=corrupt_5prime,
-        corrupt_3prime=corrupt_3prime,
-        paired_end_read_length=paired_end_read_length,
-        reverse_complement_prob=reverse_complement_prob,
-        quality_base_error=quality_base_error,
-        quality_peak_error=quality_peak_error,
-        umi_length=umi_length,
-        pcr_error_rate=pcr_error_rate,
-        pcr_cycles=pcr_cycles,
-        primer_mask_length=primer_mask_length,
-        contaminant_rate=contaminant_rate,
-        indel_prob=indel_prob,
-        n_prob=n_prob,
-    )
-
-
-@mcp.tool()
-def simulate_preset(
-    preset: str,
-    config: str = "human_igh",
-    n: int = 10,
-    seed: Optional[int] = None,
-    fields: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """Generate sequences using a named experimental preset.
-
-    Presets capture common real-world scenarios so you don't need to know
-    individual parameter values. Available presets:
-
-    - "naive":    Unmutated V(D)J rearrangements (germline B/T cells)
-    - "memory":   Mutated sequences (2-8% SHM, S5F model, productive only)
-    - "illumina": Realistic Illumina sequencing (memory + paired-end 300bp,
-                  quality errors, 5'/3' loss)
-    - "nanopore": Long-read sequencing (memory + homopolymer errors)
-    - "noisy":    Kitchen-sink noise (illumina + contaminants + indels + Ns)
-    - "tcr":      T-cell receptor preset (naive, productive only)
-
-    Args:
-        preset: One of: "naive", "memory", "illumina", "nanopore", "noisy", "tcr".
-        config: Species/chain config name.
-        n: Number of sequences (1-10000).
-        seed: Random seed for reproducibility.
-        fields: Subset of AIRR fields to return (None = all).
-    """
-    if preset not in PRESETS:
-        return {
-            "error": f"Unknown preset {preset!r}. "
-                     f"Available: {sorted(PRESETS.keys())}"
-        }
-
-    params = dict(PRESETS[preset])
-    productive = params.pop("productive", False)
-    return _run_simulation(
-        config=config, n=n, seed=seed, productive=productive,
-        fields=fields, **params,
-    )
-
-
-@mcp.tool()
-def narrate_simulation(
-    config: str = "human_igh",
-    seed: int = 42,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-) -> str:
-    """Simulate one sequence and return a detailed human-readable narrative.
-
-    Shows every internal step: allele selection, exonuclease trimming,
-    N/P nucleotide addition, junction assembly, productivity assessment,
-    somatic hypermutation events (each mutation position, context, base change),
-    and any sequencing artifacts.
-
-    Useful for understanding what GenAIRR does, debugging, or explaining
-    a simulation result to a user.
-
-    Args:
-        config: Species/chain config name.
-        seed: Random seed for reproducibility.
-        min_mutation_rate: Enable SHM with this minimum rate.
-        max_mutation_rate: Maximum SHM rate.
-        productive: Only generate productive rearrangements.
-    """
-    err = _check_backend()
-    if err:
-        return err
-
-    try:
-        from GenAIRR.result import narrate as _narrate
-
-        exp = _build_experiment(
-            config,
-            min_mutation_rate=min_mutation_rate,
-            max_mutation_rate=max_mutation_rate,
-        )
-        if productive:
-            # narrate() doesn't take productive directly; compile handles it
-            sim = exp.compile(seed=seed, productive=True)
-            csim = sim._sim
-            csim.set_trace(True)
-            csim.simulate_one()
-            trace_text = csim.get_trace()
-            csim.set_trace(False)
-            # Return raw trace (narrate formats it, but we'd need the full
-            # function; simpler to just call narrate with a non-productive exp)
-            return _narrate(exp, seed=seed, color=False)
-
-        return _narrate(exp, seed=seed, color=False)
-    except Exception as e:
-        return f"Error: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
+@envelope("config_info")
 def config_info(config: str) -> Dict[str, Any]:
-    """Get detailed information about a specific species/chain configuration.
-
-    Returns metadata including species, chain type, whether the chain has
-    a D segment, the reference database source, and counts of V/D/J/C
-    alleles in the germline pool.
+    """Per-config gene/allele counts, locus, chain type, anchor coverage.
 
     Args:
-        config: Config name (e.g. "human_igh", "MOUSE_IGK_IMGT",
-                "rabbit_tcrb"). Use list_configs() to see all options.
-    """
-    try:
-        from GenAIRR.protocol import _resolve_config
+        config: config name (e.g. "human_igh", "mouse_tcrb").
 
-        dc = _resolve_config(config)
-        meta = dc.metadata
-
-        def _count_alleles(allele_dict):
-            if not allele_dict:
-                return 0
-            return sum(len(v) for v in allele_dict.values())
-
-        return {
-            "config": config,
-            "species": meta.species.value if meta.species else "unknown",
-            "chain_type": meta.chain_type.value if meta.chain_type else "unknown",
-            "has_d": meta.has_d,
-            "reference_set": meta.reference_set,
-            "last_updated": str(meta.last_updated),
-            "n_v_alleles": _count_alleles(dc.v_alleles),
-            "n_d_alleles": _count_alleles(dc.d_alleles),
-            "n_j_alleles": _count_alleles(dc.j_alleles),
-            "n_c_alleles": _count_alleles(dc.c_alleles),
+    Returns:
+        {
+          "config": str,
+          "chain_type": str,              # e.g. "vdj", "vj"
+          "locus": str,                   # e.g. "IGH"
+          "species": str,
+          "v_pool_size": int,
+          "d_pool_size": int,             # 0 for VJ chains
+          "j_pool_size": int,
+          "anchor_coverage": Dict[str, float],  # {"v": 1.0, "j": 0.98}
         }
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
 
-
-# ── Category 1: Reference Introspection ────────────────────────
-
-
-@mcp.tool()
-def inspect_allele(config: str, allele_name: str) -> Dict[str, Any]:
-    """Look up a specific allele's properties from the germline reference.
-
-    Returns the allele's sequence (preview), ungapped length, anchor position,
-    gene family, and segment type. Useful for investigating individual alleles
-    (e.g. checking if TRBV17*01 has a valid anchor).
-
-    Args:
-        config: Species/chain config name.
-        allele_name: Full allele name (e.g. "IGHV1-2*01", "TRBV17*01").
+    Raises:
+        MCPError(CONFIG_NOT_FOUND): when the config name isn't recognised.
     """
-    try:
-        from GenAIRR.protocol import _resolve_config
-        from GenAIRR.utilities.mcp_helpers import find_allele, format_allele_info
+    refdata = resolve_refdata(config)
+    species = _split_config_name(config) or "Unknown"
+    locus = locus_from_config_name(config) or ""
 
-        dc = _resolve_config(config)
-        allele = find_allele(dc, allele_name)
-        if allele is None:
-            return {"error": f"Allele {allele_name!r} not found in {config}"}
-        return format_allele_info(allele)
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+    def anchor_rate(segment: str) -> float:
+        total = 0
+        anchored = 0
+        for allele in iter_alleles(refdata, segment):
+            total += 1
+            if getattr(allele, "anchor", None) is not None:
+                anchored += 1
+        return round(anchored / total, 4) if total > 0 else 0.0
+
+    return {
+        "config": config,
+        "chain_type": str(getattr(refdata, "chain_type", "")),
+        "locus": locus,
+        "species": species,
+        "v_pool_size": refdata.v_pool_size(),
+        "d_pool_size": refdata.d_pool_size() if refdata.has_d() else 0,
+        "j_pool_size": refdata.j_pool_size(),
+        "anchor_coverage": {
+            "v": anchor_rate("v"),
+            "j": anchor_rate("j"),
+        },
+    }
+
+
+# -- list_alleles tool ---------------------------------------------
 
 
 @mcp.tool()
+@envelope("list_alleles")
 def list_alleles(
     config: str,
     segment: str = "v",
-    gene_filter: Optional[str] = None,
-    limit: int = 50,
+    limit: int = 100,
 ) -> Dict[str, Any]:
-    """List alleles in a configuration by segment type.
-
-    Survey the V, D, J, or C alleles with optional gene-name filtering.
-    Returns a compact summary of each allele (name, length, anchor, family).
+    """Allele names from a config's V/D/J/C pool.
 
     Args:
-        config: Species/chain config name.
-        segment: Segment type: "v", "d", "j", or "c".
-        gene_filter: Case-insensitive substring to filter allele names (e.g. "TRBV17").
-        limit: Maximum number of alleles to return (default 50).
-    """
-    try:
-        from GenAIRR.protocol import _resolve_config
-        from GenAIRR.utilities.mcp_helpers import flatten_alleles, format_allele_info
+        config: config name (e.g. "human_igh").
+        segment: one of "v", "d", "j", "c".
+        limit: cap on the number of names returned. Set high to enumerate all.
 
-        dc = _resolve_config(config)
-        seg = segment.lower()
-        allele_dict = getattr(dc, f"{seg}_alleles", None)
-        if allele_dict is None:
-            return {"error": f"No {seg.upper()} alleles in {config}"}
-
-        flat = flatten_alleles(allele_dict)
-        if gene_filter:
-            gf = gene_filter.upper()
-            flat = {k: v for k, v in flat.items() if gf in k.upper()}
-
-        total = len(flat)
-        alleles = [format_allele_info(a) for a in list(flat.values())[:limit]]
-        return {"segment": seg.upper(), "total": total, "returned": len(alleles), "alleles": alleles}
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
-
-
-@mcp.tool()
-def query_config(config: str, section: str) -> Dict[str, Any]:
-    """Deep-dive into a configuration's internal probability distributions.
-
-    Inspect gene usage probabilities, trimming distributions, NP region
-    Markov chain parameters, or P-nucleotide length probabilities.
-
-    Args:
-        config: Species/chain config name.
-        section: One of: "gene_use", "trimming", "np_params", "p_nucleotides".
-    """
-    try:
-        from GenAIRR.protocol import _resolve_config
-        from GenAIRR.utilities.mcp_helpers import extract_config_section
-
-        dc = _resolve_config(config)
-        return extract_config_section(dc, section)
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
-
-
-# ── Category 2: Record Validation ─────────────────────────────
-
-
-@mcp.tool()
-def validate_record(record: Dict[str, Any]) -> Dict[str, Any]:
-    """Run 9 consistency checks on a single AIRR record.
-
-    Checks: nucleotide validity, coordinate bounds, segment ordering,
-    junction bounds, junction length match, productive consistency,
-    mutation count, mutation content (each pos:X>Y verified against
-    germline_alignment and sequence), and sequence_length field.
-
-    Pass a record dict from simulate() output.
-
-    Args:
-        record: A single AIRR record dictionary.
-    """
-    try:
-        from GenAIRR.utilities.mcp_helpers import validate_record as _validate
-        return _validate(record)
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
-
-
-@mcp.tool()
-def validate_batch(
-    config: str = "human_igh",
-    n: int = 100,
-    seed: Optional[int] = None,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-    corrupt_5prime: bool = False,
-    indel_prob: Optional[float] = None,
-) -> Dict[str, Any]:
-    """Simulate sequences and validate every record — the audit tool.
-
-    Generates n sequences and runs all 9 validation checks on each one.
-    Returns a summary of pass/fail counts per check and details of any failures.
-
-    Args:
-        config: Species/chain config name.
-        n: Number of sequences to generate and validate (1-10000).
-        seed: Random seed for reproducibility.
-        min_mutation_rate: Enable SHM with this minimum rate.
-        max_mutation_rate: Maximum SHM rate.
-        productive: Only generate productive rearrangements.
-        corrupt_5prime: Enable 5' end loss.
-        indel_prob: Per-position indel probability.
-    """
-    try:
-        from GenAIRR.utilities.mcp_helpers import validate_record as _validate
-
-        sim_result = _run_simulation(
-            config=config, n=n, seed=seed, productive=productive,
-            min_mutation_rate=min_mutation_rate,
-            max_mutation_rate=max_mutation_rate,
-            corrupt_5prime=corrupt_5prime,
-            indel_prob=indel_prob,
-        )
-        if "error" in sim_result:
-            return sim_result
-
-        records = sim_result["records"]
-        check_summary: Dict[str, Dict[str, int]] = {}
-        failures = []
-
-        for rec in records:
-            result = _validate(rec)
-            for check in result["checks"]:
-                name = check["name"]
-                if name not in check_summary:
-                    check_summary[name] = {"passed": 0, "failed": 0}
-                if check["passed"]:
-                    check_summary[name]["passed"] += 1
-                else:
-                    check_summary[name]["failed"] += 1
-            if not result["valid"] and len(failures) < 10:
-                failures.append({
-                    "v_call": rec.get("v_call", ""),
-                    "failed_checks": [c for c in result["checks"] if not c["passed"]],
-                })
-
-        n_valid = sum(1 for r in records if _validate(r)["valid"])
-        return {
-            "n_simulated": len(records),
-            "n_valid": n_valid,
-            "n_failed": len(records) - n_valid,
-            "check_summary": check_summary,
-            "failures": failures,
+    Returns:
+        {
+          "config": str,
+          "segment": str,
+          "n_total": int,
+          "allele_names": List[str],
+          "truncated": bool,
         }
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
 
-
-# ── Category 3: Germline Analysis ─────────────────────────────
-
-
-@mcp.tool()
-def align_to_germline(config: str, record: Dict[str, Any]) -> Dict[str, Any]:
-    """Compare a simulated sequence to its germline reference alleles.
-
-    Cross-references the sequence and germline_alignment fields with the
-    reported mutations to find:
-    - True mutations (seq != germline, reported)
-    - Unreported mutations (seq != germline, NOT reported)
-    - Phantom mutations (seq == germline, but reported)
-
-    Args:
-        config: Species/chain config name.
-        record: A single AIRR record dictionary.
+    Raises:
+        MCPError(CONFIG_NOT_FOUND), MCPError(INVALID_PARAMETER).
     """
-    try:
-        from GenAIRR.protocol import _resolve_config
-        from GenAIRR.utilities.mcp_helpers import align_to_germline as _align
-
-        dc = _resolve_config(config)
-        return _align(dc, record)
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
-
-
-@mcp.tool()
-def score_allele_calls(config: str, record: Dict[str, Any]) -> Dict[str, Any]:
-    """Re-score allele calls against the full germline reference.
-
-    For each segment (V, D, J), scores every allele in the reference
-    against the sequence region and returns the top matches. Verifies
-    the reported call is the best match (or ties for best).
-
-    Uses N-aware scoring matching C bitmap semantics.
-
-    Args:
-        config: Species/chain config name.
-        record: A single AIRR record dictionary.
-    """
-    try:
-        from GenAIRR.protocol import _resolve_config
-        from GenAIRR.utilities.mcp_helpers import score_all_alleles
-
-        dc = _resolve_config(config)
-        result = {}
-        for seg in ("v", "d", "j"):
-            scores = score_all_alleles(dc, record, seg)
-            reported = (record.get(f"{seg}_call", "") or "").split(",")[0].strip()
-            reported_is_best = False
-            if scores:
-                best_frac = scores[0]["fraction"]
-                reported_is_best = any(
-                    s["is_reported_call"] and s["fraction"] >= best_frac - 0.0001
-                    for s in scores
-                )
-            result[seg] = {
-                "reported": reported,
-                "top_5": scores[:5],
-                "reported_is_best": reported_is_best,
-            }
-        return result
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
-
-
-# ── Category 4: Sequence Analysis ─────────────────────────────
-
-
-@mcp.tool()
-def analyze_mutations(
-    config: str = "human_igh",
-    n: int = 200,
-    seed: Optional[int] = None,
-    min_mutation_rate: float = 0.02,
-    max_mutation_rate: float = 0.08,
-) -> Dict[str, Any]:
-    """Analyze somatic hypermutation patterns across simulated sequences.
-
-    Generates mutated sequences and analyzes:
-    - Per-IMGT-region mutation distribution (FWR1/CDR1/FWR2/CDR2/FWR3/CDR3/FWR4)
-    - Transition/transversion ratio
-    - SHM hotspot motif targeting (WRCY/RGYW)
-
-    Args:
-        config: Species/chain config name.
-        n: Number of sequences to generate (1-10000).
-        seed: Random seed for reproducibility.
-        min_mutation_rate: Minimum SHM rate.
-        max_mutation_rate: Maximum SHM rate.
-    """
-    err = _check_backend()
-    if err:
-        return {"error": err}
-
-    try:
-        from GenAIRR.protocol import _resolve_config
-        from GenAIRR.utilities.mcp_helpers import analyze_mutation_patterns
-
-        n = max(1, min(n, 10000))
-        dc = _resolve_config(config)
-        exp = _build_experiment(
-            config,
-            min_mutation_rate=min_mutation_rate,
-            max_mutation_rate=max_mutation_rate,
+    if segment not in {"v", "d", "j", "c"}:
+        raise MCPError(
+            INVALID_PARAMETER,
+            f"segment={segment!r} must be one of 'v', 'd', 'j', 'c'.",
         )
-        result = exp.run(n=n, seed=seed)
-        records = [dict(r) for r in result]
-        return analyze_mutation_patterns(records, dc)
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+
+    refdata = resolve_refdata(config)
+    all_names = sorted({allele.name for allele in iter_alleles(refdata, segment)})
+    truncated = len(all_names) > limit
+    return {
+        "config": config,
+        "segment": segment,
+        "n_total": len(all_names),
+        "allele_names": all_names[:limit],
+        "truncated": truncated,
+    }
+
+
+# -- inspect_allele tool -------------------------------------------
 
 
 @mcp.tool()
-def classify_regions(config: str, record: Dict[str, Any]) -> Dict[str, Any]:
-    """Classify every position in a sequence into IMGT structural regions.
-
-    Maps each position to FWR1, CDR1, FWR2, CDR2, FWR3, CDR3, FWR4, or NP.
-    Also breaks down mutations by region and provides sequence excerpts.
+@envelope("inspect_allele")
+def inspect_allele(config: str, allele_name: str) -> Dict[str, Any]:
+    """One allele's full detail -- sequence, anchor, length, gene family.
 
     Args:
-        config: Species/chain config name.
-        record: A single AIRR record dictionary.
-    """
-    try:
-        from GenAIRR.protocol import _resolve_config
-        from GenAIRR.utilities.mcp_helpers import classify_record_positions
+        config: config name.
+        allele_name: e.g. "IGHVF1-G1*01". Searches V, D, J pools.
 
-        dc = _resolve_config(config)
-        return classify_record_positions(dc, record)
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
-
-
-# ── Category 5: Targeted Simulation ───────────────────────────
-
-
-@mcp.tool()
-def simulate_allele(
-    config: str = "human_igh",
-    v_allele: Optional[str] = None,
-    d_allele: Optional[str] = None,
-    j_allele: Optional[str] = None,
-    n: int = 10,
-    seed: Optional[int] = None,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-    fields: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """Simulate sequences with specific V/D/J alleles locked.
-
-    Forces the simulator to use the specified allele(s) for every sequence.
-    Useful for stress-testing specific alleles (e.g. "generate 100 sequences
-    using only TRBV17*01 to verify they're all non-productive").
-
-    Args:
-        config: Species/chain config name.
-        v_allele: Lock this V allele (e.g. "IGHV1-2*01"). None = random.
-        d_allele: Lock this D allele. None = random.
-        j_allele: Lock this J allele. None = random.
-        n: Number of sequences (1-10000).
-        seed: Random seed for reproducibility.
-        min_mutation_rate: Enable SHM with this minimum rate.
-        max_mutation_rate: Maximum SHM rate.
-        productive: Only return productive rearrangements.
-        fields: Subset of AIRR fields to return.
-    """
-    err = _check_backend()
-    if err:
-        return {"error": err}
-
-    try:
-        from GenAIRR._native import CSimulator
-        from GenAIRR.protocol import _resolve_config
-        from GenAIRR.dataconfig.gdc_io import to_gdc_bytes
-
-        n = max(1, min(n, 10000))
-        dc = _resolve_config(config)
-
-        # Determine S5F chain category for GDC serialization
-        s5f_cat = None
-        if min_mutation_rate is not None:
-            ct = dc.metadata.chain_type.value if dc.metadata and dc.metadata.chain_type else ""
-            if "HEAVY" in ct or "BETA" in ct or "DELTA" in ct:
-                s5f_cat = "heavy"
-            else:
-                s5f_cat = "light"
-
-        gdc_bytes = to_gdc_bytes(dc, s5f_chain_category=s5f_cat)
-        sim = CSimulator(gdc_bytes=gdc_bytes)
-
-        # Lock alleles
-        if v_allele:
-            sim.lock_allele("v", v_allele)
-        if d_allele:
-            sim.lock_allele("d", d_allele)
-        if j_allele:
-            sim.lock_allele("j", j_allele)
-
-        # Set features/params
-        if seed is not None:
-            sim.set_seed(seed)
-        if productive:
-            sim.set_feature("productive", True)
-        if min_mutation_rate is not None:
-            sim.set_feature("mutation", True)
-            sim.set_param("mutation_rate_min", min_mutation_rate)
-            sim.set_param("mutation_rate_max", max_mutation_rate or min_mutation_rate)
-
-        records = sim.simulate(n)
-        records = _filter_fields(records, fields)
-        field_names = list(records[0].keys()) if records else []
-        return {
-            "count": len(records),
-            "fields": field_names,
-            "records": records,
+    Returns:
+        {
+          "config": str,
+          "allele_name": str,
+          "segment": str,                 # "v" | "d" | "j"
+          "length": int,
+          "anchor": Optional[int],
+          "gene_family": Optional[str],
+          "sequence": str,                # raw germline bases
         }
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
 
-
-# ── Category 6: Statistical Summary ───────────────────────────
-
-
-@mcp.tool()
-def summarize_dataset(
-    config: str = "human_igh",
-    n: int = 500,
-    seed: Optional[int] = None,
-    preset: Optional[str] = None,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-) -> Dict[str, Any]:
-    """Generate sequences and return aggregate statistics (no individual records).
-
-    Computes: productive rate, mutation rate stats, junction length distribution,
-    V/D/J gene usage (top 20), NP region length stats.
-
-    Much more token-efficient than simulate() for dataset-level analysis.
-
-    Args:
-        config: Species/chain config name.
-        n: Number of sequences to generate (1-10000).
-        seed: Random seed for reproducibility.
-        preset: Optional preset name ("naive", "memory", etc.) for defaults.
-        min_mutation_rate: Minimum SHM rate (overrides preset).
-        max_mutation_rate: Maximum SHM rate (overrides preset).
-        productive: Only generate productive rearrangements.
+    Raises:
+        MCPError(CONFIG_NOT_FOUND), MCPError(ALLELE_NOT_FOUND).
     """
-    try:
-        from GenAIRR.utilities.mcp_helpers import compute_dataset_summary
+    refdata = resolve_refdata(config)
 
-        # Merge preset if provided
-        kwargs: Dict[str, Any] = {}
-        if preset and preset in PRESETS:
-            kwargs = dict(PRESETS[preset])
-            productive = kwargs.pop("productive", productive)
-        if min_mutation_rate is not None:
-            kwargs["min_mutation_rate"] = min_mutation_rate
-        if max_mutation_rate is not None:
-            kwargs["max_mutation_rate"] = max_mutation_rate
-
-        sim_result = _run_simulation(
-            config=config, n=n, seed=seed, productive=productive, **kwargs,
+    for segment in ("v", "d", "j"):
+        allele = find_allele(refdata, segment, allele_name)
+        if allele is None:
+            continue
+        raw_seq = allele.seq()
+        sequence = (
+            raw_seq.decode("ascii")
+            if isinstance(raw_seq, (bytes, bytearray))
+            else str(raw_seq)
         )
-        if "error" in sim_result:
-            return sim_result
+        return {
+            "config": config,
+            "allele_name": allele_name,
+            "segment": segment,
+            "length": len(sequence),
+            "anchor": int(allele.anchor) if allele.anchor is not None else None,
+            "gene_family": getattr(allele, "gene", None),
+            "sequence": sequence,
+        }
 
-        return compute_dataset_summary(sim_result["records"])
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+    raise MCPError(
+        ALLELE_NOT_FOUND,
+        f"Allele {allele_name!r} not found in any pool of config {config!r}.",
+        hint="Call list_alleles to enumerate available allele names.",
+    )
 
 
-# ── Category 7: Deep Introspection (Pipeline Hooks) ────────────
+# -- Simulation helpers (private) -----------------------------------
 
 
-def _build_hooked_simulator(
+def _build_experiment_from_params(
+    *,
     config: str,
-    seed: Optional[int] = None,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-    v_allele: Optional[str] = None,
-    indel_prob: Optional[float] = None,
-    corrupt_5prime: bool = False,
-    corrupt_3prime: bool = False,
-    n_prob: Optional[float] = None,
-):
-    """Build a CSimulator configured for hooked simulation."""
-    from GenAIRR._native import CSimulator
-    from GenAIRR.protocol import _resolve_config
-    from GenAIRR.dataconfig.gdc_io import to_gdc_bytes
+    mutation_model: Optional[str],
+    mutation_count_min: Optional[int],
+    mutation_count_max: Optional[int],
+    five_prime_loss_max: Optional[int],
+    three_prime_loss_max: Optional[int],
+    pcr_error_count_max: Optional[int],
+    indel_count_max: Optional[int],
+    n_injection_count_max: Optional[int],
+    quality_count_max: Optional[int],
+    contaminant_prob: Optional[float],
+    rev_comp_prob: Optional[float],
+    n_clones: Optional[int],
+    clone_size: Optional[int],
+    v_alleles: Optional[List[str]],
+    d_alleles: Optional[List[str]],
+    j_alleles: Optional[List[str]],
+) -> Any:
+    """Translate flat MCP parameters into a v2.0.0 Experiment object.
 
-    dc = _resolve_config(config)
+    The clonal-fork policy (per the README's realistic-pipeline section):
+      passes BEFORE with_clonal_structure apply to the parent rearrangement
+      (shared by every sister sequence in the clone); passes AFTER apply
+      per-descendant (independent SHM + per-descendant sequencing artefacts).
+    So we order: recombine -> using -> with_clonal_structure -> mutate -> corrupt*.
 
-    s5f_cat = None
-    if min_mutation_rate is not None:
-        ct = dc.metadata.chain_type.value if dc.metadata and dc.metadata.chain_type else ""
-        if "HEAVY" in ct or "BETA" in ct or "DELTA" in ct:
-            s5f_cat = "heavy"
+    Raises:
+        MCPError(CONFIG_NOT_FOUND): unknown config alias.
+        MCPError(INVALID_PARAMETER): half-specified clonal pair or mutation
+            model without any count bound.
+    """
+    # resolve_refdata raises MCPError(CONFIG_NOT_FOUND) on unknown aliases.
+    # Probe the config first so the error envelope is consistent with every
+    # other tool, even though we don't need the refdata object itself here.
+    resolve_refdata(config)
+
+    # Validate clonal pair (half-specified is a user error)
+    if (n_clones is None) != (clone_size is None):
+        raise MCPError(
+            INVALID_PARAMETER,
+            "n_clones and clone_size must be provided together (or both omitted).",
+        )
+
+    exp = ga.Experiment.on(config).recombine()
+
+    # -- Allele lock (parent-level) -----------------------------------
+    using_kwargs: Dict[str, Any] = {}
+    if v_alleles:
+        using_kwargs["v"] = list(v_alleles)
+    if d_alleles:
+        using_kwargs["d"] = list(d_alleles)
+    if j_alleles:
+        using_kwargs["j"] = list(j_alleles)
+    if using_kwargs:
+        exp = exp.using(**using_kwargs)
+
+    # -- Clonal fork (between parent and per-descendant noise) --------
+    if n_clones is not None:
+        # The (n_clones is None) != (clone_size is None) guard above
+        # ensures both are set together. The assert pins the invariant
+        # for the type checker.
+        assert clone_size is not None
+        exp = exp.with_clonal_structure(n_clones=int(n_clones), size=int(clone_size))
+
+    # -- Per-descendant SHM -------------------------------------------
+    if (
+        mutation_model is not None
+        or mutation_count_min is not None
+        or mutation_count_max is not None
+    ):
+        # Resolve `count` shape: int when only one bound given, tuple when both.
+        if mutation_count_min is not None and mutation_count_max is not None:
+            mut_count: Any = (int(mutation_count_min), int(mutation_count_max))
+        elif mutation_count_max is not None:
+            mut_count = (0, int(mutation_count_max))
+        elif mutation_count_min is not None:
+            mut_count = int(mutation_count_min)
         else:
-            s5f_cat = "light"
+            # mutation_model set without any count -- engine requires count.
+            raise MCPError(
+                INVALID_PARAMETER,
+                "mutation_model set without mutation_count_min or mutation_count_max.",
+            )
+        exp = exp.mutate(model=(mutation_model or "s5f"), count=mut_count)
 
-    gdc_bytes = to_gdc_bytes(dc, s5f_chain_category=s5f_cat)
-    sim = CSimulator(gdc_bytes=gdc_bytes)
-
-    if seed is not None:
-        sim.set_seed(seed)
-    if productive:
-        sim.set_feature("productive", True)
-    if min_mutation_rate is not None:
-        sim.set_feature("mutate", True)
-        sim.set_param("min_mutation_rate", min_mutation_rate)
-        sim.set_param("max_mutation_rate", max_mutation_rate or min_mutation_rate)
-    if v_allele:
-        sim.lock_allele("v", v_allele)
-    if indel_prob is not None:
-        sim.set_feature("indels", True)
-        sim.set_param("indel_prob", indel_prob)
-    if corrupt_5prime:
-        sim.set_feature("corrupt_5_prime", True)
-    if corrupt_3prime:
-        sim.set_feature("corrupt_3_prime", True)
-    if n_prob is not None:
-        sim.set_feature("insert_ns", True)
-        sim.set_param("n_prob", n_prob)
-
-    return sim
-
-
-@mcp.tool()
-def introspect_sequence(
-    config: str = "human_igh",
-    seed: int = 42,
-    hooks: Optional[List[str]] = None,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-    v_allele: Optional[str] = None,
-    indel_prob: Optional[float] = None,
-    corrupt_5prime: bool = False,
-    corrupt_3prime: bool = False,
-    compact: bool = True,
-) -> Dict[str, Any]:
-    """Simulate one sequence with pipeline hooks to inspect internal ASeq state.
-
-    Places hooks at specified pipeline stages and captures a full snapshot
-    of the ASeq linked list at each point. Each snapshot shows every
-    nucleotide node with its current base, germline base, segment, flags,
-    germline position, frame phase, amino acid, and productivity.
-
-    Hook points:
-      post_assembly, post_functionality, post_d_inversion, post_receptor_rev,
-      post_mutation, post_selection, post_corrupt_5, post_corrupt_3,
-      post_indels, post_ns, post_pcr, post_quality, final
-
-    Args:
-        config: Species/chain config name.
-        seed: Random seed for reproducibility.
-        hooks: List of hook point names (default: post_assembly, post_mutation, final).
-        min_mutation_rate: Enable SHM with this minimum rate.
-        max_mutation_rate: Maximum SHM rate.
-        productive: Only generate productive rearrangements.
-        v_allele: Lock a specific V allele.
-        indel_prob: Enable indels with this probability.
-        corrupt_5prime: Enable 5' corruption.
-        corrupt_3prime: Enable 3' corruption.
-        compact: If True, return summaries instead of full node lists.
-    """
-    err = _check_backend()
-    if err:
-        return {"error": err}
-
-    if hooks is None:
-        hooks = ["post_assembly", "post_mutation", "final"]
-
-    try:
-        from GenAIRR.utilities.mcp_helpers import (
-            summarize_aseq, detect_node_anomalies, format_snapshot_timeline,
+    # -- Per-descendant sequencing artefacts --------------------------
+    if five_prime_loss_max is not None:
+        exp = exp.corrupt_5prime_loss(length=(0, int(five_prime_loss_max)))
+    if three_prime_loss_max is not None:
+        exp = exp.corrupt_3prime_loss(length=(0, int(three_prime_loss_max)))
+    if indel_count_max is not None:
+        exp = exp.corrupt_indels(
+            count=(0, int(indel_count_max)),
+            insertion_prob=0.5,
         )
+    if pcr_error_count_max is not None:
+        exp = exp.corrupt_pcr(count=(0, int(pcr_error_count_max)))
+    if n_injection_count_max is not None:
+        exp = exp.corrupt_ns(count=(0, int(n_injection_count_max)))
+    if quality_count_max is not None:
+        exp = exp.corrupt_quality(count=(0, int(quality_count_max)))
+    if contaminant_prob is not None:
+        exp = exp.corrupt_contaminants(prob=float(contaminant_prob))
+    if rev_comp_prob is not None:
+        exp = exp.corrupt_reverse_complement(prob=float(rev_comp_prob))
 
-        sim = _build_hooked_simulator(
-            config, seed=seed,
-            min_mutation_rate=min_mutation_rate,
-            max_mutation_rate=max_mutation_rate,
-            productive=productive, v_allele=v_allele,
-            indel_prob=indel_prob,
-            corrupt_5prime=corrupt_5prime,
-            corrupt_3prime=corrupt_3prime,
-        )
-
-        rec, snapshots, trace = sim.simulate_one_hooked(hooks)
-
-        # Process snapshots
-        processed = []
-        for snap in snapshots:
-            nodes = snap["nodes"]
-            entry: Dict[str, Any] = {
-                "hook": snap["hook"],
-                "summary": summarize_aseq(nodes),
-                "anomalies": detect_node_anomalies(nodes),
-            }
-            if not compact:
-                entry["nodes"] = nodes
-            processed.append(entry)
-
-        timeline = format_snapshot_timeline(snapshots)
-
-        return {
-            "airr_record": rec,
-            "snapshots": processed,
-            "timeline": timeline,
-            "trace": trace,
-        }
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+    # Note: productive_only is applied at run_records time via respect=, not here.
+    return exp
 
 
-@mcp.tool()
-def inspect_flags(
-    config: str = "human_igh",
+# -- simulate_repertoire tool --------------------------------------
+
+
+def _simulate_repertoire_impl(
+    *,
+    config: str,
     n: int = 100,
-    seed: Optional[int] = None,
-    hooks: Optional[List[str]] = None,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-    indel_prob: Optional[float] = None,
+    seed: int = 0,
+    productive_only: bool = False,
+    mutation_model: Optional[str] = None,
+    mutation_count_min: Optional[int] = None,
+    mutation_count_max: Optional[int] = None,
+    five_prime_loss_max: Optional[int] = None,
+    three_prime_loss_max: Optional[int] = None,
+    pcr_error_count_max: Optional[int] = None,
+    indel_count_max: Optional[int] = None,
+    n_injection_count_max: Optional[int] = None,
+    quality_count_max: Optional[int] = None,
+    contaminant_prob: Optional[float] = None,
+    rev_comp_prob: Optional[float] = None,
+    n_clones: Optional[int] = None,
+    clone_size: Optional[int] = None,
+    v_alleles: Optional[List[str]] = None,
+    d_alleles: Optional[List[str]] = None,
+    j_alleles: Optional[List[str]] = None,
+    return_records: bool = False,
+    return_records_limit: int = 100,
+    summary_top_n: int = 10,
 ) -> Dict[str, Any]:
-    """Batch flag audit: inspect per-node flags across N sequences.
+    """Inner implementation of simulate_repertoire -- returns the raw result dict.
 
-    Simulates N sequences with hooks and aggregates flag distributions.
-    Shows per-flag counts, per-segment flag counts, and total anomalies.
+    Shared by simulate_repertoire, simulate_preset, and simulate_allele so that
+    each tool's @envelope decorator fires exactly once per MCP call. fastmcp 3.x
+    registers @mcp.tool() functions as plain Python functions, so we cannot
+    bypass the envelope by introspecting `.fn.__wrapped__` -- a shared private
+    helper is the clean way to delegate.
 
-    Args:
-        config: Species/chain config name.
-        n: Number of sequences (1-1000).
-        seed: Random seed.
-        hooks: Hook points to inspect (default: ["final"]).
-        min_mutation_rate: Enable SHM.
-        max_mutation_rate: Maximum SHM rate.
-        productive: Only productive rearrangements.
-        indel_prob: Enable indels.
+    See simulate_repertoire's docstring for parameter and return-shape semantics.
     """
-    err = _check_backend()
-    if err:
-        return {"error": err}
+    from GenAIRR._mcp_summary import compute_repertoire_summary
 
-    if hooks is None:
-        hooks = ["final"]
+    exp = _build_experiment_from_params(
+        config=config,
+        mutation_model=mutation_model,
+        mutation_count_min=mutation_count_min,
+        mutation_count_max=mutation_count_max,
+        five_prime_loss_max=five_prime_loss_max,
+        three_prime_loss_max=three_prime_loss_max,
+        pcr_error_count_max=pcr_error_count_max,
+        indel_count_max=indel_count_max,
+        n_injection_count_max=n_injection_count_max,
+        quality_count_max=quality_count_max,
+        contaminant_prob=contaminant_prob,
+        rev_comp_prob=rev_comp_prob,
+        n_clones=n_clones,
+        clone_size=clone_size,
+        v_alleles=v_alleles,
+        d_alleles=d_alleles,
+        j_alleles=j_alleles,
+    )
 
-    n = max(1, min(n, 1000))
+    respect = ga.productive() if productive_only else None
 
-    try:
-        from GenAIRR.utilities.mcp_helpers import aggregate_flag_stats
+    # When clonal: n comes from n_clones x clone_size -- don't pass `n`.
+    if n_clones is not None:
+        result = exp.run_records(seed=seed, respect=respect)
+    else:
+        result = exp.run_records(n=n, seed=seed, respect=respect)
 
-        sim = _build_hooked_simulator(
-            config, seed=seed,
-            min_mutation_rate=min_mutation_rate,
-            max_mutation_rate=max_mutation_rate,
-            productive=productive, indel_prob=indel_prob,
-        )
-        sim.set_hooks(hooks)
+    records = list(result.records)
+    summary = compute_repertoire_summary(records, summary_top_n=summary_top_n)
 
-        all_nodes = []
-        for _ in range(n):
-            sim.simulate_one()
-            snaps = sim.get_snapshots()
-            for snap in snaps:
-                all_nodes.append(snap["nodes"])
+    out: Dict[str, Any] = {
+        "config": config,
+        "n_records": len(records),
+        "seed": seed,
+        "productive_only": productive_only,
+        **summary,
+    }
 
-        sim.set_hooks([])
-        return aggregate_flag_stats(all_nodes)
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+    if return_records:
+        out["records"] = records[:return_records_limit]
+        out["records_truncated"] = len(records) > return_records_limit
+
+    return out
 
 
 @mcp.tool()
-def inspect_codon_rail(
-    config: str = "human_igh",
-    seed: int = 42,
-    hook: str = "final",
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
+@envelope("simulate_repertoire")
+def simulate_repertoire(
+    config: str,
+    n: int = 100,
+    seed: int = 0,
+    productive_only: bool = False,
+    mutation_model: Optional[str] = None,
+    mutation_count_min: Optional[int] = None,
+    mutation_count_max: Optional[int] = None,
+    five_prime_loss_max: Optional[int] = None,
+    three_prime_loss_max: Optional[int] = None,
+    pcr_error_count_max: Optional[int] = None,
+    indel_count_max: Optional[int] = None,
+    n_injection_count_max: Optional[int] = None,
+    quality_count_max: Optional[int] = None,
+    contaminant_prob: Optional[float] = None,
+    rev_comp_prob: Optional[float] = None,
+    n_clones: Optional[int] = None,
+    clone_size: Optional[int] = None,
+    v_alleles: Optional[List[str]] = None,
+    d_alleles: Optional[List[str]] = None,
+    j_alleles: Optional[List[str]] = None,
+    return_records: bool = False,
+    return_records_limit: int = 100,
+    summary_top_n: int = 10,
 ) -> Dict[str, Any]:
-    """Inspect the codon rail at a specific pipeline stage.
+    """Headline tool. Generate a repertoire and return a structured summary.
 
-    The codon rail is the reading-frame overlay on the ASeq: each codon
-    is a triplet of nucleotides with a translated amino acid. Shows all
-    codons with their bases, amino acid, stop codon status, and segment.
+    Translates 22 flat parameters into a v2.0.0 Experiment via the private
+    _build_experiment_from_params helper, runs the engine, and returns the
+    summary computed by compute_repertoire_summary. AIRR records themselves
+    are opt-in via return_records=True and capped at return_records_limit.
+
+    See spec section 2 for parameter and return-shape semantics.
 
     Args:
-        config: Species/chain config name.
-        seed: Random seed.
-        hook: Hook point name (default: "final").
-        min_mutation_rate: Enable SHM.
-        max_mutation_rate: Maximum SHM rate.
-    """
-    err = _check_backend()
-    if err:
-        return {"error": err}
+        config: species/chain config alias (e.g. "human_igh").
+        n: number of records to generate. Ignored when n_clones is set
+            (total = n_clones x clone_size).
+        seed: deterministic RNG seed.
+        productive_only: when True, apply respect=ga.productive() at run
+            time so every returned record is productive.
+        mutation_model: SHM model (e.g. "s5f"); requires a count bound.
+        mutation_count_min / mutation_count_max: SHM count bounds.
+        five_prime_loss_max / three_prime_loss_max: max bases trimmed
+            from each end.
+        pcr_error_count_max / indel_count_max / n_injection_count_max /
+            quality_count_max: per-record sequencing artefact caps.
+        contaminant_prob / rev_comp_prob: probability knobs.
+        n_clones / clone_size: clonal lineage fork (both or neither).
+        v_alleles / d_alleles / j_alleles: optional allele locks.
+        return_records: include the actual AIRR record dicts in the
+            response (default False -- agents see only the summary).
+        return_records_limit: cap on records returned when opted in.
+        summary_top_n: cap on each top-N usage table in the summary.
 
-    try:
-        from GenAIRR.utilities.mcp_helpers import validate_codon_rail_snapshot
-
-        sim = _build_hooked_simulator(
-            config, seed=seed,
-            min_mutation_rate=min_mutation_rate,
-            max_mutation_rate=max_mutation_rate,
-        )
-        sim.set_hooks([hook])
-        sim.simulate_one()
-        snaps = sim.get_snapshots()
-        sim.set_hooks([])
-
-        if not snaps:
-            return {"error": f"No snapshot captured at hook '{hook}'"}
-
-        codons = sim.get_snapshot_codon_rail(0)
-        validation = validate_codon_rail_snapshot(codons)
-
-        return {
-            "hook": hook,
-            "codons": codons,
-            "validation": validation,
+    Returns:
+        {
+          "config": str,
+          "n_records": int,
+          "seed": int,
+          "productive_only": bool,
+          ...summary fields...,
+          "records": Optional[List[Dict]],
+          "records_truncated": Optional[bool],
         }
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+
+    Raises:
+        MCPError(CONFIG_NOT_FOUND): when the config alias is unknown.
+        MCPError(INVALID_PARAMETER): when the n_clones / clone_size pair is
+            half-specified, or mutation_model is set without any count bound.
+    """
+    return _simulate_repertoire_impl(
+        config=config,
+        n=n,
+        seed=seed,
+        productive_only=productive_only,
+        mutation_model=mutation_model,
+        mutation_count_min=mutation_count_min,
+        mutation_count_max=mutation_count_max,
+        five_prime_loss_max=five_prime_loss_max,
+        three_prime_loss_max=three_prime_loss_max,
+        pcr_error_count_max=pcr_error_count_max,
+        indel_count_max=indel_count_max,
+        n_injection_count_max=n_injection_count_max,
+        quality_count_max=quality_count_max,
+        contaminant_prob=contaminant_prob,
+        rev_comp_prob=rev_comp_prob,
+        n_clones=n_clones,
+        clone_size=clone_size,
+        v_alleles=v_alleles,
+        d_alleles=d_alleles,
+        j_alleles=j_alleles,
+        return_records=return_records,
+        return_records_limit=return_records_limit,
+        summary_top_n=summary_top_n,
+    )
+
+
+# -- simulate_preset tool ------------------------------------------
 
 
 @mcp.tool()
-def diff_snapshots(
-    config: str = "human_igh",
-    seed: int = 42,
-    hook_before: str = "post_assembly",
-    hook_after: str = "post_mutation",
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-    indel_prob: Optional[float] = None,
-    corrupt_5prime: bool = False,
-    corrupt_3prime: bool = False,
+@envelope("simulate_preset")
+def simulate_preset(
+    preset: str,
+    n: Optional[int] = None,
+    seed: int = 0,
+    return_records: bool = False,
+    return_records_limit: int = 100,
 ) -> Dict[str, Any]:
-    """Compare the ASeq state at two pipeline stages.
+    """Pre-baked simulation scenarios by name.
 
-    Shows exactly what changed between two hook points: which nodes were
-    added, removed, or modified, and how flags changed. Perfect for
-    questions like "what exactly did S5F mutation do to this sequence?"
+    See spec section 3 for the 5 preset definitions:
+    naive_b_cell, memory_b_cell_shm, tcr_beta_pool,
+    low_quality_sequencing, clonal_expansion.
 
     Args:
-        config: Species/chain config name.
-        seed: Random seed.
-        hook_before: First hook point (default: "post_assembly").
-        hook_after: Second hook point (default: "post_mutation").
-        min_mutation_rate: Enable SHM.
-        max_mutation_rate: Maximum SHM rate.
-        productive: Only productive rearrangements.
-        indel_prob: Enable indels.
-        corrupt_5prime: Enable 5' corruption.
-        corrupt_3prime: Enable 3' corruption.
+        preset: preset name.
+        n: override the preset's default n. Ignored for clonal presets
+            (where total = n_clones x clone_size).
+        seed: deterministic seed.
+        return_records / return_records_limit: passed through to the
+            underlying simulate_repertoire implementation.
+
+    Raises:
+        MCPError(INVALID_PRESET): when the name is unknown.
     """
-    err = _check_backend()
-    if err:
-        return {"error": err}
+    from GenAIRR._mcp_presets import resolve_preset
 
-    try:
-        from GenAIRR.utilities.mcp_helpers import (
-            summarize_aseq, diff_snapshots as _diff,
-        )
+    params = resolve_preset(preset)  # raises INVALID_PRESET
+    # Caller's n overrides the preset's n unless the preset is clonal
+    # (where total = n_clones x clone_size).
+    if n is not None and "n_clones" not in params:
+        params["n"] = int(n)
+    params["seed"] = seed
+    params["return_records"] = return_records
+    params["return_records_limit"] = return_records_limit
 
-        sim = _build_hooked_simulator(
-            config, seed=seed,
-            min_mutation_rate=min_mutation_rate,
-            max_mutation_rate=max_mutation_rate,
-            productive=productive, indel_prob=indel_prob,
-            corrupt_5prime=corrupt_5prime,
-            corrupt_3prime=corrupt_3prime,
-        )
+    # Delegate to the shared inner implementation so the @envelope decorator
+    # fires only once (on simulate_preset itself). fastmcp 3.x registers
+    # tools as plain functions, so we cannot use simulate_repertoire.fn.
+    return _simulate_repertoire_impl(**params)
 
-        rec, snapshots, trace = sim.simulate_one_hooked([hook_before, hook_after])
 
-        # Find the two snapshots
-        snap_a = next((s for s in snapshots if s["hook"] == hook_before), None)
-        snap_b = next((s for s in snapshots if s["hook"] == hook_after), None)
-
-        if not snap_a:
-            return {"error": f"Hook '{hook_before}' not captured (step may not be active)"}
-        if not snap_b:
-            return {"error": f"Hook '{hook_after}' not captured (step may not be active)"}
-
-        diff_result = _diff(snap_a["nodes"], snap_b["nodes"])
-        diff_result["before_summary"] = summarize_aseq(snap_a["nodes"])
-        diff_result["after_summary"] = summarize_aseq(snap_b["nodes"])
-        diff_result["before_hook"] = hook_before
-        diff_result["after_hook"] = hook_after
-
-        return diff_result
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+# -- simulate_allele tool ------------------------------------------
 
 
 @mcp.tool()
-def replay_with_trace(
-    config: str = "human_igh",
-    seed: int = 42,
-    hooks: Optional[List[str]] = None,
-    min_mutation_rate: Optional[float] = None,
-    max_mutation_rate: Optional[float] = None,
-    productive: bool = False,
-    indel_prob: Optional[float] = None,
-    include_nodes: bool = False,
+@envelope("simulate_allele")
+def simulate_allele(
+    config: str,
+    v_allele: str,
+    j_allele: str,
+    d_allele: Optional[str] = None,
+    n: int = 50,
+    seed: int = 0,
+    mutation_count_max: int = 10,
+    productive_only: bool = True,
 ) -> Dict[str, Any]:
-    """Full pipeline replay with trace log and snapshot timeline.
+    """Focused simulation under a fixed V/D/J allele lock.
 
-    Simulates one sequence with trace logging enabled and captures
-    snapshots at multiple pipeline stages. Returns the AIRR record,
-    execution trace, and a compact timeline showing how the sequence
-    evolved through each stage.
+    Internally delegates to the shared simulate_repertoire implementation
+    with v_alleles=[v_allele] / j_alleles=[j_allele] (and d_alleles=[d_allele]
+    when supplied) plus a moderate SHM range. Returns the same summary shape
+    -- useful for "what does this exact allele combination produce?" questions.
 
     Args:
-        config: Species/chain config name.
-        seed: Random seed.
-        hooks: Hook points (default: post_assembly, post_functionality,
-               post_mutation, final).
-        min_mutation_rate: Enable SHM.
-        max_mutation_rate: Maximum SHM rate.
-        productive: Only productive rearrangements.
-        indel_prob: Enable indels.
-        include_nodes: Include full node lists in snapshots (verbose).
+        config: species/chain config alias (e.g. "human_igh").
+        v_allele / j_allele: allele names to lock (e.g. "IGHVF1-G1*01").
+        d_allele: optional D allele lock for VDJ chains.
+        n: number of records to generate.
+        seed: deterministic RNG seed.
+        mutation_count_max: per-record SHM upper bound. Set to 0 to disable
+            SHM entirely (so v_call / j_call stay exactly == the locked truth).
+        productive_only: default True -- focused queries usually want clean
+            productive records.
     """
-    err = _check_backend()
-    if err:
-        return {"error": err}
+    return _simulate_repertoire_impl(
+        config=config,
+        n=n,
+        seed=seed,
+        productive_only=productive_only,
+        mutation_model="s5f" if mutation_count_max > 0 else None,
+        mutation_count_min=0 if mutation_count_max > 0 else None,
+        mutation_count_max=mutation_count_max if mutation_count_max > 0 else None,
+        v_alleles=[v_allele],
+        d_alleles=[d_allele] if d_allele else None,
+        j_alleles=[j_allele],
+    )
 
-    if hooks is None:
-        hooks = ["post_assembly", "post_functionality", "post_mutation", "final"]
 
-    try:
-        from GenAIRR.utilities.mcp_helpers import (
-            summarize_aseq, detect_node_anomalies, format_snapshot_timeline,
+# -- validate_records tool -----------------------------------------
+
+
+@mcp.tool()
+@envelope("validate_records")
+def validate_records(
+    records: List[Dict[str, Any]],
+    config: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Per-record AIRR consistency checks.
+
+    See spec section 3 + GenAIRR/_mcp_validators.py for the 9 checks
+    (5 schema-only, 4 refdata-driven). Returns per-record issue lists
+    plus aggregate counts.
+
+    Args:
+        records: list of AIRR record dicts.
+        config: when provided, enables refdata-driven checks (checks 6-9).
+
+    Raises:
+        MCPError(CONFIG_NOT_FOUND): when config is supplied but unknown.
+    """
+    from GenAIRR._mcp_validators import validate_one_record
+
+    refdata = resolve_refdata(config) if config is not None else None
+
+    per_record: List[Dict[str, Any]] = []
+    issue_counts: Dict[str, int] = defaultdict(int)
+    n_valid = 0
+    for i, rec in enumerate(records):
+        if not isinstance(rec, dict):
+            issues = [f"record at index {i} is not a dict"]
+        else:
+            issues = validate_one_record(rec, refdata=refdata, config_name=config)
+
+        sequence_id = rec.get("sequence_id") if isinstance(rec, dict) else None
+        per_record.append({
+            "sequence_id": sequence_id if sequence_id else f"<index {i}>",
+            "valid": len(issues) == 0,
+            "issues": issues,
+        })
+        if not issues:
+            n_valid += 1
+        for issue in issues:
+            issue_counts[issue] += 1
+
+    return {
+        "n_records": len(records),
+        "n_valid": n_valid,
+        "n_invalid": len(records) - n_valid,
+        "per_record": per_record,
+        "issue_counts": dict(sorted(issue_counts.items(), key=lambda kv: -kv[1])),
+    }
+
+
+# -- align_to_germline tool ----------------------------------------
+
+
+def _align_one_segment(
+    sequence: str,
+    seq_start: Optional[int],
+    seq_end: Optional[int],
+    germline: str,
+    ref_start: Optional[int],
+    ref_end: Optional[int],
+) -> Dict[str, Any]:
+    """Compare two equal-length string slices base by base.
+
+    The engine has already emitted matching start/end spans (CIGAR M+I-aware
+    on the sequence side, M+D-aware on the germline side); here we only
+    compute match/mismatch on the M positions, ignoring I and D ops by
+    simple slicing.
+    """
+    if seq_start is None or seq_end is None or ref_start is None or ref_end is None:
+        return {
+            "identity": None,
+            "match_count": 0,
+            "mismatch_count": 0,
+            "mismatch_positions": [],
+        }
+
+    obs = sequence[seq_start:seq_end].upper()
+    ref = germline[ref_start:ref_end].upper()
+    n = min(len(obs), len(ref))
+
+    matches = 0
+    mismatches: List[int] = []
+    for i in range(n):
+        if obs[i] == ref[i]:
+            matches += 1
+        else:
+            mismatches.append(seq_start + i)
+    return {
+        "match_count": matches,
+        "mismatch_count": len(mismatches),
+        "identity": round(matches / n, 4) if n > 0 else None,
+        "mismatch_positions": mismatches,
+    }
+
+
+def _germline_seq_for_call(
+    refdata: Any, segment: str, call: str, config: str
+) -> Optional[str]:
+    """Resolve the first allele name in a comma-separated tie set to its
+    germline string. Returns None when the call is empty or the segment's
+    pool is missing (e.g. d_call on a VJ chain). Raises ALLELE_NOT_FOUND
+    when the call is non-empty but doesn't match any allele in the pool.
+    """
+    if not call:
+        return None
+    first = str(call).split(",", 1)[0].strip()
+    if not first:
+        return None
+    allele = find_allele(refdata, segment, first)
+    if allele is None:
+        # Distinguish "missing pool" from "missing allele": iter_alleles
+        # is empty for missing pools, so a None result there means the
+        # segment isn't populated for this config -- treat as no-germline
+        # rather than as an error.
+        if not any(True for _ in iter_alleles(refdata, segment)):
+            return None
+        raise MCPError(
+            ALLELE_NOT_FOUND,
+            f"Allele {first!r} (from {segment}_call) not found in config {config!r}.",
+            hint="Call list_alleles to enumerate available allele names.",
         )
+    raw_seq = allele.seq()
+    return (
+        raw_seq.decode("ascii")
+        if isinstance(raw_seq, (bytes, bytearray))
+        else str(raw_seq)
+    )
 
-        sim = _build_hooked_simulator(
-            config, seed=seed,
-            min_mutation_rate=min_mutation_rate,
-            max_mutation_rate=max_mutation_rate,
-            productive=productive, indel_prob=indel_prob,
-        )
 
-        rec, snapshots, trace = sim.simulate_one_hooked(hooks)
+@mcp.tool()
+@envelope("align_to_germline")
+def align_to_germline(config: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    """Per-segment alignment of a sequence against its claimed germline.
 
-        processed = []
-        for snap in snapshots:
-            nodes = snap["nodes"]
-            entry: Dict[str, Any] = {
-                "hook": snap["hook"],
-                "summary": summarize_aseq(nodes),
-                "anomalies": detect_node_anomalies(nodes),
+    Compares record["sequence"][v_sequence_start:v_sequence_end] against
+    the V allele named in record["v_call"] at [v_germline_start:v_germline_end].
+    Returns per-segment identity + mismatch positions for V/D/J.
+
+    Args:
+        config: config name (used to resolve allele names to germline).
+        record: an AIRR record dict.
+
+    Raises:
+        MCPError(CONFIG_NOT_FOUND): unknown config alias.
+        MCPError(MALFORMED_RECORD): record missing the sequence field.
+        MCPError(ALLELE_NOT_FOUND): a claimed allele isn't in the pool.
+    """
+    if "sequence" not in record:
+        raise MCPError(MALFORMED_RECORD, "record missing required field: sequence")
+
+    refdata = resolve_refdata(config)
+    sequence = record.get("sequence") or ""
+
+    out: Dict[str, Any] = {}
+    for segment in ("v", "d", "j"):
+        call = record.get(f"{segment}_call") or ""
+        germline = _germline_seq_for_call(refdata, segment, call, config)
+        claimed_call = str(call).split(",", 1)[0].strip() if call else ""
+        if germline is None:
+            out[f"{segment}_alignment"] = {
+                "claimed_call": claimed_call,
+                "identity": None,
+                "match_count": 0,
+                "mismatch_count": 0,
+                "mismatch_positions": [],
             }
-            if include_nodes:
-                entry["nodes"] = nodes
-            processed.append(entry)
+            continue
+        align = _align_one_segment(
+            sequence=sequence,
+            seq_start=record.get(f"{segment}_sequence_start"),
+            seq_end=record.get(f"{segment}_sequence_end"),
+            germline=germline,
+            ref_start=record.get(f"{segment}_germline_start"),
+            ref_end=record.get(f"{segment}_germline_end"),
+        )
+        align["claimed_call"] = claimed_call
+        out[f"{segment}_alignment"] = align
 
-        timeline = format_snapshot_timeline(snapshots)
+    return out
 
-        return {
-            "airr_record": rec,
-            "trace": trace,
-            "timeline": timeline,
-            "snapshots": processed,
+
+# -- score_allele_calls tool ---------------------------------------
+
+
+@mcp.tool()
+@envelope("score_allele_calls")
+def score_allele_calls(
+    config: str,
+    record: Dict[str, Any],
+    top_k: int = 5,
+) -> Dict[str, Any]:
+    """Re-score the claimed v_call / d_call / j_call against the full pool.
+
+    For each segment, compute match count between
+    record['sequence'][seg_sequence_start:seg_sequence_end] and EVERY allele
+    in the pool at the same projected offsets; return the top-K alleles
+    with their match counts + identity, plus an is_claimed flag for the
+    one(s) named in record[f"{segment}_call"]. Ties broken by allele name
+    (alphabetical) for determinism.
+
+    Args:
+        config: config name.
+        record: AIRR record dict.
+        top_k: how many top-ranked alleles to return per segment.
+
+    Raises:
+        MCPError(CONFIG_NOT_FOUND): unknown config alias.
+        MCPError(MALFORMED_RECORD): record missing the sequence field.
+    """
+    if "sequence" not in record:
+        raise MCPError(MALFORMED_RECORD, "record missing required field: sequence")
+
+    refdata = resolve_refdata(config)
+    sequence = record.get("sequence") or ""
+
+    def _score_segment(segment: str) -> List[Dict[str, Any]]:
+        seq_start = record.get(f"{segment}_sequence_start")
+        seq_end = record.get(f"{segment}_sequence_end")
+        ref_start = record.get(f"{segment}_germline_start")
+        ref_end = record.get(f"{segment}_germline_end")
+        if any(v is None for v in (seq_start, seq_end, ref_start, ref_end)):
+            return []
+        obs = sequence[seq_start:seq_end].upper()
+
+        claimed_names = {
+            n.strip()
+            for n in str(record.get(f"{segment}_call") or "").split(",")
+            if n.strip()
         }
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+
+        scores: List[Dict[str, Any]] = []
+        for allele in iter_alleles(refdata, segment):
+            raw = allele.seq()
+            ref_str = (
+                raw.decode("ascii")
+                if isinstance(raw, (bytes, bytearray))
+                else str(raw)
+            ).upper()
+            ref_slice = ref_str[ref_start:ref_end]
+            n = min(len(obs), len(ref_slice))
+            if n == 0:
+                continue
+            matches = sum(1 for i in range(n) if obs[i] == ref_slice[i])
+            scores.append({
+                "allele": allele.name,
+                "score": matches,
+                "identity": round(matches / n, 4),
+                "is_claimed": allele.name in claimed_names,
+            })
+
+        scores.sort(key=lambda e: (-e["score"], e["allele"]))
+        return scores[:top_k]
+
+    rankings = {f"{seg}_score_ranking": _score_segment(seg) for seg in ("v", "d", "j")}
+    claimed_is_best = {
+        seg: bool(rankings[f"{seg}_score_ranking"]
+                  and rankings[f"{seg}_score_ranking"][0]["is_claimed"])
+        for seg in ("v", "d", "j")
+    }
+
+    return {**rankings, "claimed_call_is_best": claimed_is_best}
 
 
-# ── Entry point ─────────────────────────────────────────────────
+# -- SHM analysis ----------------------------------------------------
 
-def main():
-    """Run the GenAIRR MCP server (STDIO transport)."""
-    mcp.run(transport="stdio")
+# WRC and RGYW are SHM hotspot motifs from Yaari et al. We check both the
+# forward (WRC) and reverse-complement (GYW) plus the canonical 5-mer
+# motif (RGYW) seen by an aligner. Position refers to the C (forward) or
+# G (reverse) base -- that's the one AID targets.
+_HOTSPOT_NUCS = {"A", "T"}  # W = A or T
+
+_PURINES = {"A", "G"}
+_PYRIMIDINES = {"C", "T"}
 
 
-if __name__ == "__main__":
-    main()
+def _is_transition(from_base: str, to_base: str) -> bool:
+    f, t = from_base.upper(), to_base.upper()
+    return (f in _PURINES and t in _PURINES) or (f in _PYRIMIDINES and t in _PYRIMIDINES)
+
+
+def _is_hotspot_context(sequence: str, pos: int) -> bool:
+    """Return True when the base at `pos` sits in a WRC (A/T-A/G-C) or
+    GYW (G-C/T-A/T) trinucleotide context. Hotspot definition follows
+    AID's preferred motifs; this is a coarse proxy used to flag mutations
+    that landed in canonical SHM-favoured positions."""
+    if pos < 1 or pos >= len(sequence) - 1:
+        return False
+    a = sequence[pos - 1].upper()
+    b = sequence[pos].upper()
+    c = sequence[pos + 1].upper()
+    # WRC: a in W, b in R (A or G), c == C
+    if a in _HOTSPOT_NUCS and b in {"A", "G"} and c == "C":
+        return True
+    # GYW: a == G, b in Y (C or T), c in W
+    if a == "G" and b in {"C", "T"} and c in _HOTSPOT_NUCS:
+        return True
+    return False
+
+
+@mcp.tool()
+@envelope("analyze_mutations")
+def analyze_mutations(config: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    """SHM pattern analysis on a single record.
+
+    Compares record["sequence"] against the V germline (claimed v_call)
+    over [v_sequence_start, v_sequence_end] and produces:
+
+      - n_mutations
+      - transition_count, transversion_count, transition_transversion_ratio
+      - hotspot_targeted_count, hotspot_targeting_rate
+      - per_mutation: List[{position, from, to, is_hotspot}]
+
+    Args:
+        config: config name.
+        record: AIRR record dict.
+
+    Raises:
+        MCPError(CONFIG_NOT_FOUND), MCPError(MALFORMED_RECORD),
+        MCPError(ALLELE_NOT_FOUND).
+    """
+    if "sequence" not in record:
+        raise MCPError(MALFORMED_RECORD, "record missing required field: sequence")
+
+    refdata = resolve_refdata(config)
+
+    sequence = (record.get("sequence") or "").upper()
+    v_call = record.get("v_call") or ""
+    first_v = v_call.split(",", 1)[0].strip() if v_call else ""
+
+    seq_start = record.get("v_sequence_start")
+    seq_end = record.get("v_sequence_end")
+    ref_start = record.get("v_germline_start")
+    ref_end = record.get("v_germline_end")
+
+    germline = None
+    if first_v:
+        allele = find_allele(refdata, "v", first_v)
+        if allele is not None:
+            raw = allele.seq()
+            germline = (
+                raw.decode("ascii")
+                if isinstance(raw, (bytes, bytearray))
+                else str(raw)
+            ).upper()
+
+    per_mutation: List[Dict[str, Any]] = []
+    transitions = 0
+    transversions = 0
+    hotspots = 0
+
+    if (
+        germline
+        and seq_start is not None
+        and seq_end is not None
+        and ref_start is not None
+        and ref_end is not None
+    ):
+        obs = sequence[seq_start:seq_end]
+        ref = germline[ref_start:ref_end]
+        n = min(len(obs), len(ref))
+        for i in range(n):
+            if obs[i] != ref[i] and obs[i] != "N" and ref[i] != "N":
+                from_b, to_b = ref[i], obs[i]
+                is_hotspot = _is_hotspot_context(sequence, seq_start + i)
+                per_mutation.append({
+                    "position": seq_start + i,
+                    "from": from_b,
+                    "to": to_b,
+                    "is_hotspot": is_hotspot,
+                })
+                if _is_transition(from_b, to_b):
+                    transitions += 1
+                else:
+                    transversions += 1
+                if is_hotspot:
+                    hotspots += 1
+
+    n_mutations = len(per_mutation)
+    return {
+        "n_mutations": n_mutations,
+        "transition_count": transitions,
+        "transversion_count": transversions,
+        "transition_transversion_ratio": (
+            round(transitions / transversions, 2) if transversions > 0 else None
+        ),
+        "hotspot_targeted_count": hotspots,
+        "hotspot_targeting_rate": (
+            round(hotspots / n_mutations, 3) if n_mutations > 0 else 0.0
+        ),
+        "per_mutation": per_mutation,
+    }
+
+
+# -- Region classification ------------------------------------------
+
+
+@mcp.tool()
+@envelope("classify_regions")
+def classify_regions(config: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    """IMGT region breakdown of a record.
+
+    In v2.0.0 the engine's Allele type carries no `imgt_regions` attribute
+    (only anchor/gene/name/segment/seq), so per-allele FWR1/CDR1/FWR2/CDR2/FWR3
+    boundaries are unavailable to project into the record's coordinate space.
+    We degrade gracefully and emit only the regions derivable from the AIRR
+    coordinates the engine does emit:
+
+      - CDR3: junction_start + 3 .. junction_end - 3 (IMGT convention:
+        junction minus the flanking anchor codons).
+      - FWR4: junction_end .. j_sequence_end (J anchor sits at junction_end-3;
+        FWR4 extends from there to j_sequence_end).
+
+    If/when the Allele type grows an imgt_regions attribute downstream,
+    this tool should be extended to project those onto FWR1/CDR1/FWR2/CDR2/FWR3.
+
+    Args:
+        config: config name.
+        record: AIRR record dict.
+
+    Returns:
+        {
+          "sequence_length": int,
+          "regions": Dict[str, [int, int]],   # 0-based half-open
+          "region_lengths": Dict[str, int],
+          "junction_in_cdr3": bool,
+        }
+
+    Raises:
+        MCPError(MALFORMED_RECORD), MCPError(CONFIG_NOT_FOUND).
+    """
+    if "sequence" not in record:
+        raise MCPError(MALFORMED_RECORD, "record missing required field: sequence")
+
+    # Resolve refdata for validation that the config exists, even if we don't
+    # currently project per-allele boundaries (see docstring).
+    refdata = resolve_refdata(config)
+
+    sequence = record.get("sequence") or ""
+    seq_len = len(sequence)
+    v_call = (record.get("v_call") or "").split(",", 1)[0].strip()
+    v_seq_start = record.get("v_sequence_start")
+    j_seq_end = record.get("j_sequence_end")
+
+    regions: Dict[str, List[int]] = {}
+
+    # Look up V allele -- preserved as a hook for future imgt_regions support.
+    # Today the v2.0.0 Allele type has no `imgt_regions` attribute, so we
+    # cannot project FWR1/CDR1/FWR2/CDR2/FWR3 from allele coords onto sequence
+    # coords. We still resolve the allele to surface ALLELE_NOT_FOUND-style
+    # mismatches early if v_call references something not in the pool, but
+    # we don't currently raise -- find_allele returning None is tolerated.
+    if v_call and v_seq_start is not None:
+        v_allele = find_allele(refdata, "v", v_call)
+        if v_allele is not None:
+            imgt = getattr(v_allele, "imgt_regions", None)
+            if isinstance(imgt, dict):
+                v_germline_start = record.get("v_germline_start") or 0
+                for name, span in imgt.items():
+                    try:
+                        a, b = int(span[0]), int(span[1])
+                    except (TypeError, IndexError, ValueError):
+                        continue
+                    proj_start = v_seq_start + max(0, a - v_germline_start)
+                    proj_end = v_seq_start + max(0, b - v_germline_start)
+                    proj_start = max(0, min(seq_len, proj_start))
+                    proj_end = max(0, min(seq_len, proj_end))
+                    regions[name] = [proj_start, proj_end]
+
+    # CDR3: derived from junction_start/junction_end (excluding the
+    # flanking anchor codons -- AIRR junction includes them, IMGT CDR3
+    # is junction minus first 3 and last 3).
+    junction_start = record.get("junction_start")
+    junction_end = record.get("junction_end")
+    cdr3_in_junction = False
+    if junction_start is not None and junction_end is not None:
+        cdr3_start = junction_start + 3
+        cdr3_end = junction_end - 3
+        if cdr3_end >= cdr3_start:
+            regions["CDR3"] = [cdr3_start, cdr3_end]
+            cdr3_in_junction = True
+
+    # FWR4: from the J anchor + 3 to sequence end (the J anchor sits at
+    # junction_end - 3; FWR4 extends from there to j_sequence_end).
+    if j_seq_end is not None and junction_end is not None and j_seq_end > junction_end:
+        regions["FWR4"] = [junction_end, j_seq_end]
+
+    region_lengths = {name: span[1] - span[0] for name, span in regions.items()}
+
+    return {
+        "sequence_length": seq_len,
+        "regions": regions,
+        "region_lengths": region_lengths,
+        "junction_in_cdr3": cdr3_in_junction,
+    }
+
+
+# -- Dataset summarisation -------------------------------------------
+
+
+@mcp.tool()
+@envelope("summarize_dataset")
+def summarize_dataset(
+    records: List[Dict[str, Any]],
+    summary_top_n: int = 10,
+) -> Dict[str, Any]:
+    """Compute the same summary shape as simulate_repertoire on user-supplied records.
+
+    Lets the agent compare external AIRR data against simulated data
+    apples-to-apples: simulate_repertoire returns {v_usage_top, ...} and
+    so does this tool.
+
+    Args:
+        records: list of AIRR record dicts.
+        summary_top_n: how many top V/D/J calls to surface.
+    """
+    from GenAIRR._mcp_summary import compute_repertoire_summary
+
+    return {
+        "n_records": len(records),
+        **compute_repertoire_summary(records, summary_top_n=summary_top_n),
+    }
+
+
+# -- Reproducibility: replay_seed -----------------------------------
+
+
+_TRACE_HEADLINE_ADDRESSES = (
+    "sample_allele.v",
+    "sample_allele.d",
+    "sample_allele.j",
+    "trim.v_5", "trim.v_3",
+    "trim.d_5", "trim.d_3",
+    "trim.j_5", "trim.j_3",
+    "np.np1.length",
+    "np.np2.length",
+)
+
+
+def _summarize_trace(outcome: Any) -> Dict[str, Any]:
+    """Pull the headline draws out of a full Outcome.trace() -- allele picks,
+    trim lengths, NP lengths -- and stringify the values for JSON safety.
+    The agent gets the meaningful per-record randomness without the full
+    byte-level dump."""
+    trace = outcome.trace()
+    key_addresses: Dict[str, str] = {}
+    for addr in _TRACE_HEADLINE_ADDRESSES:
+        rec = trace.find(addr)
+        if rec is None:
+            continue
+        # ChoiceRecord.value is a discriminated value (Int/Base/etc.);
+        # str-cast is the safest JSON projection.
+        key_addresses[addr] = str(rec.value)
+    return {
+        "n_passes": len(outcome.pass_names()),
+        "pass_names": list(outcome.pass_names()),
+        "key_addresses": key_addresses,
+    }
+
+
+@mcp.tool()
+@envelope("replay_seed")
+def replay_seed(
+    config: str,
+    seed: int,
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Reproduce a specific simulation and return the record + trace summary.
+
+    Args:
+        config: config name.
+        seed: deterministic seed.
+        params: optional subset of simulate_repertoire params (productive_only,
+            mutation_model, mutation_count_min/max, corruption knobs, etc.).
+            Defaults to no constraints / no SHM / no corruption.
+
+    Returns:
+        {
+          "config": str, "seed": int, "params_used": Dict[str, Any],
+          "record": Dict[str, Any],   # full AIRR fields
+          "trace_summary": {
+            "n_passes": int,
+            "pass_names": List[str],
+            "key_addresses": Dict[str, str],   # allele picks + trim + np lengths
+          },
+        }
+
+    Raises:
+        MCPError(CONFIG_NOT_FOUND).
+    """
+    params = dict(params or {})
+    # Reuse simulate_repertoire's parameter translation but ALSO need the
+    # Outcome for the trace summary. simulate_repertoire returns records
+    # not outcomes. So we rebuild the Experiment + call .run() (Outcome path).
+    productive_only = bool(params.pop("productive_only", False))
+
+    # Translate to an Experiment using the same helper as simulate_repertoire.
+    # _build_experiment_from_params no longer accepts productive_only -- that
+    # is applied at run time via respect=ga.productive() below.
+    build_kwargs = {
+        "config": config,
+        "mutation_model": params.get("mutation_model"),
+        "mutation_count_min": params.get("mutation_count_min"),
+        "mutation_count_max": params.get("mutation_count_max"),
+        "five_prime_loss_max": params.get("five_prime_loss_max"),
+        "three_prime_loss_max": params.get("three_prime_loss_max"),
+        "pcr_error_count_max": params.get("pcr_error_count_max"),
+        "indel_count_max": params.get("indel_count_max"),
+        "n_injection_count_max": params.get("n_injection_count_max"),
+        "quality_count_max": params.get("quality_count_max"),
+        "contaminant_prob": params.get("contaminant_prob"),
+        "rev_comp_prob": params.get("rev_comp_prob"),
+        "n_clones": params.get("n_clones"),
+        "clone_size": params.get("clone_size"),
+        "v_alleles": params.get("v_alleles"),
+        "d_alleles": params.get("d_alleles"),
+        "j_alleles": params.get("j_alleles"),
+    }
+    exp = _build_experiment_from_params(**build_kwargs)
+    respect = ga.productive() if productive_only else None
+
+    if build_kwargs["n_clones"] is not None:
+        outcomes = exp.run(seed=seed, respect=respect)
+    else:
+        outcomes = exp.run(n=1, seed=seed, respect=respect)
+    if not outcomes:
+        raise MCPError(
+            SEED_REPLAY_MISMATCH,
+            f"Replay with seed={seed} produced no outcomes.",
+        )
+
+    # Build the AIRR record from the first outcome (consistent with what
+    # simulate_repertoire would return at index 0). Use resolve_refdata
+    # rather than exp.refdata for consistency with every other tool that
+    # touches the refdata surface.
+    from GenAIRR._airr_record import outcome_to_airr_record
+    refdata = resolve_refdata(config)
+    record = outcome_to_airr_record(outcomes[0], refdata, sequence_id="seq0")
+
+    return {
+        "config": config,
+        "seed": seed,
+        "params_used": {**build_kwargs, "productive_only": productive_only},
+        "record": record,
+        "trace_summary": _summarize_trace(outcomes[0]),
+    }
