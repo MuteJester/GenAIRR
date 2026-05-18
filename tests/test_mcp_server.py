@@ -169,3 +169,50 @@ def test_summary_handles_empty_records():
     assert summary["v_usage_top"] == {}
     assert summary["n_unique_v"] == 0
     assert summary["cdr3_length_histogram"] == {}
+
+
+# -- Foundation: _mcp_validators ------------------------------------
+
+from GenAIRR._mcp_validators import validate_one_record
+
+
+def test_validator_required_fields_present_passes():
+    rec = _fake_record()
+    issues = validate_one_record(rec, refdata=None)
+    assert issues == []
+
+
+def test_validator_missing_sequence_field_flags():
+    rec = _fake_record()
+    del rec["v_call"]
+    issues = validate_one_record(rec, refdata=None)
+    assert any("missing required field" in i and "v_call" in i for i in issues)
+
+
+def test_validator_junction_bounds_out_of_range_flags():
+    rec = _fake_record()
+    rec["sequence_length"] = 200
+    rec["junction_start"] = 180
+    rec["junction_end"] = 250  # > sequence_length
+    issues = validate_one_record(rec, refdata=None)
+    assert any("junction_end" in i and "out of range" in i for i in issues)
+
+
+def test_validator_productive_with_stop_codon_in_junction_flags():
+    rec = _fake_record(productive=True, junction_aa="CAR*W")
+    issues = validate_one_record(rec, refdata=None)
+    assert any("stop" in i.lower() for i in issues)
+
+
+def test_validator_cigar_with_soft_clip_op_flags():
+    rec = _fake_record()
+    rec["v_cigar"] = "5S280M"
+    issues = validate_one_record(rec, refdata=None)
+    assert any("v_cigar" in i and "S" in i for i in issues)
+
+
+def test_validator_refdata_required_checks_skipped_without_config():
+    # Tests that checks 6-9 are skipped (not flagged) when refdata=None.
+    rec = _fake_record(v_call="IGHV_DOES_NOT_EXIST*01")
+    issues = validate_one_record(rec, refdata=None)
+    assert not any("allele not found" in i.lower() for i in issues)
