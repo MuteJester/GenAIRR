@@ -216,3 +216,41 @@ def test_validator_refdata_required_checks_skipped_without_config():
     rec = _fake_record(v_call="IGHV_DOES_NOT_EXIST*01")
     issues = validate_one_record(rec, refdata=None)
     assert not any("allele not found" in i.lower() for i in issues)
+
+
+# -- Foundation: _mcp_presets --------------------------------------
+
+from GenAIRR._mcp_presets import PRESETS, resolve_preset
+
+
+def test_presets_enumeration_matches_spec():
+    assert set(PRESETS.keys()) == {
+        "naive_b_cell",
+        "memory_b_cell_shm",
+        "tcr_beta_pool",
+        "low_quality_sequencing",
+        "clonal_expansion",
+    }
+
+
+def test_resolve_preset_returns_param_dict_with_config_n_seed():
+    params = resolve_preset("memory_b_cell_shm")
+    assert params["config"] == "human_igh"
+    assert params["productive_only"] is True
+    assert params["mutation_model"] == "s5f"
+    assert params["mutation_count_min"] == 5
+    assert params["mutation_count_max"] == 15
+
+
+def test_resolve_preset_clonal_expansion_uses_clonal_params():
+    params = resolve_preset("clonal_expansion")
+    assert params["n_clones"] == 20
+    assert params["clone_size"] == 25
+    # No top-level n -- total comes from n_clones x clone_size
+    assert "n" not in params or params["n"] is None
+
+
+def test_resolve_preset_unknown_raises_mcp_error():
+    with pytest.raises(MCPError) as exc_info:
+        resolve_preset("not_a_real_preset")
+    assert exc_info.value.code == INVALID_PRESET
