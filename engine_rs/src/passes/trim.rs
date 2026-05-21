@@ -1,5 +1,6 @@
 //! `TrimPass` — recombination-stage trim sampling (C.6).
 
+use crate::address;
 use crate::assignment::TrimEnd;
 use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
 use crate::ir::{Segment, Simulation};
@@ -72,15 +73,7 @@ impl TrimPass {
     /// The hierarchical-string address (D3) at which this pass
     /// records its choice. Same string as `name()`.
     fn address(&self) -> &'static str {
-        match (self.segment, self.end) {
-            (Segment::V, TrimEnd::Five) => "trim.v_5",
-            (Segment::V, TrimEnd::Three) => "trim.v_3",
-            (Segment::D, TrimEnd::Five) => "trim.d_5",
-            (Segment::D, TrimEnd::Three) => "trim.d_3",
-            (Segment::J, TrimEnd::Five) => "trim.j_5",
-            (Segment::J, TrimEnd::Three) => "trim.j_3",
-            _ => unreachable!("TrimPass with non-V/D/J segment"),
-        }
+        address::trim_vdj(self.segment, self.end)
     }
 
     fn sample_trim(

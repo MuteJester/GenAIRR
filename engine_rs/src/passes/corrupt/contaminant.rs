@@ -1,5 +1,6 @@
 //! `ContaminantPass` — wholesale sequence replacement (E.6).
 
+use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
@@ -73,8 +74,10 @@ impl ContaminantPass {
         // 1. Coin flip: is this read contaminated?
         let coin = ctx.rng.next_f64();
         let applied = coin < self.apply_prob;
-        ctx.trace
-            .record("corrupt.contaminant.applied", ChoiceValue::Bool(applied));
+        ctx.trace.record(
+            address::CORRUPT_CONTAMINANT_APPLIED,
+            ChoiceValue::Bool(applied),
+        );
 
         if !applied {
             return Ok(sim.clone());
@@ -89,7 +92,7 @@ impl ContaminantPass {
         let mut current = sim.clone();
         for i in 0..pool_len {
             let site = NucHandle::new(i);
-            let address = format!("corrupt.contaminant.bases[{}]", i);
+            let address = address::corrupt_contaminant_base(i);
             let new_base = sample_targeted_base(
                 &current,
                 ctx,
@@ -105,7 +108,7 @@ impl ContaminantPass {
 
 impl Pass for ContaminantPass {
     fn name(&self) -> &str {
-        "corrupt.contaminant"
+        address::CORRUPT_CONTAMINANT
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -123,8 +126,8 @@ impl Pass for ContaminantPass {
 
     fn declared_choices(&self) -> Vec<String> {
         vec![
-            "corrupt.contaminant.applied".to_string(),
-            "corrupt.contaminant.bases[0..n]".to_string(),
+            address::CORRUPT_CONTAMINANT_APPLIED.to_string(),
+            address::CORRUPT_CONTAMINANT_BASES_PATTERN.to_string(),
         ]
     }
 

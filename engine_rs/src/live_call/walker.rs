@@ -10,7 +10,7 @@ use super::{
     AlleleBitSet, EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentLiveCall,
     SegmentRefIndex,
 };
-use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
+use crate::ir::{NucHandle, Region, Segment, Simulation};
 use crate::refdata::AlleleId;
 
 pub(super) fn call_from_region(
@@ -49,23 +49,19 @@ pub(super) fn call_from_region(
             .get(NucHandle::new(seq_pos))
             .expect("region range must point into the nucleotide pool");
 
+        // Single segment check covers both branches below: cross-segment
+        // nucleotides — synthetic (indel-insert) or otherwise — are a
+        // malformed IR for this region and produce `unsupported_call`.
+        if nucleotide.segment != segment {
+            return unsupported_call(segment, allele_universe_len, evidence_version);
+        }
+
         // an indel-inserted nucleotide ends up inside V/D/J's
         // region with `germline_pos == GermlinePos::NONE`. It carries
         // no allele evidence (no germline byte to compare), so we
         // skip it without failing the call.
-        if nucleotide.germline_pos.is_none() {
-            // Sanity: only same-segment synthetic bases (e.g. indel
-            // insertions placed inside V's region) belong here.
-            // Cross-segment synthetic bases would be a malformed IR
-            // and still warrant `unsupported_call`.
-            if nucleotide.segment != segment {
-                return unsupported_call(segment, allele_universe_len, evidence_version);
-            }
+        let Some(ref_pos) = nucleotide.germline_pos.get().map(|p| p as u32) else {
             continue;
-        }
-
-        let Some(ref_pos) = live_ref_pos(nucleotide, segment) else {
-            return unsupported_call(segment, allele_universe_len, evidence_version);
         };
 
         match next_ref_pos {
@@ -87,14 +83,14 @@ pub(super) fn call_from_region(
         // and keep walking. We never abort the call on a single
         // unmatched position; only an explicitly malformed IR (above)
         // produces `unsupported_call`.
-        let Some(evidence) =
-            segment_index.compatible_alleles_at(ref_pos as usize, nucleotide.base)
+        let Some(evidence) = segment_index.compatible_alleles_at(ref_pos as usize, nucleotide.base)
         else {
             continue;
         };
-        for id in evidence.allele_ids.iter_ids() {
-            scores[id.as_usize()] = scores[id.as_usize()].saturating_add(1);
-        }
+        evidence.allele_ids.for_each_id(|id| {
+            let slot = &mut scores[id.as_usize()];
+            *slot = slot.saturating_add(1);
+        });
         if evidence.informative {
             informative_matches = informative_matches.saturating_add(1);
         } else {
@@ -127,14 +123,8 @@ pub(super) fn call_from_region(
     // halt-on-empty-evidence semantics. This keeps unit-level live-call
     // tests backwards-compatible while real pipeline runs always have
     // the trim metadata available.
-    let trim_cap_3: Option<u32> = sim
-        .assignments
-        .get(segment)
-        .map(|a| a.trim_3 as u32);
-    let trim_cap_5: Option<u32> = sim
-        .assignments
-        .get(segment)
-        .map(|a| a.trim_5 as u32);
+    let trim_cap_3: Option<u32> = sim.assignments.get(segment).map(|a| a.trim_3 as u32);
+    let trim_cap_5: Option<u32> = sim.assignments.get(segment).map(|a| a.trim_5 as u32);
 
     // Structural-boundary caps for the extension walkers.
     //
@@ -153,26 +143,11 @@ pub(super) fn call_from_region(
     // edge. For a right walker (V/D), it is the structural region
     // immediately after the adjacent NP region; the walker may claim
     // inside it but stops at its right edge.
-    let left_boundary: Option<u32> = left_extension.and_then(|np_region| {
-        sim.sequence
-            .regions
-            .iter()
-            .find(|r| {
-                matches!(r.segment, Segment::V | Segment::D | Segment::J)
-                    && r.end == np_region.start
-            })
-            .map(|r| r.start.index())
-    });
-    let right_boundary: Option<u32> = right_extension.and_then(|np_region| {
-        sim.sequence
-            .regions
-            .iter()
-            .find(|r| {
-                matches!(r.segment, Segment::V | Segment::D | Segment::J)
-                    && r.start == np_region.end
-            })
-            .map(|r| r.end.index())
-    });
+    //
+    // The boundary scans are computed lazily, inside each extension's
+    // branch, so a present-but-non-adjacent NP region (one whose `end`
+    // does not equal `seq_start`, or whose `start` does not equal
+    // `seq_end`) doesn't pay for a scan it won't consume.
 
     // ── Left-side extension + overlap walk ───────────────────────────
     //
@@ -208,7 +183,16 @@ pub(super) fn call_from_region(
             // structural region immediately before this NP region) so
             // the walker can overlap into that prior structural region
             // when evidence supports it, but never cross past it.
-            let lower_bound: u32 = left_boundary.unwrap_or(0);
+            let lower_bound: u32 = sim
+                .sequence
+                .regions
+                .iter()
+                .find(|r| {
+                    matches!(r.segment, Segment::V | Segment::D | Segment::J)
+                        && r.end == np_region.start
+                })
+                .map(|r| r.start.index())
+                .unwrap_or(0);
             for seq_pos in (lower_bound..np_region.end.index()).rev() {
                 // Cap by the sampled allele's 5' trim — the walker can
                 // reach at most `trim_5` ref positions before the
@@ -240,9 +224,10 @@ pub(super) fn call_from_region(
                 if evidence.allele_ids.is_empty() {
                     break;
                 }
-                for id in evidence.allele_ids.iter_ids() {
-                    scores[id.as_usize()] = scores[id.as_usize()].saturating_add(1);
-                }
+                evidence.allele_ids.for_each_id(|id| {
+                    let slot = &mut scores[id.as_usize()];
+                    *slot = slot.saturating_add(1);
+                });
                 extended_seq_start = seq_pos;
                 extended_ref_start = candidate_ref_pos;
                 if evidence.informative {
@@ -294,7 +279,17 @@ pub(super) fn call_from_region(
             // after the adjacent NP region (e.g. D for V's right walker,
             // J for D's right walker). Overlap into that region is fine;
             // crossing past it into more-distant territory is not.
-            let upper_bound: u32 = right_boundary.unwrap_or(pool_len).min(pool_len);
+            let upper_bound: u32 = sim
+                .sequence
+                .regions
+                .iter()
+                .find(|r| {
+                    matches!(r.segment, Segment::V | Segment::D | Segment::J)
+                        && r.start == np_region.end
+                })
+                .map(|r| r.end.index())
+                .unwrap_or(pool_len)
+                .min(pool_len);
             for seq_pos in np_region.start.index()..upper_bound {
                 // Cap by the sampled allele's 3' trim — the walker can
                 // reach at most `trim_3` ref positions past the
@@ -310,8 +305,8 @@ pub(super) fn call_from_region(
                     .pool
                     .get(NucHandle::new(seq_pos))
                     .expect("extension range must point into the nucleotide pool");
-                let Some(evidence) = segment_index
-                    .compatible_alleles_at(extended_ref_pos as usize, nucleotide.base)
+                let Some(evidence) =
+                    segment_index.compatible_alleles_at(extended_ref_pos as usize, nucleotide.base)
                 else {
                     break;
                 };
@@ -322,9 +317,10 @@ pub(super) fn call_from_region(
                 if evidence.allele_ids.is_empty() {
                     break;
                 }
-                for id in evidence.allele_ids.iter_ids() {
-                    scores[id.as_usize()] = scores[id.as_usize()].saturating_add(1);
-                }
+                evidence.allele_ids.for_each_id(|id| {
+                    let slot = &mut scores[id.as_usize()];
+                    *slot = slot.saturating_add(1);
+                });
                 extended_seq_end = seq_pos.saturating_add(1);
                 extended_ref_pos = extended_ref_pos.saturating_add(1);
                 if evidence.informative {
@@ -395,13 +391,6 @@ pub(super) fn call_from_region(
         vec![hypothesis],
         evidence_version,
     )
-}
-
-fn live_ref_pos(nucleotide: &Nucleotide, segment: Segment) -> Option<u32> {
-    if nucleotide.segment != segment {
-        return None;
-    }
-    nucleotide.germline_pos.get().map(|p| p as u32)
 }
 
 fn unsupported_call(

@@ -9,36 +9,22 @@
 //! fields; this is one of the main reasons we expect a >5× speedup
 //! at scale.
 
-use super::{bytes_to_string, np_claim_owner, pool_bases, projected_allele_id, AirrRecord};
+mod helpers;
+mod types;
+
+pub(in crate::airr_record) use helpers::runlength_to_string;
+
+use helpers::{
+    bytes_uppercase_in_place, eq_ascii_case_insensitive, extend_ref_range, push_cigar_op,
+    push_dmask_for_seg, ref_pos_already_covered,
+};
+use types::AlignmentWalk;
+
+use super::projection::{np_claim_owner, projected_allele_id};
+use super::sequence::{bytes_to_string, pool_bases};
+use super::AirrRecord;
 use crate::ir::{Nucleotide, Segment, Simulation};
 use crate::refdata::RefDataConfig;
-
-pub(super) struct AlignmentWalk {
-    pub(super) sa: String,
-    pub(super) galn: String,
-    pub(super) dmask: String,
-    /// One CIGAR string per V/D/J segment (in that order).
-    pub(super) cigars: [String; 3],
-    /// Per-segment alignment-string spans `(start, end)` (0-based
-    /// half-open). `None` when the segment contributed no columns.
-    pub(super) align_ranges: [Option<(i64, i64)>; 3],
-    /// Per-segment pool-position spans `(start, end)` (0-based
-    /// half-open). Tracks the structural region plus any NP columns
-    /// the column-walker claimed for the segment — i.e. the slice of
-    /// the sequence that this segment "owns" after live-call overlap
-    /// resolution. Used for `*_sequence_start/end`.
-    pub(super) seq_ranges: [Option<(i64, i64)>; 3],
-    /// Per-segment allele-position spans `(start, end)` (0-based
-    /// half-open). Mirrors `seq_ranges` but in reference space —
-    /// the union of ref positions consumed by `M` and `D` ops on
-    /// the segment. Used for `*_germline_start/end` so the AIRR
-    /// record's germline span matches the CIGAR exactly:
-    /// `germline_span == M + D` by construction.
-    pub(super) ref_ranges: [Option<(i64, i64)>; 3],
-    /// Per-segment identity (matches / total), or `None` when no
-    /// columns. Indexed V=0, D=1, J=2.
-    pub(super) identities: [Option<f64>; 3],
-}
 
 pub(super) fn walk_alignment_columns(
     sim: &Simulation,
@@ -129,11 +115,8 @@ pub(super) fn walk_alignment_columns(
                     // covered, so a structural-indel deletion at the
                     // leftmost germline_pos doesn't trigger a D-fill
                     // at a ref position the NP claim already counted.
-                    let np_covered_end = ref_ranges[seg_idx]
-                        .map(|(_, e)| e as usize)
-                        .unwrap_or(0);
-                    let mut expected_pos: usize =
-                        (trim_5.max(0) as usize).max(np_covered_end);
+                    let np_covered_end = ref_ranges[seg_idx].map(|(_, e)| e as usize).unwrap_or(0);
+                    let mut expected_pos: usize = (trim_5.max(0) as usize).max(np_covered_end);
                     let end_germ: usize = (allele_seq.len() as i64 - trim_3).max(0) as usize;
                     for i in r_start..r_end {
                         let nuc: &Nucleotide = &sim.pool.as_slice()[i];
@@ -371,75 +354,5 @@ pub(super) fn walk_alignment_columns(
         seq_ranges,
         ref_ranges,
         identities,
-    }
-}
-
-fn bytes_uppercase_in_place(bytes: &mut [u8]) {
-    for b in bytes.iter_mut() {
-        if (*b).is_ascii_lowercase() {
-            *b = (*b).to_ascii_uppercase();
-        }
-    }
-}
-
-fn eq_ascii_case_insensitive(a: u8, b: u8) -> bool {
-    a.to_ascii_uppercase() == b.to_ascii_uppercase()
-}
-
-fn push_cigar_op(runs: &mut Vec<(u32, u8)>, op: u8) {
-    if let Some(last) = runs.last_mut() {
-        if last.1 == op {
-            last.0 += 1;
-            return;
-        }
-    }
-    runs.push((1, op));
-}
-
-pub(super) fn runlength_to_string(runs: &[(u32, u8)]) -> String {
-    let mut s = String::with_capacity(runs.len() * 4);
-    for (count, op) in runs {
-        s.push_str(&count.to_string());
-        s.push(*op as char);
-    }
-    s
-}
-
-fn push_dmask_for_seg(dmask: &mut Vec<u8>, seg: Segment, ga_char: u8) {
-    if seg == Segment::D && ga_char != b'-' {
-        dmask.push(b'N');
-    } else {
-        dmask.push(ga_char);
-    }
-}
-
-/// Extend `ranges[idx]` so it covers the (single) ref position
-/// `ref_pos`. Used for `ref_ranges` in the column walker — every
-/// `M` and `D` op consumes one ref position; this helper folds that
-/// into the per-segment span.
-fn extend_ref_range(ranges: &mut [Option<(i64, i64)>; 3], idx: usize, ref_pos: i64) {
-    ranges[idx] = Some(match ranges[idx] {
-        Some((s, e)) => (s.min(ref_pos), e.max(ref_pos + 1)),
-        None => (ref_pos, ref_pos + 1),
-    });
-}
-
-/// returns true when `ref_pos` is already inside
-/// `ranges[idx]`. Used by the NP-claim path to detect when a
-/// hypothesis's `pool_pos → ref_pos` projection collides with a
-/// ref position the structural walker already accounted for. This
-/// happens when the segment contains a structural-indel deletion
-/// (the live-call hypothesis tracks pool↔ref linearly, but a
-/// deletion breaks that mapping). When detected, the NP claim is
-/// skipped — structural CIGAR ops take precedence over extension
-/// ops on overlap.
-fn ref_pos_already_covered(
-    ranges: &[Option<(i64, i64)>; 3],
-    idx: usize,
-    ref_pos: i64,
-) -> bool {
-    match ranges[idx] {
-        Some((s, e)) => ref_pos >= s && ref_pos < e,
-        None => false,
     }
 }

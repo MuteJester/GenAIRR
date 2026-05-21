@@ -14,6 +14,7 @@
 //! - `corrupt.ns.count` — number of `N` substitutions applied.
 //! - `corrupt.ns.site[i]` — pool position of the i-th substitution.
 
+use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
@@ -38,7 +39,7 @@ impl NCorruptionPass {
         if strict && count_raw < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
-                "corrupt.ns.count",
+                address::CORRUPT_NS_COUNT,
                 count_raw,
                 "negative_count",
             ));
@@ -46,7 +47,7 @@ impl NCorruptionPass {
         if strict && count_raw > u32::MAX as i64 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
-                "corrupt.ns.count",
+                address::CORRUPT_NS_COUNT,
                 count_raw,
                 "count_exceeds_u32",
             ));
@@ -63,7 +64,7 @@ impl NCorruptionPass {
         );
         let count = count_raw as u32;
         ctx.trace
-            .record("corrupt.ns.count", ChoiceValue::Int(count_raw));
+            .record(address::CORRUPT_NS_COUNT, ChoiceValue::Int(count_raw));
 
         let pool_len = sim.pool.len() as u32;
         if pool_len == 0 || count == 0 {
@@ -74,10 +75,8 @@ impl NCorruptionPass {
         for i in 0..count {
             let site = ctx.rng.range_u32(pool_len);
             let site_handle = NucHandle::new(site);
-            ctx.trace.record(
-                format!("corrupt.ns.site[{}]", i),
-                ChoiceValue::Int(site as i64),
-            );
+            ctx.trace
+                .record(address::corrupt_ns_site(i), ChoiceValue::Int(site as i64));
             current = current.with_base_changed(site_handle, b'N');
         }
 
@@ -87,7 +86,7 @@ impl NCorruptionPass {
 
 impl Pass for NCorruptionPass {
     fn name(&self) -> &str {
-        "corrupt.ns"
+        address::CORRUPT_NS
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -105,8 +104,8 @@ impl Pass for NCorruptionPass {
 
     fn declared_choices(&self) -> Vec<String> {
         vec![
-            "corrupt.ns.count".to_string(),
-            "corrupt.ns.site[0..n]".to_string(),
+            address::CORRUPT_NS_COUNT.to_string(),
+            address::CORRUPT_NS_SITE_PATTERN.to_string(),
         ]
     }
 
@@ -125,11 +124,8 @@ mod tests {
     fn ns_test_sim() -> Simulation {
         let mut sim = Simulation::new();
         for (i, b) in b"AAACCCGGGTTT".iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
-                *b,
-                i as u16,
-                Segment::V,
-            ));
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
         sim
@@ -146,7 +142,11 @@ mod tests {
     }
 
     fn n_count(sim: &Simulation) -> usize {
-        sim.pool.as_slice().iter().filter(|n| n.base == b'N').count()
+        sim.pool
+            .as_slice()
+            .iter()
+            .filter(|n| n.base == b'N')
+            .count()
     }
 
     #[test]

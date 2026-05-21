@@ -8,6 +8,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::address;
 use crate::compiled::{CompiledSimulator, ExecutionPolicy};
 use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
 use crate::ir::{flag, Segment};
@@ -48,7 +49,7 @@ fn run_smoke_plan(seed: u64) -> PyOutcome {
     for i in 0..8 {
         plan.push(Box::new(EchoPass::new(b'A', i as u16, Segment::V)));
         plan.push(Box::new(SampleBasePass::new(
-            format!("np.np1.bases[{}]", i),
+            address::np_base(Segment::Np1, i).expect("NP1 base address"),
             Box::new(UniformBase),
             Segment::Np1,
             flag::N_NUC,

@@ -1,5 +1,6 @@
 //! `PCRErrorPass` — observation-stage PCR amplification errors (E.4).
 
+use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
@@ -57,7 +58,7 @@ impl PCRErrorPass {
         if strict && count_raw < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
-                "corrupt.pcr.count",
+                address::CORRUPT_PCR_COUNT,
                 count_raw,
                 "negative_count",
             ));
@@ -65,7 +66,7 @@ impl PCRErrorPass {
         if strict && count_raw > u32::MAX as i64 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
-                "corrupt.pcr.count",
+                address::CORRUPT_PCR_COUNT,
                 count_raw,
                 "count_exceeds_u32",
             ));
@@ -82,7 +83,7 @@ impl PCRErrorPass {
         );
         let count = count_raw as u32;
         ctx.trace
-            .record("corrupt.pcr.count", ChoiceValue::Int(count_raw));
+            .record(address::CORRUPT_PCR_COUNT, ChoiceValue::Int(count_raw));
 
         let pool_len = sim.pool.len() as u32;
         if pool_len == 0 || count == 0 {
@@ -93,12 +94,10 @@ impl PCRErrorPass {
         for i in 0..count {
             let site = ctx.rng.range_u32(pool_len);
             let site_handle = NucHandle::new(site);
-            let base_address = format!("corrupt.pcr.error_base[{}]", i);
+            let base_address = address::corrupt_pcr_base(i);
 
-            ctx.trace.record(
-                format!("corrupt.pcr.error_site[{}]", i),
-                ChoiceValue::Int(site as i64),
-            );
+            ctx.trace
+                .record(address::corrupt_pcr_site(i), ChoiceValue::Int(site as i64));
             let new_base = sample_targeted_base(
                 &current,
                 ctx,
@@ -116,7 +115,7 @@ impl PCRErrorPass {
 
 impl Pass for PCRErrorPass {
     fn name(&self) -> &str {
-        "corrupt.pcr"
+        address::CORRUPT_PCR
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -134,9 +133,9 @@ impl Pass for PCRErrorPass {
 
     fn declared_choices(&self) -> Vec<String> {
         vec![
-            "corrupt.pcr.count".to_string(),
-            "corrupt.pcr.error_site[0..n]".to_string(),
-            "corrupt.pcr.error_base[0..n]".to_string(),
+            address::CORRUPT_PCR_COUNT.to_string(),
+            address::CORRUPT_PCR_SITE_PATTERN.to_string(),
+            address::CORRUPT_PCR_BASE_PATTERN.to_string(),
         ]
     }
 

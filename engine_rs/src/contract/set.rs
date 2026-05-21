@@ -117,7 +117,7 @@ impl ContractSet {
         refdata: Option<&RefDataConfig>,
         address: &str,
         candidate: &ChoiceValue,
-        context: ChoiceContext,
+        context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
         for c in &self.contracts {
             c.admits_with_context(sim, refdata, address, candidate, context)?;
@@ -136,7 +136,7 @@ impl ContractSet {
         post_sim: &Simulation,
         refdata: Option<&RefDataConfig>,
         address: &str,
-        context: ChoiceContext,
+        context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
         for c in &self.contracts {
             c.admits_post_event(pre_sim, post_sim, refdata, address, context)?;

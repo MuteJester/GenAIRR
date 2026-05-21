@@ -5,6 +5,7 @@
 
 use pyo3::prelude::*;
 
+pub mod address;
 pub mod airr_record;
 pub mod assignment;
 pub mod codon;

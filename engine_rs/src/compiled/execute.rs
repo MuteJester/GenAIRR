@@ -149,18 +149,10 @@ fn apply_live_call_updates(
                 // the targeted hops stay conservative).
                 match segment {
                     Segment::D => {
-                        sim = with_assembled_segment_live_call(
-                            &sim,
-                            reference_index,
-                            Segment::V,
-                        );
+                        sim = with_assembled_segment_live_call(&sim, reference_index, Segment::V);
                     }
                     Segment::J => {
-                        sim = with_assembled_segment_live_call(
-                            &sim,
-                            reference_index,
-                            Segment::D,
-                        );
+                        sim = with_assembled_segment_live_call(&sim, reference_index, Segment::D);
                     }
                     _ => {}
                 }

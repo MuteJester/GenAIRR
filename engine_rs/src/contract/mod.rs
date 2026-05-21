@@ -30,11 +30,13 @@
 //! The trait surface itself, `ChoiceContext`, `ContractViolation`,
 //! and the canonical `productive()` bundle live in this `mod.rs`.
 
+use crate::contract::junction_stop_state::JunctionStopState as JunctionStopStateInner;
 use crate::ir::{NucHandle, Segment, Simulation};
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
 
 pub mod anchor_preserved;
+pub mod junction_stop_state;
 pub mod no_stop_codon_in_junction;
 pub mod productive_junction_frame;
 pub mod set;
@@ -43,6 +45,7 @@ pub mod set;
 pub(crate) mod test_support;
 
 pub use anchor_preserved::AnchorPreserved;
+pub use junction_stop_state::JunctionStopState;
 pub use no_stop_codon_in_junction::NoStopCodonInJunction;
 pub use productive_junction_frame::ProductiveJunctionFrame;
 pub use set::ContractSet;
@@ -104,22 +107,30 @@ pub enum ChoiceKind {
 ///   random future bases.
 /// - Site-based transforms need the target nucleotide handle so a
 ///   contract can evaluate the exact post-candidate local state.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
-pub struct ChoiceContext {
+pub struct ChoiceContext<'a> {
     pub draw_index: Option<u32>,
     pub draw_count: Option<u32>,
     pub target: Option<NucHandle>,
     pub kind: ChoiceKind,
+    /// Precomputed junction-stop state for the active record. Set
+    /// by `GenerateNPPass` before its NP-base draw loop so the
+    /// `NoStopCodonInJunction` filter can use the O(1) fast path
+    /// instead of rebuilding the hypothetical junction buffer per
+    /// candidate. `None` outside the NP-base hot path, in which
+    /// case the contract falls back to the slow rebuild path.
+    pub junction_stop_state: Option<&'a JunctionStopStateInner>,
 }
 
-impl ChoiceContext {
+impl<'a> ChoiceContext<'a> {
     pub const fn none() -> Self {
         Self {
             draw_index: None,
             draw_count: None,
             target: None,
             kind: ChoiceKind::Plain,
+            junction_stop_state: None,
         }
     }
 
@@ -129,6 +140,7 @@ impl ChoiceContext {
             draw_count: Some(draw_count),
             target: None,
             kind: ChoiceKind::Plain,
+            junction_stop_state: None,
         }
     }
 
@@ -146,6 +158,7 @@ impl ChoiceContext {
             draw_count: Some(draw_count),
             target: Some(target),
             kind: ChoiceKind::TargetedBaseSubstitution,
+            junction_stop_state: None,
         }
     }
 
@@ -155,6 +168,7 @@ impl ChoiceContext {
             draw_count: Some(draw_count),
             target: Some(target),
             kind: ChoiceKind::IndelInsertion,
+            junction_stop_state: None,
         }
     }
 
@@ -164,6 +178,7 @@ impl ChoiceContext {
             draw_count: Some(draw_count),
             target: Some(target),
             kind: ChoiceKind::IndelDeletion,
+            junction_stop_state: None,
         }
     }
 
@@ -173,11 +188,43 @@ impl ChoiceContext {
             draw_count: Some(draw_count),
             target: None,
             kind: ChoiceKind::IndelDeletion,
+            junction_stop_state: None,
         }
+    }
+
+    /// Attach a precomputed `JunctionStopState` reference to this
+    /// `ChoiceContext`. The `NoStopCodonInJunction` filter consults
+    /// it when present to take the O(1) fast path.
+    #[must_use]
+    pub fn with_junction_stop_state(mut self, state: &'a JunctionStopStateInner) -> Self {
+        self.junction_stop_state = Some(state);
+        self
     }
 }
 
-impl Default for ChoiceContext {
+// PartialEq / Eq manually so the borrowed reference doesn't have
+// to participate (we compare structural fields only). Sufficient
+// for existing test sites that match on draw_index / draw_count.
+impl PartialEq for ChoiceContext<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.draw_index == other.draw_index
+            && self.draw_count == other.draw_count
+            && self.target == other.target
+            && self.kind == other.kind
+            && std::ptr::eq(
+                self.junction_stop_state
+                    .map(|s| s as *const _)
+                    .unwrap_or(std::ptr::null()),
+                other
+                    .junction_stop_state
+                    .map(|s| s as *const _)
+                    .unwrap_or(std::ptr::null()),
+            )
+    }
+}
+impl Eq for ChoiceContext<'_> {}
+
+impl Default for ChoiceContext<'_> {
     fn default() -> Self {
         Self::none()
     }
@@ -281,7 +328,7 @@ pub trait Contract {
         refdata: Option<&RefDataConfig>,
         address: &str,
         candidate: &ChoiceValue,
-        context: ChoiceContext,
+        context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
         let _ = context;
         self.admits(sim, refdata, address, candidate)
@@ -301,7 +348,7 @@ pub trait Contract {
         post_sim: &Simulation,
         refdata: Option<&RefDataConfig>,
         address: &str,
-        context: ChoiceContext,
+        context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
         let _ = (pre_sim, address, context);
         self.verify(post_sim, refdata)

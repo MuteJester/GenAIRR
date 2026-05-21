@@ -1,5 +1,6 @@
 //! `AnchorPreserved` — anchor codon must remain in the retained slice.
 
+use crate::address;
 use crate::assignment::TrimEnd;
 use crate::ir::{translate_codon, GermlinePos, NucHandle, Segment, Simulation};
 use crate::refdata::{Allele, AlleleId, RefDataConfig};
@@ -60,22 +61,17 @@ impl AnchorPreserved {
     }
 
     fn sample_address_for(segment: Segment) -> &'static str {
-        match segment {
-            Segment::V => "sample_allele.v",
-            Segment::D => "sample_allele.d",
-            Segment::J => "sample_allele.j",
-            _ => unreachable!("AnchorPreserved with non-V/D/J segment"),
-        }
+        address::sample_allele_vdj(segment)
     }
 
-    fn trim_end_for_address(segment: Segment, address: &str) -> Option<TrimEnd> {
-        match (segment, address) {
-            (Segment::V, "trim.v_5") | (Segment::D, "trim.d_5") | (Segment::J, "trim.j_5") => {
-                Some(TrimEnd::Five)
-            }
-            (Segment::V, "trim.v_3") | (Segment::D, "trim.d_3") | (Segment::J, "trim.j_3") => {
-                Some(TrimEnd::Three)
-            }
+    fn trim_end_for_address(segment: Segment, choice_address: &str) -> Option<TrimEnd> {
+        match (segment, choice_address) {
+            (Segment::V, address::TRIM_V_5)
+            | (Segment::D, address::TRIM_D_5)
+            | (Segment::J, address::TRIM_J_5) => Some(TrimEnd::Five),
+            (Segment::V, address::TRIM_V_3)
+            | (Segment::D, address::TRIM_D_3)
+            | (Segment::J, address::TRIM_J_3) => Some(TrimEnd::Three),
             _ => None,
         }
     }
@@ -249,7 +245,7 @@ impl AnchorPreserved {
         refdata: Option<&RefDataConfig>,
         address: &str,
         candidate: &ChoiceValue,
-        context: ChoiceContext,
+        context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
         if context.kind != ChoiceKind::TargetedBaseSubstitution {
             return Ok(());
@@ -478,7 +474,7 @@ impl Contract for AnchorPreserved {
         refdata: Option<&RefDataConfig>,
         address: &str,
         candidate: &ChoiceValue,
-        context: ChoiceContext,
+        context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
         self.admits(sim, refdata, address, candidate)?;
         self.admits_targeted_anchor_substitution(sim, refdata, address, candidate, context)

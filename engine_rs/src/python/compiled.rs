@@ -13,9 +13,9 @@ use crate::contract::ContractSet;
 use crate::refdata::RefDataConfig;
 
 use super::contract::pass_error_to_pyerr;
-use super::simulation::PySimulation;
 use super::outcome::PyOutcome;
 use super::plan::PyPassPlan;
+use super::simulation::PySimulation;
 
 #[pyclass(name = "CompiledSimulator", module = "GenAIRR._engine", unsendable)]
 pub struct PyCompiledSimulator {

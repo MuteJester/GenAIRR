@@ -1,5 +1,6 @@
 //! `ProductiveJunctionFrame` — junction length divisible by 3.
 
+use crate::address;
 use crate::ir::{Segment, Simulation};
 use crate::junction::compute_junction;
 use crate::refdata::RefDataConfig;
@@ -123,8 +124,8 @@ impl Contract for ProductiveJunctionFrame {
 
         let is_vj = sim.assignments.d.is_none();
         let applicable = match address {
-            "np.np1.length" => is_vj,
-            "np.np2.length" => !is_vj,
+            address::NP1_LENGTH => is_vj,
+            address::NP2_LENGTH => !is_vj,
             _ => false,
         };
         if !applicable {

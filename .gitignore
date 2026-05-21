@@ -53,6 +53,7 @@ _old_docs/
 .mcp.json
 .claude/
 .docs/
+/benchmarks/
 
 # Keep release tools tracked but ignore local secrets file
 !/tools/

@@ -1,8 +1,9 @@
 //! `AssembleSegmentPass` — copy a germline allele slice into the pool (C.8).
 
-use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
+use crate::address;
 #[cfg(test)]
 use crate::ir::GermlinePos;
+use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError, PassRequirement};
 
 /// Assemble one germline segment (V, D, or J) from its assigned
@@ -138,23 +139,23 @@ impl AssembleSegmentPass {
         let cumulative_len: u32 = sim.sequence.regions.iter().map(|r| r.len()).sum();
         let frame_phase = (cumulative_len % 3) as u8;
 
-        let region_start = NucHandle::new(sim.pool.len() as u32);
-
         // Push the post-trim slice into the pool as germline nucleotides.
-        // Each base carries its position-in-original-allele as `germline_pos`.
-        let mut current = sim.clone();
-        for i in 0..slice_len {
-            let allele_pos = slice_start + i;
-            let base = allele.seq[allele_pos as usize];
-            let (next, _h) = current.with_nucleotide_pushed(Nucleotide::germline(
-                base,
-                allele_pos as u16,
-                self.segment,
-            ));
-            current = next;
-        }
+        // Batched-extend (Phase 1 IR-allocation refactor): collapse the
+        // N per-base `with_nucleotide_pushed` calls into one
+        // `with_nucleotides_extended`. Safe here because no contract
+        // consults intermediate per-base pool states inside an assembly
+        // pass — only after the pass completes (post-pass `verify` in
+        // strict mode reads the final pool).
+        let seg = self.segment;
+        let slice = &allele.seq[slice_start as usize..(slice_start + slice_len) as usize];
+        let (current, range) =
+            sim.with_nucleotides_extended(slice.iter().enumerate().map(|(i, &base)| {
+                let allele_pos = slice_start + i as u32;
+                Nucleotide::germline(base, allele_pos as u16, seg)
+            }));
 
-        let region_end = NucHandle::new(current.pool.len() as u32);
+        let region_start = NucHandle::new(range.start);
+        let region_end = NucHandle::new(range.end);
         let region = Region::new(self.segment, region_start, region_end)
             .with_frame_phase(frame_phase)
             .with_codon_rail_recomputed(&current.pool);
@@ -165,12 +166,7 @@ impl AssembleSegmentPass {
 
 impl Pass for AssembleSegmentPass {
     fn name(&self) -> &str {
-        match self.segment {
-            Segment::V => "assemble.v",
-            Segment::D => "assemble.d",
-            Segment::J => "assemble.j",
-            _ => unreachable!("AssembleSegmentPass with non-V/D/J segment"),
-        }
+        address::assemble_vdj(self.segment)
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {

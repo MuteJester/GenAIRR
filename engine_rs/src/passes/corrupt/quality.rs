@@ -1,5 +1,6 @@
 //! `QualityErrorPass` — sequencing-error model (E.5).
 
+use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
@@ -64,7 +65,7 @@ impl QualityErrorPass {
         if strict && count_raw < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
-                "corrupt.quality.count",
+                address::CORRUPT_QUALITY_COUNT,
                 count_raw,
                 "negative_count",
             ));
@@ -72,7 +73,7 @@ impl QualityErrorPass {
         if strict && count_raw > u32::MAX as i64 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
-                "corrupt.quality.count",
+                address::CORRUPT_QUALITY_COUNT,
                 count_raw,
                 "count_exceeds_u32",
             ));
@@ -89,7 +90,7 @@ impl QualityErrorPass {
         );
         let count = count_raw as u32;
         ctx.trace
-            .record("corrupt.quality.count", ChoiceValue::Int(count_raw));
+            .record(address::CORRUPT_QUALITY_COUNT, ChoiceValue::Int(count_raw));
 
         let pool_len = sim.pool.len() as u32;
         if pool_len == 0 || count == 0 {
@@ -100,10 +101,10 @@ impl QualityErrorPass {
         for i in 0..count {
             let site = ctx.rng.range_u32(pool_len);
             let site_handle = NucHandle::new(site);
-            let base_address = format!("corrupt.quality.error_base[{}]", i);
+            let base_address = address::corrupt_quality_base(i);
 
             ctx.trace.record(
-                format!("corrupt.quality.error_site[{}]", i),
+                address::corrupt_quality_site(i),
                 ChoiceValue::Int(site as i64),
             );
 
@@ -125,7 +126,7 @@ impl QualityErrorPass {
 
 impl Pass for QualityErrorPass {
     fn name(&self) -> &str {
-        "corrupt.quality"
+        address::CORRUPT_QUALITY
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -143,9 +144,9 @@ impl Pass for QualityErrorPass {
 
     fn declared_choices(&self) -> Vec<String> {
         vec![
-            "corrupt.quality.count".to_string(),
-            "corrupt.quality.error_site[0..n]".to_string(),
-            "corrupt.quality.error_base[0..n]".to_string(),
+            address::CORRUPT_QUALITY_COUNT.to_string(),
+            address::CORRUPT_QUALITY_SITE_PATTERN.to_string(),
+            address::CORRUPT_QUALITY_BASE_PATTERN.to_string(),
         ]
     }
 

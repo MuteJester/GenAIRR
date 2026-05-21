@@ -1,5 +1,6 @@
 //! `SampleAllelePass` — recombination-stage allele sampling (C.5).
 
+use crate::address;
 use crate::assignment::AlleleInstance;
 use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
 use crate::ir::{Segment, Simulation};
@@ -63,14 +64,7 @@ impl SampleAllelePass {
     /// records its choice. Same string as `name()` since the pass
     /// makes exactly one choice per execution.
     fn address(&self) -> &'static str {
-        match self.segment {
-            Segment::V => "sample_allele.v",
-            Segment::D => "sample_allele.d",
-            Segment::J => "sample_allele.j",
-            // Unreachable due to constructor validation; if this
-            // fires it's a code defect, not a user error.
-            _ => unreachable!("SampleAllelePass with non-V/D/J segment"),
-        }
+        address::sample_allele_vdj(self.segment)
     }
 
     fn sample_allele(

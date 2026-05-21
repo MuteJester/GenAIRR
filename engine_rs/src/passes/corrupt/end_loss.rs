@@ -21,6 +21,7 @@
 //!   length records the actual removal, not the requested one).
 //! - `corrupt.end_loss.3` — `Int(actual)`: same on the 3' end.
 
+use crate::address;
 use crate::dist::Distribution;
 use crate::ir::Simulation;
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
@@ -52,18 +53,15 @@ impl EndLossPass {
 
     fn address(&self) -> &'static str {
         match self.end {
-            LossEnd::Five => "corrupt.end_loss.5",
-            LossEnd::Three => "corrupt.end_loss.3",
+            LossEnd::Five => address::CORRUPT_END_LOSS_5,
+            LossEnd::Three => address::CORRUPT_END_LOSS_3,
         }
     }
 }
 
 impl Pass for EndLossPass {
     fn name(&self) -> &str {
-        match self.end {
-            LossEnd::Five => "corrupt.end_loss.5",
-            LossEnd::Three => "corrupt.end_loss.3",
-        }
+        self.address()
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -130,11 +128,8 @@ mod tests {
     fn end_loss_test_sim() -> Simulation {
         let mut sim = Simulation::new();
         for (i, b) in b"AAACCCGGGTTT".iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
-                *b,
-                i as u16,
-                Segment::V,
-            ));
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
         let region = Region::new(
@@ -158,11 +153,7 @@ mod tests {
     }
 
     fn pool_string(sim: &Simulation) -> String {
-        sim.pool
-            .as_slice()
-            .iter()
-            .map(|n| n.base as char)
-            .collect()
+        sim.pool.as_slice().iter().map(|n| n.base as char).collect()
     }
 
     #[test]

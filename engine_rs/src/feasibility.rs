@@ -10,6 +10,7 @@
 //! a second pass scheduler: it is a typed, compile-derived support
 //! artifact consulted by sampling passes before committing choices.
 
+use crate::address;
 use crate::assignment::TrimEnd;
 use crate::ir::{translate_codon, Segment, Simulation, AMINO_STOP};
 use crate::refdata::{AlleleId, RefDataConfig};
@@ -318,25 +319,26 @@ impl VjProductiveFeasibility {
 fn is_vj_productive_choice(address: &str) -> bool {
     matches!(
         address,
-        "sample_allele.v" | "sample_allele.j" | "trim.v_5" | "trim.v_3" | "trim.j_5" | "trim.j_3"
+        address::SAMPLE_ALLELE_V
+            | address::SAMPLE_ALLELE_J
+            | address::TRIM_V_5
+            | address::TRIM_V_3
+            | address::TRIM_J_5
+            | address::TRIM_J_3
     )
 }
 
 fn sample_allele_address(segment: Segment) -> &'static str {
     match segment {
-        Segment::V => "sample_allele.v",
-        Segment::J => "sample_allele.j",
-        _ => "sample_allele.<unsupported>",
+        Segment::V | Segment::J => address::sample_allele_vdj(segment),
+        _ => address::SAMPLE_ALLELE_UNSUPPORTED,
     }
 }
 
 fn trim_address(segment: Segment, end: TrimEnd) -> &'static str {
     match (segment, end) {
-        (Segment::V, TrimEnd::Five) => "trim.v_5",
-        (Segment::V, TrimEnd::Three) => "trim.v_3",
-        (Segment::J, TrimEnd::Five) => "trim.j_5",
-        (Segment::J, TrimEnd::Three) => "trim.j_3",
-        _ => "trim.<unsupported>",
+        (Segment::V | Segment::J, _) => address::trim_vdj(segment, end),
+        _ => address::TRIM_UNSUPPORTED,
     }
 }
 
@@ -387,5 +389,4 @@ fn no_known_stop_for_length(v_tail: &[u8], np_len: u32, j_head: &[u8]) -> bool {
 }
 
 #[cfg(test)]
-#[path = "feasibility_tests.rs"]
 mod tests;

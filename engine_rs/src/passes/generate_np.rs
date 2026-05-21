@@ -1,8 +1,9 @@
 //! `GenerateNPPass` — TdT-like N-nucleotide region generation (C.7).
 
-use crate::contract::ChoiceContext;
+use crate::address;
+use crate::contract::{ChoiceContext, JunctionStopState};
 use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
-use crate::ir::{flag, NucHandle, Nucleotide, Region, Segment, Simulation};
+use crate::ir::{flag, NucHandle, Nucleotide, Region, Segment, Simulation, SimulationBuilder};
 use crate::pass::{IntegerSupport, Pass, PassCompileFact, PassContext, PassEffect, PassError};
 use crate::trace::ChoiceValue;
 
@@ -76,27 +77,15 @@ impl GenerateNPPass {
     }
 
     fn length_address(&self) -> &'static str {
-        match self.np_segment {
-            Segment::Np1 => "np.np1.length",
-            Segment::Np2 => "np.np2.length",
-            _ => unreachable!("GenerateNPPass with non-NP segment"),
-        }
+        address::np_length_region(self.np_segment)
     }
 
     fn bases_prefix(&self) -> &'static str {
-        match self.np_segment {
-            Segment::Np1 => "np.np1.bases",
-            Segment::Np2 => "np.np2.bases",
-            _ => unreachable!("GenerateNPPass with non-NP segment"),
-        }
+        address::np_bases_region_prefix(self.np_segment)
     }
 
     fn pass_name(&self) -> &'static str {
-        match self.np_segment {
-            Segment::Np1 => "generate_np.np1",
-            Segment::Np2 => "generate_np.np2",
-            _ => unreachable!("GenerateNPPass with non-NP segment"),
-        }
+        address::generate_np_region(self.np_segment)
     }
 
     /// Constraint-aware length sample (D.6).
@@ -150,6 +139,14 @@ impl GenerateNPPass {
     /// can reject a candidate base before it is written to the IR. The
     /// immediate hardening target is `NoStopCodonInJunction`, which
     /// rejects NP bases that would complete a junction stop codon.
+    ///
+    /// When `junction_stop_state` is `Some`, it is attached to the
+    /// `ChoiceContext` so the stop-codon contract can take its O(1)
+    /// fast path instead of rebuilding the hypothetical junction buffer
+    /// on every candidate. When `None`, the contract falls back to its
+    /// pre-existing rebuild path — this happens when the build's
+    /// preconditions are not met (no V/J assignment, missing anchors,
+    /// invalid retained bounds) or when contracts aren't active at all.
     fn sample_base(
         &self,
         sim: &Simulation,
@@ -158,12 +155,16 @@ impl GenerateNPPass {
         index: u32,
         total_len: u32,
         strict: bool,
+        junction_stop_state: Option<&JunctionStopState>,
     ) -> Result<u8, PassError> {
         let refdata = ctx.refdata;
         let contracts = ctx.contracts;
 
         if let Some(contracts) = contracts {
-            let context = ChoiceContext::indexed(index, total_len);
+            let mut context = ChoiceContext::indexed(index, total_len);
+            if let Some(state) = junction_stop_state {
+                context = context.with_junction_stop_state(state);
+            }
             match sample_filtered_result(ctx.rng, self.base_dist.as_ref(), |candidate: &u8| {
                 contracts
                     .admits_with_context(
@@ -243,21 +244,45 @@ impl GenerateNPPass {
         let length = length as u32;
         let region_start = NucHandle::new(sim.pool.len() as u32);
 
+        // Precompute the per-record stop-codon state once before the
+        // candidate draw loop fires. The contract then only consults
+        // the codon containing the current candidate (O(1)) instead
+        // of rebuilding the whole hypothetical junction buffer per
+        // candidate (~10 codons × 4 candidates × ~10 NP positions =
+        // ~400 wasted codon translations per record). When refdata
+        // or contracts aren't active, or when the build's
+        // preconditions aren't met (no V/J assigned yet, anchors
+        // missing, etc.), `junction_stop_state` stays `None` and
+        // `NoStopCodonInJunction` falls back to its rebuild path.
+        let junction_stop_state = match (ctx.refdata, ctx.contracts) {
+            (Some(refdata), Some(_)) => {
+                JunctionStopState::build(sim, refdata, self.np_segment, length)
+            }
+            _ => None,
+        };
+
         // 2. Sample bases and push them into the pool. Each push
-        //    produces a one-step persistent IR update; the loop
-        //    accumulates into `current`.
-        let mut current = sim.clone();
+        //    mutates the builder's owned `Simulation` in place; the
+        //    builder unique-ifies the pool's Arc once at construction
+        //    so subsequent `push_nucleotide` calls are direct
+        //    `Vec::push` operations (no per-base CoW). Contracts see
+        //    the same `&Simulation` shape through `builder.peek()`.
+        let mut builder = SimulationBuilder::from_simulation(sim.clone());
         for i in 0..length {
             let base_address = format!("{}[{}]", self.bases_prefix(), i);
-            let base = self.sample_base(&current, ctx, &base_address, i, length, strict)?;
+            let base = self.sample_base(
+                builder.peek(),
+                ctx,
+                &base_address,
+                i,
+                length,
+                strict,
+                junction_stop_state.as_ref(),
+            )?;
             ctx.trace.record(base_address, ChoiceValue::Base(base));
-            let (next, _h) = current.with_nucleotide_pushed(Nucleotide::synthetic(
-                base,
-                self.np_segment,
-                flag::N_NUC,
-            ));
-            current = next;
+            builder.push_nucleotide(Nucleotide::synthetic(base, self.np_segment, flag::N_NUC));
         }
+        let current = builder.seal();
 
         // 3. Build the region and append it. Codon rail recomputes
         //    against the updated pool. Frame phase chains from
@@ -299,7 +324,7 @@ impl Pass for GenerateNPPass {
         // expansion.
         vec![
             self.length_address().to_string(),
-            format!("{}[0..n]", self.bases_prefix()),
+            address::np_bases_pattern(self.np_segment).expect("GenerateNPPass with non-NP segment"),
         ]
     }
 

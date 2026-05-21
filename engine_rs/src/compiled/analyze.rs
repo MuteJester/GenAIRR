@@ -209,12 +209,10 @@ fn validate_productive_frame_preconditions(
 ) {
     let contract_name = "productive_junction_frame";
     let Some(refdata) = refdata else {
-        errors.push(plan_scoped_error(
-            super::error::contract_precondition(
-                contract_name,
-                "productive frame validation requires reference data",
-            ),
-        ));
+        errors.push(plan_scoped_error(super::error::contract_precondition(
+            contract_name,
+            "productive frame validation requires reference data",
+        )));
         return;
     };
 

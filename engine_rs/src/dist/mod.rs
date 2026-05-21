@@ -84,5 +84,4 @@ pub use integer::UniformInt;
 pub use uniform::UniformBase;
 
 #[cfg(test)]
-#[path = "../dist_tests.rs"]
 mod tests;

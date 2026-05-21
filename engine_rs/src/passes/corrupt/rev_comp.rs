@@ -18,6 +18,7 @@
 //! - `corrupt.rev_comp.applied` — `Bool(true)` if the read was
 //!   marked antisense, `Bool(false)` otherwise.
 
+use crate::address;
 use crate::ir::Simulation;
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
 use crate::trace::ChoiceValue;
@@ -46,14 +47,16 @@ impl RevCompPass {
 
 impl Pass for RevCompPass {
     fn name(&self) -> &str {
-        "corrupt.rev_comp"
+        address::CORRUPT_REV_COMP
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         let coin = ctx.rng.next_f64();
         let applied = coin < self.apply_prob;
-        ctx.trace
-            .record("corrupt.rev_comp.applied", ChoiceValue::Bool(applied));
+        ctx.trace.record(
+            address::CORRUPT_REV_COMP_APPLIED,
+            ChoiceValue::Bool(applied),
+        );
         // No IR mutation — the AIRR record builder reads the trace
         // flag and post-flips the sequence at projection time.
         sim.clone()
@@ -68,7 +71,7 @@ impl Pass for RevCompPass {
     }
 
     fn declared_choices(&self) -> Vec<String> {
-        vec!["corrupt.rev_comp.applied".to_string()]
+        vec![address::CORRUPT_REV_COMP_APPLIED.to_string()]
     }
 
     fn effects(&self) -> Vec<PassEffect> {
@@ -131,12 +134,7 @@ mod tests {
         let outcome = PassRuntime::execute(&plan, initial.clone(), 0);
         let final_sim = outcome.final_simulation();
         let initial_bases: Vec<u8> = initial.pool.as_slice().iter().map(|n| n.base).collect();
-        let final_bases: Vec<u8> = final_sim
-            .pool
-            .as_slice()
-            .iter()
-            .map(|n| n.base)
-            .collect();
+        let final_bases: Vec<u8> = final_sim.pool.as_slice().iter().map(|n| n.base).collect();
         assert_eq!(initial_bases, final_bases);
     }
 

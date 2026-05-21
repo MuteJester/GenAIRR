@@ -1,5 +1,6 @@
 //! `UniformMutationPass` — simplest SHM model.
 
+use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
@@ -64,7 +65,7 @@ impl UniformMutationPass {
         if strict && count_raw < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
-                "mutate.uniform.count",
+                address::MUTATE_UNIFORM_COUNT,
                 count_raw,
                 "negative_count",
             ));
@@ -72,7 +73,7 @@ impl UniformMutationPass {
         if strict && count_raw > u32::MAX as i64 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
-                "mutate.uniform.count",
+                address::MUTATE_UNIFORM_COUNT,
                 count_raw,
                 "count_exceeds_u32",
             ));
@@ -89,7 +90,7 @@ impl UniformMutationPass {
         );
         let count = count_raw as u32;
         ctx.trace
-            .record("mutate.uniform.count", ChoiceValue::Int(count_raw));
+            .record(address::MUTATE_UNIFORM_COUNT, ChoiceValue::Int(count_raw));
 
         // No-op if the pool is empty — nothing to mutate.
         let pool_len = sim.pool.len() as u32;
@@ -106,10 +107,10 @@ impl UniformMutationPass {
         for i in 0..count {
             let site = ctx.rng.range_u32(pool_len);
             let site_handle = NucHandle::new(site);
-            let base_address = format!("mutate.uniform.base[{}]", i);
+            let base_address = address::mutate_uniform_base(i);
 
             ctx.trace.record(
-                format!("mutate.uniform.site[{}]", i),
+                address::mutate_uniform_site(i),
                 ChoiceValue::Int(site as i64),
             );
             let new_base = sample_targeted_base(
@@ -131,7 +132,7 @@ impl UniformMutationPass {
 
 impl Pass for UniformMutationPass {
     fn name(&self) -> &str {
-        "mutate.uniform"
+        address::MUTATE_UNIFORM
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -151,9 +152,9 @@ impl Pass for UniformMutationPass {
         // Count is fixed-address; site and base are variable per
         // mutation. Use the [0..n] expansion convention from D3.
         vec![
-            "mutate.uniform.count".to_string(),
-            "mutate.uniform.site[0..n]".to_string(),
-            "mutate.uniform.base[0..n]".to_string(),
+            address::MUTATE_UNIFORM_COUNT.to_string(),
+            address::MUTATE_UNIFORM_SITE_PATTERN.to_string(),
+            address::MUTATE_UNIFORM_BASE_PATTERN.to_string(),
         ]
     }
 

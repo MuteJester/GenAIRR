@@ -177,8 +177,7 @@ impl PyPassPlan {
                             )));
                         }
                     }
-                    let allele_ids: Vec<AlleleId> =
-                        ids.into_iter().map(AlleleId::new).collect();
+                    let allele_ids: Vec<AlleleId> = ids.into_iter().map(AlleleId::new).collect();
                     Box::new(AllelePoolDist::restricted_uniform(pool, allele_ids))
                 }
             }
@@ -400,9 +399,10 @@ impl PyPassPlan {
                 "count_pairs must contain at least one (count, weight) entry",
             ));
         }
-        self.inner_mut()?.push(Box::new(NCorruptionPass::new(
-            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
-        )));
+        self.inner_mut()?
+            .push(Box::new(NCorruptionPass::new(Box::new(
+                EmpiricalLengthDist::from_pairs(count_pairs),
+            ))));
         Ok(())
     }
 

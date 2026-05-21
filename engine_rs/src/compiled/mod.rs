@@ -6,6 +6,7 @@
 //! reference data, active contracts, execution policy, and compile-time
 //! analysis report needed to run safely and introspectably.
 
+use crate::address;
 use crate::assignment::TrimEnd;
 use crate::contract::ContractSet;
 use crate::feasibility::FeasibilityContext;
@@ -14,7 +15,7 @@ use crate::live_call::ReferenceMatchIndex;
 use crate::pass::{Outcome, PassError, PassPlan};
 use crate::refdata::RefDataConfig;
 
-// Test-only re-imports — the `compiled_tests.rs` submodule pulls these
+// Test-only re-imports — the `compiled::tests` submodules pull these
 // names through `use super::*`. Gated under `cfg(test)` so non-test
 // builds don't carry unused imports.
 #[cfg(test)]
@@ -374,34 +375,16 @@ use analyze::analyze_plan;
 mod feasibility_builder;
 
 fn sample_allele_address(segment: Segment) -> &'static str {
-    match segment {
-        Segment::V => "sample_allele.v",
-        Segment::D => "sample_allele.d",
-        Segment::J => "sample_allele.j",
-        Segment::Np1 | Segment::Np2 => "sample_allele.<invalid>",
-    }
+    address::sample_allele(segment).unwrap_or(address::SAMPLE_ALLELE_INVALID)
 }
 
 fn trim_address(segment: Segment, end: TrimEnd) -> &'static str {
-    match (segment, end) {
-        (Segment::V, TrimEnd::Five) => "trim.v_5",
-        (Segment::V, TrimEnd::Three) => "trim.v_3",
-        (Segment::D, TrimEnd::Five) => "trim.d_5",
-        (Segment::D, TrimEnd::Three) => "trim.d_3",
-        (Segment::J, TrimEnd::Five) => "trim.j_5",
-        (Segment::J, TrimEnd::Three) => "trim.j_3",
-        _ => "trim.<invalid>",
-    }
+    address::trim(segment, end).unwrap_or(address::TRIM_INVALID)
 }
 
 fn np_length_address(segment: Segment) -> &'static str {
-    match segment {
-        Segment::Np1 => "np.np1.length",
-        Segment::Np2 => "np.np2.length",
-        _ => "np.<invalid>.length",
-    }
+    address::np_length(segment).unwrap_or(address::NP_INVALID_LENGTH)
 }
 
 #[cfg(test)]
-#[path = "../compiled_tests.rs"]
 mod tests;

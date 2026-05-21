@@ -56,7 +56,7 @@ impl<'a> TargetedBaseChoice<'a> {
         (self.value_transform)(base)
     }
 
-    fn context(&self) -> ChoiceContext {
+    fn context(&self) -> ChoiceContext<'static> {
         ChoiceContext::targeted_base_substitution(self.index, self.count, self.site)
     }
 }
@@ -111,15 +111,20 @@ pub(crate) fn sample_targeted_base(
 /// One finite structural candidate plus the IR that would result if
 /// it were committed.
 #[derive(Clone)]
-pub(crate) struct PostEventCandidate<T> {
+pub(crate) struct PostEventCandidate<'a, T> {
     pub(crate) value: T,
     pub(crate) weight: f64,
     pub(crate) post_sim: Simulation,
-    pub(crate) context: ChoiceContext,
+    pub(crate) context: ChoiceContext<'a>,
 }
 
-impl<T> PostEventCandidate<T> {
-    pub(crate) fn new(value: T, weight: f64, post_sim: Simulation, context: ChoiceContext) -> Self {
+impl<'a, T> PostEventCandidate<'a, T> {
+    pub(crate) fn new(
+        value: T,
+        weight: f64,
+        post_sim: Simulation,
+        context: ChoiceContext<'a>,
+    ) -> Self {
         Self {
             value,
             weight,
@@ -135,13 +140,13 @@ impl<T> PostEventCandidate<T> {
 /// permissive caller should fall back to legacy unconstrained sampling.
 /// Strict callers receive the same structured `PassError` shape used by
 /// substitution sampling.
-pub(crate) fn sample_contract_verified_event<T: Clone>(
+pub(crate) fn sample_contract_verified_event<'a, T: Clone>(
     pre_sim: &Simulation,
     ctx: &mut PassContext,
     pass_name: &str,
     address: &str,
     strict: bool,
-    candidates: Result<Vec<PostEventCandidate<T>>, FilteredSampleError>,
+    candidates: Result<Vec<PostEventCandidate<'a, T>>, FilteredSampleError>,
 ) -> Result<Option<T>, PassError> {
     let Some(contracts) = ctx.contracts else {
         return Ok(None);
@@ -155,7 +160,7 @@ pub(crate) fn sample_contract_verified_event<T: Clone>(
         Err(_) => return Ok(None),
     };
 
-    let mut filtered: Vec<PostEventCandidate<T>> = candidates
+    let mut filtered: Vec<PostEventCandidate<'a, T>> = candidates
         .into_iter()
         .filter(|candidate| {
             contracts
