@@ -142,18 +142,25 @@ fn apply_live_call_updates(
                 // OVERLAPS_OTHER_SEGMENT on the upstream hypothesis.
                 //
                 // - Assembling D → refresh V (V right overlaps into D).
-                // - Assembling J → refresh D (D right overlaps into J).
+                // - Assembling J → refresh D (D right overlaps into J in
+                //   VDJ chains) AND refresh V (V right overlaps into J
+                //   in VJ chains, where V sits directly upstream of J
+                //   separated only by NP1).
                 //
-                // No symmetric upstream hook for V right-into-J (we
-                // never assemble J without D in VDJ chains, and the
-                // walker would have to traverse D's region first;
-                // the targeted hops stay conservative).
+                // Phase 24: the V-on-J refresh closes a bug where
+                // VJ-chain V→J overlap never fired because the
+                // previous dispatcher only refreshed D on J assembly.
+                // In VDJ chains the V refresh is a near-no-op since V
+                // was already narrowed past D, and the Phase 20
+                // conservative-extension walker halts immediately when
+                // the call set is already fully resolved.
                 match segment {
                     Segment::D => {
                         sim = with_assembled_segment_live_call(&sim, reference_index, Segment::V);
                     }
                     Segment::J => {
                         sim = with_assembled_segment_live_call(&sim, reference_index, Segment::D);
+                        sim = with_assembled_segment_live_call(&sim, reference_index, Segment::V);
                     }
                     _ => {}
                 }

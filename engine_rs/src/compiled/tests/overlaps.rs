@@ -11,6 +11,13 @@ use super::*;
 //   downstream segment's seq_start,
 // - the upstream hypothesis carrying the OVERLAPS_OTHER_SEGMENT
 //   flag.
+//
+// Phase 20: extension is *conservative*. Even when D's leading
+// bases continue to match the upstream allele's continuation, the
+// walker only consumes bytes that strictly narrow the upstream
+// call's tie set. Once the call has resolved to a singleton, the
+// overlap walk halts — even mid-D — and seq_end reflects just the
+// bytes that contributed evidence.
 // ──────────────────────────────────────────────────────────────
 
 /// Build a VDJ refdata where V*01's distinguishing 3' suffix
@@ -105,15 +112,14 @@ fn v_right_overlaps_d_when_d_starts_with_v_suffix() {
     //   V right-extension walker enters with NP1 [9, 9), empty,
     //   loops `9..pool_len`. seq_pos = 9 is D's first base 'T'.
     //   compatible_alleles_at(ref_pos=9, base=T) → V*01[9]='T' ✓,
-    //   V*02[9]='A' ✗ → V*02 drops, candidates = {V*01}.
-    //   Continue 10, 11 (V*01 ref pos 10, 11 = T, T ✓).
-    //   At seq_pos=12 (D's 4th base 'A'), V*01 ref pos 12 = out of
-    //   range → halt.
+    //   V*02[9]='A' ✗ → tie set {V01,V02}→{V01}. Extends.
+    //   At seq_pos=10 the tie set is already {V01}; conservative
+    //   declines. Walker halts.
     //
-    // Final V hypothesis: candidates={V*01}, seq_end=12,
-    // ref_end=12, BOUNDARY_ELASTIC + OVERLAPS_OTHER_SEGMENT set.
-    // D's region.start = 9. V hypothesis seq_end (12) > D start
-    // (9) → 3 bases of overlap.
+    // Final V hypothesis: candidates={V*01}, seq_end=10,
+    // ref_end=10, BOUNDARY_ELASTIC + OVERLAPS_OTHER_SEGMENT set.
+    // D's region.start = 9. V hypothesis seq_end (10) > D start
+    // (9) → 1 base of overlap.
     let (cfg, v01, _v02, d01) = v_d_overlap_refdata();
     let plan = v_overlap_plan(&cfg, v01, d01, 3, 0);
 
@@ -156,8 +162,8 @@ fn v_right_overlaps_d_when_d_starts_with_v_suffix() {
         "V hypothesis must carry OVERLAPS_OTHER_SEGMENT after \
              extending past NP1 into D's region"
     );
-    assert_eq!(v_hypothesis.seq_end, 12);
-    assert_eq!(v_hypothesis.ref_end, 12);
+    assert_eq!(v_hypothesis.seq_end, 10);
+    assert_eq!(v_hypothesis.ref_end, 10);
 
     // D's hypothesis is computed independently from D's region;
     // its seq_start should still match D.region.start = 9.
@@ -246,11 +252,15 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
     // walker reaching backward into V's region.
     //
     // D*01 has prefix "GGG" — that's V*01's last 3 bases.
+    // D*02 has prefix "TTT" (mismatches V's tail).
     // Trim D_5 by 3 → D's structural region drops the GGG prefix
     // and starts at ref pos 3. After AssembleSegment(D), D's
-    // left-extension walks backward from D.start through the
-    // empty NP1 into V's region. V's last 3 bases are GGG, which
-    // happen to match D*01's trimmed prefix → overlap.
+    // post-assemble live call is {D*01, D*02} (both match the
+    // shared ACGTAC tail). D's left-extension walks backward
+    // through the empty NP1 into V's region. V's last base 'G'
+    // matches D*01[2]='G' but not D*02[2]='T', narrowing the tie
+    // set to {D*01} — and the walker halts at that single byte
+    // under conservative extension (ref_start = 2, not 0).
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
@@ -343,8 +353,10 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         "D's left-extension overlap into V must set OVERLAPS_OTHER_SEGMENT"
     );
 
-    // D hypothesis seq_start should now be 6 (V's last 3 bases
-    // started at pool position 6); ref_start should be 0.
+    // Under conservative extension, D hypothesis seq_start moves
+    // from the structural D start (9) back by exactly the single
+    // narrowing byte → seq_start = 8 (V's last 'G' position).
+    // ref_start advances from 3 to 2, not all the way to 0.
     let v_region_end = v_call.hypotheses[0].seq_end;
     assert!(
         d_hypothesis.seq_start < v_region_end,
@@ -352,33 +364,56 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         d_hypothesis.seq_start,
         v_region_end,
     );
-    assert_eq!(d_hypothesis.ref_start, 0);
+    assert_eq!(d_hypothesis.ref_start, 2);
 }
 
 #[test]
 fn overlap_walker_halts_at_pool_end() {
-    // Sanity: even if D's bases continue to match V's allele's
-    // continuation, the walker must halt at pool_len (no
-    // out-of-bounds reads). Construct a fixture where V's allele
-    // continuation matches arbitrarily many bases — by giving V
-    // an allele whose tail matches D's bases — and verify the
-    // walker stops cleanly.
+    // Conservative-extension counterpart of the old "pool_len
+    // upper-bound" safety check. Under the conservative policy
+    // (Phase 20), the walker halts as soon as the call set
+    // collapses to a singleton — long before it could possibly
+    // run off the end of the pool. This test exercises that
+    // halt-on-resolution behaviour:
+    //
+    // - Two V alleles with a shared prefix and differing on a
+    //   single byte at ref pos 5 (V*01='T', V*02='A').
+    // - V_3 trim of 7 → V's structural region is just the first
+    //   5 bases (the shared prefix). Post-assemble tie set =
+    //   {V*01, V*02}.
+    // - D is long all-'T' bases. The first byte of D narrows the
+    //   tie set to {V*01}; the subsequent matching 'T' bytes in
+    //   D no longer narrow anything, so the walker stops mid-D.
+    //
+    // seq_end must therefore reflect "one byte into D", not the
+    // entire D length — and certainly never beyond pool_len.
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
-        // V's allele runs WAY past V's region: 100 bases long.
-        seq: vec![b'A'; 100],
+        // V*01: AAAAA T AAAAA... (12 bases). First 5 'A's shared,
+        // pos 5 = 'T'.
+        seq: {
+            let mut s = vec![b'A'; 12];
+            s[5] = b'T';
+            s
+        },
+        segment: Segment::V,
+        anchor: None,
+    });
+    let _ = cfg.v_pool.push(Allele {
+        name: "V*02".into(),
+        gene: "V".into(),
+        // V*02: AAAAA A AAAAA... (12 bases of 'A'). Diverges from
+        // V*01 only at pos 5.
+        seq: vec![b'A'; 12],
         segment: Segment::V,
         anchor: None,
     });
     let _ = cfg.d_pool.push(Allele {
         name: "D*01".into(),
-        // D is also all 'A' bases, so V's continuation matches
-        // arbitrarily into D — extension walker must halt at
-        // pool_len, not run forever.
         gene: "D".into(),
-        seq: vec![b'A'; 5],
+        seq: vec![b'T'; 5],
         segment: Segment::D,
         anchor: None,
     });
@@ -390,11 +425,9 @@ fn overlap_walker_halts_at_pool_end() {
         anchor: None,
     });
     let d01 = AlleleId::new(0);
-    // Trim V_3 by 95 so V's structural region is just the first
-    // 5 bases. V right-extension can extend up to 95 ref positions
-    // — but D has only 5 bases of pool. Walker should halt at
-    // pool_len after extending into all 5 D bases.
-    let plan = v_overlap_plan(&cfg, v01, d01, 95, 0);
+    // Trim V_3 by 7 so V's structural region is just the first
+    // 5 'A's (shared between both alleles → tie set has 2).
+    let plan = v_overlap_plan(&cfg, v01, d01, 7, 0);
 
     let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
@@ -416,12 +449,16 @@ fn overlap_walker_halts_at_pool_end() {
                 .contains(crate::live_call::HypothesisFlags::BOUNDARY_ELASTIC)
         })
         .expect("V hypothesis should be elastic");
-    // Pool layout: V_region [0, 5) (after V_3 trim of 95), NP1
-    // [5, 5), D_region [5, 10). pool_len = 10.
+    // Pool layout: V_region [0, 5), NP1 [5, 5), D_region [5, 10).
+    // pool_len = 10. The first D byte (pool pos 5 = 'T') narrows
+    // {V01,V02}→{V01} (V*01[5]='T', V*02[5]='A'). seq_end = 6.
+    // The remaining D bytes can't narrow {V01} further; walker
+    // halts safely without running to pool_len.
     assert_eq!(
-        v_hypothesis.seq_end, 10,
-        "walker should extend exactly to pool_len = 10, not beyond"
+        v_hypothesis.seq_end, 6,
+        "conservative walker halts at the first byte that fully resolves the call"
     );
+    assert!(v_hypothesis.seq_end < 10, "seq_end stays within pool_len");
     assert!(
         v_hypothesis
             .flags

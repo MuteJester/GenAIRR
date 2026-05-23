@@ -1,5 +1,57 @@
 use super::super::{HypothesisFlags, SegmentRefIndex};
 use crate::ir::{NucHandle, Region, Segment, Simulation};
+use crate::refdata::AlleleId;
+
+/// Phase 20: conservative narrowing check for the boundary extension
+/// walkers. The walkers extend a V/D/J live-call hypothesis one byte
+/// at a time into an adjacent NP region (or across a structural
+/// boundary into a neighbor segment). The pre-Phase-20 policy was
+/// *greedy*: extend whenever the new byte matches at least one allele
+/// in the segment's pool. The Phase 20 policy is *conservative*:
+/// extend only when the byte strictly narrows the current max-score
+/// tie set.
+///
+/// "Narrowing" is precisely:
+/// - among alleles currently tied at `pre_max`,
+/// - at least one is in `matched_ids` (so post_max = pre_max + 1
+///   exists),
+/// - and at least one is NOT in `matched_ids` (so the post tie set
+///   excludes them, strictly shrinking).
+///
+/// Cases ruled out:
+/// - All current max-score alleles match → tie set size unchanged
+///   after extension (everyone moves up by one). Don't extend.
+/// - No current max-score allele matches → would *widen* the tie set
+///   to include former-non-max alleles that bumped up to pre_max+
+///   (some byte they happened to match before). Don't extend.
+/// - Score floor (pre_max == 0) → nothing to narrow against (no
+///   informative bytes have landed yet). Don't extend; the structural
+///   walk is what populates initial scores.
+///
+/// Returns `true` iff the extension is allowed to proceed.
+fn extension_narrows_tie_set(scores: &[u32], matched_ids: &super::super::AlleleBitSet) -> bool {
+    let pre_max = scores.iter().copied().max().unwrap_or(0);
+    if pre_max == 0 {
+        return false;
+    }
+    let mut any_matched = false;
+    let mut any_missed = false;
+    for (i, &score) in scores.iter().enumerate() {
+        if score != pre_max {
+            continue;
+        }
+        let id = AlleleId::new(i as u32);
+        if matched_ids.contains(id) {
+            any_matched = true;
+        } else {
+            any_missed = true;
+        }
+        if any_matched && any_missed {
+            return true;
+        }
+    }
+    false
+}
 
 pub(crate) struct ExtensionWalkState<'a> {
     pub scores: &'a mut [u32],
@@ -62,6 +114,14 @@ pub(crate) fn walk_left_extension(
             break;
         };
         if evidence.allele_ids.is_empty() {
+            break;
+        }
+        // Phase 20: only extend when this byte strictly narrows the
+        // current max-score tie set. If every current candidate
+        // matches the byte (or none of them do), the extension would
+        // not resolve any ambiguity — leave the structural boundary
+        // alone and stop walking.
+        if !extension_narrows_tie_set(state.scores, &evidence.allele_ids) {
             break;
         }
         evidence.allele_ids.for_each_id(|id| {
@@ -142,6 +202,10 @@ pub(crate) fn walk_right_extension(
             break;
         };
         if evidence.allele_ids.is_empty() {
+            break;
+        }
+        // Phase 20: see commentary in `walk_left_extension`.
+        if !extension_narrows_tie_set(state.scores, &evidence.allele_ids) {
             break;
         }
         evidence.allele_ids.for_each_id(|id| {

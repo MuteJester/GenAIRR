@@ -5,8 +5,12 @@ use super::*;
 //
 // The acceptance criterion from the design doc: a trimmed V suffix
 // can be recreated by NP1 bases, and when that happens the live
-// `v_call` should shrink to the allele(s) that the recreated suffix
-// exactly extends.
+// `v_call` should narrow to the allele(s) that the recreated bytes
+// distinguish. Under the conservative extension policy (Phase 20),
+// extension proceeds one byte at a time only while the byte strictly
+// narrows the current max-score tie set. Once the call set has
+// collapsed to a single allele, further matching bytes do NOT extend
+// the boundary — there is no ambiguity left to resolve.
 // ──────────────────────────────────────────────────────────────
 
 /// Build a VDJ refdata holding two V alleles that share a 9-base
@@ -85,8 +89,12 @@ fn v_call_shrinks_when_np1_recreates_trimmed_suffix() {
     // post-assemble v_call = {V*01, V*02}.
     // Then GenerateNP(NP1, length=3, 'T') puts TTT right after V.
     // V right-extension into NP1 walks T → matches V*01 ref pos 9
-    // (V*01[9]='T'); V*02[9]='A' → V*02 drops out. After 3 NP1
-    // bases the call has shrunk back to {V*01}.
+    // (V*01[9]='T'); V*02[9]='A' → V*02 drops out, narrowing
+    // {V01,V02}→{V01}. Under conservative extension this is the
+    // last narrowing step: position 10 has only V*01 in the tie
+    // set, so the next byte cannot narrow further and the walker
+    // stops. ref_end therefore reaches 10 (not 12), and seq_end
+    // advances by exactly 1 NP1 base.
     let (cfg, v01, _v02) = v_extension_refdata();
 
     let plan = v_extension_plan(&cfg, v01, 3, 3, b'T');
@@ -136,16 +144,21 @@ fn v_call_shrinks_when_np1_recreates_trimmed_suffix() {
                 .contains(crate::live_call::HypothesisFlags::BOUNDARY_ELASTIC)
         })
         .expect("at least one hypothesis should be flagged BOUNDARY_ELASTIC");
-    // ref_end advanced past the (post-trim) V region's ref_end of 9
-    // by exactly 3 (TTT extension covers ref positions 9..12).
+    // Under conservative extension, ref_end advances past the
+    // (post-trim) V region's ref_end of 9 by exactly 1: the first
+    // NP1 byte 'T' narrows {V01,V02}→{V01}; the next byte cannot
+    // narrow further (tie set is now {V01} only) so the walker
+    // stops. ref_end therefore reaches 10, not the allele end 12.
     assert_eq!(
-        elastic_hypothesis.ref_end, 12,
-        "ref_end should reach allele length 12 after extending into NP1"
+        elastic_hypothesis.ref_end, 10,
+        "conservative extension stops once the call set narrows to a single allele"
     );
+    // seq_end advanced from V end (9) by 1 NP1 byte = 10. The
+    // remaining 2 NP1 bytes (seq positions 10, 11) stay outside
+    // the V hypothesis.
     assert_eq!(
-        elastic_hypothesis.seq_end,
-        outcome.final_simulation().pool.len() as u32,
-        "seq_end should reach the end of the pool (V region + 3 NP1 bases)"
+        elastic_hypothesis.seq_end, 10,
+        "seq_end advances by the single NP1 byte that narrowed the call"
     );
 }
 
@@ -188,11 +201,11 @@ fn v_call_stays_widened_when_np1_does_not_match_any_allele() {
 fn v_call_partially_extends_when_np1_matches_only_a_prefix() {
     // V*01 = AAACCCGGG TTT, V*02 = AAACCCGGG AAA. Trim V_3 by 3 →
     // assembled V is AAACCCGGG. NP1 emits 'T' for length 5 → bases
-    // T-T-T-?-?. The first 3 NP1 bases match V*01's suffix exactly
-    // (positions 9, 10, 11 are all 'T'). Position 12 doesn't exist
-    // in V*01 (ref length is 12) so the extension halts at
-    // ref_pos=12 / seq_end = (V end) + 3 = 12. The remaining NP1
-    // bases stay outside the V hypothesis.
+    // T-T-T-?-?. Under conservative extension, the first NP1 byte
+    // narrows {V01,V02}→{V01}. The second byte cannot narrow the
+    // tie set further (the set is already {V01}), so the walker
+    // stops at ref_pos=10 / seq_end=10. The remaining 4 NP1 bytes
+    // stay outside the V hypothesis.
     let (cfg, v01, _v02) = v_extension_refdata();
 
     let plan = v_extension_plan(&cfg, v01, 3, 5, b'T');
@@ -219,13 +232,13 @@ fn v_call_partially_extends_when_np1_matches_only_a_prefix() {
         })
         .expect("hypothesis should be flagged BOUNDARY_ELASTIC");
     assert_eq!(
-        elastic_hypothesis.ref_end, 12,
-        "extension should stop when ref position reaches V*01 allele length 12"
+        elastic_hypothesis.ref_end, 10,
+        "conservative extension stops at the first byte where the call set is fully resolved"
     );
-    // seq_end is V_region.end (9) + 3 extension bases = 12. The
-    // remaining 2 NP1 bases (seq positions 12 and 13) are outside
-    // the V hypothesis.
-    assert_eq!(elastic_hypothesis.seq_end, 12);
+    // seq_end advances from V_region.end (9) by the single NP1
+    // byte that narrowed the call = 10. The remaining 4 NP1 bytes
+    // (seq positions 10..14) stay outside the V hypothesis.
+    assert_eq!(elastic_hypothesis.seq_end, 10);
 }
 
 #[test]

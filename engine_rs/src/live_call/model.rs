@@ -291,17 +291,31 @@ impl LiveCallState {
     /// bump itself.
     pub fn with_segment_call_observed(&self, call: SegmentLiveCall) -> Self {
         let mut next = self.clone();
+        next.stage_segment_call(call);
+        next
+    }
+
+    /// Phase 23: in-place mutator for the V/D/J staging loop in
+    /// `SimulationBuilder::seal_with_committed_live_calls`. Stashes
+    /// the segment call directly without cloning the entire state;
+    /// the loop now takes ownership of one `LiveCallState` and
+    /// mutates it across all three segments instead of cloning
+    /// before each segment.
+    ///
+    /// Semantics match [`Self::with_segment_call_observed`] exactly:
+    /// the version is NOT bumped (the consumer hook bumps it when
+    /// absorbing the staged call via the fast path).
+    pub fn stage_segment_call(&mut self, call: SegmentLiveCall) {
         match call.segment {
-            Segment::V => next.v = Some(call),
-            Segment::D => next.d = Some(call),
-            Segment::J => next.j = Some(call),
+            Segment::V => self.v = Some(call),
+            Segment::D => self.d = Some(call),
+            Segment::J => self.j = Some(call),
             Segment::Np1 | Segment::Np2 => unreachable!("SegmentLiveCall rejects NP segments"),
         }
         // Intentionally does NOT bump `version`. The post-pass
         // `with_assembled_segment_live_call` consumer detects the
         // observer-staged call via `evidence_version == version + 1`
         // and increments the version itself.
-        next
     }
 
     pub fn with_dirty_window(&self, window: DirtyWindow) -> Self {

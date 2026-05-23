@@ -489,17 +489,6 @@ impl<'idx> SimulationBuilder<'idx> {
         self.dirty_signal_observer = Some(DirtySignalObserver::new());
     }
 
-    /// Drain the attached dirty-signal observer, returning the
-    /// captured windows. Returns `None` when no observer is attached
-    /// — used by the indel pass which seals through the plain
-    /// `builder.seal()` path (no walker observers) and needs to
-    /// commit dirty windows onto the simulation manually.
-    pub(crate) fn take_dirty_signal_observer(
-        &mut self,
-    ) -> Option<Vec<crate::live_call::DirtyWindow>> {
-        self.dirty_signal_observer.take().map(|obs| obs.seal())
-    }
-
     /// Phase 4: change the base byte at `handle` in place and notify
     /// every attached observer of an `on_base_changed` event.
     ///
@@ -655,6 +644,45 @@ impl<'idx> SimulationBuilder<'idx> {
         }
     }
 
+    /// Phase 22: standard observer-attach pattern for the mutation
+    /// passes (S5F, uniform, PCR, quality, ncorrupt, contaminant,
+    /// indel, end-loss). Always attaches a codon-rail observer for
+    /// every existing region. When a `ReferenceMatchIndex` is
+    /// available, additionally attaches the dirty-signal observer
+    /// (consumed by `apply_live_call_updates` in the compiled path)
+    /// and a walker observer for every V/D/J region with a matching
+    /// segment index.
+    ///
+    /// Without a `ReferenceMatchIndex`, only the codon-rail observer
+    /// attaches. Test harnesses like `PassRuntime::execute_with_refdata`
+    /// take this branch — they don't run `apply_live_call_updates`,
+    /// so dirty-signal + walker observers would be dead state.
+    /// Phase 22 collapsed the previous "attach dirty signal observer
+    /// for symmetry" branch in `indel.rs` / `end_loss.rs` because
+    /// nothing consumed it.
+    pub(crate) fn attach_standard_mutation_observers(
+        &mut self,
+        reference_index: Option<&'idx crate::live_call::ReferenceMatchIndex>,
+    ) {
+        self.attach_codon_rail_observers_for_all_regions();
+        let Some(ref_index) = reference_index else {
+            return;
+        };
+        self.attach_dirty_signal_observer();
+        // Clone the regions snapshot because the subsequent attach
+        // method borrows `&self.simulation` and we then take
+        // `&mut self` to install observers.
+        let regions: Vec<super::Region> =
+            self.simulation.sequence.regions.iter().cloned().collect();
+        for region in regions
+            .iter()
+            .filter(|r| ref_index.get(r.segment).is_some())
+        {
+            let segment_index = ref_index.get(region.segment).unwrap();
+            self.attach_walker_observer_for_region(segment_index, region);
+        }
+    }
+
     /// Phase 10: seal **both** codon-rail observers and walker
     /// observers, write back codon rails to their regions, finalize
     /// each walker observer into a `SegmentLiveCall`, and stage the
@@ -712,6 +740,12 @@ impl<'idx> SimulationBuilder<'idx> {
             }
         }
 
+        // Phase 23: take ownership of the LiveCallState once,
+        // mutate in place across V→D→J staging + dirty-window stash,
+        // and reattach via a single `with_live_calls` at the end.
+        // This eliminates the 7-clone churn the previous
+        // clone-per-segment pattern produced.
+        //
         // Phase 15: stage walker calls ONLY for segments whose region
         // overlaps a dirty window. Clean segments inherit their prior
         // live call unchanged, so the consumer
@@ -723,31 +757,29 @@ impl<'idx> SimulationBuilder<'idx> {
         // When no observer was attached (test paths feeding an empty
         // `dirty_windows`), every segment falls through to staging so
         // the existing version-chain behaviour is preserved.
-        let has_dirty_observer_signal = !dirty_windows.is_empty();
-        let base_version = current
+        let mut state: crate::live_call::LiveCallState = current
             .live_calls
             .as_ref()
-            .map(|s| s.version)
-            .unwrap_or(0);
+            .map(|s| (**s).clone())
+            .unwrap_or_default();
+        let base_version = state.version;
+        let has_dirty_observer_signal = !dirty_windows.is_empty();
         let order = [
             crate::ir::Segment::V,
             crate::ir::Segment::D,
             crate::ir::Segment::J,
         ];
-        let mut walker_sealed = walker_sealed; // mutable bindings can shadow
+        let mut walker_sealed = walker_sealed;
         let mut staged_count: u64 = 0;
         for target_segment in order.iter() {
             let position = match walker_sealed.iter().position(|s| s.segment() == *target_segment) {
                 Some(p) => p,
-                None => continue, // no walker observer for this segment
+                None => continue,
             };
-            // Skip clean segments when we have dirty-observer signal.
-            // Without signal (legacy test path), stage everything to
-            // keep the pre-Phase-15 behaviour.
             if has_dirty_observer_signal
                 && !segment_region_overlaps_dirty(&current, *target_segment, &dirty_windows)
             {
-                walker_sealed.swap_remove(position); // drop, do not stage
+                walker_sealed.swap_remove(position);
                 continue;
             }
             let sealed = walker_sealed.swap_remove(position);
@@ -759,30 +791,13 @@ impl<'idx> SimulationBuilder<'idx> {
             staged_count = staged_count.saturating_add(1);
             let live_call = sealed.into_live_call(&current, segment_index, evidence_version);
 
-            let base_state = current
-                .live_calls
-                .as_ref()
-                .map(|s| (**s).clone())
-                .unwrap_or_default();
-            let next_state = base_state.with_segment_call_observed(live_call);
-            current = current.with_live_calls(next_state);
+            state.stage_segment_call(live_call);
         }
 
-        // Stash dirty windows on the live-calls sidecar so the
-        // post-pass consumer can read them. `with_live_calls` swaps
-        // the state arc without bumping the version, preserving the
-        // version chain established by the staging loop above.
-        if !dirty_windows.is_empty() {
-            let mut next_state = current
-                .live_calls
-                .as_ref()
-                .map(|s| (**s).clone())
-                .unwrap_or_default();
-            next_state.dirty_windows.extend(dirty_windows);
-            current = current.with_live_calls(next_state);
-        }
+        // Stash dirty windows on the same state instance.
+        state.dirty_windows.extend(dirty_windows);
 
-        current
+        current.with_live_calls(state)
     }
 
     /// Convenience: seal every attached codon-rail observer and

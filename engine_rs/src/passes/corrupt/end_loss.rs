@@ -85,25 +85,7 @@ impl Pass for EndLossPass {
         // refresh. Dirty signals from each delete flow into
         // `LiveCallState.dirty_windows` for the consumer hook.
         let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_codon_rail_observers_for_all_regions();
-        if let Some(ref_index) = ctx.reference_index {
-            builder.attach_dirty_signal_observer();
-            for region in builder
-                .peek()
-                .sequence
-                .regions
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .iter()
-                .filter(|r| ref_index.get(r.segment).is_some())
-            {
-                let segment_index = ref_index.get(region.segment).unwrap();
-                builder.attach_walker_observer_for_region(segment_index, region);
-            }
-        } else {
-            builder.attach_dirty_signal_observer();
-        }
+        builder.attach_standard_mutation_observers(ctx.reference_index);
 
         match self.end {
             LossEnd::Five => {
@@ -128,22 +110,12 @@ impl Pass for EndLossPass {
         if let Some(ref_index) = ctx.reference_index {
             builder.seal_with_committed_live_calls(ref_index)
         } else {
-            // No reference index → no walker observers attached.
-            // Codon rails still get committed via the observer
-            // route; dirty windows are stashed manually so any
-            // downstream consumer can read them.
-            let dirty_windows = builder.take_dirty_signal_observer().unwrap_or_default();
-            let mut s = builder.seal_with_committed_codon_rails();
-            if !dirty_windows.is_empty() {
-                let mut state = s
-                    .live_calls
-                    .as_ref()
-                    .map(|state| (**state).clone())
-                    .unwrap_or_default();
-                state.dirty_windows.extend(dirty_windows);
-                s = s.with_live_calls(state);
-            }
-            s
+            // No reference index → no walker / dirty-signal observers
+            // attached. Codon rails still get committed via the
+            // observer route. No dirty-window stash because
+            // `apply_live_call_updates` only runs on the compiled
+            // path which always has a reference index.
+            builder.seal_with_committed_codon_rails()
         }
     }
 

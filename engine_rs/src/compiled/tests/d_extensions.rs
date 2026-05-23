@@ -11,6 +11,13 @@ use super::*;
 //   because NP1 already exists by then.
 // - D RIGHT extension needs the new AppendRegion(Np2) hook
 //   (NP2 is generated AFTER D is assembled).
+//
+// Phase 20: extension into NP is *conservative*. It proceeds one
+// byte at a time only while the byte strictly narrows the current
+// max-score tie set. If the primary structural walk has already
+// resolved the call to a single allele, conservative extension
+// declines to walk further; ref_start / ref_end stay at the
+// structural boundary.
 // ──────────────────────────────────────────────────────────────
 
 /// Build a VDJ refdata with two D alleles that share a 5-base core
@@ -119,17 +126,24 @@ fn d_extension_plan(
 
 #[test]
 fn d_call_shrinks_when_np1_recreates_trimmed_prefix() {
-    // Sample D*01 (TTTCCCCCAAA), trim D_5 by 3, D_3 by 0.
-    // Assembled D ref window starts at pos 3, covers 3..11 (CCCCCAAA).
+    // Sample D*01 (TTTCCCCCAAA), trim D_5 by 3, D_3 by 3.
+    // Assembled D ref window starts at pos 3, covers 3..8 (CCCCC).
     // BOTH D alleles match the assembled bases at those positions →
     // post-assemble d_call = {D*01, D*02}.
     // NP1 = TTT (length 3, all 'T'). The walker checks NP1's
     // RIGHTMOST base first against ref pos 2 (D*01[2]='T',
-    // D*02[2]='G'). D*02 drops out. Two more 'T's match D*01[1]
-    // and D*01[0] respectively → d_call shrinks to {D*01}.
+    // D*02[2]='G'). D*02 drops out; the tie set narrows from
+    // {D01,D02} to {D01}.
+    //
+    // Under conservative extension, this is the only narrowing
+    // step: at ref pos 1 the tie set is already {D01}, so no
+    // further byte can narrow it. ref_start advances from 3 to 2
+    // (one byte recovered), not to 0.
     let (cfg, d01, _d02) = d_extension_refdata();
 
-    let plan = d_extension_plan(&cfg, d01, 3, 0, 3, b'T', 0, b'A');
+    // Trim both ends by 3 so the post-assemble tie set is genuinely
+    // {D*01, D*02} (both match the CCCCC core).
+    let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 0, b'A');
     let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
@@ -152,9 +166,12 @@ fn d_call_shrinks_when_np1_recreates_trimmed_prefix() {
                 .contains(crate::live_call::HypothesisFlags::BOUNDARY_ELASTIC)
         })
         .expect("D hypothesis should be flagged BOUNDARY_ELASTIC");
-    // ref_start should be 0 — the extension recovered all 3
-    // trimmed prefix bases.
-    assert_eq!(elastic.ref_start, 0);
+    // Under conservative extension, ref_start moves from 3 (the
+    // post-trim structural start) to 2 — the single NP1 byte that
+    // narrowed the call from {D01,D02} to {D01}. It does NOT reach
+    // 0 (would require greedy extension into bytes that no longer
+    // narrow anything).
+    assert_eq!(elastic.ref_start, 2);
 }
 
 #[test]
@@ -202,9 +219,11 @@ fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
     // Sample D*01, trim D_3 by 3, D_5 by 0. Assembled D = AAACCCCC
     // (ref pos 0..8). Both alleles match → live call = {D*01, D*02}.
     // NP2 = TTT (length 3). The walker extends right: NP2[0]='T'
-    // vs ref pos 8 (D*01[8]='T' ✓, D*02[8]='G' ✗) → D*02 out.
-    // Continue: NP2[1] vs pos 9 (D*01[9]='T' ✓), NP2[2] vs pos 10
-    // (D*01[10]='T' ✓). Final d_call = {D*01}.
+    // vs ref pos 8 (D*01[8]='T' ✓, D*02[8]='G' ✗) → D*02 out, tie
+    // set narrows {D01,D02}→{D01}. Under conservative extension
+    // this is the only narrowing step; positions 9 and 10 cannot
+    // narrow the singleton further so the walker stops. Final
+    // d_call = {D*01}, ref_end = 9 (not 11).
     let plan = d_extension_plan(&cfg, d01, 0, 3, 0, b'A', 3, b'T');
     let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
@@ -228,9 +247,10 @@ fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
                 .contains(crate::live_call::HypothesisFlags::BOUNDARY_ELASTIC)
         })
         .expect("D hypothesis should be flagged BOUNDARY_ELASTIC");
-    // ref_end should now be 11 — extension covered the full
-    // post-trim allele length.
-    assert_eq!(elastic.ref_end, 11);
+    // Under conservative extension, ref_end advances by exactly
+    // the single NP2 byte that narrowed {D01,D02}→{D01}. It does
+    // not reach the full allele length (11).
+    assert_eq!(elastic.ref_end, 9);
 }
 
 #[test]
@@ -239,14 +259,17 @@ fn d_call_shrinks_via_both_sides_simultaneously() {
     // D_3 = 3. Assembled D = CCCCC (ref pos 3..8). Both match
     // → d_call = {D*01, D*02}.
     //
-    // NP1 = TTT (length 3) — narrows D left to {D*01} on
-    // AssembleSegment(D).
-    // NP2 = AAA (length 3) — D right-extension into NP2 is
-    // already only checking against {D*01}; ref_end advances to
-    // 11 (full allele length) after AppendRegion(Np2).
+    // NP1 = TTT (length 3) — first byte at ref pos 2 narrows
+    // {D01,D02}→{D01} (D*01[2]='T' vs D*02[2]='G'). Conservative
+    // extension stops there: ref_start advances from 3 to 2.
+    // NP2 = AAA (length 3) — the right walk starts with a
+    // singleton tie set {D01}, so no NP2 byte can narrow it
+    // further. ref_end stays at the structural boundary 8.
     //
-    // Final state: d_call = {D*01}, BOUNDARY_ELASTIC flag set,
-    // ref_start = 0, ref_end = 11.
+    // Under conservative the call still collapses to {D*01} (the
+    // single NP1 byte was enough), but the recovered boundaries
+    // only advance by the bytes that actually narrowed the tie
+    // set: ref_start = 2 (not 0), ref_end = 8 (not 11).
     let (cfg, d01, _d02) = d_extension_refdata();
     let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 3, b'A');
 
@@ -272,8 +295,8 @@ fn d_call_shrinks_via_both_sides_simultaneously() {
                 .contains(crate::live_call::HypothesisFlags::BOUNDARY_ELASTIC)
         })
         .expect("D hypothesis should be flagged BOUNDARY_ELASTIC");
-    assert_eq!(elastic.ref_start, 0);
-    assert_eq!(elastic.ref_end, 11);
+    assert_eq!(elastic.ref_start, 2);
+    assert_eq!(elastic.ref_end, 8);
 }
 
 #[test]

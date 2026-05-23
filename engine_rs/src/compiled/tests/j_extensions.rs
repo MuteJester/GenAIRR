@@ -9,6 +9,12 @@ use super::*;
 // reference prefix.
 // Acceptance: trim J 5' so live j_call widens, then have NP bases
 // happen to recreate the trimmed J prefix → j_call shrinks back.
+//
+// Phase 20: extension is *conservative*. The walker takes one byte
+// at a time and stops as soon as the byte fails to strictly narrow
+// the current max-score tie set. In practice this means: once a
+// single NP byte has collapsed the call to one allele, the walker
+// halts; subsequent matching bytes do not advance ref_start.
 // ──────────────────────────────────────────────────────────────
 
 /// Build a VJ-chain refdata with two J alleles that share a 9-base
@@ -97,9 +103,11 @@ fn j_call_shrinks_when_np1_recreates_trimmed_prefix_vj() {
     // Both alleles match the assembled J bases → post-assemble
     // j_call = {J*01, J*02}.
     // NP1 bases = TTT (length 3, all 'T'). The walker checks NP1's
-    // RIGHTMOST base first against ref pos 2 (J*01[2]='T'). Then
-    // pos 1 (J*01[1]='T'). Then pos 0 (J*01[0]='T'). All match
-    // J*01 only → j_call shrinks back to {J*01}.
+    // RIGHTMOST base first against ref pos 2 (J*01[2]='T' ✓,
+    // J*02[2]='G' ✗) → tie set {J01,J02}→{J01}. Under conservative
+    // extension, that single narrowing step is enough; bytes at
+    // ref pos 1 and 0 cannot narrow the singleton {J01} further
+    // and the walker halts. ref_start advances from 3 to 2 only.
     let (cfg, j01, _j02) = j_extension_vj_refdata();
 
     let plan = j_extension_plan(&cfg, j01, 3, 3, b'T');
@@ -127,9 +135,9 @@ fn j_call_shrinks_when_np1_recreates_trimmed_prefix_vj() {
                 .contains(crate::live_call::HypothesisFlags::BOUNDARY_ELASTIC)
         })
         .expect("J hypothesis should be flagged BOUNDARY_ELASTIC");
-    // The extension brought ref_start from 3 (post-trim) back to 0
-    // (matching all 3 NP1 bases against J*01[0..3]).
-    assert_eq!(elastic.ref_start, 0);
+    // Under conservative extension, ref_start advances from 3 to
+    // 2 (one narrowing byte) — not all the way back to 0.
+    assert_eq!(elastic.ref_start, 2);
 }
 
 #[test]
@@ -169,11 +177,12 @@ fn j_call_partially_extends_when_np1_matches_only_a_suffix_of_prefix() {
     // J*01 = TTT ACGTACGTA, J*02 = GGG ACGTACGTA.
     // Trim J_5 by 3, NP1 length 5, base 'T'. NP1 = T-T-T-T-T.
     // Walker checks rightmost NP1 byte vs ref_start - 1 = 2 first.
-    //   NP1[4]='T' vs J*01[2]='T' ✓ → candidates={J*01}.
-    //   NP1[3]='T' vs J*01[1]='T' ✓.
-    //   NP1[2]='T' vs J*01[0]='T' ✓.
-    //   NP1[1]: ref_start now 0, can't go further → halt.
-    // Two of the five NP1 bases stay outside the J hypothesis.
+    //   NP1[4]='T' vs J*01[2]='T' ✓, J*02[2]='G' ✗ → tie set
+    //     {J01,J02}→{J01}.
+    //   NP1[3]: tie set is now {J01}; conservative extension
+    //     declines (no allele in the tie set could MISS the byte
+    //     to narrow it further). Walker halts.
+    // Four of the five NP1 bases stay outside the J hypothesis.
     let (cfg, j01, _j02) = j_extension_vj_refdata();
 
     let plan = j_extension_plan(&cfg, j01, 3, 5, b'T');
@@ -200,15 +209,14 @@ fn j_call_partially_extends_when_np1_matches_only_a_suffix_of_prefix() {
         })
         .expect("J hypothesis should be flagged BOUNDARY_ELASTIC");
     assert_eq!(
-        elastic.ref_start, 0,
-        "extension reached ref_start = 0 (the start of the allele)"
+        elastic.ref_start, 2,
+        "conservative extension consumes only the single byte that narrows the tie set"
     );
-    // J's seq_start moved left by 3 (3 NP1 bases consumed). The
-    // remaining 2 NP1 bases (positions 0 and 1 in the pool's NP1
-    // span) sit outside the J hypothesis.
+    // J's seq_start moved left by 1 (1 NP1 base consumed). The
+    // remaining 4 NP1 bases stay outside the J hypothesis.
     // Pool layout: [V (3 bases) 0..3] [NP1 (5 bases) 3..8] [J (9
-    // bases) 8..17]. Post-extension J seq_start = 8 - 3 = 5.
-    assert_eq!(elastic.seq_start, 5);
+    // bases) 8..17]. Post-extension J seq_start = 8 - 1 = 7.
+    assert_eq!(elastic.seq_start, 7);
     assert_eq!(elastic.seq_end, 17);
 }
 
@@ -334,7 +342,10 @@ fn j_left_extension_works_for_vdj_chain_via_np2() {
                 .contains(crate::live_call::HypothesisFlags::BOUNDARY_ELASTIC)
         })
         .expect("J hypothesis should be flagged BOUNDARY_ELASTIC");
-    assert_eq!(elastic.ref_start, 0);
+    // Conservative extension: the first NP2 byte narrows
+    // {J01,J02}→{J01}. The remaining bytes cannot narrow the
+    // singleton further, so ref_start stops at 2 (not 0).
+    assert_eq!(elastic.ref_start, 2);
 }
 
 // ──────────────────────────────────────────────────────────────
