@@ -119,14 +119,77 @@ impl IndelPass {
             return Ok(sim.clone());
         }
 
-        let mut current = sim.clone();
-        for i in 0..count {
-            let event = self.sample_event(&current, ctx, i, count, strict)?;
-            Self::record_event(ctx, i, event);
-            current = Self::apply_event(&current, event);
+        // Phase 12: route indel mutations through `SimulationBuilder`
+        // so each insertion/deletion emits an `on_indel_*` event to
+        // attached observers.
+        //
+        // Phase 16: codon-rail and walker observers now implement
+        // `on_indel_*` properly. External indels (before a region)
+        // are absorbed as `seq_start` shifts; internal indels mark
+        // the observer `needs_rebuild` so the seal helpers replace
+        // it with a fresh `from_existing_region` rebuild against the
+        // post-mutation pool. The staged live calls then absorb via
+        // the Phase-1 fast path in the post-pass
+        // `PassEffect::StructuralIndel` dispatch, replacing the prior
+        // unconditional from-scratch `call_from_region` re-walk per
+        // V/D/J segment.
+        //
+        // Phase 15 dirty-signal observer is also attached so the
+        // dispatcher can drain the post-pass `dirty_windows` state.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        builder.attach_codon_rail_observers_for_all_regions();
+        if let Some(ref_index) = ctx.reference_index {
+            builder.attach_dirty_signal_observer();
+            for region in builder
+                .peek()
+                .sequence
+                .regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .iter()
+                .filter(|r| ref_index.get(r.segment).is_some())
+            {
+                let segment_index = ref_index.get(region.segment).unwrap();
+                builder.attach_walker_observer_for_region(segment_index, region);
+            }
+        } else {
+            // Test paths without a compiled reference index still
+            // need dirty windows for `apply_live_call_updates` (which
+            // only runs when reference_index is present in the
+            // execution context, so this branch is effectively a
+            // no-op for that consumer — but kept for symmetry with
+            // the mutation passes).
+            builder.attach_dirty_signal_observer();
         }
 
-        Ok(current)
+        for i in 0..count {
+            let event = self.sample_event(builder.peek(), ctx, i, count, strict)?;
+            Self::record_event(ctx, i, event);
+            Self::apply_event_via_builder(&mut builder, event);
+        }
+
+        let sealed = if let Some(ref_index) = ctx.reference_index {
+            builder.seal_with_committed_live_calls(ref_index)
+        } else {
+            // No reference index → no walker observers attached.
+            // Fall back to the codon-rail-only seal helper, plus a
+            // manual dirty-window stash for any consumer that reads
+            // them downstream.
+            let dirty_windows = builder.take_dirty_signal_observer().unwrap_or_default();
+            let mut s = builder.seal_with_committed_codon_rails();
+            if !dirty_windows.is_empty() {
+                let mut state = s
+                    .live_calls
+                    .as_ref()
+                    .map(|state| (**state).clone())
+                    .unwrap_or_default();
+                state.dirty_windows.extend(dirty_windows);
+                s = s.with_live_calls(state);
+            }
+            s
+        };
+        Ok(sealed)
     }
 }
 

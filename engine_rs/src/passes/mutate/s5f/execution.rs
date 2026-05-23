@@ -1,6 +1,6 @@
 use crate::address;
 use crate::dist::FilteredSampleError;
-use crate::ir::{NucHandle, Simulation};
+use crate::ir::{NucHandle, Simulation, SimulationBuilder};
 use crate::pass::{Pass, PassContext, PassError};
 use crate::trace::ChoiceValue;
 
@@ -49,10 +49,43 @@ impl S5FMutationPass {
             return Ok(sim.clone());
         }
 
-        let mut current = sim.clone();
+        // Phase 7: route mutations through `SimulationBuilder` so
+        // each `change_base` notifies attached observers.
+        //
+        // Phase 10: attach BOTH codon-rail (one per existing region)
+        // AND walker (one per existing V/D/J region) observers.
+        // After the mutation loop, the combined seal helper stages
+        // walker calls in V→D→J order with monotonically increasing
+        // `evidence_version`s so the post-pass
+        // `PassEffect::EditBases` refresh hits the Phase-1 fast path
+        // for each segment — skipping the from-scratch
+        // `call_from_region` rebuild entirely.
+        let mut builder = SimulationBuilder::from_simulation(sim.clone());
+        builder.attach_codon_rail_observers_for_all_regions();
+        if let Some(ref_index) = ctx.reference_index {
+            builder.attach_dirty_signal_observer();
+            // Walker observers require a SegmentRefIndex per segment.
+            // When the runtime didn't compile a reference index (test
+            // harness / refdata-only plans), skip walker attachment —
+            // the post-pass `PassEffect::EditBases` refresh handles
+            // it just as it did pre-Phase-10.
+            for region in builder
+                .peek()
+                .sequence
+                .regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .iter()
+                .filter(|r| ref_index.get(r.segment).is_some())
+            {
+                let segment_index = ref_index.get(region.segment).unwrap();
+                builder.attach_walker_observer_for_region(segment_index, region);
+            }
+        }
 
         for i in 0..count {
-            let profile = self.build_profile(&current.pool);
+            let profile = self.build_profile(&builder.peek().pool);
             if profile.is_empty() {
                 break;
             }
@@ -64,7 +97,7 @@ impl S5FMutationPass {
             let base_address = address::mutate_s5f_base(i);
 
             if let Some(contracts) = ctx.contracts {
-                let candidates = match self.event_candidates(&current, &profile, i, count) {
+                let candidates = match self.event_candidates(builder.peek(), &profile, i, count) {
                     Ok(candidates) => candidates,
                     Err(reason) if strict => {
                         return Err(PassError::constraint_sampling(
@@ -80,7 +113,7 @@ impl S5FMutationPass {
                     .filter(|candidate| {
                         contracts
                             .admits_with_context(
-                                &current,
+                                builder.peek(),
                                 ctx.refdata,
                                 &base_address,
                                 &ChoiceValue::Base(candidate.event.base),
@@ -99,7 +132,7 @@ impl S5FMutationPass {
                         ctx.trace
                             .record(base_address, ChoiceValue::Base(event.base));
 
-                        current = current.with_base_changed(NucHandle::new(event.site), event.base);
+                        builder.change_base(NucHandle::new(event.site), event.base);
                         continue;
                     }
                     Ok(None) if strict => {
@@ -131,7 +164,7 @@ impl S5FMutationPass {
                 }
             }
 
-            let context = match Self::context_at(&current.pool, chosen_pos) {
+            let context = match Self::context_at(&builder.peek().pool, chosen_pos) {
                 Some(c) => c,
                 None => continue,
             };
@@ -152,9 +185,38 @@ impl S5FMutationPass {
             ctx.trace
                 .record(base_address, ChoiceValue::Base(chosen_base));
 
-            current = current.with_base_changed(NucHandle::new(chosen_pos), chosen_base);
+            builder.change_base(NucHandle::new(chosen_pos), chosen_base);
         }
 
-        Ok(current)
+        // Seal observers and commit results. When a reference index
+        // is available (compiled execution path), use the combined
+        // helper that also stages walker calls so the post-pass
+        // `PassEffect::EditBases` refresh fast-paths each segment.
+        // Otherwise fall back to the codon-rail-only helper —
+        // walker observers weren't attached (no segment_index to
+        // borrow), so they have nothing to seal anyway.
+        let mut sealed = if let Some(ref_index) = ctx.reference_index {
+            builder.seal_with_committed_live_calls(ref_index)
+        } else {
+            builder.seal_with_committed_codon_rails()
+        };
+
+        // Phase 17: stash the mutation count on `LiveCallState` so
+        // the AIRR projection reads `n_mutations` in O(1) instead of
+        // trace-scanning `MUTATE_S5F_COUNT`. Preserves prior
+        // semantics — we stash `count_raw` to match what the trace
+        // recorded above (line 45), which is the requested count
+        // rather than the actual applied count if the loop broke
+        // early.
+        if count_raw > 0 {
+            let mut state = sealed
+                .live_calls
+                .as_ref()
+                .map(|s| (**s).clone())
+                .unwrap_or_default();
+            state.mutation_count = state.mutation_count.saturating_add(count_raw as u32);
+            sealed = sealed.with_live_calls(state);
+        }
+        Ok(sealed)
     }
 }

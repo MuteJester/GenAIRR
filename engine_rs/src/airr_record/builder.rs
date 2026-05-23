@@ -12,7 +12,7 @@ use super::projection::{
     lookup_allele, projected_call_name, unclaimed_np_bounds, unclaimed_np_string,
 };
 use super::sequence::{apply_rev_comp_projection, bytes_to_string, pool_bases};
-use super::trace_fields::{mutation_count, trace_bool, trace_int};
+use super::trace_fields::{trace_bool, trace_int};
 use super::walk::walk_alignment_columns;
 use super::AirrRecord;
 
@@ -135,7 +135,14 @@ pub fn build_airr_record(
     }
 
     // Mutation + corruption counters.
-    rec.n_mutations = mutation_count(trace);
+    // Phase 17: read mutation count directly from `LiveCallState`
+    // (stashed by S5F / Uniform passes at seal time) instead of
+    // trace-scanning `MUTATE_S5F_COUNT` / `MUTATE_UNIFORM_COUNT`.
+    rec.n_mutations = sim
+        .live_calls
+        .as_ref()
+        .map(|s| s.mutation_count as i64)
+        .unwrap_or(0);
     rec.mutation_rate = if rec.sequence_length > 0 {
         rec.n_mutations as f64 / rec.sequence_length as f64
     } else {

@@ -1,11 +1,16 @@
 //! `GenerateNPPass` — TdT-like N-nucleotide region generation (C.7).
 
 use crate::address;
-use crate::contract::{ChoiceContext, JunctionStopState};
-use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
-use crate::ir::{flag, NucHandle, Nucleotide, Region, Segment, Simulation, SimulationBuilder};
+use crate::dist::Distribution;
+use crate::ir::{Segment, Simulation};
 use crate::pass::{IntegerSupport, Pass, PassCompileFact, PassContext, PassEffect, PassError};
-use crate::trace::ChoiceValue;
+
+// `execute_with_sampling_mode` and the constraint-aware sampling
+// helpers live in submodules so the codon-rail + admit-mask observer
+// wiring (Phase 2/3) and the `sample_base_with_admit_mask` bypass
+// stay focused. Both submodules `impl GenerateNPPass` here.
+mod execution;
+mod sampling;
 
 /// Generate one NP (non-template) region — a stretch of bases
 /// interpolated between adjacent V/D/J segments by the TdT enzyme
@@ -76,227 +81,16 @@ impl GenerateNPPass {
         self.np_segment
     }
 
-    fn length_address(&self) -> &'static str {
+    pub(super) fn length_address(&self) -> &'static str {
         address::np_length_region(self.np_segment)
     }
 
-    fn bases_prefix(&self) -> &'static str {
+    pub(super) fn bases_prefix(&self) -> &'static str {
         address::np_bases_region_prefix(self.np_segment)
     }
 
-    fn pass_name(&self) -> &'static str {
+    pub(super) fn pass_name(&self) -> &'static str {
         address::generate_np_region(self.np_segment)
-    }
-
-    /// Constraint-aware length sample (D.6).
-    ///
-    /// When `ctx.contracts` is `Some`, we use `sample_filtered_result`
-    /// to draw only from values the contract set admits at the
-    /// length address. In permissive mode, falls back to plain
-    /// `sample` when:
-    /// - no contracts are active,
-    /// - the distribution doesn't expose `support()` (continuous
-    ///   or too-large categorical), or
-    /// - the filtered support is empty (no admissible candidate).
-    ///
-    /// In strict mode, the last two cases return a structured
-    /// `PassError` instead of silently sampling outside the contract.
-    fn sample_length(
-        &self,
-        sim: &Simulation,
-        ctx: &mut PassContext,
-        address: &'static str,
-        strict: bool,
-    ) -> Result<i64, PassError> {
-        // Capture borrows of fields we'll read in the closure so
-        // the borrow checker doesn't see overlapping `&mut ctx`
-        // and `&ctx.contracts`.
-        let refdata = ctx.refdata;
-        let contracts = ctx.contracts;
-
-        if let Some(contracts) = contracts {
-            match sample_filtered_result(ctx.rng, self.length_dist.as_ref(), |&candidate: &i64| {
-                contracts
-                    .admits(sim, refdata, address, &ChoiceValue::Int(candidate))
-                    .is_ok()
-            }) {
-                Ok(value) => return Ok(value),
-                Err(reason) if strict => {
-                    return Err(self.constraint_sampling_error(address, reason));
-                }
-                Err(_) => {
-                    // Permissive legacy path: empty/non-enumerable filters
-                    // fall through to unconstrained sampling.
-                }
-            }
-        }
-        Ok(self.length_dist.sample(ctx.rng))
-    }
-
-    /// Constraint-aware base sample (D.6).
-    ///
-    /// This is the base-level counterpart to `sample_length`: contracts
-    /// can reject a candidate base before it is written to the IR. The
-    /// immediate hardening target is `NoStopCodonInJunction`, which
-    /// rejects NP bases that would complete a junction stop codon.
-    ///
-    /// When `junction_stop_state` is `Some`, it is attached to the
-    /// `ChoiceContext` so the stop-codon contract can take its O(1)
-    /// fast path instead of rebuilding the hypothetical junction buffer
-    /// on every candidate. When `None`, the contract falls back to its
-    /// pre-existing rebuild path — this happens when the build's
-    /// preconditions are not met (no V/J assignment, missing anchors,
-    /// invalid retained bounds) or when contracts aren't active at all.
-    fn sample_base(
-        &self,
-        sim: &Simulation,
-        ctx: &mut PassContext,
-        address: &str,
-        index: u32,
-        total_len: u32,
-        strict: bool,
-        junction_stop_state: Option<&JunctionStopState>,
-    ) -> Result<u8, PassError> {
-        let refdata = ctx.refdata;
-        let contracts = ctx.contracts;
-
-        if let Some(contracts) = contracts {
-            let mut context = ChoiceContext::indexed(index, total_len);
-            if let Some(state) = junction_stop_state {
-                context = context.with_junction_stop_state(state);
-            }
-            match sample_filtered_result(ctx.rng, self.base_dist.as_ref(), |candidate: &u8| {
-                contracts
-                    .admits_with_context(
-                        sim,
-                        refdata,
-                        address,
-                        &ChoiceValue::Base(*candidate),
-                        context,
-                    )
-                    .is_ok()
-            }) {
-                Ok(value) => return Ok(value),
-                Err(reason) if strict => {
-                    return Err(self.constraint_sampling_error(address, reason));
-                }
-                Err(_) => {}
-            }
-        }
-
-        Ok(self.base_dist.sample(ctx.rng))
-    }
-
-    fn constraint_sampling_error(
-        &self,
-        address: impl Into<String>,
-        reason: FilteredSampleError,
-    ) -> PassError {
-        PassError::constraint_sampling(self.pass_name(), address, reason)
-    }
-
-    fn execute_with_sampling_mode(
-        &self,
-        sim: &Simulation,
-        ctx: &mut PassContext,
-        strict: bool,
-    ) -> Result<Simulation, PassError> {
-        // 1. Sample length, possibly constrained by active contracts.
-        //
-        // **Constraint-aware sampling (D.6):** if `ctx.contracts`
-        // is set, we filter the length distribution's support to
-        // values that the contract set admits at this address. In
-        // strict mode, inability to draw an admissible value is a
-        // structured error. In permissive mode, we silently fall
-        // back to an unfiltered draw.
-        let address = self.length_address();
-        let length = self.sample_length(sim, ctx, address, strict)?;
-        if strict && length < 0 {
-            return Err(PassError::invalid_distribution_output(
-                self.pass_name(),
-                address,
-                length,
-                "negative_length",
-            ));
-        }
-        if strict && length > u32::MAX as i64 {
-            return Err(PassError::invalid_distribution_output(
-                self.pass_name(),
-                address,
-                length,
-                "length_exceeds_u32",
-            ));
-        }
-        assert!(
-            length >= 0,
-            "GenerateNPPass({}): length distribution returned negative value {}",
-            address,
-            length
-        );
-        assert!(
-            length <= u32::MAX as i64,
-            "GenerateNPPass({}): length distribution returned {} > u32::MAX",
-            address,
-            length
-        );
-        ctx.trace.record(address, ChoiceValue::Int(length));
-
-        let length = length as u32;
-        let region_start = NucHandle::new(sim.pool.len() as u32);
-
-        // Precompute the per-record stop-codon state once before the
-        // candidate draw loop fires. The contract then only consults
-        // the codon containing the current candidate (O(1)) instead
-        // of rebuilding the whole hypothetical junction buffer per
-        // candidate (~10 codons × 4 candidates × ~10 NP positions =
-        // ~400 wasted codon translations per record). When refdata
-        // or contracts aren't active, or when the build's
-        // preconditions aren't met (no V/J assigned yet, anchors
-        // missing, etc.), `junction_stop_state` stays `None` and
-        // `NoStopCodonInJunction` falls back to its rebuild path.
-        let junction_stop_state = match (ctx.refdata, ctx.contracts) {
-            (Some(refdata), Some(_)) => {
-                JunctionStopState::build(sim, refdata, self.np_segment, length)
-            }
-            _ => None,
-        };
-
-        // 2. Sample bases and push them into the pool. Each push
-        //    mutates the builder's owned `Simulation` in place; the
-        //    builder unique-ifies the pool's Arc once at construction
-        //    so subsequent `push_nucleotide` calls are direct
-        //    `Vec::push` operations (no per-base CoW). Contracts see
-        //    the same `&Simulation` shape through `builder.peek()`.
-        let mut builder = SimulationBuilder::from_simulation(sim.clone());
-        for i in 0..length {
-            let base_address = format!("{}[{}]", self.bases_prefix(), i);
-            let base = self.sample_base(
-                builder.peek(),
-                ctx,
-                &base_address,
-                i,
-                length,
-                strict,
-                junction_stop_state.as_ref(),
-            )?;
-            ctx.trace.record(base_address, ChoiceValue::Base(base));
-            builder.push_nucleotide(Nucleotide::synthetic(base, self.np_segment, flag::N_NUC));
-        }
-        let current = builder.seal();
-
-        // 3. Build the region and append it. Codon rail recomputes
-        //    against the updated pool. Frame phase chains from
-        //    cumulative prior region length, same convention as
-        //    AssembleSegmentPass — keeps the codon frame coherent
-        //    across V/NP/D/NP/J boundaries.
-        let cumulative_len: u32 = sim.sequence.regions.iter().map(|r| r.len()).sum();
-        let frame_phase = (cumulative_len % 3) as u8;
-
-        let region_end = NucHandle::new(current.pool.len() as u32);
-        let region = Region::new(self.np_segment, region_start, region_end)
-            .with_frame_phase(frame_phase)
-            .with_codon_rail_recomputed(&current.pool);
-        Ok(current.with_region_added(region))
     }
 }
 
@@ -344,8 +138,10 @@ impl Pass for GenerateNPPass {
 mod tests {
     use super::*;
     use crate::dist::{EmpiricalLengthDist, UniformBase};
+    use crate::ir::{flag, NucHandle};
     use crate::pass::{PassError, PassPlan, PassRuntime};
     use crate::passes::EchoPass;
+    use crate::trace::ChoiceValue;
 
     #[test]
     #[should_panic(expected = "np_segment must be Np1 or Np2")]

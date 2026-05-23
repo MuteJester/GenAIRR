@@ -2,9 +2,11 @@
 
 use crate::address;
 #[cfg(test)]
-use crate::ir::GermlinePos;
-use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
+use crate::ir::{GermlinePos, NucHandle};
+use crate::ir::{Segment, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError, PassRequirement};
+
+mod execution;
 
 /// Assemble one germline segment (V, D, or J) from its assigned
 /// `AlleleInstance` into the simulation pool.
@@ -59,109 +61,10 @@ impl AssembleSegmentPass {
         self.segment
     }
 
-    fn execute_with_validation(
-        &self,
-        sim: &Simulation,
-        ctx: &mut PassContext,
-        strict: bool,
-    ) -> Result<Simulation, PassError> {
-        let refdata = match ctx.refdata {
-            Some(refdata) => refdata,
-            None if strict => return Err(PassError::missing_refdata(self.name())),
-            None => {
-                panic!(
-                    "AssembleSegmentPass({:?}): PassContext.refdata is None — \
-                     use PassRuntime::execute_with_refdata for plans containing \
-                     assembly passes",
-                    self.segment
-                )
-            }
-        };
-
-        let inst = match sim.assignments.get(self.segment).copied() {
-            Some(inst) => inst,
-            None if strict => return Err(PassError::missing_assignment(self.name(), self.segment)),
-            None => {
-                panic!(
-                    "AssembleSegmentPass({:?}): no allele assigned — \
-                     SampleAllelePass for this segment must run before assembly",
-                    self.segment
-                )
-            }
-        };
-
-        let allele = match refdata.get(self.segment, inst.allele_id) {
-            Some(allele) => allele,
-            None if strict => {
-                return Err(PassError::missing_allele(
-                    self.name(),
-                    self.segment,
-                    inst.allele_id.index(),
-                ));
-            }
-            None => {
-                panic!(
-                    "AssembleSegmentPass({:?}): allele_id {:?} out of bounds \
-                     for refdata pool",
-                    self.segment, inst.allele_id
-                )
-            }
-        };
-
-        let trim_5 = inst.trim_5 as u32;
-        let trim_3 = inst.trim_3 as u32;
-        let allele_len = allele.len();
-
-        if strict && trim_5 + trim_3 > allele_len {
-            return Err(PassError::invalid_plan_state(
-                self.name(),
-                "trim_exceeds_allele_length",
-            ));
-        }
-        assert!(
-            trim_5 + trim_3 <= allele_len,
-            "AssembleSegmentPass({:?}): trim_5 ({}) + trim_3 ({}) exceeds \
-             allele length ({}) for {}",
-            self.segment,
-            trim_5,
-            trim_3,
-            allele_len,
-            allele.name
-        );
-
-        let slice_start = trim_5;
-        let slice_end = allele_len - trim_3;
-        let slice_len = slice_end - slice_start;
-
-        // Frame phase: cumulative length of prior regions, mod 3.
-        // The frame is implicitly anchored at the start of the first
-        // assembled region.
-        let cumulative_len: u32 = sim.sequence.regions.iter().map(|r| r.len()).sum();
-        let frame_phase = (cumulative_len % 3) as u8;
-
-        // Push the post-trim slice into the pool as germline nucleotides.
-        // Batched-extend (Phase 1 IR-allocation refactor): collapse the
-        // N per-base `with_nucleotide_pushed` calls into one
-        // `with_nucleotides_extended`. Safe here because no contract
-        // consults intermediate per-base pool states inside an assembly
-        // pass — only after the pass completes (post-pass `verify` in
-        // strict mode reads the final pool).
-        let seg = self.segment;
-        let slice = &allele.seq[slice_start as usize..(slice_start + slice_len) as usize];
-        let (current, range) =
-            sim.with_nucleotides_extended(slice.iter().enumerate().map(|(i, &base)| {
-                let allele_pos = slice_start + i as u32;
-                Nucleotide::germline(base, allele_pos as u16, seg)
-            }));
-
-        let region_start = NucHandle::new(range.start);
-        let region_end = NucHandle::new(range.end);
-        let region = Region::new(self.segment, region_start, region_end)
-            .with_frame_phase(frame_phase)
-            .with_codon_rail_recomputed(&current.pool);
-
-        Ok(current.with_region_added(region))
-    }
+    // `execute_with_validation` lives in the [`execution`] submodule.
+    // Phase 1 split it out so the streaming-walker-observer path can
+    // share the same code path with the original batch-push fallback;
+    // see `execution.rs` for the body.
 }
 
 impl Pass for AssembleSegmentPass {

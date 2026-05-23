@@ -13,7 +13,7 @@ use crate::contract::ContractSet;
 use crate::event::{EventRecord, StateSummary, TraceSpan};
 use crate::feasibility::FeasibilityContext;
 use crate::ir::{Segment, Simulation};
-use crate::live_call::{with_assembled_segment_live_call, ReferenceMatchIndex};
+use crate::live_call::{with_assembled_segment_live_call, DirtyWindow, ReferenceMatchIndex};
 use crate::pass::{Outcome, PassContext, PassEffect, PassError, PassPlan};
 use crate::refdata::RefDataConfig;
 use crate::rng::Rng;
@@ -68,6 +68,7 @@ pub(super) fn execute_transactional(
             refdata: inputs.refdata,
             contracts: inputs.contracts,
             feasibility: inputs.feasibility,
+            reference_index: inputs.reference_index,
         };
 
         let mut next = match inputs.policy {
@@ -159,21 +160,22 @@ fn apply_live_call_updates(
             }
             // any base edit (SHM, uniform mutation, PCR, quality
             // / N injection, contaminant overwrite) can change which
-            // alleles the assembled bases support. We do a conservative
-            // refresh — every assembled V/D/J segment is recomputed from
-            // the current pool. Segments without an assembled region are
-            // a no-op inside `with_assembled_segment_live_call`.
+            // alleles the assembled bases support. Phase 15: read the
+            // dirty windows stamped by the pass's
+            // `DirtySignalObserver` and refresh only segments whose
+            // region overlaps a dirty position. When no observer was
+            // attached (legacy / test paths), `dirty_windows` is
+            // empty and we fall back to the conservative full V/D/J
+            // sweep.
             //
-            // A dirty-window optimization (scanning the trace delta for
-            // edited positions and skipping segments outside the dirty
-            // range) was evaluated. The trace-scan cost (~5 µs/record)
-            // cancelled the refresh savings — net change was 0-2
-            // µs/record on typical loads, sometimes a small loss. The
-            // simpler full-refresh policy is kept for clarity.
+            // Historical note: an earlier trace-scan attempt to do
+            // this (parse the per-pass trace delta for edited
+            // positions) was abandoned because the trace-scan cost
+            // (~5 µs/record) cancelled the refresh savings. Sourcing
+            // dirty signals directly from the IR event stream is
+            // O(1) per edit and removes that overhead.
             PassEffect::EditBases => {
-                for segment in [Segment::V, Segment::D, Segment::J] {
-                    sim = with_assembled_segment_live_call(&sim, reference_index, segment);
-                }
+                sim = refresh_segments_for_edit(sim, reference_index);
             }
             // an NP region appearing right-adjacent to V
             // can extend V's right boundary if the NP bases happen to
@@ -205,15 +207,92 @@ fn apply_live_call_updates(
             // the walker now tolerates. Refresh every assembled V/D/J
             // segment from the post-indel pool so the live calls reflect
             // the new evidence layout.
+            //
+            // Phase 15 dirty-window optimisation does NOT apply here:
+            // an indel anywhere in the pool shifts every region whose
+            // start sits at or after the indel position, so a J
+            // hypothesis built before the indel references stale
+            // pool indices even when the indel didn't land inside J's
+            // current region. Refresh all three segments
+            // unconditionally; drain the dirty windows so the next
+            // pass's EditBases dispatch starts clean.
             PassEffect::StructuralIndel => {
                 for segment in [Segment::V, Segment::D, Segment::J] {
                     sim = with_assembled_segment_live_call(&sim, reference_index, segment);
                 }
+                sim = drain_dirty_windows(sim);
             }
             _ => {}
         }
     }
     sim
+}
+
+/// Refresh V/D/J live calls after a base-edit or structural-indel
+/// pass, using the dirty windows stamped by the pass's
+/// `DirtySignalObserver` to skip segments whose region doesn't
+/// overlap any dirty position.
+///
+/// Empty dirty windows are interpreted conservatively as "we don't
+/// know what changed" → all assembled V/D/J segments refresh, which
+/// matches the pre-Phase-15 behaviour. After refresh the windows are
+/// drained so the next pass starts clean.
+fn refresh_segments_for_edit(
+    mut sim: Simulation,
+    reference_index: &ReferenceMatchIndex,
+) -> Simulation {
+    let dirty_windows: Vec<DirtyWindow> = sim
+        .live_calls
+        .as_ref()
+        .map(|s| s.dirty_windows.clone())
+        .unwrap_or_default();
+    let has_dirty = !dirty_windows.is_empty();
+
+    for segment in [Segment::V, Segment::D, Segment::J] {
+        if has_dirty && !region_overlaps_dirty(&sim, segment, &dirty_windows) {
+            continue;
+        }
+        sim = with_assembled_segment_live_call(&sim, reference_index, segment);
+    }
+
+    if has_dirty {
+        sim = drain_dirty_windows(sim);
+    }
+    sim
+}
+
+/// Does the segment's assembled region (if any) overlap any of the
+/// supplied dirty windows? A region with no assembled instance can
+/// never need a refresh from this dispatch, so this returns `false`.
+fn region_overlaps_dirty(sim: &Simulation, segment: Segment, windows: &[DirtyWindow]) -> bool {
+    let Some(region) = sim
+        .sequence
+        .regions
+        .iter()
+        .find(|r| r.segment == segment)
+    else {
+        return false;
+    };
+    let region_start = region.start.index();
+    let region_end = region.end.index();
+    windows
+        .iter()
+        .any(|w| w.start < region_end && w.end > region_start)
+}
+
+/// Clear `live_calls.dirty_windows` after consumption. Preserves
+/// every other field, including the version, so the fast-path
+/// version chain established by the mutation pass survives.
+fn drain_dirty_windows(sim: Simulation) -> Simulation {
+    let Some(state) = sim.live_calls.as_ref() else {
+        return sim;
+    };
+    if state.dirty_windows.is_empty() {
+        return sim;
+    }
+    let mut next = (**state).clone();
+    next.dirty_windows.clear();
+    sim.with_live_calls(next)
 }
 
 fn abort(

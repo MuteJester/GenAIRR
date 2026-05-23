@@ -9,6 +9,19 @@ use super::walker::call_from_region;
 /// Discovery is restricted to the existing structural region. It
 /// does not extend into NP evidence, repair indel-shifted
 /// hypotheses, or alter AIRR projection.
+///
+/// **Fast path (Phase 1 streaming-walker observer).** When the
+/// preceding `AssembleSegmentPass` ran with a `WalkerObserverState`
+/// attached, it produced the segment's `SegmentLiveCall` inline with
+/// the per-base push loop and stashed it on `sim.live_calls` via
+/// `LiveCallState::with_segment_call_observed` *without* bumping the
+/// `version`. We detect that pre-staged call here by checking
+/// `evidence_version == base_state.version + 1` and absorb it by
+/// performing the version bump that the observer path deliberately
+/// skipped. The slow path (full `call_from_region` re-walk) remains
+/// for callers that did not run the observer (e.g. test fixtures
+/// that build `Simulation` directly without going through
+/// `AssembleSegmentPass`).
 pub fn with_assembled_segment_live_call(
     sim: &Simulation,
     reference_index: &ReferenceMatchIndex,
@@ -17,6 +30,18 @@ pub fn with_assembled_segment_live_call(
     assert_live_segment(segment);
     let base_state = sim.live_calls.clone().unwrap_or_default();
     let evidence_version = base_state.version.saturating_add(1);
+
+    // Fast path: did `AssembleSegmentPass` already populate the
+    // segment's call via the streaming walker observer?
+    if let Some(existing) = base_state.get(segment) {
+        if existing.evidence_version == evidence_version {
+            // Observer-staged call detected. Absorb it by bumping
+            // the version so subsequent passes see a consistent
+            // monotonic version trajectory.
+            return sim.with_live_calls(base_state.with_segment_call(existing.clone()));
+        }
+    }
+
     let Some(call) = assembled_segment_live_call(sim, reference_index, segment, evidence_version)
     else {
         return sim.clone();

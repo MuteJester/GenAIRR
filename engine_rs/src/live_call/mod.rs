@@ -7,9 +7,11 @@ use crate::ir::Segment;
 
 mod bitset;
 mod call;
+pub(crate) mod dirty_signal_observer;
 mod model;
 mod reference_index;
 mod walker;
+pub(crate) mod walker_observer;
 
 pub use bitset::AlleleBitSet;
 pub use call::{assembled_segment_live_call, with_assembled_segment_live_call};

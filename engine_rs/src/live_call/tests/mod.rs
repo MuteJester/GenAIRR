@@ -5,6 +5,8 @@ mod bitset;
 mod caller;
 mod reference_index;
 mod state;
+mod walker_observer_change_base;
+mod walker_observer_from_existing_region;
 
 fn id(index: u32) -> AlleleId {
     AlleleId::new(index)

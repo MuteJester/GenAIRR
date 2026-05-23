@@ -87,3 +87,86 @@ where
 {
     sample_filtered_result(rng, dist, predicate).ok()
 }
+
+/// Sample one canonical base (`A`/`C`/`G`/`T`) from `dist` restricted
+/// to the admitted bases indicated by `admit_mask`.
+///
+/// `admit_mask` follows the convention from
+/// `contract::admit_mask_observer`: bit 0 = `A`, bit 1 = `C`,
+/// bit 2 = `G`, bit 3 = `T`. A base is admitted iff its bit is set.
+///
+/// Compared to [`sample_filtered_result`] over a predicate that
+/// performs the same admit check, this function:
+/// - Pulls the distribution's support exactly once (one `Vec`
+///   allocation) instead of materialising a separate `filtered`
+///   Vec on top.
+/// - Iterates the support twice in-place (sum + inverse CDF)
+///   without temporary storage.
+/// - Performs a single bit-test per candidate instead of a contract
+///   trait dispatch chain.
+///
+/// Returns `Err(FilteredSampleError)` on the same conditions
+/// `sample_filtered_result` would — empty admissible support,
+/// missing support, or invalid total weight.
+///
+/// Determinism: consumes exactly one RNG word on the success path.
+/// Non-canonical bases in the support are treated as unadmitted
+/// (they cannot map to any bit in the 4-bit mask) and contribute
+/// zero weight; this matches the predicate path's behaviour when
+/// the contract dispatch returns `Err` for non-canonical
+/// candidates.
+pub fn sample_base_with_admit_mask<D>(
+    rng: &mut Rng,
+    dist: &D,
+    admit_mask: u8,
+) -> Result<u8, FilteredSampleError>
+where
+    D: Distribution<Output = u8> + ?Sized,
+{
+    let support = dist
+        .support()
+        .ok_or(FilteredSampleError::SupportUnavailable)?;
+
+    let is_admitted = |base: u8| -> bool {
+        let idx = match base {
+            b'A' | b'a' => 0,
+            b'C' | b'c' => 1,
+            b'G' | b'g' => 2,
+            b'T' | b't' => 3,
+            _ => return false,
+        };
+        (admit_mask >> idx) & 1 == 1
+    };
+
+    // Pass 1: sum admitted weights.
+    let mut total = 0.0f64;
+    for &(base, w) in support.iter() {
+        if is_admitted(base) {
+            total += w;
+        }
+    }
+    if total <= 0.0 || !total.is_finite() {
+        // total == 0 with admit_mask == 0 (no admissible bases) is
+        // the typical case; total non-finite is a defensive guard.
+        if admit_mask == 0 {
+            return Err(FilteredSampleError::EmptyAdmissibleSupport);
+        }
+        return Err(FilteredSampleError::InvalidFilteredSupport);
+    }
+
+    // Pass 2: inverse CDF over admitted subset.
+    let r = rng.next_f64() * total;
+    let mut cum = 0.0;
+    let mut last_admitted: Option<u8> = None;
+    for &(base, w) in support.iter() {
+        if is_admitted(base) {
+            cum += w;
+            if r < cum {
+                return Ok(base);
+            }
+            last_admitted = Some(base);
+        }
+    }
+    // Defensive last-admitted fallback for ULP rounding.
+    last_admitted.ok_or(FilteredSampleError::EmptyAdmissibleSupport)
+}

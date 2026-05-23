@@ -23,7 +23,9 @@
 //! sequence, and live-call state so ordinary `Clone` calls are cheap while
 //! preserving the public persistent API.
 
-mod builder;
+pub(crate) mod builder;
+pub(crate) mod codon_rail_observer;
+pub(crate) mod event_log_observer;
 mod handle;
 mod nucleotide;
 mod pool;

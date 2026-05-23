@@ -71,16 +71,41 @@ impl NCorruptionPass {
             return Ok(sim.clone());
         }
 
-        let mut current = sim.clone();
+        // Phase 8: builder-pattern port (see quality.rs / s5f.rs).
+        // Phase 11: also attach walker observers when ref_index is
+        // available so the post-pass walker refresh is suppressed.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        builder.attach_codon_rail_observers_for_all_regions();
+        if let Some(ref_index) = ctx.reference_index {
+            builder.attach_dirty_signal_observer();
+            for region in builder
+                .peek()
+                .sequence
+                .regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .iter()
+                .filter(|r| ref_index.get(r.segment).is_some())
+            {
+                let segment_index = ref_index.get(region.segment).unwrap();
+                builder.attach_walker_observer_for_region(segment_index, region);
+            }
+        }
+
         for i in 0..count {
             let site = ctx.rng.range_u32(pool_len);
             let site_handle = NucHandle::new(site);
             ctx.trace
                 .record(address::corrupt_ns_site(i), ChoiceValue::Int(site as i64));
-            current = current.with_base_changed(site_handle, b'N');
+            builder.change_base(site_handle, b'N');
         }
 
-        Ok(current)
+        Ok(if let Some(ref_index) = ctx.reference_index {
+            builder.seal_with_committed_live_calls(ref_index)
+        } else {
+            builder.seal_with_committed_codon_rails()
+        })
     }
 }
 

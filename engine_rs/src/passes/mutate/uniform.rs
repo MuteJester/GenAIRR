@@ -98,12 +98,33 @@ impl UniformMutationPass {
             return Ok(sim.clone());
         }
 
-        // 2. Apply `count` mutations sequentially. Each mutation
-        //    samples a site (uniform in [0, pool_len)) and then draws
-        //    an admissible base for that target when contracts are
-        //    active. The IR evolves one mutation at a time through
-        //    the persistent API.
-        let mut current = sim.clone();
+        // 2. Apply `count` mutations sequentially. Phase 8: route
+        //    each mutation through `SimulationBuilder::change_base`
+        //    so attached codon-rail observers update incrementally
+        //    (one per existing region) — matches what the old
+        //    `with_base_changed` did via `refresh_regions_covering`.
+        //    Phase 11: also attach walker observers when ref_index is
+        //    available so the post-pass walker refresh is
+        //    suppressed via the Phase-1 fast path.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        builder.attach_codon_rail_observers_for_all_regions();
+        if let Some(ref_index) = ctx.reference_index {
+            builder.attach_dirty_signal_observer();
+            for region in builder
+                .peek()
+                .sequence
+                .regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .iter()
+                .filter(|r| ref_index.get(r.segment).is_some())
+            {
+                let segment_index = ref_index.get(region.segment).unwrap();
+                builder.attach_walker_observer_for_region(segment_index, region);
+            }
+        }
+
         for i in 0..count {
             let site = ctx.rng.range_u32(pool_len);
             let site_handle = NucHandle::new(site);
@@ -114,19 +135,35 @@ impl UniformMutationPass {
                 ChoiceValue::Int(site as i64),
             );
             let new_base = sample_targeted_base(
-                &current,
+                builder.peek(),
                 ctx,
                 self.base_dist.as_ref(),
                 TargetedBaseChoice::new(self.name(), &base_address, i, count, site_handle, strict),
             )?;
             ctx.trace.record(base_address, ChoiceValue::Base(new_base));
 
-            // `with_base_changed` auto-refreshes the codon rail of
-            // any region containing `site` (post-D audit fix).
-            current = current.with_base_changed(site_handle, new_base);
+            builder.change_base(site_handle, new_base);
         }
 
-        Ok(current)
+        let mut sealed = if let Some(ref_index) = ctx.reference_index {
+            builder.seal_with_committed_live_calls(ref_index)
+        } else {
+            builder.seal_with_committed_codon_rails()
+        };
+
+        // Phase 17: stash the mutation count on `LiveCallState` so
+        // the AIRR projection reads `n_mutations` in O(1) instead of
+        // trace-scanning `MUTATE_UNIFORM_COUNT`.
+        if count_raw > 0 {
+            let mut state = sealed
+                .live_calls
+                .as_ref()
+                .map(|s| (**s).clone())
+                .unwrap_or_default();
+            state.mutation_count = state.mutation_count.saturating_add(count_raw as u32);
+            sealed = sealed.with_live_calls(state);
+        }
+        Ok(sealed)
     }
 }
 

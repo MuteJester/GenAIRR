@@ -74,14 +74,44 @@ impl Pass for EndLossPass {
         if actual == 0 {
             return sim.clone();
         }
-        let mut current = sim.clone();
+
+        // Phase 17: route deletes through `SimulationBuilder` so each
+        // removal emits `on_indel_deleted` to attached observers,
+        // matching the indel pass's reactive shape. Phase 16's
+        // observer indel handlers (`needs_rebuild` on internal /
+        // pre-region deletes, shift on external for walker) keep
+        // codon-rail and walker live-call state correct without
+        // relying on the post-pass `StructuralIndel` from-scratch
+        // refresh. Dirty signals from each delete flow into
+        // `LiveCallState.dirty_windows` for the consumer hook.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        builder.attach_codon_rail_observers_for_all_regions();
+        if let Some(ref_index) = ctx.reference_index {
+            builder.attach_dirty_signal_observer();
+            for region in builder
+                .peek()
+                .sequence
+                .regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .iter()
+                .filter(|r| ref_index.get(r.segment).is_some())
+            {
+                let segment_index = ref_index.get(region.segment).unwrap();
+                builder.attach_walker_observer_for_region(segment_index, region);
+            }
+        } else {
+            builder.attach_dirty_signal_observer();
+        }
+
         match self.end {
             LossEnd::Five => {
                 // Delete from pool position 0, `actual` times. Each
                 // call shifts every later position left by 1, so the
                 // next position 0 is the original position 1, etc.
                 for _ in 0..actual {
-                    current = current.with_indel_deleted(0);
+                    builder.delete_indel(0);
                 }
             }
             LossEnd::Three => {
@@ -89,12 +119,32 @@ impl Pass for EndLossPass {
                 // each call the new pool length is one less, so the
                 // next "last" index decreases.
                 for _ in 0..actual {
-                    let last = current.pool.len() as u32 - 1;
-                    current = current.with_indel_deleted(last);
+                    let last = builder.peek().pool.len() as u32 - 1;
+                    builder.delete_indel(last);
                 }
             }
         }
-        current
+
+        if let Some(ref_index) = ctx.reference_index {
+            builder.seal_with_committed_live_calls(ref_index)
+        } else {
+            // No reference index → no walker observers attached.
+            // Codon rails still get committed via the observer
+            // route; dirty windows are stashed manually so any
+            // downstream consumer can read them.
+            let dirty_windows = builder.take_dirty_signal_observer().unwrap_or_default();
+            let mut s = builder.seal_with_committed_codon_rails();
+            if !dirty_windows.is_empty() {
+                let mut state = s
+                    .live_calls
+                    .as_ref()
+                    .map(|state| (**state).clone())
+                    .unwrap_or_default();
+                state.dirty_windows.extend(dirty_windows);
+                s = s.with_live_calls(state);
+            }
+            s
+        }
     }
 
     fn execute_checked(

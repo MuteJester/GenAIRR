@@ -237,6 +237,19 @@ pub struct LiveCallState {
     pub j: Option<SegmentLiveCall>,
     pub dirty_windows: Vec<DirtyWindow>,
     pub version: u64,
+    /// Phase 17: per-record running count of base mutations applied
+    /// by S5F / uniform mutation passes. AIRR projection reads this
+    /// directly for the `n_mutations` field instead of trace-scanning
+    /// `MUTATE_S5F_COUNT` / `MUTATE_UNIFORM_COUNT` addresses (which
+    /// was a residual pull-from-trace anti-pattern surviving Phase
+    /// 15's dirty-window push migration).
+    ///
+    /// Co-located here because LiveCallState is already the
+    /// derived-state sidecar that's propagated through every
+    /// persistent `Simulation::with_*` operation via `Arc::clone`,
+    /// and because mutation count is, like `dirty_windows`, a fact
+    /// derived from observing the IR mutation stream.
+    pub mutation_count: u32,
 }
 
 impl LiveCallState {
@@ -262,6 +275,32 @@ impl LiveCallState {
             Segment::Np1 | Segment::Np2 => unreachable!("SegmentLiveCall rejects NP segments"),
         }
         next.version = next.version.saturating_add(1);
+        next
+    }
+
+    /// Stash a pre-computed segment call without bumping the
+    /// `version`. The caller is expected to have stamped
+    /// `call.evidence_version == self.version + 1` so that the
+    /// post-pass `with_assembled_segment_live_call` hook recognises
+    /// it as the in-flight result and absorbs it via its fast path
+    /// (which then performs the normal `version` bump).
+    ///
+    /// Use only when the call is produced by the streaming walker
+    /// observer during `AssembleSegmentPass`; for any other path,
+    /// prefer [`Self::with_segment_call`] which handles the version
+    /// bump itself.
+    pub fn with_segment_call_observed(&self, call: SegmentLiveCall) -> Self {
+        let mut next = self.clone();
+        match call.segment {
+            Segment::V => next.v = Some(call),
+            Segment::D => next.d = Some(call),
+            Segment::J => next.j = Some(call),
+            Segment::Np1 | Segment::Np2 => unreachable!("SegmentLiveCall rejects NP segments"),
+        }
+        // Intentionally does NOT bump `version`. The post-pass
+        // `with_assembled_segment_live_call` consumer detects the
+        // observer-staged call via `evidence_version == version + 1`
+        // and increments the version itself.
         next
     }
 

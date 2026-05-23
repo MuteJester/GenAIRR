@@ -35,6 +35,7 @@ use crate::ir::{NucHandle, Segment, Simulation};
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
 
+pub(crate) mod admit_mask_observer;
 pub mod anchor_preserved;
 pub mod junction_stop_state;
 pub mod no_stop_codon_in_junction;

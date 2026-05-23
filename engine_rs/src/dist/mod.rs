@@ -79,7 +79,9 @@ mod uniform;
 
 pub use allele_pool::AllelePoolDist;
 pub use empirical::EmpiricalLengthDist;
-pub use filtered::{sample_filtered, sample_filtered_result, FilteredSampleError};
+pub use filtered::{
+    sample_base_with_admit_mask, sample_filtered, sample_filtered_result, FilteredSampleError,
+};
 pub use integer::UniformInt;
 pub use uniform::UniformBase;
 

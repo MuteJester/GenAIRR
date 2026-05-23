@@ -115,6 +115,31 @@ impl Simulation {
         }
     }
 
+    /// Phase 7: replace the region whose `(segment, start)` matches
+    /// `(replacement.segment, replacement.start)` with `replacement`.
+    ///
+    /// Used by post-assembly mutation passes (S5F, …) to write
+    /// observer-produced codon-rail data back into the existing
+    /// region without going through `with_region_added` (which
+    /// would create a duplicate). If no matching region is found
+    /// the returned simulation is unchanged — same behaviour as
+    /// the pre-Phase-7 path where the rail update was deferred to
+    /// the post-pass refresh.
+    pub fn with_region_replaced_for_segment(&self, replacement: Region) -> Self {
+        let idx = match self.sequence.regions.iter().position(|r| {
+            r.segment == replacement.segment && r.start == replacement.start
+        }) {
+            Some(idx) => idx,
+            None => return self.clone(),
+        };
+        Self {
+            pool: self.pool.clone(),
+            sequence: Arc::new(self.sequence.with_region_replaced(idx, replacement)),
+            assignments: self.assignments,
+            live_calls: self.live_calls.clone(),
+        }
+    }
+
     /// Return a new simulation with `instance` assigned to `segment`.
     pub fn with_allele_assigned(
         &self,

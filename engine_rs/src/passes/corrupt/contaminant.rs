@@ -89,20 +89,45 @@ impl ContaminantPass {
         }
 
         // 2. Replace every base in the pool with a contaminant draw.
-        let mut current = sim.clone();
+        // Phase 8: builder-pattern port (see quality.rs / s5f.rs).
+        // Phase 11: also attach walker observers when ref_index is
+        // available.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        builder.attach_codon_rail_observers_for_all_regions();
+        if let Some(ref_index) = ctx.reference_index {
+            builder.attach_dirty_signal_observer();
+            for region in builder
+                .peek()
+                .sequence
+                .regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .iter()
+                .filter(|r| ref_index.get(r.segment).is_some())
+            {
+                let segment_index = ref_index.get(region.segment).unwrap();
+                builder.attach_walker_observer_for_region(segment_index, region);
+            }
+        }
+
         for i in 0..pool_len {
             let site = NucHandle::new(i);
             let address = address::corrupt_contaminant_base(i);
             let new_base = sample_targeted_base(
-                &current,
+                builder.peek(),
                 ctx,
                 self.base_dist.as_ref(),
                 TargetedBaseChoice::new(self.name(), &address, i, pool_len, site, strict),
             )?;
             ctx.trace.record(address, ChoiceValue::Base(new_base));
-            current = current.with_base_changed(site, new_base);
+            builder.change_base(site, new_base);
         }
-        Ok(current)
+        Ok(if let Some(ref_index) = ctx.reference_index {
+            builder.seal_with_committed_live_calls(ref_index)
+        } else {
+            builder.seal_with_committed_codon_rails()
+        })
     }
 }
 

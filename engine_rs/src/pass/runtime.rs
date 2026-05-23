@@ -72,6 +72,7 @@ impl PassRuntime {
                 refdata,
                 contracts,
                 feasibility: None,
+                reference_index: None,
             };
             let next = pass.execute(prev, &mut ctx);
             pass_names.push(pass.name().to_string());
@@ -110,6 +111,7 @@ impl PassRuntime {
                 refdata,
                 contracts,
                 feasibility: None,
+                reference_index: None,
             };
             let next = pass.execute_checked(prev, &mut ctx)?;
             pass_names.push(pass.name().to_string());

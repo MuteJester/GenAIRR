@@ -104,6 +104,21 @@ impl NucleotidePool {
         next
     }
 
+    /// Mutate the `base` byte at `handle` in place, returning the
+    /// nucleotide as it was *before* the change (caller borrows the
+    /// previous value to feed event observers etc.).
+    ///
+    /// Companion to [`Self::push`]: uses `Arc::make_mut` internally,
+    /// which is the refcount==1 cheap path once `make_unique` has
+    /// been called on the owning `SimulationBuilder`.
+    pub(crate) fn change_base_in_place(&mut self, handle: NucHandle, new_base: u8) -> Nucleotide {
+        let inner = Arc::make_mut(&mut self.nucleotides);
+        let idx = handle.as_usize();
+        let old = inner[idx];
+        inner[idx].base = new_base;
+        old
+    }
+
     /// Return a new pool with a fresh nucleotide inserted at position `at`.
     pub fn with_inserted(&self, at: u32, n: Nucleotide) -> Self {
         assert!(

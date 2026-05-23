@@ -97,7 +97,37 @@ impl QualityErrorPass {
             return Ok(sim.clone());
         }
 
-        let mut current = sim.clone();
+        // Phase 8: route per-base mutations through `SimulationBuilder`
+        // so each `change_base` notifies attached codon-rail observers
+        // (one per existing region). Old `with_base_changed` triggered
+        // `refresh_regions_covering` for ALL regions overlapping the
+        // handle; observing every region preserves that semantics.
+        //
+        // Phase 11: also attach walker observers (one per V/D/J
+        // region) when a reference index is available, so the
+        // per-allele score vectors update incrementally and the
+        // post-pass `PassEffect::EditBases` walker refresh is
+        // suppressed via the Phase-1 fast path. See S5F's port for
+        // the version-bump coordination.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        builder.attach_codon_rail_observers_for_all_regions();
+        if let Some(ref_index) = ctx.reference_index {
+            builder.attach_dirty_signal_observer();
+            for region in builder
+                .peek()
+                .sequence
+                .regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .iter()
+                .filter(|r| ref_index.get(r.segment).is_some())
+            {
+                let segment_index = ref_index.get(region.segment).unwrap();
+                builder.attach_walker_observer_for_region(segment_index, region);
+            }
+        }
+
         for i in 0..count {
             let site = ctx.rng.range_u32(pool_len);
             let site_handle = NucHandle::new(site);
@@ -109,7 +139,7 @@ impl QualityErrorPass {
             );
 
             let new_base = sample_targeted_base(
-                &current,
+                builder.peek(),
                 ctx,
                 self.base_dist.as_ref(),
                 TargetedBaseChoice::new(self.name(), &base_address, i, count, site_handle, strict)
@@ -117,10 +147,14 @@ impl QualityErrorPass {
             )?;
             ctx.trace.record(base_address, ChoiceValue::Base(new_base));
 
-            current = current.with_base_changed(site_handle, new_base);
+            builder.change_base(site_handle, new_base);
         }
 
-        Ok(current)
+        Ok(if let Some(ref_index) = ctx.reference_index {
+            builder.seal_with_committed_live_calls(ref_index)
+        } else {
+            builder.seal_with_committed_codon_rails()
+        })
     }
 }
 
