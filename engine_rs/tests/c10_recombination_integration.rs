@@ -309,14 +309,18 @@ fn end_to_end_vdj_trace_contains_expected_addresses() {
 fn end_to_end_vdj_codon_rail_correct_for_v_region() {
     // V region with frame_phase 0 + bases "AAACCCGGG" → codons
     // AAA, CCC, GGG → K, P, G.
+    //
+    // rail no longer maintained in the hot path; compute
+    // on demand via `with_codon_rail_recomputed`.
     let refdata = make_synthetic_vdj_refdata();
     let plan = build_basic_vdj_plan(&refdata);
     let outcome = PassRuntime::execute_with_refdata(&plan, Simulation::new(), 42, &refdata);
     let sim = outcome.final_simulation();
     let v = &sim.sequence.regions[0];
     assert_eq!(v.segment, Segment::V);
-    assert_eq!(v.amino_acids, b"KPG");
-    assert!(v.stop_codon_positions.is_empty());
+    let computed = v.with_codon_rail_recomputed(&sim.pool);
+    assert_eq!(computed.amino_acids, b"KPG");
+    assert!(computed.stop_codon_positions.is_empty());
 }
 
 #[test]

@@ -10,7 +10,7 @@ use super::walker::call_from_region;
 /// does not extend into NP evidence, repair indel-shifted
 /// hypotheses, or alter AIRR projection.
 ///
-/// **Fast path (Phase 1 streaming-walker observer).** When the
+/// **Fast path (streaming-walker observer).** When the
 /// preceding `AssembleSegmentPass` ran with a `WalkerObserverState`
 /// attached, it produced the segment's `SegmentLiveCall` inline with
 /// the per-base push loop and stashed it on `sim.live_calls` via

@@ -10,7 +10,7 @@ use super::*;
 // Acceptance: trim J 5' so live j_call widens, then have NP bases
 // happen to recreate the trimmed J prefix → j_call shrinks back.
 //
-// Phase 20: extension is *conservative*. The walker takes one byte
+// extension is *conservative*. The walker takes one byte
 // at a time and stops as soon as the byte fails to strictly narrow
 // the current max-score tie set. In practice this means: once a
 // single NP byte has collapsed the call to one allele, the walker

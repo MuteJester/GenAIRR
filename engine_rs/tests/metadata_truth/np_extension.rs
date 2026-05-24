@@ -205,7 +205,7 @@ fn compile_and_run<'a>(
 fn exact_recreation_narrows_v_call_to_single_truth_allele() {
     // Sample v03*01 (distinguishing suffix CCC). Trim V_3 by 3 →
     // v_call widens to all 4. NP1 = "CCC". Under conservative
-    // extension (Phase 20), the first NP1 byte 'C' is enough to
+    // extension, the first NP1 byte 'C' is enough to
     // narrow {v01,v01*02,v02,v03}→{v03} (only v03 has C at pos 9).
     // The remaining two 'C' bytes cannot narrow {v03} further, so
     // the walker halts. v_call collapses to {v03*01} after a

@@ -12,7 +12,7 @@ use super::*;
 // - the upstream hypothesis carrying the OVERLAPS_OTHER_SEGMENT
 //   flag.
 //
-// Phase 20: extension is *conservative*. Even when D's leading
+// extension is *conservative*. Even when D's leading
 // bases continue to match the upstream allele's continuation, the
 // walker only consumes bytes that strictly narrow the upstream
 // call's tie set. Once the call has resolved to a singleton, the
@@ -371,7 +371,7 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
 fn overlap_walker_halts_at_pool_end() {
     // Conservative-extension counterpart of the old "pool_len
     // upper-bound" safety check. Under the conservative policy
-    // (Phase 20), the walker halts as soon as the call set
+    //, the walker halts as soon as the call set
     // collapses to a singleton — long before it could possibly
     // run off the end of the pool. This test exercises that
     // halt-on-resolution behaviour:

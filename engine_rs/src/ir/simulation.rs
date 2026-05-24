@@ -115,16 +115,11 @@ impl Simulation {
         }
     }
 
-    /// Phase 7: replace the region whose `(segment, start)` matches
+    /// Replace the region whose `(segment, start)` matches
     /// `(replacement.segment, replacement.start)` with `replacement`.
     ///
-    /// Used by post-assembly mutation passes (S5F, …) to write
-    /// observer-produced codon-rail data back into the existing
-    /// region without going through `with_region_added` (which
-    /// would create a duplicate). If no matching region is found
-    /// the returned simulation is unchanged — same behaviour as
-    /// the pre-Phase-7 path where the rail update was deferred to
-    /// the post-pass refresh.
+    /// If no matching region is found the returned simulation is
+    /// unchanged.
     pub fn with_region_replaced_for_segment(&self, replacement: Region) -> Self {
         let idx = match self.sequence.regions.iter().position(|r| {
             r.segment == replacement.segment && r.start == replacement.start
@@ -165,7 +160,35 @@ impl Simulation {
     }
 
     /// Return a new simulation with `n` inserted at pool position `at`.
+    /// Recomputes codon rails for every region whose range shifted.
+    /// Direct callers (tests, property-test oracles, contract
+    /// candidate enumeration) use this when they need the rail to
+    /// be correct on the returned sim.
+    ///
+    /// Production callers (the indel / end-loss pass through
+    /// `SimulationBuilder`) take the cheaper
+    /// [`Self::with_indel_inserted_no_rail_recompute`] variant
+    /// because the per-region rail isn't maintained in the hot
+    /// path — see `Region::with_codon_rail_recomputed` for the
+    /// on-demand path.
     pub fn with_indel_inserted(&self, at: u32, n: Nucleotide) -> Self {
+        self.with_indel_inserted_inner(at, n, true)
+    }
+
+    /// Return a new simulation with `n` inserted at pool position `at`,
+    /// SKIPPING the per-region codon-rail recompute. Used by callers
+    /// that don't read `region.amino_acids` / `stop_codon_positions`
+    /// on the returned sim (the builder, the indel-pass strict-mode
+    /// constraint sampler).
+    pub(crate) fn with_indel_inserted_no_rail_recompute(
+        &self,
+        at: u32,
+        n: Nucleotide,
+    ) -> Self {
+        self.with_indel_inserted_inner(at, n, false)
+    }
+
+    fn with_indel_inserted_inner(&self, at: u32, n: Nucleotide, recompute_rails: bool) -> Self {
         let new_pool = self.pool.with_inserted(at, n);
         let adjusted = self.sequence.with_indel_adjusted(at, 1);
         let new_regions: Vec<Region> = adjusted
@@ -174,10 +197,10 @@ impl Simulation {
             .enumerate()
             .map(|(i, r)| {
                 let original = &self.sequence.regions[i];
-                if r.start != original.start
+                let range_changed = r.start != original.start
                     || r.end != original.end
-                    || r.frame_phase != original.frame_phase
-                {
+                    || r.frame_phase != original.frame_phase;
+                if range_changed && recompute_rails {
                     r.with_codon_rail_recomputed(&new_pool)
                 } else {
                     r.clone()
@@ -195,7 +218,23 @@ impl Simulation {
     }
 
     /// Return a new simulation with the nucleotide at pool position `at` removed.
+    /// Recomputes codon rails for every region whose range shifted.
+    ///
+    /// See [`Self::with_indel_inserted`] for the no-recompute variant.
     pub fn with_indel_deleted(&self, at: u32) -> Self {
+        self.with_indel_deleted_inner(at, true)
+    }
+
+    /// Return a new simulation with the nucleotide at pool position
+    /// `at` removed, SKIPPING the per-region codon-rail recompute.
+    /// Used by `SimulationBuilder` since the per-region rail isn't
+    /// maintained in the hot path — consumers that need it call
+    /// `Region::with_codon_rail_recomputed` on demand.
+    pub(crate) fn with_indel_deleted_no_rail_recompute(&self, at: u32) -> Self {
+        self.with_indel_deleted_inner(at, false)
+    }
+
+    fn with_indel_deleted_inner(&self, at: u32, recompute_rails: bool) -> Self {
         let new_pool = self.pool.with_deleted(at);
         let adjusted = self.sequence.with_indel_adjusted(at, -1);
         let new_regions: Vec<Region> = adjusted
@@ -204,10 +243,10 @@ impl Simulation {
             .enumerate()
             .map(|(i, r)| {
                 let original = &self.sequence.regions[i];
-                if r.start != original.start
+                let range_changed = r.start != original.start
                     || r.end != original.end
-                    || r.frame_phase != original.frame_phase
-                {
+                    || r.frame_phase != original.frame_phase;
+                if range_changed && recompute_rails {
                     r.with_codon_rail_recomputed(&new_pool)
                 } else {
                     r.clone()

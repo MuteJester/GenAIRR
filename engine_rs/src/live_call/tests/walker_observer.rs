@@ -1,6 +1,6 @@
 //! Streamed-vs-from-scratch equivalence tests for the live-call walker.
 //!
-//! These tests anchor the Phase 1 refactor invariant: the
+//! These tests anchor the walker refactor invariant: the
 //! `WalkerObserverState` accumulating per-allele scores inline with
 //! `SimulationBuilder::push_nucleotide` must produce the **exact same**
 //! `SegmentLiveCall` (byte-for-byte equality on every public field)

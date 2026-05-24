@@ -24,7 +24,6 @@
 //! preserving the public persistent API.
 
 pub(crate) mod builder;
-pub(crate) mod codon_rail_observer;
 pub(crate) mod event_log_observer;
 mod handle;
 mod nucleotide;

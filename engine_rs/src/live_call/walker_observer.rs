@@ -104,7 +104,7 @@ pub(crate) struct WalkerObserverState<'idx> {
     /// lookup on each push reads exactly the same data structure
     /// the from-scratch walker uses, so scoring is bit-identical.
     segment_index: &'idx SegmentRefIndex,
-    /// Phase 16: set when an `on_indel_*` event arrives that the
+    /// set when an `on_indel_*` event arrives that the
     /// observer cannot patch in place — currently any deletion
     /// inside the region (which may move `ref_start` /
     /// `next_ref_pos` boundaries) and a future-safe default for
@@ -182,7 +182,7 @@ impl<'idx> WalkerObserverState<'idx> {
         }
     }
 
-    /// Phase 9: rebuild a walker observer's internal state from an
+    /// rebuild a walker observer's internal state from an
     /// already-assembled `Region` plus the current pool. Walks the
     /// region's bytes through `on_base_pushed` so the resulting
     /// score vector matches what `call_from_region`'s structural
@@ -234,19 +234,7 @@ impl<'idx> WalkerObserverState<'idx> {
         self.seq_end_seen
     }
 
-    /// Segment this observer is attached to. Used by the seal-time
-    /// rebuild lookup to find the matching post-indel region.
-    pub(crate) fn observed_segment(&self) -> Segment {
-        self.segment
-    }
-
-    /// Phase 16: was this observer's state invalidated by an indel
-    /// event the in-place patch path can't safely handle?
-    pub(crate) fn needs_rebuild(&self) -> bool {
-        self.needs_rebuild
-    }
-
-    /// Phase 16: replace the observer with a fresh
+    /// Replace the observer with a fresh
     /// `from_existing_region` rebuild against the post-mutation
     /// simulation if `needs_rebuild` is set. The rebuild walks the
     /// region currently assigned to this observer's segment in
@@ -278,7 +266,7 @@ impl<'idx> WalkerObserverState<'idx> {
     /// `_handle` is the index the nucleotide will occupy in the
     /// pool — the walker's score state is per-allele, not per-pool-
     /// position, so the parameter is ignored here. It exists on the
-    /// `IrEventObserver` trait shape for Phase 2's codon-rail
+    /// `IrEventObserver` trait shape for 's codon-rail
     /// observer (which keys per-region amino-acid state by pool
     /// position).
     ///
@@ -391,7 +379,7 @@ impl IrEventObserver for WalkerObserverState<'_> {
         WalkerObserverState::on_base_pushed(self, handle, n);
     }
 
-    /// Phase 4: incremental score delta on a base change.
+    /// incremental score delta on a base change.
     ///
     /// When the byte at `handle` flips from `old_n.base` to
     /// `new_base`, the walker's per-allele scores need to be
@@ -400,7 +388,7 @@ impl IrEventObserver for WalkerObserverState<'_> {
     /// the set whose germline matches the new base (increment).
     /// Alleles whose germline matched neither are unchanged.
     ///
-    /// This is the architectural payoff of Phase 4: a base change
+    /// This is the architectural payoff of a base change
     /// no longer triggers a full from-scratch walker rebuild via
     /// `PassEffect::EditBases` + `call_from_region`. The observer
     /// updates its score vector in O(matched_alleles) time.
@@ -461,7 +449,7 @@ impl IrEventObserver for WalkerObserverState<'_> {
         }
     }
 
-    /// Phase 16: handle an indel insertion event.
+    /// handle an indel insertion event.
     ///
     /// Inserted nucleotides are synthetic (`germline_pos == NONE`)
     /// — they contribute zero to every allele's score. So the
@@ -480,7 +468,7 @@ impl IrEventObserver for WalkerObserverState<'_> {
         }
     }
 
-    /// Phase 16: handle an indel deletion event.
+    /// handle an indel deletion event.
     ///
     /// External deletions (before our region) shift both bounds.
     /// Internal deletions invalidate observer state: removing a
@@ -586,7 +574,7 @@ impl SealedWalkerState {
     /// state itself (for `Resolved`) instead of requiring the caller
     /// to thread them. Equivalent to
     /// [`Self::finalize_with_extensions`] with those args; provided
-    /// as a convenience for callers (like S5F in Phase 10) that
+    /// as a convenience for callers (like S5F) that
     /// drain many sealed states and don't want to re-derive the
     /// coordinates per state.
     pub(crate) fn into_live_call(

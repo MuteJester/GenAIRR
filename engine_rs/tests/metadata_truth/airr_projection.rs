@@ -29,7 +29,7 @@
 //!   anchors_preserved**.
 //! - **`sequence_aa` translation is in junction frame** (not in
 //!   V-region's pool frame — these are different when trim is not
-//!   a multiple of 3; see Phase 17 analysis).
+//!   a multiple of 3; see the analysis).
 //! - **`mutation_rate` == `n_mutations / sequence_length`** exactly
 //!   (no float rounding drift past 6 digits).
 //!
@@ -418,7 +418,7 @@ fn mutation_rate_equals_n_mutations_over_sequence_length_exactly() {
 #[test]
 fn n_mutations_reflects_live_call_state_mutation_count() {
     // AIRR `n_mutations` reads from `LiveCallState.mutation_count`
-    // (Phase 17 / 18 staging point). Verify the AIRR field matches
+    //. Verify the AIRR field matches
     // the IR sidecar after a clean recombine + mutate run.
     let cfg = common::vdj_ambiguous_refdata();
     let v_id = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
@@ -487,7 +487,7 @@ fn v_call_listing_orders_truth_first_then_remaining_alleles() {
     // (See `live_call_name` in airr_record/projection.rs.)
     //
     // Uses j02*01 (GGG prefix) to keep the v_call tie set at 4 in
-    // the VJ chain. Phase 24 wired V's right-extension to walk into
+    // the VJ chain. wired V's right-extension to walk into
     // J's bytes; with j01 (TTT prefix) v01's continuation would
     // narrow the call back to {v01*01, v01*02} and break this
     // ordering test. GGG matches no V allele at the boundary, so

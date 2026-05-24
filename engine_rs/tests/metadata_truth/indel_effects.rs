@@ -4,7 +4,7 @@
 //! affected position. The engine must:
 //!
 //! - Re-stage live calls so the post-indel pool drives the
-//!   hypothesis ranges (Phase 16 indel observers + `from_existing_region`
+//!   hypothesis ranges (indel observers + `from_existing_region`
 //!   rebuild).
 //! - Preserve the truth allele in the call set when surviving
 //!   bytes still uniquely identify it.

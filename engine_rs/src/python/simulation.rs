@@ -75,13 +75,20 @@ impl PySimulation {
 
     /// All assembled regions in 5'→3' order. Each entry is a
     /// [`PyRegion`].
+    ///
+    /// The per-region codon rail (`amino_acids` /
+    /// `stop_codon_positions`) is not maintained in the simulation
+    /// hot path because no internal consumer reads it. We compute
+    /// it here once when the regions cross the Python boundary so
+    /// the Python accessor `Region.amino_acids()` continues to
+    /// work for offline tooling.
     fn regions(&self) -> Vec<PyRegion> {
+        let pool = &self.inner.pool;
         self.inner
             .sequence
             .regions
             .iter()
-            .cloned()
-            .map(PyRegion::new)
+            .map(|r| PyRegion::new(r.with_codon_rail_recomputed(pool)))
             .collect()
     }
 

@@ -71,8 +71,8 @@ impl NCorruptionPass {
             return Ok(sim.clone());
         }
 
-        // Phase 8: builder-pattern port (see quality.rs / s5f.rs).
-        // Phase 11: also attach walker observers when ref_index is
+        // builder-pattern port (see quality.rs / s5f.rs).
+        // also attach walker observers when ref_index is
         // available so the post-pass walker refresh is suppressed.
         let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
         builder.attach_standard_mutation_observers(ctx.reference_index);
@@ -88,7 +88,7 @@ impl NCorruptionPass {
         Ok(if let Some(ref_index) = ctx.reference_index {
             builder.seal_with_committed_live_calls(ref_index)
         } else {
-            builder.seal_with_committed_codon_rails()
+            builder.seal()
         })
     }
 }

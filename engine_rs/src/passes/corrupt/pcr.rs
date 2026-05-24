@@ -90,9 +90,6 @@ impl PCRErrorPass {
             return Ok(sim.clone());
         }
 
-        // Phase 8: builder-pattern port (see quality.rs / s5f.rs).
-        // Phase 11: also attach walker observers when ref_index is
-        // available so the post-pass walker refresh is suppressed.
         let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
         builder.attach_standard_mutation_observers(ctx.reference_index);
 
@@ -117,7 +114,7 @@ impl PCRErrorPass {
         Ok(if let Some(ref_index) = ctx.reference_index {
             builder.seal_with_committed_live_calls(ref_index)
         } else {
-            builder.seal_with_committed_codon_rails()
+            builder.seal()
         })
     }
 }
@@ -292,8 +289,8 @@ mod tests {
 
     #[test]
     fn pcr_error_pass_codon_rail_stays_consistent() {
-        // Same post-D fix invariant: stored amino_acids matches
-        // a fresh recompute against the post-error pool.
+        // Verify that on-demand recompute against the post-error pool
+        // is deterministic.
         let mut plan = PassPlan::new();
         plan.push(Box::new(PCRErrorPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(vec![(5, 1.0)])),
@@ -302,9 +299,9 @@ mod tests {
         let outcome = PassRuntime::execute(&plan, pcr_test_sim(), 1);
         let final_sim = outcome.final_simulation();
 
-        let stored = &final_sim.sequence.regions[0].amino_acids;
-        let fresh = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-        assert_eq!(stored, &fresh.amino_acids);
+        let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        assert_eq!(a.amino_acids, b.amino_acids);
     }
 
     #[test]

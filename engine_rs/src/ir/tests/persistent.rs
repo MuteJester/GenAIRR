@@ -176,7 +176,7 @@ fn simulation_persistent_chain_preserves_history() {
     assert_eq!(s3.sequence.region_count(), 0); // pre-region-add
 }
 
-// ── Batched-push equivalence (Phase 1 IR-allocation refactor) ───
+// ── Batched-push equivalence ───
 
 /// `with_nucleotides_extended` must produce a simulation pool that
 /// is bit-for-bit identical to one produced by N repeated

@@ -97,13 +97,13 @@ impl QualityErrorPass {
             return Ok(sim.clone());
         }
 
-        // Phase 8: route per-base mutations through `SimulationBuilder`
+        // route per-base mutations through `SimulationBuilder`
         // so each `change_base` notifies attached codon-rail observers
         // (one per existing region). Old `with_base_changed` triggered
         // `refresh_regions_covering` for ALL regions overlapping the
         // handle; observing every region preserves that semantics.
         //
-        // Phase 11: also attach walker observers (one per V/D/J
+        // also attach walker observers (one per V/D/J
         // region) when a reference index is available, so the
         // per-allele score vectors update incrementally and the
         // post-pass `PassEffect::EditBases` walker refresh is
@@ -137,7 +137,7 @@ impl QualityErrorPass {
         Ok(if let Some(ref_index) = ctx.reference_index {
             builder.seal_with_committed_live_calls(ref_index)
         } else {
-            builder.seal_with_committed_codon_rails()
+            builder.seal()
         })
     }
 }
@@ -313,9 +313,11 @@ mod tests {
 
         // After the pass, the codon rail still translates correctly
         // even though some bases are lowercase.
-        let stored = &final_sim.sequence.regions[0].amino_acids;
+        // rail no longer maintained in the hot path;
+        // compute on demand.
         let fresh = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-        assert_eq!(stored, &fresh.amino_acids);
+        // No 'X' (ambiguous) amino acids — lowercase still translates.
+        let stored = &fresh.amino_acids;
         // No 'X' (ambiguous) amino acids — lowercase still translates.
         for &aa in stored {
             assert_ne!(

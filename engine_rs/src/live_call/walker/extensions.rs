@@ -2,14 +2,13 @@ use super::super::{HypothesisFlags, SegmentRefIndex};
 use crate::ir::{NucHandle, Region, Segment, Simulation};
 use crate::refdata::AlleleId;
 
-/// Phase 20: conservative narrowing check for the boundary extension
-/// walkers. The walkers extend a V/D/J live-call hypothesis one byte
-/// at a time into an adjacent NP region (or across a structural
-/// boundary into a neighbor segment). The pre-Phase-20 policy was
-/// *greedy*: extend whenever the new byte matches at least one allele
-/// in the segment's pool. The Phase 20 policy is *conservative*:
+/// Conservative narrowing check for the boundary extension walkers.
+/// The walkers extend a V/D/J live-call hypothesis one byte at a
+/// time into an adjacent NP region (or across a structural boundary
+/// into a neighbor segment). The current policy is *conservative*:
 /// extend only when the byte strictly narrows the current max-score
-/// tie set.
+/// tie set (as opposed to the greedy "extend whenever the byte
+/// matches some allele" alternative).
 ///
 /// "Narrowing" is precisely:
 /// - among alleles currently tied at `pre_max`,
@@ -116,7 +115,7 @@ pub(crate) fn walk_left_extension(
         if evidence.allele_ids.is_empty() {
             break;
         }
-        // Phase 20: only extend when this byte strictly narrows the
+        // only extend when this byte strictly narrows the
         // current max-score tie set. If every current candidate
         // matches the byte (or none of them do), the extension would
         // not resolve any ambiguity — leave the structural boundary
@@ -204,7 +203,7 @@ pub(crate) fn walk_right_extension(
         if evidence.allele_ids.is_empty() {
             break;
         }
-        // Phase 20: see commentary in `walk_left_extension`.
+        // see commentary in `walk_left_extension`.
         if !extension_narrows_tie_set(state.scores, &evidence.allele_ids) {
             break;
         }

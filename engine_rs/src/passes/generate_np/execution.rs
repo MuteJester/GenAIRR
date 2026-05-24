@@ -60,17 +60,10 @@ impl GenerateNPPass {
         // can be initialised before the push loop.
         let cumulative_len: u32 = sim.sequence.regions.iter().map(|r| r.len()).sum();
         let frame_phase = (cumulative_len % 3) as u8;
-        let seq_start = sim.pool.len() as u32;
 
         let mut builder = SimulationBuilder::from_simulation(sim.clone());
 
-        // Phase 2 extension: attach the codon-rail observer so the
-        // NP region's amino_acids and stop_codon_positions accumulate
-        // inline with the per-base push loop, just like the assembly
-        // pass already does.
-        builder.attach_codon_rail_observer(self.np_segment, seq_start, frame_phase);
-
-        // Phase 3: attach the productive-admit-mask observer when a
+        // Attach the productive-admit-mask observer when a
         // JunctionStopState was built. It caches the 4-bit admit
         // mask for the current NP slot via the precomputed contract
         // state; the sampler reads `builder.current_admit_mask()`
@@ -102,22 +95,15 @@ impl GenerateNPPass {
             builder.push_nucleotide(Nucleotide::synthetic(base, self.np_segment, flag::N_NUC));
         }
 
-        let sealed_rail = builder.seal_codon_rail_observer();
         let current = builder.seal();
 
         let region_end = NucHandle::new(current.pool.len() as u32);
-        // Phase 2 extension: Region built directly from the sealed
-        // codon-rail observer state — byte-identical to the
-        // previous `Region::new(...).with_frame_phase(p)
-        // .with_codon_rail_recomputed(&current.pool)` chain but
-        // skipping the post-pass region rebuild.
-        let region = Region::from_sealed_codon_rail(
-            self.np_segment,
-            region_start,
-            region_end,
-            frame_phase,
-            sealed_rail,
-        );
+        // The per-region codon rail (amino_acids, stop_codon_positions)
+        // is not maintained in the hot path — no production consumer
+        // reads it. Callers that need it compute on demand via
+        // `Region::with_codon_rail_recomputed(&pool)`.
+        let region = Region::new(self.np_segment, region_start, region_end)
+            .with_frame_phase(frame_phase);
         Ok(current.with_region_added(region))
     }
 }

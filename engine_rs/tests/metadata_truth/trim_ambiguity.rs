@@ -241,7 +241,7 @@ fn trim_widens_v_call_to_all_three_real_alleles() {
     //
     // We pair with j02*01 (prefix GGG) rather than j01*01 (prefix
     // TTT): J's first byte is the first evidence position past V's
-    // trim boundary, and Phase 24 wired V's right-extension to walk
+    // trim boundary, and wired V's right-extension to walk
     // into J's bytes in VJ chains. j02's G matches NONE of v01
     // (ref pos 9 = T) / v02 (= A) / v03 (= C) — extension halts
     // immediately, the widened call stays at 4. With j01 (T) v01

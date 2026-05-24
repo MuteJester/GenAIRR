@@ -302,7 +302,7 @@ fn curated_np1_recreates_v_suffix_narrows_v_call_back() {
     // Trim V_3 by 3 (live call widens to {V1,V2,V3}) AND
     // generate NP1 = "AAA" (V1's distinguishing suffix). The
     // V right-extension walker reaches into NP1; under conservative
-    // extension (Phase 20) the first NP1 byte 'A' narrows
+    // extension the first NP1 byte 'A' narrows
     // {V1,V2,V3}→{V1} (V1[9]='A', V2[9]='C', V3[9]='G'). The
     // walker then halts: subsequent bytes cannot narrow the
     // singleton tie set. v_call collapses to {V1} after only
@@ -517,7 +517,7 @@ fn v_germline_end_reflects_np_extension() {
 #[test]
 fn d_germline_bounds_reflect_np_extension() {
     // Trim D_5 = 3, NP1 = "C" (single base). Under conservative
-    // extension (Phase 20), extension fires only when it strictly
+    // extension, extension fires only when it strictly
     // narrows the tie set.
     //
     // In this fixture the primary structural walk over D's

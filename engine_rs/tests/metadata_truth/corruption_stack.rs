@@ -751,7 +751,7 @@ fn full_corruption_stack_cigar_io_balance_equals_pool_length() {
 
 #[test]
 fn full_corruption_stack_mutation_count_matches_live_call_state_after_many_passes() {
-    // Phase 18 staged `mutation_count` into `LiveCallState`. The AIRR
+    // staged `mutation_count` into `LiveCallState`. The AIRR
     // `n_mutations` field reads from there. After a long pipeline
     // that exercises the version chain, the value must equal the
     // count of mutation events the trace recorded (not the count of

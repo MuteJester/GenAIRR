@@ -6,7 +6,7 @@ use super::*;
 // The acceptance criterion from the design doc: a trimmed V suffix
 // can be recreated by NP1 bases, and when that happens the live
 // `v_call` should narrow to the allele(s) that the recreated bytes
-// distinguish. Under the conservative extension policy (Phase 20),
+// distinguish. Under the conservative extension policy,
 // extension proceeds one byte at a time only while the byte strictly
 // narrows the current max-score tie set. Once the call set has
 // collapsed to a single allele, further matching bytes do NOT extend

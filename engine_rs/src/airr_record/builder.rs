@@ -134,10 +134,9 @@ pub fn build_airr_record(
         rec.np2_length = n;
     }
 
-    // Mutation + corruption counters.
-    // Phase 17: read mutation count directly from `LiveCallState`
-    // (stashed by S5F / Uniform passes at seal time) instead of
-    // trace-scanning `MUTATE_S5F_COUNT` / `MUTATE_UNIFORM_COUNT`.
+    // Mutation + corruption counters. `n_mutations` reads from
+    // `LiveCallState`, stashed by the S5F / Uniform passes at seal
+    // time.
     rec.n_mutations = sim
         .live_calls
         .as_ref()

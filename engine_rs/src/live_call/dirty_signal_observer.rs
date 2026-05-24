@@ -1,9 +1,9 @@
-//! Phase 15: streaming dirty-signal observer.
+//! Streaming dirty-signal observer.
 //!
 //! Captures `DirtyWindow` change signals from the IR event stream as
-//! mutations happen, replacing the abandoned trace-scan optimisation
-//! (see the historical comment in
-//! `compiled/execute.rs::apply_live_call_updates`).
+//! mutations happen, so the post-pass live-call refresh in
+//! `compiled/execute.rs::apply_live_call_updates` can narrow to
+//! segments whose region overlaps a dirty position.
 //!
 //! ## Why an observer rather than ad-hoc tracking on the builder
 //!

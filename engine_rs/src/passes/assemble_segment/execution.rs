@@ -83,27 +83,21 @@ impl AssembleSegmentPass {
         let seg = self.segment;
         let slice = &allele.seq[slice_start as usize..(slice_start + slice_len) as usize];
 
-        // Phase 19: single canonical assembly path. Build the new
-        // region's bytes via `SimulationBuilder` so observers see each
-        // base as it lands. The codon-rail observer ALWAYS runs (it
-        // populates the new region's `amino_acids` /
-        // `stop_codon_positions` byte-for-byte equivalent to a
-        // post-push `with_codon_rail_recomputed`). The walker observer
-        // runs ONLY when a `ReferenceMatchIndex` is available
-        // (compiled execution path) — test harnesses like
-        // `PassRuntime::execute_with_refdata` don't compile a
-        // reference index, so they pay nothing extra for assembly
-        // beyond the codon rail.
+        // Assembly does not maintain the per-region codon rail
+        // (`amino_acids` + `stop_codon_positions`); no production
+        // consumer reads it. `NoStopCodonInJunction` reads straight
+        // from `sim.pool`; AIRR's `sequence_aa` / `junction_aa` re-
+        // translate from raw bytes (the per-region frame doesn't
+        // match the junction frame in general). Callers that need
+        // the rail compute it on demand via
+        // `Region::with_codon_rail_recomputed(pool)`.
         //
-        // When the walker observer is attached, the post-pass
-        // `with_assembled_segment_live_call` hook detects the
-        // pre-staged call via its `evidence_version == version + 1`
-        // fast path and reuses it instead of running
-        // `call_from_region` from scratch.
+        // The walker observer still runs when a `ReferenceMatchIndex`
+        // is available — that one drives the live-call call set,
+        // which IS read by AIRR's v_call / d_call / j_call projection.
         let seq_start = sim.pool.len() as u32;
 
         let mut builder = SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_codon_rail_observer(seg, seq_start, frame_phase);
 
         let walker_attached = if let Some(reference_index) = ctx.reference_index {
             if let Some(segment_index) = reference_index.get(seg) {
@@ -122,13 +116,9 @@ impl AssembleSegmentPass {
         }
 
         let seq_end = builder.peek().pool.len() as u32;
-        let sealed_rail = builder.seal_codon_rail_observer();
 
         let segment_call = if walker_attached {
             let sealed = builder.seal_walker_observer(seq_end);
-            // The `evidence_version` we stamp into the observer-produced
-            // call must equal `base_state.version + 1` so the post-pass
-            // `with_assembled_segment_live_call` fast-path check fires.
             let base_version = builder
                 .peek()
                 .live_calls
@@ -157,11 +147,9 @@ impl AssembleSegmentPass {
 
         let region_start = NucHandle::new(seq_start);
         let region_end = NucHandle::new(seq_end);
-        // Region's codon rail comes from the sealed observer,
-        // byte-for-byte equivalent to running
-        // `with_codon_rail_recomputed(&current.pool)` on this range.
-        let region =
-            Region::from_sealed_codon_rail(seg, region_start, region_end, frame_phase, sealed_rail);
+        // Region constructed with empty codon rail. On-demand
+        // consumers call `with_codon_rail_recomputed(&pool)`.
+        let region = Region::new(seg, region_start, region_end).with_frame_phase(frame_phase);
         let current = current.with_region_added(region);
 
         // If a walker observer was attached, stash the

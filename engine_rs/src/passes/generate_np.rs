@@ -7,7 +7,7 @@ use crate::pass::{IntegerSupport, Pass, PassCompileFact, PassContext, PassEffect
 
 // `execute_with_sampling_mode` and the constraint-aware sampling
 // helpers live in submodules so the codon-rail + admit-mask observer
-// wiring (Phase 2/3) and the `sample_base_with_admit_mask` bypass
+// wiring (/3) and the `sample_base_with_admit_mask` bypass
 // stay focused. Both submodules `impl GenerateNPPass` here.
 mod execution;
 mod sampling;

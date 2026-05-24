@@ -61,9 +61,7 @@ impl AssembleSegmentPass {
         self.segment
     }
 
-    // `execute_with_validation` lives in the [`execution`] submodule.
-    // Phase 1 split it out so the streaming-walker-observer path can
-    // share the same code path with the original batch-push fallback;
+    // `execute_with_validation` lives in the [`execution`] submodule;
     // see `execution.rs` for the body.
 }
 
@@ -461,9 +459,10 @@ mod tests {
 
         let outcome = PassRuntime::execute_with_refdata(&plan, Simulation::new(), 0, &refdata);
         let sim = outcome.final_simulation();
-        let r = &sim.sequence.regions[0];
-
-        assert_eq!(r.amino_acids, b"KPG");
-        assert!(r.stop_codon_positions.is_empty());
+        // The per-region rail is not maintained in the hot path;
+        // compute on demand via `with_codon_rail_recomputed`.
+        let computed = sim.sequence.regions[0].with_codon_rail_recomputed(&sim.pool);
+        assert_eq!(computed.amino_acids, b"KPG");
+        assert!(computed.stop_codon_positions.is_empty());
     }
 }

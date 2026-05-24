@@ -70,13 +70,43 @@ pub fn uniform_s5f() -> S5FKernel {
 }
 
 pub fn assert_codon_rails_consistent(sim: &Simulation, label: &str) {
+    // the per-region rail is no longer maintained in the
+    // hot path. Region.amino_acids stays empty after assembly /
+    // mutation / indel passes; consumers compute the rail on demand
+    // via `with_codon_rail_recomputed`. So "stored == fresh" no
+    // longer means anything (stored is always empty). The invariant
+    // we DO want to verify is that a fresh recompute is deterministic
+    // and produces a rail that's internally consistent with the
+    // post-pipeline pool — i.e., every stop_codon_position handle
+    // falls within the region range and the amino_acids count
+    // matches the codon count derivable from `(region.len(), skip)`.
     for (i, region) in sim.sequence.regions.iter().enumerate() {
         let fresh = region.with_codon_rail_recomputed(&sim.pool);
+        let skip = (3 - (region.frame_phase as u32)) % 3;
+        let coding_bytes = region.len().saturating_sub(skip);
+        let expected_codons = (coding_bytes / 3) as usize;
         assert_eq!(
-            region.amino_acids, fresh.amino_acids,
-            "{}: region[{}] codon rail stale (stored {:?}, fresh {:?})",
-            label, i, region.amino_acids, fresh.amino_acids
+            fresh.amino_acids.len(),
+            expected_codons,
+            "{}: region[{}] codon count mismatch — bytes={} skip={} expected={} got={}",
+            label,
+            i,
+            region.len(),
+            skip,
+            expected_codons,
+            fresh.amino_acids.len(),
         );
+        for h in &fresh.stop_codon_positions {
+            assert!(
+                h.index() >= region.start.index() && h.index() < region.end.index(),
+                "{}: region[{}] stop_codon at handle {} outside region [{}, {})",
+                label,
+                i,
+                h.index(),
+                region.start.index(),
+                region.end.index(),
+            );
+        }
     }
 }
 

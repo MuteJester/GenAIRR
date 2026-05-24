@@ -49,10 +49,10 @@ impl S5FMutationPass {
             return Ok(sim.clone());
         }
 
-        // Phase 7: route mutations through `SimulationBuilder` so
+        // route mutations through `SimulationBuilder` so
         // each `change_base` notifies attached observers.
         //
-        // Phase 10: attach BOTH codon-rail (one per existing region)
+        // attach BOTH codon-rail (one per existing region)
         // AND walker (one per existing V/D/J region) observers.
         // After the mutation loop, the combined seal helper stages
         // walker calls in V→D→J order with monotonically increasing
@@ -177,16 +177,13 @@ impl S5FMutationPass {
         let mut sealed = if let Some(ref_index) = ctx.reference_index {
             builder.seal_with_committed_live_calls(ref_index)
         } else {
-            builder.seal_with_committed_codon_rails()
+            builder.seal()
         };
 
-        // Phase 17: stash the mutation count on `LiveCallState` so
-        // the AIRR projection reads `n_mutations` in O(1) instead of
-        // trace-scanning `MUTATE_S5F_COUNT`. Preserves prior
-        // semantics — we stash `count_raw` to match what the trace
-        // recorded above (line 45), which is the requested count
-        // rather than the actual applied count if the loop broke
-        // early.
+        // Stash the mutation count on `LiveCallState` so the AIRR
+        // projection reads `n_mutations` in O(1). `count_raw` matches
+        // what the trace records above — the requested count, not the
+        // actual applied count if the loop broke early.
         if count_raw > 0 {
             let mut state = sealed
                 .live_calls

@@ -36,21 +36,21 @@ impl GenerateNPPass {
 
     /// Constraint-aware base sample.
     ///
-    /// Phase 3 fast path: when `admit_mask` is `Some`, the caller has
+    /// fast path: when `admit_mask` is `Some`, the caller has
     /// pre-computed (via the `ProductiveAdmitMaskObserver` attached to
     /// the `SimulationBuilder`) a 4-bit mask of which canonical bases
     /// admit at this slot. We sample directly through that mask via
     /// [`sample_base_with_admit_mask`], skipping the generic
     /// `sample_filtered_result` Vec materialisation and the
     /// per-candidate contract trait dispatch entirely. This is the
-    /// architectural payoff of Phase 3: contracts move from
+    /// architectural payoff of contracts move from
     /// "queried per candidate" to "subscribed once per slot."
     ///
     /// Slow path (no admit mask available — e.g. tests using
     /// `PassRuntime::execute_with_refdata` that doesn't compile a
-    /// reference index): falls back to the existing
+    /// reference index): falls back to the
     /// `sample_filtered_result` + predicate-via-`admits_with_context`
-    /// path. Behavior bit-identical to pre-Phase-3.
+    /// path.
     pub(super) fn sample_base(
         &self,
         sim: &Simulation,
@@ -65,7 +65,7 @@ impl GenerateNPPass {
         let refdata = ctx.refdata;
         let contracts = ctx.contracts;
 
-        // Phase 3 fast path: admit-mask observer hands us a 4-bit
+        // fast path: admit-mask observer hands us a 4-bit
         // mask, we sample inverse-CDF directly over the admitted
         // subset of `base_dist`'s support. No per-candidate contract
         // dispatch, no intermediate `filtered` Vec.

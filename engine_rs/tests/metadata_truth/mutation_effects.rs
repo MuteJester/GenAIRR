@@ -2,7 +2,7 @@
 //!
 //! SHM (S5F or uniform) and PCR / quality / contaminant base-edit
 //! events all flip individual bases in the assembled pool. The live
-//! call walker observer (Phase 1+) updates its per-allele scores
+//! call walker observer updates its per-allele scores
 //! incrementally with each `on_base_changed` event. The resulting
 //! AIRR call set must reflect the post-mutation evidence:
 //!
@@ -19,9 +19,9 @@
 //!   originally-sampled truth. The truth allele falls out of the
 //!   call set — and this is biologically correct (an aligner given
 //!   only the mutated bases couldn't recover the truth either).
-//! - **n_mutations field reflects the recorded count**: Phase 18 staged
-//!   the count on `LiveCallState.mutation_count`. Verify it matches
-//!   the AIRR `n_mutations` field exactly.
+//! - **n_mutations field reflects the recorded count**: the count
+//!   is staged on `LiveCallState.mutation_count` by the mutation
+//!   passes. Verify it matches the AIRR `n_mutations` field exactly.
 //! - **Mutation count source preference** (S5F vs uniform): when
 //!   both passes ran (rare), verify the AIRR field semantics
 //!   (currently: first-set wins / sum / last-set wins — pin down
@@ -329,7 +329,7 @@ fn silent_mutation_at_non_distinguishing_position_preserves_call() {
 #[test]
 fn n_mutations_field_equals_uniform_mutation_count() {
     // UniformMutationPass with count=4 should produce
-    // `n_mutations = 4` in the AIRR record (Phase 18 stash on
+    // `n_mutations = 4` in the AIRR record (the stash on
     // LiveCallState.mutation_count).
     let cfg = common::vj_ambiguous_refdata();
     let mut plan = vj_truth_plan(&cfg, "v01*01", "j01*01", 0, 0);

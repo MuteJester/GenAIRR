@@ -1,4 +1,4 @@
-//! Phase 9 property tests for
+//! property tests for
 //! `WalkerObserverState::from_existing_region`.
 //!
 //! Rebuild an observer from an already-assembled `Region` + the

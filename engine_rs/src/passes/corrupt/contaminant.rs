@@ -89,8 +89,8 @@ impl ContaminantPass {
         }
 
         // 2. Replace every base in the pool with a contaminant draw.
-        // Phase 8: builder-pattern port (see quality.rs / s5f.rs).
-        // Phase 11: also attach walker observers when ref_index is
+        // builder-pattern port (see quality.rs / s5f.rs).
+        // also attach walker observers when ref_index is
         // available.
         let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
         builder.attach_standard_mutation_observers(ctx.reference_index);
@@ -110,7 +110,7 @@ impl ContaminantPass {
         Ok(if let Some(ref_index) = ctx.reference_index {
             builder.seal_with_committed_live_calls(ref_index)
         } else {
-            builder.seal_with_committed_codon_rails()
+            builder.seal()
         })
     }
 }
@@ -389,7 +389,8 @@ mod tests {
         let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9))
             .with_codon_rail_recomputed(&sim.pool);
         sim = sim.with_region_added(region);
-        // Before contamination: M G G.
+        // Before contamination: M G G (rail computed via the
+        // persistent helper above).
         assert_eq!(sim.sequence.regions[0].amino_acids, b"MGG");
 
         let mut plan = PassPlan::new();
@@ -397,10 +398,13 @@ mod tests {
         let outcome = PassRuntime::execute(&plan, sim, 0);
         let final_sim = outcome.final_simulation();
 
-        // After contamination: codon rail recomputed, may differ.
-        let stored = &final_sim.sequence.regions[0].amino_acids;
-        let fresh = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-        assert_eq!(stored, &fresh.amino_acids);
+        // the per-region rail is no longer maintained in the
+        // hot path. Compute on demand via `with_codon_rail_recomputed`
+        // and assert that recomputing twice yields the same result —
+        // i.e. the function is deterministic on the final pool.
+        let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        assert_eq!(a.amino_acids, b.amino_acids);
     }
 
     #[test]

@@ -75,9 +75,9 @@ impl Pass for EndLossPass {
             return sim.clone();
         }
 
-        // Phase 17: route deletes through `SimulationBuilder` so each
+        // route deletes through `SimulationBuilder` so each
         // removal emits `on_indel_deleted` to attached observers,
-        // matching the indel pass's reactive shape. Phase 16's
+        // matching the indel pass's reactive shape. 's
         // observer indel handlers (`needs_rebuild` on internal /
         // pre-region deletes, shift on external for walker) keep
         // codon-rail and walker live-call state correct without
@@ -115,7 +115,7 @@ impl Pass for EndLossPass {
             // observer route. No dirty-window stash because
             // `apply_live_call_updates` only runs on the compiled
             // path which always has a reference index.
-            builder.seal_with_committed_codon_rails()
+            builder.seal()
         }
     }
 

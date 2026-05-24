@@ -237,17 +237,12 @@ pub struct LiveCallState {
     pub j: Option<SegmentLiveCall>,
     pub dirty_windows: Vec<DirtyWindow>,
     pub version: u64,
-    /// Phase 17: per-record running count of base mutations applied
-    /// by S5F / uniform mutation passes. AIRR projection reads this
-    /// directly for the `n_mutations` field instead of trace-scanning
-    /// `MUTATE_S5F_COUNT` / `MUTATE_UNIFORM_COUNT` addresses (which
-    /// was a residual pull-from-trace anti-pattern surviving Phase
-    /// 15's dirty-window push migration).
-    ///
-    /// Co-located here because LiveCallState is already the
-    /// derived-state sidecar that's propagated through every
-    /// persistent `Simulation::with_*` operation via `Arc::clone`,
-    /// and because mutation count is, like `dirty_windows`, a fact
+    /// Per-record running count of base mutations applied by S5F /
+    /// uniform mutation passes. AIRR projection reads this directly
+    /// for the `n_mutations` field. Co-located here because
+    /// LiveCallState is already the derived-state sidecar propagated
+    /// through every persistent `Simulation::with_*` operation via
+    /// `Arc::clone`, and because the count is, like `dirty_windows`,
     /// derived from observing the IR mutation stream.
     pub mutation_count: u32,
 }
@@ -295,7 +290,7 @@ impl LiveCallState {
         next
     }
 
-    /// Phase 23: in-place mutator for the V/D/J staging loop in
+    /// in-place mutator for the V/D/J staging loop in
     /// `SimulationBuilder::seal_with_committed_live_calls`. Stashes
     /// the segment call directly without cloning the entire state;
     /// the loop now takes ownership of one `LiveCallState` and

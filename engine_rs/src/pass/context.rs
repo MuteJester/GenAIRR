@@ -22,6 +22,6 @@ pub struct PassContext<'a> {
     /// pass is running through the compiled execution path; the
     /// test-only `PassRuntime::execute_with_refdata` leaves this
     /// `None`, in which case observer-aware passes fall back to their
-    /// pre-Phase-1 batch-push code paths.
+    /// batch-push code paths.
     pub reference_index: Option<&'a ReferenceMatchIndex>,
 }

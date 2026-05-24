@@ -1,4 +1,4 @@
-//! Phase 4 property tests for `WalkerObserverState::on_base_changed`.
+//! property tests for `WalkerObserverState::on_base_changed`.
 //!
 //! Drives the streaming walker observer through a `push_nucleotide`
 //! → `change_base` sequence on a `SimulationBuilder`, then verifies

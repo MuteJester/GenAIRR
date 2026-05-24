@@ -1,22 +1,18 @@
 //! Streaming productive-admit-mask observer attached to
 //! `SimulationBuilder`.
 //!
-//! Today's `NoStopCodonInJunction` contract enforces "no stop codon
-//! in the junction" by being **queried per candidate**: for each
-//! NP-base draw, the sampler asks the contract four times (once per
-//! `{A,C,G,T}` candidate). Each query is O(1) against the
-//! precomputed [`JunctionStopState`] — but the per-candidate
-//! dispatch traffic, plus `sample_filtered_result`'s temporary
-//! `Vec<(T, f64)>` materialisation around it, is what shows up at
-//! ~31% inclusive (Vec::in_place_collect) and ~17% inclusive
-//! (`admits_with_context`) in the post-Phase-2 profile.
+//! `NoStopCodonInJunction` enforces "no stop codon in the junction"
+//! by being **queried per candidate**: for each NP-base draw, the
+//! sampler asks the contract four times (once per `{A,C,G,T}`
+//! candidate). Each query is O(1) against the precomputed
+//! [`JunctionStopState`] — but the per-candidate dispatch traffic,
+//! plus `sample_filtered_result`'s temporary `Vec<(T, f64)>`
+//! materialisation around it, was previously a dominant hot path.
 //!
-//! `ProductiveAdmitMaskObserver` is the **third concrete
-//! implementer** of [`IrEventObserver`], after the walker (Phase
-//! 1) and the codon rail (Phase 2). It validates the trait against
-//! a genuinely different consumer: not per-allele scoring, not
-//! per-position translation, but per-slot **admissibility
-//! caching**.
+//! `ProductiveAdmitMaskObserver` is an [`IrEventObserver`]
+//! implementer that exercises the trait against a per-slot
+//! **admissibility caching** consumer (rather than per-allele
+//! scoring or per-position translation).
 //!
 //! ## Reactive state model
 //!

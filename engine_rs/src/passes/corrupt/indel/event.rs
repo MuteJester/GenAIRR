@@ -71,14 +71,14 @@ impl IndelPass {
         }
     }
 
-    /// Phase 12: apply an indel event through a
+    /// apply an indel event through a
     /// `SimulationBuilder`, emitting `on_indel_inserted` /
     /// `on_indel_deleted` events to attached observers.
     ///
-    /// Default observer impls are no-ops, so the observer state
-    /// becomes stale after the call — the post-pass
+    /// Default observer impls are no-ops, so observer state becomes
+    /// stale after the call — the post-pass
     /// `PassEffect::StructuralIndel` refresh handles re-derivation
-    /// from scratch (unchanged from pre-Phase-12 behaviour).
+    /// from scratch.
     pub(super) fn apply_event_via_builder(
         builder: &mut SimulationBuilder,
         event: IndelEvent,

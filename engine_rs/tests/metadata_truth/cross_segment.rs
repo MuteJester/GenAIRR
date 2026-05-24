@@ -361,7 +361,7 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
 
 #[test]
 fn overlap_walker_halts_at_pool_end() {
-    // Under the conservative extension policy (Phase 20) the
+    // Under the conservative extension policy the
     // walker halts as soon as the call set collapses to a
     // singleton — the old "could run forever" worry is bounded
     // by the call narrowing, well before pool_len. This test
@@ -438,7 +438,7 @@ fn overlap_into_d_keeps_airr_v_sequence_end_at_structural_boundary() {
     // extensions propagate to AIRR coordinates, but cross-segment
     // overlap does not.
     //
-    // Under conservative extension (Phase 20), the live seq_end
+    // Under conservative extension, the live seq_end
     // advances by exactly the single byte that narrows
     // {V01,V02}→{V01} → seq_end = 10 internally; the AIRR
     // projection still reports 9.

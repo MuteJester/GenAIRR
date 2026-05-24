@@ -147,11 +147,10 @@ fn apply_live_call_updates(
                 //   in VJ chains, where V sits directly upstream of J
                 //   separated only by NP1).
                 //
-                // Phase 24: the V-on-J refresh closes a bug where
-                // VJ-chain V→J overlap never fired because the
-                // previous dispatcher only refreshed D on J assembly.
-                // In VDJ chains the V refresh is a near-no-op since V
-                // was already narrowed past D, and the Phase 20
+                // The V-on-J refresh covers VJ-chain V→J overlap that
+                // would otherwise be missed if only D refreshed on J
+                // assembly. In VDJ chains the V refresh is a near-no-op
+                // since V was already narrowed past D, and the
                 // conservative-extension walker halts immediately when
                 // the call set is already fully resolved.
                 match segment {
@@ -167,20 +166,12 @@ fn apply_live_call_updates(
             }
             // any base edit (SHM, uniform mutation, PCR, quality
             // / N injection, contaminant overwrite) can change which
-            // alleles the assembled bases support. Phase 15: read the
-            // dirty windows stamped by the pass's
-            // `DirtySignalObserver` and refresh only segments whose
-            // region overlaps a dirty position. When no observer was
-            // attached (legacy / test paths), `dirty_windows` is
-            // empty and we fall back to the conservative full V/D/J
-            // sweep.
-            //
-            // Historical note: an earlier trace-scan attempt to do
-            // this (parse the per-pass trace delta for edited
-            // positions) was abandoned because the trace-scan cost
-            // (~5 µs/record) cancelled the refresh savings. Sourcing
-            // dirty signals directly from the IR event stream is
-            // O(1) per edit and removes that overhead.
+            // alleles the assembled bases support. Read the dirty
+            // windows stamped by the pass's `DirtySignalObserver` and
+            // refresh only segments whose region overlaps a dirty
+            // position. When no observer was attached (legacy / test
+            // paths), `dirty_windows` is empty and we fall back to the
+            // conservative full V/D/J sweep.
             PassEffect::EditBases => {
                 sim = refresh_segments_for_edit(sim, reference_index);
             }
@@ -215,14 +206,14 @@ fn apply_live_call_updates(
             // segment from the post-indel pool so the live calls reflect
             // the new evidence layout.
             //
-            // Phase 15 dirty-window optimisation does NOT apply here:
-            // an indel anywhere in the pool shifts every region whose
-            // start sits at or after the indel position, so a J
-            // hypothesis built before the indel references stale
-            // pool indices even when the indel didn't land inside J's
-            // current region. Refresh all three segments
-            // unconditionally; drain the dirty windows so the next
-            // pass's EditBases dispatch starts clean.
+            // Dirty-window narrowing does NOT apply here: an indel
+            // anywhere in the pool shifts every region whose start
+            // sits at or after the indel position, so a J hypothesis
+            // built before the indel references stale pool indices
+            // even when the indel didn't land inside J's current
+            // region. Refresh all three segments unconditionally;
+            // drain the dirty windows so the next pass's EditBases
+            // dispatch starts clean.
             PassEffect::StructuralIndel => {
                 for segment in [Segment::V, Segment::D, Segment::J] {
                     sim = with_assembled_segment_live_call(&sim, reference_index, segment);
@@ -241,9 +232,8 @@ fn apply_live_call_updates(
 /// overlap any dirty position.
 ///
 /// Empty dirty windows are interpreted conservatively as "we don't
-/// know what changed" → all assembled V/D/J segments refresh, which
-/// matches the pre-Phase-15 behaviour. After refresh the windows are
-/// drained so the next pass starts clean.
+/// know what changed" → all assembled V/D/J segments refresh. After
+/// refresh the windows are drained so the next pass starts clean.
 fn refresh_segments_for_edit(
     mut sim: Simulation,
     reference_index: &ReferenceMatchIndex,

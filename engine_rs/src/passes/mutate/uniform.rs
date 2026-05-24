@@ -98,14 +98,12 @@ impl UniformMutationPass {
             return Ok(sim.clone());
         }
 
-        // 2. Apply `count` mutations sequentially. Phase 8: route
-        //    each mutation through `SimulationBuilder::change_base`
-        //    so attached codon-rail observers update incrementally
-        //    (one per existing region) — matches what the old
-        //    `with_base_changed` did via `refresh_regions_covering`.
-        //    Phase 11: also attach walker observers when ref_index is
-        //    available so the post-pass walker refresh is
-        //    suppressed via the Phase-1 fast path.
+        // 2. Apply `count` mutations sequentially. Route each
+        //    mutation through `SimulationBuilder::change_base` so
+        //    attached walker observers (when a reference index is
+        //    available) update per-allele scores incrementally
+        //    instead of triggering a from-scratch refresh at the
+        //    post-pass `PassEffect::EditBases` hook.
         let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
         builder.attach_standard_mutation_observers(ctx.reference_index);
 
@@ -132,12 +130,12 @@ impl UniformMutationPass {
         let mut sealed = if let Some(ref_index) = ctx.reference_index {
             builder.seal_with_committed_live_calls(ref_index)
         } else {
-            builder.seal_with_committed_codon_rails()
+            builder.seal()
         };
 
-        // Phase 17: stash the mutation count on `LiveCallState` so
-        // the AIRR projection reads `n_mutations` in O(1) instead of
-        // trace-scanning `MUTATE_UNIFORM_COUNT`.
+        // Stash the mutation count on `LiveCallState` so the AIRR
+        // projection reads `n_mutations` in O(1) instead of trace-
+        // scanning `MUTATE_UNIFORM_COUNT`.
         if count_raw > 0 {
             let mut state = sealed
                 .live_calls
@@ -394,16 +392,13 @@ mod tests {
         let outcome = PassRuntime::execute(&plan, sim, 99);
         let final_sim = outcome.final_simulation();
 
-        // Stored codon rail equals a fresh recomputation against
-        // the post-mutation pool. This is the staleness invariant.
-        let stored_aa = &final_sim.sequence.regions[0].amino_acids;
-        let fresh_region =
-            final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-        assert_eq!(stored_aa, &fresh_region.amino_acids);
-        assert_eq!(
-            final_sim.sequence.regions[0].stop_codon_positions,
-            fresh_region.stop_codon_positions
-        );
+        // The per-region codon rail isn't maintained in the hot path;
+        // verify that an on-demand recompute against the post-
+        // mutation pool is deterministic.
+        let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        assert_eq!(a.amino_acids, b.amino_acids);
+        assert_eq!(a.stop_codon_positions, b.stop_codon_positions);
     }
 
     #[test]

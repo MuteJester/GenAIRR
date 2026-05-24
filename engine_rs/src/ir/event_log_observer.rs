@@ -1,4 +1,4 @@
-//! Phase 13: structured event-log observer.
+//! structured event-log observer.
 //!
 //! Captures every IR mutation event emitted by `SimulationBuilder`
 //! into a flat `Vec<IrEvent>`. Replaying the resulting event stream
@@ -17,14 +17,12 @@
 //! - **Sampling-bias metrics** — counting events of each kind per
 //!   pass is a small downstream consumer.
 //!
-//! The architectural significance: this is the **fourth concrete
-//! `IrEventObserver` impl** (after walker, codon rail, productive
-//! admit-mask), demonstrating that the trait system supports new
-//! consumers by **pure registration** — no changes to the trait
+//! Architecturally, this is another concrete `IrEventObserver` impl
+//! alongside the walker, productive admit-mask, and dirty-signal
+//! observers — demonstrating that the trait system supports new
+//! consumers by **pure registration**: no changes to the trait
 //! surface, no changes to the existing observers, no changes to the
-//! builder's broadcast logic. Adding a fifth observer (e.g. a
-//! per-segment freshness tracker, or a per-allele evidence
-//! summariser) follows the same template.
+//! builder's broadcast logic.
 
 use super::nucleotide::NucFlags;
 use super::{NucHandle, Nucleotide, Segment};

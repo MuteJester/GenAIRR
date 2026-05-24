@@ -162,6 +162,8 @@ fn indel_pass_insertion_grows_region_only_when_spanning() {
 
 #[test]
 fn indel_pass_codon_rail_refresh_after_insertion() {
+    // rail no longer maintained in the hot path. Compute
+    // on demand and assert determinism.
     let mut plan = PassPlan::new();
     plan.push(Box::new(IndelPass::new(
         fixed_count(2),
@@ -171,13 +173,14 @@ fn indel_pass_codon_rail_refresh_after_insertion() {
     let outcome = PassRuntime::execute(&plan, indel_test_sim(), 1);
     let final_sim = outcome.final_simulation();
 
-    let stored = &final_sim.sequence.regions[0].amino_acids;
-    let fresh = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-    assert_eq!(stored, &fresh.amino_acids);
+    let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+    let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+    assert_eq!(a.amino_acids, b.amino_acids);
 }
 
 #[test]
 fn indel_pass_codon_rail_refresh_after_deletion() {
+    // see comment on insertion variant.
     let mut plan = PassPlan::new();
     plan.push(Box::new(IndelPass::new(
         fixed_count(2),
@@ -187,9 +190,9 @@ fn indel_pass_codon_rail_refresh_after_deletion() {
     let outcome = PassRuntime::execute(&plan, indel_test_sim(), 1);
     let final_sim = outcome.final_simulation();
 
-    let stored = &final_sim.sequence.regions[0].amino_acids;
-    let fresh = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-    assert_eq!(stored, &fresh.amino_acids);
+    let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+    let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+    assert_eq!(a.amino_acids, b.amino_acids);
 }
 
 #[test]

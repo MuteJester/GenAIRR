@@ -47,7 +47,13 @@ impl IndelPass {
                 let segment = Self::insertion_segment(sim, site);
                 for &(base, base_weight) in &base_support {
                     let nuc = Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED);
-                    let post_sim = sim.with_indel_inserted(site, nuc);
+                    // Skip the codon-rail recompute on the candidate
+                    // post-sim: contracts evaluate against `sim.pool`
+                    // directly (no contract reads
+                    // `region.amino_acids` / `stop_codon_positions`),
+                    // and the candidate sim is discarded once the
+                    // weight is computed.
+                    let post_sim = sim.with_indel_inserted_no_rail_recompute(site, nuc);
                     candidates.push(PostEventCandidate::new(
                         IndelEvent::Insertion { site, base },
                         site_weight * base_weight,
@@ -70,7 +76,7 @@ impl IndelPass {
             } else {
                 let site_weight = deletion_prob / pool_len as f64;
                 for site in 0..pool_len {
-                    let post_sim = sim.with_indel_deleted(site);
+                    let post_sim = sim.with_indel_deleted_no_rail_recompute(site);
                     candidates.push(PostEventCandidate::new(
                         IndelEvent::Deletion { site: Some(site) },
                         site_weight,

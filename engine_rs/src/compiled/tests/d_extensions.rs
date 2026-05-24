@@ -12,7 +12,7 @@ use super::*;
 // - D RIGHT extension needs the new AppendRegion(Np2) hook
 //   (NP2 is generated AFTER D is assembled).
 //
-// Phase 20: extension into NP is *conservative*. It proceeds one
+// extension into NP is *conservative*. It proceeds one
 // byte at a time only while the byte strictly narrows the current
 // max-score tie set. If the primary structural walk has already
 // resolved the call to a single allele, conservative extension

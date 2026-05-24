@@ -21,3 +21,11 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
 
 [dev-dependencies]
 # Reserved for proptest / property-based tests.
+
+[profile.release]
+# Keep debug info so py-spy / perf / samply can symbolicate native
+# stacks inside the .so. No effect on codegen / optimizations; adds a
+# few MB to the .so size, fine for a Python extension. Explicit
+# `strip = "none"` overrides any cargo default that might strip.
+debug = true
+strip = "none"
