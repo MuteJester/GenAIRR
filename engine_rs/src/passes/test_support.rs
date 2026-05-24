@@ -78,16 +78,14 @@ pub(crate) fn make_substitution_productive_vj_fixture() -> (RefDataConfig, Simul
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
         sim = next;
     }
-    let v_region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3))
-        .with_codon_rail_recomputed(&sim.pool);
+    let v_region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3));
     sim = sim.with_region_added(v_region);
 
     for (i, &b) in b"TGG".iter().enumerate() {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::J));
         sim = next;
     }
-    let j_region = Region::new(Segment::J, NucHandle::new(3), NucHandle::new(6))
-        .with_codon_rail_recomputed(&sim.pool);
+    let j_region = Region::new(Segment::J, NucHandle::new(3), NucHandle::new(6));
     sim = sim.with_region_added(j_region);
 
     sim = sim

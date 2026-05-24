@@ -181,7 +181,7 @@ mod tests {
     use super::*;
     use crate::contract::productive;
     use crate::dist::{EmpiricalLengthDist, FilteredSampleError, UniformBase};
-    use crate::ir::{Nucleotide, Region, Segment};
+    use crate::ir::{compute_codon_rail, Nucleotide, Region, Segment};
     use crate::pass::{PassPlan, PassRuntime};
     use crate::passes::test_support::{
         make_substitution_productive_vj_fixture, StopOnlyMutationBaseDist,
@@ -228,8 +228,7 @@ mod tests {
                 sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
-        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9))
-            .with_codon_rail_recomputed(&sim.pool);
+        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9));
         sim = sim.with_region_added(region);
 
         let mut plan = PassPlan::new();
@@ -250,8 +249,8 @@ mod tests {
         }
         // Codon rail unchanged.
         assert_eq!(
-            final_sim.sequence.regions[0].amino_acids,
-            sim.sequence.regions[0].amino_acids
+            compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool).amino_acids,
+            compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids
         );
         // Trace recorded count=0, no site/base entries.
         assert_eq!(outcome.trace.len(), 1);
@@ -269,8 +268,7 @@ mod tests {
                 sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
-        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12))
-            .with_codon_rail_recomputed(&sim.pool);
+        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12));
         sim = sim.with_region_added(region);
 
         let mut plan = PassPlan::new();
@@ -373,8 +371,7 @@ mod tests {
                 sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
-        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12))
-            .with_codon_rail_recomputed(&sim.pool);
+        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12));
         sim = sim.with_region_added(region);
 
         let mut plan = PassPlan::new();
@@ -386,11 +383,10 @@ mod tests {
         let outcome = PassRuntime::execute(&plan, sim, 99);
         let final_sim = outcome.final_simulation();
 
-        // The per-region codon rail isn't maintained in the hot path;
-        // verify that an on-demand recompute against the post-
+        // Verify that an on-demand recompute against the post-
         // mutation pool is deterministic.
-        let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-        let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        let a = compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
+        let b = compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
         assert_eq!(a.amino_acids, b.amino_acids);
         assert_eq!(a.stop_codon_positions, b.stop_codon_positions);
     }

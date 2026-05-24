@@ -459,10 +459,9 @@ mod tests {
 
         let outcome = PassRuntime::execute_with_refdata(&plan, Simulation::new(), 0, &refdata);
         let sim = outcome.final_simulation();
-        // The per-region rail is not maintained in the hot path;
-        // compute on demand via `with_codon_rail_recomputed`.
-        let computed = sim.sequence.regions[0].with_codon_rail_recomputed(&sim.pool);
-        assert_eq!(computed.amino_acids, b"KPG");
-        assert!(computed.stop_codon_positions.is_empty());
+        // Codon rail is computed on demand at consumer call sites.
+        let rail = crate::ir::compute_codon_rail(&sim.sequence.regions[0], &sim.pool);
+        assert_eq!(rail.amino_acids, b"KPG");
+        assert!(rail.stop_codon_positions.is_empty());
     }
 }

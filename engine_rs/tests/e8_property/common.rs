@@ -57,8 +57,7 @@ pub fn assembled_v_sim() -> Simulation {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
         sim = next;
     }
-    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12))
-        .with_codon_rail_recomputed(&sim.pool);
+    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12));
     sim.with_region_added(region)
 }
 
@@ -81,7 +80,7 @@ pub fn assert_codon_rails_consistent(sim: &Simulation, label: &str) {
     // falls within the region range and the amino_acids count
     // matches the codon count derivable from `(region.len(), skip)`.
     for (i, region) in sim.sequence.regions.iter().enumerate() {
-        let fresh = region.with_codon_rail_recomputed(&sim.pool);
+        let fresh = genairr_engine::ir::compute_codon_rail(region, &sim.pool);
         let skip = (3 - (region.frame_phase as u32)) % 3;
         let coding_bytes = region.len().saturating_sub(skip);
         let expected_codons = (coding_bytes / 3) as usize;

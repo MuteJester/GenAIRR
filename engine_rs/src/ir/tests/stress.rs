@@ -1,4 +1,5 @@
 use super::*;
+use crate::ir::compute_codon_rail;
 
 // ── Stress test for the persistent IR + codon rail ──────────────
 
@@ -23,25 +24,22 @@ impl Xorshift32 {
 }
 
 /// Apply 1000 random base mutations through the persistent API,
-/// keeping every IR revision in memory. Verifies four properties
-/// that together pin the IR's architectural commitments:
+/// keeping every IR revision in memory. Verifies two properties:
 ///
-///   1. Persistent contract (D1): the initial revision retains its
-///      original amino-acid sequence after all 1000 mutations have
-///      been applied to descendant revisions. No mutation leaks
-///      back upstream.
-///   2. Persistent + entity-attached metadata (D5): every revision's
-///      stored `amino_acids` field equals the result of recomputing
-///      the codon rail from that revision's own pool. Stale
-///      metadata is structurally impossible.
-///   3. Branching independence: at any mid-revision, the stored
-///      amino acids match the revision's pool — they were captured
-///      at construction time and were not perturbed by later writes.
-///   4. The persistent API is not silently coalescing changes —
-///      most random mutations produce a visible delta in the new
-///      revision's pool versus the previous revision's pool.
+///   1. **Persistent contract (D1)**: the initial revision retains
+///      its original amino-acid sequence after all 1000 mutations
+///      have been applied to descendant revisions. No mutation
+///      leaks back upstream.
+///   2. **No silent coalescing**: most random mutations produce a
+///      visible delta in the new revision's pool versus the previous
+///      revision's pool.
+///
+/// (The old test also verified that each revision's "stored"
+/// codon-rail matched a fresh recompute. That invariant is now
+/// structurally true — the codon rail is computed on demand via
+/// [`compute_codon_rail`] rather than stored on the region.)
 #[test]
-fn stress_persistent_ir_with_codon_rail() {
+fn stress_persistent_ir_under_random_mutation() {
     const N_NUCS: u32 = 90; // 30 codons
     const N_MUTATIONS: usize = 1000;
 
@@ -50,8 +48,7 @@ fn stress_persistent_ir_with_codon_rail() {
     for i in 0..N_NUCS {
         pool0.push(Nucleotide::germline(b'A', i as u16, Segment::V));
     }
-    let region0 = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(N_NUCS))
-        .with_codon_rail_recomputed(&pool0);
+    let region0 = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(N_NUCS));
     let sim0 = Simulation {
         pool: pool0,
         sequence: std::sync::Arc::new(Sequence::new().with_region_added(region0)),
@@ -62,15 +59,13 @@ fn stress_persistent_ir_with_codon_rail() {
     };
 
     // Property check at revision 0.
-    assert_eq!(sim0.sequence.regions[0].amino_acids.len(), 30);
-    assert!(sim0.sequence.regions[0]
-        .amino_acids
-        .iter()
-        .all(|&aa| aa == b'K'));
+    let rail0 = compute_codon_rail(&sim0.sequence.regions[0], &sim0.pool);
+    assert_eq!(rail0.amino_acids.len(), 30);
+    assert!(rail0.amino_acids.iter().all(|&aa| aa == b'K'));
 
     // Snapshot the initial amino acid sequence to verify property
     // (1) — that revision 0 is never perturbed.
-    let initial_amino_acids = sim0.sequence.regions[0].amino_acids.clone();
+    let initial_amino_acids = rail0.amino_acids.clone();
 
     // Apply 1000 random mutations. Every mutation produces a new
     // Simulation revision; every previous revision stays alive.
@@ -91,15 +86,10 @@ fn stress_persistent_ir_with_codon_rail() {
             visible_mutations += 1;
         }
 
-        // Persistent update: pool, then region (with codon rail
-        // recomputed against the new pool), then sequence.
         let new_pool = prev.pool.with_base_changed(NucHandle::new(pos), new_base);
-        let new_region = prev.sequence.regions[0].with_codon_rail_recomputed(&new_pool);
-        let new_sequence = prev.sequence.with_region_replaced(0, new_region);
-
         history.push(Simulation {
             pool: new_pool,
-            sequence: std::sync::Arc::new(new_sequence),
+            sequence: prev.sequence.clone(),
             assignments: crate::assignment::AlleleAssignments::new(),
             segment_calls: prev.segment_calls.clone(),
             dirty_log: prev.dirty_log.clone(),
@@ -112,42 +102,11 @@ fn stress_persistent_ir_with_codon_rail() {
 
     // Property (1): revision 0's amino acids are exactly what they
     // were before any mutation happened.
-    assert_eq!(
-        history[0].sequence.regions[0].amino_acids,
-        initial_amino_acids
-    );
-    assert!(history[0].sequence.regions[0]
-        .amino_acids
-        .iter()
-        .all(|&aa| aa == b'K'));
+    let rev0_rail = compute_codon_rail(&history[0].sequence.regions[0], &history[0].pool);
+    assert_eq!(rev0_rail.amino_acids, initial_amino_acids);
+    assert!(rev0_rail.amino_acids.iter().all(|&aa| aa == b'K'));
 
-    // Property (2): every revision's stored amino acids equal a
-    // fresh recomputation from its own pool. This is the entity-
-    // attached metadata invariant — staleness is impossible.
-    for (i, rev) in history.iter().enumerate() {
-        let recomputed = rev.sequence.regions[0].with_codon_rail_recomputed(&rev.pool);
-        assert_eq!(
-            rev.sequence.regions[0].amino_acids, recomputed.amino_acids,
-            "revision {} amino acids drift from pool",
-            i
-        );
-        assert_eq!(
-            rev.sequence.regions[0].stop_codon_positions, recomputed.stop_codon_positions,
-            "revision {} stop codon positions drift from pool",
-            i
-        );
-    }
-
-    // Property (3): mid-revisions hold their own state, not the
-    // tail's state. We pick a few specific revisions to confirm.
-    for &i in &[1usize, 250, 500, 750, 999] {
-        assert!(i < history.len());
-        let rev = &history[i];
-        let recomputed = rev.sequence.regions[0].with_codon_rail_recomputed(&rev.pool);
-        assert_eq!(rev.sequence.regions[0].amino_acids, recomputed.amino_acids);
-    }
-
-    // Property (4): most mutations produced a visible base delta.
+    // Property (2): most mutations produced a visible base delta.
     // With a uniform 4-base alphabet, the expected fraction of
     // self-substitutions is 1/4, so visible should be ~75% × 1000.
     // Use a generous lower bound to absorb statistical jitter.

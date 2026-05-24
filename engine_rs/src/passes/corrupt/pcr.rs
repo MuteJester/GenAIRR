@@ -169,8 +169,7 @@ mod tests {
                 sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
-        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(21))
-            .with_codon_rail_recomputed(&sim.pool);
+        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(21));
         sim.with_region_added(region)
     }
 
@@ -299,8 +298,8 @@ mod tests {
         let outcome = PassRuntime::execute(&plan, pcr_test_sim(), 1);
         let final_sim = outcome.final_simulation();
 
-        let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-        let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        let a = crate::ir::compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
+        let b = crate::ir::compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
         assert_eq!(a.amino_acids, b.amino_acids);
     }
 

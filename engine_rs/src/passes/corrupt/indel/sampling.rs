@@ -53,7 +53,7 @@ impl IndelPass {
                     // `region.amino_acids` / `stop_codon_positions`),
                     // and the candidate sim is discarded once the
                     // weight is computed.
-                    let post_sim = sim.with_indel_inserted_no_rail_recompute(site, nuc);
+                    let post_sim = sim.with_indel_inserted(site, nuc);
                     candidates.push(PostEventCandidate::new(
                         IndelEvent::Insertion { site, base },
                         site_weight * base_weight,
@@ -76,7 +76,7 @@ impl IndelPass {
             } else {
                 let site_weight = deletion_prob / pool_len as f64;
                 for site in 0..pool_len {
-                    let post_sim = sim.with_indel_deleted_no_rail_recompute(site);
+                    let post_sim = sim.with_indel_deleted(site);
                     candidates.push(PostEventCandidate::new(
                         IndelEvent::Deletion { site: Some(site) },
                         site_weight,

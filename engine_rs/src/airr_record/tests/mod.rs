@@ -23,8 +23,7 @@ fn anchor_record_fixture() -> (RefDataConfig, Simulation) {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
         sim = next;
     }
-    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3))
-        .with_codon_rail_recomputed(&sim.pool);
+    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3));
     sim = sim.with_region_added(region).with_allele_assigned(
         Segment::V,
         crate::assignment::AlleleInstance::new(AlleleId::new(0)),
@@ -65,8 +64,7 @@ fn call_projection_fixture() -> (RefDataConfig, Simulation, AlleleId, AlleleId) 
             sim.with_nucleotide_pushed(Nucleotide::germline(base, i as u16, Segment::V));
         sim = next;
     }
-    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(6))
-        .with_codon_rail_recomputed(&sim.pool);
+    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(6));
     sim = sim
         .with_region_added(region)
         .with_allele_assigned(Segment::V, AlleleInstance::new(v0));

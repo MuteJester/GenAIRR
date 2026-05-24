@@ -3,21 +3,26 @@
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::ir::{Region, Segment};
+use crate::ir::{CodonRail, Region, Segment};
 
 /// A read-only view of one region of an assembled receptor sequence.
 ///
 /// Carries the segment role (V/D/J/Np1/Np2/C), the half-open
-/// `[start, end)` pool index range, and the codon-rail metadata
-/// (`frame_phase` + `amino_acids`).
+/// `[start, end)` pool index range, the codon frame phase, and the
+/// codon-rail metadata pre-computed against the pool snapshot at
+/// boundary-cross time. The rail is no longer stored on
+/// [`Region`] itself — `PyRegion` carries it as a sibling so the
+/// Python `amino_acids()` accessor doesn't need pool access at call
+/// time.
 #[pyclass(name = "Region", module = "GenAIRR._engine", frozen)]
 pub struct PyRegion {
     pub(crate) inner: Region,
+    pub(crate) codon_rail: CodonRail,
 }
 
 impl PyRegion {
-    pub(crate) fn new(inner: Region) -> Self {
-        Self { inner }
+    pub(crate) fn new(inner: Region, codon_rail: CodonRail) -> Self {
+        Self { inner, codon_rail }
     }
 }
 
@@ -70,7 +75,7 @@ impl PyRegion {
     /// stop codon, `b'X'` marks an ambiguous codon containing
     /// non-{A,C,G,T,U} bases.
     fn amino_acids<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        PyBytes::new_bound(py, &self.inner.amino_acids)
+        PyBytes::new_bound(py, &self.codon_rail.amino_acids)
     }
 
     fn __repr__(&self) -> String {

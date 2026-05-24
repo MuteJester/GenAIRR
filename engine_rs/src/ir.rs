@@ -40,7 +40,7 @@ pub use handle::{NucHandle, RegionHandle};
 pub use nucleotide::{encode_base, flag, GermlinePos, NucFlags, Nucleotide};
 pub use per_segment::PerSegment;
 pub use pool::NucleotidePool;
-pub use region::Region;
+pub use region::{compute_codon_rail, CodonRail, Region};
 pub use segment::Segment;
 pub use sequence::Sequence;
 pub use simulation::Simulation;

@@ -178,7 +178,7 @@ mod tests {
     use super::*;
     use crate::contract::productive;
     use crate::dist::{EmpiricalLengthDist, FilteredSampleError, UniformBase};
-    use crate::ir::{Nucleotide, Region, Segment};
+    use crate::ir::{compute_codon_rail, Nucleotide, Region, Segment};
     use crate::pass::{PassPlan, PassRuntime};
     use crate::passes::test_support::{
         make_substitution_productive_vj_fixture, StopOnlyMutationBaseDist,
@@ -297,11 +297,10 @@ mod tests {
                 sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
-        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9))
-            .with_codon_rail_recomputed(&sim.pool);
+        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9));
         sim = sim.with_region_added(region);
         // Original codon rail: ATG GGG GGG → M G G.
-        assert_eq!(sim.sequence.regions[0].amino_acids, b"MGG");
+        assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, b"MGG");
 
         let mut plan = PassPlan::new();
         plan.push(Box::new(QualityErrorPass::new(
@@ -312,10 +311,8 @@ mod tests {
         let final_sim = outcome.final_simulation();
 
         // After the pass, the codon rail still translates correctly
-        // even though some bases are lowercase.
-        // rail no longer maintained in the hot path;
-        // compute on demand.
-        let fresh = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        // even though some bases are lowercase. Computed on demand.
+        let fresh = compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
         // No 'X' (ambiguous) amino acids — lowercase still translates.
         let stored = &fresh.amino_acids;
         // No 'X' (ambiguous) amino acids — lowercase still translates.

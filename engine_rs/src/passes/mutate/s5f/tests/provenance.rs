@@ -52,10 +52,10 @@ fn s5f_mutation_pass_refreshes_codon_rail() {
     let outcome = PassRuntime::execute(&plan, s5f_test_sim(), 42);
     let final_sim = outcome.final_simulation();
 
-    // rail no longer maintained in the hot path. Assert
-    // on-demand recompute is deterministic against the final pool.
-    let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-    let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+    // The codon rail is computed on demand. Assert the recompute
+    // is deterministic against the final pool.
+    let a = crate::ir::compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
+    let b = crate::ir::compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
     assert_eq!(a.amino_acids, b.amino_acids);
     assert_eq!(a.stop_codon_positions, b.stop_codon_positions);
 }

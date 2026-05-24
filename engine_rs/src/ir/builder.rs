@@ -353,7 +353,7 @@ impl<'idx> SimulationBuilder<'idx> {
         // The per-region codon rail is not maintained in the hot
         // path; consumers compute on demand. The persistent layer's
         // recompute would be wasted work.
-        self.simulation = self.simulation.with_indel_inserted_no_rail_recompute(at, n);
+        self.simulation = self.simulation.with_indel_inserted(at, n);
     }
 
     /// Delete the nucleotide at position `at`, shifting every existing
@@ -363,7 +363,7 @@ impl<'idx> SimulationBuilder<'idx> {
     pub(crate) fn delete_indel(&mut self, at: u32) -> Option<Nucleotide> {
         let removed = *self.simulation.pool.get(NucHandle::new(at))?;
         self.broadcast(|obs| obs.on_indel_deleted(at, &removed));
-        self.simulation = self.simulation.with_indel_deleted_no_rail_recompute(at);
+        self.simulation = self.simulation.with_indel_deleted(at);
         Some(removed)
     }
 

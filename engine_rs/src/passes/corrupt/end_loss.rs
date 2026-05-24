@@ -158,8 +158,7 @@ mod tests {
             Segment::V,
             crate::ir::NucHandle::new(0),
             crate::ir::NucHandle::new(12),
-        )
-        .with_codon_rail_recomputed(&sim.pool);
+        );
         sim.with_region_added(region)
     }
 

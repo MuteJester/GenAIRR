@@ -318,7 +318,7 @@ fn end_to_end_vdj_codon_rail_correct_for_v_region() {
     let sim = outcome.final_simulation();
     let v = &sim.sequence.regions[0];
     assert_eq!(v.segment, Segment::V);
-    let computed = v.with_codon_rail_recomputed(&sim.pool);
+    let computed = genairr_engine::ir::compute_codon_rail(v, &sim.pool);
     assert_eq!(computed.amino_acids, b"KPG");
     assert!(computed.stop_codon_positions.is_empty());
 }
@@ -375,7 +375,9 @@ fn end_to_end_vdj_is_deterministic_under_same_seed() {
         assert_eq!(ra.start, rb.start);
         assert_eq!(ra.end, rb.end);
         assert_eq!(ra.frame_phase, rb.frame_phase);
-        assert_eq!(ra.amino_acids, rb.amino_acids);
+        // Codon rail is no longer stored on Region; pool equality
+        // checked elsewhere in this test guarantees the on-demand
+        // rail recompute would also match.
     }
 }
 

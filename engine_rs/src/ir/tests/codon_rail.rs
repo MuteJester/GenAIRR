@@ -1,6 +1,7 @@
 use super::*;
+use crate::ir::compute_codon_rail;
 
-// ── Codon-rail metadata tests ───────────────────────────────────
+// ── Codon-rail computation tests ─────────────────────────────────
 
 /// Helper: build a pool from a base string with all nucleotides in
 /// segment V, germline_pos = position within the string. Returns
@@ -57,49 +58,39 @@ fn translate_codon_uracil_treated_as_thymine() {
 }
 
 #[test]
-fn region_codon_rail_starts_empty_until_recomputed() {
-    let r = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9));
-    assert!(r.amino_acids.is_empty());
-    assert!(r.stop_codon_positions.is_empty());
-    assert_eq!(r.stop_codon_count(), 0);
-}
-
-#[test]
-fn region_with_codon_rail_recomputed_translates_in_frame() {
+fn compute_codon_rail_translates_in_frame() {
     // ATG GGG CAC → M G H, no stops.
     let (pool, region) = pool_from_string("ATGGGGCAC");
-    let r = region.with_codon_rail_recomputed(&pool);
+    let rail = compute_codon_rail(&region, &pool);
 
-    assert_eq!(r.amino_acids, b"MGH");
-    assert_eq!(r.stop_codon_positions, vec![]);
-    assert_eq!(r.stop_codon_count(), 0);
-    // Receiver unchanged (persistent contract).
-    assert!(region.amino_acids.is_empty());
+    assert_eq!(rail.amino_acids, b"MGH");
+    assert_eq!(rail.stop_codon_positions, vec![]);
+    assert_eq!(rail.stop_codon_count(), 0);
 }
 
 #[test]
-fn region_with_codon_rail_recomputed_picks_up_stops() {
+fn compute_codon_rail_picks_up_stops() {
     // ATG TAA TGG → M * W, one stop at position 3.
     let (pool, region) = pool_from_string("ATGTAATGG");
-    let r = region.with_codon_rail_recomputed(&pool);
+    let rail = compute_codon_rail(&region, &pool);
 
-    assert_eq!(r.amino_acids, b"M*W");
-    assert_eq!(r.stop_codon_positions, vec![NucHandle::new(3)]);
-    assert_eq!(r.stop_codon_count(), 1);
+    assert_eq!(rail.amino_acids, b"M*W");
+    assert_eq!(rail.stop_codon_positions, vec![NucHandle::new(3)]);
+    assert_eq!(rail.stop_codon_count(), 1);
 }
 
 #[test]
-fn region_with_codon_rail_recomputed_drops_partial_codon_at_end() {
+fn compute_codon_rail_drops_partial_codon_at_end() {
     // ATG GG → M, plus 2 incomplete bases. No second amino acid.
     let (pool, region) = pool_from_string("ATGGG");
-    let r = region.with_codon_rail_recomputed(&pool);
+    let rail = compute_codon_rail(&region, &pool);
 
-    assert_eq!(r.amino_acids, b"M");
-    assert_eq!(r.stop_codon_count(), 0);
+    assert_eq!(rail.amino_acids, b"M");
+    assert_eq!(rail.stop_codon_count(), 0);
 }
 
 #[test]
-fn region_with_codon_rail_respects_frame_phase_one() {
+fn compute_codon_rail_respects_frame_phase_one() {
     // frame_phase=1 means position 0 is the 2nd base of a codon
     // started in a (notional) previous region. Skip 2 bases, then
     // translate.
@@ -108,12 +99,13 @@ fn region_with_codon_rail_respects_frame_phase_one() {
     // Phase:   1 2 0 1 2 0 1 2     (0 = first base of codon)
     // Codons fully in this region: ATG, CCC → M P
     let (pool, region) = pool_from_string("XXATGCCC");
-    let r = region.with_frame_phase(1).with_codon_rail_recomputed(&pool);
-    assert_eq!(r.amino_acids, b"MP");
+    let r = region.with_frame_phase(1);
+    let rail = compute_codon_rail(&r, &pool);
+    assert_eq!(rail.amino_acids, b"MP");
 }
 
 #[test]
-fn region_with_codon_rail_respects_frame_phase_two() {
+fn compute_codon_rail_respects_frame_phase_two() {
     // frame_phase=2 means position 0 is the 3rd base of a codon.
     // Skip 1 base, then translate.
     //
@@ -121,110 +113,111 @@ fn region_with_codon_rail_respects_frame_phase_two() {
     // Phase:   2 0 1 2 0 1 2
     // Codons fully in this region: TAC, GGG → Y G
     let (pool, region) = pool_from_string("XTACGGG");
-    let r = region.with_frame_phase(2).with_codon_rail_recomputed(&pool);
-    assert_eq!(r.amino_acids, b"YG");
+    let r = region.with_frame_phase(2);
+    let rail = compute_codon_rail(&r, &pool);
+    assert_eq!(rail.amino_acids, b"YG");
 }
 
 #[test]
-fn region_with_codon_rail_handles_ambiguous_bases() {
+fn compute_codon_rail_handles_ambiguous_bases() {
     // Codon containing N → X.
     let (pool, region) = pool_from_string("ATGNAATGG");
-    let r = region.with_codon_rail_recomputed(&pool);
+    let rail = compute_codon_rail(&region, &pool);
     // ATG = M, NAA = X (ambiguous), TGG = W
-    assert_eq!(r.amino_acids, b"MXW");
+    assert_eq!(rail.amino_acids, b"MXW");
 }
 
 #[test]
-fn region_with_codon_rail_recomputes_after_base_mutation() {
-    // Mutation in this region must produce a region revision with
-    // updated amino acids.
-    let (pool0, region0) = pool_from_string("ATGTACTGG");
-    let r0 = region0.with_codon_rail_recomputed(&pool0);
-    assert_eq!(r0.amino_acids, b"MYW");
+fn compute_codon_rail_re_evaluates_after_base_mutation() {
+    // Mutation in this region must produce a different rail when
+    // re-computed against the mutated pool.
+    let (pool0, region) = pool_from_string("ATGTACTGG");
+    let rail0 = compute_codon_rail(&region, &pool0);
+    assert_eq!(rail0.amino_acids, b"MYW");
 
     // Mutate the second base of the second codon: TAC → TGC = C.
     let pool1 = pool0.with_base_changed(NucHandle::new(4), b'G');
-    let r1 = region0.with_codon_rail_recomputed(&pool1);
-    assert_eq!(r1.amino_acids, b"MCW");
+    let rail1 = compute_codon_rail(&region, &pool1);
+    assert_eq!(rail1.amino_acids, b"MCW");
 
-    // Old region revision unaffected.
-    assert_eq!(r0.amino_acids, b"MYW");
+    // Old rail unaffected (the rail is a free-function return value;
+    // no stale state to worry about).
+    assert_eq!(rail0.amino_acids, b"MYW");
 }
 
 #[test]
-fn region_with_codon_rail_detects_stop_introduced_by_mutation() {
+fn compute_codon_rail_detects_stop_introduced_by_mutation() {
     // TAC → TAA (Y → stop) by mutating one base.
-    let (pool0, region0) = pool_from_string("ATGTACGGG");
-    let r0 = region0.with_codon_rail_recomputed(&pool0);
-    assert_eq!(r0.stop_codon_count(), 0);
-    assert_eq!(r0.amino_acids, b"MYG");
+    let (pool0, region) = pool_from_string("ATGTACGGG");
+    let rail0 = compute_codon_rail(&region, &pool0);
+    assert_eq!(rail0.stop_codon_count(), 0);
+    assert_eq!(rail0.amino_acids, b"MYG");
 
     // Mutate position 5: TAC → TAA. This creates a stop codon.
     let pool1 = pool0.with_base_changed(NucHandle::new(5), b'A');
-    let r1 = region0.with_codon_rail_recomputed(&pool1);
-    assert_eq!(r1.amino_acids, b"M*G");
-    assert_eq!(r1.stop_codon_count(), 1);
-    assert_eq!(r1.stop_codon_positions, vec![NucHandle::new(3)]);
-
-    // Old revision unchanged.
-    assert_eq!(r0.stop_codon_count(), 0);
+    let rail1 = compute_codon_rail(&region, &pool1);
+    assert_eq!(rail1.amino_acids, b"M*G");
+    assert_eq!(rail1.stop_codon_count(), 1);
+    assert_eq!(rail1.stop_codon_positions, vec![NucHandle::new(3)]);
 }
 
 #[test]
-fn region_codon_rail_empty_region_produces_empty_metadata() {
+fn compute_codon_rail_empty_region_produces_empty_metadata() {
     let pool = NucleotidePool::new();
     let region = Region::new(Segment::Np1, NucHandle::new(0), NucHandle::new(0));
-    let r = region.with_codon_rail_recomputed(&pool);
-    assert!(r.amino_acids.is_empty());
-    assert!(r.stop_codon_positions.is_empty());
+    let rail = compute_codon_rail(&region, &pool);
+    assert!(rail.amino_acids.is_empty());
+    assert!(rail.stop_codon_positions.is_empty());
 }
 
 #[test]
-fn region_codon_rail_frame_phase_2_on_one_base_region() {
+fn compute_codon_rail_frame_phase_2_on_one_base_region() {
     // frame_phase = 2 means the region's first base is the third
     // base of a codon started in a previous region. `skip = 1`,
     // so we'd need at least 4 bases (1 skipped + 3 for a fresh
     // codon) to emit anything. With one base, output is empty.
     let (pool, region) = pool_from_string("X");
-    let r = region.with_frame_phase(2).with_codon_rail_recomputed(&pool);
-    assert!(r.amino_acids.is_empty());
-    assert!(r.stop_codon_positions.is_empty());
+    let r = region.with_frame_phase(2);
+    let rail = compute_codon_rail(&r, &pool);
+    assert!(rail.amino_acids.is_empty());
+    assert!(rail.stop_codon_positions.is_empty());
 }
 
 #[test]
-fn region_codon_rail_frame_phase_1_on_two_base_region() {
+fn compute_codon_rail_frame_phase_1_on_two_base_region() {
     // frame_phase = 1 → skip 2 → no bases left after skip.
     // Output is empty.
     let (pool, region) = pool_from_string("XY");
-    let r = region.with_frame_phase(1).with_codon_rail_recomputed(&pool);
-    assert!(r.amino_acids.is_empty());
+    let r = region.with_frame_phase(1);
+    let rail = compute_codon_rail(&r, &pool);
+    assert!(rail.amino_acids.is_empty());
 }
 
 #[test]
-fn region_codon_rail_malformed_end_less_than_start_is_safe() {
+fn compute_codon_rail_malformed_end_less_than_start_is_safe() {
     // Defensive contract: a region constructed with end < start
     // (which `len()` already saturates to 0) produces empty
-    // codon rail metadata, not a panic. Builders should not
-    // produce such regions, but the recompute should be robust.
+    // codon rail metadata, not a panic.
     let mut pool = NucleotidePool::new();
     for i in 0..6 {
         pool.push(Nucleotide::germline(b'A', i, Segment::V));
     }
     let region = Region::new(Segment::V, NucHandle::new(5), NucHandle::new(2));
-    assert_eq!(region.len(), 0); // saturating_sub clamps to 0
+    assert_eq!(region.len(), 0);
 
-    let r = region.with_codon_rail_recomputed(&pool);
-    assert!(r.amino_acids.is_empty());
-    assert!(r.stop_codon_positions.is_empty());
+    let rail = compute_codon_rail(&region, &pool);
+    assert!(rail.amino_acids.is_empty());
+    assert!(rail.stop_codon_positions.is_empty());
 }
 
 #[test]
-fn region_codon_rail_skip_overruns_end_is_safe() {
+fn compute_codon_rail_skip_overruns_end_is_safe() {
     // 1-base region with frame_phase=1 → skip=2 → start_idx > end_idx
     // after the skip. Same defensive case as above, different
     // path through the code.
     let (pool, region) = pool_from_string("X");
-    let r = region.with_frame_phase(1).with_codon_rail_recomputed(&pool);
-    assert!(r.amino_acids.is_empty());
-    assert!(r.stop_codon_positions.is_empty());
+    let r = region.with_frame_phase(1);
+    let rail = compute_codon_rail(&r, &pool);
+    assert!(rail.amino_acids.is_empty());
+    assert!(rail.stop_codon_positions.is_empty());
 }

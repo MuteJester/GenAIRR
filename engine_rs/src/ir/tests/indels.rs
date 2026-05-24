@@ -193,11 +193,9 @@ fn simulation_with_indel_inserted_refreshes_downstream_frame_phase_and_rail() {
         sim = next;
     }
     let v_region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(2))
-        .with_frame_phase(0)
-        .with_codon_rail_recomputed(&sim.pool);
+        .with_frame_phase(0);
     let j_region = Region::new(Segment::J, NucHandle::new(2), NucHandle::new(8))
-        .with_frame_phase(2)
-        .with_codon_rail_recomputed(&sim.pool);
+        .with_frame_phase(2);
     sim = sim.with_region_added(v_region).with_region_added(j_region);
 
     let mutated = sim.with_indel_inserted(
@@ -209,7 +207,8 @@ fn simulation_with_indel_inserted_refreshes_downstream_frame_phase_and_rail() {
     assert_eq!(j.start, NucHandle::new(3));
     assert_eq!(j.end, NucHandle::new(9));
     assert_eq!(j.frame_phase, 0);
-    assert_eq!(j.amino_acids, b"MP");
+    let rail = crate::ir::compute_codon_rail(j, &mutated.pool);
+    assert_eq!(rail.amino_acids, b"MP");
 }
 
 #[test]
@@ -221,11 +220,9 @@ fn simulation_with_indel_deleted_refreshes_downstream_frame_phase_and_rail() {
         sim = next;
     }
     let v_region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(4))
-        .with_frame_phase(0)
-        .with_codon_rail_recomputed(&sim.pool);
+        .with_frame_phase(0);
     let j_region = Region::new(Segment::J, NucHandle::new(4), NucHandle::new(10))
-        .with_frame_phase(1)
-        .with_codon_rail_recomputed(&sim.pool);
+        .with_frame_phase(1);
     sim = sim.with_region_added(v_region).with_region_added(j_region);
 
     let mutated = sim.with_indel_deleted(1);
@@ -234,7 +231,8 @@ fn simulation_with_indel_deleted_refreshes_downstream_frame_phase_and_rail() {
     assert_eq!(j.start, NucHandle::new(3));
     assert_eq!(j.end, NucHandle::new(9));
     assert_eq!(j.frame_phase, 0);
-    assert_eq!(j.amino_acids, b"MP");
+    let rail = crate::ir::compute_codon_rail(j, &mutated.pool);
+    assert_eq!(rail.amino_acids, b"MP");
 }
 
 #[test]
@@ -244,11 +242,10 @@ fn simulation_with_indel_inserted_full_round_trip() {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
         sim = next;
     }
-    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9))
-        .with_codon_rail_recomputed(&sim.pool);
+    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9));
     sim = sim.with_region_added(region);
     // Initial codon rail: ATG CCC GGG → M P G.
-    assert_eq!(sim.sequence.regions[0].amino_acids, b"MPG");
+    assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, b"MPG");
 
     // Insert a 'G' at position 3 — the region grows by 1, and
     // codons shift: ATG | GCC CGG G → M, A, R, + leftover G.
@@ -259,10 +256,10 @@ fn simulation_with_indel_inserted_full_round_trip() {
     assert_eq!(mutated.pool.len(), 10);
     assert_eq!(mutated.sequence.regions[0].len(), 10);
     // ATG GCC CGG → M A R (3 codons, 10 = 3*3 + 1 leftover)
-    assert_eq!(mutated.sequence.regions[0].amino_acids, b"MAR");
+    assert_eq!(compute_codon_rail(&mutated.sequence.regions[0], &mutated.pool).amino_acids, b"MAR");
     // Original sim untouched.
     assert_eq!(sim.pool.len(), 9);
-    assert_eq!(sim.sequence.regions[0].amino_acids, b"MPG");
+    assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, b"MPG");
 }
 
 #[test]
@@ -272,11 +269,10 @@ fn simulation_with_indel_deleted_full_round_trip() {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
         sim = next;
     }
-    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12))
-        .with_codon_rail_recomputed(&sim.pool);
+    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12));
     sim = sim.with_region_added(region);
     // Codon rail: ATG AAA CCC GGG → M K P G.
-    assert_eq!(sim.sequence.regions[0].amino_acids, b"MKPG");
+    assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, b"MKPG");
 
     // Delete position 3 (the first 'A' of the second codon).
     // Region shrinks to 11 bases.
@@ -285,7 +281,7 @@ fn simulation_with_indel_deleted_full_round_trip() {
     assert_eq!(mutated.sequence.regions[0].len(), 11);
     // Bases now: ATG AAC CCG GG → 3 full codons + 2 leftover.
     // ATG=M, AAC=N, CCG=P. Three amino acids.
-    assert_eq!(mutated.sequence.regions[0].amino_acids, b"MNP");
+    assert_eq!(compute_codon_rail(&mutated.sequence.regions[0], &mutated.pool).amino_acids, b"MNP");
 }
 
 #[test]
@@ -319,16 +315,15 @@ fn simulation_with_nucleotide_changed_also_refreshes_codon_rail() {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
         sim = next;
     }
-    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(6))
-        .with_codon_rail_recomputed(&sim.pool);
+    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(6));
     sim = sim.with_region_added(region);
-    assert_eq!(sim.sequence.regions[0].amino_acids, b"KP");
+    assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, b"KP");
 
     // Replace position 3 with a new nucleotide whose base is 'T'.
     // Codon at [3..6) was CCC = P, becomes TCC = S.
     let mutated =
         sim.with_nucleotide_changed(NucHandle::new(3), Nucleotide::germline(b'T', 3, Segment::V));
-    assert_eq!(mutated.sequence.regions[0].amino_acids, b"KS");
+    assert_eq!(compute_codon_rail(&mutated.sequence.regions[0], &mutated.pool).amino_acids, b"KS");
 }
 
 #[test]

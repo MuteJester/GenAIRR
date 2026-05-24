@@ -1,5 +1,6 @@
 use super::common::{assembled_v_sim, SEED_RANGE};
 use genairr_engine::dist::{EmpiricalLengthDist, UniformBase};
+use genairr_engine::ir::compute_codon_rail;
 use genairr_engine::pass::{PassPlan, PassRuntime};
 use genairr_engine::passes::{IndelPass, UniformMutationPass};
 
@@ -9,7 +10,7 @@ fn property_persistent_ir_uniform_mutation() {
         let sim = assembled_v_sim();
         let pre_len = sim.pool.len();
         let pre_region_end = sim.sequence.regions[0].end.index();
-        let pre_amino = sim.sequence.regions[0].amino_acids.clone();
+        let pre_amino = compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids.clone();
 
         let mut plan = PassPlan::new();
         plan.push(Box::new(UniformMutationPass::new(
@@ -20,7 +21,7 @@ fn property_persistent_ir_uniform_mutation() {
 
         assert_eq!(sim.pool.len(), pre_len);
         assert_eq!(sim.sequence.regions[0].end.index(), pre_region_end);
-        assert_eq!(sim.sequence.regions[0].amino_acids, pre_amino);
+        assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, pre_amino);
     }
 }
 
@@ -30,7 +31,7 @@ fn property_persistent_ir_indel_pass() {
         let sim = assembled_v_sim();
         let pre_len = sim.pool.len();
         let pre_region_end = sim.sequence.regions[0].end.index();
-        let pre_amino = sim.sequence.regions[0].amino_acids.clone();
+        let pre_amino = compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids.clone();
 
         let mut plan = PassPlan::new();
         plan.push(Box::new(IndelPass::new(
@@ -42,6 +43,6 @@ fn property_persistent_ir_indel_pass() {
 
         assert_eq!(sim.pool.len(), pre_len);
         assert_eq!(sim.sequence.regions[0].end.index(), pre_region_end);
-        assert_eq!(sim.sequence.regions[0].amino_acids, pre_amino);
+        assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, pre_amino);
     }
 }

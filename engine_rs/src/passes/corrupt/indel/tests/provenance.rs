@@ -173,8 +173,8 @@ fn indel_pass_codon_rail_refresh_after_insertion() {
     let outcome = PassRuntime::execute(&plan, indel_test_sim(), 1);
     let final_sim = outcome.final_simulation();
 
-    let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-    let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+    let a = crate::ir::compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
+    let b = crate::ir::compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
     assert_eq!(a.amino_acids, b.amino_acids);
 }
 
@@ -190,8 +190,8 @@ fn indel_pass_codon_rail_refresh_after_deletion() {
     let outcome = PassRuntime::execute(&plan, indel_test_sim(), 1);
     let final_sim = outcome.final_simulation();
 
-    let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-    let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+    let a = crate::ir::compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
+    let b = crate::ir::compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
     assert_eq!(a.amino_acids, b.amino_acids);
 }
 

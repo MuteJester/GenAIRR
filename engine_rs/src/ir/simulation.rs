@@ -136,11 +136,9 @@ impl Simulation {
 
     /// Return a new simulation with the nucleotide at `handle` replaced.
     pub fn with_nucleotide_changed(&self, handle: NucHandle, new_n: Nucleotide) -> Self {
-        let new_pool = self.pool.with_nucleotide_changed(handle, new_n);
-        let new_sequence = refresh_regions_covering(&self.sequence, &new_pool, handle);
         Self {
-            pool: new_pool,
-            sequence: Arc::new(new_sequence),
+            pool: self.pool.with_nucleotide_changed(handle, new_n),
+            sequence: self.sequence.clone(),
             assignments: self.assignments,
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
@@ -150,11 +148,9 @@ impl Simulation {
 
     /// Return a new simulation with only the base at `handle` changed.
     pub fn with_base_changed(&self, handle: NucHandle, new_base: u8) -> Self {
-        let new_pool = self.pool.with_base_changed(handle, new_base);
-        let new_sequence = refresh_regions_covering(&self.sequence, &new_pool, handle);
         Self {
-            pool: new_pool,
-            sequence: Arc::new(new_sequence),
+            pool: self.pool.with_base_changed(handle, new_base),
+            sequence: self.sequence.clone(),
             assignments: self.assignments,
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
@@ -224,107 +220,33 @@ impl Simulation {
         }
     }
 
-    /// Return a new simulation with `n` inserted at pool position `at`.
-    /// Recomputes codon rails for every region whose range shifted.
-    /// Direct callers (tests, property-test oracles, contract
-    /// candidate enumeration) use this when they need the rail to
-    /// be correct on the returned sim.
-    ///
-    /// Production callers (the indel / end-loss pass through
-    /// `SimulationBuilder`) take the cheaper
-    /// [`Self::with_indel_inserted_no_rail_recompute`] variant
-    /// because the per-region rail isn't maintained in the hot
-    /// path — see `Region::with_codon_rail_recomputed` for the
-    /// on-demand path.
+    /// Return a new simulation with `n` inserted at pool position
+    /// `at`. The persistent layer adjusts every region's `(start,
+    /// end)` for the +1 shift; codon-rail metadata is no longer
+    /// stored on `Region`, so callers that need it compute on
+    /// demand via [`crate::ir::compute_codon_rail`].
     pub fn with_indel_inserted(&self, at: u32, n: Nucleotide) -> Self {
-        self.with_indel_inserted_inner(at, n, true)
-    }
-
-    /// Return a new simulation with `n` inserted at pool position `at`,
-    /// SKIPPING the per-region codon-rail recompute. Used by callers
-    /// that don't read `region.amino_acids` / `stop_codon_positions`
-    /// on the returned sim (the builder, the indel-pass strict-mode
-    /// constraint sampler).
-    pub(crate) fn with_indel_inserted_no_rail_recompute(
-        &self,
-        at: u32,
-        n: Nucleotide,
-    ) -> Self {
-        self.with_indel_inserted_inner(at, n, false)
-    }
-
-    fn with_indel_inserted_inner(&self, at: u32, n: Nucleotide, recompute_rails: bool) -> Self {
         let new_pool = self.pool.with_inserted(at, n);
         let adjusted = self.sequence.with_indel_adjusted(at, 1);
-        let new_regions: Vec<Region> = adjusted
-            .regions
-            .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let original = &self.sequence.regions[i];
-                let range_changed = r.start != original.start
-                    || r.end != original.end
-                    || r.frame_phase != original.frame_phase;
-                if range_changed && recompute_rails {
-                    r.with_codon_rail_recomputed(&new_pool)
-                } else {
-                    r.clone()
-                }
-            })
-            .collect();
         Self {
             pool: new_pool,
-            sequence: Arc::new(Sequence {
-                regions: new_regions,
-            }),
+            sequence: Arc::new(adjusted),
             assignments: self.assignments,
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
         }
-    }
-
-    /// Return a new simulation with the nucleotide at pool position `at` removed.
-    /// Recomputes codon rails for every region whose range shifted.
-    ///
-    /// See [`Self::with_indel_inserted`] for the no-recompute variant.
-    pub fn with_indel_deleted(&self, at: u32) -> Self {
-        self.with_indel_deleted_inner(at, true)
     }
 
     /// Return a new simulation with the nucleotide at pool position
-    /// `at` removed, SKIPPING the per-region codon-rail recompute.
-    /// Used by `SimulationBuilder` since the per-region rail isn't
-    /// maintained in the hot path — consumers that need it call
-    /// `Region::with_codon_rail_recomputed` on demand.
-    pub(crate) fn with_indel_deleted_no_rail_recompute(&self, at: u32) -> Self {
-        self.with_indel_deleted_inner(at, false)
-    }
-
-    fn with_indel_deleted_inner(&self, at: u32, recompute_rails: bool) -> Self {
+    /// `at` removed. Same range-shift semantics as
+    /// [`Self::with_indel_inserted`].
+    pub fn with_indel_deleted(&self, at: u32) -> Self {
         let new_pool = self.pool.with_deleted(at);
         let adjusted = self.sequence.with_indel_adjusted(at, -1);
-        let new_regions: Vec<Region> = adjusted
-            .regions
-            .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let original = &self.sequence.regions[i];
-                let range_changed = r.start != original.start
-                    || r.end != original.end
-                    || r.frame_phase != original.frame_phase;
-                if range_changed && recompute_rails {
-                    r.with_codon_rail_recomputed(&new_pool)
-                } else {
-                    r.clone()
-                }
-            })
-            .collect();
         Self {
             pool: new_pool,
-            sequence: Arc::new(Sequence {
-                regions: new_regions,
-            }),
+            sequence: Arc::new(adjusted),
             assignments: self.assignments,
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
@@ -333,20 +255,3 @@ impl Simulation {
     }
 }
 
-fn refresh_regions_covering(seq: &Sequence, pool: &NucleotidePool, handle: NucHandle) -> Sequence {
-    let h = handle.index();
-    let new_regions: Vec<Region> = seq
-        .regions
-        .iter()
-        .map(|r| {
-            if h >= r.start.index() && h < r.end.index() {
-                r.with_codon_rail_recomputed(pool)
-            } else {
-                r.clone()
-            }
-        })
-        .collect();
-    Sequence {
-        regions: new_regions,
-    }
-}

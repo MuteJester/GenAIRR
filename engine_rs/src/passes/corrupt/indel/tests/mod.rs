@@ -19,8 +19,7 @@ fn indel_test_sim() -> Simulation {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
         sim = next;
     }
-    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12))
-        .with_codon_rail_recomputed(&sim.pool);
+    let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(12));
     sim.with_region_added(region)
 }
 
@@ -50,7 +49,7 @@ fn multi_segment_indel_context_sim() -> Simulation {
     }
 
     for region in regions {
-        sim = sim.with_region_added(region.with_codon_rail_recomputed(&sim.pool));
+        sim = sim.with_region_added(region);
     }
     sim
 }

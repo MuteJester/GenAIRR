@@ -150,6 +150,7 @@ mod tests {
     use super::*;
     use crate::assignment::AlleleInstance;
     use crate::contract::productive;
+    use crate::ir::compute_codon_rail;
     use crate::dist::{FilteredSampleError, UniformBase};
     use crate::ir::{Nucleotide, Region, Segment};
     use crate::pass::{PassPlan, PassRuntime};
@@ -209,8 +210,7 @@ mod tests {
                 sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
             sim = next;
         }
-        let v_region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3))
-            .with_codon_rail_recomputed(&sim.pool);
+        let v_region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3));
         sim = sim.with_region_added(v_region);
 
         for (i, &b) in b"TGG".iter().enumerate() {
@@ -218,8 +218,7 @@ mod tests {
                 sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::J));
             sim = next;
         }
-        let j_region = Region::new(Segment::J, NucHandle::new(3), NucHandle::new(6))
-            .with_codon_rail_recomputed(&sim.pool);
+        let j_region = Region::new(Segment::J, NucHandle::new(3), NucHandle::new(6));
         sim = sim.with_region_added(j_region);
 
         sim = sim
@@ -386,24 +385,22 @@ mod tests {
                 sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
-        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9))
-            .with_codon_rail_recomputed(&sim.pool);
+        let region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9));
         sim = sim.with_region_added(region);
         // Before contamination: M G G (rail computed via the
         // persistent helper above).
-        assert_eq!(sim.sequence.regions[0].amino_acids, b"MGG");
+        assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, b"MGG");
 
         let mut plan = PassPlan::new();
         plan.push(Box::new(ContaminantPass::new(1.0, Box::new(UniformBase))));
         let outcome = PassRuntime::execute(&plan, sim, 0);
         let final_sim = outcome.final_simulation();
 
-        // the per-region rail is no longer maintained in the
-        // hot path. Compute on demand via `with_codon_rail_recomputed`
-        // and assert that recomputing twice yields the same result —
-        // i.e. the function is deterministic on the final pool.
-        let a = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
-        let b = final_sim.sequence.regions[0].with_codon_rail_recomputed(&final_sim.pool);
+        // The codon rail is computed on demand. Assert that
+        // recomputing twice yields the same result — i.e. the
+        // function is deterministic on the final pool.
+        let a = compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
+        let b = compute_codon_rail(&final_sim.sequence.regions[0], &final_sim.pool);
         assert_eq!(a.amino_acids, b.amino_acids);
     }
 
