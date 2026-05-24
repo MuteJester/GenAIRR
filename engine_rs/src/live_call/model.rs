@@ -231,25 +231,38 @@ pub enum DirtyReason {
 
 /// V/D/J live-call evidence + monotonic version chain.
 ///
-/// Previously this was `LiveCallState`, a grab bag that also owned
-/// `dirty_windows` (an inter-pass message log) and `mutation_count`
-/// (a per-record AIRR counter). Those two had nothing to do with
-/// segment-call evidence — they just hitched a ride on the only
-/// derived-state sidecar propagated through every
-/// `Simulation::with_*` operation. The split moves them to their own
-/// fields on [`crate::ir::Simulation`] so each piece has one writer
-/// and one reader.
+/// **Storage shape — typestate for the fast-path absorb.** Each
+/// V/D/J segment has TWO slots: a `committed` call (the consistent
+/// state) and an optional `staged` call (a pending observer-produced
+/// call waiting for absorption). The streaming walker observer writes
+/// to `staged`; the post-pass refresh hook commits via
+/// [`Self::commit_staged`].
 ///
-/// `version` is the change-detection token consumed by the fast-path
-/// absorb in `with_assembled_segment_live_call`: when the staged
-/// call's `evidence_version == base.version + N`, the absorb skips
-/// the from-scratch rebuild.
+/// This replaces the previous "`evidence_version == base.version + 1`"
+/// arithmetic test that detected staged calls. The version-arithmetic
+/// contract was a fragile convention: it required
+/// [`crate::ir::SimulationBuilder::seal_with_committed_live_calls`]
+/// to stamp staged calls with exactly the version offset the absorb
+/// would test for, and required the post-pass refresh to iterate
+/// V → D → J in lockstep. Both invariants lived in prose. The
+/// staged/committed split makes "this call was produced by an
+/// observer and hasn't been committed yet" a structural property of
+/// the type — the compiler enforces what the convention used to.
+///
+/// `version` still bumps on every commit and is surfaced to
+/// downstream consumers (AIRR provenance, change-detection tests),
+/// but it's no longer load-bearing for the absorb path.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SegmentCalls {
-    /// Per-segment slot table. Use [`Self::get`] / [`Self::iter`]
-    /// rather than touching `slots` directly so future extensions
-    /// (C-region, paired-chain) flow through one access surface.
-    slots: crate::ir::PerSegment<SegmentLiveCall>,
+    /// Per-segment slots holding the consistent (committed) call for
+    /// each V/D/J segment. Use [`Self::get`] / [`Self::iter`] to
+    /// read; modifications flow through [`Self::with_segment_call`].
+    committed: crate::ir::PerSegment<SegmentLiveCall>,
+    /// Per-segment slots holding observer-staged calls awaiting
+    /// commitment. A staged call shadows its committed counterpart on
+    /// read — it's the freshest evidence the engine has seen for that
+    /// segment.
+    staged: crate::ir::PerSegment<SegmentLiveCall>,
     pub version: u64,
 }
 
@@ -258,52 +271,73 @@ impl SegmentCalls {
         Self::default()
     }
 
+    /// Return the freshest call for `segment`: the staged one if any
+    /// (pending commit), otherwise the committed one. `None` if
+    /// neither slot is populated, or `segment` is non-assignable.
     pub fn get(&self, segment: Segment) -> Option<&SegmentLiveCall> {
         if !Segment::assignable().contains(&segment) {
             return None;
         }
-        self.slots.get(segment)
+        self.staged
+            .get(segment)
+            .or_else(|| self.committed.get(segment))
     }
 
     /// Iterate populated `(segment, &call)` entries in canonical
-    /// V → D → J order. Skips empty slots.
+    /// V → D → J order. Yields the freshest (staged-shadowed) view
+    /// of each segment. Skips empty slots.
     pub fn iter(&self) -> impl Iterator<Item = (Segment, &SegmentLiveCall)> + '_ {
-        self.slots.iter()
+        Segment::assignable()
+            .iter()
+            .copied()
+            .filter_map(move |seg| self.get(seg).map(|c| (seg, c)))
     }
 
+    /// `true` when `segment` has a staged-but-uncommitted call.
+    pub fn has_staged(&self, segment: Segment) -> bool {
+        self.staged.contains(segment)
+    }
+
+    /// Commit `call` directly: write to the committed slot, clear any
+    /// pending stage on the same segment, bump `version`.
     pub fn with_segment_call(&self, call: SegmentLiveCall) -> Self {
+        assert!(
+            Segment::assignable().contains(&call.segment),
+            "SegmentCalls::with_segment_call: non-assignable segment {:?}",
+            call.segment
+        );
         let mut next = self.clone();
-        next.set_segment_call(call);
+        next.staged.take(call.segment);
+        next.committed.set(call.segment, call);
         next.version = next.version.saturating_add(1);
         next
     }
 
-    /// Stash a pre-computed segment call without bumping the
-    /// `version`. The caller is expected to have stamped
-    /// `call.evidence_version == self.version + 1` so that the
-    /// post-pass `with_assembled_segment_live_call` hook recognises
-    /// it as the in-flight result and absorbs it via its fast path
-    /// (which then performs the normal `version` bump).
+    /// Stash a pre-computed segment call in the staged slot. Does
+    /// **not** bump `version` and does **not** touch the committed
+    /// slot — the post-pass refresh hook commits via
+    /// [`Self::commit_staged`].
     ///
-    /// Use only when the call is produced by the streaming walker
-    /// observer during `AssembleSegmentPass`; for any other path,
-    /// prefer [`Self::with_segment_call`] which handles the version
-    /// bump itself.
+    /// Used only by the streaming walker observer during
+    /// `AssembleSegmentPass` / mutation passes. Direct in-place
+    /// mutator (no clone) to amortise across the V → D → J staging
+    /// loop in `SimulationBuilder::seal_with_committed_live_calls`.
     pub fn stage_segment_call(&mut self, call: SegmentLiveCall) {
-        self.set_segment_call(call);
-        // Intentionally does NOT bump `version`. The post-pass
-        // `with_assembled_segment_live_call` consumer detects the
-        // observer-staged call via `evidence_version == version + 1`
-        // and increments the version itself.
-    }
-
-    fn set_segment_call(&mut self, call: SegmentLiveCall) {
         assert!(
             Segment::assignable().contains(&call.segment),
-            "SegmentLiveCall rejects non-assignable segment {:?}",
+            "SegmentCalls::stage_segment_call: non-assignable segment {:?}",
             call.segment
         );
-        self.slots.set(call.segment, call);
+        self.staged.set(call.segment, call);
+    }
+
+    /// If `segment` has a staged call, commit it (move staged →
+    /// committed, bump `version`) and return the new `SegmentCalls`.
+    /// Returns `None` when nothing is staged for that segment so the
+    /// caller can fall through to a from-scratch recompute path.
+    pub fn commit_staged(&self, segment: Segment) -> Option<Self> {
+        let staged_call = self.staged.get(segment)?.clone();
+        Some(self.with_segment_call(staged_call))
     }
 }
 

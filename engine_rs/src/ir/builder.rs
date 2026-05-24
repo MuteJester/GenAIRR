@@ -585,23 +585,23 @@ impl<'idx> SimulationBuilder<'idx> {
         let dirty_windows = self.take_dirty_signal_observer().map(|o| o.seal()).unwrap_or_default();
         let current = self.seal();
 
-        // Take ownership of the LiveCallState once, mutate in place
-        // across V→D→J staging + dirty-window stash, and reattach
-        // via a single `with_live_calls` at the end. This avoids
-        // the per-segment clone churn the previous
-        // clone-on-every-segment pattern produced.
+        // Take ownership of the SegmentCalls once, stage in place
+        // across V → D → J, and reattach via a single
+        // `with_segment_calls` at the end.
         //
         // Stage walker calls ONLY for segments whose region overlaps
         // a dirty window. Clean segments inherit their prior live
-        // call unchanged, so the consumer
-        // (`apply_live_call_updates`) can safely skip them — this is
-        // what makes the dirty-window optimisation correctness-
-        // preserving without breaking the V→D→J monotonic version
-        // chain that the Phase-1 fast path relies on.
+        // call unchanged.
         //
-        // When no observer was attached (test paths feeding an empty
-        // `dirty_windows`), every segment falls through to staging so
-        // the existing version-chain behaviour is preserved.
+        // Each staged call's `evidence_version` is stamped with the
+        // global version it'll have AFTER commit (base+1 for V,
+        // base+2 for D, base+3 for J in the V → D → J commit order).
+        // The post-pass `LiveCallRefreshHook` calls
+        // `with_assembled_segment_live_call` per segment; the absorb
+        // path detects staged calls structurally via
+        // `SegmentCalls::commit_staged` — the `evidence_version`
+        // stamp is now informational provenance, not the absorb's
+        // control signal.
         let mut calls: crate::live_call::SegmentCalls = (*current.segment_calls).clone();
         let base_version = calls.version;
         let has_dirty_observer_signal = !dirty_windows.is_empty();

@@ -58,6 +58,59 @@ fn segment_calls_updates_are_persistent() {
 }
 
 #[test]
+fn staged_call_shadows_committed_until_commit() {
+    // Stage path: stage_segment_call writes the staged slot,
+    // `version` is unchanged, `has_staged` flips on, `get` returns
+    // the staged value (not the committed one if any).
+    let mut state = SegmentCalls::empty();
+    state.stage_segment_call(SegmentLiveCall::unresolved(Segment::V, 4));
+    assert_eq!(state.version, 0, "stage must not bump version");
+    assert!(state.has_staged(Segment::V));
+    assert!(state.get(Segment::V).is_some(), "staged shadows committed");
+}
+
+#[test]
+fn commit_staged_moves_staged_to_committed_and_bumps_version() {
+    let mut state = SegmentCalls::empty();
+    state.stage_segment_call(SegmentLiveCall::unresolved(Segment::V, 4));
+    let committed = state.commit_staged(Segment::V).expect("staged → committed");
+    assert!(!committed.has_staged(Segment::V));
+    assert!(committed.get(Segment::V).is_some());
+    assert_eq!(committed.version, 1);
+}
+
+#[test]
+fn commit_staged_returns_none_when_nothing_staged() {
+    let state = SegmentCalls::empty();
+    assert!(state.commit_staged(Segment::V).is_none());
+}
+
+#[test]
+fn vdj_staging_chain_commits_independently_of_evidence_version_value() {
+    // The OLD absorb required staged calls to be stamped with
+    // exactly base.version + N (the V → D → J order). The new
+    // absorb is structural (staged/committed slots); evidence_version
+    // is informational only. Verify by stamping garbage versions —
+    // commits should still succeed in V → D → J order, each bumping
+    // the global version by 1.
+    let mut state = SegmentCalls::empty();
+    state.stage_segment_call(SegmentLiveCall::unresolved(Segment::V, 999));
+    state.stage_segment_call(SegmentLiveCall::unresolved(Segment::D, 999));
+    state.stage_segment_call(SegmentLiveCall::unresolved(Segment::J, 999));
+
+    let state = state
+        .commit_staged(Segment::V)
+        .and_then(|s| s.commit_staged(Segment::D))
+        .and_then(|s| s.commit_staged(Segment::J))
+        .expect("V/D/J should each commit cleanly");
+
+    assert_eq!(state.version, 3);
+    assert!(state.get(Segment::V).is_some());
+    assert!(state.get(Segment::D).is_some());
+    assert!(state.get(Segment::J).is_some());
+}
+
+#[test]
 fn dirty_log_is_a_separate_sidecar() {
     let mut log = DirtyLog::empty();
     assert!(log.is_empty());

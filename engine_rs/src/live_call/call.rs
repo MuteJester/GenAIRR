@@ -10,17 +10,16 @@ use super::walker::call_from_region;
 /// does not extend into NP evidence, repair indel-shifted
 /// hypotheses, or alter AIRR projection.
 ///
-/// **Fast path (streaming-walker observer).** When the
-/// preceding `AssembleSegmentPass` ran with a `WalkerObserverState`
-/// attached, it produced the segment's `SegmentLiveCall` inline with
-/// the per-base push loop and stashed it on `sim.segment_calls` via
-/// `SegmentCalls::stage_segment_call` *without* bumping the
-/// `version`. We detect that pre-staged call here by checking
-/// `evidence_version == base_state.version + 1` and absorb it by
-/// performing the version bump that the observer path deliberately
-/// skipped. The slow path (full `call_from_region` re-walk) remains
-/// for callers that did not run the observer (e.g. test fixtures
-/// that build `Simulation` directly without going through
+/// **Fast path (streaming-walker observer).** When the preceding
+/// `AssembleSegmentPass` ran with a `WalkerObserverState` attached,
+/// it produced the segment's `SegmentLiveCall` inline with the
+/// per-base push loop and stashed it in the segment's *staged* slot
+/// on `sim.segment_calls` via `SegmentCalls::stage_segment_call`.
+/// This function detects the staged call structurally (via
+/// `SegmentCalls::commit_staged`) and absorbs it without re-walking
+/// the region. The slow path (full `call_from_region` re-walk)
+/// remains for callers that did not run the observer (e.g. test
+/// fixtures that build `Simulation` directly without going through
 /// `AssembleSegmentPass`).
 pub fn with_assembled_segment_live_call(
     sim: &Simulation,
@@ -28,25 +27,20 @@ pub fn with_assembled_segment_live_call(
     segment: Segment,
 ) -> Simulation {
     assert_live_segment(segment);
-    let base_state = (*sim.segment_calls).clone();
-    let evidence_version = base_state.version.saturating_add(1);
 
-    // Fast path: did `AssembleSegmentPass` already populate the
-    // segment's call via the streaming walker observer?
-    if let Some(existing) = base_state.get(segment) {
-        if existing.evidence_version == evidence_version {
-            // Observer-staged call detected. Absorb it by bumping
-            // the version so subsequent passes see a consistent
-            // monotonic version trajectory.
-            return sim.with_segment_calls(base_state.with_segment_call(existing.clone()));
-        }
+    // Fast path: a staged call exists for this segment — the
+    // observer produced it during the pass. Commit it structurally.
+    if let Some(committed) = sim.segment_calls.commit_staged(segment) {
+        return sim.with_segment_calls(committed);
     }
 
+    // Slow path: recompute from current pool state.
+    let evidence_version = sim.segment_calls.version.saturating_add(1);
     let Some(call) = assembled_segment_live_call(sim, reference_index, segment, evidence_version)
     else {
         return sim.clone();
     };
-    sim.with_segment_calls(base_state.with_segment_call(call))
+    sim.with_segment_calls(sim.segment_calls.with_segment_call(call))
 }
 
 /// Build the exact live call implied by the latest structural region
