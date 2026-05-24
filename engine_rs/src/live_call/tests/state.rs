@@ -1,6 +1,6 @@
 use super::super::{
-    AlleleBitSet, BoundaryValue, DirtyReason, DirtyWindow, EvidenceScore, HypothesisFlags,
-    LiveCallConfidence, LiveCallState, PlacementHypothesis, SegmentLiveCall,
+    AlleleBitSet, BoundaryValue, DirtyLog, DirtyReason, DirtyWindow, EvidenceScore,
+    HypothesisFlags, LiveCallConfidence, PlacementHypothesis, SegmentCalls, SegmentLiveCall,
 };
 use super::id;
 use crate::ir::Segment;
@@ -46,23 +46,29 @@ fn segment_live_call_summarizes_hypothesis_boundaries_and_alleles() {
 }
 
 #[test]
-fn live_call_state_updates_are_persistent() {
-    let state = LiveCallState::empty();
+fn segment_calls_updates_are_persistent() {
+    let state = SegmentCalls::empty();
     let call = SegmentLiveCall::unresolved(Segment::J, 4);
     let with_call = state.with_segment_call(call);
-    let with_dirty = with_call.with_dirty_window(DirtyWindow::new(
-        5,
-        8,
-        DirtyReason::StructuralIndel { site: 6, delta: 1 },
-    ));
 
     assert!(state.get(Segment::J).is_none());
     assert_eq!(state.version, 0);
     assert!(with_call.get(Segment::J).is_some());
     assert_eq!(with_call.version, 1);
-    assert!(with_call.dirty_windows.is_empty());
-    assert_eq!(with_dirty.version, 2);
-    assert_eq!(with_dirty.dirty_windows.len(), 1);
+}
+
+#[test]
+fn dirty_log_is_a_separate_sidecar() {
+    let mut log = DirtyLog::empty();
+    assert!(log.is_empty());
+    log.push(DirtyWindow::new(
+        5,
+        8,
+        DirtyReason::StructuralIndel { site: 6, delta: 1 },
+    ));
+    assert_eq!(log.len(), 1);
+    log.clear();
+    assert!(log.is_empty());
 }
 
 #[test]

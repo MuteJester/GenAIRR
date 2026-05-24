@@ -602,12 +602,8 @@ impl<'idx> SimulationBuilder<'idx> {
         // When no observer was attached (test paths feeding an empty
         // `dirty_windows`), every segment falls through to staging so
         // the existing version-chain behaviour is preserved.
-        let mut state: crate::live_call::LiveCallState = current
-            .live_calls
-            .as_ref()
-            .map(|s| (**s).clone())
-            .unwrap_or_default();
-        let base_version = state.version;
+        let mut calls: crate::live_call::SegmentCalls = (*current.segment_calls).clone();
+        let base_version = calls.version;
         let has_dirty_observer_signal = !dirty_windows.is_empty();
         let order = [
             crate::ir::Segment::V,
@@ -636,13 +632,17 @@ impl<'idx> SimulationBuilder<'idx> {
             staged_count = staged_count.saturating_add(1);
             let live_call = sealed.into_live_call(&current, segment_index, evidence_version);
 
-            state.stage_segment_call(live_call);
+            calls.stage_segment_call(live_call);
         }
 
-        // Stash dirty windows on the same state instance.
-        state.dirty_windows.extend(dirty_windows);
+        // Stash dirty windows on their own sidecar. Segment-call
+        // updates and dirty-log updates are now independent — the
+        // mutation pass touches both via two focused writes instead
+        // of one clone-modify-reattach on the shared grab bag.
+        let mut dirty_log: crate::live_call::DirtyLog = (*current.dirty_log).clone();
+        dirty_log.extend(dirty_windows);
 
-        current.with_live_calls(state)
+        current.with_segment_calls(calls).with_dirty_log(dirty_log)
     }
 
 

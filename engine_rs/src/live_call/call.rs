@@ -13,8 +13,8 @@ use super::walker::call_from_region;
 /// **Fast path (streaming-walker observer).** When the
 /// preceding `AssembleSegmentPass` ran with a `WalkerObserverState`
 /// attached, it produced the segment's `SegmentLiveCall` inline with
-/// the per-base push loop and stashed it on `sim.live_calls` via
-/// `LiveCallState::with_segment_call_observed` *without* bumping the
+/// the per-base push loop and stashed it on `sim.segment_calls` via
+/// `SegmentCalls::stage_segment_call` *without* bumping the
 /// `version`. We detect that pre-staged call here by checking
 /// `evidence_version == base_state.version + 1` and absorb it by
 /// performing the version bump that the observer path deliberately
@@ -28,7 +28,7 @@ pub fn with_assembled_segment_live_call(
     segment: Segment,
 ) -> Simulation {
     assert_live_segment(segment);
-    let base_state = sim.live_calls.clone().unwrap_or_default();
+    let base_state = (*sim.segment_calls).clone();
     let evidence_version = base_state.version.saturating_add(1);
 
     // Fast path: did `AssembleSegmentPass` already populate the
@@ -38,7 +38,7 @@ pub fn with_assembled_segment_live_call(
             // Observer-staged call detected. Absorb it by bumping
             // the version so subsequent passes see a consistent
             // monotonic version trajectory.
-            return sim.with_live_calls(base_state.with_segment_call(existing.clone()));
+            return sim.with_segment_calls(base_state.with_segment_call(existing.clone()));
         }
     }
 
@@ -46,7 +46,7 @@ pub fn with_assembled_segment_live_call(
     else {
         return sim.clone();
     };
-    sim.with_live_calls(base_state.with_segment_call(call))
+    sim.with_segment_calls(base_state.with_segment_call(call))
 }
 
 /// Build the exact live call implied by the latest structural region

@@ -108,9 +108,7 @@ fn v_call_shrinks_when_np1_recreates_trimmed_suffix() {
 
     // After AssembleSegment(V) but before NP1: both alleles match.
     let post_assemble_call = outcome.revisions[3]
-        .live_calls
-        .as_ref()
-        .expect("live calls populated after assembly")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists after assembly");
@@ -125,9 +123,7 @@ fn v_call_shrinks_when_np1_recreates_trimmed_suffix() {
     // After NP1 generation: the right-extension walk has
     // narrowed to V*01 only.
     let post_np1_call = outcome.revisions[4]
-        .live_calls
-        .as_ref()
-        .expect("live calls still populated after NP1")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists after NP1");
@@ -177,9 +173,7 @@ fn v_call_stays_widened_when_np1_does_not_match_any_allele() {
 
     let post_np1_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists");
@@ -215,9 +209,7 @@ fn v_call_partially_extends_when_np1_matches_only_a_prefix() {
 
     let post_np1_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists");
@@ -256,9 +248,7 @@ fn v_call_extension_no_op_when_no_trim() {
 
     let post_np1_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists");
@@ -287,14 +277,10 @@ fn append_region_np1_bumps_live_call_version() {
     let outcome = compiled.run_one(0).expect("plan should run");
 
     let post_assemble_version = outcome.revisions[3]
-        .live_calls
-        .as_ref()
-        .expect("post-assemble live calls present")
+        .segment_calls
         .version;
     let post_np1_version = outcome.revisions[4]
-        .live_calls
-        .as_ref()
-        .expect("post-np1 live calls present")
+        .segment_calls
         .version;
     assert!(
         post_np1_version > post_assemble_version,

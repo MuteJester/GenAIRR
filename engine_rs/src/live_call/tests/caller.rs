@@ -168,12 +168,13 @@ fn with_assembled_segment_live_call_persists_state_update() {
 
     let next = with_assembled_segment_live_call(&sim, &index, Segment::V);
 
-    assert!(sim.live_calls.is_none());
-    let live = next
-        .live_calls
-        .expect("live call state should be initialized");
-    let v = live.get(Segment::V).expect("V call should be present");
-    assert_eq!(live.version, 1);
+    assert_eq!(sim.segment_calls.version, 0);
+    let v = next
+        .segment_calls
+        .get(Segment::V)
+        .cloned()
+        .expect("V call should be present");
+    assert_eq!(next.segment_calls.version, 1);
     assert_eq!(v.evidence_version, 1);
     assert_eq!(v.allele_call.to_ids(), vec![id0]);
 }

@@ -1,7 +1,7 @@
 use super::super::build_airr_record;
 use super::*;
 use crate::live_call::{
-    AlleleBitSet, EvidenceScore, HypothesisFlags, LiveCallState, PlacementHypothesis,
+    AlleleBitSet, EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentCalls,
     SegmentLiveCall,
 };
 
@@ -29,8 +29,8 @@ fn airr_call_projection_prefers_live_call_allele_set() {
         HypothesisFlags::EMPTY,
     );
     let call = SegmentLiveCall::from_hypotheses(Segment::V, cfg.v_pool.len(), vec![hypothesis], 1);
-    let live = LiveCallState::empty().with_segment_call(call);
-    let outcome = outcome_from_sim(sim.with_live_calls(live));
+    let live = SegmentCalls::empty().with_segment_call(call);
+    let outcome = outcome_from_sim(sim.with_segment_calls(live));
 
     let rec = build_airr_record(&outcome, &cfg, "live");
 
@@ -42,8 +42,8 @@ fn airr_call_projection_prefers_live_call_allele_set() {
 fn airr_call_projection_falls_back_to_truth_when_live_call_is_unsupported() {
     let (cfg, sim, _v0, _v1) = call_projection_fixture();
     let call = SegmentLiveCall::from_hypotheses(Segment::V, cfg.v_pool.len(), Vec::new(), 1);
-    let live = LiveCallState::empty().with_segment_call(call);
-    let outcome = outcome_from_sim(sim.with_live_calls(live));
+    let live = SegmentCalls::empty().with_segment_call(call);
+    let outcome = outcome_from_sim(sim.with_segment_calls(live));
 
     let rec = build_airr_record(&outcome, &cfg, "unsupported");
 

@@ -229,25 +229,30 @@ pub enum DirtyReason {
     ContaminantReplacement,
 }
 
-/// Dormant top-level live-call sidecar.
+/// V/D/J live-call evidence + monotonic version chain.
+///
+/// Previously this was `LiveCallState`, a grab bag that also owned
+/// `dirty_windows` (an inter-pass message log) and `mutation_count`
+/// (a per-record AIRR counter). Those two had nothing to do with
+/// segment-call evidence — they just hitched a ride on the only
+/// derived-state sidecar propagated through every
+/// `Simulation::with_*` operation. The split moves them to their own
+/// fields on [`crate::ir::Simulation`] so each piece has one writer
+/// and one reader.
+///
+/// `version` is the change-detection token consumed by the fast-path
+/// absorb in `with_assembled_segment_live_call`: when the staged
+/// call's `evidence_version == base.version + N`, the absorb skips
+/// the from-scratch rebuild.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct LiveCallState {
+pub struct SegmentCalls {
     pub v: Option<SegmentLiveCall>,
     pub d: Option<SegmentLiveCall>,
     pub j: Option<SegmentLiveCall>,
-    pub dirty_windows: Vec<DirtyWindow>,
     pub version: u64,
-    /// Per-record running count of base mutations applied by S5F /
-    /// uniform mutation passes. AIRR projection reads this directly
-    /// for the `n_mutations` field. Co-located here because
-    /// LiveCallState is already the derived-state sidecar propagated
-    /// through every persistent `Simulation::with_*` operation via
-    /// `Arc::clone`, and because the count is, like `dirty_windows`,
-    /// derived from observing the IR mutation stream.
-    pub mutation_count: u32,
 }
 
-impl LiveCallState {
+impl SegmentCalls {
     pub fn empty() -> Self {
         Self::default()
     }
@@ -263,12 +268,7 @@ impl LiveCallState {
 
     pub fn with_segment_call(&self, call: SegmentLiveCall) -> Self {
         let mut next = self.clone();
-        match call.segment {
-            Segment::V => next.v = Some(call),
-            Segment::D => next.d = Some(call),
-            Segment::J => next.j = Some(call),
-            Segment::Np1 | Segment::Np2 => unreachable!("SegmentLiveCall rejects NP segments"),
-        }
+        next.set_segment_call(call);
         next.version = next.version.saturating_add(1);
         next
     }
@@ -284,39 +284,62 @@ impl LiveCallState {
     /// observer during `AssembleSegmentPass`; for any other path,
     /// prefer [`Self::with_segment_call`] which handles the version
     /// bump itself.
-    pub fn with_segment_call_observed(&self, call: SegmentLiveCall) -> Self {
-        let mut next = self.clone();
-        next.stage_segment_call(call);
-        next
-    }
-
-    /// in-place mutator for the V/D/J staging loop in
-    /// `SimulationBuilder::seal_with_committed_live_calls`. Stashes
-    /// the segment call directly without cloning the entire state;
-    /// the loop now takes ownership of one `LiveCallState` and
-    /// mutates it across all three segments instead of cloning
-    /// before each segment.
-    ///
-    /// Semantics match [`Self::with_segment_call_observed`] exactly:
-    /// the version is NOT bumped (the consumer hook bumps it when
-    /// absorbing the staged call via the fast path).
     pub fn stage_segment_call(&mut self, call: SegmentLiveCall) {
-        match call.segment {
-            Segment::V => self.v = Some(call),
-            Segment::D => self.d = Some(call),
-            Segment::J => self.j = Some(call),
-            Segment::Np1 | Segment::Np2 => unreachable!("SegmentLiveCall rejects NP segments"),
-        }
+        self.set_segment_call(call);
         // Intentionally does NOT bump `version`. The post-pass
         // `with_assembled_segment_live_call` consumer detects the
         // observer-staged call via `evidence_version == version + 1`
         // and increments the version itself.
     }
 
-    pub fn with_dirty_window(&self, window: DirtyWindow) -> Self {
-        let mut next = self.clone();
-        next.dirty_windows.push(window);
-        next.version = next.version.saturating_add(1);
-        next
+    fn set_segment_call(&mut self, call: SegmentLiveCall) {
+        match call.segment {
+            Segment::V => self.v = Some(call),
+            Segment::D => self.d = Some(call),
+            Segment::J => self.j = Some(call),
+            Segment::Np1 | Segment::Np2 => unreachable!("SegmentLiveCall rejects NP segments"),
+        }
+    }
+}
+
+/// Inter-pass dirty-window message log. Producer:
+/// [`crate::live_call::dirty_signal_observer::DirtySignalObserver`].
+/// Consumer: [`crate::live_call::LiveCallRefreshHook`]. The
+/// post-pass refresh in `compiled/execute.rs` reads the windows to
+/// narrow which V/D/J segments need recomputation, then drains via
+/// [`crate::ir::Simulation::with_dirty_log`].
+///
+/// Was previously a `Vec<DirtyWindow>` field inside `LiveCallState`;
+/// pulled into its own sidecar so it stops version-coupling to the
+/// segment calls and stops cluttering call sites that only want to
+/// touch the mutation counter or the V/D/J evidence.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DirtyLog {
+    pub windows: Vec<DirtyWindow>,
+}
+
+impl DirtyLog {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.windows.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.windows.len()
+    }
+
+    pub fn push(&mut self, window: DirtyWindow) {
+        self.windows.push(window);
+    }
+
+    pub fn extend<I: IntoIterator<Item = DirtyWindow>>(&mut self, windows: I) {
+        self.windows.extend(windows);
+    }
+
+    pub fn clear(&mut self) {
+        self.windows.clear();
     }
 }

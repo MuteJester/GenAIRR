@@ -119,9 +119,7 @@ fn j_call_shrinks_when_np1_recreates_trimmed_prefix_vj() {
     // The final revision should hold the post-extension j_call.
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::J)
         .cloned()
         .expect("J live call exists after assembly");
@@ -154,9 +152,7 @@ fn j_call_stays_widened_when_np1_does_not_recreate_prefix_vj() {
 
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::J)
         .cloned()
         .expect("J live call exists");
@@ -192,9 +188,7 @@ fn j_call_partially_extends_when_np1_matches_only_a_suffix_of_prefix() {
 
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::J)
         .cloned()
         .expect("J live call exists");
@@ -234,9 +228,7 @@ fn j_call_extension_no_op_when_no_trim() {
 
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::J)
         .cloned()
         .expect("J live call exists");
@@ -323,9 +315,7 @@ fn j_left_extension_works_for_vdj_chain_via_np2() {
     let outcome = compiled.run_one(0).expect("plan should run");
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::J)
         .cloned()
         .expect("J live call exists");

@@ -437,12 +437,7 @@ fn n_mutations_reflects_live_call_state_mutation_count() {
     let outcome = compiled.run_one(7).expect("plan should run");
     let rec = build_airr_record(&outcome, &cfg, "n_mut");
 
-    let live_count = outcome
-        .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("mutation pass should leave live calls in place")
-        .mutation_count as i64;
+    let live_count = outcome.final_simulation().mutation_count as i64;
 
     assert_eq!(rec.n_mutations, live_count);
     assert_eq!(rec.n_mutations, 4);
@@ -470,10 +465,12 @@ fn v_call_falls_back_to_origin_when_no_live_call_is_present() {
     );
     let rec = build_airr_record(&outcome, &cfg, "fallback");
 
-    // live_calls is None — the v_call must come from the origin.
-    assert!(
-        outcome.final_simulation().live_calls.is_none(),
-        "PassRuntime::execute_with_refdata should NOT populate live_calls",
+    // segment_calls is empty (no walker observer ran) — the v_call
+    // must come from the origin.
+    assert_eq!(
+        outcome.final_simulation().segment_calls.version,
+        0,
+        "PassRuntime::execute_with_refdata should NOT populate segment_calls",
     );
     assert_eq!(rec.v_call, "v01*01");
     assert_eq!(rec.j_call, "j01*01");

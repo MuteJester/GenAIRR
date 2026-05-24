@@ -17,8 +17,8 @@ pub(crate) mod walker_observer;
 pub use bitset::AlleleBitSet;
 pub use call::{assembled_segment_live_call, with_assembled_segment_live_call};
 pub use model::{
-    BoundarySummary, BoundaryValue, DirtyReason, DirtyWindow, EvidenceScore, HypothesisFlags,
-    LiveCallConfidence, LiveCallState, PlacementHypothesis, SegmentLiveCall,
+    BoundarySummary, BoundaryValue, DirtyLog, DirtyReason, DirtyWindow, EvidenceScore,
+    HypothesisFlags, LiveCallConfidence, PlacementHypothesis, SegmentCalls, SegmentLiveCall,
 };
 pub use refresh_hook::LiveCallRefreshHook;
 pub use reference_index::{

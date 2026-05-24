@@ -56,7 +56,9 @@ fn stress_persistent_ir_with_codon_rail() {
         pool: pool0,
         sequence: std::sync::Arc::new(Sequence::new().with_region_added(region0)),
         assignments: crate::assignment::AlleleAssignments::new(),
-        live_calls: None,
+        segment_calls: std::sync::Arc::new(crate::live_call::SegmentCalls::empty()),
+        dirty_log: std::sync::Arc::new(crate::live_call::DirtyLog::empty()),
+        mutation_count: 0,
     };
 
     // Property check at revision 0.
@@ -99,7 +101,9 @@ fn stress_persistent_ir_with_codon_rail() {
             pool: new_pool,
             sequence: std::sync::Arc::new(new_sequence),
             assignments: crate::assignment::AlleleAssignments::new(),
-            live_calls: prev.live_calls.clone(),
+            segment_calls: prev.segment_calls.clone(),
+            dirty_log: prev.dirty_log.clone(),
+            mutation_count: prev.mutation_count,
         });
     }
 

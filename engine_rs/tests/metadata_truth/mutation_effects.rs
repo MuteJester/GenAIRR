@@ -430,9 +430,8 @@ fn plan_clone(cfg: &RefDataConfig, v_truth: &str, n_count: i64, mode: &str) -> P
 // ──────────────────────────────────────────────────────────────
 
 fn v_hypothesis_flags(sim: &Simulation) -> HypothesisFlags {
-    sim.live_calls
-        .as_ref()
-        .and_then(|lc| lc.get(Segment::V))
+    sim.segment_calls
+        .get(Segment::V)
         .and_then(|sc| sc.hypotheses.first().map(|h| h.flags))
         .unwrap_or(HypothesisFlags::EMPTY)
 }

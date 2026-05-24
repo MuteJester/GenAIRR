@@ -130,7 +130,9 @@ fn simulation_default_construction_is_clean() {
     let s = Simulation::new();
     assert!(s.pool.is_empty());
     assert_eq!(s.sequence.region_count(), 0);
-    assert!(s.live_calls.is_none());
+    assert_eq!(s.segment_calls.version, 0);
+    assert!(s.dirty_log.is_empty());
+    assert_eq!(s.mutation_count, 0);
 }
 
 #[test]
@@ -139,19 +141,24 @@ fn simulation_with_capacity_pre_allocates() {
     let s = Simulation::with_capacity(500);
     assert!(s.pool.is_empty());
     assert_eq!(s.sequence.region_count(), 0);
-    assert!(s.live_calls.is_none());
+    assert_eq!(s.segment_calls.version, 0);
+    assert!(s.dirty_log.is_empty());
 }
 
 #[test]
 fn simulation_live_call_sidecar_is_persistent_and_dormant() {
-    let live = crate::live_call::LiveCallState::empty().with_dirty_window(
-        crate::live_call::DirtyWindow::new(
-            1,
-            4,
-            crate::live_call::DirtyReason::BaseEdited { site: 2 },
-        ),
-    );
-    let s0 = Simulation::new().with_live_calls(live.clone());
+    // Sidecars (segment_calls / dirty_log / mutation_count) propagate
+    // unchanged through structural edits — none of `with_*` interpret
+    // or mutate them.
+    let mut log = crate::live_call::DirtyLog::empty();
+    log.push(crate::live_call::DirtyWindow::new(
+        1,
+        4,
+        crate::live_call::DirtyReason::BaseEdited { site: 2 },
+    ));
+    let s0 = Simulation::new()
+        .with_dirty_log(log.clone())
+        .with_mutation_count(7);
     let (s1, handle) = s0.with_nucleotide_pushed(Nucleotide::germline(b'A', 0, Segment::V));
     let s2 = s1.with_base_changed(handle, b'C');
     let s3 = s2.with_region_added(Region::new(
@@ -160,10 +167,10 @@ fn simulation_live_call_sidecar_is_persistent_and_dormant() {
         NucHandle::new(1),
     ));
 
-    assert_eq!(s0.live_calls.as_deref(), Some(&live));
-    assert_eq!(s1.live_calls.as_deref(), Some(&live));
-    assert_eq!(s2.live_calls.as_deref(), Some(&live));
-    assert_eq!(s3.live_calls.as_deref(), Some(&live));
+    for sim in [&s0, &s1, &s2, &s3] {
+        assert_eq!(&*sim.dirty_log, &log);
+        assert_eq!(sim.mutation_count, 7);
+    }
 
     // Dormant means core structural edits do not yet interpret or
     // mutate live calls; they only preserve the sidecar.

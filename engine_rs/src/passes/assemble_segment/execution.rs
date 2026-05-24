@@ -119,12 +119,7 @@ impl AssembleSegmentPass {
 
         let segment_call = if walker_attached {
             let sealed = builder.seal_walker_observer(seq_end);
-            let base_version = builder
-                .peek()
-                .live_calls
-                .as_ref()
-                .map(|s| s.version)
-                .unwrap_or(0);
+            let base_version = builder.peek().segment_calls.version;
             let evidence_version = base_version.saturating_add(1);
             let reference_index = ctx
                 .reference_index
@@ -153,21 +148,17 @@ impl AssembleSegmentPass {
         let current = current.with_region_added(region);
 
         // If a walker observer was attached, stash the
-        // observer-produced call on the live-calls sidecar without
-        // bumping the LiveCallState version. The post-pass
-        // `apply_live_call_updates` hook (in `compiled/execute.rs`)
+        // observer-produced call on the segment_calls sidecar without
+        // bumping the version. The post-pass `LiveCallRefreshHook`
         // calls `with_assembled_segment_live_call`, whose fast path
-        // notices the pre-staged call (evidence_version == base.version + 1)
-        // and absorbs it by bumping the version to match — the final
-        // version trajectory matches the original two-walk path.
+        // notices the pre-staged call (evidence_version ==
+        // base.version + 1) and absorbs it by bumping the version to
+        // match — the final version trajectory matches the original
+        // two-walk path.
         if let Some(segment_call) = segment_call {
-            let base_state = current
-                .live_calls
-                .as_ref()
-                .map(|s| (**s).clone())
-                .unwrap_or_default();
-            let next_state = base_state.with_segment_call_observed(segment_call);
-            Ok(current.with_live_calls(next_state))
+            let mut next_calls = (*current.segment_calls).clone();
+            next_calls.stage_segment_call(segment_call);
+            Ok(current.with_segment_calls(next_calls))
         } else {
             Ok(current)
         }

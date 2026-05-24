@@ -166,7 +166,7 @@ fn change_base_against_callfromregion_oracle() {
         NucHandle::new(4),
     ));
     let oracle_sim = with_assembled_segment_live_call(&oracle_sim, &ref_index, Segment::V);
-    let oracle_call = oracle_sim.live_calls.as_ref().unwrap().v.as_ref().unwrap();
+    let oracle_call = oracle_sim.segment_calls.v.as_ref().unwrap();
 
     // The two paths must agree on the tie-set, boundaries, and
     // evidence-score shape.

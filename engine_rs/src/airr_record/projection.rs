@@ -45,16 +45,14 @@ pub(super) fn projected_allele_id(
         Segment::J => sim.assignments.j.map(|i| i.allele_id),
         _ => None,
     };
-    if let Some(state) = &sim.live_calls {
-        if let Some(call) = state.get(segment) {
-            if let Some(tid) = truth_id {
-                if call.allele_call.contains(tid) {
-                    return Some(tid);
-                }
+    if let Some(call) = sim.segment_calls.get(segment) {
+        if let Some(tid) = truth_id {
+            if call.allele_call.contains(tid) {
+                return Some(tid);
             }
-            if let Some(id) = call.allele_call.iter_ids().next() {
-                return Some(id);
-            }
+        }
+        if let Some(id) = call.allele_call.iter_ids().next() {
+            return Some(id);
         }
     }
     truth_id
@@ -75,7 +73,7 @@ pub(super) fn projected_call_name(
     // against.
     live_call_name(
         refdata,
-        sim.live_calls.as_ref().and_then(|state| state.get(segment)),
+        sim.segment_calls.get(segment),
         segment,
         origin_id,
     )
@@ -168,7 +166,7 @@ fn check_segment_claim(
     seg: Segment,
     pool_pos: usize,
 ) -> Option<(Segment, u8, u32)> {
-    let call = sim.live_calls.as_ref()?.get(seg)?;
+    let call = sim.segment_calls.get(seg)?;
     let h = call.hypotheses.first()?;
     // NP-claim germline byte comes from the projected
     // allele (live-call's first allele, fallback to provenance) so

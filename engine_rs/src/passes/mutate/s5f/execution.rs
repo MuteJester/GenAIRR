@@ -180,18 +180,13 @@ impl S5FMutationPass {
             builder.seal()
         };
 
-        // Stash the mutation count on `LiveCallState` so the AIRR
+        // Stash the mutation count on its own sidecar so the AIRR
         // projection reads `n_mutations` in O(1). `count_raw` matches
         // what the trace records above — the requested count, not the
         // actual applied count if the loop broke early.
         if count_raw > 0 {
-            let mut state = sealed
-                .live_calls
-                .as_ref()
-                .map(|s| (**s).clone())
-                .unwrap_or_default();
-            state.mutation_count = state.mutation_count.saturating_add(count_raw as u32);
-            sealed = sealed.with_live_calls(state);
+            sealed = sealed
+                .with_mutation_count(sealed.mutation_count.saturating_add(count_raw as u32));
         }
         Ok(sealed)
     }

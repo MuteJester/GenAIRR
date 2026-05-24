@@ -139,11 +139,7 @@ fn refresh_segments_for_edit(
     mut sim: Simulation,
     reference_index: &ReferenceMatchIndex,
 ) -> Simulation {
-    let dirty_windows: Vec<DirtyWindow> = sim
-        .live_calls
-        .as_ref()
-        .map(|s| s.dirty_windows.clone())
-        .unwrap_or_default();
+    let dirty_windows: Vec<DirtyWindow> = sim.dirty_log.windows.clone();
     let has_dirty = !dirty_windows.is_empty();
 
     for segment in [Segment::V, Segment::D, Segment::J] {
@@ -178,17 +174,11 @@ fn region_overlaps_dirty(sim: &Simulation, segment: Segment, windows: &[DirtyWin
         .any(|w| w.start < region_end && w.end > region_start)
 }
 
-/// Clear `live_calls.dirty_windows`. Preserves every other field,
-/// including the version, so the fast-path version chain established
-/// by the mutation pass survives.
+/// Clear the dirty-window log so the next pass's `EditBases`
+/// dispatch starts clean. No-op when the log is already empty.
 fn drain_dirty_windows(sim: Simulation) -> Simulation {
-    let Some(state) = sim.live_calls.as_ref() else {
-        return sim;
-    };
-    if state.dirty_windows.is_empty() {
+    if sim.dirty_log.is_empty() {
         return sim;
     }
-    let mut next = (**state).clone();
-    next.dirty_windows.clear();
-    sim.with_live_calls(next)
+    sim.with_dirty_log(crate::live_call::DirtyLog::empty())
 }

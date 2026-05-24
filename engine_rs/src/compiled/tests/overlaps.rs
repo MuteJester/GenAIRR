@@ -129,16 +129,12 @@ fn v_right_overlaps_d_when_d_starts_with_v_suffix() {
 
     let final_sim = outcome.final_simulation();
     let v_call = final_sim
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists");
     let d_call = final_sim
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::D)
         .cloned()
         .expect("D live call exists");
@@ -225,9 +221,7 @@ fn v_right_does_not_overlap_when_d_does_not_match_v_suffix() {
     let outcome = compiled.run_one(0).expect("plan should run");
     let v_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists");
@@ -320,16 +314,12 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
 
     let final_sim = outcome.final_simulation();
     let v_call = final_sim
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists");
     let d_call = final_sim
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::D)
         .cloned()
         .expect("D live call exists");
@@ -434,9 +424,7 @@ fn overlap_walker_halts_at_pool_end() {
     let outcome = compiled.run_one(0).expect("plan should run");
     let v_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists");
@@ -488,14 +476,10 @@ fn v_overlap_into_d_bumps_v_live_call_version() {
         .position(|n| n == "assemble.d")
         .expect("plan must include assemble.d");
     let post_assemble_v_version = outcome.revisions[assemble_v_idx + 1]
-        .live_calls
-        .as_ref()
-        .expect("post-assemble-V live calls present")
+        .segment_calls
         .version;
     let post_assemble_d_version = outcome.revisions[assemble_d_idx + 1]
-        .live_calls
-        .as_ref()
-        .expect("post-assemble-D live calls present")
+        .segment_calls
         .version;
     assert!(
         post_assemble_d_version > post_assemble_v_version,

@@ -154,7 +154,7 @@ fn rebuild_plus_extensions_matches_call_from_region_oracle() {
     // Oracle: with_assembled_segment_live_call on the mutated sim.
     let oracle_sim =
         with_assembled_segment_live_call(&mutated_sim, &ref_index, Segment::V);
-    let oracle_call = oracle_sim.live_calls.as_ref().unwrap().v.as_ref().unwrap();
+    let oracle_call = oracle_sim.segment_calls.v.as_ref().unwrap();
 
     assert_eq!(
         observer_call.allele_call.to_ids(),

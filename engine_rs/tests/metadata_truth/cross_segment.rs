@@ -158,9 +158,8 @@ fn compile_and_run<'a>(
 }
 
 fn v_hypothesis_has_overlap_flag(sim: &genairr_engine::ir::Simulation) -> bool {
-    sim.live_calls
-        .as_ref()
-        .and_then(|lc| lc.get(Segment::V))
+    sim.segment_calls
+        .get(Segment::V)
         .map(|sc| {
             sc.hypotheses
                 .iter()
@@ -170,9 +169,8 @@ fn v_hypothesis_has_overlap_flag(sim: &genairr_engine::ir::Simulation) -> bool {
 }
 
 fn v_hypothesis_seq_end(sim: &genairr_engine::ir::Simulation) -> Option<u32> {
-    sim.live_calls
-        .as_ref()
-        .and_then(|lc| lc.get(Segment::V))
+    sim.segment_calls
+        .get(Segment::V)
         .and_then(|sc| sc.hypotheses.iter().map(|h| h.seq_end).max())
 }
 
@@ -331,9 +329,7 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
     let outcome = compile_and_run(&cfg, &plan);
     let sim = outcome.final_simulation();
     let d_call = sim
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::D)
         .cloned()
         .expect("D live call exists");

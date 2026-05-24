@@ -269,13 +269,8 @@ fn full_corruption_stack_preserves_record_self_consistency() {
     let expected_rate = rec.n_mutations as f64 / rec.sequence_length as f64;
     assert_eq!(rec.mutation_rate, expected_rate);
 
-    // n_mutations == LiveCallState.mutation_count.
-    let live_mut_count = outcome
-        .final_simulation()
-        .live_calls
-        .as_ref()
-        .map(|s| s.mutation_count as i64)
-        .unwrap_or(0);
+    // n_mutations == Simulation.mutation_count.
+    let live_mut_count = outcome.final_simulation().mutation_count as i64;
     assert_eq!(rec.n_mutations, live_mut_count);
 
     // sequence_alignment / germline_alignment / d_mask share length.
@@ -770,20 +765,16 @@ fn full_corruption_stack_mutation_count_matches_live_call_state_after_many_passe
     // sites — which it should on a 30+bp pool).
     assert_eq!(rec.n_mutations, 2);
 
-    // LiveCallState.mutation_count agrees.
-    let lc = outcome
-        .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated after full stack");
-    assert_eq!(lc.mutation_count as i64, rec.n_mutations);
+    // Simulation.mutation_count agrees.
+    let final_sim = outcome.final_simulation();
+    assert_eq!(final_sim.mutation_count as i64, rec.n_mutations);
 
-    // The version on the live-call state should be > 0 after the
-    // long pipeline (assemblies + edits + indel all bump version).
+    // The version on the segment-calls sidecar should be > 0 after
+    // the long pipeline (assemblies + edits all bump version).
     assert!(
-        lc.version > 0,
-        "LiveCallState.version should advance after a full stack run; got {}",
-        lc.version,
+        final_sim.segment_calls.version > 0,
+        "SegmentCalls.version should advance after a full stack run; got {}",
+        final_sim.segment_calls.version,
     );
 }
 

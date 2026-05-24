@@ -115,9 +115,7 @@ fn run_indel_plan(
     let outcome = compiled.run_one(0).expect("plan should run");
     let v_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated after assembly")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists after assembly");
@@ -232,14 +230,10 @@ fn structural_indel_bumps_live_call_version() {
         .position(|n| n == "test.delete_at")
         .expect("plan must include test.delete_at");
     let post_assemble_version = outcome.revisions[assemble_idx + 1]
-        .live_calls
-        .as_ref()
-        .expect("post-assemble live calls present")
+        .segment_calls
         .version;
     let post_indel_version = outcome.revisions[indel_idx + 1]
-        .live_calls
-        .as_ref()
-        .expect("post-indel live calls present")
+        .segment_calls
         .version;
     assert!(
         post_indel_version > post_assemble_version,

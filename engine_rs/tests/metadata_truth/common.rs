@@ -200,10 +200,7 @@ fn call_names_for_segment(
         Segment::J => &refdata.j_pool,
         Segment::Np1 | Segment::Np2 => return Vec::new(),
     };
-    let Some(live) = sim.live_calls.as_ref() else {
-        return Vec::new();
-    };
-    let Some(seg_call) = live.get(segment) else {
+    let Some(seg_call) = sim.segment_calls.get(segment) else {
         return Vec::new();
     };
     let mut names: Vec<String> = Vec::new();

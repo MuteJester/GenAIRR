@@ -86,9 +86,7 @@ fn run_edit(
     let outcome = compiled.run_one(0).expect("plan should run");
     let final_sim = outcome.final_simulation().clone();
     let v_call = final_sim
-        .live_calls
-        .as_ref()
-        .expect("live calls populated after assembly")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists after assembly");
@@ -212,9 +210,7 @@ fn pre_edit_live_call_visible_in_intermediate_revision() {
     assert_eq!(outcome.revisions.len(), 4);
     let after_assemble = &outcome.revisions[2];
     let pre_edit_call = after_assemble
-        .live_calls
-        .as_ref()
-        .expect("live calls populated after assembly")
+        .segment_calls
         .get(Segment::V)
         .cloned()
         .expect("V live call exists after assembly");
@@ -257,14 +253,10 @@ fn real_uniform_mutation_pass_increments_live_call_version() {
 
     // revisions: [initial, post-sample, post-assemble, post-mutate].
     let post_assemble_version = outcome.revisions[2]
-        .live_calls
-        .as_ref()
-        .expect("live calls populated after assembly")
+        .segment_calls
         .version;
     let post_mutate_version = outcome.revisions[3]
-        .live_calls
-        .as_ref()
-        .expect("live calls populated after mutation")
+        .segment_calls
         .version;
     assert!(
         post_mutate_version > post_assemble_version,

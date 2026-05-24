@@ -150,9 +150,7 @@ fn d_call_shrinks_when_np1_recreates_trimmed_prefix() {
 
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::D)
         .cloned()
         .expect("D live call exists");
@@ -231,9 +229,7 @@ fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
 
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::D)
         .cloned()
         .expect("D live call exists");
@@ -279,9 +275,7 @@ fn d_call_shrinks_via_both_sides_simultaneously() {
 
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::D)
         .cloned()
         .expect("D live call exists");
@@ -313,9 +307,7 @@ fn d_call_stays_widened_when_neither_np_matches() {
 
     let final_call = outcome
         .final_simulation()
-        .live_calls
-        .as_ref()
-        .expect("live calls populated")
+        .segment_calls
         .get(Segment::D)
         .cloned()
         .expect("D live call exists");
@@ -361,14 +353,10 @@ fn append_region_np2_bumps_d_live_call_version() {
     );
 
     let post_assemble_d_version = outcome.revisions[assemble_d_idx + 1]
-        .live_calls
-        .as_ref()
-        .expect("post-assemble-D live calls present")
+        .segment_calls
         .version;
     let post_np2_version = outcome.revisions[np2_idx + 1]
-        .live_calls
-        .as_ref()
-        .expect("post-NP2 live calls present")
+        .segment_calls
         .version;
     assert!(
         post_np2_version > post_assemble_d_version,

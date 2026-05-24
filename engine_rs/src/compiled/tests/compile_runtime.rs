@@ -102,11 +102,11 @@ fn compiled_assembly_initializes_exact_live_call_from_current_region() {
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("run should succeed");
     let final_sim = outcome.final_simulation();
-    let live = final_sim
-        .live_calls
-        .as_ref()
-        .expect("compiled assembly should initialize live calls");
-    let v_call = live.get(Segment::V).expect("V live call should exist");
+    let v_call = final_sim
+        .segment_calls
+        .get(Segment::V)
+        .cloned()
+        .expect("V live call should exist");
 
     assert_eq!(final_sim.assignments.get(Segment::V).unwrap().allele_id, v0);
     assert_eq!(v_call.allele_call.to_ids(), vec![v0, v1]);
@@ -175,8 +175,11 @@ fn compiled_v_three_prime_trim_widens_live_and_airr_call() {
         .expect("trim-before-assembly plan should compile");
     let outcome = compiled.run_one(0).expect("run should succeed");
     let final_sim = outcome.final_simulation();
-    let live = final_sim.live_calls.as_ref().expect("live calls exist");
-    let v_call = live.get(Segment::V).expect("V live call exists");
+    let v_call = final_sim
+        .segment_calls
+        .get(Segment::V)
+        .cloned()
+        .expect("V live call exists");
 
     assert_eq!(
         final_sim.assignments.get(Segment::V).unwrap().allele_id,
