@@ -80,3 +80,16 @@ include = [
     { path = "README.md", format = "sdist" },
     { path = "LICENSE", format = "sdist" },
 ]
+
+[tool.pytest.ini_options]
+# v2.0 DSL: `recombine()` warns when bound to a raw RefDataConfig
+# (no empirical NP-length / trim distributions available). That's a
+# real signal for end users, but the engine-level test suite uses
+# minimal synthetic refdata on purpose. Ignore the two specific
+# warnings by default so they don't drown the test log; tests that
+# specifically validate the warning use `pytest.warns()` which is
+# unaffected by these global filters.
+filterwarnings = [
+    "ignore:Experiment bound to a raw RefDataConfig with no empirical NP-length distribution.*:UserWarning",
+    "ignore:Experiment bound to a raw RefDataConfig has no trim distributions.*:UserWarning",
+]

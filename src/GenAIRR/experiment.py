@@ -23,6 +23,7 @@ In all three cases the input is normalised to a
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
 
@@ -1180,9 +1181,13 @@ class Experiment:
         ``DataConfig.NP_lengths``) when the experiment is bound to
         a DataConfig. For raw-RefDataConfig experiments where no
         empirical data is available, both fall back to the uniform
-        ``[(0, 1.0), ..., (6, 1.0)]`` distribution. Pass an explicit
-        iterable of ``(length, weight)`` tuples to override the
-        default. ``np2_lengths`` is silently ignored on VJ chains.
+        ``[(0, 1.0), ..., (6, 1.0)]`` distribution and emit a
+        :class:`UserWarning` so the caller knows the synthetic
+        default is being used. Pass an explicit iterable of
+        ``(length, weight)`` tuples to override the default.
+        Passing ``np2_lengths`` on a VJ chain raises ``ValueError``
+        (VJ chains have no NP2 region — there's no D segment to
+        bracket).
 
         ``trim=True`` (default) inserts trim passes before assembly
         when the bound DataConfig carries empirical trim
@@ -1190,9 +1195,9 @@ class Experiment:
         per-gene ``trim_dicts`` to a single segment-level
         distribution. Set ``trim=False`` to disable trimming
         entirely (e.g. for tests that expect untrimmed alleles).
-        Raw-RefDataConfig experiments always have ``trim`` as a
-        no-op since there's no DataConfig to source the
-        distributions from.
+        Raw-RefDataConfig experiments have ``trim`` as a no-op (no
+        DataConfig to source distributions from); a :class:`UserWarning`
+        is emitted in that case so the silent no-op is visible.
 
         ``v_allele_weights`` / ``d_allele_weights`` /
         ``j_allele_weights`` — optional ``{allele_name:
@@ -1204,7 +1209,43 @@ class Experiment:
         per-segment ``.using(...)`` lock. Raises ``ValueError`` for
         unknown allele names or non-positive weights.
         """
+        # VJ chains have no NP2 region — surface user mistakes loudly
+        # instead of silently dropping the argument.
+        if np2_lengths is not None and self._refdata.chain_type != "vdj":
+            raise ValueError(
+                f"np2_lengths is only valid for VDJ chains; the bound "
+                f"refdata is {self._refdata.chain_type!r} (no D segment, "
+                f"no NP2 region). Drop the np2_lengths kwarg or bind a "
+                f"VDJ refdata."
+            )
+
         defaults = self._recombine_defaults() if trim or self._dataconfig else None
+
+        # Raw-RefDataConfig path: there's no DataConfig backing this
+        # experiment, so empirical NP lengths and trim distributions
+        # don't exist. We fall back to a uniform NP-length default
+        # and a no-op trim — historically silent. Surface both so the
+        # caller knows the synthetic default is in play.
+        if self._dataconfig is None:
+            if np1_lengths is None or (
+                self._refdata.chain_type == "vdj" and np2_lengths is None
+            ):
+                warnings.warn(
+                    "Experiment bound to a raw RefDataConfig with no empirical "
+                    "NP-length distribution; falling back to uniform "
+                    "[(0, 1.0), ..., (6, 1.0)]. Pass np1_lengths "
+                    "(and np2_lengths for VDJ) explicitly to silence this.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            if trim:
+                warnings.warn(
+                    "Experiment bound to a raw RefDataConfig has no trim "
+                    "distributions; trim=True is a no-op. Pass trim=False "
+                    "explicitly to silence this.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         np1 = (
             _normalize_lengths(np1_lengths)

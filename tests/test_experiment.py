@@ -19,6 +19,8 @@ it produces. Verifies:
 """
 from __future__ import annotations
 
+import warnings
+
 from GenAIRR import _engine as ge
 import pytest
 
@@ -226,12 +228,26 @@ def test_recombine_custom_np1_length_distribution_propagates():
         assert o.trace().find("np.np1.length").value == 4
 
 
-def test_recombine_custom_np2_length_only_used_on_vdj():
-    # Pass np2_lengths to a VJ experiment — silently ignored, no error.
+def test_recombine_custom_np2_length_rejected_on_vj():
+    # v2.0: passing np2_lengths on a VJ chain is now an explicit
+    # ValueError (was silently ignored in v1.x). VJ chains have no
+    # NP2 region; the kwarg can only ever indicate a user mistake.
+    cfg = _vj_refdata()
+    with pytest.raises(ValueError, match="np2_lengths"):
+        Experiment.on(cfg).recombine(
+            np1_lengths=[(2, 1.0)],
+            np2_lengths=[(7, 1.0)],
+        )
+
+
+def test_recombine_vj_without_np2_still_produces_single_np():
+    # The other half of the old test: VJ chains still produce just
+    # V / NP1 / J when np2_lengths is omitted (which is the only
+    # supported VJ shape).
     cfg = _vj_refdata()
     outcomes = Experiment.on(cfg).recombine(
         np1_lengths=[(2, 1.0)],
-        np2_lengths=[(7, 1.0)],
+        trim=False,
     ).run(n=1, seed=0)
     np1 = outcomes[0].final_simulation().regions()[1]
     assert len(np1) == 2
@@ -4369,3 +4385,82 @@ def test_germline_alignment_byte_matches_source_allele():
     expected = v_seq[: v_end - v_start]
     actual = galn[v_start:v_end]
     assert actual == expected, f"V germline mismatch:\nexpected: {expected[:60]}\nactual:   {actual[:60]}"
+
+
+# ──────────────────────────────────────────────────────────────────
+# Phase 1 (v2.0 prep): DSL silent-failure → loud-failure
+# ──────────────────────────────────────────────────────────────────
+
+
+def test_recombine_rejects_np2_lengths_on_vj_chain():
+    """VJ chains have no NP2 region; passing np2_lengths was previously
+    silently ignored, which hid genuine user mistakes (binding the wrong
+    refdata, copy-pasted VDJ snippet, etc.). Phase 1 of the v2.0 DSL
+    cleanup turns this into an explicit ValueError."""
+    exp = Experiment.on(_vj_refdata())
+    with pytest.raises(ValueError, match="np2_lengths.*VDJ"):
+        exp.recombine(np2_lengths=[(0, 1.0), (3, 1.0)])
+
+
+def test_recombine_accepts_np2_lengths_on_vdj_chain():
+    """The np2_lengths kwarg is still valid for VDJ; the new check
+    only fires on VJ."""
+    exp = Experiment.on(_vdj_refdata())
+    # Should not raise.
+    compiled = exp.recombine(np2_lengths=[(0, 1.0), (3, 1.0)], trim=False).compile()
+    assert compiled.refdata.chain_type == "vdj"
+
+
+def test_recombine_accepts_no_np2_on_vj_silently():
+    """Not passing np2_lengths on a VJ chain is fine — that's the
+    normal case. We only complain when the user explicitly supplies a
+    nonsensical kwarg."""
+    exp = Experiment.on(_vj_refdata())
+    # Should not raise and should not warn about np2.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        # Trim warning is expected on raw RefData; suppress that
+        # specifically so we only catch unexpected ones.
+        warnings.filterwarnings("ignore", message=".*trim.*", category=UserWarning)
+        warnings.filterwarnings("ignore", message=".*NP-length.*", category=UserWarning)
+        exp.recombine().compile()
+
+
+def test_recombine_warns_on_raw_refdata_uniform_np_fallback():
+    """Raw RefDataConfig has no DataConfig, so NP-length distributions
+    fall back to a uniform synthetic default. That used to be silent;
+    now we surface it so users notice they're not getting empirical
+    biology."""
+    exp = Experiment.on(_vj_refdata())
+    with pytest.warns(UserWarning, match="uniform"):
+        exp.recombine(trim=False)
+
+
+def test_recombine_warns_on_raw_refdata_trim_noop():
+    """Same shape as above: trim=True on raw RefDataConfig is a
+    silent no-op because there's no DataConfig with trim distributions.
+    Now warns instead of pretending to trim."""
+    exp = Experiment.on(_vj_refdata())
+    with pytest.warns(UserWarning, match="trim"):
+        # explicit np1_lengths so the NP warning doesn't fire too
+        exp.recombine(trim=True, np1_lengths=[(0, 1.0), (3, 1.0)])
+
+
+def test_recombine_warning_silenced_when_caller_supplies_lengths_and_trim_false():
+    """User passes everything explicitly → no warnings."""
+    exp = Experiment.on(_vdj_refdata())
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        exp.recombine(
+            trim=False,
+            np1_lengths=[(0, 1.0), (3, 1.0)],
+            np2_lengths=[(0, 1.0), (3, 1.0)],
+        )
+
+
+def test_recombine_no_warnings_on_dataconfig_path():
+    """Bound to a real DataConfig (via the builtin string alias) →
+    empirical NP + empirical trim available → no fallback warnings."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ga.Experiment.on("human_igh").recombine()
