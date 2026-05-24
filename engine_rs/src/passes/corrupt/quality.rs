@@ -162,7 +162,8 @@ mod tests {
     use crate::contract::productive;
     use crate::dist::{EmpiricalLengthDist, FilteredSampleError, UniformBase};
     use crate::ir::{compute_codon_rail, Nucleotide, Region, Segment};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::PassPlan;
+    use crate::pass::testing::PassRuntime;
     use crate::passes::test_support::{
         make_substitution_productive_vj_fixture, StopOnlyMutationBaseDist,
         StopThenSafeMutationBaseDist,

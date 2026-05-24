@@ -457,7 +457,7 @@ fn v_call_falls_back_to_origin_when_no_live_call_is_present() {
     let j_id = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
 
     let plan = vj_recombine_plan(&cfg, v_id, j_id, 0, b'A');
-    let outcome = genairr_engine::pass::PassRuntime::execute_with_refdata(
+    let outcome = genairr_engine::pass::testing::PassRuntime::execute_with_refdata(
         &plan,
         genairr_engine::ir::Simulation::new(),
         0,

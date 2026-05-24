@@ -57,7 +57,8 @@ mod tests {
         AllelePoolDist, Distribution, EmpiricalLengthDist, FilteredSampleError, UniformBase,
     };
     use crate::ir::{Segment, Simulation};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::PassPlan;
+    use crate::pass::testing::PassRuntime;
     use crate::passes::sample_allele::test_support::make_test_pool;
     use crate::trace::ChoiceValue;
 

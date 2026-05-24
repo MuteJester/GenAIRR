@@ -34,7 +34,7 @@ use crate::contract::ContractSet;
 use crate::ir::Simulation;
 use crate::refdata::RefDataConfig;
 
-use super::{NodeId, Outcome, PassError, PassPlan};
+use crate::pass::{NodeId, Outcome, PassError, PassPlan};
 
 /// Test-only execution entry point. Iterates the plan in insertion
 /// order through the production transactional loop. See module docs.

@@ -1,7 +1,8 @@
 use super::common::{assembled_v_sim, SEED_RANGE};
 use genairr_engine::dist::{EmpiricalLengthDist, UniformBase};
 use genairr_engine::ir::compute_codon_rail;
-use genairr_engine::pass::{PassPlan, PassRuntime};
+use genairr_engine::pass::PassPlan;
+use genairr_engine::pass::testing::PassRuntime;
 use genairr_engine::passes::{IndelPass, UniformMutationPass};
 
 #[test]

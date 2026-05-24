@@ -2,7 +2,7 @@ use super::common::{vj_plan, vj_refdata, SEED_RANGE};
 use genairr_engine::contract::productive;
 use genairr_engine::ir::Simulation;
 use genairr_engine::junction::compute_junction;
-use genairr_engine::pass::PassRuntime;
+use genairr_engine::pass::testing::PassRuntime;
 
 #[test]
 fn property_productive_implies_in_frame_vj() {

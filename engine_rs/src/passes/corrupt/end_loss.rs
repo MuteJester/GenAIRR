@@ -140,7 +140,8 @@ mod tests {
     use super::*;
     use crate::dist::EmpiricalLengthDist;
     use crate::ir::{Nucleotide, Region, Segment};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::PassPlan;
+    use crate::pass::testing::PassRuntime;
 
     fn end_loss_test_sim() -> Simulation {
         let mut sim = Simulation::new();

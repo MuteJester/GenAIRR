@@ -85,7 +85,8 @@ impl Pass for RevCompPass {
 mod tests {
     use super::*;
     use crate::ir::{Nucleotide, Segment};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::PassPlan;
+    use crate::pass::testing::PassRuntime;
     use crate::trace::Trace;
 
     fn rev_comp_test_sim() -> Simulation {

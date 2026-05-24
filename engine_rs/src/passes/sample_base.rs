@@ -89,7 +89,8 @@ mod tests {
     use super::*;
     use crate::dist::UniformBase;
     use crate::ir::{flag, NucHandle};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::PassPlan;
+    use crate::pass::testing::PassRuntime;
     use crate::passes::EchoPass;
 
     #[test]

@@ -1,7 +1,8 @@
 use super::common::{assembled_v_sim, SEED_RANGE};
 use genairr_engine::dist::{EmpiricalLengthDist, UniformBase};
 use genairr_engine::ir::NucHandle;
-use genairr_engine::pass::{PassPlan, PassRuntime};
+use genairr_engine::pass::PassPlan;
+use genairr_engine::pass::testing::PassRuntime;
 use genairr_engine::passes::UniformMutationPass;
 use genairr_engine::trace::ChoiceValue;
 

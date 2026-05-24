@@ -145,7 +145,8 @@ mod tests {
     use crate::ir::compute_codon_rail;
     use crate::dist::{FilteredSampleError, UniformBase};
     use crate::ir::{Nucleotide, Region, Segment};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::PassPlan;
+    use crate::pass::testing::PassRuntime;
     use crate::refdata::{Allele, AlleleId, ChainType, RefDataConfig};
 
     fn contaminant_test_sim() -> Simulation {

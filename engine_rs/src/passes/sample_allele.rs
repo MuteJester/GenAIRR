@@ -179,7 +179,8 @@ mod tests {
     use super::test_support::make_test_pool;
     use super::*;
     use crate::dist::AllelePoolDist;
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::PassPlan;
+    use crate::pass::testing::PassRuntime;
 
     #[test]
     #[should_panic(expected = "segment must be V, D, or J")]

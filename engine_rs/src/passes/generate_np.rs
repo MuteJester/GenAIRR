@@ -139,7 +139,8 @@ mod tests {
     use super::*;
     use crate::dist::{EmpiricalLengthDist, UniformBase};
     use crate::ir::{flag, NucHandle};
-    use crate::pass::{PassError, PassPlan, PassRuntime};
+    use crate::pass::{PassError, PassPlan};
+    use crate::pass::testing::PassRuntime;
     use crate::passes::EchoPass;
     use crate::trace::ChoiceValue;
 

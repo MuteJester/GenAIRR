@@ -2,7 +2,8 @@ use super::*;
 use crate::contract::productive;
 use crate::dist::{Distribution, EmpiricalLengthDist, FilteredSampleError, UniformBase};
 use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
-use crate::pass::{PassError, PassPlan, PassRuntime};
+use crate::pass::{PassError, PassPlan};
+    use crate::pass::testing::PassRuntime;
 use crate::passes::test_support::make_substitution_productive_vj_fixture;
 use crate::trace::ChoiceValue;
 

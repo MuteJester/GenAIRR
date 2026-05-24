@@ -204,7 +204,8 @@ impl Pass for TrimPass {
 mod tests {
     use super::*;
     use crate::dist::{AllelePoolDist, EmpiricalLengthDist};
-    use crate::pass::{PassError, PassPlan, PassRuntime};
+    use crate::pass::{PassError, PassPlan};
+    use crate::pass::testing::PassRuntime;
     use crate::passes::sample_allele::test_support::make_test_pool;
     use crate::passes::SampleAllelePass;
 

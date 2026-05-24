@@ -1,5 +1,6 @@
 use super::*;
 use crate::ir::{NucFlags, NucHandle, Nucleotide, Segment, Simulation};
+use crate::pass::testing::PassRuntime;
 use crate::trace::ChoiceValue;
 
 struct TestEchoPass {

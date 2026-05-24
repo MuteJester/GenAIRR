@@ -76,7 +76,8 @@ impl Pass for EchoPass {
 mod tests {
     use super::*;
     use crate::ir::{GermlinePos, NucHandle};
-    use crate::pass::{PassPlan, PassRuntime};
+    use crate::pass::PassPlan;
+    use crate::pass::testing::PassRuntime;
 
     #[test]
     fn echo_pass_appends_configured_nucleotide() {
