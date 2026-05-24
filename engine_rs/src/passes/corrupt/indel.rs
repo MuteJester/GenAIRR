@@ -45,6 +45,7 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::Simulation;
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 mod event;
@@ -119,43 +120,32 @@ impl IndelPass {
             return Ok(sim.clone());
         }
 
-        // route indel mutations through `SimulationBuilder`
-        // so each insertion/deletion emits an `on_indel_*` event to
-        // attached observers.
+        // Route indel mutations through `MutationTransaction` so each
+        // insertion/deletion emits an `on_indel_*` event to attached
+        // observers, and the seal step picks the reference-index-aware
+        // path automatically.
         //
-        // codon-rail and walker observers now implement
-        // `on_indel_*` properly. External indels (before a region)
-        // are absorbed as `seq_start` shifts; internal indels mark
-        // the observer `needs_rebuild` so the seal helpers replace
-        // it with a fresh `from_existing_region` rebuild against the
-        // post-mutation pool. The staged live calls then absorb via
-        // the Phase-1 fast path in the post-pass
-        // `PassEffect::StructuralIndel` dispatch, replacing the prior
-        // unconditional from-scratch `call_from_region` re-walk per
-        // V/D/J segment.
-        //
-        // dirty-signal observer is also attached so the
-        // dispatcher can drain the post-pass `dirty_windows` state.
-        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_standard_mutation_observers(ctx.reference_index);
+        // Codon-rail and walker observers implement `on_indel_*`
+        // properly. External indels (before a region) are absorbed as
+        // `seq_start` shifts; internal indels mark the observer
+        // `needs_rebuild` so the seal helpers replace it with a fresh
+        // `from_existing_region` rebuild against the post-mutation
+        // pool. The staged live calls then absorb via the Phase-1
+        // fast path in the post-pass `PassEffect::StructuralIndel`
+        // dispatch, replacing the prior unconditional from-scratch
+        // `call_from_region` re-walk per V/D/J segment.
+        let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
         for i in 0..count {
-            let event = self.sample_event(builder.peek(), ctx, i, count, strict)?;
-            Self::record_event(ctx, i, event);
-            Self::apply_event_via_builder(&mut builder, event);
+            let event = {
+                let (sim_ref, ctx_ref) = tx.split_borrows();
+                self.sample_event(sim_ref, ctx_ref, i, count, strict)?
+            };
+            Self::record_event(tx.ctx(), i, event);
+            Self::apply_event_via_tx(&mut tx, event)?;
         }
 
-        let sealed = if let Some(ref_index) = ctx.reference_index {
-            builder.seal_with_committed_live_calls(ref_index)
-        } else {
-            // No reference index → no walker / dirty-signal observers
-            // attached. Codon-rail observer's seal helper handles the
-            // amino-acid + stop-codon writeback; no dirty-window stash
-            // because `apply_live_call_updates` only runs on the
-            // compiled path which always has a reference index.
-            builder.seal()
-        };
-        Ok(sealed)
+        tx.commit()
     }
 }
 

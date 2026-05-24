@@ -358,3 +358,80 @@ fn identity_base(base: u8) -> u8 {
     base
 }
 
+#[cfg(test)]
+mod boundary_lockdown {
+    //! Guard test that enforces the pass-author convention encoded
+    //! in [`crate::ir::builder::SimulationBuilder`]: no file under
+    //! `src/passes/` other than this one may call `.change_base(`,
+    //! `.insert_indel(`, or `.delete_indel(` directly. New passes
+    //! must route mutations through [`MutationTransaction`].
+    //!
+    //! Visibility lockdown via `pub(super)` isn't an option because
+    //! `MutationTransaction` itself lives in `src/passes/`, not in
+    //! `src/ir/`. So we enforce the rule with a grep-style assertion
+    //! that runs in CI.
+    //!
+    //! Walks `src/passes/` from the manifest dir, ignoring this file
+    //! (the sole legitimate caller), and asserts the forbidden call
+    //! patterns are absent. Doc-comment references are excluded by
+    //! matching only lines that contain `.` immediately followed by
+    //! the method name and `(`.
+    use std::fs;
+    use std::path::Path;
+
+    const FORBIDDEN: &[&str] = &[".change_base(", ".insert_indel(", ".delete_indel("];
+
+    fn visit(dir: &Path, violations: &mut Vec<String>) {
+        for entry in fs::read_dir(dir).expect("read_dir under src/passes") {
+            let entry = entry.expect("dir entry");
+            let path = entry.path();
+            if path.is_dir() {
+                visit(&path, violations);
+                continue;
+            }
+            if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+                continue;
+            }
+            if path.file_name().and_then(|s| s.to_str())
+                == Some("mutation_transaction.rs")
+            {
+                continue;
+            }
+            let body = match fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            for (line_no, line) in body.lines().enumerate() {
+                let trimmed = line.trim_start();
+                // Skip doc-comment references like `builder.change_base()`.
+                if trimmed.starts_with("//") || trimmed.starts_with("///") {
+                    continue;
+                }
+                for pattern in FORBIDDEN {
+                    if line.contains(pattern) {
+                        violations.push(format!(
+                            "{}:{} → {}",
+                            path.display(),
+                            line_no + 1,
+                            line.trim()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_pass_calls_low_level_builder_mutators_directly() {
+        let passes_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/passes");
+        let mut violations = Vec::new();
+        visit(&passes_dir, &mut violations);
+        assert!(
+            violations.is_empty(),
+            "Pass files calling SimulationBuilder mutation methods directly — \
+             use MutationTransaction instead. Offenders:\n{}",
+            violations.join("\n")
+        );
+    }
+}
+

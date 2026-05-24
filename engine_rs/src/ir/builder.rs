@@ -348,6 +348,13 @@ impl<'idx> SimulationBuilder<'idx> {
     /// API rather than mutating the inner pool/sequence in place.
     /// The Arc-clones inside `with_indel_inserted` are negligible at
     /// this frequency.
+    ///
+    /// **Pass authors:** do not call this directly — route insertions
+    /// through [`crate::passes::mutation_transaction::MutationTransaction::insert_base`],
+    /// which validates the handle, fires observer events, and applies
+    /// the reference-index-aware seal at `commit`. The only legitimate
+    /// non-TX callers are the event-log replay path (`ir::event_log_observer`)
+    /// and observer unit tests (`live_call::tests`).
     pub(crate) fn insert_indel(&mut self, at: u32, n: Nucleotide) {
         self.broadcast(|obs| obs.on_indel_inserted(at, &n));
         // The per-region codon rail is not maintained in the hot
@@ -360,6 +367,10 @@ impl<'idx> SimulationBuilder<'idx> {
     /// handle `> at` down by 1. Notifies observers of `on_indel_deleted`
     /// before the underlying pool mutation applies the shift.
     /// Returns the removed nucleotide (caller may ignore).
+    ///
+    /// **Pass authors:** do not call this directly — route deletions
+    /// through [`crate::passes::mutation_transaction::MutationTransaction::delete_base`].
+    /// Same restriction and rationale as [`Self::insert_indel`].
     pub(crate) fn delete_indel(&mut self, at: u32) -> Option<Nucleotide> {
         let removed = *self.simulation.pool.get(NucHandle::new(at))?;
         self.broadcast(|obs| obs.on_indel_deleted(at, &removed));
@@ -419,6 +430,15 @@ impl<'idx> SimulationBuilder<'idx> {
     /// deltas, retranslate codons, etc.) *before* the pool reflects
     /// the new value. The new base is applied immediately after the
     /// notifications return.
+    ///
+    /// **Pass authors:** do not call this directly — route base
+    /// substitutions through [`crate::passes::mutation_transaction::MutationTransaction::substitute_base`]
+    /// (contract-filtered, trace-recording) or [`crate::passes::mutation_transaction::MutationTransaction::substitute_base_fixed`]
+    /// (unconditional). The TX validates the handle, picks the
+    /// reference-index-aware seal path, and emits structured
+    /// `PassError`s for out-of-range handles instead of panicking
+    /// through this method's `.expect()`. Legitimate non-TX callers
+    /// are limited to the event-log replay path and observer unit tests.
     pub(crate) fn change_base(&mut self, handle: NucHandle, new_base: u8) -> Nucleotide {
         // Read the old nucleotide *before* mutating the pool — the
         // event observers need the old value with its segment and

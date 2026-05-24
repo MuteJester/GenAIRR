@@ -1,6 +1,7 @@
 use crate::address;
-use crate::ir::{flag, NucHandle, Nucleotide, Segment, Simulation, SimulationBuilder};
-use crate::pass::PassContext;
+use crate::ir::{flag, NucHandle, Nucleotide, Segment, Simulation};
+use crate::pass::{PassContext, PassError};
+use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 use super::IndelPass;
@@ -71,28 +72,26 @@ impl IndelPass {
         }
     }
 
-    /// apply an indel event through a
-    /// `SimulationBuilder`, emitting `on_indel_inserted` /
-    /// `on_indel_deleted` events to attached observers.
+    /// Apply an indel event through the active `MutationTransaction`,
+    /// emitting `on_indel_inserted` / `on_indel_deleted` events to
+    /// attached observers.
     ///
     /// Default observer impls are no-ops, so observer state becomes
     /// stale after the call — the post-pass
     /// `PassEffect::StructuralIndel` refresh handles re-derivation
     /// from scratch.
-    pub(super) fn apply_event_via_builder(
-        builder: &mut SimulationBuilder,
+    pub(super) fn apply_event_via_tx(
+        tx: &mut MutationTransaction<'_, '_>,
         event: IndelEvent,
-    ) {
+    ) -> Result<(), PassError> {
         match event {
             IndelEvent::Insertion { site, base } => {
-                let segment = Self::insertion_segment(builder.peek(), site);
+                let segment = Self::insertion_segment(tx.peek(), site);
                 let new_nuc = Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED);
-                builder.insert_indel(site, new_nuc);
+                tx.insert_base(site, new_nuc)
             }
-            IndelEvent::Deletion { site: Some(site) } => {
-                builder.delete_indel(site);
-            }
-            IndelEvent::Deletion { site: None } => {}
+            IndelEvent::Deletion { site: Some(site) } => tx.delete_base(site).map(|_| ()),
+            IndelEvent::Deletion { site: None } => Ok(()),
         }
     }
 }

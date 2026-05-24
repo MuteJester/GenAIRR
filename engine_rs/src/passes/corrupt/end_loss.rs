@@ -25,6 +25,7 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::Simulation;
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 /// Which end the loss is applied to.
@@ -57,6 +58,50 @@ impl EndLossPass {
             LossEnd::Three => address::CORRUPT_END_LOSS_3,
         }
     }
+
+    fn execute_inner(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+    ) -> Result<Simulation, PassError> {
+        let raw = self.length_dist.sample(ctx.rng);
+        let requested = raw.max(0) as u32;
+        let pool_len = sim.pool.len() as u32;
+        let actual = requested.min(pool_len);
+        ctx.trace
+            .record(self.address(), ChoiceValue::Int(actual as i64));
+        if actual == 0 {
+            return Ok(sim.clone());
+        }
+
+        // Route deletes through MutationTransaction so each removal
+        // emits `on_indel_deleted` to attached observers and the
+        // post-pass live-call refresh hook absorbs the structural
+        // change correctly.
+        let mut tx = MutationTransaction::open(sim, ctx, self.name(), false);
+
+        match self.end {
+            LossEnd::Five => {
+                // Delete pool position 0, `actual` times. Each call
+                // shifts every later position left by 1, so the next
+                // position 0 is the original position 1, etc.
+                for _ in 0..actual {
+                    tx.delete_base(0)?;
+                }
+            }
+            LossEnd::Three => {
+                // Delete the last position, `actual` times. After
+                // each call the new pool length is one less, so the
+                // next "last" index decreases.
+                for _ in 0..actual {
+                    let last = tx.peek().pool.len() as u32 - 1;
+                    tx.delete_base(last)?;
+                }
+            }
+        }
+
+        tx.commit()
+    }
 }
 
 impl Pass for EndLossPass {
@@ -65,58 +110,8 @@ impl Pass for EndLossPass {
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
-        let raw = self.length_dist.sample(ctx.rng);
-        let requested = raw.max(0) as u32;
-        let pool_len = sim.pool.len() as u32;
-        let actual = requested.min(pool_len);
-        ctx.trace
-            .record(self.address(), ChoiceValue::Int(actual as i64));
-        if actual == 0 {
-            return sim.clone();
-        }
-
-        // route deletes through `SimulationBuilder` so each
-        // removal emits `on_indel_deleted` to attached observers,
-        // matching the indel pass's reactive shape. 's
-        // observer indel handlers (`needs_rebuild` on internal /
-        // pre-region deletes, shift on external for walker) keep
-        // codon-rail and walker live-call state correct without
-        // relying on the post-pass `StructuralIndel` from-scratch
-        // refresh. Dirty signals from each delete flow into
-        // `LiveCallState.dirty_windows` for the consumer hook.
-        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_standard_mutation_observers(ctx.reference_index);
-
-        match self.end {
-            LossEnd::Five => {
-                // Delete from pool position 0, `actual` times. Each
-                // call shifts every later position left by 1, so the
-                // next position 0 is the original position 1, etc.
-                for _ in 0..actual {
-                    builder.delete_indel(0);
-                }
-            }
-            LossEnd::Three => {
-                // Delete the last position, `actual` times. After
-                // each call the new pool length is one less, so the
-                // next "last" index decreases.
-                for _ in 0..actual {
-                    let last = builder.peek().pool.len() as u32 - 1;
-                    builder.delete_indel(last);
-                }
-            }
-        }
-
-        if let Some(ref_index) = ctx.reference_index {
-            builder.seal_with_committed_live_calls(ref_index)
-        } else {
-            // No reference index → no walker / dirty-signal observers
-            // attached. Codon rails still get committed via the
-            // observer route. No dirty-window stash because
-            // `apply_live_call_updates` only runs on the compiled
-            // path which always has a reference index.
-            builder.seal()
-        }
+        self.execute_inner(sim, ctx)
+            .expect("EndLossPass: delete positions are bounded by pool length by construction")
     }
 
     fn execute_checked(
@@ -124,7 +119,7 @@ impl Pass for EndLossPass {
         sim: &Simulation,
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
-        Ok(self.execute(sim, ctx))
+        self.execute_inner(sim, ctx)
     }
 
     fn declared_choices(&self) -> Vec<String> {
