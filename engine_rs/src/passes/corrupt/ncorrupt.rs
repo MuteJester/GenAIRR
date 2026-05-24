@@ -18,6 +18,7 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 pub struct NCorruptionPass {
@@ -71,25 +72,22 @@ impl NCorruptionPass {
             return Ok(sim.clone());
         }
 
-        // builder-pattern port (see quality.rs / s5f.rs).
-        // also attach walker observers when ref_index is
-        // available so the post-pass walker refresh is suppressed.
-        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_standard_mutation_observers(ctx.reference_index);
+        // N-corruption unconditionally writes `b'N'` — no
+        // distribution, no contract filter — through the scoped
+        // MutationTransaction.
+        let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
         for i in 0..count {
-            let site = ctx.rng.range_u32(pool_len);
+            let site = tx.rng().range_u32(pool_len);
             let site_handle = NucHandle::new(site);
-            ctx.trace
-                .record(address::corrupt_ns_site(i), ChoiceValue::Int(site as i64));
-            builder.change_base(site_handle, b'N');
+            tx.trace().record(
+                address::corrupt_ns_site(i),
+                ChoiceValue::Int(site as i64),
+            );
+            tx.substitute_base_fixed(site_handle, b'N')?;
         }
 
-        Ok(if let Some(ref_index) = ctx.reference_index {
-            builder.seal_with_committed_live_calls(ref_index)
-        } else {
-            builder.seal()
-        })
+        tx.commit()
     }
 }
 

@@ -4,7 +4,7 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
-use crate::passes::constrained::{sample_targeted_base, TargetedBaseChoice};
+use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 /// Models PCR amplification errors as a small number of random
@@ -90,32 +90,26 @@ impl PCRErrorPass {
             return Ok(sim.clone());
         }
 
-        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_standard_mutation_observers(ctx.reference_index);
+        let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
         for i in 0..count {
-            let site = ctx.rng.range_u32(pool_len);
+            let site = tx.rng().range_u32(pool_len);
             let site_handle = NucHandle::new(site);
-            let base_address = address::corrupt_pcr_base(i);
-
-            ctx.trace
-                .record(address::corrupt_pcr_site(i), ChoiceValue::Int(site as i64));
-            let new_base = sample_targeted_base(
-                builder.peek(),
-                ctx,
+            tx.trace().record(
+                address::corrupt_pcr_site(i),
+                ChoiceValue::Int(site as i64),
+            );
+            tx.substitute_base(
+                site_handle,
                 self.base_dist.as_ref(),
-                TargetedBaseChoice::new(self.name(), &base_address, i, count, site_handle, strict),
+                &address::corrupt_pcr_base(i),
+                i,
+                count,
+                None,
             )?;
-            ctx.trace.record(base_address, ChoiceValue::Base(new_base));
-
-            builder.change_base(site_handle, new_base);
         }
 
-        Ok(if let Some(ref_index) = ctx.reference_index {
-            builder.seal_with_committed_live_calls(ref_index)
-        } else {
-            builder.seal()
-        })
+        tx.commit()
     }
 }
 

@@ -4,7 +4,7 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
-use crate::passes::constrained::{sample_targeted_base, TargetedBaseChoice};
+use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 fn lowercase_base(base: u8) -> u8 {
@@ -97,48 +97,31 @@ impl QualityErrorPass {
             return Ok(sim.clone());
         }
 
-        // route per-base mutations through `SimulationBuilder`
-        // so each `change_base` notifies attached codon-rail observers
-        // (one per existing region). Old `with_base_changed` triggered
-        // `refresh_regions_covering` for ALL regions overlapping the
-        // handle; observing every region preserves that semantics.
-        //
-        // also attach walker observers (one per V/D/J
-        // region) when a reference index is available, so the
-        // per-allele score vectors update incrementally and the
-        // post-pass `PassEffect::EditBases` walker refresh is
-        // suppressed via the Phase-1 fast path. See S5F's port for
-        // the version-bump coordination.
-        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_standard_mutation_observers(ctx.reference_index);
+        // Quality substitutions go through MutationTransaction with
+        // a value-transform that lowercases the chosen base — the
+        // sequencing-error convention. The TX handles observer
+        // attach, contract filtering, trace recording, and the seal
+        // protocol; this loop only samples sites and submits.
+        let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
         for i in 0..count {
-            let site = ctx.rng.range_u32(pool_len);
+            let site = tx.rng().range_u32(pool_len);
             let site_handle = NucHandle::new(site);
-            let base_address = address::corrupt_quality_base(i);
-
-            ctx.trace.record(
+            tx.trace().record(
                 address::corrupt_quality_site(i),
                 ChoiceValue::Int(site as i64),
             );
-
-            let new_base = sample_targeted_base(
-                builder.peek(),
-                ctx,
+            tx.substitute_base(
+                site_handle,
                 self.base_dist.as_ref(),
-                TargetedBaseChoice::new(self.name(), &base_address, i, count, site_handle, strict)
-                    .with_value_transform(lowercase_base),
+                &address::corrupt_quality_base(i),
+                i,
+                count,
+                Some(lowercase_base),
             )?;
-            ctx.trace.record(base_address, ChoiceValue::Base(new_base));
-
-            builder.change_base(site_handle, new_base);
         }
 
-        Ok(if let Some(ref_index) = ctx.reference_index {
-            builder.seal_with_committed_live_calls(ref_index)
-        } else {
-            builder.seal()
-        })
+        tx.commit()
     }
 }
 

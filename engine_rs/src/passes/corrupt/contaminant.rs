@@ -4,7 +4,7 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
-use crate::passes::constrained::{sample_targeted_base, TargetedBaseChoice};
+use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 /// Models read contamination: with probability `apply_prob` the
@@ -88,30 +88,22 @@ impl ContaminantPass {
             return Ok(sim.clone());
         }
 
-        // 2. Replace every base in the pool with a contaminant draw.
-        // builder-pattern port (see quality.rs / s5f.rs).
-        // also attach walker observers when ref_index is
-        // available.
-        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_standard_mutation_observers(ctx.reference_index);
+        // Replace every base in the pool with a contaminant draw,
+        // contract-filtered per base.
+        let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
         for i in 0..pool_len {
             let site = NucHandle::new(i);
-            let address = address::corrupt_contaminant_base(i);
-            let new_base = sample_targeted_base(
-                builder.peek(),
-                ctx,
+            tx.substitute_base(
+                site,
                 self.base_dist.as_ref(),
-                TargetedBaseChoice::new(self.name(), &address, i, pool_len, site, strict),
+                &address::corrupt_contaminant_base(i),
+                i,
+                pool_len,
+                None,
             )?;
-            ctx.trace.record(address, ChoiceValue::Base(new_base));
-            builder.change_base(site, new_base);
         }
-        Ok(if let Some(ref_index) = ctx.reference_index {
-            builder.seal_with_committed_live_calls(ref_index)
-        } else {
-            builder.seal()
-        })
+        tx.commit()
     }
 }
 

@@ -4,7 +4,7 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
-use crate::passes::constrained::{sample_targeted_base, TargetedBaseChoice};
+use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 /// The simplest mutation pass: pick `N` positions uniformly across
@@ -98,48 +98,36 @@ impl UniformMutationPass {
             return Ok(sim.clone());
         }
 
-        // 2. Apply `count` mutations sequentially. Route each
-        //    mutation through `SimulationBuilder::change_base` so
-        //    attached walker observers (when a reference index is
-        //    available) update per-allele scores incrementally
-        //    instead of triggering a from-scratch refresh at the
-        //    post-pass `PassEffect::EditBases` hook.
-        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
-        builder.attach_standard_mutation_observers(ctx.reference_index);
+        // 2. Apply `count` mutations sequentially through a scoped
+        //    MutationTransaction. The TX owns the
+        //    builder + attach observers + seal protocol, contract
+        //    filtering for each substitute, and the mutation-count
+        //    sidecar writeback. Out-of-range site handles surface as
+        //    `PassError::invalid_plan_state` rather than panicking.
+        let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
         for i in 0..count {
-            let site = ctx.rng.range_u32(pool_len);
+            let site = tx.rng().range_u32(pool_len);
             let site_handle = NucHandle::new(site);
-            let base_address = address::mutate_uniform_base(i);
-
-            ctx.trace.record(
+            tx.trace().record(
                 address::mutate_uniform_site(i),
                 ChoiceValue::Int(site as i64),
             );
-            let new_base = sample_targeted_base(
-                builder.peek(),
-                ctx,
+            let base_address = address::mutate_uniform_base(i);
+            tx.substitute_base(
+                site_handle,
                 self.base_dist.as_ref(),
-                TargetedBaseChoice::new(self.name(), &base_address, i, count, site_handle, strict),
+                &base_address,
+                i,
+                count,
+                None,
             )?;
-            ctx.trace.record(base_address, ChoiceValue::Base(new_base));
-
-            builder.change_base(site_handle, new_base);
         }
 
-        let mut sealed = if let Some(ref_index) = ctx.reference_index {
-            builder.seal_with_committed_live_calls(ref_index)
-        } else {
-            builder.seal()
-        };
-
-        // Stash the mutation count on its own sidecar so the AIRR
-        // projection reads `n_mutations` in O(1).
         if count_raw > 0 {
-            sealed = sealed
-                .with_mutation_count(sealed.mutation_count.saturating_add(count_raw as u32));
+            tx.add_to_mutation_count(count_raw as u32);
         }
-        Ok(sealed)
+        tx.commit()
     }
 }
 
