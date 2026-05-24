@@ -420,6 +420,231 @@ class _CorruptStep:
             raise ValueError(f"unsupported corruption kind {self.kind!r}")
 
 
+# ──────────────────────────────────────────────────────────────────
+# describe() helpers — render step configurations as biology-style
+# narrative strings. The output is the diagnostic instrument we use
+# to grade DSL readability: if a chain reads weird in describe(), the
+# chain itself reads weird.
+# ──────────────────────────────────────────────────────────────────
+
+
+def _describe_distribution(pairs: Tuple[Tuple[int, float], ...]) -> str:
+    """Render a ``(value, weight)`` distribution as a short
+    biology-friendly string: ``"5"`` for a fixed count, ``"5–15"``
+    for a uniform range, ``"0–8 weighted"`` for non-uniform."""
+    if not pairs:
+        return "<empty>"
+    values = [v for v, _ in pairs]
+    weights = [w for _, w in pairs]
+    lo, hi = min(values), max(values)
+    if lo == hi:
+        return str(lo)
+    uniform = all(abs(w - weights[0]) < 1e-9 for w in weights)
+    covers_range = sorted(values) == list(range(lo, hi + 1))
+    if uniform and covers_range:
+        return f"{lo}–{hi}"
+    return f"{lo}–{hi} weighted"
+
+
+def _describe_recombine_step(step: "_RecombineStep", chain_type: str) -> str:
+    segs = "V/J" if chain_type == "vj" else "V/D/J"
+    parts: List[str] = [f"sample {segs} alleles"]
+
+    locked_segs = []
+    if step.locks_v is not None:
+        locked_segs.append(f"V ({len(step.locks_v)})")
+    if step.locks_d is not None:
+        locked_segs.append(f"D ({len(step.locks_d)})")
+    if step.locks_j is not None:
+        locked_segs.append(f"J ({len(step.locks_j)})")
+    if locked_segs:
+        parts.append(f"locked to {', '.join(locked_segs)}")
+
+    weighted_segs = []
+    for seg, weights in (("V", step.weights_v), ("D", step.weights_d), ("J", step.weights_j)):
+        if weights is not None:
+            weighted_segs.append(seg)
+    if weighted_segs:
+        parts.append(f"custom {'/'.join(weighted_segs)} allele weights")
+
+    trim_bits = []
+    if step.trim_v_3:
+        trim_bits.append("V3'")
+    if step.trim_d_5:
+        trim_bits.append("D5'")
+    if step.trim_d_3:
+        trim_bits.append("D3'")
+    if step.trim_j_5:
+        trim_bits.append("J5'")
+    if trim_bits:
+        parts.append(f"empirical exonuclease trim ({', '.join(trim_bits)})")
+
+    np1_desc = _describe_distribution(step.np1_lengths)
+    if chain_type == "vdj":
+        np2_desc = _describe_distribution(step.np2_lengths)
+        parts.append(f"insert NP1 ({np1_desc} bases) and NP2 ({np2_desc} bases)")
+    else:
+        parts.append(f"insert NP1 ({np1_desc} bases)")
+
+    return "V(D)J recombination: " + "; ".join(parts)
+
+
+_S5F_KERNEL_LABELS = {
+    "hh_s5f": "human heavy-chain (HH_S5F)",
+    "hkl_s5f": "human kappa/lambda (HKL_S5F)",
+    "mk_rs5nf": "mouse (MK_RS5NF)",
+}
+
+
+def _describe_mutate_step(step: "_MutateStep") -> str:
+    count = _describe_distribution(step.count_pairs)
+    if step.model == "s5f":
+        kernel_label = _S5F_KERNEL_LABELS.get(step.s5f_model_name, step.s5f_model_name)
+        return f"Somatic hypermutation (S5F context model, {kernel_label}): {count} mutations/record"
+    if step.model == "uniform":
+        return f"Somatic hypermutation (uniform, position-independent): {count} mutations/record"
+    return f"Mutation ({step.model}): {count}/record"
+
+
+_CORRUPT_NARRATIVE_LABELS = {
+    _CORRUPT_KIND_PCR: ("PCR substitution errors", "errors/record"),
+    _CORRUPT_KIND_QUALITY: ("Sequencing quality errors", "errors/record"),
+    _CORRUPT_KIND_5PRIME_LOSS: ("5'-end loss (primer/adapter trim)", "bases trimmed"),
+    _CORRUPT_KIND_3PRIME_LOSS: ("3'-end loss", "bases trimmed"),
+    _CORRUPT_KIND_NS: ("Low-quality N-base injection", "bases replaced with N"),
+}
+
+
+def _describe_corrupt_step(step: "_CorruptStep") -> str:
+    if step.kind in _CORRUPT_NARRATIVE_LABELS:
+        label, unit = _CORRUPT_NARRATIVE_LABELS[step.kind]
+        count = _describe_distribution(step.count_pairs)
+        return f"{label}: {count} {unit}"
+    if step.kind == _CORRUPT_KIND_INDEL:
+        count = _describe_distribution(step.count_pairs)
+        return (
+            f"Structural indels (library prep): {count} events/record, "
+            f"insertion fraction {step.insertion_prob:.2f}"
+        )
+    if step.kind == _CORRUPT_KIND_CONTAMINANT:
+        return (
+            f"Cross-sample contamination: {step.apply_prob:.0%} of records "
+            f"replaced with a random allele sequence"
+        )
+    if step.kind == _CORRUPT_KIND_REV_COMP:
+        return f"Random strand orientation: {step.apply_prob:.0%} of records reverse-complemented"
+    return f"Corruption ({step.kind})"  # pragma: no cover — guarded at builder time
+
+
+def _describe_clonal_fork_step(step: "_ClonalForkStep") -> str:
+    return f"Clonal expansion: {step.n_clones} lineages × {step.size} reads/clone"
+
+
+def _describe_step(step: Any, chain_type: str) -> str:
+    """Dispatch to the right step-describer based on the step type."""
+    if isinstance(step, _RecombineStep):
+        return _describe_recombine_step(step, chain_type)
+    if isinstance(step, _MutateStep):
+        return _describe_mutate_step(step)
+    if isinstance(step, _CorruptStep):
+        return _describe_corrupt_step(step)
+    if isinstance(step, _ClonalForkStep):
+        return _describe_clonal_fork_step(step)
+    return f"Unknown step: {type(step).__name__}"  # pragma: no cover
+
+
+_CHAIN_TYPE_BIOLOGY_LABELS = {
+    "BCR_HEAVY": "heavy-chain BCR",
+    "BCR_LIGHT_KAPPA": "kappa light-chain BCR",
+    "BCR_LIGHT_LAMBDA": "lambda light-chain BCR",
+    "TCR_ALPHA": "alpha-chain TCR",
+    "TCR_BETA": "beta-chain TCR",
+    "TCR_GAMMA": "gamma-chain TCR",
+    "TCR_DELTA": "delta-chain TCR",
+}
+
+
+def _describe_experiment_header(
+    refdata: "_engine.RefDataConfig",
+    dataconfig: Optional[DataConfig],
+) -> str:
+    """One-line header naming the refdata source and chain type."""
+    chain = refdata.chain_type
+    if dataconfig is not None and getattr(dataconfig, "metadata", None) is not None:
+        meta = dataconfig.metadata
+        species_label: Optional[str] = None
+        species = getattr(meta, "species", None)
+        if species is not None:
+            species_label = getattr(species, "value", None) or str(species)
+        chain_enum = getattr(meta, "chain_type", None)
+        chain_key = getattr(chain_enum, "value", None) if chain_enum is not None else None
+        chain_label = _CHAIN_TYPE_BIOLOGY_LABELS.get(chain_key or "", f"{chain.upper()} chain")
+        if species_label:
+            return f"Experiment on {species_label} {chain_label}"
+        return f"Experiment on {chain_label}"
+    return f"Experiment on raw RefDataConfig ({chain.upper()})"
+
+
+def _describe_step_sequence(
+    steps: Sequence[Any],
+    chain_type: str,
+    *,
+    indent: str = "  ",
+    start_index: int = 1,
+) -> List[str]:
+    """Render a sequence of steps as numbered narrative lines. The
+    clonal-fork step gets a visual divider so the pre/post boundary
+    is obvious; subsequent steps continue numbering.
+
+    Returns one string per output line (no trailing newlines).
+    """
+    out: List[str] = []
+    step_no = start_index
+    for step in steps:
+        if isinstance(step, _ClonalForkStep):
+            out.append(f"{indent}── {_describe_clonal_fork_step(step)} ──")
+            out.append(f"{indent}    (steps above run once per clone; "
+                       f"steps below run once per descendant)")
+            continue
+        out.append(f"{indent}{step_no}. {_describe_step(step, chain_type)}")
+        step_no += 1
+    return out
+
+
+_PRODUCTIVE_BUNDLE_NAMES = frozenset({
+    "productive_junction_frame",
+    "no_stop_codon_in_junction",
+    "anchor_preserved.v",
+    "anchor_preserved.j",
+})
+
+
+def _format_active_contracts(active: Sequence[str]) -> Optional[str]:
+    """Render the compiled simulator's active-contracts tuple as a
+    biology-style line, or ``None`` if no contracts are bound. The
+    `ga.productive()` bundle's four underlying contracts
+    (productive_junction_frame, no_stop_codon_in_junction, and the
+    two anchor_preserved contracts) collapse to the single label
+    "productive sequences only" so the line reads naturally."""
+    if not active:
+        return None
+    names = list(active)
+    extras: List[str] = []
+    productive_present = _PRODUCTIVE_BUNDLE_NAMES.issubset(set(names))
+    bundle_names = _PRODUCTIVE_BUNDLE_NAMES if productive_present else frozenset()
+    for n in names:
+        if n in bundle_names:
+            continue
+        extras.append(n)
+    labels: List[str] = []
+    if productive_present:
+        labels.append("productive sequences only")
+    labels.extend(extras)
+    if not labels:
+        return None
+    return "; ".join(labels)
+
+
 def _normalize_count(
     count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
 ) -> Tuple[Tuple[int, float], ...]:
@@ -1414,13 +1639,26 @@ class Experiment:
                 post_steps, None, any_lock=False, replace_fn=_replace
             )
             return CompiledClonalExperiment(
-                pre_simulator, post_simulator, fork_step, self._refdata
+                pre_simulator,
+                post_simulator,
+                fork_step,
+                self._refdata,
+                pre_steps=tuple(pre_steps),
+                post_steps=tuple(post_steps),
+                dataconfig=self._dataconfig,
+                metadata=self._metadata,
             )
 
         simulator = self._build_simulator(
             self._steps, contracts, any_lock, replace_fn=_replace
         )
-        return CompiledExperiment(simulator, self._refdata)
+        return CompiledExperiment(
+            simulator,
+            self._refdata,
+            steps=tuple(self._steps),
+            dataconfig=self._dataconfig,
+            metadata=self._metadata,
+        )
 
     def _build_simulator(
         self,
@@ -1562,6 +1800,38 @@ class Experiment:
             id_prefix=id_prefix,
         )
 
+    def describe(self) -> str:
+        """Render a biology-style narrative of this experiment.
+
+        The output is one line per step, prefixed with its position
+        in the chain. Locks, allele weights, NP-length distributions,
+        SHM kernels, and per-corruption rates are all surfaced. Use
+        this to sanity-check what a fluent chain actually encodes —
+        if it doesn't read like an immunology protocol, the chain is
+        too murky.
+
+        Returns a multi-line string ending without a trailing newline.
+        Safe to ``print(exp.describe())``.
+
+        Example::
+
+            >>> print(Experiment.on("human_igh").recombine().mutate(count=(5, 15)).describe())
+            Experiment on human_igh (vdj, DataConfig)
+              1. V(D)J recombination: sample V/D/J alleles; empirical exonuclease trim (V3', D5', D3', J5'); insert NP1 (0–11 weighted bases) and NP2 (0–11 weighted bases)
+              2. Somatic hypermutation (S5F context model, human heavy-chain (HH_S5F)): 5–15 mutations/record
+        """
+        header = _describe_experiment_header(self._refdata, self._dataconfig)
+        if not self._steps:
+            return header + "\n  (no steps appended yet)"
+
+        lines = [header]
+        body_lines = _describe_step_sequence(self._steps, self._refdata.chain_type)
+        lines.extend(body_lines)
+        if self._metadata:
+            stamps = ", ".join(f"{k}={v!r}" for k, v in self._metadata.items())
+            lines.append(f"  Metadata stamped on every record: {stamps}")
+        return "\n".join(lines)
+
     def __repr__(self) -> str:
         return f"<Experiment chain={self.chain_type} steps={self.step_count}>"
 
@@ -1574,15 +1844,25 @@ class CompiledExperiment:
     time; ``run()`` only accepts execution parameters.
     """
 
-    __slots__ = ("_simulator", "_refdata")
+    __slots__ = ("_simulator", "_refdata", "_steps", "_dataconfig", "_metadata")
 
     def __init__(
         self,
         simulator: "_engine.CompiledSimulator",
         refdata: "_engine.RefDataConfig",
+        steps: Sequence[Any] = (),
+        dataconfig: Optional[DataConfig] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._simulator = simulator
         self._refdata = refdata
+        # Source steps stashed for `describe()`. The compiled simulator
+        # itself can render pass names but not biology — keeping the
+        # builder steps around is the cheapest way to give a faithful
+        # narrative back.
+        self._steps: Tuple[Any, ...] = tuple(steps)
+        self._dataconfig = dataconfig
+        self._metadata = dict(metadata) if metadata else {}
 
     @property
     def simulator(self) -> "_engine.CompiledSimulator":
@@ -1608,6 +1888,28 @@ class CompiledExperiment:
     def refdata(self) -> "_engine.RefDataConfig":
         """The :class:`GenAIRR._engine.RefDataConfig` the plan was built against."""
         return self._refdata
+
+    def describe(self) -> str:
+        """Render a biology-style narrative of the compiled experiment.
+
+        Equivalent to ``Experiment.describe()`` but additionally
+        surfaces compile-time constraints (e.g. ``productive_only``)
+        attached via ``compile(respect=...)``. See
+        :meth:`Experiment.describe` for the output shape.
+        """
+        header = _describe_experiment_header(self._refdata, self._dataconfig)
+        if not self._steps:
+            body = ["  (no steps recorded)"]
+        else:
+            body = _describe_step_sequence(self._steps, self._refdata.chain_type)
+        lines = [header, *body]
+        contracts_line = _format_active_contracts(self.active_contracts)
+        if contracts_line:
+            lines.append(f"  Constraints: {contracts_line}")
+        if self._metadata:
+            stamps = ", ".join(f"{k}={v!r}" for k, v in self._metadata.items())
+            lines.append(f"  Metadata stamped on every record: {stamps}")
+        return "\n".join(lines)
 
     def run(
         self,
@@ -1740,7 +2042,16 @@ class CompiledClonalExperiment:
     clonal structure.
     """
 
-    __slots__ = ("_pre", "_post", "_fork", "_refdata")
+    __slots__ = (
+        "_pre",
+        "_post",
+        "_fork",
+        "_refdata",
+        "_pre_steps",
+        "_post_steps",
+        "_dataconfig",
+        "_metadata",
+    )
 
     def __init__(
         self,
@@ -1748,11 +2059,19 @@ class CompiledClonalExperiment:
         post_simulator: "_engine.CompiledSimulator",
         fork: "_ClonalForkStep",
         refdata: "_engine.RefDataConfig",
+        pre_steps: Sequence[Any] = (),
+        post_steps: Sequence[Any] = (),
+        dataconfig: Optional[DataConfig] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._pre = pre_simulator
         self._post = post_simulator
         self._fork = fork
         self._refdata = refdata
+        self._pre_steps: Tuple[Any, ...] = tuple(pre_steps)
+        self._post_steps: Tuple[Any, ...] = tuple(post_steps)
+        self._dataconfig = dataconfig
+        self._metadata = dict(metadata) if metadata else {}
 
     @property
     def n_clones(self) -> int:
@@ -1770,6 +2089,36 @@ class CompiledClonalExperiment:
     @property
     def refdata(self) -> "_engine.RefDataConfig":
         return self._refdata
+
+    def describe(self) -> str:
+        """Render a biology-style narrative of the compiled clonal
+        experiment, with an explicit divider at the fork. See
+        :meth:`Experiment.describe` for the basic shape."""
+        header = _describe_experiment_header(self._refdata, self._dataconfig)
+        lines = [header]
+        # pre-fork section (per-clone)
+        pre_lines = _describe_step_sequence(
+            self._pre_steps, self._refdata.chain_type, start_index=1
+        )
+        lines.extend(pre_lines)
+        # the fork itself
+        lines.append(f"  ── {_describe_clonal_fork_step(self._fork)} ──")
+        lines.append(
+            "      (steps above run once per clone; "
+            "steps below run once per descendant)"
+        )
+        # post-fork section (per-descendant)
+        post_start = sum(
+            1 for s in self._pre_steps if not isinstance(s, _ClonalForkStep)
+        ) + 1
+        post_lines = _describe_step_sequence(
+            self._post_steps, self._refdata.chain_type, start_index=post_start
+        )
+        lines.extend(post_lines)
+        if self._metadata:
+            stamps = ", ".join(f"{k}={v!r}" for k, v in self._metadata.items())
+            lines.append(f"  Metadata stamped on every record: {stamps}")
+        return "\n".join(lines)
 
     def run(
         self,
