@@ -16,8 +16,9 @@ mod execution;
 /// and `trim_3` from the end, and pushes the retained bases as
 /// germline-derived nucleotides into the pool. Then constructs a
 /// `Region` for the segment with `frame_phase` chained from the
-/// cumulative length of all prior regions, and recomputes its
-/// codon rail.
+/// cumulative length of all prior regions. No codon-rail data is
+/// stored on the region — callers that need translation call
+/// [`crate::ir::compute_codon_rail`] against the post-assembly pool.
 ///
 /// **Determinism:** the pass makes no random choices.
 /// `declared_choices()` returns the empty vector — there is

@@ -21,10 +21,11 @@ use crate::trace::ChoiceValue;
 /// the count, then two per mutation (site index + base). Same seed
 /// → same mutations.
 ///
-/// **Codon-rail consistency:** every `with_base_changed` call
-/// auto-refreshes the affected region's codon rail (per the
-/// post-D audit fix). Stop codons that get introduced will be
-/// visible in `Region.amino_acids` immediately.
+/// **Codon-rail consistency:** codon-rail data is not stored on
+/// `Region` — the pool is the authoritative source.
+/// `NoStopCodonInJunction` reads pool bytes directly; callers that
+/// need amino-acid translation call
+/// [`crate::ir::compute_codon_rail`] against the post-mutation pool.
 ///
 /// **Constraint awareness:** every candidate base is filtered
 /// against the active `ContractSet` with the chosen target site in
@@ -349,11 +350,12 @@ mod tests {
     }
 
     #[test]
-    fn uniform_mutation_pass_refreshes_codon_rail_through_persistent_api() {
-        // The post-D audit fix in action: every `with_base_changed`
-        // call inside the pass updates Region.amino_acids
-        // automatically. After a mutation pass runs, the codon rail
-        // should still match a fresh recomputation against the pool.
+    fn uniform_mutation_pass_codon_rail_recompute_is_deterministic() {
+        // Codon-rail data isn't cached on `Region` — every reader
+        // calls `compute_codon_rail` against the current pool. This
+        // test verifies the pure function is deterministic: two
+        // consecutive computes against the post-mutation pool produce
+        // identical results.
         let mut sim = Simulation::new();
         for (i, b) in b"ATGGGGAAATTT".iter().enumerate() {
             let (next, _) =

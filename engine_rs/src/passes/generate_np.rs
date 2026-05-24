@@ -44,8 +44,9 @@ mod sampling;
 ///    pool.
 /// 4. Construct `Region(np_segment, [start, start+L))` with
 ///    `frame_phase = 0` (cross-region frame chaining is C.8's
-///    responsibility) and recompute its codon rail against the
-///    new pool.
+///    responsibility). No codon-rail data is stored on the region;
+///    callers that need translation call
+///    [`crate::ir::compute_codon_rail`] on demand.
 /// 5. Append the region to the sequence.
 pub struct GenerateNPPass {
     np_segment: Segment,

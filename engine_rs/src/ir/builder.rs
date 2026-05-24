@@ -549,14 +549,16 @@ impl<'idx> SimulationBuilder<'idx> {
     /// in the compiled path) and a walker observer for every V/D/J
     /// region with a matching segment index. Without a
     /// `ReferenceMatchIndex` (test harnesses like
-    /// `PassRuntime::execute_with_refdata`), this method is a no-op.
+    /// `pass::testing::PassRuntime::execute_with_refdata`), this
+    /// method is a no-op.
     ///
-    /// The per-region codon rail (`amino_acids` /
-    /// `stop_codon_positions`) is intentionally NOT maintained: no
-    /// production consumer reads it (`NoStopCodonInJunction` reads
-    /// pool directly, AIRR re-translates from raw sequence). Callers
-    /// that need the rail compute it on demand via
-    /// `Region::with_codon_rail_recomputed`.
+    /// Codon-rail data is *not* stored on `Region` — see the struct
+    /// comment in [`crate::ir::region`]. No production consumer reads
+    /// a cached rail (`NoStopCodonInJunction` reads pool bytes
+    /// directly; AIRR projection re-translates from the raw
+    /// sequence). Callers that need the rail call
+    /// [`crate::ir::compute_codon_rail`] against the current pool at
+    /// point of use.
     pub(crate) fn attach_standard_mutation_observers(
         &mut self,
         reference_index: Option<&'idx crate::live_call::ReferenceMatchIndex>,

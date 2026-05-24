@@ -7,8 +7,9 @@
 //! change pool length and shift downstream handle positions. The
 //! underlying primitives (`Simulation::with_indel_inserted` /
 //! `with_indel_deleted`) handle the position-shifting and
-//! region-range adjustments. Codon rails refresh automatically
-//! for any region whose range changed.
+//! region-range adjustments. Codon-rail data is not stored on
+//! `Region`; callers that need amino-acid translation call
+//! `compute_codon_rail(region, pool)` against the post-indel pool.
 //!
 //! **Per-indel semantics:**
 //! - Each indel is independently chosen to be an insertion or

@@ -21,10 +21,10 @@ use crate::trace::ChoiceValue;
 ///   (~10⁻⁵ per base per cycle in real PCR, but the rate is
 ///   user-supplied so it could be anything)
 ///
-/// Like all substitution passes, every `with_base_changed` call
-/// triggers automatic codon-rail refresh (post-D audit fix).
-/// When contracts are active, replacement bases are sampled from
-/// the admissible subset for the chosen target site, so observation
+/// Like all substitution passes, the pool is the authoritative
+/// source — codon-rail data is not stored on `Region`. When
+/// contracts are active, replacement bases are sampled from the
+/// admissible subset for the chosen target site, so observation
 /// errors cannot silently break enforced contracts when a safe
 /// replacement exists.
 ///

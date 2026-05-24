@@ -26,14 +26,14 @@ use crate::trace::ChoiceValue;
 /// `Bool(false)`, no further records are emitted (the pool is
 /// returned unchanged).
 ///
-/// Codon rail consistency is preserved per-base by
-/// `with_base_changed`. After a contamination event, the affected
-/// region's `amino_acids` reflects the contaminant content (not the
-/// original germline) — which is the desired post-contamination
-/// semantics. When contracts are active, each replacement base is
-/// filtered against the current intermediate IR and the target site,
-/// so a contamination event cannot transiently violate enforced
-/// contracts when an admissible replacement exists.
+/// Codon-rail data is not stored on `Region` — the pool directly
+/// reflects the contaminant bytes after each `with_base_changed`,
+/// and callers that need amino-acid translation call
+/// [`crate::ir::compute_codon_rail`] on demand. When contracts are
+/// active, each replacement base is filtered against the current
+/// intermediate IR and the target site, so a contamination event
+/// cannot transiently violate enforced contracts when an admissible
+/// replacement exists.
 ///
 /// Trace addresses (D3):
 /// - `corrupt.contaminant.applied` — `Bool(true)` if contamination

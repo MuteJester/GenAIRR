@@ -13,7 +13,10 @@
 //! - **Persistent IR (D1):** all top-level entities derive `Clone` and have
 //!   no interior mutability.
 //! - **Entity-attached metadata (D5):** derived state lives on the entity
-//!   that owns it (codon rail / amino acids).
+//!   that owns it (live-call state, dirty log, mutation count). Codon-rail
+//!   data is *not* stored on `Region` — it's a pure on-demand projection
+//!   produced by [`compute_codon_rail`] at the Python boundary; see the
+//!   struct comment in [`region`].
 //!
 //! ## Performance / cost model
 //!

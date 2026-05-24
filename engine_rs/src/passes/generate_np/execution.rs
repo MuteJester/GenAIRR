@@ -98,10 +98,9 @@ impl GenerateNPPass {
         let current = builder.seal();
 
         let region_end = NucHandle::new(current.pool.len() as u32);
-        // The per-region codon rail (amino_acids, stop_codon_positions)
-        // is not maintained in the hot path — no production consumer
-        // reads it. Callers that need it compute on demand via
-        // `Region::with_codon_rail_recomputed(&pool)`.
+        // Region carries no codon-rail data; the pool is the
+        // authoritative source. Callers that need translation call
+        // `crate::ir::compute_codon_rail(&region, &pool)` on demand.
         let region = Region::new(self.np_segment, region_start, region_end)
             .with_frame_phase(frame_phase);
         Ok(current.with_region_added(region))

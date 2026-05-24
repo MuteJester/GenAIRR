@@ -30,10 +30,11 @@ fn lowercase_base(base: u8) -> u8 {
 /// value that will actually be written, while still sampling from the
 /// configured base distribution.
 ///
-/// Pass `name()` is `"corrupt.quality"`. Codon-rail consistency
-/// is preserved by `with_base_changed` (the codon translator is
-/// case-insensitive, so lowercase bases translate to the same
-/// amino acid as their uppercase counterparts).
+/// Pass `name()` is `"corrupt.quality"`. Codon-rail data is not
+/// stored on `Region` — the pool is the authoritative source.
+/// `compute_codon_rail` is case-insensitive (lowercase bases
+/// translate to the same amino acid as uppercase), so quality
+/// errors do not change downstream amino-acid translation.
 ///
 /// Trace addresses (D3):
 /// - `corrupt.quality.count` — total errors applied

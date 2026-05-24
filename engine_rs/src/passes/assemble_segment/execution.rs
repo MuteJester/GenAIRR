@@ -83,14 +83,13 @@ impl AssembleSegmentPass {
         let seg = self.segment;
         let slice = &allele.seq[slice_start as usize..(slice_start + slice_len) as usize];
 
-        // Assembly does not maintain the per-region codon rail
-        // (`amino_acids` + `stop_codon_positions`); no production
-        // consumer reads it. `NoStopCodonInJunction` reads straight
-        // from `sim.pool`; AIRR's `sequence_aa` / `junction_aa` re-
-        // translate from raw bytes (the per-region frame doesn't
+        // No codon-rail data is stored on `Region`; the pool is the
+        // authoritative source. `NoStopCodonInJunction` reads straight
+        // from `sim.pool`, AIRR's `sequence_aa` / `junction_aa`
+        // re-translate from raw bytes (the per-region frame doesn't
         // match the junction frame in general). Callers that need
-        // the rail compute it on demand via
-        // `Region::with_codon_rail_recomputed(pool)`.
+        // the rail call `crate::ir::compute_codon_rail(region, pool)`
+        // against the current pool.
         //
         // The walker observer still runs when a `ReferenceMatchIndex`
         // is available — that one drives the live-call call set,
@@ -142,8 +141,8 @@ impl AssembleSegmentPass {
 
         let region_start = NucHandle::new(seq_start);
         let region_end = NucHandle::new(seq_end);
-        // Region constructed with empty codon rail. On-demand
-        // consumers call `with_codon_rail_recomputed(&pool)`.
+        // Region carries no codon-rail data. On-demand consumers call
+        // `crate::ir::compute_codon_rail(&region, &pool)`.
         let region = Region::new(seg, region_start, region_end).with_frame_phase(frame_phase);
         let current = current.with_region_added(region);
 

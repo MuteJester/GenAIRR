@@ -25,9 +25,10 @@ mod sampling;
 ///    c. Build the 5-mer context at the chosen position; look up
 ///       `kernel.substitution_row(context)`; sample a destination
 ///       base weighted by those four probabilities.
-///    d. Apply the mutation via `sim.with_base_changed`. The
-///       affected region's codon rail auto-refreshes (post-D
-///       audit fix).
+///    d. Apply the mutation via `sim.with_base_changed`. Codon-rail
+///       data is not stored on `Region`; callers that need
+///       translation call [`crate::ir::compute_codon_rail`] on
+///       demand.
 ///
 /// **Why iterative recomputation:** mutating a base changes the
 /// 5-mer contexts of its neighbors (positions `[pos-2, pos+2]`),
