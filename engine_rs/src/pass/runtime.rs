@@ -1,32 +1,74 @@
+//! `PassRuntime` — test-only execution helper that shares the
+//! production transactional loop in `compiled/execute.rs`.
+//!
+//! Pre-refactor `PassRuntime` had its own hand-rolled execute loop,
+//! which over time drifted from `CompiledSimulator`'s loop (different
+//! semantics for the live-call refresh, no effect hooks, no schedule
+//! topo-sort). The audit flagged this as "two runtimes" — bugs the
+//! production loop fixed could persist undetected through `PassRuntime`
+//! test fixtures.
+//!
+//! Today `PassRuntime` is unambiguously test-only and delegates to the
+//! production `execute_transactional` loop in [`crate::compiled::execute`].
+//! Tests get the same per-pass commit transaction, the same `Outcome`
+//! shape, and any future loop-level fixes apply to both paths.
+//!
+//! What `PassRuntime` does NOT do (deliberately, for test isolation):
+//!
+//! - Skip [`crate::compiled::analyze::analyze_plan`] — no compile-time
+//!   validation of distribution supports, contract preconditions,
+//!   etc. Tests can build "minimal" plans that wouldn't pass the
+//!   compile gate but should still execute. Production code paths
+//!   always go through `CompiledSimulator::compile`.
+//! - Skip the topo-sorted [`crate::pass::Schedule::compile`] —
+//!   `PassRuntime` honors the caller's insertion order verbatim.
+//! - Build a [`crate::live_call::ReferenceMatchIndex`] — tests that
+//!   need the index pass it explicitly or go through `CompiledSimulator`.
+//! - Register [`crate::pass::EffectHook`]s — there are no
+//!   post-pass derived-state refreshes. Tests asserting on live-call
+//!   sidecars should use `CompiledSimulator`.
+
+use crate::compiled::execute::{execute_transactional, ExecutionInputs};
+use crate::compiled::ExecutionPolicy;
 use crate::contract::ContractSet;
 use crate::ir::Simulation;
 use crate::refdata::RefDataConfig;
-use crate::rng::Rng;
-use crate::trace::Trace;
 
-use super::{Outcome, PassContext, PassError, PassPlan};
+use super::{NodeId, Outcome, PassError, PassPlan};
 
-/// Executes a `PassPlan` against an initial `Simulation`, threading
-/// the trace and RNG through every pass.
+/// Test-only execution entry point. Iterates the plan in insertion
+/// order through the production transactional loop. See module docs.
 pub struct PassRuntime;
 
 impl PassRuntime {
-    /// Run `plan` starting from `initial`, seeded with `seed`.
+    /// Run `plan` starting from `initial`, seeded with `seed`. No
+    /// refdata, no contracts, permissive policy.
     pub fn execute(plan: &PassPlan, initial: Simulation, seed: u64) -> Outcome {
-        Self::execute_inner(plan, initial, seed, None, None)
+        Self::run(plan, initial, seed, None, None, ExecutionPolicy::Permissive)
+            .expect("PassRuntime::execute: permissive run should not return PassError")
     }
 
-    /// Run `plan` with reference data threaded into every `PassContext`.
+    /// Run `plan` with reference data threaded into every
+    /// `PassContext`. Permissive policy.
     pub fn execute_with_refdata(
         plan: &PassPlan,
         initial: Simulation,
         seed: u64,
         refdata: &RefDataConfig,
     ) -> Outcome {
-        Self::execute_inner(plan, initial, seed, Some(refdata), None)
+        Self::run(
+            plan,
+            initial,
+            seed,
+            Some(refdata),
+            None,
+            ExecutionPolicy::Permissive,
+        )
+        .expect("PassRuntime::execute_with_refdata: permissive run should not return PassError")
     }
 
-    /// Run `plan` with both reference data and an active contract set.
+    /// Run `plan` with both reference data and an active contract
+    /// set. Permissive policy.
     pub fn execute_with_context(
         plan: &PassPlan,
         initial: Simulation,
@@ -34,10 +76,12 @@ impl PassRuntime {
         refdata: Option<&RefDataConfig>,
         contracts: Option<&ContractSet>,
     ) -> Outcome {
-        Self::execute_inner(plan, initial, seed, refdata, contracts)
+        Self::run(plan, initial, seed, refdata, contracts, ExecutionPolicy::Permissive)
+            .expect("PassRuntime::execute_with_context: permissive run should not return PassError")
     }
 
-    /// Strict counterpart to `execute_with_context`.
+    /// Strict counterpart to [`Self::execute_with_context`]. Returns
+    /// the first `PassError` instead of panicking.
     pub fn execute_strict_with_context(
         plan: &PassPlan,
         initial: Simulation,
@@ -45,84 +89,31 @@ impl PassRuntime {
         refdata: Option<&RefDataConfig>,
         contracts: Option<&ContractSet>,
     ) -> Result<Outcome, PassError> {
-        Self::execute_inner_checked(plan, initial, seed, refdata, contracts)
+        Self::run(plan, initial, seed, refdata, contracts, ExecutionPolicy::Strict)
     }
 
-    fn execute_inner(
+    fn run(
         plan: &PassPlan,
         initial: Simulation,
         seed: u64,
         refdata: Option<&RefDataConfig>,
         contracts: Option<&ContractSet>,
-    ) -> Outcome {
-        let mut trace = Trace::new();
-        let mut rng = Rng::new(seed);
-
-        let mut revisions: Vec<Simulation> = Vec::with_capacity(plan.len() + 1);
-        let mut pass_names: Vec<String> = Vec::with_capacity(plan.len());
-
-        revisions.push(initial);
-
-        for (pass_index, pass) in plan.passes().iter().enumerate() {
-            let prev = revisions.last().expect("non-empty by construction");
-            let mut ctx = PassContext {
-                trace: &mut trace,
-                rng: &mut rng,
-                pass_index,
-                refdata,
-                contracts,
-                feasibility: None,
-                reference_index: None,
-            };
-            let next = pass.execute(prev, &mut ctx);
-            pass_names.push(pass.name().to_string());
-            revisions.push(next);
-        }
-
-        Outcome {
-            revisions,
-            pass_names,
-            trace,
-            events: Vec::new(),
-        }
-    }
-
-    fn execute_inner_checked(
-        plan: &PassPlan,
-        initial: Simulation,
-        seed: u64,
-        refdata: Option<&RefDataConfig>,
-        contracts: Option<&ContractSet>,
+        policy: ExecutionPolicy,
     ) -> Result<Outcome, PassError> {
-        let mut trace = Trace::new();
-        let mut rng = Rng::new(seed);
-
-        let mut revisions: Vec<Simulation> = Vec::with_capacity(plan.len() + 1);
-        let mut pass_names: Vec<String> = Vec::with_capacity(plan.len());
-
-        revisions.push(initial);
-
-        for (pass_index, pass) in plan.passes().iter().enumerate() {
-            let prev = revisions.last().expect("non-empty by construction");
-            let mut ctx = PassContext {
-                trace: &mut trace,
-                rng: &mut rng,
-                pass_index,
-                refdata,
-                contracts,
-                feasibility: None,
-                reference_index: None,
-            };
-            let next = pass.execute_checked(prev, &mut ctx)?;
-            pass_names.push(pass.name().to_string());
-            revisions.push(next);
-        }
-
-        Ok(Outcome {
-            revisions,
-            pass_names,
-            trace,
-            events: Vec::new(),
-        })
+        // Insertion-order schedule — no topo-sort. Tests that
+        // intentionally test schedule-aware behaviour should go
+        // through `CompiledSimulator`.
+        let sorted_order: Vec<NodeId> = (0..plan.len()).map(|i| NodeId(i as u32)).collect();
+        let inputs = ExecutionInputs {
+            plan,
+            sorted_order: &sorted_order,
+            hooks: &[],
+            refdata,
+            contracts,
+            feasibility: None,
+            reference_index: None,
+            policy,
+        };
+        execute_transactional(inputs, initial, seed).map_err(|abort| abort.error)
     }
 }

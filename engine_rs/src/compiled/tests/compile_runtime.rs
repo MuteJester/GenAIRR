@@ -538,7 +538,9 @@ fn compiled_run_one_matches_direct_runtime_for_valid_plan() {
     let via_compiled = compiled.run_one(42).expect("run should succeed");
 
     assert_eq!(direct.trace.choices(), via_compiled.trace.choices());
-    assert!(direct.events.is_empty());
+    // PassRuntime now shares the transactional execute loop with the
+    // compiled simulator, so both populate the per-pass event log.
+    assert_eq!(direct.events.len(), plan.len());
     assert_eq!(via_compiled.events.len(), plan.len());
     assert_eq!(
         direct.final_simulation().pool.as_slice(),

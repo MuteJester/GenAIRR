@@ -24,35 +24,35 @@ use crate::rng::Rng;
 use crate::trace::Trace;
 
 #[derive(Copy, Clone)]
-pub(super) struct ExecutionInputs<'a> {
-    pub(super) plan: &'a PassPlan,
+pub(crate) struct ExecutionInputs<'a> {
+    pub(crate) plan: &'a PassPlan,
     /// Topologically-sorted execution order. `execute_transactional`
     /// iterates `sorted_order` and indexes into `plan.passes()`; the
     /// vec's positional index becomes the runtime `pass_index` in
     /// `PassContext`.
-    pub(super) sorted_order: &'a [NodeId],
+    pub(crate) sorted_order: &'a [NodeId],
     /// Effect hooks invoked after each pass commits. The compiled
     /// artifact owns the underlying `Vec<Box<dyn EffectHook>>` and
     /// hands the executor a borrowed slice of trait objects.
-    pub(super) hooks: &'a [Box<dyn EffectHook>],
-    pub(super) refdata: Option<&'a RefDataConfig>,
-    pub(super) contracts: Option<&'a ContractSet>,
-    pub(super) feasibility: Option<&'a FeasibilityContext>,
-    pub(super) reference_index: Option<&'a ReferenceMatchIndex>,
-    pub(super) policy: ExecutionPolicy,
+    pub(crate) hooks: &'a [Box<dyn EffectHook>],
+    pub(crate) refdata: Option<&'a RefDataConfig>,
+    pub(crate) contracts: Option<&'a ContractSet>,
+    pub(crate) feasibility: Option<&'a FeasibilityContext>,
+    pub(crate) reference_index: Option<&'a ReferenceMatchIndex>,
+    pub(crate) policy: ExecutionPolicy,
 }
 
 #[derive(Debug)]
-pub(super) struct ExecutionAbort {
-    pub(super) error: PassError,
+pub(crate) struct ExecutionAbort {
+    pub(crate) error: PassError,
     /// Already-committed prefix at the point of failure. Kept private:
     /// public runners expose only the structured pass error, while
     /// internal tests can assert transaction commit boundaries.
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(super) committed: Outcome,
+    pub(crate) committed: Outcome,
 }
 
-pub(super) fn execute_transactional(
+pub(crate) fn execute_transactional(
     inputs: ExecutionInputs<'_>,
     initial: Simulation,
     seed: u64,

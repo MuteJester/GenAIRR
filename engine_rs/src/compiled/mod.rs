@@ -42,7 +42,7 @@ pub use report::{CompileReport, CompileWarning, DeclaredChoice, PassSummary};
 mod error;
 pub use error::{CompileError, CompileErrorKind, CompileErrors};
 
-mod execute;
+pub(crate) mod execute;
 use execute::{execute_transactional, ExecutionAbort, ExecutionInputs};
 
 /// A borrowed compiled simulation artifact ready for deterministic execution.
