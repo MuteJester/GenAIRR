@@ -676,6 +676,55 @@ def test_pass_plan_run_matches_run_vj_recombination_under_same_seed():
     ]
 
 
+def test_pass_plan_exposes_last_pushed_node_and_explicit_edges():
+    # Build a plan with two independent allele samples (V and D) and
+    # force D to run before V via an explicit edge. The compile step
+    # should topo-sort accordingly.
+    cfg = _build_smoke_vj_refdata()
+    plan = genairr_engine.PassPlan()
+
+    plan.push_sample_allele("V", cfg)
+    v_idx = plan.last_pushed_node()
+    plan.push_sample_allele("J", cfg)
+    j_idx = plan.last_pushed_node()
+    assert v_idx == 0
+    assert j_idx == 1
+
+    # `.after(j_idx, v_idx)` means "j runs after v". This is already
+    # the natural order; the API should accept it without complaint.
+    plan.after(j_idx, v_idx)
+
+    # `.add_edge` with an out-of-range index errors at the Python boundary.
+    with pytest.raises(ValueError):
+        plan.add_edge(99, 0)
+    with pytest.raises(ValueError):
+        plan.add_edge(0, 0)  # self-edge
+
+
+def test_pass_plan_explicit_edge_reorders_independent_passes():
+    # Push V then D, then declare D-before-V. The compiled report's
+    # pass_names should reflect the topo-sorted order with D first.
+    cfg = _build_smoke_vj_refdata()
+    plan = genairr_engine.PassPlan()
+
+    plan.push_sample_allele("V", cfg)
+    v_idx = plan.last_pushed_node()
+    plan.push_sample_allele("J", cfg)
+    j_idx = plan.last_pushed_node()
+    plan.push_assemble("V")
+    plan.push_generate_np("NP1", [(0, 1.0), (3, 1.0)])
+    plan.push_assemble("J")
+
+    # Force J's allele draw to come before V's.
+    plan.before(j_idx, v_idx)
+
+    compiled = plan.compile(refdata=cfg)
+    names = compiled.pass_names()
+    assert names.index("sample_allele.j") < names.index("sample_allele.v"), (
+        f"explicit edge `j before v` must reorder allele draws: {names}"
+    )
+
+
 def test_pass_plan_run_without_refdata_works_for_pure_np_plan():
     # NP-only plan: no allele sampling, no assembly. Doesn't need refdata.
     plan = genairr_engine.PassPlan()

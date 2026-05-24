@@ -200,7 +200,11 @@ fn compiled_v_three_prime_trim_widens_live_and_airr_call() {
 }
 
 #[test]
-fn compiled_simulator_rejects_trim_after_assembly() {
+fn compiled_simulator_auto_reorders_trim_pushed_after_assemble() {
+    // Before the dep-graph scheduler, pushing trim AFTER assemble of
+    // the same segment was a hard compile error. The scheduler now
+    // derives the implicit `TrimAllele → AssembleSegment` edge from
+    // the pass metadata and topo-sorts trim back ahead of assemble.
     let cfg = vj_refdata();
     let mut plan = PassPlan::new();
     plan.push(Box::new(SampleAllelePass::new(
@@ -214,19 +218,25 @@ fn compiled_simulator_rejects_trim_after_assembly() {
         Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
     )));
 
-    let err = match CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-    {
-        Ok(_) => panic!("trim after assembly should fail compilation"),
-        Err(err) => err,
-    };
+    let compiled =
+        CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+            .expect("scheduler must auto-fix misordered trim/assemble");
 
-    assert!(err.errors.iter().any(|error| {
-        matches!(
-            &error.kind,
-            CompileErrorKind::InvalidPassOrder { reason }
-                if reason == "trim_after_assembly.V"
-        )
-    }));
+    // Report's pass_names() reads execution order from the topo-sort;
+    // trim should appear before assemble even though it was pushed
+    // last.
+    let names = compiled.report().pass_names();
+    let pos = |needle: &str| {
+        names
+            .iter()
+            .position(|n| n == needle)
+            .unwrap_or_else(|| panic!("pass {:?} not in {:?}", needle, names))
+    };
+    assert!(
+        pos("trim.v_3") < pos("assemble.v"),
+        "trim.v_3 must run before assemble.v, got order {:?}",
+        names
+    );
 }
 
 #[test]

@@ -87,6 +87,63 @@ impl PyPassPlan {
         Ok(self.inner()?.is_empty())
     }
 
+    /// Stable index of the most recently pushed pass. Use as a
+    /// handle for [`Self::add_edge`] / [`Self::after`] /
+    /// [`Self::before`]. Equal to `len() - 1` right after any
+    /// `push_*` call. Errors if the plan is empty or has already
+    /// been consumed by `compile()`.
+    fn last_pushed_node(&self) -> PyResult<u32> {
+        let plan = self.inner()?;
+        let n = plan.len();
+        if n == 0 {
+            return Err(PyValueError::new_err(
+                "plan is empty; push a pass first before calling last_pushed_node()",
+            ));
+        }
+        Ok((n - 1) as u32)
+    }
+
+    /// Declare an explicit ordering edge: the pass at `from_idx`
+    /// must execute before the pass at `to_idx`. The indices are
+    /// node handles obtained from [`Self::last_pushed_node`] (or
+    /// equivalently positions in push order, 0-based).
+    ///
+    /// Used for cross-cutting constraints that the auto-derived
+    /// `Pass::requirements()` / `Pass::effects()` edges don't
+    /// capture — e.g. "this corruption pass must come after that
+    /// mutation pass" when neither produces an effect the other
+    /// consumes.
+    fn add_edge(&mut self, from_idx: u32, to_idx: u32) -> PyResult<()> {
+        use crate::pass::NodeId;
+        let plan = self.inner_mut()?;
+        let n = plan.len() as u32;
+        if from_idx >= n || to_idx >= n {
+            return Err(PyValueError::new_err(format!(
+                "add_edge: node index out of range (have {} passes, got {}/{})",
+                n, from_idx, to_idx
+            )));
+        }
+        if from_idx == to_idx {
+            return Err(PyValueError::new_err(
+                "add_edge: self-edge would create a cycle",
+            ));
+        }
+        plan.add_edge(NodeId(from_idx), NodeId(to_idx));
+        Ok(())
+    }
+
+    /// Shorthand for `add_edge(other_idx, self_idx)`: make
+    /// `self_idx` execute after `other_idx`.
+    fn after(&mut self, self_idx: u32, other_idx: u32) -> PyResult<()> {
+        self.add_edge(other_idx, self_idx)
+    }
+
+    /// Shorthand for `add_edge(self_idx, other_idx)`: make
+    /// `self_idx` execute before `other_idx`.
+    fn before(&mut self, self_idx: u32, other_idx: u32) -> PyResult<()> {
+        self.add_edge(self_idx, other_idx)
+    }
+
     /// Append a `SampleAllelePass` for `segment`. Requires the active
     /// `refdata` so the per-segment allele distribution can be built
     /// at push time.

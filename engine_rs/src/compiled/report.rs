@@ -4,7 +4,7 @@
 //! choices, active contracts, and non-fatal warnings.
 
 use super::ExecutionPolicy;
-use crate::pass::{PassEffect, PassRequirement};
+use crate::pass::{NodeId, PassEffect, PassRequirement};
 
 /// One pass-level compile summary.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +40,35 @@ impl CompileReport {
             .iter()
             .map(|summary| summary.name.clone())
             .collect()
+    }
+
+    /// Reorder `pass_summaries` from insertion order into the
+    /// topo-sorted execution order produced by `Schedule::compile`,
+    /// and rewrite each `PassSummary.index` to its post-sort
+    /// position so `report.pass_names()` matches what actually runs.
+    /// `declared_choices`' `pass_index` is updated to match.
+    pub(super) fn reorder_to_execution(&mut self, sorted_order: &[NodeId]) {
+        // Build a map: original insertion index → execution position.
+        let mut exec_pos = vec![0usize; self.pass_summaries.len()];
+        for (exec_idx, node) in sorted_order.iter().enumerate() {
+            exec_pos[node.index()] = exec_idx;
+        }
+
+        // Reorder pass_summaries into execution order, rewriting
+        // each `index` to its execution position.
+        let mut reordered: Vec<PassSummary> = Vec::with_capacity(self.pass_summaries.len());
+        for node in sorted_order {
+            let mut summary = self.pass_summaries[node.index()].clone();
+            summary.index = reordered.len();
+            reordered.push(summary);
+        }
+        self.pass_summaries = reordered;
+
+        // Rewrite `pass_index` on declared_choices to match new
+        // execution positions.
+        for choice in &mut self.declared_choices {
+            choice.pass_index = exec_pos[choice.pass_index];
+        }
     }
 }
 

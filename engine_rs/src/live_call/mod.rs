@@ -10,6 +10,7 @@ mod call;
 pub(crate) mod dirty_signal_observer;
 mod model;
 mod reference_index;
+mod refresh_hook;
 mod walker;
 pub(crate) mod walker_observer;
 
@@ -19,6 +20,7 @@ pub use model::{
     BoundarySummary, BoundaryValue, DirtyReason, DirtyWindow, EvidenceScore, HypothesisFlags,
     LiveCallConfidence, LiveCallState, PlacementHypothesis, SegmentLiveCall,
 };
+pub use refresh_hook::LiveCallRefreshHook;
 pub use reference_index::{
     BaseBitsets, BaseEvidence, BoundaryIndex, IndexedAllele, KmerHit, KmerIndex,
     ReferenceMatchIndex, SegmentRefIndex, DEFAULT_REFERENCE_KMER_LEN,

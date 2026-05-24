@@ -11,8 +11,8 @@ use crate::assignment::TrimEnd;
 use crate::contract::ContractSet;
 use crate::feasibility::FeasibilityContext;
 use crate::ir::{Segment, Simulation};
-use crate::live_call::ReferenceMatchIndex;
-use crate::pass::{Outcome, PassError, PassPlan};
+use crate::live_call::{LiveCallRefreshHook, ReferenceMatchIndex};
+use crate::pass::{EffectHook, NodeId, Outcome, PassError, PassPlan};
 use crate::refdata::RefDataConfig;
 
 // Test-only re-imports — the `compiled::tests` submodules pull these
@@ -54,6 +54,15 @@ use execute::{execute_transactional, ExecutionAbort, ExecutionInputs};
 /// usage.
 pub struct CompiledSimulator<'a> {
     plan: &'a PassPlan,
+    /// Topologically-sorted execution order produced by
+    /// `Schedule::compile`. `execute_transactional` iterates this
+    /// instead of `plan.passes()` so the canonical pipeline order is
+    /// derived from the dep graph, not the user's push order.
+    sorted_order: Vec<NodeId>,
+    /// Effect hooks invoked after each pass commits. Today the only
+    /// registered hook is the live-call refresh; new derived-state
+    /// consumers register here without touching the executor.
+    hooks: Vec<Box<dyn EffectHook>>,
     refdata: Option<&'a RefDataConfig>,
     contracts: Option<&'a ContractSet>,
     policy: ExecutionPolicy,
@@ -70,6 +79,10 @@ pub struct CompiledSimulator<'a> {
 /// deterministic execution.
 pub struct OwnedCompiledSimulator {
     plan: PassPlan,
+    /// Topologically-sorted execution order from `Schedule::compile`.
+    sorted_order: Vec<NodeId>,
+    /// Effect hooks invoked after each pass commits.
+    hooks: Vec<Box<dyn EffectHook>>,
     refdata: Option<RefDataConfig>,
     contracts: Option<ContractSet>,
     policy: ExecutionPolicy,
@@ -91,14 +104,26 @@ impl<'a> CompiledSimulator<'a> {
         contracts: Option<&'a ContractSet>,
         policy: ExecutionPolicy,
     ) -> Result<Self, CompileErrors> {
-        let (report, errors, feasibility) = analyze_plan(plan, refdata, contracts, policy);
+        let sorted_order = match plan.compile(refdata.is_some()) {
+            Ok(order) => order,
+            Err(schedule_err) => {
+                let err = error::schedule_error_into_compile_error(schedule_err, |idx| {
+                    plan.passes()[idx].name().to_string()
+                });
+                return Err(CompileErrors { errors: vec![err] });
+            }
+        };
+        let (mut report, errors, feasibility) = analyze_plan(plan, refdata, contracts, policy);
         if !errors.is_empty() {
             return Err(CompileErrors { errors });
         }
+        report.reorder_to_execution(&sorted_order);
         let reference_index = refdata.map(ReferenceMatchIndex::build);
 
         Ok(Self {
             plan,
+            sorted_order,
+            hooks: default_hooks(),
             refdata,
             contracts,
             policy,
@@ -143,6 +168,8 @@ impl<'a> CompiledSimulator<'a> {
     fn inputs_with_policy(&self, policy: ExecutionPolicy) -> ExecutionInputs<'_> {
         ExecutionInputs {
             plan: self.plan,
+            sorted_order: &self.sorted_order,
+            hooks: &self.hooks,
             refdata: self.refdata,
             contracts: self.contracts,
             feasibility: self.feasibility.as_ref(),
@@ -230,15 +257,27 @@ impl OwnedCompiledSimulator {
         contracts: Option<ContractSet>,
         policy: ExecutionPolicy,
     ) -> Result<Self, CompileErrors> {
-        let (report, errors, feasibility) =
+        let sorted_order = match plan.compile(refdata.is_some()) {
+            Ok(order) => order,
+            Err(schedule_err) => {
+                let err = error::schedule_error_into_compile_error(schedule_err, |idx| {
+                    plan.passes()[idx].name().to_string()
+                });
+                return Err(CompileErrors { errors: vec![err] });
+            }
+        };
+        let (mut report, errors, feasibility) =
             analyze_plan(&plan, refdata.as_ref(), contracts.as_ref(), policy);
         if !errors.is_empty() {
             return Err(CompileErrors { errors });
         }
+        report.reorder_to_execution(&sorted_order);
         let reference_index = refdata.as_ref().map(ReferenceMatchIndex::build);
 
         Ok(Self {
             plan,
+            sorted_order,
+            hooks: default_hooks(),
             refdata,
             contracts,
             policy,
@@ -256,9 +295,18 @@ impl OwnedCompiledSimulator {
         report: CompileReport,
         feasibility: Option<FeasibilityContext>,
     ) -> Self {
+        // Callers reach here only after the plan already passed
+        // `Schedule::compile` upstream (otherwise the validated-parts
+        // promise is broken). Recompute the sorted order here rather
+        // than threading it through the API.
+        let sorted_order = plan
+            .compile(refdata.is_some())
+            .expect("from_validated_parts requires a schedule that already topo-sorted cleanly");
         let reference_index = refdata.as_ref().map(ReferenceMatchIndex::build);
         Self {
             plan,
+            sorted_order,
+            hooks: default_hooks(),
             refdata,
             contracts,
             policy,
@@ -299,6 +347,8 @@ impl OwnedCompiledSimulator {
     fn inputs_with_policy(&self, policy: ExecutionPolicy) -> ExecutionInputs<'_> {
         ExecutionInputs {
             plan: &self.plan,
+            sorted_order: &self.sorted_order,
+            hooks: &self.hooks,
             refdata: self.refdata.as_ref(),
             contracts: self.contracts.as_ref(),
             feasibility: self.feasibility.as_ref(),
@@ -384,6 +434,13 @@ fn trim_address(segment: Segment, end: TrimEnd) -> &'static str {
 
 fn np_length_address(segment: Segment) -> &'static str {
     address::np_length(segment).unwrap_or(address::NP_INVALID_LENGTH)
+}
+
+/// Default effect-hook registration for a freshly-compiled
+/// simulator. Today this is just the live-call refresh; future
+/// derived-state consumers (e.g. a junction cache) get added here.
+fn default_hooks() -> Vec<Box<dyn EffectHook>> {
+    vec![Box::new(LiveCallRefreshHook::new())]
 }
 
 #[cfg(test)]

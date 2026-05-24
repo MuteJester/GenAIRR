@@ -7,8 +7,7 @@
 //! `OwnedCompiledSimulator::compile`.
 
 use super::error::{
-    invalid_parameter, invalid_pass_order, pass_scoped_error, plan_scoped_error, CompileError,
-    CompileErrorKind,
+    invalid_parameter, plan_scoped_error, CompileError, CompileErrorKind,
 };
 use super::feasibility_builder::{
     anchor_head_residues, anchor_tail_residues, build_feasibility_context, d_length_residues,
@@ -20,9 +19,7 @@ use crate::assignment::TrimEnd;
 use crate::contract::{ContractKind, ContractSet};
 use crate::feasibility::FeasibilityContext;
 use crate::ir::Segment;
-use crate::pass::{
-    AlleleIdSupport, IntegerSupport, PassCompileFact, PassEffect, PassPlan, PassRequirement,
-};
+use crate::pass::{AlleleIdSupport, IntegerSupport, PassCompileFact, PassEffect, PassPlan};
 use crate::refdata::RefDataConfig;
 use std::collections::{HashMap, HashSet};
 
@@ -271,12 +268,10 @@ pub(super) fn analyze_plan(
     contracts: Option<&ContractSet>,
     policy: ExecutionPolicy,
 ) -> (CompileReport, Vec<CompileError>, Option<FeasibilityContext>) {
-    let mut assigned: HashSet<Segment> = HashSet::new();
     let mut pass_summaries = Vec::with_capacity(plan.len());
     let mut declared_choices = Vec::new();
     let mut errors = Vec::new();
     let mut fact_index = CompileFactIndex::default();
-    let mut assembled: HashSet<Segment> = HashSet::new();
 
     for (index, pass) in plan.passes().iter().enumerate() {
         let name = pass.name().to_string();
@@ -285,25 +280,14 @@ pub(super) fn analyze_plan(
         let effects = pass.effects();
         let compile_facts = pass.compile_facts();
 
-        for req in &requirements {
-            match req {
-                PassRequirement::RefData if refdata.is_none() => {
-                    errors.push(pass_scoped_error(
-                        index,
-                        &name,
-                        CompileErrorKind::MissingRefData,
-                    ));
-                }
-                PassRequirement::AlleleAssignment(segment) if !assigned.contains(segment) => {
-                    errors.push(pass_scoped_error(
-                        index,
-                        &name,
-                        CompileErrorKind::MissingAssignment { segment: *segment },
-                    ));
-                }
-                _ => {}
-            }
-        }
+        // Pre-`Schedule` we checked `RefData` and `AlleleAssignment`
+        // requirements here, and rejected `TrimAllele(seg)` if it
+        // came after `AssembleSegment(seg)` in declared order. The
+        // `Schedule::compile` topo-sort now owns all three: missing
+        // requirements come back as `ScheduleError`, and a misordered
+        // trim is silently reordered before assemble via the
+        // implicit `TrimAllele → AssembleSegment` edge. `analyze_plan`
+        // keeps only the facts-and-feasibility responsibilities.
 
         for fact in compile_facts {
             fact_index.record_fact(fact, index, &name, refdata, &mut errors);
@@ -318,22 +302,8 @@ pub(super) fn analyze_plan(
         }
 
         for effect in &effects {
-            match effect {
-                PassEffect::AssignAllele(segment) => {
-                    assigned.insert(*segment);
-                    fact_index.assigned_segments.insert(*segment);
-                }
-                PassEffect::TrimAllele(segment) if assembled.contains(segment) => {
-                    errors.push(pass_scoped_error(
-                        index,
-                        &name,
-                        invalid_pass_order(format!("trim_after_assembly.{:?}", segment)),
-                    ));
-                }
-                PassEffect::AssembleSegment(segment) => {
-                    assembled.insert(*segment);
-                }
-                _ => {}
+            if let PassEffect::AssignAllele(segment) = effect {
+                fact_index.assigned_segments.insert(*segment);
             }
         }
 

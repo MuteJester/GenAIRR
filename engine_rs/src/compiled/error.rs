@@ -6,6 +6,7 @@
 //! feasibility_builder) can emit consistently-shaped errors.
 
 use crate::ir::Segment;
+use crate::pass::ScheduleError;
 use std::fmt;
 
 /// Fatal compile-time error.
@@ -95,14 +96,6 @@ impl std::error::Error for CompileErrors {}
 
 // ── builder helpers ────────────────────────────────────────────────
 
-pub(super) fn pass_scoped_error(index: usize, name: &str, kind: CompileErrorKind) -> CompileError {
-    CompileError {
-        pass_index: Some(index),
-        pass_name: Some(name.to_string()),
-        kind,
-    }
-}
-
 pub(super) fn plan_scoped_error(kind: CompileErrorKind) -> CompileError {
     CompileError {
         pass_index: None,
@@ -121,12 +114,6 @@ pub(super) fn invalid_parameter(
     }
 }
 
-pub(super) fn invalid_pass_order(reason: impl Into<String>) -> CompileErrorKind {
-    CompileErrorKind::InvalidPassOrder {
-        reason: reason.into(),
-    }
-}
-
 pub(super) fn contract_precondition(
     contract_name: impl Into<String>,
     reason: impl Into<String>,
@@ -134,5 +121,39 @@ pub(super) fn contract_precondition(
     CompileErrorKind::ContractPrecondition {
         contract_name: contract_name.into(),
         reason: reason.into(),
+    }
+}
+
+/// Convert a `ScheduleError` from the topo-sort step into the
+/// corresponding `CompileError`, preserving pass index/name so the
+/// human-readable message points at the offending pass.
+pub(super) fn schedule_error_into_compile_error(
+    err: ScheduleError,
+    name_for: impl Fn(usize) -> String,
+) -> CompileError {
+    match err {
+        ScheduleError::MissingRefData { pass, name } => CompileError {
+            pass_index: Some(pass.index()),
+            pass_name: Some(name),
+            kind: CompileErrorKind::MissingRefData,
+        },
+        ScheduleError::MissingAlleleAssignment {
+            pass,
+            name,
+            segment,
+        } => CompileError {
+            pass_index: Some(pass.index()),
+            pass_name: Some(name),
+            kind: CompileErrorKind::MissingAssignment { segment },
+        },
+        ScheduleError::Cycle(stuck) => {
+            let names: Vec<String> = stuck.iter().map(|n| name_for(n.index())).collect();
+            let reason = format!("cycle:{}", names.join("->"));
+            CompileError {
+                pass_index: stuck.first().map(|n| n.index()),
+                pass_name: stuck.first().map(|n| name_for(n.index())),
+                kind: CompileErrorKind::InvalidPassOrder { reason },
+            }
+        }
     }
 }

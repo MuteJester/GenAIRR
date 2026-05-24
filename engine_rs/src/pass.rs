@@ -8,21 +8,28 @@
 
 mod context;
 mod error;
+mod hook;
 mod metadata;
 mod outcome;
-mod plan;
 mod runtime;
+mod schedule;
 mod support;
 mod traits;
 
 pub use context::PassContext;
 pub use error::PassError;
+pub use hook::{EffectHook, HookContext};
 pub use metadata::{PassEffect, PassRequirement};
 pub use outcome::Outcome;
-pub use plan::PassPlan;
 pub use runtime::PassRuntime;
+pub use schedule::{NodeId, Schedule, ScheduleError};
 pub use support::{AlleleIdSupport, IntegerSupport, PassCompileFact};
 pub use traits::Pass;
+
+/// Back-compat alias for the dependency-graph schedule. The plan/list
+/// terminology is being phased out in favour of [`Schedule`] — both
+/// now name the same type.
+pub type PassPlan = Schedule;
 
 #[cfg(test)]
 mod tests;
