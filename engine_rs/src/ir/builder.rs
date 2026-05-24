@@ -125,41 +125,110 @@ pub(crate) trait IrEventObserver {
     fn on_indel_deleted(&mut self, at: u32, removed: &Nucleotide) {}
 }
 
+/// One slot in the [`SimulationBuilder`]'s observer registry.
+///
+/// Wraps each concrete observer kind in a typed enum variant so the
+/// builder can hold a single `Vec<ObserverSlot<'idx>>` instead of
+/// four parallel `Option<T>` / `Vec<T>` fields. Each mutation method
+/// broadcasts through one loop; this enum's `IrEventObserver` impl
+/// fans the event out to the wrapped observer's matching trait
+/// method.
+///
+/// Adding a fifth observer kind = one new variant + one match arm
+/// per event method (today: `on_base_pushed`, `on_base_changed`,
+/// `on_indel_inserted`, `on_indel_deleted`). Mutation methods stay
+/// untouched.
+///
+/// Conceptually the variants split into three **tiers**, mirroring
+/// game-engine signal/slot ordering conventions (Bevy
+/// `SystemSet::Recorder`/`Derived`/`Refresher`):
+///
+/// - **Derived** — observers that maintain incremental derived
+///   state in reaction to events ([`Walker`](Self::Walker) tracks
+///   per-allele scores; [`AdmitMask`](Self::AdmitMask) tracks the
+///   next-NP-slot counter). Most common case.
+/// - **Recorder** — passive observers that record the event stream
+///   ([`EventLog`](Self::EventLog)). Today's only consumer is debug
+///   replay and the MCP audit log.
+/// - **Refresher** — observers that record what changed so a
+///   downstream consumer can react ([`DirtySignal`](Self::DirtySignal)
+///   accumulates [`DirtyWindow`]s for `apply_live_call_updates`).
+///
+/// Tier is not enforced in code today — observers fire in
+/// `Vec`-insertion order. The trait contract guarantees that no
+/// observer reads another's state during a broadcast, so the
+/// ordering is purely a recording-order convention.
+pub(crate) enum ObserverSlot<'idx> {
+    /// Derived live-call walker observer. The builder may hold one
+    /// (assembly path) or up to three (mutation-pass path attaching
+    /// one observer per existing V/D/J region).
+    Walker(WalkerObserverState<'idx>),
+    /// Derived productive-admit-mask observer queried per NP slot
+    /// via [`SimulationBuilder::current_admit_mask`]. No seal output
+    /// — pure ephemeral query state.
+    AdmitMask(ProductiveAdmitMaskObserver<'idx>),
+    /// Recorder that captures every IR mutation event into a
+    /// `Vec<IrEvent>`. Drained at seal time via
+    /// [`SimulationBuilder::seal_event_log_observer`].
+    EventLog(EventLogObserver),
+    /// Refresher that accumulates `DirtyWindow`s for every base
+    /// change / indel event. Drained inside
+    /// [`SimulationBuilder::seal_with_committed_live_calls`].
+    DirtySignal(DirtySignalObserver),
+}
+
+impl<'idx> IrEventObserver for ObserverSlot<'idx> {
+    fn on_base_pushed(&mut self, handle: NucHandle, n: &Nucleotide) {
+        match self {
+            Self::Walker(o) => o.on_base_pushed(handle, n),
+            Self::AdmitMask(o) => o.on_base_pushed(handle, n),
+            Self::EventLog(o) => o.on_base_pushed(handle, n),
+            Self::DirtySignal(o) => o.on_base_pushed(handle, n),
+        }
+    }
+
+    fn on_base_changed(&mut self, handle: NucHandle, old_n: &Nucleotide, new_base: u8) {
+        match self {
+            Self::Walker(o) => o.on_base_changed(handle, old_n, new_base),
+            Self::AdmitMask(o) => o.on_base_changed(handle, old_n, new_base),
+            Self::EventLog(o) => o.on_base_changed(handle, old_n, new_base),
+            Self::DirtySignal(o) => o.on_base_changed(handle, old_n, new_base),
+        }
+    }
+
+    fn on_indel_inserted(&mut self, at: u32, n: &Nucleotide) {
+        match self {
+            Self::Walker(o) => o.on_indel_inserted(at, n),
+            Self::AdmitMask(o) => o.on_indel_inserted(at, n),
+            Self::EventLog(o) => o.on_indel_inserted(at, n),
+            Self::DirtySignal(o) => o.on_indel_inserted(at, n),
+        }
+    }
+
+    fn on_indel_deleted(&mut self, at: u32, removed: &Nucleotide) {
+        match self {
+            Self::Walker(o) => o.on_indel_deleted(at, removed),
+            Self::AdmitMask(o) => o.on_indel_deleted(at, removed),
+            Self::EventLog(o) => o.on_indel_deleted(at, removed),
+            Self::DirtySignal(o) => o.on_indel_deleted(at, removed),
+        }
+    }
+}
+
 /// Mutable, by-value owner of an in-progress `Simulation` whose pool
 /// supports cheap per-base append. See the module docs for the design
 /// rationale.
 ///
 /// The lifetime `'idx` is the lifetime of the borrowed
 /// `SegmentRefIndex` used by an attached walker observer (if any).
-/// Builders without an observer can safely use `'static` (the borrow
-/// slot stays `None`).
+/// Builders without an observer can safely use `'static`.
 pub struct SimulationBuilder<'idx> {
     simulation: Simulation,
-    /// Streaming live-call walker observers, one per segment under
-    /// observation. During assembly there is exactly one (the V/D/J
-    /// segment currently being built). During post-assembly mutation
-    /// passes (S5F, PCR, …) there may be up to three — one per
-    /// existing V/D/J region so each can receive `on_base_changed`
-    /// events for bases in its own range. Events broadcast to every
-    /// attached observer; observers self-filter by segment.
-    walker_observers: Vec<WalkerObserverState<'idx>>,
-    /// Optional streaming productive-admit-mask observer. Populated
-    /// by `attach_admit_mask_observer` and queried per NP slot via
-    /// `current_admit_mask`; advanced lazily on each
-    /// `push_nucleotide` whose segment matches the observer's NP
-    /// segment. No `seal_*` method — the observer carries no
-    /// committable output, only ephemeral query state.
-    admit_mask_observer: Option<ProductiveAdmitMaskObserver<'idx>>,
-    /// Optional structured event-log observer. Captures every IR
-    /// mutation event into a `Vec<IrEvent>` for trace replay /
-    /// MCP audit / metrics. Pure recorder; doesn't react.
-    event_log_observer: Option<EventLogObserver>,
-    /// Optional dirty-signal observer. Records a `DirtyWindow`
-    /// for every base change / indel event so the post-pass
-    /// `apply_live_call_updates` dispatch can refresh only segments
-    /// whose region overlaps a dirty position instead of re-sweeping
-    /// V/D/J unconditionally.
-    dirty_signal_observer: Option<DirtySignalObserver>,
+    /// Unified observer registry. Replaces the previous four parallel
+    /// `Option<T>` / `Vec<T>` fields. Observers fire in insertion
+    /// order during broadcasts. See [`ObserverSlot`] for the variant
+    /// list and the tier convention.
+    observers: Vec<ObserverSlot<'idx>>,
 }
 
 impl<'idx> SimulationBuilder<'idx> {
@@ -169,10 +238,7 @@ impl<'idx> SimulationBuilder<'idx> {
     pub fn from_simulation(sim: Simulation) -> Self {
         let mut builder = Self {
             simulation: sim,
-            walker_observers: Vec::new(),
-            admit_mask_observer: None,
-            event_log_observer: None,
-            dirty_signal_observer: None,
+            observers: Vec::new(),
         };
         // Force unique ownership of the pool's nucleotide vector. After
         // this, every subsequent `Arc::make_mut` inside `pool.push`
@@ -180,6 +246,20 @@ impl<'idx> SimulationBuilder<'idx> {
         // `&mut Vec<Nucleotide>` without copying.
         builder.simulation.pool.make_unique();
         builder
+    }
+
+    /// Broadcast `event_fn` to every attached observer in
+    /// insertion order. Replaces the previous four-arm `if let
+    /// Some(obs) = ...` fanout that each mutation method
+    /// duplicated.
+    #[inline]
+    fn broadcast<F>(&mut self, mut event_fn: F)
+    where
+        F: FnMut(&mut ObserverSlot<'idx>),
+    {
+        for obs in &mut self.observers {
+            event_fn(obs);
+        }
     }
 
     /// Read-only view of the in-progress simulation. Contracts and
@@ -203,8 +283,9 @@ impl<'idx> SimulationBuilder<'idx> {
         segment_index: &'idx SegmentRefIndex,
         seq_start: u32,
     ) {
-        self.walker_observers
-            .push(WalkerObserverState::new(segment_index, seq_start));
+        self.observers.push(ObserverSlot::Walker(
+            WalkerObserverState::new(segment_index, seq_start),
+        ));
     }
 
     /// Attach a walker observer **rebuilt** from an already-assembled
@@ -224,36 +305,26 @@ impl<'idx> SimulationBuilder<'idx> {
         segment_index: &'idx SegmentRefIndex,
         region: &super::Region,
     ) {
-        self.walker_observers
-            .push(WalkerObserverState::from_existing_region(
+        self.observers.push(ObserverSlot::Walker(
+            WalkerObserverState::from_existing_region(
                 segment_index,
                 &self.simulation,
                 region,
-            ));
+            ),
+        ));
     }
 
     /// Append one nucleotide and return its handle. Amortized O(1):
     /// no Arc clone, no `Vec` reallocation if capacity holds.
     ///
     /// Each attached observer is notified via
-    /// [`BaseAppendObserver::on_base_pushed`] *before* the pool's
-    /// `push` consumes `n`. The handle passed to observers equals the
-    /// index `n` will occupy: `NucHandle::new(pool.len() as u32)` at
-    /// the moment of call.
+    /// [`IrEventObserver::on_base_pushed`] *before* the pool's `push`
+    /// consumes `n`. The handle passed to observers equals the index
+    /// `n` will occupy: `NucHandle::new(pool.len() as u32)` at the
+    /// moment of call.
     pub fn push_nucleotide(&mut self, n: Nucleotide) -> NucHandle {
         let handle = NucHandle::new(self.simulation.pool.len() as u32);
-        for obs in &mut self.walker_observers {
-            obs.on_base_pushed(handle, &n);
-        }
-        if let Some(obs) = &mut self.admit_mask_observer {
-            obs.on_base_pushed(handle, &n);
-        }
-        if let Some(obs) = &mut self.event_log_observer {
-            obs.on_base_pushed(handle, &n);
-        }
-        if let Some(obs) = &mut self.dirty_signal_observer {
-            obs.on_base_pushed(handle, &n);
-        }
+        self.broadcast(|obs| obs.on_base_pushed(handle, &n));
         // The pool's `push` already does `Arc::make_mut` internally;
         // after `from_simulation`'s prepayment, that call is the cheap
         // refcount==1 path on every iteration. The returned handle
@@ -278,18 +349,7 @@ impl<'idx> SimulationBuilder<'idx> {
     /// The Arc-clones inside `with_indel_inserted` are negligible at
     /// this frequency.
     pub(crate) fn insert_indel(&mut self, at: u32, n: Nucleotide) {
-        for obs in &mut self.walker_observers {
-            obs.on_indel_inserted(at, &n);
-        }
-        if let Some(obs) = &mut self.admit_mask_observer {
-            obs.on_indel_inserted(at, &n);
-        }
-        if let Some(obs) = &mut self.event_log_observer {
-            obs.on_indel_inserted(at, &n);
-        }
-        if let Some(obs) = &mut self.dirty_signal_observer {
-            obs.on_indel_inserted(at, &n);
-        }
+        self.broadcast(|obs| obs.on_indel_inserted(at, &n));
         // The per-region codon rail is not maintained in the hot
         // path; consumers compute on demand. The persistent layer's
         // recompute would be wasted work.
@@ -302,18 +362,7 @@ impl<'idx> SimulationBuilder<'idx> {
     /// Returns the removed nucleotide (caller may ignore).
     pub(crate) fn delete_indel(&mut self, at: u32) -> Option<Nucleotide> {
         let removed = *self.simulation.pool.get(NucHandle::new(at))?;
-        for obs in &mut self.walker_observers {
-            obs.on_indel_deleted(at, &removed);
-        }
-        if let Some(obs) = &mut self.admit_mask_observer {
-            obs.on_indel_deleted(at, &removed);
-        }
-        if let Some(obs) = &mut self.event_log_observer {
-            obs.on_indel_deleted(at, &removed);
-        }
-        if let Some(obs) = &mut self.dirty_signal_observer {
-            obs.on_indel_deleted(at, &removed);
-        }
+        self.broadcast(|obs| obs.on_indel_deleted(at, &removed));
         self.simulation = self.simulation.with_indel_deleted_no_rail_recompute(at);
         Some(removed)
     }
@@ -324,18 +373,23 @@ impl<'idx> SimulationBuilder<'idx> {
     /// captured stream. Used for trace replay, MCP audit, metrics.
     #[allow(dead_code)]
     pub(crate) fn attach_event_log_observer(&mut self) {
-        self.event_log_observer = Some(EventLogObserver::new());
+        self.observers
+            .push(ObserverSlot::EventLog(EventLogObserver::new()));
     }
 
     /// Drain the attached event-log observer and return the
     /// captured events. Panics if no observer is attached.
     #[allow(dead_code)]
     pub(crate) fn seal_event_log_observer(&mut self) -> Vec<IrEvent> {
-        let observer = self
-            .event_log_observer
-            .take()
+        let idx = self
+            .observers
+            .iter()
+            .position(|o| matches!(o, ObserverSlot::EventLog(_)))
             .expect("seal_event_log_observer called without a prior attach_event_log_observer");
-        observer.seal()
+        match self.observers.remove(idx) {
+            ObserverSlot::EventLog(o) => o.seal(),
+            _ => unreachable!("position() located the EventLog variant"),
+        }
     }
 
     /// Attach a dirty-signal observer that records a `DirtyWindow`
@@ -351,7 +405,8 @@ impl<'idx> SimulationBuilder<'idx> {
     /// `PassEffect::AssembleSegment` / `AppendRegion`, which have
     /// their own refresh logic in `apply_live_call_updates`.
     pub(crate) fn attach_dirty_signal_observer(&mut self) {
-        self.dirty_signal_observer = Some(DirtySignalObserver::new());
+        self.observers
+            .push(ObserverSlot::DirtySignal(DirtySignalObserver::new()));
     }
 
     /// Change the base byte at `handle` in place and notify every
@@ -374,18 +429,7 @@ impl<'idx> SimulationBuilder<'idx> {
             .get(handle)
             .expect("change_base: handle must point into the pool");
 
-        for obs in &mut self.walker_observers {
-            obs.on_base_changed(handle, &old, new_base);
-        }
-        if let Some(obs) = &mut self.admit_mask_observer {
-            obs.on_base_changed(handle, &old, new_base);
-        }
-        if let Some(obs) = &mut self.event_log_observer {
-            obs.on_base_changed(handle, &old, new_base);
-        }
-        if let Some(obs) = &mut self.dirty_signal_observer {
-            obs.on_base_changed(handle, &old, new_base);
-        }
+        self.broadcast(|obs| obs.on_base_changed(handle, &old, new_base));
 
         let prev = self.simulation.pool.change_base_in_place(handle, new_base);
         debug_assert_eq!(
@@ -404,13 +448,14 @@ impl<'idx> SimulationBuilder<'idx> {
     /// case (mutation passes attaching one observer per existing
     /// V/D/J region).
     pub(crate) fn seal_walker_observer(&mut self, seq_end: u32) -> SealedWalkerState {
+        let walkers = self.take_walker_observers();
         assert!(
-            self.walker_observers.len() == 1,
+            walkers.len() == 1,
             "seal_walker_observer expects exactly one attached observer; \
              got {}. Use seal_all_walker_observers for multi-region passes.",
-            self.walker_observers.len()
+            walkers.len()
         );
-        self.walker_observers.pop().unwrap().seal(seq_end)
+        walkers.into_iter().next().unwrap().seal(seq_end)
     }
 
     /// Drain every attached walker observer, returning one sealed
@@ -428,8 +473,9 @@ impl<'idx> SimulationBuilder<'idx> {
     /// the sealed state reflects the post-indel pool rather than
     /// stale pre-indel scores.
     pub(crate) fn seal_all_walker_observers(&mut self) -> Vec<SealedWalkerState> {
+        let walkers = self.take_walker_observers();
         let sim = &self.simulation;
-        std::mem::take(&mut self.walker_observers)
+        walkers
             .into_iter()
             .map(|obs| obs.rebuild_if_stale(sim))
             .map(|obs| {
@@ -437,6 +483,41 @@ impl<'idx> SimulationBuilder<'idx> {
                 obs.seal(seq_end)
             })
             .collect()
+    }
+
+    /// Find-and-remove every `ObserverSlot::Walker` from the
+    /// registry, returning the wrapped `WalkerObserverState`s in
+    /// attach order. Non-walker observers (admit-mask, event-log,
+    /// dirty-signal) stay attached and continue receiving events
+    /// until their own seal / drop. Used internally by
+    /// [`Self::seal_walker_observer`] / [`Self::seal_all_walker_observers`].
+    fn take_walker_observers(&mut self) -> Vec<WalkerObserverState<'idx>> {
+        let mut walkers = Vec::new();
+        let mut keep = Vec::with_capacity(self.observers.len());
+        for slot in std::mem::take(&mut self.observers) {
+            match slot {
+                ObserverSlot::Walker(w) => walkers.push(w),
+                other => keep.push(other),
+            }
+        }
+        self.observers = keep;
+        walkers
+    }
+
+    /// Find-and-remove the attached `ObserverSlot::DirtySignal` (if
+    /// any) and return the wrapped observer. Other observers stay
+    /// in the registry. Used internally by
+    /// [`Self::seal_with_committed_live_calls`] to drain dirty
+    /// windows.
+    fn take_dirty_signal_observer(&mut self) -> Option<DirtySignalObserver> {
+        let idx = self
+            .observers
+            .iter()
+            .position(|o| matches!(o, ObserverSlot::DirtySignal(_)))?;
+        match self.observers.remove(idx) {
+            ObserverSlot::DirtySignal(o) => Some(o),
+            _ => unreachable!("position() located the DirtySignal variant"),
+        }
     }
 
     /// Standard observer-attach pattern for the mutation passes
@@ -501,11 +582,7 @@ impl<'idx> SimulationBuilder<'idx> {
         // Drain dirty signals captured during the pass so
         // `apply_live_call_updates` can use them to skip refreshes
         // for segments that received no edits.
-        let dirty_windows = self
-            .dirty_signal_observer
-            .take()
-            .map(|obs| obs.seal())
-            .unwrap_or_default();
+        let dirty_windows = self.take_dirty_signal_observer().map(|o| o.seal()).unwrap_or_default();
         let current = self.seal();
 
         // Take ownership of the LiveCallState once, mutate in place
@@ -578,7 +655,9 @@ impl<'idx> SimulationBuilder<'idx> {
         state: &'idx JunctionStopState,
         np_segment: Segment,
     ) {
-        self.admit_mask_observer = Some(ProductiveAdmitMaskObserver::new(state, np_segment));
+        self.observers.push(ObserverSlot::AdmitMask(
+            ProductiveAdmitMaskObserver::new(state, np_segment),
+        ));
     }
 
     /// 4-bit admit mask for the current NP slot, or `None` when no
@@ -586,9 +665,10 @@ impl<'idx> SimulationBuilder<'idx> {
     /// bit 1 → `C`, bit 2 → `G`, bit 3 → `T`. See
     /// [`ProductiveAdmitMaskObserver::current_admit_mask`].
     pub(crate) fn current_admit_mask(&self) -> Option<u8> {
-        self.admit_mask_observer
-            .as_ref()
-            .map(|obs| obs.current_admit_mask(&self.simulation))
+        self.observers.iter().find_map(|o| match o {
+            ObserverSlot::AdmitMask(am) => Some(am.current_admit_mask(&self.simulation)),
+            _ => None,
+        })
     }
 
     /// Consume the builder and return the sealed `Simulation`.
