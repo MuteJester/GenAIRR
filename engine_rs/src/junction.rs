@@ -81,8 +81,8 @@ impl Junction {
 /// to their own semantics (typically: vacuously satisfied, since
 /// there's nothing to verify yet).
 pub fn compute_junction(sim: &Simulation, refdata: &RefDataConfig) -> Option<Junction> {
-    let v_inst = sim.assignments.v?;
-    let j_inst = sim.assignments.j?;
+    let v_inst = sim.assignments.get(Segment::V).copied()?;
+    let j_inst = sim.assignments.get(Segment::J).copied()?;
 
     let v_allele = refdata.get(Segment::V, v_inst.allele_id)?;
     let j_allele = refdata.get(Segment::J, j_inst.allele_id)?;

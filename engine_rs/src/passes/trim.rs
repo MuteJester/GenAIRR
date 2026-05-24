@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(rec.value, ChoiceValue::Int(4));
 
         // Trim applied to the V allele instance.
-        let v = outcome.final_simulation().assignments.v.unwrap();
+        let v = outcome.final_simulation().assignments.get(Segment::V).copied().unwrap();
         assert_eq!(v.trim_3, 4);
         assert_eq!(v.trim_5, 0);
     }
@@ -386,10 +386,10 @@ mod tests {
 
         // Trims applied to the assignments.
         let sim = outcome.final_simulation();
-        assert_eq!(sim.assignments.v.unwrap().trim_3, 2);
-        assert_eq!(sim.assignments.d.unwrap().trim_5, 2);
-        assert_eq!(sim.assignments.d.unwrap().trim_3, 2);
-        assert_eq!(sim.assignments.j.unwrap().trim_5, 2);
+        assert_eq!(sim.assignments.get(Segment::V).copied().unwrap().trim_3, 2);
+        assert_eq!(sim.assignments.get(Segment::D).copied().unwrap().trim_5, 2);
+        assert_eq!(sim.assignments.get(Segment::D).copied().unwrap().trim_3, 2);
+        assert_eq!(sim.assignments.get(Segment::J).copied().unwrap().trim_5, 2);
     }
 
     #[test]
@@ -417,8 +417,8 @@ mod tests {
         let oa = PassRuntime::execute(&plan(), Simulation::new(), 0xc0ff_ee);
         let ob = PassRuntime::execute(&plan(), Simulation::new(), 0xc0ff_ee);
         assert_eq!(
-            oa.final_simulation().assignments.v.unwrap().trim_3,
-            ob.final_simulation().assignments.v.unwrap().trim_3
+            oa.final_simulation().assignments.get(Segment::V).copied().unwrap().trim_3,
+            ob.final_simulation().assignments.get(Segment::V).copied().unwrap().trim_3
         );
         assert_eq!(oa.trace.choices(), ob.trace.choices());
     }

@@ -40,9 +40,9 @@ pub(super) fn projected_allele_id(
     // that's the genuine aligner-drift case the divergence narrative
     // captures.
     let truth_id = match segment {
-        Segment::V => sim.assignments.v.map(|i| i.allele_id),
-        Segment::D => sim.assignments.d.map(|i| i.allele_id),
-        Segment::J => sim.assignments.j.map(|i| i.allele_id),
+        Segment::V => sim.assignments.get(Segment::V).copied().map(|i| i.allele_id),
+        Segment::D => sim.assignments.get(Segment::D).copied().map(|i| i.allele_id),
+        Segment::J => sim.assignments.get(Segment::J).copied().map(|i| i.allele_id),
         _ => None,
     };
     if let Some(call) = sim.segment_calls.get(segment) {
@@ -98,7 +98,7 @@ pub(super) fn np_claim_owner(
     refdata: &RefDataConfig,
     pool_pos: usize,
 ) -> Option<(Segment, u8, u32)> {
-    for seg in [Segment::V, Segment::D, Segment::J] {
+    for &seg in Segment::assignable() {
         if let Some(claim) = check_segment_claim(sim, refdata, seg, pool_pos) {
             return Some(claim);
         }

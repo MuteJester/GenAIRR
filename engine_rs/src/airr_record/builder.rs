@@ -52,9 +52,9 @@ pub fn build_airr_record(
     rec.j_trim_3 = 0;
 
     // Calls + locus.
-    let v_id = sim.assignments.v.map(|i| i.allele_id);
-    let d_id = sim.assignments.d.map(|i| i.allele_id);
-    let j_id = sim.assignments.j.map(|i| i.allele_id);
+    let v_id = sim.assignments.get(Segment::V).copied().map(|i| i.allele_id);
+    let d_id = sim.assignments.get(Segment::D).copied().map(|i| i.allele_id);
+    let j_id = sim.assignments.get(Segment::J).copied().map(|i| i.allele_id);
 
     rec.v_call = projected_call_name(refdata, sim, Segment::V, v_id);
     rec.d_call = projected_call_name(refdata, sim, Segment::D, d_id);

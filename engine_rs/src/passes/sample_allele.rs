@@ -207,14 +207,14 @@ mod tests {
         let final_sim = outcome.final_simulation();
         // Single-allele dist always returns AlleleId(0).
         assert_eq!(
-            final_sim.assignments.v.unwrap().allele_id,
+            final_sim.assignments.get(Segment::V).copied().unwrap().allele_id,
             crate::refdata::AlleleId::new(0)
         );
-        assert!(final_sim.assignments.d.is_none());
-        assert!(final_sim.assignments.j.is_none());
+        assert!(final_sim.assignments.get(Segment::D).is_none());
+        assert!(final_sim.assignments.get(Segment::J).is_none());
         // Default trims.
-        assert_eq!(final_sim.assignments.v.unwrap().trim_5, 0);
-        assert_eq!(final_sim.assignments.v.unwrap().trim_3, 0);
+        assert_eq!(final_sim.assignments.get(Segment::V).copied().unwrap().trim_5, 0);
+        assert_eq!(final_sim.assignments.get(Segment::V).copied().unwrap().trim_3, 0);
     }
 
     #[test]
@@ -273,8 +273,8 @@ mod tests {
         let ob = PassRuntime::execute(&plan_b, Simulation::new(), 0xc0ff_ee);
 
         assert_eq!(
-            oa.final_simulation().assignments.v.unwrap().allele_id,
-            ob.final_simulation().assignments.v.unwrap().allele_id
+            oa.final_simulation().assignments.get(Segment::V).copied().unwrap().allele_id,
+            ob.final_simulation().assignments.get(Segment::V).copied().unwrap().allele_id
         );
         assert_eq!(oa.trace.choices()[0].value, ob.trace.choices()[0].value);
     }
@@ -304,15 +304,15 @@ mod tests {
         let outcome = PassRuntime::execute(&plan, Simulation::new(), 42);
 
         let sim = outcome.final_simulation();
-        assert!(sim.assignments.v.is_some());
-        assert!(sim.assignments.d.is_some());
-        assert!(sim.assignments.j.is_some());
-        assert!(sim.assignments.c.is_none());
+        assert!(sim.assignments.has(Segment::V));
+        assert!(sim.assignments.has(Segment::D));
+        assert!(sim.assignments.has(Segment::J));
+        assert_eq!(sim.assignments.iter().count(), 3);
 
         // Sampled ids are in-bounds for their pools (D-binding from C.3).
-        assert!(sim.assignments.v.unwrap().allele_id.as_usize() < 5);
-        assert!(sim.assignments.d.unwrap().allele_id.as_usize() < 3);
-        assert!(sim.assignments.j.unwrap().allele_id.as_usize() < 2);
+        assert!(sim.assignments.get(Segment::V).copied().unwrap().allele_id.as_usize() < 5);
+        assert!(sim.assignments.get(Segment::D).copied().unwrap().allele_id.as_usize() < 3);
+        assert!(sim.assignments.get(Segment::J).copied().unwrap().allele_id.as_usize() < 2);
     }
 
     #[test]

@@ -395,7 +395,7 @@ fn productive_runtime_filters_anchorless_v_allele_candidates() {
     let outcome = compiled.run_one(0).expect("run should succeed");
 
     assert_eq!(
-        outcome.final_simulation().assignments.v.unwrap().allele_id,
+        outcome.final_simulation().assignments.get(Segment::V).copied().unwrap().allele_id,
         anchored_v
     );
 }
@@ -412,8 +412,8 @@ fn vj_productive_feasibility_filters_j_before_np_length_sampling() {
     for seed in 0..32 {
         let outcome = compiled.run_one(seed).expect("run should stay feasible");
         let final_sim = outcome.final_simulation();
-        assert_eq!(final_sim.assignments.j.unwrap().allele_id, j_good);
-        assert_ne!(final_sim.assignments.j.unwrap().allele_id, j_bad);
+        assert_eq!(final_sim.assignments.get(Segment::J).copied().unwrap().allele_id, j_good);
+        assert_ne!(final_sim.assignments.get(Segment::J).copied().unwrap().allele_id, j_bad);
         assert!(
             contracts.verify(final_sim, Some(&cfg)).is_ok(),
             "seed {seed} should satisfy productive()"
@@ -477,11 +477,11 @@ fn vj_productive_feasibility_respects_future_trim_support() {
     let final_sim = outcome.final_simulation();
 
     assert_eq!(
-        final_sim.assignments.j.unwrap().allele_id,
+        final_sim.assignments.get(Segment::J).copied().unwrap().allele_id,
         j_needs_future_v_trim
     );
-    assert_ne!(final_sim.assignments.j.unwrap().allele_id, j_good);
-    assert_eq!(final_sim.assignments.v.unwrap().trim_3, 1);
+    assert_ne!(final_sim.assignments.get(Segment::J).copied().unwrap().allele_id, j_good);
+    assert_eq!(final_sim.assignments.get(Segment::V).copied().unwrap().trim_3, 1);
     contracts
         .verify(final_sim, Some(&cfg))
         .expect("final simulation should satisfy productive()");
@@ -520,7 +520,7 @@ fn vj_productive_feasibility_filters_upstream_known_stop() {
     for seed in 0..32 {
         let outcome = compiled.run_one(seed).expect("run should stay feasible");
         let final_sim = outcome.final_simulation();
-        assert_eq!(final_sim.assignments.v.unwrap().allele_id, v_productive);
+        assert_eq!(final_sim.assignments.get(Segment::V).copied().unwrap().allele_id, v_productive);
         contracts
             .verify(final_sim, Some(&cfg))
             .unwrap_or_else(|_| panic!("seed {seed} should satisfy productive()"));

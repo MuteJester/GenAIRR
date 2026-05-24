@@ -246,9 +246,10 @@ pub enum DirtyReason {
 /// the from-scratch rebuild.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SegmentCalls {
-    pub v: Option<SegmentLiveCall>,
-    pub d: Option<SegmentLiveCall>,
-    pub j: Option<SegmentLiveCall>,
+    /// Per-segment slot table. Use [`Self::get`] / [`Self::iter`]
+    /// rather than touching `slots` directly so future extensions
+    /// (C-region, paired-chain) flow through one access surface.
+    slots: crate::ir::PerSegment<SegmentLiveCall>,
     pub version: u64,
 }
 
@@ -258,12 +259,16 @@ impl SegmentCalls {
     }
 
     pub fn get(&self, segment: Segment) -> Option<&SegmentLiveCall> {
-        match segment {
-            Segment::V => self.v.as_ref(),
-            Segment::D => self.d.as_ref(),
-            Segment::J => self.j.as_ref(),
-            Segment::Np1 | Segment::Np2 => None,
+        if !Segment::assignable().contains(&segment) {
+            return None;
         }
+        self.slots.get(segment)
+    }
+
+    /// Iterate populated `(segment, &call)` entries in canonical
+    /// V → D → J order. Skips empty slots.
+    pub fn iter(&self) -> impl Iterator<Item = (Segment, &SegmentLiveCall)> + '_ {
+        self.slots.iter()
     }
 
     pub fn with_segment_call(&self, call: SegmentLiveCall) -> Self {
@@ -293,12 +298,12 @@ impl SegmentCalls {
     }
 
     fn set_segment_call(&mut self, call: SegmentLiveCall) {
-        match call.segment {
-            Segment::V => self.v = Some(call),
-            Segment::D => self.d = Some(call),
-            Segment::J => self.j = Some(call),
-            Segment::Np1 | Segment::Np2 => unreachable!("SegmentLiveCall rejects NP segments"),
-        }
+        assert!(
+            Segment::assignable().contains(&call.segment),
+            "SegmentLiveCall rejects non-assignable segment {:?}",
+            call.segment
+        );
+        self.slots.set(call.segment, call);
     }
 }
 

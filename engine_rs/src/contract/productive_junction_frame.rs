@@ -122,7 +122,7 @@ impl Contract for ProductiveJunctionFrame {
             _ => return Ok(()),
         };
 
-        let is_vj = sim.assignments.d.is_none();
+        let is_vj = sim.assignments.get(Segment::D).is_none();
         let applicable = match address {
             address::NP1_LENGTH => is_vj,
             address::NP2_LENGTH => !is_vj,
@@ -133,11 +133,11 @@ impl Contract for ProductiveJunctionFrame {
         }
 
         // Need V/J alleles + anchors + V region in pool.
-        let v_inst = match sim.assignments.v {
+        let v_inst = match sim.assignments.get(Segment::V).copied() {
             None => return Ok(()),
             Some(v) => v,
         };
-        let j_inst = match sim.assignments.j {
+        let j_inst = match sim.assignments.get(Segment::J).copied() {
             None => return Ok(()),
             Some(j) => j,
         };

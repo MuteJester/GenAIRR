@@ -605,14 +605,9 @@ impl<'idx> SimulationBuilder<'idx> {
         let mut calls: crate::live_call::SegmentCalls = (*current.segment_calls).clone();
         let base_version = calls.version;
         let has_dirty_observer_signal = !dirty_windows.is_empty();
-        let order = [
-            crate::ir::Segment::V,
-            crate::ir::Segment::D,
-            crate::ir::Segment::J,
-        ];
         let mut walker_sealed = walker_sealed;
         let mut staged_count: u64 = 0;
-        for target_segment in order.iter() {
+        for target_segment in Segment::assignable() {
             let position = match walker_sealed.iter().position(|s| s.segment() == *target_segment) {
                 Some(p) => p,
                 None => continue,

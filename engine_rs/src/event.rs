@@ -52,11 +52,7 @@ pub struct StateSummary {
 
 impl StateSummary {
     pub fn from_simulation(sim: &Simulation) -> Self {
-        let assignments = sim.assignments;
-        let assigned_allele_count = [assignments.v, assignments.d, assignments.j, assignments.c]
-            .iter()
-            .filter(|assignment| assignment.is_some())
-            .count();
+        let assigned_allele_count = sim.assignments.iter().count();
 
         Self {
             pool_len: sim.pool.len(),

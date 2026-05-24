@@ -75,7 +75,7 @@ pub(super) fn append_d_body(
     sim: &Simulation,
     refdata: &RefDataConfig,
 ) -> Option<()> {
-    let d_inst = sim.assignments.d?;
+    let d_inst = sim.assignments.get(Segment::D).copied()?;
     let d_allele = refdata.get(Segment::D, d_inst.allele_id)?;
     let (d_retained_start, d_retained_end) =
         retained_bounds(d_allele.len(), d_inst.trim_5, d_inst.trim_3)?;

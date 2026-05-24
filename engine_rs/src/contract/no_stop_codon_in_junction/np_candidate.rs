@@ -162,8 +162,8 @@ impl NoStopCodonInJunction {
         refdata: &RefDataConfig,
         np_candidate: NpFilterCandidate,
     ) -> Option<Vec<Option<u8>>> {
-        let v_inst = sim.assignments.v?;
-        let j_inst = sim.assignments.j?;
+        let v_inst = sim.assignments.get(Segment::V).copied()?;
+        let j_inst = sim.assignments.get(Segment::J).copied()?;
         let v_allele = refdata.get(Segment::V, v_inst.allele_id)?;
         let j_allele = refdata.get(Segment::J, j_inst.allele_id)?;
         let v_anchor = v_allele.anchor? as u32;
@@ -190,7 +190,7 @@ impl NoStopCodonInJunction {
         let mut bases = Vec::new();
         Self::append_pool_range(&mut bases, sim, v_anchor_pool, v_region.end.index());
 
-        if sim.assignments.d.is_some() {
+        if sim.assignments.has(Segment::D) {
             if !Self::append_np_segment(&mut bases, sim, Segment::Np1, np_candidate)? {
                 return Some(bases);
             }

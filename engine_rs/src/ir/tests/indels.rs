@@ -344,7 +344,7 @@ fn simulation_assignments_chain_with_pool_changes() {
     let (s1, _h) = s0.with_nucleotide_pushed(Nucleotide::germline(b'A', 0, Segment::V));
 
     // Assignment survives across the pool change.
-    assert_eq!(s1.assignments.v.unwrap().allele_id, AlleleId::new(3));
+    assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().allele_id, AlleleId::new(3));
 }
 
 #[test]

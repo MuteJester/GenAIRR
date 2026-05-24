@@ -494,8 +494,8 @@ mod tests {
             ob.final_simulation().pool.len()
         );
         assert_eq!(
-            oa.final_simulation().assignments.v.unwrap().allele_id,
-            ob.final_simulation().assignments.v.unwrap().allele_id
+            oa.final_simulation().assignments.get(Segment::V).copied().unwrap().allele_id,
+            ob.final_simulation().assignments.get(Segment::V).copied().unwrap().allele_id
         );
         // Trace contains exactly one entry — only the sampling pass records.
         assert_eq!(oa.trace.len(), 1);

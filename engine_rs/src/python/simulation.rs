@@ -3,7 +3,7 @@
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::ir::{NucHandle, Simulation};
+use crate::ir::{NucHandle, Segment, Simulation};
 
 use super::region::PyRegion;
 
@@ -95,17 +95,17 @@ impl PySimulation {
     /// Allele identifier assigned to the V slot, or `None` if no
     /// V allele has been sampled yet.
     fn v_allele_id(&self) -> Option<u32> {
-        self.inner.assignments.v.map(|i| i.allele_id.index())
+        self.inner.assignments.get(Segment::V).copied().map(|i| i.allele_id.index())
     }
 
     /// Allele identifier assigned to the D slot, or `None`.
     fn d_allele_id(&self) -> Option<u32> {
-        self.inner.assignments.d.map(|i| i.allele_id.index())
+        self.inner.assignments.get(Segment::D).copied().map(|i| i.allele_id.index())
     }
 
     /// Allele identifier assigned to the J slot, or `None`.
     fn j_allele_id(&self) -> Option<u32> {
-        self.inner.assignments.j.map(|i| i.allele_id.index())
+        self.inner.assignments.get(Segment::J).copied().map(|i| i.allele_id.index())
     }
 
     fn __repr__(&self) -> String {

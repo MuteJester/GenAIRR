@@ -3,10 +3,10 @@ use super::*;
 #[test]
 fn simulation_assignments_default_is_empty() {
     let sim = Simulation::new();
-    assert!(sim.assignments.v.is_none());
-    assert!(sim.assignments.d.is_none());
-    assert!(sim.assignments.j.is_none());
-    assert!(sim.assignments.c.is_none());
+    assert!(sim.assignments.get(Segment::V).is_none());
+    assert!(sim.assignments.get(Segment::D).is_none());
+    assert!(sim.assignments.get(Segment::J).is_none());
+    assert_eq!(sim.assignments.iter().count(), 0);
 }
 
 #[test]
@@ -18,11 +18,11 @@ fn simulation_with_allele_assigned_populates_slot_persistently() {
     let s1 = s0.with_allele_assigned(Segment::V, AlleleInstance::new(AlleleId::new(7)));
 
     // s0 unchanged.
-    assert!(s0.assignments.v.is_none());
+    assert!(s0.assignments.get(Segment::V).is_none());
     // s1 has the V allele.
-    assert_eq!(s1.assignments.v.unwrap().allele_id, AlleleId::new(7));
-    assert_eq!(s1.assignments.v.unwrap().trim_5, 0);
-    assert_eq!(s1.assignments.v.unwrap().trim_3, 0);
+    assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().allele_id, AlleleId::new(7));
+    assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().trim_5, 0);
+    assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().trim_3, 0);
 }
 
 #[test]
@@ -35,11 +35,11 @@ fn simulation_with_trim_updates_assignment_persistently() {
     let s1 = s0.with_trim(Segment::V, TrimEnd::Three, 5);
 
     // s0 retains zero trim.
-    assert_eq!(s0.assignments.v.unwrap().trim_3, 0);
+    assert_eq!(s0.assignments.get(Segment::V).copied().unwrap().trim_3, 0);
     // s1 has the trim applied.
-    assert_eq!(s1.assignments.v.unwrap().trim_3, 5);
+    assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().trim_3, 5);
     // 5' end untouched.
-    assert_eq!(s1.assignments.v.unwrap().trim_5, 0);
+    assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().trim_5, 0);
 }
 
 #[test]

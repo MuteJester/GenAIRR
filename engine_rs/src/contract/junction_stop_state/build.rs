@@ -32,8 +32,8 @@ impl JunctionStopState {
         np_segment: Segment,
         np_total_len: u32,
     ) -> Option<Self> {
-        let v_inst = sim.assignments.v?;
-        let j_inst = sim.assignments.j?;
+        let v_inst = sim.assignments.get(Segment::V).copied()?;
+        let j_inst = sim.assignments.get(Segment::J).copied()?;
         let v_allele = refdata.get(Segment::V, v_inst.allele_id)?;
         let j_allele = refdata.get(Segment::J, j_inst.allele_id)?;
         let v_anchor = v_allele.anchor? as u32;
@@ -61,7 +61,7 @@ impl JunctionStopState {
             return None;
         }
 
-        let has_d = sim.assignments.d.is_some();
+        let has_d = sim.assignments.has(Segment::D);
         let mut slots: Vec<JunctionSlot> = Vec::new();
         let mut fixed_bytes: Vec<u8> = Vec::new();
 

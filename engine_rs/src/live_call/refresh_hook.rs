@@ -120,7 +120,7 @@ impl EffectHook for LiveCallRefreshHook {
                 // NOT apply here because an indel anywhere shifts
                 // every region with a start ≥ the indel position.
                 PassEffect::StructuralIndel => {
-                    for segment in [Segment::V, Segment::D, Segment::J] {
+                    for &segment in Segment::assignable() {
                         sim = with_assembled_segment_live_call(&sim, reference_index, segment);
                     }
                     sim = drain_dirty_windows(sim);
@@ -142,7 +142,7 @@ fn refresh_segments_for_edit(
     let dirty_windows: Vec<DirtyWindow> = sim.dirty_log.windows.clone();
     let has_dirty = !dirty_windows.is_empty();
 
-    for segment in [Segment::V, Segment::D, Segment::J] {
+    for &segment in Segment::assignable() {
         if has_dirty && !region_overlaps_dirty(&sim, segment, &dirty_windows) {
             continue;
         }

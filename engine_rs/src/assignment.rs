@@ -30,7 +30,7 @@
 //! persistent `with_*` API. No sampling pass, no assembly — those
 //! arrive in C.5–C.8.
 
-use crate::ir::Segment;
+use crate::ir::{PerSegment, Segment};
 use crate::refdata::AlleleId;
 
 // ──────────────────────────────────────────────────────────────────
@@ -106,18 +106,20 @@ pub enum TrimEnd {
 // AlleleAssignments — the four optional slots on a simulation
 // ──────────────────────────────────────────────────────────────────
 
-/// Per-simulation allele assignments, one optional slot per
-/// segment role.
+/// Per-simulation allele assignments, indexed by `Segment`.
 ///
-/// Pre-recombination this is all-`None`. Each `SampleAllele*` pass
-/// (C.5) populates one slot. NP segments do not appear here — they
-/// have no allele.
+/// Pre-recombination every slot is empty. Each `SampleAllele*` pass
+/// populates one slot via [`Self::with_assigned`]. NP segments do
+/// not appear here — they have no allele.
+///
+/// Backed by [`PerSegment`] rather than parallel `Option<...>`
+/// fields, which makes adding a new assignable segment (e.g. C-region
+/// for constant regions, or a paired-chain second segment) a
+/// one-line change to [`Segment::assignable`] — no schema migration
+/// here.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub struct AlleleAssignments {
-    pub v: Option<AlleleInstance>,
-    pub d: Option<AlleleInstance>,
-    pub j: Option<AlleleInstance>,
-    pub c: Option<AlleleInstance>,
+    slots: PerSegment<AlleleInstance>,
 }
 
 impl AlleleAssignments {
@@ -129,12 +131,10 @@ impl AlleleAssignments {
     /// `None` for unassigned slots and for NP segments (which never
     /// have alleles).
     pub fn get(&self, segment: Segment) -> Option<&AlleleInstance> {
-        match segment {
-            Segment::V => self.v.as_ref(),
-            Segment::D => self.d.as_ref(),
-            Segment::J => self.j.as_ref(),
-            Segment::Np1 | Segment::Np2 => None,
+        if !Segment::assignable().contains(&segment) {
+            return None;
         }
+        self.slots.get(segment)
     }
 
     /// Whether a particular segment has an assigned instance.
@@ -142,23 +142,27 @@ impl AlleleAssignments {
         self.get(segment).is_some()
     }
 
+    /// Iterate every populated `(segment, instance)` entry in
+    /// canonical segment order (V → D → J). Skips empty slots.
+    pub fn iter(&self) -> impl Iterator<Item = (Segment, &AlleleInstance)> + '_ {
+        self.slots.iter()
+    }
+
     // ── Persistent update API ──────────────────────────────────────
 
     /// Return new assignments with `instance` set on the given
-    /// segment slot; receiver unchanged. Panics if `segment` is an
-    /// NP segment — those don't have alleles.
+    /// segment slot; receiver unchanged. Panics if `segment` is not
+    /// in [`Segment::assignable`] (NP segments, or any future
+    /// non-allele-bearing segment).
     pub fn with_assigned(&self, segment: Segment, instance: AlleleInstance) -> Self {
+        assert!(
+            Segment::assignable().contains(&segment),
+            "AlleleAssignments::with_assigned: cannot assign an allele \
+             to non-assignable segment {:?}",
+            segment
+        );
         let mut next = *self;
-        match segment {
-            Segment::V => next.v = Some(instance),
-            Segment::D => next.d = Some(instance),
-            Segment::J => next.j = Some(instance),
-            Segment::Np1 | Segment::Np2 => panic!(
-                "AlleleAssignments::with_assigned: cannot assign an allele \
-                 to NP segment {:?}",
-                segment
-            ),
-        }
+        next.slots.set(segment, instance);
         next
     }
 
@@ -236,13 +240,12 @@ mod tests {
     #[test]
     fn assignments_starts_empty() {
         let a = AlleleAssignments::new();
-        assert!(a.v.is_none());
-        assert!(a.d.is_none());
-        assert!(a.j.is_none());
-        assert!(a.c.is_none());
+        assert!(a.get(Segment::V).is_none());
+        assert!(a.get(Segment::D).is_none());
+        assert!(a.get(Segment::J).is_none());
         assert!(!a.has(Segment::V));
         assert!(!a.has(Segment::J));
-        assert!(a.get(Segment::V).is_none());
+        assert_eq!(a.iter().count(), 0);
     }
 
     #[test]
@@ -260,11 +263,11 @@ mod tests {
         let b = a.with_assigned(Segment::V, inst);
 
         // Old assignments untouched.
-        assert!(a.v.is_none());
+        assert!(a.get(Segment::V).is_none());
         // New assignments has the V instance.
-        assert_eq!(b.v, Some(inst));
-        assert!(b.d.is_none());
-        assert!(b.j.is_none());
+        assert_eq!(b.get(Segment::V).copied(), Some(inst));
+        assert!(b.get(Segment::D).is_none());
+        assert!(b.get(Segment::J).is_none());
         assert!(b.has(Segment::V));
     }
 
@@ -280,20 +283,20 @@ mod tests {
             .with_assigned(Segment::D, inst_d)
             .with_assigned(Segment::J, inst_j);
 
-        assert_eq!(b.v, Some(inst_v));
-        assert_eq!(b.d, Some(inst_d));
-        assert_eq!(b.j, Some(inst_j));
+        assert_eq!(b.get(Segment::V).copied(), Some(inst_v));
+        assert_eq!(b.get(Segment::D).copied(), Some(inst_d));
+        assert_eq!(b.get(Segment::J).copied(), Some(inst_j));
     }
 
     #[test]
-    #[should_panic(expected = "cannot assign an allele to NP segment")]
+    #[should_panic(expected = "cannot assign an allele to non-assignable segment")]
     fn assignments_with_assigned_rejects_np1() {
         let a = AlleleAssignments::new();
         let _ = a.with_assigned(Segment::Np1, AlleleInstance::new(AlleleId::new(0)));
     }
 
     #[test]
-    #[should_panic(expected = "cannot assign an allele to NP segment")]
+    #[should_panic(expected = "cannot assign an allele to non-assignable segment")]
     fn assignments_with_assigned_rejects_np2() {
         let a = AlleleAssignments::new();
         let _ = a.with_assigned(Segment::Np2, AlleleInstance::new(AlleleId::new(0)));
@@ -313,10 +316,10 @@ mod tests {
         let b = a.with_updated(Segment::V, |i| i.with_trim_3(4));
 
         // Old assignments retains zero trim.
-        assert_eq!(a.v.unwrap().trim_3, 0);
+        assert_eq!(a.get(Segment::V).unwrap().trim_3, 0);
         // New assignments has updated trim, same allele_id.
-        assert_eq!(b.v.unwrap().trim_3, 4);
-        assert_eq!(b.v.unwrap().allele_id, AlleleId::new(7));
+        assert_eq!(b.get(Segment::V).unwrap().trim_3, 4);
+        assert_eq!(b.get(Segment::V).unwrap().allele_id, AlleleId::new(7));
     }
 
     #[test]
@@ -330,14 +333,14 @@ mod tests {
             .with_trim(Segment::J, TrimEnd::Five, 2);
 
         // V got 3' trim, J got 5' trim. Other ends and segments unchanged.
-        assert_eq!(b.v.unwrap().trim_5, 0);
-        assert_eq!(b.v.unwrap().trim_3, 6);
-        assert_eq!(b.j.unwrap().trim_5, 2);
-        assert_eq!(b.j.unwrap().trim_3, 0);
+        assert_eq!(b.get(Segment::V).unwrap().trim_5, 0);
+        assert_eq!(b.get(Segment::V).unwrap().trim_3, 6);
+        assert_eq!(b.get(Segment::J).unwrap().trim_5, 2);
+        assert_eq!(b.get(Segment::J).unwrap().trim_3, 0);
 
         // Original assignments untouched.
-        assert_eq!(a.v.unwrap().trim_3, 0);
-        assert_eq!(a.j.unwrap().trim_5, 0);
+        assert_eq!(a.get(Segment::V).unwrap().trim_3, 0);
+        assert_eq!(a.get(Segment::J).unwrap().trim_5, 0);
     }
 
     #[test]
@@ -347,9 +350,9 @@ mod tests {
         let branch_a = base.with_trim(Segment::V, TrimEnd::Three, 1);
         let branch_b = base.with_trim(Segment::V, TrimEnd::Three, 9);
 
-        assert_eq!(base.v.unwrap().trim_3, 0);
-        assert_eq!(branch_a.v.unwrap().trim_3, 1);
-        assert_eq!(branch_b.v.unwrap().trim_3, 9);
+        assert_eq!(base.get(Segment::V).unwrap().trim_3, 0);
+        assert_eq!(branch_a.get(Segment::V).unwrap().trim_3, 1);
+        assert_eq!(branch_b.get(Segment::V).unwrap().trim_3, 9);
     }
 
     #[test]
@@ -358,7 +361,7 @@ mod tests {
             .with_assigned(Segment::V, AlleleInstance::new(AlleleId::new(1)));
         let b = a.with_assigned(Segment::V, AlleleInstance::new(AlleleId::new(2)));
 
-        assert_eq!(a.v.unwrap().allele_id, AlleleId::new(1));
-        assert_eq!(b.v.unwrap().allele_id, AlleleId::new(2));
+        assert_eq!(a.get(Segment::V).unwrap().allele_id, AlleleId::new(1));
+        assert_eq!(b.get(Segment::V).unwrap().allele_id, AlleleId::new(2));
     }
 }
