@@ -1193,43 +1193,43 @@ class Experiment:
             self._contracts.append("productive")
         return self
 
-    def with_clonal_structure(
+    def expand_clones(
         self,
         *,
-        n_clones: int,
-        size: int,
+        n: int,
+        per_clone: int,
     ) -> "Experiment":
-        """Split the pipeline into per-clone (parent) and
-        per-descendant phases for clonal-family generation.
+        """Expand the pipeline into clonal lineages.
 
-        Steps appended *before* this call run **once per clone** —
+        Marks the per-clone / per-descendant boundary in the chain:
+        steps appended *before* this call run **once per clone** —
         typically just :meth:`recombine`, which establishes the
         parent V/D/J + trim + NP + assembled IR for the clonal
         family. Steps appended *after* this call run **once per
         read inside the family** — typically :meth:`mutate` and the
-        ``corrupt_*`` ops, which introduce per-read divergence
-        within the clone.
+        library-prep / sequencing-stage steps, which introduce
+        per-read divergence within the clone.
 
         Concrete shape::
 
             exp = (Experiment.on("human_igh")
                    .recombine()
-                   .with_clonal_structure(n_clones=10, size=20)
-                   .mutate(count=8)
+                   .expand_clones(n=10, per_clone=20)
+                   .mutate(rate=0.05)
                    .pcr_amplify(count=2))
             result = exp.run_records(seed=0)
             # 10 clones × 20 descendants = 200 records.
             # Each record carries a ``clone_id`` integer in [0, 10).
 
-        ``n`` can be omitted from :meth:`run_records` for a clonal
-        experiment — the runtime expands ``n_clones * size``
-        records automatically. Passing ``n`` is allowed only when
-        ``n == n_clones * size``.
+        ``n_records`` can be omitted from :meth:`run_records` for a
+        clonal experiment — the runtime expands ``n * per_clone``
+        records automatically. Passing ``n_records`` is allowed only
+        when ``n_records == n * per_clone``.
 
         Constraints:
-        - Both ``n_clones`` and ``size`` must be positive ints.
-        - At most one fork per pipeline; calling this method twice
-          raises ``ValueError``.
+        - Both ``n`` and ``per_clone`` must be positive ints.
+        - At most one expansion per pipeline; calling this method
+          twice raises ``ValueError``.
 
         Implementation note: the runtime forks the parent's IR
         (final ``Simulation`` after the pre-fork plan) into
@@ -1238,17 +1238,17 @@ class Experiment:
         shares the same recombination provenance (V allele, trim,
         NP bases) and only diverges through the post-fork passes.
         """
-        if not isinstance(n_clones, int) or isinstance(n_clones, bool) or n_clones < 1:
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
             raise ValueError(
-                f"n_clones must be a positive int, got {n_clones!r}"
+                f"n must be a positive int, got {n!r}"
             )
-        if not isinstance(size, int) or isinstance(size, bool) or size < 1:
-            raise ValueError(f"size must be a positive int, got {size!r}")
+        if not isinstance(per_clone, int) or isinstance(per_clone, bool) or per_clone < 1:
+            raise ValueError(f"per_clone must be a positive int, got {per_clone!r}")
         if any(isinstance(s, _ClonalForkStep) for s in self._steps):
             raise ValueError(
-                "with_clonal_structure() can only be called once per pipeline"
+                "expand_clones() can only be called once per pipeline"
             )
-        self._steps.append(_ClonalForkStep(n_clones=n_clones, size=size))
+        self._steps.append(_ClonalForkStep(n_clones=n, size=per_clone))
         return self
 
     def mutate(
@@ -1809,7 +1809,7 @@ class Experiment:
     def compile(self):
         """Compile the recorded steps into a reusable
         :class:`CompiledExperiment` (or :class:`CompiledClonalExperiment`
-        when the pipeline contains a :meth:`with_clonal_structure`
+        when the pipeline contains a :meth:`expand_clones`
         fork).
 
         Idempotent: calling ``compile()`` twice produces two distinct
@@ -1871,7 +1871,7 @@ class Experiment:
             # upstream. Re-passing them here would force the compiler to
             # look for support (np.np1.length, anchor trims) in passes
             # the post-fork plan doesn't contain — which would fail any
-            # pipeline that combines `with_clonal_structure()` with
+            # pipeline that combines `expand_clones()` with
             # `.productive_only()`.
             post_simulator = self._build_simulator(
                 post_steps, None, any_lock=False, replace_fn=_replace

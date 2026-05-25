@@ -287,10 +287,11 @@ def _build_experiment_from_params(
     """Translate flat MCP parameters into a v2.0.0 Experiment object.
 
     The clonal-fork policy (per the README's realistic-pipeline section):
-      passes BEFORE with_clonal_structure apply to the parent rearrangement
+      passes BEFORE expand_clones apply to the parent rearrangement
       (shared by every sister sequence in the clone); passes AFTER apply
       per-descendant (independent SHM + per-descendant sequencing artefacts).
-    So we order: recombine -> using -> with_clonal_structure -> mutate -> corrupt*.
+    So we order: recombine -> restrict_alleles -> expand_clones -> mutate
+    -> library / sequencing artefacts.
 
     Raises:
         MCPError(CONFIG_NOT_FOUND): unknown config alias.
@@ -328,7 +329,7 @@ def _build_experiment_from_params(
         # ensures both are set together. The assert pins the invariant
         # for the type checker.
         assert clone_size is not None
-        exp = exp.with_clonal_structure(n_clones=int(n_clones), size=int(clone_size))
+        exp = exp.expand_clones(n=int(n_clones), per_clone=int(clone_size))
 
     # -- Per-descendant SHM -------------------------------------------
     if (

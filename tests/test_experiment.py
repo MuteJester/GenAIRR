@@ -1649,7 +1649,7 @@ def test_g10_with_metadata_works_with_clonal():
         ga.Experiment.on("human_igh")
         .with_metadata(sample_id="P1")
         .recombine()
-        .with_clonal_structure(n_clones=2, size=3)
+        .expand_clones(n=2, per_clone=3)
     )
     result = exp.run_records(seed=0)
     assert len(result) == 6
@@ -1708,7 +1708,7 @@ def test_g8_truth_columns_via_clonal_pipeline():
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .with_clonal_structure(n_clones=2, size=3)
+        .expand_clones(n=2, per_clone=3)
         .mutate(count=15)
     )
     result = exp.run_records(seed=0, expose_provenance=True)
@@ -1785,7 +1785,7 @@ def test_g5_clonal_structure_total_record_count():
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .with_clonal_structure(n_clones=5, size=4)
+        .expand_clones(n=5, per_clone=4)
         .mutate(count=3)
     )
     result = exp.run_records(seed=0)
@@ -1798,7 +1798,7 @@ def test_g5_clonal_descendants_identical_without_post_fork_passes():
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .with_clonal_structure(n_clones=3, size=4)
+        .expand_clones(n=3, per_clone=4)
     )
     by_clone = {}
     for rec in exp.run_records(seed=0):
@@ -1817,7 +1817,7 @@ def test_g5_clonal_descendants_share_junction_diverge_via_mutate():
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .with_clonal_structure(n_clones=2, size=8)
+        .expand_clones(n=2, per_clone=8)
         .mutate(count=8)
     )
     by_clone = {}
@@ -1842,7 +1842,7 @@ def test_g5_clonal_explicit_n_must_match_total():
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .with_clonal_structure(n_clones=4, size=5)
+        .expand_clones(n=4, per_clone=5)
     )
     # n=20 matches → ok.
     result = exp.run_records(n=20, seed=0)
@@ -1852,19 +1852,19 @@ def test_g5_clonal_explicit_n_must_match_total():
         exp.run_records(n=10, seed=0)
 
 
-def test_g5_with_clonal_structure_rejects_double_call():
+def test_g5_expand_clones_rejects_double_call():
     exp = ga.Experiment.on("human_igh").recombine()
-    exp = exp.with_clonal_structure(n_clones=3, size=2)
+    exp = exp.expand_clones(n=3, per_clone=2)
     with pytest.raises(ValueError, match="only be called once"):
-        exp.with_clonal_structure(n_clones=2, size=2)
+        exp.expand_clones(n=2, per_clone=2)
 
 
-def test_g5_with_clonal_structure_rejects_invalid_args():
+def test_g5_expand_clones_rejects_invalid_args():
     exp = ga.Experiment.on("human_igh").recombine()
     with pytest.raises(ValueError, match="positive int"):
-        exp.with_clonal_structure(n_clones=0, size=5)
+        exp.expand_clones(n=0, per_clone=5)
     with pytest.raises(ValueError, match="positive int"):
-        exp.with_clonal_structure(n_clones=5, size=-1)
+        exp.expand_clones(n=5, per_clone=-1)
 
 
 def test_g5_clonal_record_to_tsv(tmp_path):
@@ -1873,7 +1873,7 @@ def test_g5_clonal_record_to_tsv(tmp_path):
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .with_clonal_structure(n_clones=3, size=4)
+        .expand_clones(n=3, per_clone=4)
         .mutate(count=2)
     )
     path = tmp_path / "clones.tsv"
@@ -4547,7 +4547,7 @@ def test_describe_clonal_pipeline_shows_visible_fork_divider():
     out = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .with_clonal_structure(n_clones=50, size=20)
+        .expand_clones(n=50, per_clone=20)
         .mutate(count=8)
         .describe()
     )
@@ -4589,7 +4589,7 @@ def test_describe_compiled_clonal_experiment_shows_fork_and_numbers_continue():
     compiled = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .with_clonal_structure(n_clones=3, size=4)
+        .expand_clones(n=3, per_clone=4)
         .mutate(count=8)
         .pcr_amplify(count=(0, 2))
         .compile()

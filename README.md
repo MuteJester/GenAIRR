@@ -93,7 +93,7 @@ result = (
       #    Passes BEFORE this point apply to the parent rearrangement;
       #    passes AFTER apply per-descendant. So each clone shares the
       #    same V(D)J recombination but accumulates its own SHM + errors.
-      .with_clonal_structure(n_clones=50, size=20)
+      .expand_clones(n=50, per_clone=20)
       # 3. Somatic hypermutation per descendant — S5F context-dependent
       #    model, 5–15 mutations per sequence sampled uniformly.
       .mutate(model="s5f", count=(5, 15))
