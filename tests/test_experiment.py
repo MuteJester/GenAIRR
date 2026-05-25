@@ -245,10 +245,7 @@ def test_recombine_vj_without_np2_still_produces_single_np():
     # V / NP1 / J when np2_lengths is omitted (which is the only
     # supported VJ shape).
     cfg = _vj_refdata()
-    outcomes = Experiment.on(cfg).recombine(
-        np1_lengths=[(2, 1.0)],
-        trim=False,
-    ).run(n=1, seed=0)
+    outcomes = Experiment.on(cfg).recombine(np1_lengths=[(2, 1.0)]).trim(enabled=False).run(n=1, seed=0)
     np1 = outcomes[0].final_simulation().regions()[1]
     assert len(np1) == 2
     # Only NP1 region — VJ has no NP2.
@@ -365,7 +362,8 @@ def test_compiled_experiment_can_be_run_multiple_times():
 
 
 # ──────────────────────────────────────────────────────────────────
-# F.6 — Contract bridge: productive() + Experiment.run(respect=...)
+# F.6 — Contract bundle: .productive_only() and the underlying
+# engine `productive()` ContractSet
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -398,24 +396,29 @@ def test_contract_set_repr_includes_count_and_names():
     assert "productive_junction_frame" in r
 
 
-def test_run_with_respect_none_matches_run_without_respect():
-    # respect=None is the no-op path — same outcome as no respect arg.
+def test_run_without_productive_only_matches_uncalled_chain():
+    # Calling productive_only() then immediately compiling without
+    # other constraint methods should match a chain where it was
+    # never called *only if* the productive() outcome happens to
+    # equal the unconstrained outcome at the chosen seed. We instead
+    # verify the basic invariant: an experiment without productive_only
+    # produces the same output across two runs at the same seed.
     cfg = _vj_refdata()
     exp = Experiment.on(cfg).recombine()
     a = exp.run(n=3, seed=0)
-    b = exp.run(n=3, seed=0, respect=None)
+    b = exp.run(n=3, seed=0)
     for x, y in zip(a, b):
         assert x.final_simulation().bases() == y.final_simulation().bases()
 
 
-def test_run_with_productive_contract_constrains_np1_length_to_in_frame():
+def test_productive_only_constrains_np1_length_to_in_frame():
     # Synthetic VJ refdata: V_anchor_to_end = 3, J_anchor_to_W3 = 3,
     # so junction = 6 + NP1. Productive frame ⇒ NP1 % 3 == 0.
     # Filter NP1 length distribution to {0..6} uniform; with productive
     # active every NP1 length must be in {0, 3, 6}.
     cfg = _vj_refdata()
-    outcomes = Experiment.on(cfg).recombine().run(
-        n=20, seed=0, respect=ge.productive()
+    outcomes = (
+        Experiment.on(cfg).recombine().productive_only().run(n=20, seed=0)
     )
     for o in outcomes:
         np1 = o.final_simulation().regions()[1]
@@ -425,65 +428,61 @@ def test_run_with_productive_contract_constrains_np1_length_to_in_frame():
 
 
 def test_run_unconstrained_produces_some_out_of_frame_np1():
-    # Negative control for the test above: without respect, the
-    # uniform NP1 distribution produces out-of-frame lengths
+    # Negative control for the test above: without productive_only(),
+    # the uniform NP1 distribution produces out-of-frame lengths
     # ~67% of the time. Across 20 seeds we should see at least one.
     cfg = _vj_refdata()
     outcomes = Experiment.on(cfg).recombine().run(n=20, seed=0)
     out_of_frame = [
         o for o in outcomes if len(o.final_simulation().regions()[1]) % 3 != 0
     ]
-    assert out_of_frame, "expected at least one out-of-frame NP1 without respect"
+    assert out_of_frame, "expected at least one out-of-frame NP1 without productive_only"
 
 
-def test_run_accepts_respect_as_single_contract_set():
+def test_productive_only_is_idempotent():
+    # Calling .productive_only() twice is the same as once — the
+    # bundle is added at most once to the contract list.
     cfg = _vj_refdata()
-    out = Experiment.on(cfg).recombine().run(n=1, seed=0, respect=ge.productive())
-    assert len(out) == 1
-
-
-def test_run_accepts_respect_as_length_one_list():
-    # List form — same effect as the bare ContractSet.
-    cfg = _vj_refdata()
-    a = Experiment.on(cfg).recombine().run(n=2, seed=0, respect=ge.productive())
-    b = Experiment.on(cfg).recombine().run(n=2, seed=0, respect=[ge.productive()])
+    a = (
+        Experiment.on(cfg).recombine().productive_only().run(n=2, seed=0)
+    )
+    b = (
+        Experiment.on(cfg)
+        .recombine()
+        .productive_only()
+        .productive_only()
+        .run(n=2, seed=0)
+    )
     for x, y in zip(a, b):
         assert x.final_simulation().bases() == y.final_simulation().bases()
 
 
-def test_run_accepts_respect_as_empty_list_no_op():
-    # Empty list normalises to None — no contracts active.
+def test_productive_only_is_order_independent_in_the_chain():
+    # Whether productive_only() is called before or after recombine()
+    # / mutate(), the compiled simulator is structurally equal.
     cfg = _vj_refdata()
-    a = Experiment.on(cfg).recombine().run(n=2, seed=0)
-    b = Experiment.on(cfg).recombine().run(n=2, seed=0, respect=[])
+    a = (
+        Experiment.on(cfg)
+        .recombine()
+        .mutate(count=3)
+        .productive_only()
+        .run(n=2, seed=0)
+    )
+    b = (
+        Experiment.on(cfg)
+        .productive_only()
+        .recombine()
+        .mutate(count=3)
+        .run(n=2, seed=0)
+    )
     for x, y in zip(a, b):
         assert x.final_simulation().bases() == y.final_simulation().bases()
 
 
-def test_run_rejects_non_contract_set_in_respect():
-    cfg = _vj_refdata()
-    with pytest.raises(TypeError, match="ContractSet"):
-        Experiment.on(cfg).recombine().run(n=1, seed=0, respect="not a contract")
-
-
-def test_run_rejects_non_contract_set_inside_respect_list():
-    cfg = _vj_refdata()
-    with pytest.raises(TypeError, match="respect\\[0\\]"):
-        Experiment.on(cfg).recombine().run(n=1, seed=0, respect=[42])
-
-
-def test_run_rejects_multi_bundle_respect_list():
-    cfg = _vj_refdata()
-    with pytest.raises(NotImplementedError, match="2 bundles"):
-        Experiment.on(cfg).recombine().run(
-            n=1, seed=0, respect=[ge.productive(), ge.productive()]
-        )
-
-
-def test_compiled_experiment_run_supports_respect():
+def test_compiled_experiment_carries_productive_bundle():
     # Contracts are captured at compile time and reused by run().
     cfg = _vj_refdata()
-    compiled = Experiment.on(cfg).recombine().compile(respect=ge.productive())
+    compiled = Experiment.on(cfg).recombine().productive_only().compile()
     assert compiled.active_contracts == (
         "productive_junction_frame",
         "no_stop_codon_in_junction",
@@ -495,11 +494,11 @@ def test_compiled_experiment_run_supports_respect():
         assert len(o.final_simulation().regions()[1]) % 3 == 0
 
 
-def test_run_with_respect_is_deterministic_under_same_seed():
+def test_run_with_productive_only_is_deterministic_under_same_seed():
     cfg = _vj_refdata()
-    exp = Experiment.on(cfg).recombine()
-    a = exp.run(n=5, seed=0xCAFE, respect=ge.productive())
-    b = exp.run(n=5, seed=0xCAFE, respect=ge.productive())
+    exp = Experiment.on(cfg).recombine().productive_only()
+    a = exp.run(n=5, seed=0xCAFE)
+    b = exp.run(n=5, seed=0xCAFE)
     for x, y in zip(a, b):
         assert x.final_simulation().bases() == y.final_simulation().bases()
 
@@ -578,7 +577,8 @@ def test_strict_with_satisfiable_contract_succeeds():
     out = (
         Experiment.on(cfg)
         .recombine()
-        .run(n=3, seed=0, respect=ge.productive(), strict=True)
+        .productive_only()
+        .run(n=3, seed=0, strict=True)
     )
     assert len(out) == 3
 
@@ -611,7 +611,7 @@ def test_compiled_feasibility_filters_runtime_frame_residue():
 
 def test_strict_mode_passes_through_compiled_experiment_run():
     cfg = _vj_refdata()
-    compiled = Experiment.on(cfg).recombine().compile(respect=ge.productive())
+    compiled = Experiment.on(cfg).recombine().productive_only().compile()
     # Satisfiable: succeeds.
     out = compiled.run(n=2, seed=0, strict=True)
     assert len(out) == 2
@@ -665,11 +665,11 @@ def test_light_chain_productive_strict_batches_have_feasible_upstream_choices():
         ("human_igl", 20260507, 50),
     ]
     for cfg_name, seed, n in cases:
-        records = Experiment.on(cfg_name).recombine().run_records(
-            n=n,
-            seed=seed,
-            respect=ge.productive(),
-            strict=True,
+        records = (
+            Experiment.on(cfg_name)
+            .recombine()
+            .productive_only()
+            .run_records(n=n, seed=seed, strict=True)
         )
         assert all(rec["productive"] is True for rec in records), cfg_name
 
@@ -780,7 +780,7 @@ def test_mutate_can_chain_after_recombine():
 def test_mutate_respects_productive_contract():
     # SHM under productive contract: the S5F base draws are filtered
     # so mutations don't introduce stop codons in the junction.
-    out = _human_igh_exp().mutate(count=10).run(n=3, seed=0, respect=ga.productive())
+    out = _human_igh_exp().mutate(count=10).productive_only().run(n=3, seed=0)
     assert len(out) == 3
 
 
@@ -790,7 +790,7 @@ def test_mutate_strict_mode_under_productive_succeeds_for_typical_seeds():
     out = (
         _human_igh_exp()
         .mutate(model="uniform", count=5)
-        .run(n=1, seed=0, respect=ga.productive(), strict=True)
+        .productive_only().run(n=1, seed=0, strict=True)
     )
     assert len(out) == 1
 
@@ -1049,7 +1049,7 @@ def test_corruption_under_productive_contract_runs():
         .corrupt_indels(count=1)
         .corrupt_contaminants(prob=0.1)
     )
-    out = exp.run(n=3, seed=0, respect=ga.productive())
+    out = exp.productive_only().run(n=3, seed=0)
     assert len(out) == 3
 
 
@@ -1084,7 +1084,7 @@ def test_recombine_trim_passes_appear_after_sample_allele_before_assemble():
 def test_recombine_trim_false_omits_trim_passes():
     o = _human_igh_exp().recombine.__wrapped__ if False else None  # noqa: E501 - placeholder
     # Use a fresh experiment with trim=False explicitly.
-    exp = ga.Experiment.on("human_igh").recombine(trim=False)
+    exp = ga.Experiment.on("human_igh").recombine().trim(enabled=False)
     o = exp.run(n=1, seed=0)[0]
     pn = o.pass_names()
     assert not any(n.startswith("trim.") for n in pn)
@@ -1128,7 +1128,7 @@ def test_recombine_with_raw_refdata_trim_true_is_silent_no_op():
     cfg = ge.RefDataConfig.vj()
     cfg.add_v_allele("v*01", "v", b"AAACCCGGG", anchor=6)
     cfg.add_j_allele("j*01", "j", b"TTTAAA", anchor=0)
-    o = Experiment.on(cfg).recombine(trim=True).run(n=1, seed=0)[0]
+    o = Experiment.on(cfg).recombine().trim(enabled=True).run(n=1, seed=0)[0]
     assert not any(n.startswith("trim.") for n in o.pass_names())
 
 
@@ -1177,7 +1177,7 @@ def test_recombine_does_not_panic_across_many_seeds():
 
 
 def test_recombine_with_empirical_data_composes_with_productive_contract():
-    out = _human_igh_exp().run(n=10, seed=0, respect=ga.productive())
+    out = _human_igh_exp().productive_only().run(n=10, seed=0)
     assert len(out) == 10
 
 
@@ -1218,7 +1218,7 @@ def test_recombine_step_count_after_trim_does_not_change():
     # `step_count` is the number of FLUENT calls, not the number of
     # passes. recombine() with or without trims is one step.
     a = ga.Experiment.on("human_igh").recombine()
-    b = ga.Experiment.on("human_igh").recombine(trim=False)
+    b = ga.Experiment.on("human_igh").recombine().trim(enabled=False)
     assert a.step_count == 1
     assert b.step_count == 1
 
@@ -1357,7 +1357,7 @@ def test_record_junction_window_is_consistent():
 
 
 def test_record_productive_flag_is_consistent_with_frame_and_stop():
-    result = _human_igh_records(n=10, respect=ga.productive())
+    result = _human_igh_exp().productive_only().run_records(n=10, seed=42)
     for rec in result:
         assert rec["productive"] is True
         assert rec["vj_in_frame"] is True
@@ -2035,7 +2035,7 @@ def test_column_order_preserves_extras_after_canonical():
 
 
 # ──────────────────────────────────────────────────────────────────
-# G.5 — allele locking via Experiment.using(v=, d=, j=)
+# G.5 — allele locking via Experiment.restrict_alleles(v=, d=, j=)
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -2053,14 +2053,14 @@ def _j_name(refdata, outcome):
 
 def test_using_returns_self_for_chaining():
     exp = ga.Experiment.on("human_igh")
-    same = exp.using(v="IGHVF1-G1*01")
+    same = exp.restrict_alleles(v="IGHVF1-G1*01")
     assert same is exp
 
 
 def test_using_locks_single_v_allele():
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01")
+        .restrict_alleles(v="IGHVF1-G1*01")
         .recombine()
     )
     for o in exp.run(n=10, seed=0):
@@ -2070,7 +2070,7 @@ def test_using_locks_single_v_allele():
 def test_using_locks_single_d_allele():
     exp = (
         ga.Experiment.on("human_igh")
-        .using(d="IGHD3-3*01")
+        .restrict_alleles(d="IGHD3-3*01")
         .recombine()
     )
     for o in exp.run(n=10, seed=0):
@@ -2080,7 +2080,7 @@ def test_using_locks_single_d_allele():
 def test_using_locks_single_j_allele():
     exp = (
         ga.Experiment.on("human_igh")
-        .using(j="IGHJ4*02")
+        .restrict_alleles(j="IGHJ4*02")
         .recombine()
     )
     for o in exp.run(n=10, seed=0):
@@ -2090,7 +2090,7 @@ def test_using_locks_single_j_allele():
 def test_using_locks_full_vdj_simultaneously():
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01", d="IGHD3-3*01", j="IGHJ4*02")
+        .restrict_alleles(v="IGHVF1-G1*01", d="IGHD3-3*01", j="IGHJ4*02")
         .recombine()
     )
     for o in exp.run(n=10, seed=0):
@@ -2103,7 +2103,7 @@ def test_using_accepts_multi_allele_list():
     allowed = ["IGHVF10-G38*02", "IGHVF10-G38*04"]
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v=allowed)
+        .restrict_alleles(v=allowed)
         .recombine()
     )
     seen = {_v_name(exp.refdata, o) for o in exp.run(n=40, seed=0)}
@@ -2117,7 +2117,7 @@ def test_using_accepts_tuple_input():
     allowed = ("IGHVF10-G38*02", "IGHVF10-G38*04")
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v=allowed)
+        .restrict_alleles(v=allowed)
         .recombine()
     )
     for o in exp.run(n=10, seed=0):
@@ -2130,18 +2130,18 @@ def test_using_after_recombine_still_applies():
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .using(v="IGHVF1-G1*01")
+        .restrict_alleles(v="IGHVF1-G1*01")
     )
     for o in exp.run(n=5, seed=0):
         assert _v_name(exp.refdata, o) == "IGHVF1-G1*01"
 
 
 def test_using_called_twice_overlays_per_segment():
-    # First .using() locks V, second locks D — both should hold.
+    # First .restrict_alleles() locks V, second locks D — both should hold.
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01")
-        .using(d="IGHD3-3*01")
+        .restrict_alleles(v="IGHVF1-G1*01")
+        .restrict_alleles(d="IGHD3-3*01")
         .recombine()
     )
     for o in exp.run(n=5, seed=0):
@@ -2153,8 +2153,8 @@ def test_using_called_twice_overwrites_same_segment():
     # Second call's V lock replaces the first one.
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01")
-        .using(v="IGHVF10-G38*02")
+        .restrict_alleles(v="IGHVF1-G1*01")
+        .restrict_alleles(v="IGHVF10-G38*02")
         .recombine()
     )
     for o in exp.run(n=5, seed=0):
@@ -2165,8 +2165,8 @@ def test_using_none_clears_prior_lock():
     # Clearing reverts to the full pool.
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01")
-        .using(v=None)
+        .restrict_alleles(v="IGHVF1-G1*01")
+        .restrict_alleles(v=None)
         .recombine()
     )
     seen = {_v_name(exp.refdata, o) for o in exp.run(n=30, seed=0)}
@@ -2174,11 +2174,11 @@ def test_using_none_clears_prior_lock():
 
 
 def test_using_omitted_kwarg_leaves_prior_lock_untouched():
-    # Calling .using(d=...) shouldn't clobber an earlier V lock.
+    # Calling .restrict_alleles(d=...) shouldn't clobber an earlier V lock.
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01")
-        .using(d="IGHD3-3*01")  # only D supplied
+        .restrict_alleles(v="IGHVF1-G1*01")
+        .restrict_alleles(d="IGHD3-3*01")  # only D supplied
         .recombine()
     )
     for o in exp.run(n=5, seed=0):
@@ -2188,44 +2188,44 @@ def test_using_omitted_kwarg_leaves_prior_lock_untouched():
 
 def test_using_unknown_v_name_raises():
     with pytest.raises(ValueError, match="no V allele named"):
-        ga.Experiment.on("human_igh").using(v="NOPE*01")
+        ga.Experiment.on("human_igh").restrict_alleles(v="NOPE*01")
 
 
 def test_using_unknown_d_name_raises():
     with pytest.raises(ValueError, match="no D allele named"):
-        ga.Experiment.on("human_igh").using(d="IGHD-NOPE*01")
+        ga.Experiment.on("human_igh").restrict_alleles(d="IGHD-NOPE*01")
 
 
 def test_using_unknown_j_name_raises():
     with pytest.raises(ValueError, match="no J allele named"):
-        ga.Experiment.on("human_igh").using(j="IGHJ-NOPE*01")
+        ga.Experiment.on("human_igh").restrict_alleles(j="IGHJ-NOPE*01")
 
 
 def test_using_d_lock_on_vj_chain_raises():
     with pytest.raises(ValueError, match="cannot lock D alleles"):
-        ga.Experiment.on("human_igk").using(d="IGHD3-3*01")
+        ga.Experiment.on("human_igk").restrict_alleles(d="IGHD3-3*01")
 
 
 def test_using_empty_list_raises():
     with pytest.raises(ValueError, match="must be non-empty"):
-        ga.Experiment.on("human_igh").using(v=[])
+        ga.Experiment.on("human_igh").restrict_alleles(v=[])
 
 
 def test_using_duplicate_in_list_raises():
     with pytest.raises(ValueError, match="duplicate"):
-        ga.Experiment.on("human_igh").using(
+        ga.Experiment.on("human_igh").restrict_alleles(
             v=["IGHVF1-G1*01", "IGHVF1-G1*01"]
         )
 
 
 def test_using_non_string_entry_raises():
     with pytest.raises(TypeError, match="must all be strings"):
-        ga.Experiment.on("human_igh").using(v=["IGHVF1-G1*01", 5])  # type: ignore[list-item]
+        ga.Experiment.on("human_igh").restrict_alleles(v=["IGHVF1-G1*01", 5])  # type: ignore[list-item]
 
 
 def test_using_does_not_increment_step_count():
-    # ``.using()`` is a configuration knob, not a pipeline step.
-    exp = ga.Experiment.on("human_igh").using(v="IGHVF1-G1*01")
+    # ``.restrict_alleles()`` is a configuration knob, not a pipeline step.
+    exp = ga.Experiment.on("human_igh").restrict_alleles(v="IGHVF1-G1*01")
     assert exp.step_count == 0
 
 
@@ -2233,13 +2233,13 @@ def test_using_is_deterministic_under_same_seed():
     locked = ["IGHVF10-G38*02", "IGHVF10-G38*04"]
     a = (
         ga.Experiment.on("human_igh")
-        .using(v=locked)
+        .restrict_alleles(v=locked)
         .recombine()
         .run(n=10, seed=0xCAFE)
     )
     b = (
         ga.Experiment.on("human_igh")
-        .using(v=locked)
+        .restrict_alleles(v=locked)
         .recombine()
         .run(n=10, seed=0xCAFE)
     )
@@ -2251,7 +2251,7 @@ def test_using_composes_with_mutation_and_corruption():
     # Locks should work alongside the rest of the DSL pipeline.
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01")
+        .restrict_alleles(v="IGHVF1-G1*01")
         .recombine()
         .mutate(count=8)
         .corrupt_pcr(count=2)
@@ -2271,7 +2271,7 @@ def test_using_works_for_vj_chain_v_and_j():
     j_name = refdata.j_allele(0).name
     exp = (
         ga.Experiment.on("human_igk")
-        .using(v=v_name, j=j_name)
+        .restrict_alleles(v=v_name, j=j_name)
         .recombine()
     )
     for o in exp.run(n=5, seed=0):
@@ -2283,10 +2283,10 @@ def test_using_with_productive_contract():
     # Locks + productive() should still produce productive sequences.
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01", j="IGHJ4*02")
+        .restrict_alleles(v="IGHVF1-G1*01", j="IGHJ4*02")
         .recombine()
     )
-    out = exp.run_records(n=3, seed=0, respect=ga.productive())
+    out = exp.productive_only().run_records(n=3, seed=0)
     for rec in out:
         assert rec["v_call"] == "IGHVF1-G1*01"
         assert rec["j_call"] == "IGHJ4*02"
@@ -2296,7 +2296,7 @@ def test_using_with_productive_contract():
 def test_using_compile_is_idempotent_with_locks():
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01")
+        .restrict_alleles(v="IGHVF1-G1*01")
         .recombine()
     )
     plan_a = exp.compile()
@@ -2386,7 +2386,7 @@ def test_stream_supports_respect_kwarg():
     out = list(
         _human_igh_exp()
         .mutate(count=5)
-        .stream(n=3, seed=0, respect=ga.productive())
+        .productive_only().stream(n=3, seed=0)
     )
     # The stream should still produce productive outcomes.
     for o in out:
@@ -2469,7 +2469,7 @@ def test_stream_records_works_on_compiled_experiment():
 def test_stream_compose_with_using_lock():
     exp = (
         ga.Experiment.on("human_igh")
-        .using(v="IGHVF1-G1*01")
+        .restrict_alleles(v="IGHVF1-G1*01")
         .recombine()
     )
     for o in exp.stream(n=5, seed=0):
@@ -2659,7 +2659,7 @@ def test_record_has_np_aa_fields():
 def test_sequence_aa_is_nonempty_for_productive_outcome():
     out = (
         _human_igh_exp()
-        .run_records(n=3, seed=42, respect=ga.productive())
+        .productive_only().run_records(n=3, seed=42)
     )
     for rec in out:
         assert rec["sequence_aa"] != ""
@@ -2670,7 +2670,7 @@ def test_sequence_aa_contains_junction_aa_for_productive_outcome():
     # translation must appear inside sequence_aa.
     out = (
         _human_igh_exp()
-        .run_records(n=5, seed=42, respect=ga.productive())
+        .productive_only().run_records(n=5, seed=42)
     )
     for rec in out:
         assert rec["junction_aa"], "expected junction_aa for productive seq"
@@ -2683,7 +2683,7 @@ def test_sequence_aa_uses_v_anchor_frame():
     # position should equal junction_aa.
     rec = (
         _human_igh_exp()
-        .run_records(n=1, seed=42, respect=ga.productive())[0]
+        .productive_only().run_records(n=1, seed=42)[0]
     )
     junction_start = rec["junction_start"]
     frame_offset = junction_start % 3
@@ -2700,7 +2700,7 @@ def test_sequence_aa_uses_v_anchor_frame():
 def test_sequence_aa_length_matches_codon_count():
     rec = (
         _human_igh_exp()
-        .run_records(n=1, seed=42, respect=ga.productive())[0]
+        .productive_only().run_records(n=1, seed=42)[0]
     )
     seq = rec["sequence"]
     junction_start = rec["junction_start"]
@@ -2730,7 +2730,7 @@ def test_np_aa_consistent_with_sequence_aa_slice():
     # codon-aligned positions inside the NP region.
     rec = (
         _human_igh_exp()
-        .run_records(n=1, seed=42, respect=ga.productive())[0]
+        .productive_only().run_records(n=1, seed=42)[0]
     )
     junction_start = rec["junction_start"]
     frame_offset = junction_start % 3
@@ -2756,7 +2756,7 @@ def test_np_aa_only_translates_complete_codons():
     # NP regions are typically not multiples of 3 → aa length should
     # never exceed (np_length // 3) + 1 (with leeway for partial
     # boundary codons).
-    out = _human_igh_exp().run_records(n=10, seed=0, respect=ga.productive())
+    out = _human_igh_exp().productive_only().run_records(n=10, seed=0)
     for rec in out:
         np1_len = rec["np1_length"]
         np2_len = rec["np2_length"]
@@ -2773,7 +2773,7 @@ def test_np_aa_empty_when_np_region_empty():
         ga.Experiment.on("human_igh")
         .recombine(np1_lengths=[(0, 1.0)], np2_lengths=[(0, 1.0)])
     )
-    for rec in exp.run_records(n=3, seed=0, respect=ga.productive()):
+    for rec in exp.productive_only().run_records(n=3, seed=0):
         assert rec["np1"] == ""
         assert rec["np1_aa"] == ""
         assert rec["np2"] == ""
@@ -3137,7 +3137,7 @@ def test_alignment_invariants_under_full_corruption_stack():
         .corrupt_quality(count=8)
         .corrupt_indels(count=4, insertion_prob=0.5)
     )
-    result = exp.run_records(n=200, seed=0, respect=ga.productive())
+    result = exp.productive_only().run_records(n=200, seed=0)
     failures = [
         (i, _alignment_invariants_hold(rec))
         for i, rec in enumerate(result)
@@ -4407,7 +4407,7 @@ def test_recombine_accepts_np2_lengths_on_vdj_chain():
     only fires on VJ."""
     exp = Experiment.on(_vdj_refdata())
     # Should not raise.
-    compiled = exp.recombine(np2_lengths=[(0, 1.0), (3, 1.0)], trim=False).compile()
+    compiled = exp.recombine(np2_lengths=[(0, 1.0), (3, 1.0)]).trim(enabled=False).compile()
     assert compiled.refdata.chain_type == "vdj"
 
 
@@ -4433,17 +4433,34 @@ def test_recombine_warns_on_raw_refdata_uniform_np_fallback():
     biology."""
     exp = Experiment.on(_vj_refdata())
     with pytest.warns(UserWarning, match="uniform"):
-        exp.recombine(trim=False)
+        exp.recombine().trim(enabled=False)
 
 
 def test_recombine_warns_on_raw_refdata_trim_noop():
-    """Same shape as above: trim=True on raw RefDataConfig is a
-    silent no-op because there's no DataConfig with trim distributions.
-    Now warns instead of pretending to trim."""
-    exp = Experiment.on(_vj_refdata())
+    """trim is default-on but on raw RefDataConfig there's no DataConfig
+    with trim distributions, so it's a silent no-op. v2.0 surfaces a
+    warning at compile() time when the user hasn't explicitly called
+    :meth:`Experiment.trim`. Calling :meth:`trim` (with any setting)
+    is the documented way to suppress the warning."""
+    exp = Experiment.on(_vj_refdata()).recombine(
+        np1_lengths=[(0, 1.0), (3, 1.0)]
+    )
     with pytest.warns(UserWarning, match="trim"):
-        # explicit np1_lengths so the NP warning doesn't fire too
-        exp.recombine(trim=True, np1_lengths=[(0, 1.0), (3, 1.0)])
+        exp.compile()
+
+
+def test_recombine_warn_silenced_by_explicit_trim_disable():
+    """Calling .trim(enabled=False) explicitly silences the raw-RefDataConfig
+    trim-noop warning at compile() time."""
+    exp = (
+        Experiment.on(_vj_refdata())
+        .recombine(np1_lengths=[(0, 1.0), (3, 1.0)])
+        .trim(enabled=False)
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        warnings.filterwarnings("ignore", message=".*NP-length.*", category=UserWarning)
+        exp.compile()
 
 
 def test_recombine_warning_silenced_when_caller_supplies_lengths_and_trim_false():
@@ -4452,10 +4469,9 @@ def test_recombine_warning_silenced_when_caller_supplies_lengths_and_trim_false(
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         exp.recombine(
-            trim=False,
             np1_lengths=[(0, 1.0), (3, 1.0)],
             np2_lengths=[(0, 1.0), (3, 1.0)],
-        )
+        ).trim(enabled=False)
 
 
 def test_recombine_no_warnings_on_dataconfig_path():
@@ -4478,9 +4494,12 @@ def test_describe_empty_experiment_says_no_steps():
 
 
 def test_describe_recombine_only_vj_lists_segments_and_np1():
-    out = Experiment.on(_vj_refdata()).recombine(
-        trim=False, np1_lengths=[(0, 1.0), (3, 1.0)]
-    ).describe()
+    out = (
+        Experiment.on(_vj_refdata())
+        .recombine(np1_lengths=[(0, 1.0), (3, 1.0)])
+        .trim(enabled=False)
+        .describe()
+    )
     # Header line + numbered step
     assert "1. V(D)J recombination" in out
     assert "V/J alleles" in out  # VJ, not VDJ
@@ -4489,11 +4508,12 @@ def test_describe_recombine_only_vj_lists_segments_and_np1():
 
 
 def test_describe_recombine_vdj_lists_both_np_regions():
-    out = Experiment.on(_vdj_refdata()).recombine(
-        trim=False,
-        np1_lengths=[(0, 1.0), (3, 1.0)],
-        np2_lengths=[(2, 1.0)],
-    ).describe()
+    out = (
+        Experiment.on(_vdj_refdata())
+        .recombine(np1_lengths=[(0, 1.0), (3, 1.0)], np2_lengths=[(2, 1.0)])
+        .trim(enabled=False)
+        .describe()
+    )
     assert "V/D/J alleles" in out
     assert "NP1" in out
     assert "NP2" in out
@@ -4515,7 +4535,7 @@ def test_describe_mutate_s5f_names_kernel():
 def test_describe_corrupt_pcr_reads_as_pcr_errors():
     out = (
         Experiment.on(_vj_refdata())
-        .recombine(trim=False, np1_lengths=[(2, 1.0)])
+        .recombine(np1_lengths=[(2, 1.0)]).trim(enabled=False)
         .corrupt_pcr(count=(0, 3))
         .describe()
     )
@@ -4555,7 +4575,7 @@ def test_describe_compiled_experiment_renders_productive_constraint_in_biology_t
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=(5, 15))
-        .compile(respect=ga.productive())
+        .productive_only().compile()
     )
     out = compiled.describe()
     # Internal contract names collapse to a single biology label.

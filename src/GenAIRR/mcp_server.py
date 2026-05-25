@@ -320,7 +320,7 @@ def _build_experiment_from_params(
     if j_alleles:
         using_kwargs["j"] = list(j_alleles)
     if using_kwargs:
-        exp = exp.using(**using_kwargs)
+        exp = exp.restrict_alleles(**using_kwargs)
 
     # -- Clonal fork (between parent and per-descendant noise) --------
     if n_clones is not None:
@@ -372,7 +372,9 @@ def _build_experiment_from_params(
     if rev_comp_prob is not None:
         exp = exp.corrupt_reverse_complement(prob=float(rev_comp_prob))
 
-    # Note: productive_only is applied at run_records time via respect=, not here.
+    # Note: productive_only is applied by the caller as .productive_only(),
+    # not here, so this helper can be re-used by both productive and
+    # non-productive simulation entry points.
     return exp
 
 
@@ -437,13 +439,14 @@ def _simulate_repertoire_impl(
         j_alleles=j_alleles,
     )
 
-    respect = ga.productive() if productive_only else None
+    if productive_only:
+        exp = exp.productive_only()
 
     # When clonal: n comes from n_clones x clone_size -- don't pass `n`.
     if n_clones is not None:
-        result = exp.run_records(seed=seed, respect=respect)
+        result = exp.run_records(seed=seed)
     else:
-        result = exp.run_records(n=n, seed=seed, respect=respect)
+        result = exp.run_records(n=n, seed=seed)
 
     records = list(result.records)
     summary = compute_repertoire_summary(records, summary_top_n=summary_top_n)
@@ -504,8 +507,9 @@ def simulate_repertoire(
         n: number of records to generate. Ignored when n_clones is set
             (total = n_clones x clone_size).
         seed: deterministic RNG seed.
-        productive_only: when True, apply respect=ga.productive() at run
-            time so every returned record is productive.
+        productive_only: when True, attach the productive-sequence
+            contract bundle via :meth:`Experiment.productive_only` so
+            every returned record satisfies it by construction.
         mutation_model: SHM model (e.g. "s5f"); requires a count bound.
         mutation_count_min / mutation_count_max: SHM count bounds.
         five_prime_loss_max / three_prime_loss_max: max bases trimmed
@@ -1258,7 +1262,7 @@ def replay_seed(
 
     # Translate to an Experiment using the same helper as simulate_repertoire.
     # _build_experiment_from_params no longer accepts productive_only -- that
-    # is applied at run time via respect=ga.productive() below.
+    # is applied by attaching .productive_only() to the returned Experiment.
     build_kwargs = {
         "config": config,
         "mutation_model": params.get("mutation_model"),
@@ -1279,12 +1283,13 @@ def replay_seed(
         "j_alleles": params.get("j_alleles"),
     }
     exp = _build_experiment_from_params(**build_kwargs)
-    respect = ga.productive() if productive_only else None
+    if productive_only:
+        exp = exp.productive_only()
 
     if build_kwargs["n_clones"] is not None:
-        outcomes = exp.run(seed=seed, respect=respect)
+        outcomes = exp.run(seed=seed)
     else:
-        outcomes = exp.run(n=1, seed=seed, respect=respect)
+        outcomes = exp.run(n=1, seed=seed)
     if not outcomes:
         raise MCPError(
             SEED_REPLAY_MISMATCH,

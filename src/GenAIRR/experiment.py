@@ -33,14 +33,6 @@ from .dataconfig import DataConfig
 from .dataconfig.enums import ChainType
 
 
-# Anything :meth:`Experiment.compile` (or the one-shot
-# :meth:`Experiment.run`) accepts as ``respect=``. The Rust compiler
-# ultimately needs a single :class:`GenAIRR._engine.ContractSet`; the
-# helpers below normalise the convenient list-form ``[productive()]``
-# to that single value.
-RespectInput = Union["_engine.ContractSet", Sequence["_engine.ContractSet"], None]
-
-
 # Sentinel for `using(...)` arguments that the caller did not pass at
 # all. We can't use ``None`` for "unchanged" because ``None`` already
 # means "clear the lock."
@@ -262,6 +254,11 @@ class _RecombineStep:
     weights_v: Optional[Tuple[float, ...]] = None
     weights_d: Optional[Tuple[float, ...]] = None
     weights_j: Optional[Tuple[float, ...]] = None
+    # Set to True by ``Experiment.trim(...)``. Drives the
+    # raw-RefDataConfig trim-noop warning at compile() time: when the
+    # user explicitly called .trim(), silence the warning regardless
+    # of whether trim is enabled or disabled.
+    trim_overridden: bool = False
 
     def apply(
         self,
@@ -619,6 +616,26 @@ _PRODUCTIVE_BUNDLE_NAMES = frozenset({
 })
 
 
+def _format_declared_contracts(declared: Sequence[str]) -> Optional[str]:
+    """Render the contract bundles declared by `.productive_only()`
+    etc. on an uncompiled Experiment as a biology-style line.
+
+    Companion to :func:`_format_active_contracts`, which renders the
+    compiled simulator's per-pass contract names (the underlying
+    primitives the bundles expand into). On the Experiment side we
+    show the bundle name directly because that's what the user typed.
+    """
+    if not declared:
+        return None
+    labels = []
+    for bundle in declared:
+        if bundle == "productive":
+            labels.append("productive sequences only")
+        else:
+            labels.append(bundle)
+    return "; ".join(labels)
+
+
 def _format_active_contracts(active: Sequence[str]) -> Optional[str]:
     """Render the compiled simulator's active-contracts tuple as a
     biology-style line, or ``None`` if no contracts are bound. The
@@ -743,44 +760,6 @@ def _normalize_lengths(
 # Public API: Experiment + CompiledExperiment
 # ──────────────────────────────────────────────────────────────────
 
-def _coerce_respect(respect: RespectInput) -> Optional["_engine.ContractSet"]:
-    """Normalise the ``respect=`` argument to a single ``ContractSet``.
-
-    Accepts:
-    - ``None`` → no contracts active.
-    - a single ``ContractSet`` → used directly.
-    - a length-1 sequence containing one ``ContractSet`` → unwrapped
-      (the ``respect=[productive()]`` form).
-
-    Sequences with multiple bundles raise ``NotImplementedError`` —
-    contract composition is not yet supported. Anything else raises
-    ``TypeError``.
-    """
-    if respect is None:
-        return None
-    if isinstance(respect, _engine.ContractSet):
-        return respect
-    if isinstance(respect, (list, tuple)):
-        if len(respect) == 0:
-            return None
-        if len(respect) == 1:
-            item = respect[0]
-            if not isinstance(item, _engine.ContractSet):
-                raise TypeError(
-                    f"respect[0]: expected GenAIRR._engine.ContractSet, "
-                    f"got {type(item).__name__}"
-                )
-            return item
-        raise NotImplementedError(
-            f"respect=[...] with {len(respect)} bundles is not yet supported. "
-            "Compose contracts inside a single bundle for now."
-        )
-    raise TypeError(
-        f"respect=: expected GenAIRR._engine.ContractSet or sequence of one, "
-        f"got {type(respect).__name__}"
-    )
-
-
 # Anything :meth:`Experiment.on` accepts.
 ExperimentInput = Union[str, DataConfig, "_engine.RefDataConfig"]
 
@@ -824,7 +803,14 @@ class Experiment:
     different seeds.
     """
 
-    __slots__ = ("_refdata", "_steps", "_dataconfig", "_locks", "_metadata")
+    __slots__ = (
+        "_refdata",
+        "_steps",
+        "_dataconfig",
+        "_locks",
+        "_metadata",
+        "_contracts",
+    )
 
     def __init__(
         self,
@@ -834,7 +820,11 @@ class Experiment:
         self._refdata = refdata
         self._dataconfig = dataconfig
         self._steps: List[Union[_RecombineStep, _MutateStep, _CorruptStep]] = []
-        # Per-segment allele-lock subsets set by ``.using(...)``. Each
+        # Constraint bundles declared via `.productive_only()` etc.
+        # Stored as a list so future bundles can compose. Today only
+        # the productive bundle is recognized.
+        self._contracts: List[str] = []
+        # Per-segment allele-lock subsets set by ``.restrict_alleles(...)``. Each
         # entry is ``None`` (no lock — sample uniformly across the pool)
         # or a tuple of allele IDs to sample uniformly across.
         self._locks: Dict[str, Optional[Tuple[int, ...]]] = {
@@ -1144,6 +1134,44 @@ class Experiment:
                 self._metadata[key] = value
         return self
 
+    def productive_only(self) -> "Experiment":
+        """Require every emitted record to be a productive sequence.
+
+        Attaches the canonical productive-sequence contract bundle to
+        the experiment: junction frame in-register, no stop codons in
+        the junction, and V/J anchor amino acids preserved. The bundle
+        is enforced during recombination and SHM passes, so
+        non-admissible candidates are filtered before commit (the
+        runtime falls back to permissive sampling if no admissible
+        candidate exists; use ``strict=True`` at run time to raise
+        instead).
+
+        **Order-independent.** This method is a constraint declaration,
+        not a pipeline step — it can be called anywhere in the chain
+        and the result is identical. Convention is to place it last
+        (right before ``run_records()``) so the constraint reads as a
+        post-hoc requirement on the emitted records.
+
+        TCR refdata accepts the call but raises ``ValueError`` at
+        :meth:`compile` time because TCRs don't have somatic
+        hypermutation and the productive bundle's anchor checks
+        assume BCR semantics. Catch this early at the builder if it
+        matters to you.
+
+        Example::
+
+            result = (
+                Experiment.on("human_igh")
+                .recombine()
+                .mutate(count=(5, 15))
+                .productive_only()
+                .run_records(seed=42)
+            )
+        """
+        if "productive" not in self._contracts:
+            self._contracts.append("productive")
+        return self
+
     def with_clonal_structure(
         self,
         *,
@@ -1275,32 +1303,40 @@ class Experiment:
         first_v_name = self._refdata.v_allele(0).name
         return first_v_name.upper().startswith("TR")
 
-    def using(
+    def restrict_alleles(
         self,
         *,
         v: "_LockInput" = _UNSET,
         d: "_LockInput" = _UNSET,
         j: "_LockInput" = _UNSET,
     ) -> "Experiment":
-        """Restrict allele sampling to a named subset (allele-locking).
+        """Narrow allele sampling to a named subset, per segment.
+
+        Sampling stays uniform — this restricts the *support* of the
+        sampling distribution to the listed allele names, not pins a
+        single allele. If you supply one name, the result is
+        effectively deterministic (uniform over one element); for any
+        list of N names, the recombination pass samples uniformly
+        over those N alleles.
 
         Each kwarg accepts:
         - a single allele name string (e.g. ``"IGHV1-2*02"``),
         - a list / tuple of allele names (sample uniformly among them),
-        - ``None`` to clear a previously-set lock for that segment.
-        - omitted (default) — the existing lock for that segment is
-          left unchanged.
+        - ``None`` to clear a previously-set restriction for that segment,
+        - omitted (default) — the existing restriction for that segment
+          is left unchanged.
 
-        The locks are applied to the next ``recombine()`` step's
+        The restrictions are applied to the next ``recombine()`` step's
         ``push_sample_allele`` calls at compile time. Calling
-        ``.using(...)`` more than once overlays the new values onto
-        the previous locks (per-segment), so
-        ``.using(v="A").using(d="B")`` locks both V and D.
+        ``restrict_alleles()`` more than once overlays the new values
+        onto the previous restrictions (per-segment), so
+        ``.restrict_alleles(v="A").restrict_alleles(d="B")`` restricts
+        both V and D.
 
         Raises:
         - ``ValueError`` if an allele name doesn't exist in the
-          configured refdata, or if a lock is set for ``D`` on a VJ
-          chain.
+          configured refdata, or if a restriction is set for ``D`` on
+          a VJ chain.
         - ``TypeError`` if an unexpected input shape is passed.
         """
         for segment, value in (("V", v), ("D", d), ("J", j)):
@@ -1333,16 +1369,16 @@ class Experiment:
                 names = tuple(value)
             except TypeError as exc:
                 raise TypeError(
-                    f"using(): {segment} lock must be a name string or an "
+                    f"restrict_alleles(): {segment} lock must be a name string or an "
                     f"iterable of name strings; got {type(value).__name__}"
                 ) from exc
             if not all(isinstance(n, str) for n in names):
                 raise TypeError(
-                    f"using(): {segment} lock entries must all be strings"
+                    f"restrict_alleles(): {segment} lock entries must all be strings"
                 )
             if not names:
                 raise ValueError(
-                    f"using(): {segment} lock list must be non-empty "
+                    f"restrict_alleles(): {segment} lock list must be non-empty "
                     "(pass None to clear instead)"
                 )
 
@@ -1352,13 +1388,13 @@ class Experiment:
         for name in names:
             if name not in index:
                 raise ValueError(
-                    f"using(): no {segment} allele named {name!r} in refdata "
+                    f"restrict_alleles(): no {segment} allele named {name!r} in refdata "
                     "(check spelling against `list_alleles` or the loaded config)"
                 )
             allele_id = index[name]
             if allele_id in seen:
                 raise ValueError(
-                    f"using(): duplicate {segment} allele {name!r} in lock list"
+                    f"restrict_alleles(): duplicate {segment} allele {name!r} in lock list"
                 )
             seen.add(allele_id)
             ids.append(allele_id)
@@ -1368,7 +1404,7 @@ class Experiment:
         """Build a name → allele_id map for the given segment by
         scanning the refdata pool. Cheap enough to do per-call given
         typical pool sizes (≤ a few hundred) and the rarity of
-        ``.using()``."""
+        ``.restrict_alleles()``."""
         if segment == "V":
             n = self._refdata.v_pool_size()
             getter = self._refdata.v_allele
@@ -1387,7 +1423,6 @@ class Experiment:
         *,
         np1_lengths: Optional[Iterable[Tuple[int, float]]] = None,
         np2_lengths: Optional[Iterable[Tuple[int, float]]] = None,
-        trim: bool = True,
         v_allele_weights: Optional[Dict[str, float]] = None,
         d_allele_weights: Optional[Dict[str, float]] = None,
         j_allele_weights: Optional[Dict[str, float]] = None,
@@ -1414,15 +1449,14 @@ class Experiment:
         (VJ chains have no NP2 region — there's no D segment to
         bracket).
 
-        ``trim=True`` (default) inserts trim passes before assembly
-        when the bound DataConfig carries empirical trim
-        distributions. Trim distributions are marginalized from the
-        per-gene ``trim_dicts`` to a single segment-level
-        distribution. Set ``trim=False`` to disable trimming
-        entirely (e.g. for tests that expect untrimmed alleles).
-        Raw-RefDataConfig experiments have ``trim`` as a no-op (no
-        DataConfig to source distributions from); a :class:`UserWarning`
-        is emitted in that case so the silent no-op is visible.
+        **Exonuclease trim** is enabled by default and uses the
+        empirical per-segment trim distributions from the bound
+        ``DataConfig`` when available. To disable trim, or supply
+        custom trim distributions, call :meth:`trim` *after*
+        :meth:`recombine` in the chain (before any mutation /
+        corruption step). On a raw ``RefDataConfig`` without trim
+        data, recombine emits a :class:`UserWarning` and falls back
+        to a no-op trim.
 
         ``v_allele_weights`` / ``d_allele_weights`` /
         ``j_allele_weights`` — optional ``{allele_name:
@@ -1431,8 +1465,9 @@ class Experiment:
         to 1.0, so e.g. ``v_allele_weights={"IGHV3-23*01": 100}``
         boosts that allele while keeping every other V allele
         possible at 1/100th the rate. Mutually exclusive with the
-        per-segment ``.using(...)`` lock. Raises ``ValueError`` for
-        unknown allele names or non-positive weights.
+        per-segment :meth:`restrict_alleles` restriction. Raises
+        ``ValueError`` for unknown allele names or non-positive
+        weights.
         """
         # VJ chains have no NP2 region — surface user mistakes loudly
         # instead of silently dropping the argument.
@@ -1444,13 +1479,17 @@ class Experiment:
                 f"VDJ refdata."
             )
 
+        # Trim is default-on; .trim() may later disable or replace it.
+        trim = True
         defaults = self._recombine_defaults() if trim or self._dataconfig else None
 
         # Raw-RefDataConfig path: there's no DataConfig backing this
         # experiment, so empirical NP lengths and trim distributions
-        # don't exist. We fall back to a uniform NP-length default
-        # and a no-op trim — historically silent. Surface both so the
-        # caller knows the synthetic default is in play.
+        # don't exist. We fall back to a uniform NP-length default —
+        # historically silent — and surface a warning so the synthetic
+        # default isn't mistaken for real biology. The trim warning is
+        # emitted at compile() time instead, after .trim() has had a
+        # chance to disable trim explicitly.
         if self._dataconfig is None:
             if np1_lengths is None or (
                 self._refdata.chain_type == "vdj" and np2_lengths is None
@@ -1460,14 +1499,6 @@ class Experiment:
                     "NP-length distribution; falling back to uniform "
                     "[(0, 1.0), ..., (6, 1.0)]. Pass np1_lengths "
                     "(and np2_lengths for VDJ) explicitly to silence this.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            if trim:
-                warnings.warn(
-                    "Experiment bound to a raw RefDataConfig has no trim "
-                    "distributions; trim=True is a no-op. Pass trim=False "
-                    "explicitly to silence this.",
                     UserWarning,
                     stacklevel=2,
                 )
@@ -1507,6 +1538,100 @@ class Experiment:
             weights_j=weights_j,
         )
         self._steps.append(step)
+        return self
+
+    def trim(
+        self,
+        *,
+        enabled: bool = True,
+        v_3: Optional[Iterable[Tuple[int, float]]] = None,
+        d_5: Optional[Iterable[Tuple[int, float]]] = None,
+        d_3: Optional[Iterable[Tuple[int, float]]] = None,
+        j_5: Optional[Iterable[Tuple[int, float]]] = None,
+    ) -> "Experiment":
+        """Configure exonuclease trim on the preceding :meth:`recombine`
+        step.
+
+        Trim is a per-segment exonuclease step that lives biologically
+        *inside* V(D)J recombination (between allele selection and NP
+        insertion). It is on by default with empirical distributions
+        sourced from the bound ``DataConfig``. Use this method only
+        when you need to override that default:
+
+        - ``trim(enabled=False)`` — disable trim entirely. Equivalent to
+          recombining against the raw allele endpoints.
+        - ``trim(v_3=..., d_5=..., d_3=..., j_5=...)`` — supply custom
+          per-segment trim-length distributions as ``(length, weight)``
+          iterables. Omitted segments keep their empirical defaults
+          (or no-op on raw RefDataConfig).
+
+        **Position in the chain.** ``trim()`` is configuration applied
+        to the most recent ``recombine()`` step. It must appear after
+        ``recombine()`` and before any mutation / corruption step.
+        Calling it before ``recombine()`` raises ``ValueError``;
+        calling it after a mutation step raises ``ValueError``.
+
+        Raises ``ValueError`` if no ``recombine()`` step has been
+        appended yet, or if the chain already has steps that would
+        biologically follow recombination (mutate, corrupt_*).
+        """
+        from dataclasses import replace as _replace
+
+        # Find the most recent recombine step.
+        rec_idx: Optional[int] = None
+        for i in range(len(self._steps) - 1, -1, -1):
+            if isinstance(self._steps[i], _RecombineStep):
+                rec_idx = i
+                break
+        if rec_idx is None:
+            raise ValueError(
+                "trim() must be called after recombine(); no recombine "
+                "step is on this Experiment yet."
+            )
+
+        # Anything appended after the recombine step is wrong-ordered
+        # for trim configuration.
+        for j in range(rec_idx + 1, len(self._steps)):
+            offending = type(self._steps[j]).__name__
+            raise ValueError(
+                f"trim() must be called immediately after recombine() — "
+                f"before any mutation / corruption / clonal-fork step. "
+                f"Found a {offending!r} between the latest recombine() "
+                f"and this trim() call."
+            )
+
+        prior: _RecombineStep = self._steps[rec_idx]  # type: ignore[assignment]
+        if not enabled:
+            # Disable all trim slots, keep NP + weights untouched.
+            new_step = _replace(
+                prior,
+                trim_v_3=None,
+                trim_d_5=None,
+                trim_d_3=None,
+                trim_j_5=None,
+                trim_overridden=True,
+            )
+            self._steps[rec_idx] = new_step
+            return self
+
+        # Override individual distributions; pass-through on None.
+        def _resolve(
+            current: Optional[Tuple[Tuple[int, float], ...]],
+            override: Optional[Iterable[Tuple[int, float]]],
+        ) -> Optional[Tuple[Tuple[int, float], ...]]:
+            if override is None:
+                return current
+            return _normalize_lengths(override)
+
+        new_step = _replace(
+            prior,
+            trim_v_3=_resolve(prior.trim_v_3, v_3),
+            trim_d_5=_resolve(prior.trim_d_5, d_5),
+            trim_d_3=_resolve(prior.trim_d_3, d_3),
+            trim_j_5=_resolve(prior.trim_j_5, j_5),
+            trim_overridden=True,
+        )
+        self._steps[rec_idx] = new_step
         return self
 
     def _resolve_allele_weights(
@@ -1580,6 +1705,29 @@ class Experiment:
 
         return extract_recombine_defaults(self._dataconfig)
 
+    def _build_contracts(self) -> Optional["_engine.ContractSet"]:
+        """Synthesize the engine ``ContractSet`` from declared bundles.
+
+        Today only the productive bundle is recognized. Future bundles
+        (e.g. ``.in_frame_only()``) would compose here. Returns
+        ``None`` when no constraint methods have been called.
+        """
+        if not self._contracts:
+            return None
+        # Composition across bundles isn't supported by the engine yet,
+        # so for now exactly one bundle is allowed.
+        if len(self._contracts) > 1:
+            raise NotImplementedError(
+                f"composing multiple constraint bundles is not yet supported; "
+                f"got {self._contracts!r}"
+            )
+        bundle = self._contracts[0]
+        if bundle == "productive":
+            return _engine.productive()
+        raise NotImplementedError(
+            f"unknown constraint bundle {bundle!r}"
+        )
+
     @staticmethod
     def _default_np_lengths(
         defaults, key: str
@@ -1594,7 +1742,7 @@ class Experiment:
                 return tuple(empirical)
         return tuple(_DEFAULT_NP_LENGTHS)
 
-    def compile(self, *, respect: RespectInput = None):
+    def compile(self):
         """Compile the recorded steps into a reusable
         :class:`CompiledExperiment` (or :class:`CompiledClonalExperiment`
         when the pipeline contains a :meth:`with_clonal_structure`
@@ -1603,15 +1751,41 @@ class Experiment:
         Idempotent: calling ``compile()`` twice produces two distinct
         compiled instances with structurally-equal simulators.
 
-        ``respect`` accepts ``None`` (no contracts), a single
-        :class:`GenAIRR._engine.ContractSet`, or a length-1 sequence
-        containing one. Contracts are compile-time inputs: the
-        resulting compiled simulator owns the active contract bundle
-        and reuses it for every run.
+        Constraints declared via :meth:`productive_only` (or future
+        bundle methods) are baked into the compiled simulator at this
+        step; they're not runtime knobs. To run without constraints,
+        omit the constraint methods from the chain.
         """
         from dataclasses import replace as _replace
 
-        contracts = _coerce_respect(respect)
+        # On raw RefDataConfig with default-on trim, warn at compile
+        # time if the user didn't explicitly call .trim() to either
+        # disable or replace the no-op default. By compile() time we
+        # know the final shape of the recombine step.
+        if self._dataconfig is None:
+            for step in self._steps:
+                if not isinstance(step, _RecombineStep):
+                    continue
+                has_trim_data = any(
+                    (step.trim_v_3, step.trim_d_5, step.trim_d_3, step.trim_j_5)
+                )
+                if has_trim_data or step.trim_overridden:
+                    # Either trim is set up (DataConfig path or
+                    # .trim(v_3=...)) or the user explicitly called
+                    # .trim() — both silence the warning.
+                    continue
+                warnings.warn(
+                    "Experiment bound to a raw RefDataConfig has no "
+                    "trim distributions; exonuclease trim is a no-op. "
+                    "Call .trim(enabled=False) to silence this warning, "
+                    "or supply custom distributions via "
+                    ".trim(v_3=..., d_5=..., ...).",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                break  # one warning per compile() call is enough
+
+        contracts = self._build_contracts()
         any_lock = any(self._locks[seg] is not None for seg in ("V", "D", "J"))
 
         # if a `_ClonalForkStep` is present, split the step list
@@ -1629,12 +1803,12 @@ class Experiment:
                 pre_steps, contracts, any_lock, replace_fn=_replace
             )
             # post-fork plan inherits the parent's V/D/J/NP backbone, so
-            # the recombination-time contracts in `respect=` have already
-            # been enforced upstream. Re-passing them here would force the
-            # compiler to look for support (np.np1.length, anchor trims)
-            # in passes the post-fork plan doesn't contain — which would
-            # fail any pipeline that combines `with_clonal_structure()`
-            # with `respect=ga.productive()`.
+            # the recombination-time contracts have already been enforced
+            # upstream. Re-passing them here would force the compiler to
+            # look for support (np.np1.length, anchor trims) in passes
+            # the post-fork plan doesn't contain — which would fail any
+            # pipeline that combines `with_clonal_structure()` with
+            # `.productive_only()`.
             post_simulator = self._build_simulator(
                 post_steps, None, any_lock=False, replace_fn=_replace
             )
@@ -1673,7 +1847,7 @@ class Experiment:
         two simulators from sub-step-lists with a shared body."""
         plan = _engine.PassPlan()
         for step in steps:
-            # Inject any allele-locks set via ``.using(...)`` into the
+            # Inject any allele-locks set via ``.restrict_alleles(...)`` into the
             # recombine step at compile time. Other step types ignore
             # locks.
             if any_lock and isinstance(step, _RecombineStep):
@@ -1691,7 +1865,6 @@ class Experiment:
         *,
         n: Optional[int] = None,
         seed: int = 0,
-        respect: RespectInput = None,
         strict: bool = False,
         expose_provenance: bool = False,
     ) -> "SimulationResult":
@@ -1715,7 +1888,7 @@ class Experiment:
         Returns a :class:`SimulationResult`; clonal records carry
         an integer ``clone_id`` field per row.
         """
-        compiled = self.compile(respect=respect)
+        compiled = self.compile()
         if isinstance(compiled, CompiledClonalExperiment):
             result = compiled.run_records(
                 n=n,
@@ -1741,20 +1914,19 @@ class Experiment:
         *,
         n: Optional[int] = None,
         seed: int = 0,
-        respect: RespectInput = None,
         strict: bool = False,
     ) -> List["_engine.Outcome"]:
         """Compile and run this experiment ``n`` times.
 
         Equivalent to
-        ``self.compile(respect=respect).run(n=n, seed=seed, strict=strict)``.
+        ``self.compile().run(n=n, seed=seed, strict=strict)``.
         Returns a list of :class:`GenAIRR._engine.Outcome` objects in
         clone-major order for clonal experiments.
 
-        Pass ``respect=productive()`` (or any other ``ContractSet``) to
-        constrain every random draw to admissible values; the runtime
-        filters NP base draws, length samples, and mutation /
-        contamination substitutions in real time so the resulting
+        Attach :meth:`productive_only` (or any future constraint
+        method) to the chain to require admissible records; the
+        runtime filters NP base draws, length samples, and mutation
+        / contamination substitutions in real time so the resulting
         sequences satisfy the bundle by construction.
 
         Statically impossible contract configurations fail during
@@ -1764,7 +1936,7 @@ class Experiment:
         ``strict=True`` raises
         :class:`GenAIRR._engine.StrictSamplingError` instead.
         """
-        compiled = self.compile(respect=respect)
+        compiled = self.compile()
         if isinstance(compiled, CompiledClonalExperiment):
             return compiled.run(n=n, seed=seed, strict=strict)
         return compiled.run(n=1 if n is None else n, seed=seed, strict=strict)
@@ -1774,26 +1946,24 @@ class Experiment:
         *,
         n: Optional[int] = None,
         seed: int = 0,
-        respect: RespectInput = None,
         strict: bool = False,
     ) -> Iterator["_engine.Outcome"]:
         """Compile and lazily yield :class:`GenAIRR._engine.Outcome`
         objects. See :meth:`CompiledExperiment.stream` for full
         semantics."""
-        return self.compile(respect=respect).stream(n=n, seed=seed, strict=strict)
+        return self.compile().stream(n=n, seed=seed, strict=strict)
 
     def stream_records(
         self,
         *,
         n: Optional[int] = None,
         seed: int = 0,
-        respect: RespectInput = None,
         strict: bool = False,
         id_prefix: str = "seq",
     ) -> Iterator[Dict[str, Any]]:
         """Compile and lazily yield AIRR-format record dicts. See
         :meth:`CompiledExperiment.stream_records`."""
-        return self.compile(respect=respect).stream_records(
+        return self.compile().stream_records(
             n=n,
             seed=seed,
             strict=strict,
@@ -1821,16 +1991,46 @@ class Experiment:
               2. Somatic hypermutation (S5F context model, human heavy-chain (HH_S5F)): 5–15 mutations/record
         """
         header = _describe_experiment_header(self._refdata, self._dataconfig)
-        if not self._steps:
+        if not self._steps and not self._contracts:
             return header + "\n  (no steps appended yet)"
 
         lines = [header]
-        body_lines = _describe_step_sequence(self._steps, self._refdata.chain_type)
+        resolved = self._steps_with_locks_resolved()
+        body_lines = _describe_step_sequence(resolved, self._refdata.chain_type)
         lines.extend(body_lines)
+        contracts_line = _format_declared_contracts(self._contracts)
+        if contracts_line:
+            lines.append(f"  Constraints: {contracts_line}")
         if self._metadata:
             stamps = ", ".join(f"{k}={v!r}" for k, v in self._metadata.items())
             lines.append(f"  Metadata stamped on every record: {stamps}")
         return "\n".join(lines)
+
+    def _steps_with_locks_resolved(self) -> List[Any]:
+        """Return a copy of ``self._steps`` with per-segment allele
+        locks (from :meth:`restrict_alleles`) injected into the first
+        :class:`_RecombineStep`. Compile-time injection lives in
+        :meth:`_build_simulator`; ``describe()`` needs the same
+        substitution to render lock info correctly without
+        side-effecting the live step list."""
+        from dataclasses import replace as _replace
+
+        any_lock = any(self._locks[seg] is not None for seg in ("V", "D", "J"))
+        if not any_lock:
+            return list(self._steps)
+        out: List[Any] = []
+        injected = False
+        for step in self._steps:
+            if not injected and isinstance(step, _RecombineStep):
+                step = _replace(
+                    step,
+                    locks_v=self._locks["V"],
+                    locks_d=self._locks["D"],
+                    locks_j=self._locks["J"],
+                )
+                injected = True
+            out.append(step)
+        return out
 
     def __repr__(self) -> str:
         return f"<Experiment chain={self.chain_type} steps={self.step_count}>"
