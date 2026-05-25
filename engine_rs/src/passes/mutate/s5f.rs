@@ -52,12 +52,32 @@ mod sampling;
 /// - `mutate.s5f.base[i]` — destination base of the i-th mutation
 pub struct S5FMutationPass {
     kernel: S5FKernel,
-    count_dist: Box<dyn Distribution<Output = i64>>,
+    count_source: super::MutationCountSource,
 }
 
 impl S5FMutationPass {
+    /// Construct from an explicit count distribution. Sampled once
+    /// per pass execution independently of the pool length.
     pub fn new(kernel: S5FKernel, count_dist: Box<dyn Distribution<Output = i64>>) -> Self {
-        Self { kernel, count_dist }
+        Self {
+            kernel,
+            count_source: super::MutationCountSource::Distribution(count_dist),
+        }
+    }
+
+    /// Construct from a per-base mutation rate (e.g. `0.03` for 3 %
+    /// SHM). The count is drawn from `Poisson(rate * pool_len)`
+    /// per pass execution.
+    pub fn new_rate(kernel: S5FKernel, rate: f64) -> Self {
+        assert!(
+            rate.is_finite() && (0.0..=1.0).contains(&rate),
+            "S5FMutationPass: rate must be in [0.0, 1.0], got {}",
+            rate
+        );
+        Self {
+            kernel,
+            count_source: super::MutationCountSource::Rate(rate),
+        }
     }
 }
 

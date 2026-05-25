@@ -6,8 +6,10 @@
 //! - [`S5FMutationPass`] — context-dependent S5F kernel substitution
 //!   (Yaari et al. 2013).
 
+pub mod count_source;
 pub mod s5f;
 pub mod uniform;
 
+pub use count_source::MutationCountSource;
 pub use s5f::S5FMutationPass;
 pub use uniform::UniformMutationPass;

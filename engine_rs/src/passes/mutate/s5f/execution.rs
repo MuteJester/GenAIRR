@@ -15,7 +15,7 @@ impl S5FMutationPass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
-        let count_raw = self.count_dist.sample(ctx.rng);
+        let count_raw = self.count_source.sample(ctx.rng, sim.pool.len() as u32);
         if strict && count_raw < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),

@@ -312,6 +312,28 @@ impl PyPassPlan {
         Ok(())
     }
 
+    /// Append a rate-driven ``UniformMutationPass``. ``rate`` is the
+    /// per-base mutation rate (e.g. ``0.03`` for 3 % SHM); the count
+    /// per record is drawn from ``Poisson(rate × pool_len)`` so the
+    /// number of mutations scales with each record's own sequence
+    /// length. Companion to :meth:`push_mutate_uniform`.
+    ///
+    /// Errors: ``ValueError`` when ``rate`` is outside ``[0.0, 1.0]``
+    /// or non-finite.
+    fn push_mutate_uniform_rate(&mut self, rate: f64) -> PyResult<()> {
+        if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
+            return Err(PyValueError::new_err(format!(
+                "rate must be a finite value in [0.0, 1.0], got {}",
+                rate
+            )));
+        }
+        self.inner_mut()?.push(Box::new(UniformMutationPass::new_rate(
+            rate,
+            Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
     /// Append an `S5FMutationPass` with the given S5F kernel data.
     ///
     /// ``mutability`` is a flat ``Vec<f64>`` of length 1024 (one entry
@@ -353,6 +375,46 @@ impl PyPassPlan {
             kernel,
             Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
         )));
+        Ok(())
+    }
+
+    /// Append a rate-driven ``S5FMutationPass`` with the given S5F
+    /// kernel. ``rate`` is the per-base mutation rate (e.g. ``0.03``
+    /// for 3 % SHM); the count per record is drawn from
+    /// ``Poisson(rate × pool_len)`` so the number of mutations
+    /// scales with each record's own sequence length. Companion to
+    /// :meth:`push_mutate_s5f`.
+    ///
+    /// Errors: ``ValueError`` when ``rate`` is outside ``[0.0, 1.0]``
+    /// or kernel dimensions are wrong.
+    fn push_mutate_s5f_rate(
+        &mut self,
+        rate: f64,
+        mutability: Vec<f64>,
+        substitution: Vec<f64>,
+    ) -> PyResult<()> {
+        if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
+            return Err(PyValueError::new_err(format!(
+                "rate must be a finite value in [0.0, 1.0], got {}",
+                rate
+            )));
+        }
+        if mutability.len() != S5F_NUM_CONTEXTS {
+            return Err(PyValueError::new_err(format!(
+                "mutability must have length {} (got {})",
+                S5F_NUM_CONTEXTS,
+                mutability.len()
+            )));
+        }
+        if substitution.len() != S5F_SUBSTITUTION_LEN {
+            return Err(PyValueError::new_err(format!(
+                "substitution must have length {} (got {})",
+                S5F_SUBSTITUTION_LEN,
+                substitution.len()
+            )));
+        }
+        let kernel = S5FKernel::new(mutability, substitution);
+        self.inner_mut()?.push(Box::new(S5FMutationPass::new_rate(kernel, rate)));
         Ok(())
     }
 

@@ -316,13 +316,22 @@ class _MutateStep:
     ``S5FMutationPass`` with the bundled S5F kernel named in
     ``s5f_model_name``).
 
-    ``count_pairs`` is the empirical distribution over the number of
-    mutations per simulation, expressed as ``((count, weight), ...)``.
+    Exactly one of ``count_pairs`` and ``rate`` is set; the other is
+    ``None``. ``count_pairs`` is the empirical distribution over the
+    number of mutations per simulation, expressed as
+    ``((count, weight), ...)``. ``rate`` is a per-base mutation rate
+    (e.g. ``0.03`` for 3 % SHM); at execute time the engine draws
+    ``count ~ Poisson(rate × pool_len)`` against the current pool
+    length so the realized mutation count scales with each record's
+    own sequence length — matching how immunologists report SHM in
+    the literature.
     """
 
     model: str
-    count_pairs: Tuple[Tuple[int, float], ...]
     s5f_model_name: str
+    # Exactly one of the two below is non-None.
+    count_pairs: Optional[Tuple[Tuple[int, float], ...]] = None
+    rate: Optional[float] = None
 
     def apply(
         self,
@@ -330,14 +339,21 @@ class _MutateStep:
         refdata: "_engine.RefDataConfig",
     ) -> None:
         del refdata  # not needed for mutation passes
-        count_list = list(self.count_pairs)
         if self.model == "uniform":
-            plan.push_mutate_uniform(count_list)
+            if self.rate is not None:
+                plan.push_mutate_uniform_rate(self.rate)
+            else:
+                plan.push_mutate_uniform(list(self.count_pairs or ()))
         elif self.model == "s5f":
             from ._s5f_loader import load_builtin_s5f_kernel
 
             mutability, substitution = load_builtin_s5f_kernel(self.s5f_model_name)
-            plan.push_mutate_s5f(count_list, mutability, substitution)
+            if self.rate is not None:
+                plan.push_mutate_s5f_rate(self.rate, mutability, substitution)
+            else:
+                plan.push_mutate_s5f(
+                    list(self.count_pairs or ()), mutability, substitution
+                )
         else:  # pragma: no cover — guarded at builder time.
             raise ValueError(f"unsupported mutation model {self.model!r}")
 
@@ -494,13 +510,18 @@ _S5F_KERNEL_LABELS = {
 
 
 def _describe_mutate_step(step: "_MutateStep") -> str:
-    count = _describe_distribution(step.count_pairs)
+    if step.rate is not None:
+        intensity = f"{step.rate:.1%} of bases (Poisson)"
+    elif step.count_pairs is not None:
+        intensity = f"{_describe_distribution(step.count_pairs)} mutations"
+    else:
+        intensity = "<unset>"  # pragma: no cover — guarded at builder time
     if step.model == "s5f":
         kernel_label = _S5F_KERNEL_LABELS.get(step.s5f_model_name, step.s5f_model_name)
-        return f"Somatic hypermutation (S5F context model, {kernel_label}): {count} mutations/record"
+        return f"Somatic hypermutation (S5F context model, {kernel_label}): {intensity}/record"
     if step.model == "uniform":
-        return f"Somatic hypermutation (uniform, position-independent): {count} mutations/record"
-    return f"Mutation ({step.model}): {count}/record"
+        return f"Somatic hypermutation (uniform, position-independent): {intensity}/record"
+    return f"Mutation ({step.model}): {intensity}/record"
 
 
 _CORRUPT_NARRATIVE_LABELS = {
@@ -1234,7 +1255,8 @@ class Experiment:
         self,
         *,
         model: str = "s5f",
-        count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+        count: Optional[Union[int, Tuple[int, int], Iterable[Tuple[int, float]]]] = None,
+        rate: Optional[float] = None,
         s5f_model: str = "hh_s5f",
     ) -> "Experiment":
         """Append a somatic-hypermutation step.
@@ -1247,8 +1269,19 @@ class Experiment:
         - ``"uniform"`` — position-independent SHM. Each mutated
           position gets a uniformly drawn A/C/G/T replacement.
 
-        ``count`` is the per-simulation mutation count distribution.
-        Accepts:
+        **Specify intensity with exactly one of ``rate`` or ``count``.**
+
+        ``rate`` is the per-base mutation rate (e.g. ``0.03`` for 3 %
+        SHM, which is roughly memory B-cell SHM). At execute time the
+        engine draws ``count ~ Poisson(rate × pool_len)`` against each
+        record's current sequence length — so the realized count
+        scales with each record's actual length, matching how
+        immunologists report SHM in the literature. This is the
+        canonical, biology-default form.
+
+        ``count`` is the legacy explicit count distribution, useful
+        for benchmark scripts that want a deterministic count
+        independent of record length:
         - ``count=15`` — fixed: every simulation gets exactly 15
           mutations.
         - ``count=(5, 25)`` — uniform integer in ``[5, 25]`` (both
@@ -1256,8 +1289,8 @@ class Experiment:
         - ``count=[(5, 1.0), (10, 2.0), ...]`` — explicit empirical
           ``(count, weight)`` distribution.
 
-        ``count=0`` is a no-op (the pass runs but applies zero
-        mutations).
+        Passing both ``count`` and ``rate`` raises ``ValueError``.
+        Passing neither raises ``ValueError``.
 
         **TCR guard:** somatic hypermutation is a B-cell
         phenomenon — T-cells do not undergo SHM in the periphery.
@@ -1279,12 +1312,43 @@ class Experiment:
             raise ValueError(
                 f"model must be 'uniform' or 's5f' (got {model!r})"
             )
+        if count is not None and rate is not None:
+            raise ValueError(
+                "mutate(): pass exactly one of `rate` or `count`, not both. "
+                "`rate` is the canonical biology default (e.g. rate=0.03 "
+                "for 3% SHM); `count` is the explicit per-record count "
+                "for benchmark / deterministic-count workflows."
+            )
+        if count is None and rate is None:
+            raise ValueError(
+                "mutate(): pass exactly one of `rate` or `count`. "
+                "Suggested default: rate=0.03 (~3% SHM, memory B-cell range)."
+            )
+        if rate is not None:
+            if not isinstance(rate, (int, float)) or isinstance(rate, bool):
+                raise TypeError(
+                    f"rate must be a finite float in [0.0, 1.0], got "
+                    f"{type(rate).__name__}"
+                )
+            if not (0.0 <= float(rate) <= 1.0):
+                raise ValueError(
+                    f"rate must be in [0.0, 1.0] (got {rate!r}); rate is a "
+                    f"per-base mutation probability, not an absolute count."
+                )
+            self._steps.append(
+                _MutateStep(
+                    model=model_lc,
+                    s5f_model_name=s5f_model,
+                    rate=float(rate),
+                )
+            )
+            return self
         pairs = _normalize_count(count)
         self._steps.append(
             _MutateStep(
                 model=model_lc,
-                count_pairs=pairs,
                 s5f_model_name=s5f_model,
+                count_pairs=pairs,
             )
         )
         return self

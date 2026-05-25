@@ -40,17 +40,39 @@ use crate::trace::ChoiceValue;
 /// - `mutate.uniform.site[i]` — position of the i-th mutation
 /// - `mutate.uniform.base[i]` — new base at the i-th mutation
 pub struct UniformMutationPass {
-    count_dist: Box<dyn Distribution<Output = i64>>,
+    count_source: super::MutationCountSource,
     base_dist: Box<dyn Distribution<Output = u8>>,
 }
 
 impl UniformMutationPass {
+    /// Construct from an explicit count distribution (e.g. fixed `8`
+    /// or empirical). The count is sampled once per pass execution
+    /// independently of the pool length.
     pub fn new(
         count_dist: Box<dyn Distribution<Output = i64>>,
         base_dist: Box<dyn Distribution<Output = u8>>,
     ) -> Self {
         Self {
-            count_dist,
+            count_source: super::MutationCountSource::Distribution(count_dist),
+            base_dist,
+        }
+    }
+
+    /// Construct from a per-base mutation rate (e.g. `0.03` for 3 %
+    /// SHM). The count is drawn from `Poisson(rate * pool_len)` per
+    /// pass execution — matching how immunologists report SHM in
+    /// the literature. See [`super::MutationCountSource`].
+    pub fn new_rate(
+        rate: f64,
+        base_dist: Box<dyn Distribution<Output = u8>>,
+    ) -> Self {
+        assert!(
+            rate.is_finite() && (0.0..=1.0).contains(&rate),
+            "UniformMutationPass: rate must be in [0.0, 1.0], got {}",
+            rate
+        );
+        Self {
+            count_source: super::MutationCountSource::Rate(rate),
             base_dist,
         }
     }
@@ -61,8 +83,10 @@ impl UniformMutationPass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
-        // 1. Sample the number of mutations to apply.
-        let count_raw = self.count_dist.sample(ctx.rng);
+        // 1. Sample the number of mutations to apply. Rate-mode
+        //    consults the current pool length; distribution-mode
+        //    ignores it.
+        let count_raw = self.count_source.sample(ctx.rng, sim.pool.len() as u32);
         if strict && count_raw < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
