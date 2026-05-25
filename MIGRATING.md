@@ -23,12 +23,12 @@ objects you may have constructed manually still work the same way.
 | `corrupt_pcr(count=...)` | `pcr_amplify(count=...)` |
 | `corrupt_quality(count=...)` | `sequencing_errors(count=...)` |
 | `corrupt_contaminants(prob=...)` | `contaminate(prob=...)` |
-| `corrupt_indels(count=..., insertion_prob=...)` | `library_indels(count=..., insertion_prob=...)` |
-| `corrupt_ns(count=...)` | `mask_low_quality(count=...)` |
+| `corrupt_indels(count=..., insertion_prob=...)` | `polymerase_indels(count=..., insertion_prob=...)` |
+| `corrupt_ns(count=...)` | `ambiguous_base_calls(count=...)` |
 | `corrupt_reverse_complement(prob=...)` | `random_strand_orientation(prob=...)` |
 | `corrupt_5prime_loss(length=...)` | `primer_trim_5prime(length=...)` |
 | `corrupt_3prime_loss(length=...)` | `primer_trim_3prime(length=...)` |
-| `with_clonal_structure(n_clones=N, size=K)` | `expand_clones(n=N, per_clone=K)` |
+| `with_clonal_structure(n_clones=N, size=K)` | `expand_clones(n_clones=N, per_clone=K)` |
 
 Parameter renames are inside `expand_clones`: `n_clones` → `n`, `size` → `per_clone`.
 
@@ -42,7 +42,7 @@ A realistic memory-B-cell chain in **v1.x**:
 result = (
     ga.Experiment.on("human_igh")
       .recombine(trim=True)
-      .with_clonal_structure(n_clones=50, size=20)
+      .expand_clones(n_clones=50, per_clone=20)
       .mutate(model="s5f", count=(5, 15))
       .corrupt_5prime_loss(length=(0, 8))
       .corrupt_indels(count=(0, 2), insertion_prob=0.5)
@@ -62,9 +62,9 @@ result = (
       .expand_clones(n=50, per_clone=20)
       .mutate(rate=0.05)
       .primer_trim_5prime(length=(0, 8))
-      .library_indels(count=(0, 2), insertion_prob=0.5)
+      .polymerase_indels(count=(0, 2), insertion_prob=0.5)
       .pcr_amplify(count=(0, 3))
-      .mask_low_quality(count=(0, 2))
+      .ambiguous_base_calls(count=(0, 2))
       .with_metadata(donor="P1", tissue="peripheral_blood")
       .productive_only()
       .run_records(seed=42)
@@ -166,9 +166,9 @@ A note on `primer_trim_5prime` / `primer_trim_3prime` vs `.trim()`:
 ### `with_clonal_structure` → `expand_clones`
 
 The new name is the verb of the biological process (B-cell clonal
-expansion). Parameter renames inside: `n_clones=10, size=20` becomes
-`n=10, per_clone=20`. Both must be positive ints; calling
-`expand_clones()` twice still raises.
+expansion). Parameter rename inside: `size=20` becomes
+`per_clone=20`. (`n_clones` stays as-is.) Both must be positive
+ints; calling `expand_clones()` twice still raises.
 
 ---
 

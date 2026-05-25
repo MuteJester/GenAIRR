@@ -45,12 +45,17 @@ ends. **Old scripts will not run unmodified** — see
 | `corrupt_pcr` | `pcr_amplify` |
 | `corrupt_quality` | `sequencing_errors` |
 | `corrupt_contaminants` | `contaminate` |
-| `corrupt_indels` | `library_indels` |
-| `corrupt_ns` | `mask_low_quality` |
+| `corrupt_indels` | `polymerase_indels` |
+| `corrupt_ns` | `ambiguous_base_calls` |
 | `corrupt_reverse_complement` | `random_strand_orientation` |
 | `corrupt_5prime_loss` | `primer_trim_5prime` |
 | `corrupt_3prime_loss` | `primer_trim_3prime` |
-| `with_clonal_structure(n_clones=N, size=K)` | `expand_clones(n=N, per_clone=K)` |
+| `with_clonal_structure(n_clones=N, size=K)` | `expand_clones(n_clones=N, per_clone=K)` |
+
+Both `pcr_amplify` and `sequencing_errors` accept `rate=` (per-base
+error probability, runtime Poisson) in addition to the legacy
+`count=`. Exactly one must be provided. `mutate(rate=...)` shares
+the same shape.
 
 #### Stricter validation
 

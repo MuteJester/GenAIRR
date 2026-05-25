@@ -389,22 +389,24 @@ _CORRUPT_KIND_NS = "ns"
 
 @dataclass(frozen=True)
 class _CorruptStep:
-    """One ``corrupt_*()`` invocation, captured for later compilation.
+    """One library-prep / sequencing-stage step, captured for later compilation.
 
     ``kind`` selects which Rust corruption pass to construct:
     ``"pcr"``, ``"quality"``, ``"indel"``, or ``"contaminant"``.
     Other fields are pass-specific:
 
-    - PCR / quality / indel use ``count_pairs``.
-    - Indel additionally uses ``insertion_prob``.
-    - Contaminant uses ``apply_prob`` only (its model is
-      probability-driven at the read level, not count-driven).
+    - PCR / quality each use exactly one of ``count_pairs`` *or*
+      ``rate``; when ``rate`` is set the engine draws
+      ``count ~ Poisson(rate × pool_len)`` per record.
+    - Indel uses ``count_pairs`` + ``insertion_prob``.
+    - Contaminant / reverse-complement use ``apply_prob``.
     """
 
     kind: str
-    count_pairs: Tuple[Tuple[int, float], ...]
-    insertion_prob: float
-    apply_prob: float
+    count_pairs: Optional[Tuple[Tuple[int, float], ...]] = None
+    insertion_prob: float = 0.0
+    apply_prob: float = 0.0
+    rate: Optional[float] = None
 
     def apply(
         self,
@@ -412,23 +414,30 @@ class _CorruptStep:
         refdata: "_engine.RefDataConfig",
     ) -> None:
         del refdata  # not used by corruption passes
-        count_list = list(self.count_pairs)
         if self.kind == _CORRUPT_KIND_PCR:
-            plan.push_corrupt_pcr(count_list)
+            if self.rate is not None:
+                plan.push_corrupt_pcr_rate(self.rate)
+            else:
+                plan.push_corrupt_pcr(list(self.count_pairs or ()))
         elif self.kind == _CORRUPT_KIND_QUALITY:
-            plan.push_corrupt_quality(count_list)
+            if self.rate is not None:
+                plan.push_corrupt_quality_rate(self.rate)
+            else:
+                plan.push_corrupt_quality(list(self.count_pairs or ()))
         elif self.kind == _CORRUPT_KIND_INDEL:
-            plan.push_corrupt_indel(count_list, insertion_prob=self.insertion_prob)
+            plan.push_corrupt_indel(
+                list(self.count_pairs or ()), insertion_prob=self.insertion_prob
+            )
         elif self.kind == _CORRUPT_KIND_CONTAMINANT:
             plan.push_corrupt_contaminant(self.apply_prob)
         elif self.kind == _CORRUPT_KIND_REV_COMP:
             plan.push_corrupt_rev_comp(self.apply_prob)
         elif self.kind == _CORRUPT_KIND_5PRIME_LOSS:
-            plan.push_corrupt_5prime_loss(count_list)
+            plan.push_corrupt_5prime_loss(list(self.count_pairs or ()))
         elif self.kind == _CORRUPT_KIND_3PRIME_LOSS:
-            plan.push_corrupt_3prime_loss(count_list)
+            plan.push_corrupt_3prime_loss(list(self.count_pairs or ()))
         elif self.kind == _CORRUPT_KIND_NS:
-            plan.push_corrupt_ns(count_list)
+            plan.push_corrupt_ns(list(self.count_pairs or ()))
         else:  # pragma: no cover — guarded at builder time.
             raise ValueError(f"unsupported corruption kind {self.kind!r}")
 
@@ -493,13 +502,33 @@ def _describe_recombine_step(step: "_RecombineStep", chain_type: str) -> str:
         parts.append(f"empirical exonuclease trim ({', '.join(trim_bits)})")
 
     np1_desc = _describe_distribution(step.np1_lengths)
+    np1_source = _np_source_tag(step.np1_lengths)
     if chain_type == "vdj":
         np2_desc = _describe_distribution(step.np2_lengths)
-        parts.append(f"insert NP1 ({np1_desc} bases) and NP2 ({np2_desc} bases)")
+        np2_source = _np_source_tag(step.np2_lengths)
+        parts.append(
+            f"insert NP1 ({np1_desc} bases{np1_source}) and "
+            f"NP2 ({np2_desc} bases{np2_source})"
+        )
     else:
-        parts.append(f"insert NP1 ({np1_desc} bases)")
+        parts.append(f"insert NP1 ({np1_desc} bases{np1_source})")
 
     return "V(D)J recombination: " + "; ".join(parts)
+
+
+def _np_source_tag(np_lengths: Tuple[Tuple[int, float], ...]) -> str:
+    """Return ``", empirical"`` or ``", uniform fallback"`` to clarify
+    whether the NP-length distribution came from the bound DataConfig
+    (empirical) or the synthetic [(0,1.0)..(6,1.0)] fallback used on
+    raw RefDataConfig with no empirical data. Empty string when the
+    user supplied an explicit distribution we can't classify."""
+    if tuple(np_lengths) == tuple(_DEFAULT_NP_LENGTHS):
+        return ", uniform fallback"
+    # User-supplied or empirical; we can't distinguish them at this
+    # point without threading more state, but the "weighted" suffix
+    # in the distribution describer already tells the reader it's a
+    # non-uniform empirical distribution when the weights aren't equal.
+    return ", empirical"
 
 
 _S5F_KERNEL_LABELS = {
@@ -529,19 +558,19 @@ _CORRUPT_NARRATIVE_LABELS = {
     _CORRUPT_KIND_QUALITY: ("Sequencing quality errors", "errors/record"),
     _CORRUPT_KIND_5PRIME_LOSS: ("5'-end loss (primer/adapter trim)", "bases trimmed"),
     _CORRUPT_KIND_3PRIME_LOSS: ("3'-end loss", "bases trimmed"),
-    _CORRUPT_KIND_NS: ("Low-quality N-base injection", "bases replaced with N"),
+    _CORRUPT_KIND_NS: ("Ambiguous base calls (low-Q positions)", "positions/record"),
 }
 
 
 def _describe_corrupt_step(step: "_CorruptStep") -> str:
     if step.kind in _CORRUPT_NARRATIVE_LABELS:
         label, unit = _CORRUPT_NARRATIVE_LABELS[step.kind]
-        count = _describe_distribution(step.count_pairs)
-        return f"{label}: {count} {unit}"
+        intensity = _describe_count_or_rate(step, default_unit=unit)
+        return f"{label}: {intensity}"
     if step.kind == _CORRUPT_KIND_INDEL:
-        count = _describe_distribution(step.count_pairs)
+        count = _describe_distribution(step.count_pairs or ())
         return (
-            f"Structural indels (library prep): {count} events/record, "
+            f"Polymerase indels (PCR slippage): {count} events/record, "
             f"insertion fraction {step.insertion_prob:.2f}"
         )
     if step.kind == _CORRUPT_KIND_CONTAMINANT:
@@ -552,6 +581,14 @@ def _describe_corrupt_step(step: "_CorruptStep") -> str:
     if step.kind == _CORRUPT_KIND_REV_COMP:
         return f"Random strand orientation: {step.apply_prob:.0%} of records reverse-complemented"
     return f"Corruption ({step.kind})"  # pragma: no cover — guarded at builder time
+
+
+def _describe_count_or_rate(step: "_CorruptStep", *, default_unit: str) -> str:
+    """Render the count / rate / events portion of a corruption step
+    line, depending on which mode was selected at builder time."""
+    if step.rate is not None:
+        return f"{step.rate:.2%} of bases (Poisson)/record"
+    return f"{_describe_distribution(step.count_pairs or ())} {default_unit}"
 
 
 def _describe_clonal_fork_step(step: "_ClonalForkStep") -> str:
@@ -897,60 +934,132 @@ class Experiment:
     def pcr_amplify(
         self,
         *,
-        count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+        count: Optional[Union[int, Tuple[int, int], Iterable[Tuple[int, float]]]] = None,
+        rate: Optional[float] = None,
     ) -> "Experiment":
-        """Append a PCR-error corruption step.
+        """Append a PCR-error step modelling substitution errors
+        introduced during PCR amplification.
 
-        ``count`` is the per-simulation distribution over the number
-        of PCR-induced base substitutions. Same input forms as
-        :meth:`mutate`'s ``count`` (fixed int, ``(low, high)`` range,
-        or empirical ``(count, weight)`` list).
+        **Specify intensity with exactly one of ``rate`` or ``count``.**
+
+        ``rate`` is the per-base PCR error probability (e.g.
+        ``1e-4`` per base per cycle, depending on polymerase
+        fidelity). At execute time the engine draws
+        ``count ~ Poisson(rate × pool_len)`` against each record's
+        current sequence length — matching how PCR error is
+        universally reported in the literature. This is the
+        canonical biology-default form.
+
+        ``count`` is the legacy explicit count distribution
+        (fixed int, ``(low, high)`` range, or empirical
+        ``(count, weight)`` list). Useful for benchmark scripts.
 
         Each error samples a uniform position in the assembled pool
-        and replaces the base with a uniform A/C/G/T draw. The trace
-        records the events at ``corrupt.pcr.{count, error_site[i],
-        error_base[i]}``.
+        and replaces the base with a uniform A/C/G/T draw. Trace
+        addresses: ``corrupt.pcr.{count, error_site[i], error_base[i]}``.
+
+        Passing both ``count`` and ``rate`` raises ``ValueError``.
+        Passing neither raises ``ValueError``.
         """
-        pairs = _normalize_count(count)
-        self._steps.append(
-            _CorruptStep(
-                kind=_CORRUPT_KIND_PCR,
-                count_pairs=pairs,
-                insertion_prob=0.0,
-                apply_prob=0.0,
-            )
+        return self._append_count_or_rate_step(
+            kind=_CORRUPT_KIND_PCR,
+            label="pcr_amplify",
+            count=count,
+            rate=rate,
         )
-        return self
 
     def sequencing_errors(
         self,
         *,
-        count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+        count: Optional[Union[int, Tuple[int, int], Iterable[Tuple[int, float]]]] = None,
+        rate: Optional[float] = None,
     ) -> "Experiment":
-        """Append a sequencing-quality-error corruption step.
+        """Append a sequencing-quality-error step modelling base-call
+        errors during sequencing readout.
+
+        **Specify intensity with exactly one of ``rate`` or ``count``.**
+
+        ``rate`` is the per-base sequencing error probability (e.g.
+        ``1e-3`` for a Q30 base, ``1e-2`` for Q20). Drawn as
+        ``count ~ Poisson(rate × pool_len)`` per record — the
+        canonical Phred-quality framing in immunoseq.
+
+        ``count`` is the legacy explicit count distribution.
 
         Same shape as :meth:`pcr_amplify` but each substitution
         writes the destination base in **lowercase** to mark the
         position as corrupted (the sequencing-error convention).
         """
+        return self._append_count_or_rate_step(
+            kind=_CORRUPT_KIND_QUALITY,
+            label="sequencing_errors",
+            count=count,
+            rate=rate,
+        )
+
+    def _append_count_or_rate_step(
+        self,
+        *,
+        kind: str,
+        label: str,
+        count: Optional[Union[int, Tuple[int, int], Iterable[Tuple[int, float]]]],
+        rate: Optional[float],
+    ) -> "Experiment":
+        """Shared validator + step appender for the corruption methods
+        that accept both ``count`` and ``rate`` (PCR errors, sequencing
+        errors). See :meth:`mutate` for the same shape on the
+        mutation side."""
+        if count is not None and rate is not None:
+            raise ValueError(
+                f"{label}(): pass exactly one of `rate` or `count`, not both. "
+                f"`rate` is the canonical biology default (e.g. rate=1e-4 "
+                f"for per-base PCR error); `count` is the explicit per-record "
+                f"count for benchmark / deterministic-count workflows."
+            )
+        if count is None and rate is None:
+            raise ValueError(
+                f"{label}(): pass exactly one of `rate` or `count`."
+            )
+        if rate is not None:
+            if not isinstance(rate, (int, float)) or isinstance(rate, bool):
+                raise TypeError(
+                    f"rate must be a finite float in [0.0, 1.0], got "
+                    f"{type(rate).__name__}"
+                )
+            if not (0.0 <= float(rate) <= 1.0):
+                raise ValueError(
+                    f"rate must be in [0.0, 1.0] (got {rate!r}); rate is a "
+                    f"per-base error probability, not an absolute count."
+                )
+            self._steps.append(
+                _CorruptStep(
+                    kind=kind,
+                    rate=float(rate),
+                )
+            )
+            return self
         pairs = _normalize_count(count)
         self._steps.append(
             _CorruptStep(
-                kind=_CORRUPT_KIND_QUALITY,
+                kind=kind,
                 count_pairs=pairs,
-                insertion_prob=0.0,
-                apply_prob=0.0,
             )
         )
         return self
 
-    def library_indels(
+    def polymerase_indels(
         self,
         *,
         count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
         insertion_prob: float = 0.5,
     ) -> "Experiment":
-        """Append an indel corruption step.
+        """Append a polymerase-slippage indel step (PCR-stage artifact).
+
+        Models the small insertions / deletions that arise from
+        polymerase slippage during PCR amplification — single-base
+        indels at low rate, typically <1 % per read at standard
+        polymerase fidelity. Larger structural indels are rare and
+        not modelled here.
 
         ``count`` is the per-simulation distribution over the total
         number of indel events. Each event independently chooses
@@ -1034,7 +1143,7 @@ class Experiment:
         )
         return self
 
-    def mask_low_quality(
+    def ambiguous_base_calls(
         self,
         *,
         count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
@@ -1196,7 +1305,7 @@ class Experiment:
     def expand_clones(
         self,
         *,
-        n: int,
+        n_clones: int,
         per_clone: int,
     ) -> "Experiment":
         """Expand the pipeline into clonal lineages.
@@ -1214,20 +1323,20 @@ class Experiment:
 
             exp = (Experiment.on("human_igh")
                    .recombine()
-                   .expand_clones(n=10, per_clone=20)
+                   .expand_clones(n_clones=10, per_clone=20)
                    .mutate(rate=0.05)
                    .pcr_amplify(count=2))
             result = exp.run_records(seed=0)
             # 10 clones × 20 descendants = 200 records.
             # Each record carries a ``clone_id`` integer in [0, 10).
 
-        ``n_records`` can be omitted from :meth:`run_records` for a
-        clonal experiment — the runtime expands ``n * per_clone``
-        records automatically. Passing ``n_records`` is allowed only
-        when ``n_records == n * per_clone``.
+        ``n`` can be omitted from :meth:`run_records` for a clonal
+        experiment — the runtime expands ``n_clones * per_clone``
+        records automatically. Passing ``n`` is allowed only when
+        ``n == n_clones * per_clone``.
 
         Constraints:
-        - Both ``n`` and ``per_clone`` must be positive ints.
+        - Both ``n_clones`` and ``per_clone`` must be positive ints.
         - At most one expansion per pipeline; calling this method
           twice raises ``ValueError``.
 
@@ -1238,9 +1347,9 @@ class Experiment:
         shares the same recombination provenance (V allele, trim,
         NP bases) and only diverges through the post-fork passes.
         """
-        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        if not isinstance(n_clones, int) or isinstance(n_clones, bool) or n_clones < 1:
             raise ValueError(
-                f"n must be a positive int, got {n!r}"
+                f"n_clones must be a positive int, got {n_clones!r}"
             )
         if not isinstance(per_clone, int) or isinstance(per_clone, bool) or per_clone < 1:
             raise ValueError(f"per_clone must be a positive int, got {per_clone!r}")
@@ -1248,7 +1357,7 @@ class Experiment:
             raise ValueError(
                 "expand_clones() can only be called once per pipeline"
             )
-        self._steps.append(_ClonalForkStep(n_clones=n, size=per_clone))
+        self._steps.append(_ClonalForkStep(n_clones=n_clones, size=per_clone))
         return self
 
     def mutate(
@@ -1305,7 +1414,7 @@ class Experiment:
                 "sequences (T-cells lack AID and the SHM machinery). The "
                 "configured refdata is a TCR locus. For sequencing-error "
                 "realism on TCR data, use pcr_amplify / sequencing_errors "
-                "/ library_indels instead."
+                "/ polymerase_indels instead."
             )
         model_lc = model.lower()
         if model_lc not in ("uniform", "s5f"):

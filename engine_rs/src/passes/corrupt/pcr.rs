@@ -33,17 +33,36 @@ use crate::trace::ChoiceValue;
 /// - `corrupt.pcr.error_site[i]` — pool position of the i-th error
 /// - `corrupt.pcr.error_base[i]` — replacement base at the i-th error
 pub struct PCRErrorPass {
-    count_dist: Box<dyn Distribution<Output = i64>>,
+    count_source: crate::passes::count_source::CountSource,
     base_dist: Box<dyn Distribution<Output = u8>>,
 }
 
 impl PCRErrorPass {
+    /// Construct from an explicit count distribution. Per pass
+    /// execution, the count is sampled once independently of pool
+    /// length — matching v1 semantics.
     pub fn new(
         count_dist: Box<dyn Distribution<Output = i64>>,
         base_dist: Box<dyn Distribution<Output = u8>>,
     ) -> Self {
         Self {
-            count_dist,
+            count_source: crate::passes::count_source::CountSource::Distribution(count_dist),
+            base_dist,
+        }
+    }
+
+    /// Construct from a per-base error rate. Per pass execution, the
+    /// count is drawn from `Poisson(rate * pool_len)` against the
+    /// current pool length — matching how PCR error is universally
+    /// reported in the literature (per-cycle, per-base rate).
+    pub fn new_rate(rate: f64, base_dist: Box<dyn Distribution<Output = u8>>) -> Self {
+        assert!(
+            rate.is_finite() && (0.0..=1.0).contains(&rate),
+            "PCRErrorPass: rate must be in [0.0, 1.0], got {}",
+            rate
+        );
+        Self {
+            count_source: crate::passes::count_source::CountSource::Rate(rate),
             base_dist,
         }
     }
@@ -54,7 +73,7 @@ impl PCRErrorPass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
-        let count_raw = self.count_dist.sample(ctx.rng);
+        let count_raw = self.count_source.sample(ctx.rng, sim.pool.len() as u32);
         if strict && count_raw < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),

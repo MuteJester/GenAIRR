@@ -19,6 +19,7 @@
 
 pub mod assemble_segment;
 pub(crate) mod constrained;
+pub(crate) mod count_source;
 pub(crate) mod mutation_transaction;
 pub mod corrupt;
 pub mod echo;

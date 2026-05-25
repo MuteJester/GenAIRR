@@ -1,4 +1,4 @@
-//! `MutationCountSource` — the count abstraction used by
+//! `CountSource` — the count abstraction used by
 //! [`super::UniformMutationPass`] and [`super::S5FMutationPass`].
 //!
 //! Two variants:
@@ -25,7 +25,7 @@
 use crate::dist::Distribution;
 use crate::rng::Rng;
 
-pub enum MutationCountSource {
+pub enum CountSource {
     /// Empirical / explicit count distribution. Sampled once per
     /// pass execution; the result is the literal mutation count.
     Distribution(Box<dyn Distribution<Output = i64>>),
@@ -35,7 +35,7 @@ pub enum MutationCountSource {
     Rate(f64),
 }
 
-impl MutationCountSource {
+impl CountSource {
     /// Sample the mutation count for one execution of the pass.
     ///
     /// `pool_len` is consulted only in the `Rate` variant. Returns
@@ -98,8 +98,8 @@ mod tests {
     use super::*;
     use crate::dist::EmpiricalLengthDist;
 
-    fn fixed(n: i64) -> MutationCountSource {
-        MutationCountSource::Distribution(Box::new(EmpiricalLengthDist::from_pairs(vec![
+    fn fixed(n: i64) -> CountSource {
+        CountSource::Distribution(Box::new(EmpiricalLengthDist::from_pairs(vec![
             (n, 1.0),
         ])))
     }
@@ -115,14 +115,14 @@ mod tests {
     #[test]
     fn rate_variant_returns_zero_on_zero_length() {
         let mut rng = Rng::new(42);
-        let src = MutationCountSource::Rate(0.05);
+        let src = CountSource::Rate(0.05);
         assert_eq!(src.sample(&mut rng, 0), 0);
     }
 
     #[test]
     fn rate_variant_returns_zero_for_zero_rate() {
         let mut rng = Rng::new(42);
-        let src = MutationCountSource::Rate(0.0);
+        let src = CountSource::Rate(0.0);
         assert_eq!(src.sample(&mut rng, 300), 0);
     }
 
@@ -132,7 +132,7 @@ mod tests {
         // to lambda. lambda = 0.03 * 300 = 9 → expect 1000-sample
         // mean within ~10 % of 9.
         let mut rng = Rng::new(42);
-        let src = MutationCountSource::Rate(0.03);
+        let src = CountSource::Rate(0.03);
         let pool_len: u32 = 300;
         let n = 1000usize;
         let total: i64 = (0..n).map(|_| src.sample(&mut rng, pool_len)).sum();
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn rate_variant_is_deterministic_under_same_seed() {
-        let src = MutationCountSource::Rate(0.05);
+        let src = CountSource::Rate(0.05);
         let mut a = Rng::new(123);
         let mut b = Rng::new(123);
         for _ in 0..50 {
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn is_rate_discriminates_variants() {
-        assert!(MutationCountSource::Rate(0.05).is_rate());
+        assert!(CountSource::Rate(0.05).is_rate());
         assert!(!fixed(8).is_rate());
     }
 }

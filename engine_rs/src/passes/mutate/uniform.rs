@@ -40,7 +40,7 @@ use crate::trace::ChoiceValue;
 /// - `mutate.uniform.site[i]` — position of the i-th mutation
 /// - `mutate.uniform.base[i]` — new base at the i-th mutation
 pub struct UniformMutationPass {
-    count_source: super::MutationCountSource,
+    count_source: super::CountSource,
     base_dist: Box<dyn Distribution<Output = u8>>,
 }
 
@@ -53,7 +53,7 @@ impl UniformMutationPass {
         base_dist: Box<dyn Distribution<Output = u8>>,
     ) -> Self {
         Self {
-            count_source: super::MutationCountSource::Distribution(count_dist),
+            count_source: super::CountSource::Distribution(count_dist),
             base_dist,
         }
     }
@@ -61,7 +61,7 @@ impl UniformMutationPass {
     /// Construct from a per-base mutation rate (e.g. `0.03` for 3 %
     /// SHM). The count is drawn from `Poisson(rate * pool_len)` per
     /// pass execution — matching how immunologists report SHM in
-    /// the literature. See [`super::MutationCountSource`].
+    /// the literature. See [`super::CountSource`].
     pub fn new_rate(
         rate: f64,
         base_dist: Box<dyn Distribution<Output = u8>>,
@@ -72,7 +72,7 @@ impl UniformMutationPass {
             rate
         );
         Self {
-            count_source: super::MutationCountSource::Rate(rate),
+            count_source: super::CountSource::Rate(rate),
             base_dist,
         }
     }

@@ -329,7 +329,7 @@ def _build_experiment_from_params(
         # ensures both are set together. The assert pins the invariant
         # for the type checker.
         assert clone_size is not None
-        exp = exp.expand_clones(n=int(n_clones), per_clone=int(clone_size))
+        exp = exp.expand_clones(n_clones=int(n_clones), per_clone=int(clone_size))
 
     # -- Per-descendant SHM -------------------------------------------
     if (
@@ -358,14 +358,14 @@ def _build_experiment_from_params(
     if three_prime_loss_max is not None:
         exp = exp.primer_trim_3prime(length=(0, int(three_prime_loss_max)))
     if indel_count_max is not None:
-        exp = exp.library_indels(
+        exp = exp.polymerase_indels(
             count=(0, int(indel_count_max)),
             insertion_prob=0.5,
         )
     if pcr_error_count_max is not None:
         exp = exp.pcr_amplify(count=(0, int(pcr_error_count_max)))
     if n_injection_count_max is not None:
-        exp = exp.mask_low_quality(count=(0, int(n_injection_count_max)))
+        exp = exp.ambiguous_base_calls(count=(0, int(n_injection_count_max)))
     if quality_count_max is not None:
         exp = exp.sequencing_errors(count=(0, int(quality_count_max)))
     if contaminant_prob is not None:

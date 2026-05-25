@@ -52,7 +52,7 @@ mod sampling;
 /// - `mutate.s5f.base[i]` — destination base of the i-th mutation
 pub struct S5FMutationPass {
     kernel: S5FKernel,
-    count_source: super::MutationCountSource,
+    count_source: super::CountSource,
 }
 
 impl S5FMutationPass {
@@ -61,7 +61,7 @@ impl S5FMutationPass {
     pub fn new(kernel: S5FKernel, count_dist: Box<dyn Distribution<Output = i64>>) -> Self {
         Self {
             kernel,
-            count_source: super::MutationCountSource::Distribution(count_dist),
+            count_source: super::CountSource::Distribution(count_dist),
         }
     }
 
@@ -76,7 +76,7 @@ impl S5FMutationPass {
         );
         Self {
             kernel,
-            count_source: super::MutationCountSource::Rate(rate),
+            count_source: super::CountSource::Rate(rate),
         }
     }
 }

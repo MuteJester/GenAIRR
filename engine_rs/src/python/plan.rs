@@ -435,6 +435,28 @@ impl PyPassPlan {
         Ok(())
     }
 
+    /// Append a rate-driven ``PCRErrorPass``. ``rate`` is the per-base
+    /// PCR substitution error probability (e.g. ``1e-4``); the count
+    /// per record is drawn from ``Poisson(rate × pool_len)`` so the
+    /// number of errors scales with each record's own sequence
+    /// length. Companion to :meth:`push_corrupt_pcr`.
+    ///
+    /// Errors: ``ValueError`` when ``rate`` is outside ``[0.0, 1.0]``
+    /// or non-finite.
+    fn push_corrupt_pcr_rate(&mut self, rate: f64) -> PyResult<()> {
+        if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
+            return Err(PyValueError::new_err(format!(
+                "rate must be a finite value in [0.0, 1.0], got {}",
+                rate
+            )));
+        }
+        self.inner_mut()?.push(Box::new(PCRErrorPass::new_rate(
+            rate,
+            Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
     /// Append a `QualityErrorPass`. Same shape as PCR but each
     /// substitution writes the destination base as **lowercase** to
     /// preserve the sequencing-error convention (uppercase =
@@ -447,6 +469,29 @@ impl PyPassPlan {
         }
         self.inner_mut()?.push(Box::new(QualityErrorPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
+            Box::new(UniformBase),
+        )));
+        Ok(())
+    }
+
+    /// Append a rate-driven ``QualityErrorPass``. ``rate`` is the
+    /// per-base sequencing error probability (e.g. ``0.001`` for
+    /// Q30); the count per record is drawn from
+    /// ``Poisson(rate × pool_len)`` so the number of errors scales
+    /// with each record's own sequence length. Companion to
+    /// :meth:`push_corrupt_quality`.
+    ///
+    /// Errors: ``ValueError`` when ``rate`` is outside ``[0.0, 1.0]``
+    /// or non-finite.
+    fn push_corrupt_quality_rate(&mut self, rate: f64) -> PyResult<()> {
+        if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
+            return Err(PyValueError::new_err(format!(
+                "rate must be a finite value in [0.0, 1.0], got {}",
+                rate
+            )));
+        }
+        self.inner_mut()?.push(Box::new(QualityErrorPass::new_rate(
+            rate,
             Box::new(UniformBase),
         )));
         Ok(())

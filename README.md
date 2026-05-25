@@ -45,7 +45,7 @@ import GenAIRR as ga
 result = (
     ga.Experiment.on("human_igh")
       .recombine()
-      .run_records(n=1000, seed=42, respect=ga.productive())
+      .productive_only().run_records(n=1000, seed=42)
 )
 
 # `result` is a SimulationResult — list-like over AIRR record dicts.
@@ -72,7 +72,7 @@ result.to_fastq("sequences.fastq")     # FASTQ with illumina-shaped quality scor
 df = result.to_dataframe()             # one row per record, AIRR columns
 ```
 
-`Experiment.on(...)` accepts **a config-name string** (e.g. `"human_igh"`, `"mouse_tcrb"`), **a `DataConfig`** loaded from the bundled species pickles, or **a `RefDataConfig`** for [custom reference data](#custom-reference-data). `respect=ga.productive()` is the constraint-aware bundle — covered in the next section. Drop it to allow non-productive sequences (~30% of records will then have stop codons in the junction).
+`Experiment.on(...)` accepts **a config-name string** (e.g. `"human_igh"`, `"mouse_tcrb"`), **a `DataConfig`** loaded from the bundled species pickles, or **a `RefDataConfig`** for [custom reference data](#custom-reference-data). `.productive_only()` is the constraint-aware bundle — covered in the next section. Drop it to allow non-productive sequences (~30% of records will then have stop codons in the junction).
 
 > See the full walkthrough in the docs: [Quick Start](https://mutejester.github.io/GenAIRR/docs/getting-started/quick-start) · [Interpreting Results](https://mutejester.github.io/GenAIRR/docs/getting-started/interpreting-results)
 
@@ -93,17 +93,17 @@ result = (
       #    Passes BEFORE this point apply to the parent rearrangement;
       #    passes AFTER apply per-descendant. So each clone shares the
       #    same V(D)J recombination but accumulates its own SHM + errors.
-      .expand_clones(n=50, per_clone=20)
+      .expand_clones(n_clones=50, per_clone=20)
       # 3. Somatic hypermutation per descendant — S5F context-dependent
-      #    model, 5–15 mutations per sequence sampled uniformly.
-      .mutate(model="s5f", count=(5, 15))
+      #    model at 5% per-base rate (matches memory-B-cell SHM).
+      .mutate(rate=0.05)
       # 4. Sequencing artefacts per descendant: primer trimming, structural
       #    indels, PCR substitution errors, quality-driven N injection.
       .primer_trim_5prime(length=(0, 8))
       .primer_trim_3prime(length=(0, 4))
-      .library_indels(count=(0, 2), insertion_prob=0.5)
+      .polymerase_indels(count=(0, 2), insertion_prob=0.5)
       .pcr_amplify(count=(0, 3))
-      .mask_low_quality(count=(0, 2))
+      .ambiguous_base_calls(count=(0, 2))
       # 5. Stamp arbitrary metadata onto every record.
       .with_metadata(experiment_id="exp001", tissue="peripheral_blood")
       # Constraint-aware sampling: the productive() bundle is enforced at
@@ -112,7 +112,7 @@ result = (
       # when aggressive corruption is in the chain — that mirrors real
       # wet-lab data, where a productive B-cell can sequence as a
       # non-productive read because of an indel during library prep.
-      .run_records(seed=42, respect=ga.productive())
+      .productive_only().run_records(seed=42)
 )
 
 len(result)                                  # 1000  (= n_clones × size)
@@ -157,7 +157,7 @@ import GenAIRR as ga
 result = (
     ga.Experiment.on("human_igh")
       .recombine()
-      .run_records(n=1000, seed=42, respect=ga.productive())
+      .productive_only().run_records(n=1000, seed=42)
 )
 assert all(rec["productive"] for rec in result)
 ```
@@ -172,9 +172,7 @@ By default, if a contract can't admit any candidate at a sampling step the runti
 import GenAIRR as ga
 
 try:
-    ga.Experiment.on("human_igh").recombine().run_records(
-        n=10, seed=42, respect=ga.productive(), strict=True
-    )
+    ga.Experiment.on("human_igh").recombine().productive_only().run_records(n=10, seed=42, strict=True)
 except ga.StrictSamplingError as e:
     pass_name, address, reason = e.args
     # pass_name e.g. "generate_np.np1", address e.g. "np.np1.length",
@@ -215,7 +213,7 @@ import GenAIRR as ga
 compiled = (
     ga.Experiment.on("human_igk")
       .recombine()
-      .compile(respect=ga.productive())
+      .productive_only().compile()
 )
 
 # Run 10 batches of 100, seeded so they don't overlap.
