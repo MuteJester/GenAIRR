@@ -365,8 +365,8 @@ class _MutateStep:
 class _ClonalForkStep:
     """Marks the boundary between "per-clone" passes (run once per
     clonal family — typically `recombine`) and "per-descendant" passes
-    (run once per read inside the family — typically `mutate`,
-    `corrupt_*`).
+    (run once per read inside the family — typically `mutate` and the
+    library-prep / sequencing-stage steps).
 
     The compile pipeline splits the experiment's step list at this
     marker, builds two `CompiledExperiment`s, and the runtime
@@ -894,7 +894,7 @@ class Experiment:
         """The engine-native ``RefDataConfig`` this experiment is bound to."""
         return self._refdata
 
-    def corrupt_pcr(
+    def pcr_amplify(
         self,
         *,
         count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
@@ -922,7 +922,7 @@ class Experiment:
         )
         return self
 
-    def corrupt_quality(
+    def sequencing_errors(
         self,
         *,
         count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
@@ -944,7 +944,7 @@ class Experiment:
         )
         return self
 
-    def corrupt_indels(
+    def library_indels(
         self,
         *,
         count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
@@ -980,7 +980,7 @@ class Experiment:
         )
         return self
 
-    def corrupt_5prime_loss(
+    def primer_trim_5prime(
         self,
         *,
         length: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
@@ -1012,7 +1012,7 @@ class Experiment:
         )
         return self
 
-    def corrupt_3prime_loss(
+    def primer_trim_3prime(
         self,
         *,
         length: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
@@ -1034,7 +1034,7 @@ class Experiment:
         )
         return self
 
-    def corrupt_ns(
+    def mask_low_quality(
         self,
         *,
         count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
@@ -1065,7 +1065,7 @@ class Experiment:
         )
         return self
 
-    def corrupt_reverse_complement(self, *, prob: float = 0.5) -> "Experiment":
+    def random_strand_orientation(self, *, prob: float = 0.5) -> "Experiment":
         """Append a reverse-complement corruption step.
 
         With probability ``prob`` the AIRR record-builder reverse-
@@ -1095,7 +1095,7 @@ class Experiment:
         )
         return self
 
-    def corrupt_contaminants(self, *, prob: float) -> "Experiment":
+    def contaminate(self, *, prob: float) -> "Experiment":
         """Append a contaminant-replacement corruption step.
 
         With probability ``prob`` the entire assembled pool is
@@ -1216,7 +1216,7 @@ class Experiment:
                    .recombine()
                    .with_clonal_structure(n_clones=10, size=20)
                    .mutate(count=8)
-                   .corrupt_pcr(count=2))
+                   .pcr_amplify(count=2))
             result = exp.run_records(seed=0)
             # 10 clones × 20 descendants = 200 records.
             # Each record carries a ``clone_id`` integer in [0, 10).

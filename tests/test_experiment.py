@@ -841,39 +841,39 @@ import GenAIRR as ga  # noqa: E402
 
 
 def test_corrupt_pcr_appends_pcr_pass():
-    o = _human_igh_exp().corrupt_pcr(count=5).run(n=1, seed=0)[0]
+    o = _human_igh_exp().pcr_amplify(count=5).run(n=1, seed=0)[0]
     assert o.pass_names()[-1] == "corrupt.pcr"
     assert o.trace().find("corrupt.pcr.count").value == 5
 
 
 def test_corrupt_pcr_count_zero_is_noop():
-    o = _human_igh_exp().corrupt_pcr(count=0).run(n=1, seed=0)[0]
+    o = _human_igh_exp().pcr_amplify(count=0).run(n=1, seed=0)[0]
     assert o.trace().find("corrupt.pcr.count").value == 0
     assert o.trace().prefix_count("corrupt.pcr.error_site") == 0
 
 
 def test_corrupt_pcr_records_per_error_addresses():
-    o = _human_igh_exp().corrupt_pcr(count=3).run(n=1, seed=0)[0]
+    o = _human_igh_exp().pcr_amplify(count=3).run(n=1, seed=0)[0]
     assert o.trace().prefix_count("corrupt.pcr.error_site") == 3
     assert o.trace().prefix_count("corrupt.pcr.error_base") == 3
 
 
 def test_corrupt_pcr_range_count_samples_in_range():
-    out = _human_igh_exp().corrupt_pcr(count=(1, 10)).run(n=20, seed=0)
+    out = _human_igh_exp().pcr_amplify(count=(1, 10)).run(n=20, seed=0)
     sampled = {o.trace().find("corrupt.pcr.count").value for o in out}
     assert all(1 <= c <= 10 for c in sampled)
 
 
 def test_corrupt_pcr_rejects_negative_count():
     with pytest.raises(ValueError, match="non-negative"):
-        _human_igh_exp().corrupt_pcr(count=-1)
+        _human_igh_exp().pcr_amplify(count=-1)
 
 
 # --- corrupt_quality ---
 
 
 def test_corrupt_quality_appends_quality_pass():
-    o = _human_igh_exp().corrupt_quality(count=4).run(n=1, seed=0)[0]
+    o = _human_igh_exp().sequencing_errors(count=4).run(n=1, seed=0)[0]
     assert o.pass_names()[-1] == "corrupt.quality"
     assert o.trace().find("corrupt.quality.count").value == 4
 
@@ -881,14 +881,14 @@ def test_corrupt_quality_appends_quality_pass():
 def test_corrupt_quality_writes_lowercase_bases():
     # Quality errors write lowercase; pick a count high enough that
     # the post-pass sequence contains at least one lowercase base.
-    o = _human_igh_exp().corrupt_quality(count=20).run(n=1, seed=0)[0]
+    o = _human_igh_exp().sequencing_errors(count=20).run(n=1, seed=0)[0]
     bases = o.final_simulation().bases()
     has_lowercase = any(b in b"acgt" for b in bases)
     assert has_lowercase, "expected lowercase bases after quality errors"
 
 
 def test_corrupt_quality_records_per_error_addresses():
-    o = _human_igh_exp().corrupt_quality(count=2).run(n=1, seed=0)[0]
+    o = _human_igh_exp().sequencing_errors(count=2).run(n=1, seed=0)[0]
     assert o.trace().prefix_count("corrupt.quality.error_site") == 2
     assert o.trace().prefix_count("corrupt.quality.error_base") == 2
 
@@ -897,7 +897,7 @@ def test_corrupt_quality_records_per_error_addresses():
 
 
 def test_corrupt_indels_appends_indel_pass():
-    o = _human_igh_exp().corrupt_indels(count=2).run(n=1, seed=0)[0]
+    o = _human_igh_exp().library_indels(count=2).run(n=1, seed=0)[0]
     assert o.pass_names()[-1] == "corrupt.indel"
     assert o.trace().find("corrupt.indel.count").value == 2
 
@@ -905,7 +905,7 @@ def test_corrupt_indels_appends_indel_pass():
 def test_corrupt_indels_default_insertion_prob_is_half():
     # Across 50 seeds, 100 events at p=0.5 should produce a mix of
     # insertions and deletions.
-    out = _human_igh_exp().corrupt_indels(count=2).run(n=50, seed=0)
+    out = _human_igh_exp().library_indels(count=2).run(n=50, seed=0)
     saw_insertion = False
     saw_deletion = False
     for o in out:
@@ -920,14 +920,14 @@ def test_corrupt_indels_default_insertion_prob_is_half():
 
 
 def test_corrupt_indels_insertion_prob_one_is_all_insertions():
-    out = _human_igh_exp().corrupt_indels(count=3, insertion_prob=1.0).run(n=5, seed=0)
+    out = _human_igh_exp().library_indels(count=3, insertion_prob=1.0).run(n=5, seed=0)
     for o in out:
         for i in range(3):
             assert o.trace().find(f"corrupt.indel.kind[{i}]").value is True
 
 
 def test_corrupt_indels_insertion_prob_zero_is_all_deletions():
-    out = _human_igh_exp().corrupt_indels(count=3, insertion_prob=0.0).run(n=5, seed=0)
+    out = _human_igh_exp().library_indels(count=3, insertion_prob=0.0).run(n=5, seed=0)
     for o in out:
         for i in range(3):
             assert o.trace().find(f"corrupt.indel.kind[{i}]").value is False
@@ -940,7 +940,7 @@ def test_corrupt_indels_changes_pool_length_relative_to_recombine_baseline():
     base = _human_igh_exp().run(n=1, seed=0)[0].final_simulation()
     with_indels = (
         _human_igh_exp()
-        .corrupt_indels(count=10, insertion_prob=1.0)
+        .library_indels(count=10, insertion_prob=1.0)
         .run(n=1, seed=0)[0]
         .final_simulation()
     )
@@ -949,53 +949,53 @@ def test_corrupt_indels_changes_pool_length_relative_to_recombine_baseline():
 
 def test_corrupt_indels_rejects_negative_insertion_prob():
     with pytest.raises(ValueError, match=r"\[0\.0, 1\.0\]"):
-        _human_igh_exp().corrupt_indels(count=1, insertion_prob=-0.1)
+        _human_igh_exp().library_indels(count=1, insertion_prob=-0.1)
 
 
 def test_corrupt_indels_rejects_above_one_insertion_prob():
     with pytest.raises(ValueError, match=r"\[0\.0, 1\.0\]"):
-        _human_igh_exp().corrupt_indels(count=1, insertion_prob=1.5)
+        _human_igh_exp().library_indels(count=1, insertion_prob=1.5)
 
 
 def test_corrupt_indels_rejects_nan_insertion_prob():
     with pytest.raises(ValueError, match=r"\[0\.0, 1\.0\]"):
-        _human_igh_exp().corrupt_indels(count=1, insertion_prob=float("nan"))
+        _human_igh_exp().library_indels(count=1, insertion_prob=float("nan"))
 
 
 # --- corrupt_contaminants ---
 
 
 def test_corrupt_contaminants_appends_contaminant_pass():
-    o = _human_igh_exp().corrupt_contaminants(prob=0.5).run(n=1, seed=0)[0]
+    o = _human_igh_exp().contaminate(prob=0.5).run(n=1, seed=0)[0]
     assert o.pass_names()[-1] == "corrupt.contaminant"
     assert o.trace().find("corrupt.contaminant.applied") is not None
 
 
 def test_corrupt_contaminants_prob_one_always_applies():
-    out = _human_igh_exp().corrupt_contaminants(prob=1.0).run(n=10, seed=0)
+    out = _human_igh_exp().contaminate(prob=1.0).run(n=10, seed=0)
     for o in out:
         assert o.trace().find("corrupt.contaminant.applied").value is True
 
 
 def test_corrupt_contaminants_prob_zero_never_applies():
-    out = _human_igh_exp().corrupt_contaminants(prob=0.0).run(n=10, seed=0)
+    out = _human_igh_exp().contaminate(prob=0.0).run(n=10, seed=0)
     for o in out:
         assert o.trace().find("corrupt.contaminant.applied").value is False
 
 
 def test_corrupt_contaminants_rejects_negative_prob():
     with pytest.raises(ValueError, match=r"\[0\.0, 1\.0\]"):
-        _human_igh_exp().corrupt_contaminants(prob=-0.1)
+        _human_igh_exp().contaminate(prob=-0.1)
 
 
 def test_corrupt_contaminants_rejects_above_one_prob():
     with pytest.raises(ValueError, match=r"\[0\.0, 1\.0\]"):
-        _human_igh_exp().corrupt_contaminants(prob=1.5)
+        _human_igh_exp().contaminate(prob=1.5)
 
 
 def test_corrupt_contaminants_rejects_nan_prob():
     with pytest.raises(ValueError, match=r"\[0\.0, 1\.0\]"):
-        _human_igh_exp().corrupt_contaminants(prob=float("nan"))
+        _human_igh_exp().contaminate(prob=float("nan"))
 
 
 # --- composition / determinism ---
@@ -1007,10 +1007,10 @@ def test_full_pipeline_chains_all_four_corruption_steps_in_order():
     exp = (
         _human_igh_exp()
         .mutate(count=5)
-        .corrupt_pcr(count=2)
-        .corrupt_quality(count=1)
-        .corrupt_indels(count=1)
-        .corrupt_contaminants(prob=0.0)
+        .pcr_amplify(count=2)
+        .sequencing_errors(count=1)
+        .library_indels(count=1)
+        .contaminate(prob=0.0)
     )
     o = exp.run(n=1, seed=0)[0]
     pn = o.pass_names()
@@ -1024,8 +1024,8 @@ def test_full_pipeline_chains_all_four_corruption_steps_in_order():
 
 
 def test_corruption_steps_are_deterministic_under_same_seed():
-    exp_a = _human_igh_exp().corrupt_pcr(count=3).corrupt_indels(count=2)
-    exp_b = _human_igh_exp().corrupt_pcr(count=3).corrupt_indels(count=2)
+    exp_a = _human_igh_exp().pcr_amplify(count=3).library_indels(count=2)
+    exp_b = _human_igh_exp().pcr_amplify(count=3).library_indels(count=2)
     a = exp_a.run(n=2, seed=0xCAFE)
     b = exp_b.run(n=2, seed=0xCAFE)
     for x, y in zip(a, b):
@@ -1033,7 +1033,7 @@ def test_corruption_steps_are_deterministic_under_same_seed():
 
 
 def test_corruption_step_count_increments_step_count():
-    exp = _human_igh_exp().corrupt_pcr(count=1).corrupt_quality(count=1)
+    exp = _human_igh_exp().pcr_amplify(count=1).sequencing_errors(count=1)
     assert exp.step_count == 3  # recombine + 2 corruption steps
 
 
@@ -1044,10 +1044,10 @@ def test_corruption_under_productive_contract_runs():
     # post-hoc verify if anyone checks.
     exp = (
         _human_igh_exp()
-        .corrupt_pcr(count=3)
-        .corrupt_quality(count=2)
-        .corrupt_indels(count=1)
-        .corrupt_contaminants(prob=0.1)
+        .pcr_amplify(count=3)
+        .sequencing_errors(count=2)
+        .library_indels(count=1)
+        .contaminate(prob=0.1)
     )
     out = exp.productive_only().run(n=3, seed=0)
     assert len(out) == 3
@@ -1390,7 +1390,7 @@ def test_record_corruption_counters_default_to_zero():
 
 def test_record_corruption_counters_track_pcr_errors():
     result = (
-        _human_igh_exp().corrupt_pcr(count=4).run_records(n=2, seed=0)
+        _human_igh_exp().pcr_amplify(count=4).run_records(n=2, seed=0)
     )
     for rec in result:
         assert rec["n_pcr_errors"] == 4
@@ -1728,7 +1728,7 @@ def test_g8_truth_columns_via_clonal_pipeline():
 def test_g7_corrupt_ns_writes_uppercase_n():
     # corrupt_ns(count=10) should sprinkle ~10 N's per record
     # (collisions reduce the count slightly).
-    exp = ga.Experiment.on("human_igh").recombine().corrupt_ns(count=10)
+    exp = ga.Experiment.on("human_igh").recombine().mask_low_quality(count=10)
     for rec in exp.run_records(n=5, seed=0):
         n_count = rec["sequence"].upper().count("N")
         # With pool length ~370 and 10 random sites, collisions are
@@ -1740,7 +1740,7 @@ def test_g7_corrupt_ns_writes_uppercase_n():
 
 def test_g7_corrupt_ns_zero_count_is_no_op():
     base = ga.Experiment.on("human_igh").recombine()
-    flipped = ga.Experiment.on("human_igh").recombine().corrupt_ns(count=0)
+    flipped = ga.Experiment.on("human_igh").recombine().mask_low_quality(count=0)
     for fwd, ns in zip(base.run_records(n=5, seed=0), flipped.run_records(n=5, seed=0)):
         assert fwd["sequence"] == ns["sequence"]
 
@@ -1749,7 +1749,7 @@ def test_g7_corrupt_ns_count_distribution_shape():
     # Variable-count distribution: count=(5, 15) → uniform integer
     # in [5, 15]. Across many records, the N-count distribution
     # should have all entries in approximately that range.
-    exp = ga.Experiment.on("human_igh").recombine().corrupt_ns(count=(5, 15))
+    exp = ga.Experiment.on("human_igh").recombine().mask_low_quality(count=(5, 15))
     counts = [r["sequence"].upper().count("N") for r in exp.run_records(n=50, seed=0)]
     assert min(counts) >= 4, f"min N count too low: {counts}"
     assert max(counts) <= 15, f"max N count too high: {counts}"
@@ -1762,9 +1762,9 @@ def test_g7_corrupt_ns_compose_with_other_passes():
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=5)
-        .corrupt_pcr(count=2)
-        .corrupt_indels(count=1)
-        .corrupt_ns(count=8)
+        .pcr_amplify(count=2)
+        .library_indels(count=1)
+        .mask_low_quality(count=8)
     )
     failures = []
     for i, rec in enumerate(exp.run_records(n=30, seed=0)):
@@ -1911,9 +1911,9 @@ def test_g4_tcr_pipeline_with_corrupt_passes_works():
     exp = (
         ga.Experiment.on("human_tcrb")
         .recombine()
-        .corrupt_pcr(count=3)
-        .corrupt_quality(count=2)
-        .corrupt_indels(count=1, insertion_prob=0.5)
+        .pcr_amplify(count=3)
+        .sequencing_errors(count=2)
+        .library_indels(count=1, insertion_prob=0.5)
     )
     records = exp.run_records(n=5, seed=0)
     assert len(records) == 5
@@ -2254,7 +2254,7 @@ def test_using_composes_with_mutation_and_corruption():
         .restrict_alleles(v="IGHVF1-G1*01")
         .recombine()
         .mutate(count=8)
-        .corrupt_pcr(count=2)
+        .pcr_amplify(count=2)
     )
     out = exp.run(n=3, seed=42)
     for o in out:
@@ -2822,7 +2822,7 @@ def test_sequence_aa_handles_lowercase_corruption_bases():
     # internally, so the AA strings should still be valid letters.
     rec = (
         _human_igh_exp()
-        .corrupt_quality(count=8)
+        .sequencing_errors(count=8)
         .run_records(n=1, seed=0)[0]
     )
     # Must be valid AA characters (no lowercase, no '?').
@@ -2929,7 +2929,7 @@ def test_indel_insertion_creates_gap_in_germline_alignment():
     # Use insertion_prob=1.0 to force all indels to be insertions.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=4, insertion_prob=1.0)
+        .library_indels(count=4, insertion_prob=1.0)
         .run_records(n=1, seed=0)[0]
     )
     galn = rec["germline_alignment"]
@@ -2944,7 +2944,7 @@ def test_indel_deletion_creates_gap_in_sequence_alignment():
     # sequence_alignment with the original allele base in germline.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=4, insertion_prob=0.0)
+        .library_indels(count=4, insertion_prob=0.0)
         .run_records(n=1, seed=0)[0]
     )
     galn = rec["germline_alignment"]
@@ -2960,7 +2960,7 @@ def test_alignment_total_gap_count_at_most_n_indels():
     # observed gap count is ≤ ``n_indels``.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=6, insertion_prob=0.5)
+        .library_indels(count=6, insertion_prob=0.5)
         .run_records(n=1, seed=12345)[0]
     )
     sa = rec["sequence_alignment"]
@@ -2975,7 +2975,7 @@ def test_alignment_length_increases_with_indels():
     # deletions add a column where seq is gap and germ has a base.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=4, insertion_prob=1.0)
+        .library_indels(count=4, insertion_prob=1.0)
         .run_records(n=1, seed=0)[0]
     )
     # sequence_length stays raw (with insertions counted, deletions
@@ -2992,7 +2992,7 @@ def test_alignment_length_grows_for_pure_deletions():
     # (each deletion is a gap column not present in the raw sequence).
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=4, insertion_prob=0.0)
+        .library_indels(count=4, insertion_prob=0.0)
         .run_records(n=1, seed=0)[0]
     )
     assert len(rec["sequence_alignment"]) == rec["sequence_length"] + 4
@@ -3003,7 +3003,7 @@ def test_d_mask_preserves_gaps_in_d_region():
     # in d_mask (not converted to N).
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=15, insertion_prob=0.0)
+        .library_indels(count=15, insertion_prob=0.0)
         .run_records(n=1, seed=0)[0]
     )
     galn = rec["germline_alignment"]
@@ -3117,8 +3117,8 @@ def test_alignment_handles_tail_indel_insertion_outside_regions():
         ga.Experiment.on("human_igk")
         .recombine()
         .mutate(count=5)
-        .corrupt_pcr(count=2)
-        .corrupt_indels(count=2)
+        .pcr_amplify(count=2)
+        .library_indels(count=2)
     )
     for rec in exp.run_records(n=50, seed=0):
         assert _alignment_invariants_hold(rec) == []
@@ -3133,9 +3133,9 @@ def test_alignment_invariants_under_full_corruption_stack():
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=15)
-        .corrupt_pcr(count=5)
-        .corrupt_quality(count=8)
-        .corrupt_indels(count=4, insertion_prob=0.5)
+        .pcr_amplify(count=5)
+        .sequencing_errors(count=8)
+        .library_indels(count=4, insertion_prob=0.5)
     )
     result = exp.productive_only().run_records(n=200, seed=0)
     failures = [
@@ -3154,7 +3154,7 @@ def test_alignment_invariants_across_loci():
         exp = ga.Experiment.on(cfg).recombine()
         if not cfg.startswith("human_tcr"):
             exp = exp.mutate(count=5)
-        exp = exp.corrupt_pcr(count=2).corrupt_indels(count=2)
+        exp = exp.pcr_amplify(count=2).library_indels(count=2)
         result = exp.run_records(n=50, seed=0)
         failures = [
             (i, _alignment_invariants_hold(rec))
@@ -3223,7 +3223,7 @@ def test_cigar_unchanged_under_mutations():
 def test_cigar_insertion_only_produces_i_ops():
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=4, insertion_prob=1.0)
+        .library_indels(count=4, insertion_prob=1.0)
         .run_records(n=1, seed=0)[0]
     )
     counts_v = _cigar_op_counts(rec["v_cigar"])
@@ -3240,7 +3240,7 @@ def test_cigar_insertion_only_produces_i_ops():
 def test_cigar_deletion_only_produces_d_ops():
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=4, insertion_prob=0.0)
+        .library_indels(count=4, insertion_prob=0.0)
         .run_records(n=1, seed=0)[0]
     )
     counts_v = _cigar_op_counts(rec["v_cigar"])
@@ -3257,7 +3257,7 @@ def test_cigar_op_count_equals_segment_alignment_columns():
     # alignment.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=5, insertion_prob=0.5)
+        .library_indels(count=5, insertion_prob=0.5)
         .run_records(n=1, seed=42)[0]
     )
     # In the full alignment string, the V coding region's columns
@@ -3295,7 +3295,7 @@ def test_cigar_consistent_with_alignment_strings():
     # region and verify they describe the same sequence of ops.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=4, insertion_prob=0.5)
+        .library_indels(count=4, insertion_prob=0.5)
         .run_records(n=1, seed=42)[0]
     )
     # Reconstruct the V CIGAR from sa/galn directly and compare.
@@ -3315,7 +3315,7 @@ def test_cigar_consistent_with_alignment_strings():
     # guaranteed by construction; this asserts the public field
     # matches the helper's output (catches any future re-routing).
     refdata = _human_igh_exp().refdata
-    outcome = _human_igh_exp().corrupt_indels(
+    outcome = _human_igh_exp().library_indels(
         count=4, insertion_prob=0.5
     ).run(n=1, seed=42)[0]
     cols = _alignment_columns(outcome, refdata)
@@ -3339,7 +3339,7 @@ def test_cigar_only_uses_canonical_ops():
     rec = (
         _human_igh_exp()
         .mutate(count=10)
-        .corrupt_indels(count=3, insertion_prob=0.5)
+        .library_indels(count=3, insertion_prob=0.5)
         .run_records(n=1, seed=0)[0]
     )
     for cig in (rec["v_cigar"], rec["d_cigar"], rec["j_cigar"]):
@@ -3364,7 +3364,7 @@ def test_cigars_in_tsv_export(tmp_path):
 
     result = (
         _human_igh_exp()
-        .corrupt_indels(count=3, insertion_prob=0.5)
+        .library_indels(count=3, insertion_prob=0.5)
         .run_records(n=2, seed=0)
     )
     path = tmp_path / "h4.tsv"
@@ -3384,9 +3384,9 @@ def test_cigar_invariants_under_full_corruption_stack():
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=15)
-        .corrupt_pcr(count=5)
-        .corrupt_quality(count=8)
-        .corrupt_indels(count=4, insertion_prob=0.5)
+        .pcr_amplify(count=5)
+        .sequencing_errors(count=8)
+        .library_indels(count=4, insertion_prob=0.5)
     )
     failures = []
     for i, rec in enumerate(exp.run_records(n=200, seed=0)):
@@ -3531,7 +3531,7 @@ def test_indel_deletion_alignment_and_sequence_spans_are_both_positive():
     # past the structural alignment span.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=4, insertion_prob=0.0)
+        .library_indels(count=4, insertion_prob=0.0)
         .run_records(n=1, seed=0)[0]
     )
     for seg in ("v", "d", "j"):
@@ -3550,7 +3550,7 @@ def test_alignment_span_equals_cigar_op_total():
     # M+I+D op count of v_cigar.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=5, insertion_prob=0.5)
+        .library_indels(count=5, insertion_prob=0.5)
         .run_records(n=1, seed=42)[0]
     )
     for seg in ("v", "d", "j"):
@@ -3571,7 +3571,7 @@ def test_germline_span_at_least_cigar_m_plus_d():
     # the hypothesis's ref range the germline span can exceed M + D.
     rec = (
         _human_igh_exp()
-        .corrupt_indels(count=5, insertion_prob=0.5)
+        .library_indels(count=5, insertion_prob=0.5)
         .run_records(n=1, seed=42)[0]
     )
     for seg in ("v", "d", "j"):
@@ -3677,8 +3677,8 @@ def test_identity_in_unit_interval_under_corruption_stack():
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=15)
-        .corrupt_pcr(count=5)
-        .corrupt_indels(count=3, insertion_prob=0.5)
+        .pcr_amplify(count=5)
+        .library_indels(count=3, insertion_prob=0.5)
     )
     for rec in exp.run_records(n=20, seed=0):
         for seg in ("v", "d", "j"):
@@ -3708,7 +3708,7 @@ def test_identity_low_for_contaminant_pass():
     rec = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .corrupt_contaminants(prob=1.0)
+        .contaminate(prob=1.0)
         .run_records(n=1, seed=0)[0]
     )
     assert rec["is_contaminant"] is True
@@ -3724,7 +3724,7 @@ def test_identity_consistent_with_alignment_string_diff_count():
     rec = (
         _human_igh_exp()
         .mutate(count=15)
-        .corrupt_indels(count=3, insertion_prob=0.5)
+        .library_indels(count=3, insertion_prob=0.5)
         .run_records(n=1, seed=42)[0]
     )
     sa = rec["sequence_alignment"]
@@ -3809,9 +3809,9 @@ def test_to_tsv_passes_airr_validation_under_full_corruption_stack(tmp_path):
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=15)
-        .corrupt_pcr(count=5)
-        .corrupt_quality(count=8)
-        .corrupt_indels(count=4, insertion_prob=0.5)
+        .pcr_amplify(count=5)
+        .sequencing_errors(count=8)
+        .library_indels(count=4, insertion_prob=0.5)
     )
     path = tmp_path / "stack.tsv"
     exp.run_records(n=20, seed=0).to_tsv(str(path))
@@ -3838,7 +3838,7 @@ def test_to_tsv_passes_airr_validation_for_tcrb(tmp_path):
     (
         ga.Experiment.on("human_tcrb")
         .recombine()
-        .corrupt_pcr(count=3)
+        .pcr_amplify(count=3)
         .run_records(n=5, seed=0)
         .to_tsv(str(path))
     )
@@ -3850,7 +3850,7 @@ def test_to_tsv_passes_airr_validation_with_contamination(tmp_path):
     path = tmp_path / "contam.tsv"
     (
         _human_igh_exp()
-        .corrupt_contaminants(prob=0.5)
+        .contaminate(prob=0.5)
         .run_records(n=5, seed=0)
         .to_tsv(str(path))
     )
@@ -3918,7 +3918,7 @@ def test_airr_strict_passes_airr_validation(tmp_path):
     result = (
         _human_igh_exp()
         .mutate(count=10)
-        .corrupt_indels(count=3, insertion_prob=0.5)
+        .library_indels(count=3, insertion_prob=0.5)
         .run_records(n=5, seed=0)
     )
     result.to_tsv(str(path), airr_strict=True)
@@ -4042,7 +4042,7 @@ def test_5prime_loss_drops_leading_bases():
     # exactly the requested amount, and the V segment's CIGAR starts
     # with that many `D` ops (the lost ref positions).
     base = ga.Experiment.on("human_igh").recombine()
-    lost = ga.Experiment.on("human_igh").recombine().corrupt_5prime_loss(length=15)
+    lost = ga.Experiment.on("human_igh").recombine().primer_trim_5prime(length=15)
     base_recs = list(base.run_records(n=10, seed=0))
     lost_recs = list(lost.run_records(n=10, seed=0))
     for fwd, lr in zip(base_recs, lost_recs):
@@ -4056,7 +4056,7 @@ def test_5prime_loss_drops_leading_bases():
 
 def test_3prime_loss_drops_trailing_bases():
     base = ga.Experiment.on("human_igh").recombine()
-    lost = ga.Experiment.on("human_igh").recombine().corrupt_3prime_loss(length=10)
+    lost = ga.Experiment.on("human_igh").recombine().primer_trim_3prime(length=10)
     for fwd, lr in zip(base.run_records(n=10, seed=0), lost.run_records(n=10, seed=0)):
         assert lr["sequence_length"] == fwd["sequence_length"] - 10
         # J's CIGAR ends with `10D` (the lost suffix of J).
@@ -4065,8 +4065,8 @@ def test_3prime_loss_drops_trailing_bases():
 
 def test_loss_zero_is_no_op():
     base = ga.Experiment.on("human_igh").recombine()
-    lost_5 = ga.Experiment.on("human_igh").recombine().corrupt_5prime_loss(length=0)
-    lost_3 = ga.Experiment.on("human_igh").recombine().corrupt_3prime_loss(length=0)
+    lost_5 = ga.Experiment.on("human_igh").recombine().primer_trim_5prime(length=0)
+    lost_3 = ga.Experiment.on("human_igh").recombine().primer_trim_3prime(length=0)
     for fwd, l5, l3 in zip(
         base.run_records(n=5, seed=0),
         lost_5.run_records(n=5, seed=0),
@@ -4085,9 +4085,9 @@ def test_loss_preserves_alignment_invariants():
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=8)
-        .corrupt_5prime_loss(length=(0, 25))
-        .corrupt_3prime_loss(length=(0, 20))
-        .corrupt_pcr(count=3)
+        .primer_trim_5prime(length=(0, 25))
+        .primer_trim_3prime(length=(0, 20))
+        .pcr_amplify(count=3)
     )
     failures = []
     for i, rec in enumerate(exp.run_records(n=100, seed=0)):
@@ -4101,7 +4101,7 @@ def test_loss_rejects_invalid_length():
     exp = ga.Experiment.on("human_igh").recombine()
     for bad in (-1, "ten", True):
         try:
-            exp.corrupt_5prime_loss(length=bad)
+            exp.primer_trim_5prime(length=bad)
         except (ValueError, TypeError):
             pass
         else:
@@ -4113,7 +4113,7 @@ def test_rev_comp_flips_sequence_and_flag():
     # `sequence` should be the reverse-complement of the same record
     # without rev_comp applied.
     base = ga.Experiment.on("human_igh").recombine()
-    flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=1.0)
+    flipped = ga.Experiment.on("human_igh").recombine().random_strand_orientation(prob=1.0)
     base_recs = list(base.run_records(n=20, seed=0))
     flipped_recs = list(flipped.run_records(n=20, seed=0))
     assert len(base_recs) == len(flipped_recs) == 20
@@ -4129,7 +4129,7 @@ def test_rev_comp_flips_per_segment_sequence_coords():
     # old_v_sequence_end, and the v slice of the new sequence equals
     # the reverse-complement of the old v slice.
     base = ga.Experiment.on("human_igh").recombine()
-    flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=1.0)
+    flipped = ga.Experiment.on("human_igh").recombine().random_strand_orientation(prob=1.0)
     for fwd, rc in zip(base.run_records(n=20, seed=0), flipped.run_records(n=20, seed=0)):
         seq_len = fwd["sequence_length"]
         for seg in ("v", "d", "j"):
@@ -4151,7 +4151,7 @@ def test_rev_comp_keeps_alignment_strings_in_forward_orientation():
     # `*_alignment_start/end` and `*_germline_start/end` coords are
     # also forward.
     base = ga.Experiment.on("human_igh").recombine()
-    flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=1.0)
+    flipped = ga.Experiment.on("human_igh").recombine().random_strand_orientation(prob=1.0)
     for fwd, rc in zip(base.run_records(n=10, seed=0), flipped.run_records(n=10, seed=0)):
         assert rc["sequence_alignment"] == fwd["sequence_alignment"]
         assert rc["germline_alignment"] == fwd["germline_alignment"]
@@ -4167,7 +4167,7 @@ def test_rev_comp_keeps_alignment_strings_in_forward_orientation():
 
 def test_rev_comp_zero_prob_is_no_op():
     base = ga.Experiment.on("human_igh").recombine()
-    flipped = ga.Experiment.on("human_igh").recombine().corrupt_reverse_complement(prob=0.0)
+    flipped = ga.Experiment.on("human_igh").recombine().random_strand_orientation(prob=0.0)
     for fwd, rc in zip(base.run_records(n=20, seed=0), flipped.run_records(n=20, seed=0)):
         # The coin is flipped (records always present in trace) but
         # never fires when prob=0.
@@ -4180,7 +4180,7 @@ def test_rev_comp_rejects_invalid_prob():
     import math
     for bad in (-0.1, 1.5, math.nan, float("inf")):
         try:
-            exp.corrupt_reverse_complement(prob=bad)
+            exp.random_strand_orientation(prob=bad)
         except ValueError:
             pass
         else:
@@ -4206,9 +4206,9 @@ def test_locus_falls_back_to_refdata_under_heavy_corruption():
         if not cfg.startswith("human_tcr"):
             exp = exp.mutate(count=15)
         exp = (
-            exp.corrupt_pcr(count=5)
-            .corrupt_quality(count=8)
-            .corrupt_indels(count=4, insertion_prob=0.5)
+            exp.pcr_amplify(count=5)
+            .sequencing_errors(count=8)
+            .library_indels(count=4, insertion_prob=0.5)
         )
         for i, rec in enumerate(exp.run_records(n=200, seed=0)):
             assert rec["locus"] == want, (
@@ -4242,9 +4242,9 @@ def test_per_segment_ga_slice_matches_called_allele():
         if not cfg.startswith("human_tcr"):
             exp = exp.mutate(count=8)
         exp = (
-            exp.corrupt_pcr(count=2)
-            .corrupt_quality(count=4)
-            .corrupt_indels(count=2, insertion_prob=0.5)
+            exp.pcr_amplify(count=2)
+            .sequencing_errors(count=4)
+            .library_indels(count=2, insertion_prob=0.5)
         )
         refdata = exp.refdata
         alleles = {"V": {}, "D": {}, "J": {}}
@@ -4291,9 +4291,9 @@ def test_h5_coords_invariants_under_corruption_stack():
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=15)
-        .corrupt_pcr(count=5)
-        .corrupt_quality(count=8)
-        .corrupt_indels(count=4, insertion_prob=0.5)
+        .pcr_amplify(count=5)
+        .sequencing_errors(count=8)
+        .library_indels(count=4, insertion_prob=0.5)
     )
     failures = []
     for i, rec in enumerate(exp.run_records(n=200, seed=0)):
@@ -4337,7 +4337,7 @@ def test_alignment_consistent_under_contaminant_pass():
     rec = (
         ga.Experiment.on("human_igh")
         .recombine()
-        .corrupt_contaminants(prob=1.0)
+        .contaminate(prob=1.0)
         .run_records(n=1, seed=0)[0]
     )
     assert rec["is_contaminant"] is True
@@ -4536,7 +4536,7 @@ def test_describe_corrupt_pcr_reads_as_pcr_errors():
     out = (
         Experiment.on(_vj_refdata())
         .recombine(np1_lengths=[(2, 1.0)]).trim(enabled=False)
-        .corrupt_pcr(count=(0, 3))
+        .pcr_amplify(count=(0, 3))
         .describe()
     )
     assert "PCR substitution errors" in out
@@ -4591,7 +4591,7 @@ def test_describe_compiled_clonal_experiment_shows_fork_and_numbers_continue():
         .recombine()
         .with_clonal_structure(n_clones=3, size=4)
         .mutate(count=8)
-        .corrupt_pcr(count=(0, 2))
+        .pcr_amplify(count=(0, 2))
         .compile()
     )
     out = compiled.describe()

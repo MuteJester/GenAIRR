@@ -353,24 +353,24 @@ def _build_experiment_from_params(
 
     # -- Per-descendant sequencing artefacts --------------------------
     if five_prime_loss_max is not None:
-        exp = exp.corrupt_5prime_loss(length=(0, int(five_prime_loss_max)))
+        exp = exp.primer_trim_5prime(length=(0, int(five_prime_loss_max)))
     if three_prime_loss_max is not None:
-        exp = exp.corrupt_3prime_loss(length=(0, int(three_prime_loss_max)))
+        exp = exp.primer_trim_3prime(length=(0, int(three_prime_loss_max)))
     if indel_count_max is not None:
-        exp = exp.corrupt_indels(
+        exp = exp.library_indels(
             count=(0, int(indel_count_max)),
             insertion_prob=0.5,
         )
     if pcr_error_count_max is not None:
-        exp = exp.corrupt_pcr(count=(0, int(pcr_error_count_max)))
+        exp = exp.pcr_amplify(count=(0, int(pcr_error_count_max)))
     if n_injection_count_max is not None:
-        exp = exp.corrupt_ns(count=(0, int(n_injection_count_max)))
+        exp = exp.mask_low_quality(count=(0, int(n_injection_count_max)))
     if quality_count_max is not None:
-        exp = exp.corrupt_quality(count=(0, int(quality_count_max)))
+        exp = exp.sequencing_errors(count=(0, int(quality_count_max)))
     if contaminant_prob is not None:
-        exp = exp.corrupt_contaminants(prob=float(contaminant_prob))
+        exp = exp.contaminate(prob=float(contaminant_prob))
     if rev_comp_prob is not None:
-        exp = exp.corrupt_reverse_complement(prob=float(rev_comp_prob))
+        exp = exp.random_strand_orientation(prob=float(rev_comp_prob))
 
     # Note: productive_only is applied by the caller as .productive_only(),
     # not here, so this helper can be re-used by both productive and

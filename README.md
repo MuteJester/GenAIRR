@@ -99,11 +99,11 @@ result = (
       .mutate(model="s5f", count=(5, 15))
       # 4. Sequencing artefacts per descendant: primer trimming, structural
       #    indels, PCR substitution errors, quality-driven N injection.
-      .corrupt_5prime_loss(length=(0, 8))
-      .corrupt_3prime_loss(length=(0, 4))
-      .corrupt_indels(count=(0, 2), insertion_prob=0.5)
-      .corrupt_pcr(count=(0, 3))
-      .corrupt_ns(count=(0, 2))
+      .primer_trim_5prime(length=(0, 8))
+      .primer_trim_3prime(length=(0, 4))
+      .library_indels(count=(0, 2), insertion_prob=0.5)
+      .pcr_amplify(count=(0, 3))
+      .mask_low_quality(count=(0, 2))
       # 5. Stamp arbitrary metadata onto every record.
       .with_metadata(experiment_id="exp001", tissue="peripheral_blood")
       # Constraint-aware sampling: the productive() bundle is enforced at
@@ -135,9 +135,9 @@ Other feature flags worth knowing:
 
 | Step | What it does |
 |-----|-----|
-| `.corrupt_contaminants(prob=0.02)` | Replace ~2% of records with unrelated background sequences. |
-| `.corrupt_quality(count=(0, 5))` | Lowercase 0–5 bases per sequence to mark sequencer-low-quality positions. |
-| `.corrupt_reverse_complement(prob=0.5)` | Flip ~50% of records to the reverse strand (with the `rev_comp` flag set). |
+| `.contaminate(prob=0.02)` | Replace ~2% of records with unrelated background sequences. |
+| `.sequencing_errors(count=(0, 5))` | Lowercase 0–5 bases per sequence to mark sequencer-low-quality positions. |
+| `.random_strand_orientation(prob=0.5)` | Flip ~50% of records to the reverse strand (with the `rev_comp` flag set). |
 | `.using(v=[...], d=[...], j=[...])` | Restrict allele sampling to a specific subset — useful for benchmarking against a known repertoire. |
 | `.mutate(model="uniform", count=(0, 30))` | Use a uniform-rate mutation model instead of S5F. |
 | `compile()` then `compiled.run_records(...)` | Compile the plan once, reuse it across many batches — see [Compile once](#compile-once-run-many-times). |
