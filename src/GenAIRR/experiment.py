@@ -46,7 +46,7 @@ class _Unset:
 _UNSET: _Unset = _Unset()
 
 
-# Inputs accepted by :meth:`Experiment.using` per segment. ``None``
+# Inputs accepted by :meth:`Experiment.restrict_alleles` per segment. ``None``
 # clears any prior lock; a single name is a one-allele lock; an
 # iterable of names is a multi-allele subset; ``_UNSET`` (the default)
 # leaves the existing lock unchanged.
@@ -237,7 +237,7 @@ class _RecombineStep:
     omitted (so a synthetic refdata without trim data still works).
 
     ``locks_*`` are optional allele-ID subsets supplied by
-    :meth:`Experiment.using`. When set, the matching
+    :meth:`Experiment.restrict_alleles`. When set, the matching
     ``push_sample_allele`` call samples uniformly only from those
     IDs instead of the full pool.
     """
@@ -929,7 +929,7 @@ class Experiment:
     ) -> "Experiment":
         """Append a sequencing-quality-error corruption step.
 
-        Same shape as :meth:`corrupt_pcr` but each substitution
+        Same shape as :meth:`pcr_amplify` but each substitution
         writes the destination base in **lowercase** to mark the
         position as corrupted (the sequencing-error convention).
         """
@@ -1021,7 +1021,7 @@ class Experiment:
 
         Drops bases from the end of the assembled sequence to model
         read-end degradation. Same ``length`` shapes as
-        :meth:`corrupt_5prime_loss`.
+        :meth:`primer_trim_5prime`.
         """
         pairs = _normalize_count(length)
         self._steps.append(
@@ -1296,7 +1296,7 @@ class Experiment:
         phenomenon — T-cells do not undergo SHM in the periphery.
         Calling ``.mutate()`` on a TCR-configured experiment raises
         ``ValueError`` to prevent silent biological misuse. Use
-        ``corrupt_pcr`` / ``corrupt_quality`` for sequencing-error
+        ``pcr_amplify`` / ``sequencing_errors`` for sequencing-error
         realism on TCR data instead.
         """
         if self._is_tcr_refdata():
@@ -1304,8 +1304,8 @@ class Experiment:
                 "mutate(): somatic hypermutation does not occur in TCR "
                 "sequences (T-cells lack AID and the SHM machinery). The "
                 "configured refdata is a TCR locus. For sequencing-error "
-                "realism on TCR data, use corrupt_pcr / corrupt_quality / "
-                "corrupt_indels instead."
+                "realism on TCR data, use pcr_amplify / sequencing_errors "
+                "/ library_indels instead."
             )
         model_lc = model.lower()
         if model_lc not in ("uniform", "s5f"):

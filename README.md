@@ -138,8 +138,8 @@ Other feature flags worth knowing:
 | `.contaminate(prob=0.02)` | Replace ~2% of records with unrelated background sequences. |
 | `.sequencing_errors(count=(0, 5))` | Lowercase 0–5 bases per sequence to mark sequencer-low-quality positions. |
 | `.random_strand_orientation(prob=0.5)` | Flip ~50% of records to the reverse strand (with the `rev_comp` flag set). |
-| `.using(v=[...], d=[...], j=[...])` | Restrict allele sampling to a specific subset — useful for benchmarking against a known repertoire. |
-| `.mutate(model="uniform", count=(0, 30))` | Use a uniform-rate mutation model instead of S5F. |
+| `.restrict_alleles(v=[...], d=[...], j=[...])` | Restrict allele sampling to a specific subset — useful for benchmarking against a known repertoire. |
+| `.mutate(model="uniform", rate=0.03)` | Use a uniform-rate mutation model instead of S5F. |
 | `compile()` then `compiled.run_records(...)` | Compile the plan once, reuse it across many batches — see [Compile once](#compile-once-run-many-times). |
 
 ---
