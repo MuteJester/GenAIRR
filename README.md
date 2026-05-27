@@ -215,23 +215,25 @@ fixtures so on-disk formats stay byte-stable.
 - **Reproducibility** — every audit slice includes trace-replay round-trips that reproduce sequence, AIRR coordinates, and per-pass event counts.
 - **Distribution invariants** — Monte-Carlo tests (±5σ) prove the constrained samplers draw from `natural_weight × admissibility`, with explicit negative controls against renormalization bugs.
 - **Performance budgets** — wall-time regression guards on seven representative workloads catch ~10× slowdowns before they ship.
-- **Postcondition validator** — `result.validate_records(refdata)` runs the engine's own truth oracle over every record (re-derives counters, junction, allele tie-set, structural coords from outcome state). Returns a `ValidationReport` you can `assert` on as a one-line CI guard.
-- **Live-call cache parity** — `outcome.check_live_call_cache_parity(refdata)` compares the cached `SegmentLiveCall` on the final simulation against a from-scratch recompute, per V/D/J. The engine-side guard that fails closest to a refresh-path bug's source.
+- **Postcondition validator** — `result.validate_records(refdata)` runs the engine's own truth oracle over every projected AIRR record (re-derives counters, junction, allele tie-set, structural coords from outcome state). Returns a `ValidationReport` you can `assert` on as a one-line CI guard. **This is the public output-correctness contract.**
+- **Live-call cache parity** — `outcome.check_live_call_cache_parity(refdata)` compares the cached `SegmentLiveCall` on the final simulation against a from-scratch recompute, per V/D/J. **This is the internal cache-correctness check on the state that feeds projection.**
 
 Two independent layers, each one a single call:
 
 ```python
 result = exp.run_records(n=1000, seed=0)
 
-# Layer 1 — projected AIRR records (user-facing contract).
+# Layer 1 — public AIRR output correctness.
 report = result.validate_records(refdata)
 assert report, report.summary()
 
-# Layer 2 — cached live-call state feeding projection (engine-side guard).
+# Layer 2 — internal live-call cache correctness.
 for outcome in result.outcomes:
     for p in outcome.check_live_call_cache_parity(refdata):
         assert p["tie_set_matches"], p
 ```
+
+**Troubleshooting rule.** If a CI run has both layers failing on the same batch, fix the **parity** divergence first: a stale cache leaks into projection and produces spurious validator failures downstream. Once parity is green, rerun the validator — remaining failures then point at a genuine projection-layer bug rather than cache fallout.
 
 The navigable index — guarantees → audit docs → test files — lives in
 [`docs/validation_matrix.md`](docs/validation_matrix.md). Use it to

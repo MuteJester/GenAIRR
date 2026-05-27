@@ -181,6 +181,10 @@ def _inject_truth_columns(outcome: Any, refdata: Any, record: Dict[str, Any]) ->
 class ValidationReport:
     """Aggregate report from :meth:`SimulationResult.validate_records`.
 
+    Carries the result of the **public AIRR output correctness** gate
+    over a batch — the downstream contract that says "every projected
+    record is internally consistent with its outcome."
+
     Attributes:
       ``count``    — total records checked.
       ``failures`` — list of failing records, each as a dict with
@@ -192,6 +196,13 @@ class ValidationReport:
 
     The report is truthy iff ``ok`` is True, so ``assert report``
     works as a one-line CI guard.
+
+    Sibling gate: :meth:`Outcome.check_live_call_cache_parity` —
+    internal cache-correctness check on the state that feeds
+    projection. If both fail on the same batch, fix parity first
+    (a stale cache leaks into projection); see
+    :meth:`SimulationResult.validate_records` docstring for the
+    full troubleshooting rule.
     """
 
     __slots__ = ("count", "failures")
@@ -331,17 +342,32 @@ class SimulationResult:
     # ── validation ──────────────────────────────────────────────────
 
     def validate_records(self, refdata: Any) -> "ValidationReport":
-        """Run the AIRR-record postcondition validator over every
-        record in this result. Returns a :class:`ValidationReport`.
+        """**Public AIRR output correctness check.**
 
-        Each record is validated against its original ``Outcome``
-        (which carries the trace, event ledger, and final
-        ``Simulation`` the validator needs). A record passes the
-        report when its outcome's
-        ``validate_record(refdata, sequence_id=...)`` returns an
-        empty issue list. Failures are collected with their
-        ``record_index``, ``sequence_id``, and the list of issue
-        dicts.
+        Run the postcondition validator over every record in this
+        result and return a :class:`ValidationReport`. This is the
+        gate a downstream consumer cares about: "is each projected
+        AIRR record internally consistent with the engine state that
+        produced it?"
+
+        Each record is re-derived independently from its original
+        ``Outcome`` (trace + event ledger + final ``Simulation``)
+        and compared against the projected dict. A record passes
+        when ``outcome.validate_record(refdata, sequence_id=...)``
+        returns an empty issue list. Failures collect the
+        ``record_index``, ``sequence_id``, and the issue dicts.
+
+        **Companion check** — for engine-side integrity, see
+        :meth:`Outcome.check_live_call_cache_parity` (returns the
+        cached-vs-fresh divergence on the live-call cache that
+        *feeds* projection).
+
+        **Troubleshooting rule** — if a CI run has both this
+        validator AND the parity harness failing on the same batch,
+        fix the parity divergence FIRST: a stale cache can leak
+        into projection and produce spurious validator failures.
+        Once parity is green, rerun the validator; remaining
+        failures point at a real projection-layer bug.
 
         ``refdata`` must be the same :class:`RefDataConfig` the
         outcomes were produced against; passing a different refdata

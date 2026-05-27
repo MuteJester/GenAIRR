@@ -151,21 +151,28 @@ impl PyOutcome {
             .collect()
     }
 
-    /// Compare the cached `SegmentLiveCall` on the final simulation
-    /// against a fresh from-scratch recomputation, per V/D/J. Returns
-    /// a list of per-segment parity dicts:
+    /// **Internal live-call cache correctness check.**
     ///
-    ///   {
-    ///     "segment": "V"/"D"/"J",
-    ///     "tie_set_matches": bool,
-    ///     "cached_tie_set": [allele_id, ...],
-    ///     "fresh_tie_set": [allele_id, ...],
-    ///     "cached_present": bool,
-    ///     "fresh_present": bool,
-    ///     "hypothesis_bounds_match": bool | None,
-    ///     "cached_hypothesis": {seq_start, seq_end, ref_start, ref_end} | None,
-    ///     "fresh_hypothesis": {seq_start, seq_end, ref_start, ref_end} | None,
-    ///   }
+    /// Compare the cached `SegmentLiveCall` on the final simulation
+    /// against a fresh from-scratch recomputation, per V/D/J. This is
+    /// the engine-side guard: "does the cached state that feeds
+    /// projection equal what a from-scratch walk would produce?"
+    ///
+    /// Returns a list of per-segment parity dicts:
+    ///
+    /// ```text
+    /// {
+    ///   "segment": "V" / "D" / "J",
+    ///   "tie_set_matches": bool,
+    ///   "cached_tie_set": [allele_id, ...],
+    ///   "fresh_tie_set": [allele_id, ...],
+    ///   "cached_present": bool,
+    ///   "fresh_present": bool,
+    ///   "hypothesis_bounds_match": bool | None,
+    ///   "cached_hypothesis": {seq_start, seq_end, ref_start, ref_end} | None,
+    ///   "fresh_hypothesis": {seq_start, seq_end, ref_start, ref_end} | None,
+    /// }
+    /// ```
     ///
     /// Use this in tests as an explicit cache-equivalence guard:
     ///
@@ -174,7 +181,19 @@ impl PyOutcome {
     ///     assert p["tie_set_matches"], p
     /// ```
     ///
-    /// See `docs/airr_record_validator.md` §5.2 for the history.
+    /// **Companion check** — for downstream AIRR-record correctness,
+    /// see `SimulationResult.validate_records(refdata)` (the
+    /// user-facing postcondition over projected output).
+    ///
+    /// **Troubleshooting rule** — if a CI run has both this parity
+    /// harness AND `validate_records` failing on the same batch,
+    /// fix the parity divergence FIRST: a stale cache leaks into
+    /// projection and produces spurious validator failures
+    /// downstream. Once parity is green, rerun the validator;
+    /// remaining failures point at a real projection-layer bug.
+    ///
+    /// See `docs/airr_record_validator.md` §5.2 for the bug-class
+    /// history that motivated this harness.
     fn check_live_call_cache_parity<'py>(
         &self,
         py: Python<'py>,
