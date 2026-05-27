@@ -37,6 +37,7 @@
 #[derive(Clone, Debug)]
 pub struct Rng {
     state: u64,
+    words_consumed: u64,
 }
 
 impl Rng {
@@ -49,12 +50,22 @@ impl Rng {
             } else {
                 seed
             },
+            words_consumed: 0,
         }
+    }
+
+    /// Number of 64-bit PRNG words consumed from this stream.
+    ///
+    /// This is an observability hook for deterministic tests and
+    /// replay diagnostics. It does not affect the generated stream.
+    pub fn words_consumed(&self) -> u64 {
+        self.words_consumed
     }
 
     /// Advance the stream and return the next 64-bit word.
     /// SplitMix64 finalizer — see Vigna 2014.
     pub fn next_u64(&mut self) -> u64 {
+        self.words_consumed = self.words_consumed.saturating_add(1);
         self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.state;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -154,8 +165,11 @@ mod tests {
         // Round-trip: pulling a u32 should advance the state. Two
         // consecutive u32 draws give different values for any seed.
         let mut r = Rng::new(7);
+        assert_eq!(r.words_consumed(), 0);
         let a = r.next_u32();
+        assert_eq!(r.words_consumed(), 1);
         let b = r.next_u32();
+        assert_eq!(r.words_consumed(), 2);
         assert_ne!(a, b);
     }
 
@@ -165,6 +179,21 @@ mod tests {
         assert_eq!(r.range_u32(0), 0);
         // Calling range_u32(0) does not advance state or panic.
         assert_eq!(r.range_u32(0), 0);
+        assert_eq!(r.words_consumed(), 0);
+    }
+
+    #[test]
+    fn rng_tracks_consumed_words_without_changing_stream() {
+        let mut counted = Rng::new(123);
+        let mut plain = Rng::new(123);
+
+        assert_eq!(counted.words_consumed(), 0);
+        assert_eq!(counted.next_u64(), plain.next_u64());
+        assert_eq!(counted.words_consumed(), 1);
+        assert_eq!(counted.next_f64(), plain.next_f64());
+        assert_eq!(counted.words_consumed(), 2);
+        assert_eq!(counted.range_u32(16), plain.range_u32(16));
+        assert_eq!(counted.words_consumed(), 3);
     }
 
     #[test]

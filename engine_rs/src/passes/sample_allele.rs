@@ -2,8 +2,9 @@
 
 use crate::address;
 use crate::assignment::AlleleInstance;
+use crate::contract::ChoiceContext;
 use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
-use crate::ir::{Segment, Simulation};
+use crate::ir::{Segment, Simulation, SimulationBuilder};
 use crate::pass::{AlleleIdSupport, Pass, PassCompileFact, PassContext, PassEffect, PassError};
 use crate::refdata::AlleleId;
 use crate::trace::ChoiceValue;
@@ -67,6 +68,48 @@ impl SampleAllelePass {
         address::sample_allele_vdj(self.segment)
     }
 
+    fn typed_segment(&self) -> address::VdjSegment {
+        match self.segment {
+            Segment::V => address::VdjSegment::V,
+            Segment::D => address::VdjSegment::D,
+            Segment::J => address::VdjSegment::J,
+            Segment::Np1 | Segment::Np2 => unreachable!("constructor rejects NP segments"),
+        }
+    }
+
+    fn choice_address(&self) -> address::ChoiceAddress {
+        address::ChoiceAddress::SampleAllele(self.typed_segment())
+    }
+
+    /// Constraint-aware allele draw.
+    ///
+    /// **v3.0 documented exception to the global
+    /// constrain-before-propose invariant.** The other constrained
+    /// samplers — TrimPass, GenerateNP (length and base),
+    /// ContaminantPass, the indel tuple sampler, the substitution
+    /// helpers — all skip the slot on permissive empty-support
+    /// rather than falling back to an unconstrained draw. Allele
+    /// sampling cannot do the same: every downstream pass
+    /// (assembly, trim, NP generation) requires an `AlleleInstance`
+    /// in the segment slot, so a "skip" semantics would panic the
+    /// pipeline at the next assemble. The architecturally honest
+    /// alternatives are:
+    /// 1. Strict-error in *both* modes (forces upstream
+    ///    re-planning).
+    /// 2. Sentinel `AlleleId(0)` (semantically wrong — the chosen
+    ///    allele is arbitrary, not "the first one").
+    /// 3. Keep the unconstrained fallback in permissive mode,
+    ///    document it as the exception.
+    ///
+    /// Option 3 is the lowest-blast-radius choice and what's
+    /// implemented here. Strict mode honors the rule (returns
+    /// `ConstraintSampling`); permissive mode falls back to the
+    /// raw natural draw. A future v3.x phase can revisit this if
+    /// allele feasibility filtering becomes more load-bearing.
+    /// Contracts may narrow allele IDs (for example
+    /// `AnchorPreserved` rejects candidates whose anchors cannot be
+    /// retained), and the runtime feasibility context may narrow
+    /// them further.
     fn sample_allele(
         &self,
         sim: &Simulation,
@@ -83,7 +126,12 @@ impl SampleAllelePass {
                 let choice = ChoiceValue::AlleleId(candidate.index());
                 let contract_ok = contracts.map_or(true, |contracts| {
                     contracts
-                        .admits(sim, refdata, self.address(), &choice)
+                        .admits_typed(
+                            sim,
+                            refdata,
+                            ChoiceContext::none().with_address(self.choice_address()),
+                            &choice,
+                        )
                         .is_ok()
                 });
                 let feasible_ok = feasibility.map_or(true, |feasibility| {
@@ -95,6 +143,10 @@ impl SampleAllelePass {
                 Err(reason) if strict => {
                     return Err(self.constraint_sampling_error(reason));
                 }
+                // v3.0 documented exception: see method-level doc
+                // above. Allele assignment is load-bearing for
+                // downstream passes; a permissive skip would panic
+                // the pipeline.
                 Err(_) => {}
             }
         }
@@ -106,16 +158,159 @@ impl SampleAllelePass {
         PassError::constraint_sampling(self.address(), self.address(), reason)
     }
 
+    /// Apply the chosen allele assignment via a `SimulationBuilder`
+    /// so the [`SimulationEvent::AssignmentChanged`] event flows
+    /// through every attached sink. The persistent mutation
+    /// itself is still `Simulation::with_allele_assigned`, called
+    /// inside [`SimulationBuilder::assign_allele`]; this wrap is
+    /// purely about routing the consequence onto the typed event
+    /// channel.
+    ///
+    /// When `ctx.event_log_sink` is supplied (compiled execution
+    /// path), the captured event is forwarded into it so the
+    /// pass's `EventRecord` carries the consequence on
+    /// `simulation_events`.
+    fn commit_assignment(
+        &self,
+        sim: Simulation,
+        id: AlleleId,
+        ctx: &mut PassContext,
+    ) -> Simulation {
+        let mut builder = SimulationBuilder::from_simulation(sim);
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+        builder.assign_allele(self.segment, AlleleInstance::new(id));
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(builder.seal_event_log_observer());
+        }
+        builder.seal()
+    }
+
     fn execute_with_sampling_mode(
         &self,
         sim: &Simulation,
         ctx: &mut PassContext,
-        strict: bool,
+        _strict: bool,
     ) -> Result<Simulation, PassError> {
-        let id = self.sample_allele(sim, ctx, strict)?;
+        // Trace-injected replay (Option B): consume the recorded
+        // allele id from the cursor, then run the same admissibility
+        // chain a fresh draw would have to pass. The replay contract
+        // is **trace supplies proposals; engine validation decides
+        // whether they apply** — a recorded id that no longer
+        // belongs in refdata, in the distribution's support, or
+        // under the active contracts / feasibility is a structured
+        // error, not silently-applied corruption.
+        if ctx.replay_cursor.is_some() {
+            let id_index = ctx
+                .replay_cursor
+                .as_deref_mut()
+                .expect("replay_cursor presence checked above")
+                .expect_allele_id(self.choice_address())
+                .map_err(|reason| PassError::replay(self.name(), reason))?;
+            self.validate_replay_candidate(sim, ctx, id_index)?;
+            ctx.trace
+                .record_choice(self.choice_address(), ChoiceValue::AlleleId(id_index));
+            return Ok(self.commit_assignment(sim.clone(), AlleleId::new(id_index), ctx));
+        }
+
+        let id = self.sample_allele(sim, ctx, _strict)?;
         ctx.trace
-            .record(self.address(), ChoiceValue::AlleleId(id.index()));
-        Ok(sim.with_allele_assigned(self.segment, AlleleInstance::new(id)))
+            .record_choice(self.choice_address(), ChoiceValue::AlleleId(id.index()));
+        Ok(self.commit_assignment(sim.clone(), id, ctx))
+    }
+
+    /// Run the full admissibility chain against a replay candidate:
+    ///
+    /// 1. The allele id must resolve in `ctx.refdata` for this
+    ///    segment (when refdata is supplied).
+    /// 2. The id must lie in the natural distribution's enumerable
+    ///    support — a recorded value outside the support implies
+    ///    either a refdata swap or a tampered trace.
+    /// 3. Any active contracts must admit the candidate via
+    ///    `admits_typed` (same surface as the fresh-sampling path's
+    ///    contract filter).
+    /// 4. The runtime feasibility tracker must admit the candidate
+    ///    (same call as the fresh-sampling path).
+    ///
+    /// Mismatches surface as the structured `PassError` variant
+    /// that best names *what* failed:
+    /// - unknown allele id → `MissingAllele`
+    /// - out-of-support / feasibility-rejected →
+    ///   `InvalidDistributionOutput` with a specific `reason`
+    ///   string (so replay diagnostics can distinguish them from
+    ///   live-sampling failures by tag, not by error variant)
+    /// - contract rejection → `ContractViolation` wrapping the
+    ///   single violation `admits_typed` short-circuited on
+    ///
+    /// When `support()` returns `None` (distribution too large to
+    /// enumerate), step 2 is skipped — there's no usable oracle.
+    /// Today's `AllelePoolDist` always enumerates, so this branch
+    /// is reachable only for future distribution kinds.
+    fn validate_replay_candidate(
+        &self,
+        sim: &Simulation,
+        ctx: &PassContext,
+        id_index: u32,
+    ) -> Result<(), PassError> {
+        let allele_id = AlleleId::new(id_index);
+        let choice = ChoiceValue::AlleleId(id_index);
+
+        if let Some(refdata) = ctx.refdata {
+            if refdata.get(self.segment, allele_id).is_none() {
+                return Err(PassError::missing_allele(
+                    self.name(),
+                    self.segment,
+                    id_index,
+                ));
+            }
+        }
+
+        if let Some(support) = self.distribution.support() {
+            let in_support = support
+                .iter()
+                .any(|(id, weight)| id.index() == id_index && *weight > 0.0);
+            if !in_support {
+                return Err(PassError::invalid_distribution_output(
+                    self.name(),
+                    self.address(),
+                    id_index as i64,
+                    "allele_id_not_in_distribution_support",
+                ));
+            }
+        }
+
+        if let Some(contracts) = ctx.contracts {
+            contracts
+                .admits_typed(
+                    sim,
+                    ctx.refdata,
+                    ChoiceContext::none().with_address(self.choice_address()),
+                    &choice,
+                )
+                .map_err(|violation| {
+                    PassError::contract_violation(self.name(), vec![violation])
+                })?;
+        }
+
+        if let Some(feasibility) = ctx.feasibility {
+            if !feasibility.admits(
+                ctx.pass_index,
+                sim,
+                ctx.refdata,
+                self.address(),
+                &choice,
+            ) {
+                return Err(PassError::invalid_distribution_output(
+                    self.name(),
+                    self.address(),
+                    id_index as i64,
+                    "feasibility_rejected",
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -137,8 +332,10 @@ impl Pass for SampleAllelePass {
         self.execute_with_sampling_mode(sim, ctx, true)
     }
 
-    fn declared_choices(&self) -> Vec<String> {
-        vec![self.address().to_string()]
+    fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {
+        vec![address::ChoiceAddressPattern::SampleAllele(
+            self.typed_segment(),
+        )]
     }
 
     fn effects(&self) -> Vec<PassEffect> {
@@ -179,8 +376,8 @@ mod tests {
     use super::test_support::make_test_pool;
     use super::*;
     use crate::dist::AllelePoolDist;
-    use crate::pass::PassPlan;
     use crate::pass::testing::PassRuntime;
+    use crate::pass::PassPlan;
 
     #[test]
     #[should_panic(expected = "segment must be V, D, or J")]
@@ -208,14 +405,35 @@ mod tests {
         let final_sim = outcome.final_simulation();
         // Single-allele dist always returns AlleleId(0).
         assert_eq!(
-            final_sim.assignments.get(Segment::V).copied().unwrap().allele_id,
+            final_sim
+                .assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .allele_id,
             crate::refdata::AlleleId::new(0)
         );
         assert!(final_sim.assignments.get(Segment::D).is_none());
         assert!(final_sim.assignments.get(Segment::J).is_none());
         // Default trims.
-        assert_eq!(final_sim.assignments.get(Segment::V).copied().unwrap().trim_5, 0);
-        assert_eq!(final_sim.assignments.get(Segment::V).copied().unwrap().trim_3, 0);
+        assert_eq!(
+            final_sim
+                .assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .trim_5,
+            0
+        );
+        assert_eq!(
+            final_sim
+                .assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .trim_3,
+            0
+        );
     }
 
     #[test]
@@ -274,8 +492,18 @@ mod tests {
         let ob = PassRuntime::execute(&plan_b, Simulation::new(), 0xc0ff_ee);
 
         assert_eq!(
-            oa.final_simulation().assignments.get(Segment::V).copied().unwrap().allele_id,
-            ob.final_simulation().assignments.get(Segment::V).copied().unwrap().allele_id
+            oa.final_simulation()
+                .assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .allele_id,
+            ob.final_simulation()
+                .assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .allele_id
         );
         assert_eq!(oa.trace.choices()[0].value, ob.trace.choices()[0].value);
     }
@@ -311,9 +539,33 @@ mod tests {
         assert_eq!(sim.assignments.iter().count(), 3);
 
         // Sampled ids are in-bounds for their pools (D-binding from C.3).
-        assert!(sim.assignments.get(Segment::V).copied().unwrap().allele_id.as_usize() < 5);
-        assert!(sim.assignments.get(Segment::D).copied().unwrap().allele_id.as_usize() < 3);
-        assert!(sim.assignments.get(Segment::J).copied().unwrap().allele_id.as_usize() < 2);
+        assert!(
+            sim.assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .allele_id
+                .as_usize()
+                < 5
+        );
+        assert!(
+            sim.assignments
+                .get(Segment::D)
+                .copied()
+                .unwrap()
+                .allele_id
+                .as_usize()
+                < 3
+        );
+        assert!(
+            sim.assignments
+                .get(Segment::J)
+                .copied()
+                .unwrap()
+                .allele_id
+                .as_usize()
+                < 2
+        );
     }
 
     #[test]
@@ -339,5 +591,210 @@ mod tests {
         let pass = SampleAllelePass::new(Segment::J, Box::new(AllelePoolDist::uniform(&pool)));
         assert_eq!(pass.segment(), Segment::J);
         assert_eq!(pass.name(), "sample_allele.j");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Replay validation parity
+    //
+    // These tests pin the replay contract: **trace supplies the
+    // proposal; engine validation decides whether it applies**. A
+    // recorded `AlleleId` must pass refdata + support + contract +
+    // feasibility checks before `sim.with_allele_assigned` runs.
+    // ──────────────────────────────────────────────────────────────
+
+    use crate::address::ChoiceAddress;
+    use crate::contract::{ChoiceContext, Contract, ContractSet, ContractViolation};
+    use crate::pass::PassContext;
+    use crate::refdata::{ChainType, RefDataConfig};
+    use crate::replay::TraceCursor;
+    use crate::rng::Rng;
+    use crate::trace::{ChoiceRecord, Trace};
+
+    /// Drive the pass through the replay path with the given
+    /// pre-recorded `AlleleId` choice, optional contracts, and the
+    /// supplied refdata. Returns the result + a snapshot of any
+    /// trace records the pass wrote.
+    fn run_replay(
+        pass: &SampleAllelePass,
+        sim: Simulation,
+        recorded_id: u32,
+        refdata: Option<&RefDataConfig>,
+        contracts: Option<&ContractSet>,
+    ) -> (Result<Simulation, PassError>, Trace) {
+        let addr = pass.choice_address();
+        let records = vec![ChoiceRecord::new(
+            addr.to_string(),
+            ChoiceValue::AlleleId(recorded_id),
+        )];
+        let mut cursor = TraceCursor::from_owned(records);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0xc0ff_ee);
+        let result;
+        {
+            let mut ctx = PassContext {
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata,
+                contracts,
+                feasibility: None,
+                reference_index: None,
+                replay_cursor: Some(&mut cursor),
+                event_log_sink: None,
+            };
+            result = pass.execute_with_sampling_mode(&sim, &mut ctx, true);
+        }
+        (result, trace)
+    }
+
+    fn refdata_with_v_pool(n_alleles: usize) -> RefDataConfig {
+        let mut rd = RefDataConfig::empty(ChainType::Vdj);
+        for i in 0..n_alleles {
+            let _ = rd.v_pool.push(crate::refdata::Allele {
+                name: format!("test_allele_{}*01", i),
+                gene: format!("test_allele_{}", i),
+                seq: vec![b'A'; 30],
+                segment: Segment::V,
+                anchor: Some(10),
+            });
+        }
+        rd
+    }
+
+    #[test]
+    fn replay_happy_path_assigns_recorded_id_when_all_checks_pass() {
+        // Pool of 3 V alleles; replay recorded id 1; matching
+        // refdata. Should land cleanly with the trace re-emitted.
+        let pool = make_test_pool(3, Segment::V);
+        let pass =
+            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let rd = refdata_with_v_pool(3);
+
+        let (result, trace) =
+            run_replay(&pass, Simulation::new(), 1, Some(&rd), None);
+        let sim = result.expect("happy-path replay must succeed");
+
+        assert_eq!(
+            sim.assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .allele_id
+                .index(),
+            1
+        );
+        // Trace re-emitted with the same id.
+        let rec = trace.find("sample_allele.v").unwrap();
+        assert_eq!(rec.value, ChoiceValue::AlleleId(1));
+    }
+
+    #[test]
+    fn replay_rejects_id_missing_from_refdata() {
+        // Recorded id 5; refdata only has 3 alleles → MissingAllele.
+        let pool = make_test_pool(3, Segment::V);
+        let pass =
+            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let rd = refdata_with_v_pool(3);
+
+        let (result, _) = run_replay(&pass, Simulation::new(), 5, Some(&rd), None);
+        match result.unwrap_err() {
+            PassError::MissingAllele {
+                segment,
+                allele_id,
+                pass_name,
+            } => {
+                assert_eq!(segment, Segment::V);
+                assert_eq!(allele_id, 5);
+                assert_eq!(pass_name, "sample_allele.v");
+            }
+            other => panic!("expected MissingAllele, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replay_rejects_id_outside_distribution_support() {
+        // Distribution support enumerates ids 0..3. Replay recorded
+        // id 7. Even if refdata happens to contain a 7th allele,
+        // the distribution can't have drawn it — the recorded value
+        // didn't come from this plan's natural draw.
+        let pool = make_test_pool(3, Segment::V);
+        let pass =
+            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let rd = refdata_with_v_pool(10); // wider refdata so MissingAllele isn't first
+
+        let (result, _) = run_replay(&pass, Simulation::new(), 7, Some(&rd), None);
+        match result.unwrap_err() {
+            PassError::InvalidDistributionOutput {
+                pass_name,
+                address,
+                value,
+                reason,
+            } => {
+                assert_eq!(pass_name, "sample_allele.v");
+                assert_eq!(address, "sample_allele.v");
+                assert_eq!(value, 7);
+                assert_eq!(reason, "allele_id_not_in_distribution_support");
+            }
+            other => panic!("expected InvalidDistributionOutput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replay_rejects_id_when_contract_short_circuits() {
+        // Stub contract that rejects id 1 at `sample_allele.v`.
+        // Replay records id 1 → ContractViolation surfaced (rather
+        // than silent application).
+        struct RejectAlleleId1;
+        impl Contract for RejectAlleleId1 {
+            fn name(&self) -> &str {
+                "reject_allele_id_1"
+            }
+            fn verify(
+                &self,
+                _sim: &Simulation,
+                _refdata: Option<&RefDataConfig>,
+            ) -> Result<(), ContractViolation> {
+                Ok(())
+            }
+            fn admits_typed(
+                &self,
+                _sim: &Simulation,
+                _refdata: Option<&RefDataConfig>,
+                _context: ChoiceContext<'_>,
+                candidate: &ChoiceValue,
+            ) -> Result<(), ContractViolation> {
+                if let ChoiceValue::AlleleId(1) = candidate {
+                    return Err(ContractViolation::new(self.name(), "id 1 rejected"));
+                }
+                Ok(())
+            }
+        }
+
+        let pool = make_test_pool(3, Segment::V);
+        let pass =
+            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let rd = refdata_with_v_pool(3);
+        let contracts = ContractSet::new().with(Box::new(RejectAlleleId1));
+
+        let (result, _) =
+            run_replay(&pass, Simulation::new(), 1, Some(&rd), Some(&contracts));
+        match result.unwrap_err() {
+            PassError::ContractViolation {
+                pass_name,
+                violations,
+            } => {
+                assert_eq!(pass_name, "sample_allele.v");
+                assert_eq!(violations.len(), 1);
+                assert_eq!(violations[0].contract_name, "reject_allele_id_1");
+            }
+            other => panic!("expected ContractViolation, got {other:?}"),
+        }
+        // Sanity: a valid id under the same contract still lands.
+        let (ok_result, _) =
+            run_replay(&pass, Simulation::new(), 0, Some(&rd), Some(&contracts));
+        let _ = ok_result.expect("id 0 should pass the contract and apply");
+        // And we know we used the choice_address — match the
+        // generate_np pattern: the address is the canonical one.
+        let _ = ChoiceAddress::SampleAllele(address::VdjSegment::V);
     }
 }

@@ -18,6 +18,17 @@ name = "genairr_engine"
 
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+# Durable trace I/O. `serde` derives Serialize/Deserialize on the
+# trace types; `serde_json` is the canonical on-disk format for
+# `TraceFile` (the audit artifact).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Deterministic content hashing for the refdata signature inside
+# `TraceFile`. SHA-256 is cryptographic strength — overkill for
+# identity but the right tool when a hash mismatch is the only
+# defense against silently replaying a trace against a drifted
+# reference dataset.
+sha2 = "0.10"
 
 [dev-dependencies]
 # Reserved for proptest / property-based tests.

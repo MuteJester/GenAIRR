@@ -22,9 +22,11 @@ use crate::trace::ChoiceValue;
 ///
 /// This means the trace begins with a single Boolean choice:
 /// `corrupt.contaminant.applied`. When that's `Bool(true)`, the
-/// trace continues with one base entry per pool position; when it's
-/// `Bool(false)`, no further records are emitted (the pool is
-/// returned unchanged).
+/// trace records one base entry for each position that was actually
+/// replaced; under active contracts in permissive mode, positions
+/// with empty admissible support are skipped and have no base trace
+/// record. When `applied` is `Bool(false)`, no further records are
+/// emitted (the pool is returned unchanged).
 ///
 /// Codon-rail data is not stored on `Region` — the pool directly
 /// reflects the contaminant bytes after each `with_base_changed`,
@@ -71,11 +73,17 @@ impl ContaminantPass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
-        // 1. Coin flip: is this read contaminated?
-        let coin = ctx.rng.next_f64();
-        let applied = coin < self.apply_prob;
-        ctx.trace.record(
-            address::CORRUPT_CONTAMINANT_APPLIED,
+        // Trace-injected replay (Tier 3): consume the recorded
+        // Bool. Same shape as RevCompPass — single coin flip.
+        let applied = if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
+            cursor
+                .expect_bool(address::ChoiceAddress::CorruptContaminantApplied)
+                .map_err(|reason| PassError::replay(self.name(), reason))?
+        } else {
+            ctx.rng.next_f64() < self.apply_prob
+        };
+        ctx.trace.record_choice(
+            address::ChoiceAddress::CorruptContaminantApplied,
             ChoiceValue::Bool(applied),
         );
 
@@ -92,12 +100,37 @@ impl ContaminantPass {
         // contract-filtered per base.
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
+        // Per-site iteration. Under replay mode the original run
+        // may have skipped sites where contracts rejected the
+        // candidate, producing trace gaps; the cursor's next record
+        // address tells us whether the original recorded this site.
+        // We peek and decide:
+        //   - cursor's next address matches `bases[i]` → call
+        //     `substitute_base`, which consumes the base via the
+        //     replay branch and validates against current contracts.
+        //   - mismatch / cursor drained → skip this site, matching
+        //     the original empty-support behavior.
         for i in 0..pool_len {
             let site = NucHandle::new(i);
+            let base_choice_address = address::ChoiceAddress::CorruptContaminantBase(i);
+            let should_consume = if tx.replay_cursor().is_some() {
+                let expected = base_choice_address.to_string();
+                tx.replay_cursor()
+                    .and_then(|c| c.peek_address().map(|s| s == expected))
+                    .unwrap_or(false)
+            } else {
+                true
+            };
+            if !should_consume {
+                // Replay mode: cursor doesn't have a record for this
+                // index → original run skipped (contract reject).
+                // Skip in replay too, matching the realized behavior.
+                continue;
+            }
             tx.substitute_base(
                 site,
                 self.base_dist.as_ref(),
-                &address::corrupt_contaminant_base(i),
+                base_choice_address,
                 i,
                 pool_len,
                 None,
@@ -125,10 +158,10 @@ impl Pass for ContaminantPass {
         self.execute_with_sampling_mode(sim, ctx, true)
     }
 
-    fn declared_choices(&self) -> Vec<String> {
+    fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {
         vec![
-            address::CORRUPT_CONTAMINANT_APPLIED.to_string(),
-            address::CORRUPT_CONTAMINANT_BASES_PATTERN.to_string(),
+            address::ChoiceAddressPattern::CorruptContaminantApplied,
+            address::ChoiceAddressPattern::CorruptContaminantBase,
         ]
     }
 
@@ -142,11 +175,11 @@ mod tests {
     use super::*;
     use crate::assignment::AlleleInstance;
     use crate::contract::productive;
-    use crate::ir::compute_codon_rail;
     use crate::dist::{FilteredSampleError, UniformBase};
+    use crate::ir::compute_codon_rail;
     use crate::ir::{Nucleotide, Region, Segment};
-    use crate::pass::PassPlan;
     use crate::pass::testing::PassRuntime;
+    use crate::pass::PassPlan;
     use crate::refdata::{Allele, AlleleId, ChainType, RefDataConfig};
 
     fn contaminant_test_sim() -> Simulation {
@@ -382,7 +415,10 @@ mod tests {
         sim = sim.with_region_added(region);
         // Before contamination: M G G (rail computed via the
         // persistent helper above).
-        assert_eq!(compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids, b"MGG");
+        assert_eq!(
+            compute_codon_rail(&sim.sequence.regions[0], &sim.pool).amino_acids,
+            b"MGG"
+        );
 
         let mut plan = PassPlan::new();
         plan.push(Box::new(ContaminantPass::new(1.0, Box::new(UniformBase))));
@@ -512,6 +548,86 @@ mod tests {
     }
 
     #[test]
+    fn contaminant_permissive_empty_support_skips_sites_without_unconstrained_fallback() {
+        // v3.0 rule: under active contracts + permissive mode,
+        // when the natural base distribution has no admissible
+        // candidates at a site, the engine must NOT fall back to
+        // an unconstrained draw (that would re-introduce
+        // reject-after-propose). Instead the site is skipped:
+        // no trace record, no pool mutation.
+        //
+        // Fixture pool = "AAATGG" (V anchor "AAA" / K, J anchor
+        // "TGG" / W). With `StopOnlyContaminantBaseDist` (support
+        // {T}), only site 3 admits T (it's already T in the J
+        // anchor codon); sites 0..2 and 4,5 all reject T under
+        // AnchorPreserved.
+        //
+        // Pre-v3.0 the permissive path would write T at every
+        // rejecting site (anchor V violation) → productive()
+        // verify fails. v3.0 leaves those sites untouched, so
+        // the bundle holds.
+        let (cfg, sim) = make_contaminant_productive_vj_fixture();
+        let contracts = productive();
+        let outcome = PassRuntime::execute_with_context(
+            &contaminant_plan(Box::new(StopOnlyContaminantBaseDist)),
+            sim.clone(),
+            0,
+            Some(&cfg),
+            Some(&contracts),
+        );
+
+        // `applied = true` (the coin flip fired); per-site `bases[i]`
+        // entries exist only for the one admissible site (i=3).
+        assert_eq!(
+            outcome
+                .trace
+                .find("corrupt.contaminant.applied")
+                .unwrap()
+                .value,
+            ChoiceValue::Bool(true)
+        );
+        for i in [0u32, 1, 2, 4, 5] {
+            assert!(
+                outcome
+                    .trace
+                    .find(&format!("corrupt.contaminant.bases[{}]", i))
+                    .is_none(),
+                "permissive empty-support must skip the trace record at site {}",
+                i
+            );
+        }
+        // Site 3 was admissible (T → T no-op) and writes a trace
+        // entry.
+        assert_eq!(
+            outcome
+                .trace
+                .find("corrupt.contaminant.bases[3]")
+                .unwrap()
+                .value,
+            ChoiceValue::Base(b'T')
+        );
+
+        // Bundle holds — no anchor codon was overwritten.
+        assert!(
+            contracts
+                .verify(outcome.final_simulation(), Some(&cfg))
+                .is_ok(),
+            "v3.0 permissive contaminant must leave the bundle satisfied"
+        );
+
+        // Pool byte-identical to input.
+        for i in 0..(sim.pool.len() as u32) {
+            let h = NucHandle::new(i);
+            assert_eq!(
+                outcome.final_simulation().pool.get(h).unwrap().base,
+                sim.pool.get(h).unwrap().base,
+                "site {} pool byte changed despite empty admissible support",
+                i
+            );
+        }
+    }
+
+    #[test]
     fn contaminant_strict_errors_when_base_filter_empty() {
         let (cfg, sim) = make_contaminant_productive_vj_fixture();
         let contracts = productive();
@@ -531,5 +647,209 @@ mod tests {
             err.constraint_reason(),
             Some(FilteredSampleError::EmptyAdmissibleSupport)
         );
+    }
+
+    // ── Trace-injected replay (Tier 3) ─────────────────────────────
+
+    use crate::address::ChoiceAddress;
+    use crate::pass::PassContext;
+    use crate::replay::{ReplayError, TraceCursor};
+    use crate::rng::Rng;
+    use crate::trace::{ChoiceRecord, Trace};
+
+    fn rec(addr: ChoiceAddress, v: ChoiceValue) -> ChoiceRecord {
+        ChoiceRecord::new(addr.to_string(), v)
+    }
+
+    fn run_contaminant_replay(
+        sim: &Simulation,
+        apply_prob: f64,
+        records: Vec<ChoiceRecord>,
+    ) -> (Result<Simulation, PassError>, Trace, u64) {
+        let pass = ContaminantPass::new(apply_prob, Box::new(UniformBase));
+        let mut cursor = TraceCursor::from_owned(records);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0xc0ff_ee);
+        let result = {
+            let mut ctx = PassContext {
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: None,
+                contracts: None,
+                feasibility: None,
+                reference_index: None,
+                replay_cursor: Some(&mut cursor),
+                event_log_sink: None,
+            };
+            pass.execute_checked(sim, &mut ctx)
+        };
+        let words = rng.words_consumed();
+        (result, trace, words)
+    }
+
+    #[test]
+    fn contaminant_replay_consumes_recorded_bool_and_per_site_bases() {
+        let sim = contaminant_test_sim(); // pool_len = 9
+        let bases = b"TGCATGCAT";
+        let mut records =
+            vec![rec(ChoiceAddress::CorruptContaminantApplied, ChoiceValue::Bool(true))];
+        for (i, b) in bases.iter().enumerate() {
+            records.push(rec(
+                ChoiceAddress::CorruptContaminantBase(i as u32),
+                ChoiceValue::Base(*b),
+            ));
+        }
+
+        let (result, trace, rng_words) = run_contaminant_replay(&sim, 1.0, records);
+        let next = result.unwrap();
+
+        // Every site now carries the replayed base.
+        for (i, b) in bases.iter().enumerate() {
+            assert_eq!(next.pool.get(NucHandle::new(i as u32)).unwrap().base, *b);
+            assert_eq!(
+                trace
+                    .find(&format!("corrupt.contaminant.bases[{}]", i))
+                    .unwrap()
+                    .value,
+                ChoiceValue::Base(*b),
+            );
+        }
+        assert_eq!(rng_words, 0);
+    }
+
+    #[test]
+    fn contaminant_replay_applied_false_skips_per_site_loop() {
+        let sim = contaminant_test_sim();
+        let records = vec![rec(
+            ChoiceAddress::CorruptContaminantApplied,
+            ChoiceValue::Bool(false),
+        )];
+        let (result, trace, rng_words) = run_contaminant_replay(&sim, 0.5, records);
+        let next = result.unwrap();
+
+        // Pool unchanged.
+        for i in 0..sim.pool.len() {
+            let h = NucHandle::new(i as u32);
+            assert_eq!(
+                next.pool.get(h).unwrap().base,
+                sim.pool.get(h).unwrap().base,
+            );
+        }
+        // Trace records the False flag and no per-site bases.
+        assert_eq!(
+            trace.find("corrupt.contaminant.applied").unwrap().value,
+            ChoiceValue::Bool(false),
+        );
+        assert_eq!(trace.find("corrupt.contaminant.bases[0]"), None);
+        assert_eq!(rng_words, 0);
+    }
+
+    #[test]
+    fn contaminant_replay_skips_sites_with_no_record() {
+        // Original run rejected sites 2 and 5 under contracts.
+        // Trace has bases at 0, 1, 3, 4, 6, 7, 8 — no records for
+        // 2 or 5. Replay must skip those sites positionally.
+        let sim = contaminant_test_sim();
+        let kept_sites: Vec<u32> = vec![0, 1, 3, 4, 6, 7, 8];
+        let mut records =
+            vec![rec(ChoiceAddress::CorruptContaminantApplied, ChoiceValue::Bool(true))];
+        for &i in &kept_sites {
+            records.push(rec(
+                ChoiceAddress::CorruptContaminantBase(i),
+                ChoiceValue::Base(b'C'),
+            ));
+        }
+
+        let (result, _trace, _) = run_contaminant_replay(&sim, 1.0, records);
+        let next = result.unwrap();
+
+        // Replayed sites carry C; skipped sites keep their germline base.
+        for &i in &kept_sites {
+            assert_eq!(next.pool.get(NucHandle::new(i)).unwrap().base, b'C');
+        }
+        for &i in &[2u32, 5] {
+            let germline = sim.pool.get(NucHandle::new(i)).unwrap().base;
+            assert_eq!(next.pool.get(NucHandle::new(i)).unwrap().base, germline);
+        }
+    }
+
+    #[test]
+    fn contaminant_replay_wrong_kind_applied_surfaces_replay_error() {
+        let sim = contaminant_test_sim();
+        // Wrong kind: Int instead of Bool.
+        let records = vec![rec(
+            ChoiceAddress::CorruptContaminantApplied,
+            ChoiceValue::Int(1),
+        )];
+        let (result, _, _) = run_contaminant_replay(&sim, 1.0, records);
+        match result.unwrap_err() {
+            PassError::Replay { reason, .. } => {
+                assert!(matches!(reason, ReplayError::ValueKindMismatch { .. }));
+            }
+            other => panic!("expected Replay::ValueKindMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn contaminant_replay_wrong_kind_base_surfaces_replay_error() {
+        let sim = contaminant_test_sim();
+        let records = vec![
+            rec(ChoiceAddress::CorruptContaminantApplied, ChoiceValue::Bool(true)),
+            // Wrong kind for bases[0]: Int instead of Base.
+            rec(
+                ChoiceAddress::CorruptContaminantBase(0),
+                ChoiceValue::Int(0),
+            ),
+        ];
+        let (result, _, _) = run_contaminant_replay(&sim, 1.0, records);
+        match result.unwrap_err() {
+            PassError::Replay { reason, .. } => {
+                assert!(matches!(reason, ReplayError::ValueKindMismatch { .. }));
+            }
+            other => panic!("expected Replay::ValueKindMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn contaminant_replay_under_contract_rejects_inadmissible_recorded_base() {
+        // V-anchor fixture: site 0..2 = TGG (Trp). AnchorPreserved
+        // rejects any non-T at site 0 (changes the codon).
+        let (cfg, sim) = make_contaminant_productive_vj_fixture();
+        let contracts = productive();
+        let records = vec![
+            rec(ChoiceAddress::CorruptContaminantApplied, ChoiceValue::Bool(true)),
+            // Pool is "AAATGG"; site 0 is the first A of the V
+            // anchor codon (AAA = Lys). Substituting to G changes
+            // the amino acid → AnchorPreserved.V rejects.
+            rec(
+                ChoiceAddress::CorruptContaminantBase(0),
+                ChoiceValue::Base(b'G'),
+            ),
+        ];
+        let pass = ContaminantPass::new(1.0, Box::new(UniformBase));
+        let mut cursor = TraceCursor::from_owned(records);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0);
+        let result = {
+            let mut ctx = PassContext {
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: Some(&cfg),
+                contracts: Some(&contracts),
+                feasibility: None,
+                reference_index: None,
+                replay_cursor: Some(&mut cursor),
+                event_log_sink: None,
+            };
+            pass.execute_checked(&sim, &mut ctx)
+        };
+        match result.unwrap_err() {
+            PassError::ConstraintSampling { address, .. } => {
+                assert_eq!(address, "corrupt.contaminant.bases[0]");
+            }
+            other => panic!("expected ConstraintSampling, got {other:?}"),
+        }
     }
 }

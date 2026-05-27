@@ -24,7 +24,9 @@ const REFERENCE: &str = "pass::testing::PassRuntime";
 /// Files allowed to name the path unconditionally: the module's own
 /// files plus the public re-export site.
 fn is_module_internal(path: &Path) -> bool {
-    let rel = path.strip_prefix(env!("CARGO_MANIFEST_DIR")).unwrap_or(path);
+    let rel = path
+        .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+        .unwrap_or(path);
     let rel_str = rel.to_string_lossy().replace('\\', "/");
     matches!(
         rel_str.as_str(),

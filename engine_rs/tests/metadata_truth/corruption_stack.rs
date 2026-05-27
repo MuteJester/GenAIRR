@@ -194,13 +194,7 @@ fn assert_regions_tile_pool(rec: &AirrRecord, sim_pool_len: usize) -> Vec<(Segme
     spans.sort_by_key(|t| t.1);
     // region.end >= region.start
     for (seg, s, e) in &spans {
-        assert!(
-            e >= s,
-            "region {:?} inverted: start={} end={}",
-            seg,
-            s,
-            e,
-        );
+        assert!(e >= s, "region {:?} inverted: start={} end={}", seg, s, e,);
     }
     // pool length matches sequence_length (the AIRR record was built
     // from the final IR's pool, so they should agree by definition).
@@ -222,9 +216,8 @@ fn run_stack(
     plan: PassPlan,
     seed: u64,
 ) -> (genairr_engine::pass::Outcome, AirrRecord) {
-    let compiled =
-        CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
-            .expect("stack plan compiles");
+    let compiled = CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
+        .expect("stack plan compiles");
     let outcome = compiled.run_one(seed).expect("stack plan runs");
     let rec = build_airr_record(&outcome, cfg, "stack");
     (outcome, rec)

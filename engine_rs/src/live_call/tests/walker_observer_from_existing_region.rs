@@ -47,9 +47,7 @@ fn assemble_via_observer(
 
 fn drain_resolved_state(sealed: SealedWalkerState) -> (Vec<u32>, u32, u32) {
     match sealed {
-        SealedWalkerState::Resolved(r) => {
-            (r.scores, r.informative_matches, r.wildcard_matches)
-        }
+        SealedWalkerState::Resolved(r) => (r.scores, r.informative_matches, r.wildcard_matches),
         _ => panic!("expected Resolved"),
     }
 }
@@ -80,7 +78,6 @@ fn rebuild_supports_subsequent_on_base_changed() {
 
     // Rebuild and apply an edit: pos 3 T → G.
     let mut rebuilt = WalkerObserverState::from_existing_region(&idx, &sim, &region);
-    use crate::ir::builder::IrEventObserver;
     let old = *sim.pool.get(NucHandle::new(3)).unwrap();
     rebuilt.on_base_changed(NucHandle::new(3), &old, b'G');
     let rebuilt_sealed = rebuilt.seal(bases.len() as u32);
@@ -114,11 +111,7 @@ fn rebuild_plus_extensions_matches_call_from_region_oracle() {
     let bases = b"AACT";
     let mut sim = Simulation::new();
     for (i, &b) in bases.iter().enumerate() {
-        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
-            b,
-            i as u16,
-            Segment::V,
-        ));
+        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
         sim = next;
     }
     sim = sim.with_region_added(Region::new(
@@ -136,7 +129,6 @@ fn rebuild_plus_extensions_matches_call_from_region_oracle() {
         .unwrap()
         .clone();
     let mut rebuilt = WalkerObserverState::from_existing_region(seg_index, &sim, &region_v);
-    use crate::ir::builder::IrEventObserver;
     let old = *sim.pool.get(NucHandle::new(3)).unwrap();
     rebuilt.on_base_changed(NucHandle::new(3), &old, b'G');
     let rebuilt_sealed = rebuilt.seal(bases.len() as u32);
@@ -152,8 +144,7 @@ fn rebuild_plus_extensions_matches_call_from_region_oracle() {
     );
 
     // Oracle: with_assembled_segment_live_call on the mutated sim.
-    let oracle_sim =
-        with_assembled_segment_live_call(&mutated_sim, &ref_index, Segment::V);
+    let oracle_sim = with_assembled_segment_live_call(&mutated_sim, &ref_index, Segment::V);
     let oracle_call = oracle_sim.segment_calls.get(Segment::V).unwrap();
 
     assert_eq!(
@@ -173,6 +164,9 @@ fn rebuild_empty_region_yields_unresolved() {
     let rebuilt = WalkerObserverState::from_existing_region(&idx, &sim, &empty_region);
     match rebuilt.seal(0) {
         SealedWalkerState::Unresolved { .. } => {}
-        other => panic!("expected Unresolved for empty region, got {:?}", std::mem::discriminant(&other)),
+        other => panic!(
+            "expected Unresolved for empty region, got {:?}",
+            std::mem::discriminant(&other)
+        ),
     }
 }

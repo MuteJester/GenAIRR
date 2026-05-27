@@ -1,4 +1,3 @@
-use crate::contract::ChoiceContext;
 use crate::dist::FilteredSampleError;
 use crate::ir::{NucHandle, NucleotidePool, Simulation};
 
@@ -81,6 +80,10 @@ impl S5FMutationPass {
         index: u32,
         count: u32,
     ) -> Result<Vec<WeightedS5FMutationEvent>, FilteredSampleError> {
+        // `index` + `count` are kept for trace / future post-event
+        // validator hooks but the natural S5F event weight is
+        // independent of them.
+        let _ = (index, count);
         let mut events = Vec::new();
 
         for &(site, mutability) in profile {
@@ -101,15 +104,15 @@ impl S5FMutationPass {
                 return Err(FilteredSampleError::InvalidFilteredSupport);
             }
 
+            // Natural per-(site, base) event weight: mutability(site)
+            // multiplied by the conditional kernel probability
+            // row_weight / row_total. Preserve this exactly so the
+            // v3.0 mask-filtered sample matches the natural event
+            // distribution restricted to the admissible support.
             for (base, weight) in row_candidates {
                 events.push(WeightedS5FMutationEvent {
                     event: S5FMutationEvent { site, base },
                     weight: mutability * (weight / row_total),
-                    context: ChoiceContext::targeted_base_substitution(
-                        index,
-                        count,
-                        NucHandle::new(site),
-                    ),
                 });
             }
         }

@@ -1,4 +1,4 @@
-use crate::address;
+use crate::address::ChoiceAddress;
 use crate::ir::{translate_codon, NucHandle, Segment, Simulation, AMINO_STOP};
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
@@ -21,20 +21,35 @@ enum NpFilterCandidate {
 }
 
 impl NoStopCodonInJunction {
-    pub(super) fn parse_np_base_address(address: &str) -> Option<(Segment, u32)> {
-        address::parse_np_base(address)
+    /// Resolve the NP base slot from the typed [`ChoiceContext::address`].
+    ///
+    /// The post-bridge-flip [`Contract::admits`] / [`Contract::admits_with_context`]
+    /// trait defaults parse the legacy string address into the typed
+    /// [`ChoiceAddress`] before routing to [`Contract::admits_typed`], so
+    /// every caller of this helper sees `context.address` set for
+    /// canonical NP-base addresses. The previous string-parse fallback is
+    /// therefore dead and has been removed.
+    pub(super) fn np_base_for_context(context: ChoiceContext<'_>) -> Option<(Segment, u32)> {
+        match context.address {
+            Some(ChoiceAddress::NpBase { segment, index }) => Some((segment.into(), index)),
+            _ => None,
+        }
     }
 
-    fn parse_np_length_address(address: &str) -> Option<Segment> {
-        address::parse_np_length(address)
+    /// Resolve the NP length slot from the typed [`ChoiceContext::address`].
+    /// Same dead-fallback removal rationale as [`Self::np_base_for_context`].
+    fn np_length_for_context(context: ChoiceContext<'_>) -> Option<Segment> {
+        match context.address {
+            Some(ChoiceAddress::NpLength(segment)) => Some(segment.into()),
+            _ => None,
+        }
     }
 
     fn parse_filter_candidate(
-        address: &str,
         candidate: &ChoiceValue,
         context: ChoiceContext<'_>,
     ) -> Option<NpFilterCandidate> {
-        if let Some(segment) = Self::parse_np_length_address(address) {
+        if let Some(segment) = Self::np_length_for_context(context) {
             let length = match candidate {
                 ChoiceValue::Int(n) if *n >= 0 => *n as u32,
                 _ => return None,
@@ -42,7 +57,7 @@ impl NoStopCodonInJunction {
             return Some(NpFilterCandidate::Length { segment, length });
         }
 
-        let (segment, index_from_address) = Self::parse_np_base_address(address)?;
+        let (segment, index_from_address) = Self::np_base_for_context(context)?;
         let base = match candidate {
             ChoiceValue::Base(b) => *b,
             _ => return None,
@@ -237,11 +252,10 @@ impl NoStopCodonInJunction {
         &self,
         sim: &Simulation,
         refdata: Option<&RefDataConfig>,
-        address: &str,
         candidate: &ChoiceValue,
         context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
-        let np_candidate = match Self::parse_filter_candidate(address, candidate, context) {
+        let np_candidate = match Self::parse_filter_candidate(candidate, context) {
             None => return Ok(()),
             Some(c) => c,
         };
@@ -253,6 +267,7 @@ impl NoStopCodonInJunction {
             None => return Ok(()),
             Some(b) => b,
         };
-        self.reject_known_stop(address, &bases)
+        let diagnostic_address = context.address_string().unwrap_or_default();
+        self.reject_known_stop(&diagnostic_address, &bases)
     }
 }

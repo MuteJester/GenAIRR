@@ -727,6 +727,12 @@ def _legacy_outcome_to_airr_record(
         "n_pcr_errors": _trace_int(outcome, "corrupt.pcr.count", 0),
         "n_quality_errors": _trace_int(outcome, "corrupt.quality.count", 0),
         "n_indels": _trace_int(outcome, "corrupt.indel.count", 0),
+        # Observation-stage end-loss / primer-trim amounts (audit
+        # §6.1 fix). The live projection path uses the Rust kernel
+        # via `outcome.airr_record(...)`; this legacy helper
+        # mirrors the field set so historical callers keep parity.
+        "end_loss_5_length": _trace_int(outcome, "corrupt.end_loss.5", 0),
+        "end_loss_3_length": _trace_int(outcome, "corrupt.end_loss.3", 0),
         "is_contaminant": _trace_bool(outcome, "corrupt.contaminant.applied", False),
     }
 

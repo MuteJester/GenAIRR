@@ -10,7 +10,7 @@
 //! a second pass scheduler: it is a typed, compile-derived support
 //! artifact consulted by sampling passes before committing choices.
 
-use crate::address;
+use crate::address::{self, ChoiceAddress, VdjSegment};
 use crate::assignment::TrimEnd;
 use crate::ir::{translate_codon, Segment, Simulation, AMINO_STOP};
 use crate::refdata::{AlleleId, RefDataConfig};
@@ -318,13 +318,12 @@ impl VjProductiveFeasibility {
 
 fn is_vj_productive_choice(address: &str) -> bool {
     matches!(
-        address,
-        address::SAMPLE_ALLELE_V
-            | address::SAMPLE_ALLELE_J
-            | address::TRIM_V_5
-            | address::TRIM_V_3
-            | address::TRIM_J_5
-            | address::TRIM_J_3
+        ChoiceAddress::parse(address),
+        Some(ChoiceAddress::SampleAllele(VdjSegment::V | VdjSegment::J))
+            | Some(ChoiceAddress::Trim {
+                segment: VdjSegment::V | VdjSegment::J,
+                ..
+            })
     )
 }
 

@@ -20,7 +20,10 @@ fn simulation_with_allele_assigned_populates_slot_persistently() {
     // s0 unchanged.
     assert!(s0.assignments.get(Segment::V).is_none());
     // s1 has the V allele.
-    assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().allele_id, AlleleId::new(7));
+    assert_eq!(
+        s1.assignments.get(Segment::V).copied().unwrap().allele_id,
+        AlleleId::new(7)
+    );
     assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().trim_5, 0);
     assert_eq!(s1.assignments.get(Segment::V).copied().unwrap().trim_3, 0);
 }

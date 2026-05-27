@@ -327,10 +327,11 @@ impl PyPassPlan {
                 rate
             )));
         }
-        self.inner_mut()?.push(Box::new(UniformMutationPass::new_rate(
-            rate,
-            Box::new(UniformBase),
-        )));
+        self.inner_mut()?
+            .push(Box::new(UniformMutationPass::new_rate(
+                rate,
+                Box::new(UniformBase),
+            )));
         Ok(())
     }
 
@@ -414,7 +415,8 @@ impl PyPassPlan {
             )));
         }
         let kernel = S5FKernel::new(mutability, substitution);
-        self.inner_mut()?.push(Box::new(S5FMutationPass::new_rate(kernel, rate)));
+        self.inner_mut()?
+            .push(Box::new(S5FMutationPass::new_rate(kernel, rate)));
         Ok(())
     }
 

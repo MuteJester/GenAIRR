@@ -1,6 +1,6 @@
 //! `ProductiveJunctionFrame` — junction length divisible by 3.
 
-use crate::address;
+use crate::address::ChoiceAddress;
 use crate::ir::{Segment, Simulation};
 use crate::junction::compute_junction;
 use crate::refdata::RefDataConfig;
@@ -29,6 +29,102 @@ pub struct ProductiveJunctionFrame;
 impl ProductiveJunctionFrame {
     pub fn new() -> Self {
         Self
+    }
+
+    fn admits_np_length_candidate(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        np_segment: Segment,
+        address: &str,
+        length: u32,
+    ) -> Result<(), ContractViolation> {
+        let refdata = match refdata {
+            None => return Ok(()),
+            Some(r) => r,
+        };
+
+        let is_vj = sim.assignments.get(Segment::D).is_none();
+        let applicable = match np_segment {
+            Segment::Np1 => is_vj,
+            Segment::Np2 => !is_vj,
+            _ => false,
+        };
+        if !applicable {
+            return Ok(());
+        }
+
+        let v_inst = match sim.assignments.get(Segment::V).copied() {
+            None => return Ok(()),
+            Some(v) => v,
+        };
+        let j_inst = match sim.assignments.get(Segment::J).copied() {
+            None => return Ok(()),
+            Some(j) => j,
+        };
+        let v_allele = match refdata.get(Segment::V, v_inst.allele_id) {
+            None => return Ok(()),
+            Some(a) => a,
+        };
+        let j_allele = match refdata.get(Segment::J, j_inst.allele_id) {
+            None => return Ok(()),
+            Some(a) => a,
+        };
+        let v_anchor = match v_allele.anchor {
+            None => return Ok(()),
+            Some(a) => a as u32,
+        };
+        let j_anchor = match j_allele.anchor {
+            None => return Ok(()),
+            Some(a) => a as u32,
+        };
+
+        let v_trim_5 = v_inst.trim_5 as u32;
+        let j_trim_5 = j_inst.trim_5 as u32;
+        if v_trim_5 > v_anchor || j_trim_5 > j_anchor {
+            return Ok(());
+        }
+
+        let v_region = match sim
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == Segment::V)
+        {
+            None => return Ok(()),
+            Some(r) => r,
+        };
+        let v_anchor_pool = v_region.start.index() + (v_anchor - v_trim_5);
+
+        debug_assert!(
+            sim.sequence.regions.iter().all(|r| r.segment != Segment::J),
+            "ProductiveJunctionFrame::admits at {}: J region is already \
+             assembled in sim.sequence.regions; the hypothetical-J-start \
+             math below assumes J has not been added to the pool yet. \
+             This indicates a pass-ordering bug — NP generation must run \
+             before J assembly.",
+            address
+        );
+
+        let hypothetical_j_start = sim.pool.len() as u32 + length;
+        let hypothetical_j_anchor_pool = hypothetical_j_start + (j_anchor - j_trim_5);
+        if hypothetical_j_anchor_pool + 3 <= v_anchor_pool {
+            return Ok(());
+        }
+        let junction_length = (hypothetical_j_anchor_pool + 3) - v_anchor_pool;
+
+        if junction_length % 3 == 0 {
+            Ok(())
+        } else {
+            Err(ContractViolation::new(
+                self.name(),
+                format!(
+                    "NP length {} at {} would produce out-of-frame \
+                     junction (hypothetical length {})",
+                    length, address, junction_length
+                ),
+            ))
+        }
     }
 }
 
@@ -77,137 +173,99 @@ impl Contract for ProductiveJunctionFrame {
         ))
     }
 
-    fn admits(
+    // `admits` and `admits_with_context` are intentionally NOT
+    // overridden: the post-bridge-flip trait defaults parse the
+    // legacy string address into the typed `ChoiceContext` and
+    // route through `admits_typed` below, which dispatches on
+    // `ChoiceAddress::NpLength(...)` directly. The string-prefix
+    // match against `address::NP1_LENGTH` / `NP2_LENGTH` that the
+    // old `admits` override carried is therefore dead — every
+    // built-in caller (and any legacy string caller, via the
+    // trait default) reaches the typed path.
+
+    fn admits_typed(
         &self,
         sim: &Simulation,
         refdata: Option<&RefDataConfig>,
-        address: &str,
+        context: super::ChoiceContext<'_>,
         candidate: &ChoiceValue,
     ) -> Result<(), ContractViolation> {
-        // Filter NP length samples to values that produce an in-frame
-        // junction. The architectural pivot from D.4 → D.6: instead
-        // of verifying after-the-fact, prune the candidate distribution
-        // before sampling.
-        //
-        // We can compute the hypothetical junction length when:
-        // - the NP being sampled is the LAST event before J assembly,
-        // - we have V assembled (so V's pool position is known),
-        // - we have V and J anchors known.
-        //
-        // For VJ chains: NP1 is the last event before J → filter np.np1.length.
-        // For VDJ chains: NP2 is the last event before J → filter np.np2.length.
-        // VDJ NP1 has D + NP2 + J between it and the junction end — NP2 will
-        // compensate, so we don't filter NP1 in the VDJ case.
-        //
-        // **Pre-condition (asserted in debug builds):** the J region
-        // must NOT be assembled yet. The hypothetical-J-start math
-        // below assumes `sim.pool.len() + length` is where J will
-        // start; that's only true if J hasn't already been pushed
-        // into the pool. Standard plans honor this by always running
-        // NP generation before J assembly. A future plan (e.g., one
-        // that pushes contaminant or adapter bases into the pool
-        // before J assembly) that violates this invariant would
-        // silently produce wrong frame predictions.
-        // The debug assertion catches that drift in dev builds; in
-        // release builds the contract may produce an over-eager
-        // rejection (false-negative admits) but never a hidden
-        // soundness violation.
-        let refdata = match refdata {
-            None => return Ok(()),
-            Some(r) => r,
-        };
-
         let length = match candidate {
             ChoiceValue::Int(n) if *n >= 0 => *n as u32,
             _ => return Ok(()),
         };
-
-        let is_vj = sim.assignments.get(Segment::D).is_none();
-        let applicable = match address {
-            address::NP1_LENGTH => is_vj,
-            address::NP2_LENGTH => !is_vj,
-            _ => false,
-        };
-        if !applicable {
+        let Some(ChoiceAddress::NpLength(segment)) = context.address else {
             return Ok(());
-        }
+        };
+        let np_segment: Segment = segment.into();
+        let address = context.address_string().unwrap_or_default();
+        self.admits_np_length_candidate(sim, refdata, np_segment, &address, length)
+    }
 
-        // Need V/J alleles + anchors + V region in pool.
-        let v_inst = match sim.assignments.get(Segment::V).copied() {
-            None => return Ok(()),
-            Some(v) => v,
-        };
-        let j_inst = match sim.assignments.get(Segment::J).copied() {
-            None => return Ok(()),
-            Some(j) => j,
-        };
-        let v_allele = match refdata.get(Segment::V, v_inst.allele_id) {
-            None => return Ok(()),
-            Some(a) => a,
-        };
-        let j_allele = match refdata.get(Segment::J, j_inst.allele_id) {
-            None => return Ok(()),
-            Some(a) => a,
-        };
-        let v_anchor = match v_allele.anchor {
-            None => return Ok(()),
-            Some(a) => a as u32,
-        };
-        let j_anchor = match j_allele.anchor {
-            None => return Ok(()),
-            Some(a) => a as u32,
-        };
-
-        let v_trim_5 = v_inst.trim_5 as u32;
-        let j_trim_5 = j_inst.trim_5 as u32;
-        if v_trim_5 > v_anchor || j_trim_5 > j_anchor {
-            return Ok(());
-        }
-
-        let v_region = match sim
+    /// Classify an indel candidate's effect on the junction frame.
+    ///
+    /// `compute_junction` derives the junction window as
+    /// `[V_region.start + V_anchor_offset, J_region.start +
+    /// J_anchor_offset + 3)`, so the junction *length* equals
+    /// `(J_region.start - V_region.start) + (J_anchor_offset −
+    /// V_anchor_offset) + 3`. The anchor offsets are allele-static —
+    /// only the region starts shift under indels. Therefore an
+    /// indel changes the length iff it shifts the V and J region
+    /// starts asymmetrically.
+    ///
+    /// `Sequence::with_indel_adjusted(pos, ±1)` shifts `region.start`
+    /// iff `region.start > pos` (strict — `region.start == pos`
+    /// does NOT shift). So an indel at site `s`:
+    /// - `s < V_region.start`: both V and J start shift → length
+    ///   unchanged → `FrameNeutral`.
+    /// - `V_region.start ≤ s < J_region.start`: V stays, J shifts
+    ///   → length ± 1 → `FrameDelta(±1)` (sign follows kind).
+    /// - `s ≥ J_region.start`: neither shifts → length unchanged →
+    ///   `FrameNeutral`.
+    ///
+    /// Vacuous (`FrameNeutral`) whenever V or J isn't yet assembled
+    /// (no region to read region.start from). The mod-3 DP in the
+    /// indel pass aggregates this classification across the
+    /// candidate tuple; final stop-codon / anchor-codon checks
+    /// happen via `admits_post_event` on the assembled tuple.
+    fn admissible_indel_class_at(
+        &self,
+        sim: &Simulation,
+        _refdata: Option<&RefDataConfig>,
+        site: u32,
+        kind: super::IndelKindHint,
+    ) -> super::IndelEventClass {
+        use super::IndelEventClass;
+        let v_start = match sim
             .sequence
             .regions
             .iter()
             .find(|r| r.segment == Segment::V)
         {
-            None => return Ok(()),
-            Some(r) => r,
+            Some(r) => r.start.index(),
+            None => return IndelEventClass::FrameNeutral,
         };
-        let v_anchor_pool = v_region.start.index() + (v_anchor - v_trim_5);
-
-        // J must not yet be assembled — see method-level doc above.
-        debug_assert!(
-            sim.sequence.regions.iter().all(|r| r.segment != Segment::J),
-            "ProductiveJunctionFrame::admits at {}: J region is already \
-             assembled in sim.sequence.regions; the hypothetical-J-start \
-             math below assumes J has not been added to the pool yet. \
-             This indicates a pass-ordering bug — NP generation must run \
-             before J assembly.",
-            address
-        );
-
-        // Hypothetical J start: pool grows by `length` more bases
-        // when the NP gets generated, then J starts immediately
-        // after.
-        let hypothetical_j_start = sim.pool.len() as u32 + length;
-        let hypothetical_j_anchor_pool = hypothetical_j_start + (j_anchor - j_trim_5);
-        // Defensive: junction must be a positive window.
-        if hypothetical_j_anchor_pool + 3 <= v_anchor_pool {
-            return Ok(());
+        let j_start = match sim
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == Segment::J)
+        {
+            Some(r) => r.start.index(),
+            None => return IndelEventClass::FrameNeutral,
+        };
+        if j_start <= v_start {
+            // Degenerate / not-yet-assembled layout; no junction
+            // length to defend.
+            return IndelEventClass::FrameNeutral;
         }
-        let junction_length = (hypothetical_j_anchor_pool + 3) - v_anchor_pool;
-
-        if junction_length % 3 == 0 {
-            Ok(())
+        if site >= v_start && site < j_start {
+            match kind {
+                super::IndelKindHint::Insertion => IndelEventClass::FrameDelta(1),
+                super::IndelKindHint::Deletion => IndelEventClass::FrameDelta(-1),
+            }
         } else {
-            Err(ContractViolation::new(
-                self.name(),
-                format!(
-                    "NP length {} at {} would produce out-of-frame \
-                     junction (hypothetical length {})",
-                    length, address, junction_length
-                ),
-            ))
+            IndelEventClass::FrameNeutral
         }
     }
 }
@@ -216,7 +274,10 @@ impl Contract for ProductiveJunctionFrame {
 mod tests {
     use super::super::test_support::{make_assembled_sim, make_vj_for_frame_test};
     use super::*;
+    use crate::address::{ChoiceAddress, NpSegment};
     use crate::assignment::AlleleInstance;
+    use crate::contract::ChoiceContext;
+    use crate::ir::{NucHandle, Nucleotide, Region};
     use crate::refdata::AlleleId;
 
     #[test]
@@ -303,6 +364,156 @@ mod tests {
     }
 
     #[test]
+    fn productive_junction_frame_typed_np_length_filters_by_frame() {
+        // Pre-J assembly state: V is materialized, J is assigned but
+        // not yet pushed. This is the exact state NP1 length sampling
+        // filters in the VJ recombination plan.
+        let cfg = make_vj_for_frame_test(Some(6), Some(0));
+        let c = ProductiveJunctionFrame::new();
+
+        let mut sim = Simulation::new();
+        for i in 0..9u32 {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(b'A', i as u16, Segment::V));
+            sim = next;
+        }
+        sim = sim
+            .with_region_added(Region::new(
+                Segment::V,
+                NucHandle::new(0),
+                NucHandle::new(9),
+            ))
+            .with_allele_assigned(Segment::V, AlleleInstance::new(AlleleId::new(0)))
+            .with_allele_assigned(Segment::J, AlleleInstance::new(AlleleId::new(0)));
+
+        // Junction-frame divisibility check is the only filter the
+        // contract applies at NP1-length time: a length is admitted
+        // iff (V_anchor_to_end + length + J_to_anchor) is divisible
+        // by 3. For this fixture that means length % 3 == 0.
+        for length in 0..6i64 {
+            let candidate = ChoiceValue::Int(length);
+            let admitted = c
+                .admits_typed(
+                    &sim,
+                    Some(&cfg),
+                    ChoiceContext::none().with_address(ChoiceAddress::NpLength(NpSegment::Np1)),
+                    &candidate,
+                )
+                .is_ok();
+            assert_eq!(admitted, length % 3 == 0, "length {length}");
+        }
+    }
+
+    #[test]
+    fn productive_junction_frame_typed_np2_length_filters_by_frame() {
+        // VDJ branch: NP1 has D + NP2 + J between it and the
+        // junction end, so the contract's frame filter applies to
+        // NP2 (the LAST NP before J). The NP1 filter is a no-op
+        // in this configuration.
+        //
+        // Set up the exact state NP2 length sampling sees: V
+        // assembled, NP1 already padded into the pool, D assembled,
+        // J assigned but not yet pushed.
+        use crate::refdata::{Allele, ChainType, RefDataConfig};
+
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        let _ = cfg.v_pool.push(Allele {
+            name: "v_test*01".into(),
+            gene: "v_test".into(),
+            seq: b"AAACCCGGG".to_vec(),
+            segment: Segment::V,
+            anchor: Some(6),
+        });
+        let _ = cfg.d_pool.push(Allele {
+            name: "d_test*01".into(),
+            gene: "d_test".into(),
+            seq: b"CCC".to_vec(),
+            segment: Segment::D,
+            anchor: None,
+        });
+        let _ = cfg.j_pool.push(Allele {
+            name: "j_test*01".into(),
+            gene: "j_test".into(),
+            seq: b"TTTAAA".to_vec(),
+            segment: Segment::J,
+            anchor: Some(0),
+        });
+        let c = ProductiveJunctionFrame::new();
+
+        // V[0..9) + NP1[9..12) + D[12..15); J not yet assembled.
+        let mut sim = Simulation::new();
+        for i in 0..9u32 {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(b'A', i as u16, Segment::V));
+            sim = next;
+        }
+        for i in 0..3u32 {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(b'A', i as u16, Segment::Np1));
+            sim = next;
+        }
+        for i in 0..3u32 {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(b'C', i as u16, Segment::D));
+            sim = next;
+        }
+        sim = sim
+            .with_region_added(Region::new(
+                Segment::V,
+                NucHandle::new(0),
+                NucHandle::new(9),
+            ))
+            .with_region_added(Region::new(
+                Segment::Np1,
+                NucHandle::new(9),
+                NucHandle::new(12),
+            ))
+            .with_region_added(Region::new(
+                Segment::D,
+                NucHandle::new(12),
+                NucHandle::new(15),
+            ))
+            .with_allele_assigned(Segment::V, AlleleInstance::new(AlleleId::new(0)))
+            .with_allele_assigned(Segment::D, AlleleInstance::new(AlleleId::new(0)))
+            .with_allele_assigned(Segment::J, AlleleInstance::new(AlleleId::new(0)));
+
+        // NP2 frame filter is the only meaningful constraint at NP2-
+        // length time in VDJ. With V_anchor-to-end = 3, NP1 = 3,
+        // D = 3, J_to_anchor = 0, total mod 3 is 0 + length mod 3;
+        // so length % 3 == 0 is admissible.
+        for length in 0..6i64 {
+            let candidate = ChoiceValue::Int(length);
+            let admitted = c
+                .admits_typed(
+                    &sim,
+                    Some(&cfg),
+                    ChoiceContext::none().with_address(ChoiceAddress::NpLength(NpSegment::Np2)),
+                    &candidate,
+                )
+                .is_ok();
+            assert_eq!(admitted, length % 3 == 0, "NP2 length {length}");
+        }
+
+        // The NP1 filter is a no-op in this VDJ configuration — the
+        // contract intentionally defers to NP2 in
+        // `admits_np_length_candidate`'s `applicable` check. Every
+        // NP1 length is admitted vacuously.
+        for length in 0..6i64 {
+            let candidate = ChoiceValue::Int(length);
+            assert!(
+                c.admits_typed(
+                    &sim,
+                    Some(&cfg),
+                    ChoiceContext::none().with_address(ChoiceAddress::NpLength(NpSegment::Np1)),
+                    &candidate,
+                )
+                .is_ok(),
+                "NP1 filter must be vacuous in VDJ at length {length}",
+            );
+        }
+    }
+
+    #[test]
     fn productive_junction_frame_works_through_box_dyn() {
         let cfg = make_vj_for_frame_test(Some(6), Some(0));
         let v_inst = AlleleInstance::new(AlleleId::new(0));
@@ -312,5 +523,101 @@ mod tests {
         let c: Box<dyn Contract> = Box::new(ProductiveJunctionFrame::new());
         assert!(c.verify(&sim, Some(&cfg)).is_ok());
         assert_eq!(c.name(), "productive_junction_frame");
+    }
+
+    mod admissible_indel_class_at {
+        use super::*;
+        use crate::contract::{IndelEventClass, IndelKindHint};
+
+        fn fixture() -> (RefDataConfig, Simulation) {
+            // V.region [0, 9), J.region [9, 15). Anchors at V[6] and
+            // J[0] so junction = [6, 12), length 6.
+            let cfg = make_vj_for_frame_test(Some(6), Some(0));
+            let sim = make_assembled_sim(
+                0,
+                9,
+                9,
+                6,
+                AlleleInstance::new(AlleleId::new(0)),
+                AlleleInstance::new(AlleleId::new(0)),
+            );
+            (cfg, sim)
+        }
+
+        #[test]
+        fn insertion_inside_v_region_is_frame_delta_plus_one() {
+            // Any insertion at site in [V.start=0, J.start=9) shifts
+            // J.region.start by +1 but leaves V.region.start fixed
+            // → junction length += 1.
+            let (cfg, sim) = fixture();
+            let c = ProductiveJunctionFrame::new();
+            for site in 0..9u32 {
+                assert_eq!(
+                    c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Insertion,),
+                    IndelEventClass::FrameDelta(1),
+                    "site {} should be FrameDelta(+1) for insertion",
+                    site
+                );
+            }
+        }
+
+        #[test]
+        fn deletion_inside_v_region_is_frame_delta_minus_one() {
+            let (cfg, sim) = fixture();
+            let c = ProductiveJunctionFrame::new();
+            for site in 0..9u32 {
+                assert_eq!(
+                    c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Deletion),
+                    IndelEventClass::FrameDelta(-1),
+                    "site {} should be FrameDelta(-1) for deletion",
+                    site
+                );
+            }
+        }
+
+        #[test]
+        fn insertion_inside_j_region_is_frame_neutral() {
+            // Site s ≥ J.start: neither V.start nor J.start shifts
+            // → length unchanged.
+            let (cfg, sim) = fixture();
+            let c = ProductiveJunctionFrame::new();
+            for site in 9..=15u32 {
+                assert_eq!(
+                    c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Insertion,),
+                    IndelEventClass::FrameNeutral,
+                    "site {} should be FrameNeutral for insertion",
+                    site
+                );
+            }
+        }
+
+        #[test]
+        fn deletion_inside_j_region_is_frame_neutral() {
+            let (cfg, sim) = fixture();
+            let c = ProductiveJunctionFrame::new();
+            for site in 9..15u32 {
+                assert_eq!(
+                    c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Deletion),
+                    IndelEventClass::FrameNeutral,
+                    "site {} should be FrameNeutral for deletion",
+                    site
+                );
+            }
+        }
+
+        #[test]
+        fn unassembled_layout_is_frame_neutral() {
+            let cfg = make_vj_for_frame_test(Some(6), Some(0));
+            let c = ProductiveJunctionFrame::new();
+            let sim = Simulation::new();
+            // No V/J regions present → classification has nothing
+            // to defend.
+            for site in 0..10u32 {
+                assert_eq!(
+                    c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Insertion,),
+                    IndelEventClass::FrameNeutral
+                );
+            }
+        }
     }
 }

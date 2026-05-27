@@ -1,11 +1,14 @@
 //! `ContractSet` — composition of multiple contracts (D.5).
 
-use crate::ir::Simulation;
+use crate::ir::{NucHandle, Simulation};
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
 use std::sync::Arc;
 
-use super::{ChoiceContext, Contract, ContractKind, ContractViolation};
+use super::{
+    BaseMask, ChoiceContext, Contract, ContractKind, ContractViolation, IndelEventClass,
+    IndelKindHint, LengthSupport, TrimTarget,
+};
 
 /// A set of contracts that all must hold for the simulation.
 ///
@@ -94,38 +97,24 @@ impl ContractSet {
         }
     }
 
-    /// Test whether `candidate` at `address` is admissible by every
-    /// contract. Short-circuits on the first violator (sampling
-    /// hot path). Returns the violator's `ContractViolation`.
-    pub fn admits(
+    /// Test whether `candidate` at the current `ChoiceContext` is
+    /// admissible by every contract. Short-circuits on the first
+    /// violator (sampling hot path) and returns its
+    /// `ContractViolation`.
+    pub fn admits_typed(
         &self,
         sim: &Simulation,
         refdata: Option<&RefDataConfig>,
-        address: &str,
-        candidate: &ChoiceValue,
-    ) -> Result<(), ContractViolation> {
-        for c in &self.contracts {
-            c.admits(sim, refdata, address, candidate)?;
-        }
-        Ok(())
-    }
-
-    /// Context-aware variant of [`ContractSet::admits`].
-    pub fn admits_with_context(
-        &self,
-        sim: &Simulation,
-        refdata: Option<&RefDataConfig>,
-        address: &str,
-        candidate: &ChoiceValue,
         context: ChoiceContext<'_>,
+        candidate: &ChoiceValue,
     ) -> Result<(), ContractViolation> {
         for c in &self.contracts {
-            c.admits_with_context(sim, refdata, address, candidate, context)?;
+            c.admits_typed(sim, refdata, context, candidate)?;
         }
         Ok(())
     }
 
-    /// Structural-event variant of [`ContractSet::admits_with_context`].
+    /// Structural-event variant of [`ContractSet::admits_typed`].
     ///
     /// Used for candidates whose admissibility depends on the complete
     /// post-event IR, such as indels that change pool length and shift
@@ -135,13 +124,103 @@ impl ContractSet {
         pre_sim: &Simulation,
         post_sim: &Simulation,
         refdata: Option<&RefDataConfig>,
-        address: &str,
         context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
         for c in &self.contracts {
-            c.admits_post_event(pre_sim, post_sim, refdata, address, context)?;
+            c.admits_post_event(pre_sim, post_sim, refdata, context)?;
         }
         Ok(())
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // v3.0 constrain-before-propose composition
+    //
+    // Each method below intersects the per-contract supports into
+    // a single typed support the pass samples from. Composition is
+    // intersection (D6 semantics — every contract in the bundle
+    // must admit). The shape-specific reducers live on the support
+    // types themselves; this layer just folds.
+    // ──────────────────────────────────────────────────────────
+
+    /// Compose every contract's per-site admissible-base mask into
+    /// the bundle's intersection mask. The pass samples from
+    /// `natural_per_position_kernel & mask` over the surviving
+    /// bases.
+    pub fn admissible_bases_at(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        site: NucHandle,
+    ) -> BaseMask {
+        let mut acc = BaseMask::UNCONSTRAINED;
+        for c in &self.contracts {
+            let m = c.admissible_bases_at(sim, refdata, site);
+            acc = BaseMask(acc.0 & m.0);
+            if !acc.is_satisfiable() {
+                // Short-circuit: no canonical base survives.
+                return BaseMask::EMPTY;
+            }
+        }
+        acc
+    }
+
+    /// Yes/no candidate check for a pinned non-canonical write
+    /// (e.g. `N` injection) against every contract in the bundle.
+    pub fn admits_fixed_base_at(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        site: NucHandle,
+        byte: u8,
+    ) -> bool {
+        self.contracts
+            .iter()
+            .all(|c| c.admits_fixed_base_at(sim, refdata, site, byte))
+    }
+
+    /// Compose every contract's indel-event classification for a
+    /// candidate `(site, kind)`. Reducer semantics live on
+    /// [`IndelEventClass::compose`] — Forbidden absorbs,
+    /// FrameNeutral is identity, conflicting deltas collapse to
+    /// Forbidden defensively.
+    pub fn admissible_indel_class_at(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        site: u32,
+        kind: IndelKindHint,
+    ) -> IndelEventClass {
+        let mut acc = IndelEventClass::FrameNeutral;
+        for c in &self.contracts {
+            let cls = c.admissible_indel_class_at(sim, refdata, site, kind);
+            acc = acc.compose(cls);
+            if matches!(acc, IndelEventClass::Forbidden) {
+                return IndelEventClass::Forbidden;
+            }
+        }
+        acc
+    }
+
+    /// Compose every contract's admissible trim-length support
+    /// into the bundle's intersection. Pass samples from
+    /// `natural_length_distribution ∩ support` over the surviving
+    /// lengths.
+    pub fn admissible_trim_lengths(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        target: TrimTarget,
+        requested_max: u32,
+    ) -> LengthSupport {
+        let mut acc = LengthSupport::Full(requested_max);
+        for c in &self.contracts {
+            let s = c.admissible_trim_lengths(sim, refdata, target, requested_max);
+            acc = acc.intersect(s);
+            if matches!(acc, LengthSupport::Empty) {
+                return LengthSupport::Empty;
+            }
+        }
+        acc
     }
 }
 
@@ -158,12 +237,13 @@ mod tests {
     };
     use super::super::{AnchorPreserved, NoStopCodonInJunction, ProductiveJunctionFrame};
     use super::*;
+    use crate::address::ChoiceAddress;
     use crate::assignment::AlleleInstance;
     use crate::ir::Segment;
     use crate::refdata::AlleleId;
 
     #[test]
-    fn contract_set_empty_admits_everything() {
+    fn contract_set_empty_verifies_and_admits_everything() {
         let s = ContractSet::new();
         assert!(s.is_empty());
         assert_eq!(s.len(), 0);
@@ -171,7 +251,7 @@ mod tests {
         let sim = Simulation::new();
         assert!(s.verify(&sim, None).is_ok());
         assert!(s
-            .admits(&sim, None, "any.address", &ChoiceValue::Int(42))
+            .admits_typed(&sim, None, ChoiceContext::none(), &ChoiceValue::Int(42),)
             .is_ok());
     }
 
@@ -267,8 +347,8 @@ mod tests {
 
     #[test]
     fn contract_set_admits_short_circuits_on_first_violator() {
-        // Two contracts, both have admits returning Err. The set
-        // should return the first one's violation.
+        // Two contracts, both have admits_typed returning Err. The
+        // set should return the first one's violation.
         struct RejectAt(&'static str);
         impl Contract for RejectAt {
             fn name(&self) -> &str {
@@ -281,11 +361,11 @@ mod tests {
             ) -> Result<(), ContractViolation> {
                 Ok(())
             }
-            fn admits(
+            fn admits_typed(
                 &self,
                 _sim: &Simulation,
                 _refdata: Option<&RefDataConfig>,
-                _address: &str,
+                _context: ChoiceContext<'_>,
                 _candidate: &ChoiceValue,
             ) -> Result<(), ContractViolation> {
                 Err(ContractViolation::new(self.name(), "rejected"))
@@ -298,15 +378,17 @@ mod tests {
 
         let sim = Simulation::new();
         let err = s
-            .admits(&sim, None, "any.address", &ChoiceValue::Int(0))
+            .admits_typed(&sim, None, ChoiceContext::none(), &ChoiceValue::Int(0))
             .unwrap_err();
         assert_eq!(err.contract_name, "first");
     }
 
     #[test]
     fn contract_set_admits_succeeds_when_all_admit() {
-        // Default `admits` is Ok, so a set of default contracts
-        // admits everything.
+        // Built-in productive-bundle contracts have no opinion on
+        // a `trim.v_3` candidate against an empty `Simulation` (no
+        // refdata, no V allele assigned) — `admits_typed` defaults
+        // to `Ok` along every relevant path.
         let s = ContractSet::new()
             .with(Box::new(AnchorPreserved::new(Segment::V)))
             .with(Box::new(ProductiveJunctionFrame::new()))
@@ -314,7 +396,15 @@ mod tests {
 
         let sim = Simulation::new();
         assert!(s
-            .admits(&sim, None, "trim.v_3", &ChoiceValue::Int(0))
+            .admits_typed(
+                &sim,
+                None,
+                ChoiceContext::none().with_address(ChoiceAddress::Trim {
+                    segment: crate::address::VdjSegment::V,
+                    end: crate::assignment::TrimEnd::Three,
+                }),
+                &ChoiceValue::Int(0),
+            )
             .is_ok());
     }
 }

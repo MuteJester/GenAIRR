@@ -1,5 +1,3 @@
-use crate::contract::ChoiceContext;
-
 #[derive(Clone, Copy, Debug)]
 pub(super) struct S5FMutationEvent {
     pub(super) site: u32,
@@ -10,5 +8,4 @@ pub(super) struct S5FMutationEvent {
 pub(super) struct WeightedS5FMutationEvent {
     pub(super) event: S5FMutationEvent,
     pub(super) weight: f64,
-    pub(super) context: ChoiceContext<'static>,
 }

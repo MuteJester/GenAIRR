@@ -35,6 +35,7 @@ pub mod region;
 pub mod runner;
 pub mod simulation;
 pub mod trace;
+pub mod trace_file;
 
 /// Register every PyO3 type and module-level function on `m`.
 /// Called once from `lib.rs` during module initialisation.
@@ -50,6 +51,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<refdata::PyRefDataConfig>()?;
     m.add_class::<plan::PyPassPlan>()?;
     m.add_class::<compiled::PyCompiledSimulator>()?;
+    m.add_class::<trace_file::PyTraceFile>()?;
     contract::register(m)?;
     runner::register(m)?;
     Ok(())

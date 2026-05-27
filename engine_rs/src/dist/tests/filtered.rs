@@ -1,6 +1,4 @@
-use super::super::{
-    sample_filtered, sample_filtered_result, Distribution, FilteredSampleError, UniformInt,
-};
+use super::super::{sample_filtered_result, Distribution, FilteredSampleError, UniformInt};
 use crate::rng::Rng;
 
 #[derive(Clone, Debug)]
@@ -37,12 +35,4 @@ fn sample_filtered_result_samples_from_admissible_subset() {
         let value = sample_filtered_result(&mut rng, &dist, |v| *v >= 7).unwrap();
         assert!((7..10).contains(&value));
     }
-}
-
-#[test]
-fn sample_filtered_permissive_collapses_filter_errors_to_none() {
-    let mut rng = Rng::new(1);
-    let dist = UniformInt::new(0, 4);
-    assert_eq!(sample_filtered(&mut rng, &dist, |_| false), None);
-    assert_eq!(sample_filtered(&mut rng, &NoSupportDist, |_| true), None);
 }

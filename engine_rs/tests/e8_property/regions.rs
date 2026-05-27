@@ -4,8 +4,8 @@ use super::common::{
 };
 use genairr_engine::dist::{EmpiricalLengthDist, UniformBase};
 use genairr_engine::ir::Simulation;
-use genairr_engine::pass::PassPlan;
 use genairr_engine::pass::testing::PassRuntime;
+use genairr_engine::pass::PassPlan;
 use genairr_engine::passes::{IndelPass, S5FMutationPass};
 
 #[test]

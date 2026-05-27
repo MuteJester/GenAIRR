@@ -22,11 +22,7 @@ fn build_v_index() -> SegmentRefIndex {
 
 /// Drive a walker observer through `bases` then apply `(handle, new_base)`
 /// edits, returning the sealed scores + match counts.
-fn drive(
-    index: &SegmentRefIndex,
-    bases: &[u8],
-    edits: &[(u32, u8)],
-) -> (Vec<u32>, u32, u32) {
+fn drive(index: &SegmentRefIndex, bases: &[u8], edits: &[(u32, u8)]) -> (Vec<u32>, u32, u32) {
     let mut builder = SimulationBuilder::from_simulation(Simulation::new());
     builder.attach_walker_observer(index, 0);
     for (i, &b) in bases.iter().enumerate() {
@@ -37,11 +33,7 @@ fn drive(
     }
     let sealed = builder.seal_walker_observer(bases.len() as u32);
     match sealed {
-        SealedWalkerState::Resolved(r) => (
-            r.scores,
-            r.informative_matches,
-            r.wildcard_matches,
-        ),
+        SealedWalkerState::Resolved(r) => (r.scores, r.informative_matches, r.wildcard_matches),
         SealedWalkerState::Unsupported { .. } | SealedWalkerState::Unresolved { .. } => {
             panic!("test expected Resolved state")
         }
@@ -88,11 +80,8 @@ fn multiple_edits_compose_to_fresh_drive() {
     let start = b"AACT";
     let target = b"AGCG";
     let (scores_target, inform_target, wild_target) = fresh_after(&idx, target);
-    let (scores_edit, inform_edit, wild_edit) = drive(
-        &idx,
-        start,
-        &[(1, b'G'), (3, b'T'), (3, b'G')],
-    );
+    let (scores_edit, inform_edit, wild_edit) =
+        drive(&idx, start, &[(1, b'G'), (3, b'T'), (3, b'G')]);
     assert_eq!(scores_target, scores_edit);
     assert_eq!(inform_target, inform_edit);
     assert_eq!(wild_target, wild_edit);
@@ -153,11 +142,8 @@ fn change_base_against_callfromregion_oracle() {
     // through the slow `call_from_region` oracle.
     let mut oracle_sim = Simulation::new();
     for (i, &b) in b"AACG".iter().enumerate() {
-        let (next, _) = oracle_sim.with_nucleotide_pushed(Nucleotide::germline(
-            b,
-            i as u16,
-            Segment::V,
-        ));
+        let (next, _) =
+            oracle_sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
         oracle_sim = next;
     }
     oracle_sim = oracle_sim.with_region_added(Region::new(

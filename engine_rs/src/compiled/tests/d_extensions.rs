@@ -352,12 +352,8 @@ fn append_region_np2_bumps_d_live_call_version() {
         "np2 generation should happen after D assembly"
     );
 
-    let post_assemble_d_version = outcome.revisions[assemble_d_idx + 1]
-        .segment_calls
-        .version;
-    let post_np2_version = outcome.revisions[np2_idx + 1]
-        .segment_calls
-        .version;
+    let post_assemble_d_version = outcome.revisions[assemble_d_idx + 1].segment_calls.version;
+    let post_np2_version = outcome.revisions[np2_idx + 1].segment_calls.version;
     assert!(
         post_np2_version > post_assemble_d_version,
         "AppendRegion(Np2) must bump live-call version: \

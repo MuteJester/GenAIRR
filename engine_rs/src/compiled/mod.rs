@@ -28,8 +28,12 @@ use crate::refdata::AlleleId;
 /// Runtime failure policy selected at compile time.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ExecutionPolicy {
-    /// Preserve permissive runtime behavior: constrained draws may
-    /// fall back to unconstrained sampling when no support is available.
+    /// Preserve permissive runtime behavior: constrained draws that
+    /// have no admissible support use the pass's explicit no-op or
+    /// sentinel behavior instead of surfacing a structured error.
+    /// The recombination-stage allele sampler is the documented
+    /// exception: it may fall back to the natural allele draw because
+    /// downstream assembly requires an assigned allele.
     Permissive,
     /// Fail loudly with structured errors when a pass cannot execute
     /// safely or cannot sample an admissible candidate.
@@ -175,6 +179,7 @@ impl<'a> CompiledSimulator<'a> {
             feasibility: self.feasibility.as_ref(),
             reference_index: self.reference_index.as_ref(),
             policy,
+            replay_records: None,
         }
     }
 
@@ -354,6 +359,7 @@ impl OwnedCompiledSimulator {
             feasibility: self.feasibility.as_ref(),
             reference_index: self.reference_index.as_ref(),
             policy,
+            replay_records: None,
         }
     }
 
@@ -387,6 +393,30 @@ impl OwnedCompiledSimulator {
     ) -> Result<Outcome, PassError> {
         execute_transactional(self.inputs_with_policy(policy), initial, seed)
             .map_err(|abort| abort.error)
+    }
+
+    /// Trace-injected replay (Option B): run the plan against an
+    /// empty initial IR, consuming the supplied `records` instead of
+    /// drawing from the RNG at sampling sites that have been
+    /// migrated to the trace-injected path.
+    ///
+    /// The `seed` is still used for unmigrated sites (those still
+    /// branch on `ctx.rng`); migrated sites read from the cursor.
+    /// `policy` controls the strict / permissive failure mode for
+    /// unmigrated sites as usual.
+    ///
+    /// Returns `PassError::Replay` on cursor-vs-plan disagreement —
+    /// address mismatch, value-kind mismatch, exhausted trace, or
+    /// trailing unused records.
+    pub fn replay_from_trace_records(
+        &self,
+        records: &[crate::trace::ChoiceRecord],
+        seed: u64,
+        policy: ExecutionPolicy,
+    ) -> Result<Outcome, PassError> {
+        let mut inputs = self.inputs_with_policy(policy);
+        inputs.replay_records = Some(records);
+        execute_transactional(inputs, Simulation::new(), seed).map_err(|abort| abort.error)
     }
 
     /// Run a deterministic seed-stitched batch using the same policy
@@ -425,15 +455,24 @@ use analyze::analyze_plan;
 mod feasibility_builder;
 
 fn sample_allele_address(segment: Segment) -> &'static str {
-    address::sample_allele(segment).unwrap_or(address::SAMPLE_ALLELE_INVALID)
+    match segment {
+        Segment::V | Segment::D | Segment::J => address::sample_allele_vdj(segment),
+        Segment::Np1 | Segment::Np2 => address::SAMPLE_ALLELE_INVALID,
+    }
 }
 
 fn trim_address(segment: Segment, end: TrimEnd) -> &'static str {
-    address::trim(segment, end).unwrap_or(address::TRIM_INVALID)
+    match segment {
+        Segment::V | Segment::D | Segment::J => address::trim_vdj(segment, end),
+        Segment::Np1 | Segment::Np2 => address::TRIM_INVALID,
+    }
 }
 
 fn np_length_address(segment: Segment) -> &'static str {
-    address::np_length(segment).unwrap_or(address::NP_INVALID_LENGTH)
+    match segment {
+        Segment::Np1 | Segment::Np2 => address::np_length_region(segment),
+        Segment::V | Segment::D | Segment::J => address::NP_INVALID_LENGTH,
+    }
 }
 
 /// Default effect-hook registration for a freshly-compiled

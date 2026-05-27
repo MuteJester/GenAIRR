@@ -286,7 +286,11 @@ fn no_recreation_leaves_v_call_widened() {
     );
 
     let rec = build_airr_record(&outcome, &cfg, "no-recreation");
-    assert_eq!(rec.v_germline_end, Some(9), "no extension → germline_end at structural post-trim");
+    assert_eq!(
+        rec.v_germline_end,
+        Some(9),
+        "no extension → germline_end at structural post-trim"
+    );
     assert_eq!(rec.np1_length, 3, "no NP1 columns claimed");
 }
 
@@ -433,7 +437,11 @@ fn vj_chain_j_extension_into_np1() {
     );
 
     let rec = build_airr_record(&outcome, &cfg, "vj-j-np1");
-    assert_eq!(rec.j_germline_start, Some(2), "single byte of left extension");
+    assert_eq!(
+        rec.j_germline_start,
+        Some(2),
+        "single byte of left extension"
+    );
     // Only 1 NP1 column absorbed; remaining 2 stay non-templated.
     assert_eq!(rec.np1, "TT");
     assert_eq!(rec.np1_length, 2);

@@ -1,13 +1,47 @@
+use crate::address::ChoiceAddress;
 use crate::contract::{ChoiceContext, JunctionStopState};
-use crate::dist::{sample_base_with_admit_mask, sample_filtered_result, FilteredSampleError};
+use crate::dist::{
+    sample_base_with_admit_mask, sample_filtered_with_policy, EmptySupport, FilteredSampleError,
+};
 use crate::ir::Simulation;
 use crate::pass::{PassContext, PassError};
 use crate::trace::ChoiceValue;
 
 use super::GenerateNPPass;
 
+/// v3.0 empty-support policy for NP-length sampling. An NP region
+/// with length 0 is a valid no-op: skipping the region entirely.
+const NP_LENGTH_EMPTY_SUPPORT: EmptySupport<i64> = EmptySupport::Sentinel(0);
+
+/// v3.0 empty-support policy for NP-base sampling. `b'N'`
+/// translates to amino acid `X` (not a stop), and NP slots sit
+/// between V/J anchor codons so the IUPAC sentinel never
+/// violates anchor preservation either.
+const NP_BASE_EMPTY_SUPPORT: EmptySupport<u8> = EmptySupport::Sentinel(b'N');
+
+/// Resolve [`NP_BASE_EMPTY_SUPPORT`] to its sentinel byte for the
+/// fast-path (admit-mask) caller. The fast path uses
+/// `sample_base_with_admit_mask`, whose error shape differs from
+/// `sample_filtered_result`, so it can't go through
+/// `sample_filtered_with_policy` directly; resolving the const
+/// here keeps the policy declaration in one place.
+#[inline]
+fn apply_base_empty_support_policy() -> u8 {
+    match NP_BASE_EMPTY_SUPPORT {
+        EmptySupport::Sentinel(s) => s,
+        EmptySupport::Skip => unreachable!(
+            "NP base sampler requires a sentinel — NP slots can't be skipped, the pool needs a byte"
+        ),
+    }
+}
+
 impl GenerateNPPass {
-    /// Constraint-aware length sample.
+    /// Constraint-aware NP-length sample.
+    ///
+    /// Empty-support policy lives at [`NP_LENGTH_EMPTY_SUPPORT`]:
+    /// strict mode surfaces `PassError::ConstraintSampling`,
+    /// permissive mode emits the length-0 sentinel (the only
+    /// architectural no-op for a length sampler).
     pub(super) fn sample_length(
         &self,
         sim: &Simulation,
@@ -19,17 +53,26 @@ impl GenerateNPPass {
         let contracts = ctx.contracts;
 
         if let Some(contracts) = contracts {
-            match sample_filtered_result(ctx.rng, self.length_dist.as_ref(), |&candidate: &i64| {
-                contracts
-                    .admits(sim, refdata, address, &ChoiceValue::Int(candidate))
-                    .is_ok()
-            }) {
-                Ok(value) => return Ok(value),
-                Err(reason) if strict => {
-                    return Err(self.constraint_sampling_error(address, reason));
-                }
-                Err(_) => {}
-            }
+            let pass_name = self.pass_name().to_string();
+            let context =
+                ChoiceContext::none().with_address_if_missing(ChoiceAddress::parse(address));
+            let outcome = sample_filtered_with_policy(
+                ctx.rng,
+                self.length_dist.as_ref(),
+                |&candidate: &i64| {
+                    contracts
+                        .admits_typed(sim, refdata, context, &ChoiceValue::Int(candidate))
+                        .is_ok()
+                },
+                strict,
+                &pass_name,
+                address,
+                NP_LENGTH_EMPTY_SUPPORT,
+            )?;
+            // The policy guarantees `Some(_)` in permissive (Skip
+            // is never used here); strict mode would have errored
+            // above.
+            return Ok(outcome.expect("NP_LENGTH_EMPTY_SUPPORT is Sentinel(0), never Skip"));
         }
         Ok(self.length_dist.sample(ctx.rng))
     }
@@ -65,6 +108,47 @@ impl GenerateNPPass {
         let refdata = ctx.refdata;
         let contracts = ctx.contracts;
 
+        // ── Trace-injected replay (Tier 3 NP base) ───────────────
+        //
+        // Consume the recorded base and validate it against the same
+        // support path the sampler would have followed at this slot:
+        //
+        //   * Fast path (admit_mask present): the recorded canonical
+        //     base must be admitted by the 4-bit mask. The `N`
+        //     sentinel is accepted only when the mask is empty —
+        //     that's the policy-emission branch in fresh sampling.
+        //   * Slow path (contracts active, no admit mask): canonical
+        //     base must be admitted by `contracts.admits_typed`. `N`
+        //     is accepted only when every canonical candidate in
+        //     `base_dist.support()` is rejected by the bundle.
+        //   * No-contracts path: byte must be in `base_dist.support()`
+        //     if enumerable; non-enumerable `support()` falls back to
+        //     best-effort accept.
+        //
+        // Any other byte (including `N` outside the empty-support
+        // emission path) surfaces as `ConstraintSampling`. We never
+        // force-apply a recorded value the live sampler couldn't
+        // have produced.
+        if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
+            let parsed = ChoiceAddress::parse(address)
+                .expect("NP base address is a built-in ChoiceAddress");
+            let recorded = cursor
+                .expect_base(parsed)
+                .map_err(|reason| PassError::replay(self.pass_name(), reason))?;
+            self.validate_replayed_np_base(
+                recorded,
+                sim,
+                refdata,
+                contracts,
+                index,
+                total_len,
+                address,
+                junction_stop_state,
+                admit_mask,
+            )?;
+            return Ok(recorded);
+        }
+
         // fast path: admit-mask observer hands us a 4-bit
         // mask, we sample inverse-CDF directly over the admitted
         // subset of `base_dist`'s support. No per-candidate contract
@@ -74,40 +158,44 @@ impl GenerateNPPass {
         // didn't request `respect=productive()` the JunctionStopState
         // wouldn't have been built and `admit_mask` would be None
         // anyway, so contracts.is_some() is guaranteed here.
+        // Fast and slow paths share the same v3 empty-support
+        // policy, [`NP_BASE_EMPTY_SUPPORT`]. We resolve the
+        // policy inline here for the fast path (different error
+        // shape than `sample_filtered_result`) and via
+        // `sample_filtered_with_policy` for the slow path.
         if let Some(mask) = admit_mask {
             match sample_base_with_admit_mask(ctx.rng, self.base_dist.as_ref(), mask) {
                 Ok(value) => return Ok(value),
                 Err(reason) if strict => {
                     return Err(self.constraint_sampling_error(address, reason));
                 }
-                Err(_) => {}
+                Err(_) => return Ok(apply_base_empty_support_policy()),
             }
         } else if let Some(contracts) = contracts {
             // Slow path: per-candidate contract dispatch via
-            // `sample_filtered_result`. Reached only when no
+            // `sample_filtered_with_policy`. Reached only when no
             // admit-mask observer is attached (test harnesses,
             // refdata-only plans).
-            let mut context = ChoiceContext::indexed(index, total_len);
+            let mut context = ChoiceContext::indexed(index, total_len)
+                .with_address_if_missing(ChoiceAddress::parse(address));
             if let Some(state) = junction_stop_state {
                 context = context.with_junction_stop_state(state);
             }
-            match sample_filtered_result(ctx.rng, self.base_dist.as_ref(), |candidate: &u8| {
-                contracts
-                    .admits_with_context(
-                        sim,
-                        refdata,
-                        address,
-                        &ChoiceValue::Base(*candidate),
-                        context,
-                    )
-                    .is_ok()
-            }) {
-                Ok(value) => return Ok(value),
-                Err(reason) if strict => {
-                    return Err(self.constraint_sampling_error(address, reason));
-                }
-                Err(_) => {}
-            }
+            let pass_name = self.pass_name().to_string();
+            let outcome = sample_filtered_with_policy(
+                ctx.rng,
+                self.base_dist.as_ref(),
+                |candidate: &u8| {
+                    contracts
+                        .admits_typed(sim, refdata, context, &ChoiceValue::Base(*candidate))
+                        .is_ok()
+                },
+                strict,
+                &pass_name,
+                address,
+                NP_BASE_EMPTY_SUPPORT,
+            )?;
+            return Ok(outcome.expect("NP_BASE_EMPTY_SUPPORT is Sentinel(b'N'), never Skip"));
         }
 
         Ok(self.base_dist.sample(ctx.rng))
@@ -119,5 +207,108 @@ impl GenerateNPPass {
         reason: FilteredSampleError,
     ) -> PassError {
         PassError::constraint_sampling(self.pass_name(), address, reason)
+    }
+
+    /// Replay-mode validator for a recorded NP base. Mirrors the
+    /// three branches inside [`Self::sample_base`] so the
+    /// admissibility rule matches what the sampler would have
+    /// applied at this slot.
+    ///
+    /// Returns `Ok(())` if the byte is reproducible by the live
+    /// sampler, otherwise `Err(PassError::ConstraintSampling)` —
+    /// never force-applies.
+    #[allow(clippy::too_many_arguments)]
+    fn validate_replayed_np_base(
+        &self,
+        recorded: u8,
+        sim: &Simulation,
+        refdata: Option<&crate::refdata::RefDataConfig>,
+        contracts: Option<&crate::contract::ContractSet>,
+        index: u32,
+        total_len: u32,
+        address: &str,
+        junction_stop_state: Option<&JunctionStopState>,
+        admit_mask: Option<u8>,
+    ) -> Result<(), PassError> {
+        let policy_sentinel = apply_base_empty_support_policy();
+        let reject = || {
+            Err(self.constraint_sampling_error(
+                address.to_string(),
+                FilteredSampleError::EmptyAdmissibleSupport,
+            ))
+        };
+
+        if let Some(mask) = admit_mask {
+            // Fast path: admit-mask present.
+            if recorded == policy_sentinel {
+                // `N` sentinel is only valid when the mask is empty
+                // (the policy-emission branch).
+                return if mask == 0 { Ok(()) } else { reject() };
+            }
+            // Canonical recorded byte: must be admitted by the mask.
+            let bit_idx = match recorded {
+                b'A' | b'a' => 0,
+                b'C' | b'c' => 1,
+                b'G' | b'g' => 2,
+                b'T' | b't' => 3,
+                _ => return reject(), // non-canonical, non-sentinel
+            };
+            if (mask >> bit_idx) & 1 == 1 {
+                Ok(())
+            } else {
+                reject()
+            }
+        } else if let Some(contracts) = contracts {
+            // Slow path: contracts active, admit_mask not precomputed.
+            let mut context = ChoiceContext::indexed(index, total_len)
+                .with_address_if_missing(ChoiceAddress::parse(address));
+            if let Some(state) = junction_stop_state {
+                context = context.with_junction_stop_state(state);
+            }
+            if recorded == policy_sentinel {
+                // Valid only when every candidate in base_dist's
+                // support is rejected by contracts — same predicate
+                // `sample_filtered_with_policy` uses to decide it
+                // exhausted the support and must emit the sentinel.
+                let support = match self.base_dist.support() {
+                    Some(s) => s,
+                    None => return reject(), // can't prove emptiness
+                };
+                if support.is_empty() {
+                    return Ok(());
+                }
+                let any_admitted = support.iter().any(|(b, _)| {
+                    contracts
+                        .admits_typed(sim, refdata, context, &ChoiceValue::Base(*b))
+                        .is_ok()
+                });
+                return if any_admitted { reject() } else { Ok(()) };
+            }
+            // Canonical recorded byte: contracts must admit it.
+            if contracts
+                .admits_typed(sim, refdata, context, &ChoiceValue::Base(recorded))
+                .is_ok()
+            {
+                Ok(())
+            } else {
+                reject()
+            }
+        } else {
+            // No-contracts path: byte must be in base_dist.support()
+            // if enumerable. Non-enumerable support is treated as
+            // "best effort accept" — there's no constraint surface
+            // to check against, and the strict-positional cursor +
+            // signature checks have already validated plan identity.
+            match self.base_dist.support() {
+                Some(support) => {
+                    if support.iter().any(|(b, _)| *b == recorded) {
+                        Ok(())
+                    } else {
+                        reject()
+                    }
+                }
+                None => Ok(()),
+            }
+        }
     }
 }

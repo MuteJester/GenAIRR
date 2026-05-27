@@ -93,3 +93,9 @@ filterwarnings = [
     "ignore:Experiment bound to a raw RefDataConfig with no empirical NP-length distribution.*:UserWarning",
     "ignore:Experiment bound to a raw RefDataConfig has no trim distributions.*:UserWarning",
 ]
+# Custom markers registered to silence PytestUnknownMarkWarning.
+# `performance` marks the budget tests in tests/test_performance_budgets.py;
+# skip with `pytest -m "not performance"` for fast CI.
+markers = [
+    "performance: regression-guard wall-time budgets (see docs/performance_baseline.md)",
+]

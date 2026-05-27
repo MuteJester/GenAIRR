@@ -8,8 +8,19 @@ use super::IndelPass;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum IndelEvent {
-    Insertion { site: u32, base: u8 },
-    Deletion { site: Option<u32> },
+    Insertion {
+        site: u32,
+        base: u8,
+    },
+    Deletion {
+        site: Option<u32>,
+    },
+    /// Permissive-mode reduce-and-skip: the count slot is consumed
+    /// but no structural change is committed. Used when an active
+    /// contract bundle rejects every (kind, site, base) candidate
+    /// and the runtime is in permissive mode. Honors the contract
+    /// rather than falling through to unconstrained sampling.
+    NoOp,
 }
 
 impl IndelPass {
@@ -52,21 +63,41 @@ impl IndelPass {
     pub(super) fn record_event(ctx: &mut PassContext, index: u32, event: IndelEvent) {
         match event {
             IndelEvent::Insertion { site, base } => {
-                ctx.trace
-                    .record(address::corrupt_indel_kind(index), ChoiceValue::Bool(true));
-                ctx.trace.record(
-                    address::corrupt_indel_site(index),
+                ctx.trace.record_choice(
+                    address::ChoiceAddress::CorruptIndelKind(index),
+                    ChoiceValue::Bool(true),
+                );
+                ctx.trace.record_choice(
+                    address::ChoiceAddress::CorruptIndelSite(index),
                     ChoiceValue::Int(site as i64),
                 );
-                ctx.trace
-                    .record(address::corrupt_indel_base(index), ChoiceValue::Base(base));
+                ctx.trace.record_choice(
+                    address::ChoiceAddress::CorruptIndelBase(index),
+                    ChoiceValue::Base(base),
+                );
             }
             IndelEvent::Deletion { site } => {
-                ctx.trace
-                    .record(address::corrupt_indel_kind(index), ChoiceValue::Bool(false));
-                ctx.trace.record(
-                    address::corrupt_indel_site(index),
+                ctx.trace.record_choice(
+                    address::ChoiceAddress::CorruptIndelKind(index),
+                    ChoiceValue::Bool(false),
+                );
+                ctx.trace.record_choice(
+                    address::ChoiceAddress::CorruptIndelSite(index),
                     ChoiceValue::Int(site.map(i64::from).unwrap_or(-1)),
+                );
+            }
+            IndelEvent::NoOp => {
+                // Permissive-mode reduce-and-skip. Record the site
+                // as -1 (matching the "no-site" sentinel used by an
+                // empty-pool deletion) so trace consumers can see
+                // the slot was consumed without a structural change.
+                ctx.trace.record_choice(
+                    address::ChoiceAddress::CorruptIndelKind(index),
+                    ChoiceValue::Bool(false),
+                );
+                ctx.trace.record_choice(
+                    address::ChoiceAddress::CorruptIndelSite(index),
+                    ChoiceValue::Int(-1),
                 );
             }
         }
@@ -92,6 +123,12 @@ impl IndelPass {
             }
             IndelEvent::Deletion { site: Some(site) } => tx.delete_base(site).map(|_| ()),
             IndelEvent::Deletion { site: None } => Ok(()),
+            // Permissive-mode reduce-and-skip: the contract bundle
+            // rejected every (kind, site, base) candidate for this
+            // slot. Honor the contract by committing no structural
+            // change; the trace records the slot via record_event so
+            // consumers can audit the reduction.
+            IndelEvent::NoOp => Ok(()),
         }
     }
 }

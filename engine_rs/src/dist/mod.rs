@@ -54,11 +54,12 @@ pub trait Distribution {
     /// retry-and-reject.
     ///
     /// `None` (the default) means the support is too large or
-    /// continuous to enumerate practically. Sampling passes that
-    /// receive `None` fall back to unconstrained sampling — which
-    /// means contracts can't filter that draw. Concrete categorical
-    /// distributions (`EmpiricalLengthDist`, `UniformBase`,
-    /// `UniformInt` for small ranges, `AllelePoolDist`) override
+    /// continuous to enumerate practically. Constraint-aware passes
+    /// cannot safely narrow such a distribution: in strict mode they
+    /// surface `SupportUnavailable`; in permissive mode they use the
+    /// pass's explicit no-op / sentinel behavior. Concrete
+    /// categorical distributions (`EmpiricalLengthDist`, `UniformBase`,
+    /// `UniformInt` for small ranges, `AllelePoolDist`) override this
     /// to return their full support.
     ///
     /// Weights need not be normalized; the caller renormalizes.
@@ -80,7 +81,8 @@ mod uniform;
 pub use allele_pool::AllelePoolDist;
 pub use empirical::EmpiricalLengthDist;
 pub use filtered::{
-    sample_base_with_admit_mask, sample_filtered, sample_filtered_result, FilteredSampleError,
+    sample_base_with_admit_mask, sample_filtered_result, sample_filtered_with_policy, EmptySupport,
+    FilteredSampleError,
 };
 pub use integer::UniformInt;
 pub use uniform::UniformBase;

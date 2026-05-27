@@ -30,17 +30,26 @@
 //! The trait surface itself, `ChoiceContext`, `ContractViolation`,
 //! and the canonical `productive()` bundle live in this `mod.rs`.
 
+use crate::address::ChoiceAddress;
 use crate::contract::junction_stop_state::JunctionStopState as JunctionStopStateInner;
 use crate::ir::{NucHandle, Segment, Simulation};
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
 
+pub mod admissible_set;
 pub(crate) mod admit_mask_observer;
 pub mod anchor_preserved;
 pub mod junction_stop_state;
 pub mod no_stop_codon_in_junction;
 pub mod productive_junction_frame;
 pub mod set;
+
+#[cfg(test)]
+mod mask_vs_admits_equivalence;
+
+pub use admissible_set::{
+    BaseMask, IndelEventClass, IndelKindHint, LengthSupport, TrimEnd, TrimTarget,
+};
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -111,6 +120,11 @@ pub enum ChoiceKind {
 #[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
 pub struct ChoiceContext<'a> {
+    /// Typed address for the choice being filtered when it belongs
+    /// to the built-in address vocabulary. Persisted traces still
+    /// store the string projection; this field lets contracts stop
+    /// parsing that string in hot-path predicate code.
+    pub address: Option<ChoiceAddress>,
     pub draw_index: Option<u32>,
     pub draw_count: Option<u32>,
     pub target: Option<NucHandle>,
@@ -127,6 +141,7 @@ pub struct ChoiceContext<'a> {
 impl<'a> ChoiceContext<'a> {
     pub const fn none() -> Self {
         Self {
+            address: None,
             draw_index: None,
             draw_count: None,
             target: None,
@@ -137,6 +152,7 @@ impl<'a> ChoiceContext<'a> {
 
     pub const fn indexed(draw_index: u32, draw_count: u32) -> Self {
         Self {
+            address: None,
             draw_index: Some(draw_index),
             draw_count: Some(draw_count),
             target: None,
@@ -145,16 +161,13 @@ impl<'a> ChoiceContext<'a> {
         }
     }
 
-    pub const fn indexed_target(draw_index: u32, draw_count: u32, target: NucHandle) -> Self {
-        Self::targeted_base_substitution(draw_index, draw_count, target)
-    }
-
     pub const fn targeted_base_substitution(
         draw_index: u32,
         draw_count: u32,
         target: NucHandle,
     ) -> Self {
         Self {
+            address: None,
             draw_index: Some(draw_index),
             draw_count: Some(draw_count),
             target: Some(target),
@@ -165,6 +178,7 @@ impl<'a> ChoiceContext<'a> {
 
     pub const fn indel_insertion(draw_index: u32, draw_count: u32, target: NucHandle) -> Self {
         Self {
+            address: None,
             draw_index: Some(draw_index),
             draw_count: Some(draw_count),
             target: Some(target),
@@ -175,6 +189,7 @@ impl<'a> ChoiceContext<'a> {
 
     pub const fn indel_deletion(draw_index: u32, draw_count: u32, target: NucHandle) -> Self {
         Self {
+            address: None,
             draw_index: Some(draw_index),
             draw_count: Some(draw_count),
             target: Some(target),
@@ -185,6 +200,7 @@ impl<'a> ChoiceContext<'a> {
 
     pub const fn indel_deletion_noop(draw_index: u32, draw_count: u32) -> Self {
         Self {
+            address: None,
             draw_index: Some(draw_index),
             draw_count: Some(draw_count),
             target: None,
@@ -201,6 +217,30 @@ impl<'a> ChoiceContext<'a> {
         self.junction_stop_state = Some(state);
         self
     }
+
+    /// Attach the typed built-in address for this candidate.
+    #[must_use]
+    pub const fn with_address(mut self, address: ChoiceAddress) -> Self {
+        self.address = Some(address);
+        self
+    }
+
+    /// Attach `address` only when this context does not already
+    /// carry one. This is useful for compatibility adapters that
+    /// parse a legacy string address at the boundary.
+    #[must_use]
+    pub const fn with_address_if_missing(mut self, address: Option<ChoiceAddress>) -> Self {
+        if self.address.is_none() {
+            self.address = address;
+        }
+        self
+    }
+
+    /// Stable string projection for diagnostics and legacy
+    /// compatibility.
+    pub fn address_string(self) -> Option<String> {
+        self.address.map(String::from)
+    }
 }
 
 // PartialEq / Eq manually so the borrowed reference doesn't have
@@ -209,6 +249,7 @@ impl<'a> ChoiceContext<'a> {
 impl PartialEq for ChoiceContext<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.draw_index == other.draw_index
+            && self.address == other.address
             && self.draw_count == other.draw_count
             && self.target == other.target
             && self.kind == other.kind
@@ -283,56 +324,35 @@ pub trait Contract {
         refdata: Option<&RefDataConfig>,
     ) -> Result<(), ContractViolation>;
 
-    /// Filter mode: would `candidate` at `address` keep this
-    /// contract satisfiable given the current `sim` state?
+    /// Typed candidate filter — the contract's per-candidate
+    /// verdict under the v3.x constrain-before-propose API.
     ///
-    /// Used by constraint-aware sampling (D.6 onward): before a
-    /// sampling pass commits to a draw, it asks every active
-    /// contract `admits(sim, refdata, addr, candidate)` and only
-    /// accepts candidates that all contracts admit.
+    /// Used by constraint-aware sampling: before a sampling pass
+    /// commits to a draw, it asks every active contract whether the
+    /// candidate is admissible at the current `ChoiceContext`. Only
+    /// candidates all contracts admit are accepted.
     ///
-    /// **Default behaviour**: `Ok(())` — "always allow." Contracts
-    /// that can usefully prune candidates at sampling time
-    /// override this method. Contracts that can only check after
-    /// a transform applies (e.g., `NoStopCodonInJunction` looking
-    /// at codons that don't exist yet) keep the default; their
-    /// constraints get enforced via `verify` post-hoc, or by
-    /// future contract-aware base-sampling passes.
+    /// **Default behaviour**: `Ok(())` — "no opinion." Contracts
+    /// that can usefully prune candidates at sampling time override
+    /// this method. Contracts that can only check after a transform
+    /// applies (e.g., `NoStopCodonInJunction` looking at codons
+    /// that don't exist yet) keep the default; their constraints
+    /// get enforced by the typed support hooks below where
+    /// available, or by post-event / strict verification for
+    /// whole-IR checks.
     ///
     /// **Returning `Err` is not a fatal failure** — it's "this
     /// specific candidate is inadmissible." The caller (the
-    /// sampling pass via the `ContractSet` from D.5) treats it as
-    /// a filter signal and tries another candidate.
-    ///
-    /// `address` follows the D3 hierarchical-string convention:
-    /// `"trim.v_3"`, `"np.np1.length"`, `"sample_allele.v"`, etc.
-    /// Contracts dispatch on prefix to handle the addresses they
-    /// care about and ignore the rest.
-    fn admits(
+    /// sampling pass) skips the candidate and tries another.
+    fn admits_typed(
         &self,
         sim: &Simulation,
         refdata: Option<&RefDataConfig>,
-        address: &str,
-        candidate: &ChoiceValue,
-    ) -> Result<(), ContractViolation> {
-        // Defaulted: ignore inputs, always allow.
-        let _ = (sim, refdata, address, candidate);
-        Ok(())
-    }
-
-    /// Context-aware filter mode. Defaults to the simpler `admits`
-    /// implementation so existing contracts only override this when
-    /// they need execution-local metadata such as indexed draw count.
-    fn admits_with_context(
-        &self,
-        sim: &Simulation,
-        refdata: Option<&RefDataConfig>,
-        address: &str,
-        candidate: &ChoiceValue,
         context: ChoiceContext<'_>,
+        candidate: &ChoiceValue,
     ) -> Result<(), ContractViolation> {
-        let _ = context;
-        self.admits(sim, refdata, address, candidate)
+        let _ = (sim, refdata, context, candidate);
+        Ok(())
     }
 
     /// Post-event filter mode for structural candidates.
@@ -343,16 +363,136 @@ pub trait Contract {
     /// implementation delegates to `verify(post_sim, refdata)`, giving
     /// every existing contract safe structural filtering without each
     /// contract needing a bespoke indel implementation.
+    ///
+    /// The typed `context` carries the trace address (via
+    /// `context.address`), draw index, and kind. Contracts that need
+    /// to dispatch on the address read it from there rather than a
+    /// separate string parameter.
     fn admits_post_event(
         &self,
         pre_sim: &Simulation,
         post_sim: &Simulation,
         refdata: Option<&RefDataConfig>,
-        address: &str,
         context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
-        let _ = (pre_sim, address, context);
+        let _ = (pre_sim, context);
         self.verify(post_sim, refdata)
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // v3.0 constrain-before-propose API
+    //
+    // Split per-kind methods so contract authors override only the
+    // decision shapes they care about. Composition lives in
+    // `ContractSet`; the default implementations below mean
+    // "no opinion" for an unmodified contract.
+    //
+    // **Invariant the contract author maintains**: a candidate `v`
+    // is admitted by `admits` (the existing predicate API) iff `v`
+    // is in the support returned by the matching per-kind method
+    // below. Distribution-invariant tests in `tests/` should
+    // verify this on every built-in contract.
+    // ──────────────────────────────────────────────────────────
+
+    /// Return the bitmask of admissible canonical bases (A/C/G/T)
+    /// for a per-site substitution at the given pool handle.
+    ///
+    /// Default: [`BaseMask::UNCONSTRAINED`] — all four bases
+    /// admissible. Contracts that can usefully prune the per-site
+    /// support (e.g. `NoStopCodonInJunction` for junction
+    /// positions, `AnchorPreserved` for anchor codon positions)
+    /// override this.
+    ///
+    /// **Non-canonical writes** (lowercase, `N`, IUPAC ambiguity)
+    /// do not flow through this mask — they use
+    /// [`Self::admits_fixed_base_at`] instead. The 4-bit mask is
+    /// the canonical hot path; the candidate check is the
+    /// pinned-value path.
+    fn admissible_bases_at(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        site: NucHandle,
+    ) -> BaseMask {
+        let _ = (sim, refdata, site);
+        BaseMask::UNCONSTRAINED
+    }
+
+    /// Yes/no candidate check for a pinned non-canonical write
+    /// (e.g. `N` injection, lowercase quality marker that maps to
+    /// the same canonical base). Defaults to `true` (admitted)
+    /// for contracts with no opinion on the pinned write.
+    ///
+    /// Used by passes like `NCorruptionPass` whose candidate value
+    /// is structurally fixed: there's no 4-base support to
+    /// narrow; the contract just decides whether the specific
+    /// byte at the specific site is admissible.
+    fn admits_fixed_base_at(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        site: NucHandle,
+        byte: u8,
+    ) -> bool {
+        let _ = (sim, refdata, site, byte);
+        true
+    }
+
+    /// Classify an indel candidate's impact on this contract.
+    ///
+    /// Returns one of:
+    /// - [`IndelEventClass::FrameNeutral`] — no opinion / no
+    ///   effect (the default).
+    /// - [`IndelEventClass::FrameDelta`] — the event introduces a
+    ///   ±1 frame shift the cross-slot coordinator must account
+    ///   for (e.g. junction-site insertions / deletions under
+    ///   `ProductiveJunctionFrame`).
+    /// - [`IndelEventClass::Forbidden`] — the event is rejected
+    ///   outright (e.g. deleting through the V anchor under
+    ///   `AnchorPreserved`).
+    ///
+    /// The indel pass collects per-slot classifications, then runs
+    /// a mod-3 DP over the FrameDelta values to enumerate
+    /// frame-preserving tuples. The mod-3 DP handles the **frame
+    /// part only**; passes must still run a final
+    /// `admits_post_event` check on the sampled tuple to catch
+    /// contracts whose admissibility depends on exact bases and
+    /// sites (e.g. `NoStopCodonInJunction` after frame-balanced
+    /// insertions can still produce a stop codon).
+    fn admissible_indel_class_at(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        site: u32,
+        kind: IndelKindHint,
+    ) -> IndelEventClass {
+        let _ = (sim, refdata, site, kind);
+        IndelEventClass::FrameNeutral
+    }
+
+    /// Return the support of admissible trim lengths for an
+    /// end-loss-style pass targeting [`TrimTarget`].
+    ///
+    /// `requested_max` is the upper bound the pass would otherwise
+    /// apply (its sampled length, clamped to pool length). The
+    /// returned [`LengthSupport`] is the subset of `0..=requested_max`
+    /// the contract admits. Default: `LengthSupport::Full(requested_max)`
+    /// — full range admissible.
+    ///
+    /// Contracts that own segment-anchor geometry (`AnchorPreserved`)
+    /// narrow this to the lengths that don't trim through the
+    /// anchor codon. Contracts that own frame
+    /// (`ProductiveJunctionFrame`) can narrow further to lengths
+    /// that preserve the junction frame.
+    fn admissible_trim_lengths(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        target: TrimTarget,
+        requested_max: u32,
+    ) -> LengthSupport {
+        let _ = (sim, refdata, target);
+        LengthSupport::Full(requested_max)
     }
 }
 
@@ -386,7 +526,7 @@ pub fn productive() -> ContractSet {
 mod tests {
     use super::*;
     use crate::contract::test_support::{
-        make_assembled_sim_from_refdata, make_v_anchor_at, make_vj_with_anchor_codons,
+        make_assembled_sim_from_refdata, make_vj_with_anchor_codons,
     };
 
     #[test]
@@ -394,61 +534,6 @@ mod tests {
         let v = ContractViolation::new("test.contract", "something failed");
         assert_eq!(v.contract_name, "test.contract");
         assert_eq!(v.reason, "something failed");
-    }
-
-    #[test]
-    fn default_admits_returns_ok_for_anchor_preserved() {
-        let cfg = make_v_anchor_at(10, Some(3));
-        let contract = AnchorPreserved::new(Segment::V);
-        let sim = Simulation::new();
-
-        // Default admits ignores the address + candidate and returns Ok.
-        assert!(contract
-            .admits(&sim, Some(&cfg), "trim.v_3", &ChoiceValue::Int(5))
-            .is_ok());
-        assert!(contract
-            .admits(&sim, None, "np.np1.length", &ChoiceValue::Int(3))
-            .is_ok());
-        assert!(contract
-            .admits(
-                &sim,
-                Some(&cfg),
-                "sample_allele.v",
-                &ChoiceValue::AlleleId(0)
-            )
-            .is_ok());
-    }
-
-    #[test]
-    fn default_admits_returns_ok_for_productive_junction_frame() {
-        let contract = ProductiveJunctionFrame::new();
-        let sim = Simulation::new();
-
-        // Same default behaviour for the new contract — D.6 will
-        // override `admits` on this contract specifically; for now
-        // it inherits the trait default.
-        assert!(contract
-            .admits(&sim, None, "np.np1.length", &ChoiceValue::Int(7))
-            .is_ok());
-    }
-
-    #[test]
-    fn no_stop_codon_admits_passes_vacuously_without_refdata() {
-        let contract = NoStopCodonInJunction::new();
-        let sim = Simulation::new();
-
-        assert!(contract
-            .admits(&sim, None, "np.np1.bases[0]", &ChoiceValue::Base(b'T'))
-            .is_ok());
-    }
-
-    #[test]
-    fn admits_works_through_box_dyn() {
-        let contract: Box<dyn Contract> = Box::new(AnchorPreserved::new(Segment::V));
-        let sim = Simulation::new();
-        assert!(contract
-            .admits(&sim, None, "trim.v_3", &ChoiceValue::Int(0))
-            .is_ok());
     }
 
     // ── productive() bundle tests (D.5) ────────────────────────────
@@ -484,16 +569,5 @@ mod tests {
             .map(|v| v.contract_name.as_str())
             .collect();
         assert!(names.contains(&"no_stop_codon_in_junction"));
-    }
-
-    #[test]
-    fn productive_bundle_admits_returns_ok_for_default_admits() {
-        // None of the productive bundle's contracts override admits
-        // yet (D.6 will add it). All defaults → Ok.
-        let s = productive();
-        let sim = Simulation::new();
-        assert!(s
-            .admits(&sim, None, "np.np1.length", &ChoiceValue::Int(3))
-            .is_ok());
     }
 }

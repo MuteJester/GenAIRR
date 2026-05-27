@@ -46,14 +46,16 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::Simulation;
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::count_source::{sample_validated_count, CountSource};
 use crate::passes::mutation_transaction::MutationTransaction;
-use crate::trace::ChoiceValue;
 
 mod event;
+mod replay;
 mod sampling;
+mod tuple_sampler;
 
 pub struct IndelPass {
-    count_dist: Box<dyn Distribution<Output = i64>>,
+    count_source: CountSource,
     insertion_prob: f64,
     base_dist: Box<dyn Distribution<Output = u8>>,
 }
@@ -74,7 +76,7 @@ impl IndelPass {
             insertion_prob
         );
         Self {
-            count_dist,
+            count_source: CountSource::Distribution(count_dist),
             insertion_prob,
             base_dist,
         }
@@ -86,36 +88,19 @@ impl IndelPass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
-        let count_raw = self.count_dist.sample(ctx.rng);
-        if strict && count_raw < 0 {
-            return Err(PassError::invalid_distribution_output(
-                self.name(),
-                address::CORRUPT_INDEL_COUNT,
-                count_raw,
-                "negative_count",
-            ));
-        }
-        if strict && count_raw > u32::MAX as i64 {
-            return Err(PassError::invalid_distribution_output(
-                self.name(),
-                address::CORRUPT_INDEL_COUNT,
-                count_raw,
-                "count_exceeds_u32",
-            ));
-        }
-        assert!(
-            count_raw >= 0,
-            "IndelPass: count distribution returned negative {}",
-            count_raw
-        );
-        assert!(
-            count_raw <= u32::MAX as i64,
-            "IndelPass: count distribution returned {} > u32::MAX",
-            count_raw
-        );
-        let count = count_raw as u32;
-        ctx.trace
-            .record(address::CORRUPT_INDEL_COUNT, ChoiceValue::Int(count_raw));
+        // Count validation + trace recording shared with the other
+        // four count-driven passes via `sample_validated_count`. The
+        // helper carries trace-injected replay for the count slot
+        // automatically; the per-event tuple replay is handled
+        // below.
+        let count = sample_validated_count(
+            &self.count_source,
+            ctx,
+            sim.pool.len() as u32,
+            self.name(),
+            address::ChoiceAddress::CorruptIndelCount,
+            strict,
+        )?;
 
         if count == 0 {
             return Ok(sim.clone());
@@ -135,12 +120,66 @@ impl IndelPass {
         // fast path in the post-pass `PassEffect::StructuralIndel`
         // dispatch, replacing the prior unconditional from-scratch
         // `call_from_region` re-walk per V/D/J segment.
+        // v3.0 architecture: under active contracts, single indels
+        // around the junction break frame and would all be rejected
+        // by the post-event check. The
+        // `sample_admissible_tuple` path picks a frame-balanced
+        // tuple in one shot using a mod-3 reachability DP +
+        // continuation weighting, then validates the assembled
+        // post-state against the full contract bundle. On
+        // permissive-mode rejection (DP exhausted, or final
+        // validator fails) every slot records as NoOp; in strict
+        // mode the failure surfaces as `PassError::ConstraintSampling`
+        // / `ContractViolation`. When no contracts are active we
+        // stay on the per-step legacy path so RNG behavior matches
+        // the pre-v3 indel pass exactly.
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
+        // Trace-injected replay (Tier 3 — final): consume the
+        // pre-recorded tuple from the cursor, validate each event
+        // against current state + contracts, and apply through the
+        // same `apply_event_via_tx` path as fresh sampling. No DP
+        // sampling, no RNG draws.
+        if tx.replay_cursor().is_some() {
+            self.replay_tuple(&mut tx, count)?;
+            return tx.commit();
+        }
+
+        if tx.ctx().contracts.is_some() {
+            let tuple_opt = {
+                let (sim_ref, ctx_ref) = tx.split_borrows();
+                self.sample_admissible_tuple(sim_ref, ctx_ref, count, strict)?
+            };
+            match tuple_opt {
+                Some(events) => {
+                    for (i, event) in events.into_iter().enumerate() {
+                        let i = i as u32;
+                        Self::record_event(tx.ctx(), i, event);
+                        Self::apply_event_via_tx(&mut tx, event)?;
+                    }
+                }
+                None => {
+                    // Permissive: no admissible tuple. Record NoOp
+                    // for each slot so trace consumers can audit
+                    // the reduction; no pool mutation.
+                    for i in 0..count {
+                        Self::record_event(tx.ctx(), i, event::IndelEvent::NoOp);
+                    }
+                }
+            }
+            return tx.commit();
+        }
+
+        // Legacy path (no contracts): per-step independent
+        // sampling via the unconstrained natural distribution.
+        // When contracts are active the path above (tuple sampler)
+        // runs instead, so this branch is reached only with
+        // `ctx.contracts == None`.
+        let _ = strict;
         for i in 0..count {
             let event = {
                 let (sim_ref, ctx_ref) = tx.split_borrows();
-                self.sample_event(sim_ref, ctx_ref, i, count, strict)?
+                self.sample_legacy_event(sim_ref, ctx_ref)
             };
             Self::record_event(tx.ctx(), i, event);
             Self::apply_event_via_tx(&mut tx, event)?;
@@ -168,12 +207,12 @@ impl Pass for IndelPass {
         self.execute_with_sampling_mode(sim, ctx, true)
     }
 
-    fn declared_choices(&self) -> Vec<String> {
+    fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {
         vec![
-            address::CORRUPT_INDEL_COUNT.to_string(),
-            address::CORRUPT_INDEL_KIND_PATTERN.to_string(),
-            address::CORRUPT_INDEL_SITE_PATTERN.to_string(),
-            address::CORRUPT_INDEL_BASE_PATTERN.to_string(),
+            address::ChoiceAddressPattern::CorruptIndelCount,
+            address::ChoiceAddressPattern::CorruptIndelKind,
+            address::ChoiceAddressPattern::CorruptIndelSite,
+            address::ChoiceAddressPattern::CorruptIndelBase,
         ]
     }
 

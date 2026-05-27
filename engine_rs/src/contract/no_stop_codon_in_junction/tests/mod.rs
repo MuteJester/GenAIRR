@@ -1,9 +1,11 @@
 use super::*;
+use crate::address::ChoiceAddress;
 use crate::assignment::AlleleInstance;
 use crate::contract::test_support::{make_assembled_sim_from_refdata, make_vj_with_anchor_codons};
 use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
 use crate::refdata::{Allele, AlleleId, AllelePool, ChainType, RefDataConfig};
 
+mod admits_fixed;
 mod np_candidates;
 mod targeted;
 mod verify;

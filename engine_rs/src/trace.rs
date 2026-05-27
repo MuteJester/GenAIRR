@@ -24,12 +24,23 @@
 //! Just the data structures. No pass integration yet (that's B.2).
 //! No serialization — trace is in-memory only at this stage.
 
+use crate::address::ChoiceAddress;
+use serde::{Deserialize, Serialize};
+
 /// The typed value of a single random choice.
 ///
 /// Intentionally a closed enum so contracts and replayers can match
 /// exhaustively on the cases. New variants get added when new choice
 /// kinds appear in the engine; the compiler refuses to build until
 /// every consumer handles them.
+///
+/// # Serialized form
+///
+/// Each variant is tagged with `"kind"` and carries its data under
+/// `"value"`. Byte payloads serialise as ASCII strings rather than
+/// raw integers so JSON dumps stay readable — `Base(b'A')` lands as
+/// `{"kind":"Base","value":"A"}`, not `{"kind":"Base","value":65}`.
+/// The custom impls handle this; the `derive` would emit raw bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChoiceValue {
     /// A signed integer. Used for length samples (NP length, trim
@@ -54,9 +65,68 @@ pub enum ChoiceValue {
     Bool(bool),
 }
 
+/// On-disk discriminant tag for `ChoiceValue`. Lives as a separate
+/// enum so the wire format is a stable string set independent of the
+/// Rust variant names — renaming a Rust variant cannot accidentally
+/// change the JSON shape; only changing this enum can.
+#[derive(Serialize, Deserialize)]
+enum ChoiceValueWire {
+    Int(i64),
+    /// Single ASCII character.
+    Base(char),
+    /// ASCII string. Validated as ASCII at parse time.
+    Bases(String),
+    AlleleId(u32),
+    Bool(bool),
+}
+
+impl Serialize for ChoiceValue {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        let wire = match *self {
+            ChoiceValue::Int(n) => ChoiceValueWire::Int(n),
+            ChoiceValue::Base(b) => ChoiceValueWire::Base(b as char),
+            ChoiceValue::Bases(ref bs) => ChoiceValueWire::Bases(
+                std::str::from_utf8(bs)
+                    .map_err(|e| serde::ser::Error::custom(format!("non-ASCII bases: {e}")))?
+                    .to_string(),
+            ),
+            ChoiceValue::AlleleId(id) => ChoiceValueWire::AlleleId(id),
+            ChoiceValue::Bool(b) => ChoiceValueWire::Bool(b),
+        };
+        wire.serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for ChoiceValue {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let wire = ChoiceValueWire::deserialize(de)?;
+        Ok(match wire {
+            ChoiceValueWire::Int(n) => ChoiceValue::Int(n),
+            ChoiceValueWire::Base(c) => {
+                if !c.is_ascii() {
+                    return Err(serde::de::Error::custom(format!(
+                        "ChoiceValue::Base must be ASCII, got {c:?}"
+                    )));
+                }
+                ChoiceValue::Base(c as u8)
+            }
+            ChoiceValueWire::Bases(s) => {
+                if !s.is_ascii() {
+                    return Err(serde::de::Error::custom(
+                        "ChoiceValue::Bases must be ASCII",
+                    ));
+                }
+                ChoiceValue::Bases(s.into_bytes())
+            }
+            ChoiceValueWire::AlleleId(id) => ChoiceValue::AlleleId(id),
+            ChoiceValueWire::Bool(b) => ChoiceValue::Bool(b),
+        })
+    }
+}
+
 /// One entry in the trace: the address at which a choice was made
 /// and the value that was sampled there.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChoiceRecord {
     pub address: String,
     pub value: ChoiceValue,
@@ -69,6 +139,13 @@ impl ChoiceRecord {
             value,
         }
     }
+
+    /// Parse this record's persisted string address into the typed
+    /// built-in address form, if it is one of the engine's canonical
+    /// stochastic choices.
+    pub fn choice_address(&self) -> Option<ChoiceAddress> {
+        ChoiceAddress::parse(&self.address)
+    }
 }
 
 /// The append-only record of every choice made during one simulation.
@@ -78,7 +155,7 @@ impl ChoiceRecord {
 /// is delivered to the caller (via the `History` API in B.2 or via
 /// `with_history=True` in the public `.run()` from D9) and dropped
 /// otherwise.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Trace {
     choices: Vec<ChoiceRecord>,
 }
@@ -117,6 +194,15 @@ impl Trace {
         self.choices.push(ChoiceRecord::new(address, value));
     }
 
+    /// Append a choice at a typed built-in address.
+    ///
+    /// This preserves the persisted trace representation as the
+    /// canonical string spelling while letting new internal call
+    /// sites avoid hand-built address strings.
+    pub fn record_choice(&mut self, address: ChoiceAddress, value: ChoiceValue) {
+        self.record(address, value);
+    }
+
     /// Atomically append a completed per-pass trace delta.
     ///
     /// The compiled simulator builds trace entries in a local
@@ -136,6 +222,13 @@ impl Trace {
     /// Address comparison is exact-string equality.
     pub fn find(&self, address: &str) -> Option<&ChoiceRecord> {
         self.choices.iter().find(|c| c.address == address)
+    }
+
+    /// Find the first choice recorded at the given typed built-in
+    /// address, if any.
+    pub fn find_choice(&self, address: ChoiceAddress) -> Option<&ChoiceRecord> {
+        let address = address.to_string();
+        self.find(&address)
     }
 
     /// Find every choice recorded at addresses with the given prefix.
@@ -168,6 +261,8 @@ impl Trace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::address::{ChoiceAddress, NpSegment, VdjSegment};
+    use crate::assignment::TrimEnd;
 
     #[test]
     fn trace_starts_empty() {
@@ -244,6 +339,49 @@ mod tests {
 
         let first = t.find("retry.same_addr").unwrap();
         assert_eq!(first.value, ChoiceValue::Int(1));
+    }
+
+    #[test]
+    fn trace_typed_address_helpers_preserve_string_storage() {
+        let mut t = Trace::new();
+        t.record_choice(
+            ChoiceAddress::Trim {
+                segment: VdjSegment::V,
+                end: TrimEnd::Three,
+            },
+            ChoiceValue::Int(4),
+        );
+        t.record_choice(
+            ChoiceAddress::NpBase {
+                segment: NpSegment::Np1,
+                index: 2,
+            },
+            ChoiceValue::Base(b'G'),
+        );
+
+        assert_eq!(t.choices()[0].address, "trim.v_3");
+        assert_eq!(
+            t.choices()[0].choice_address(),
+            Some(ChoiceAddress::Trim {
+                segment: VdjSegment::V,
+                end: TrimEnd::Three,
+            })
+        );
+
+        let rec = t
+            .find_choice(ChoiceAddress::NpBase {
+                segment: NpSegment::Np1,
+                index: 2,
+            })
+            .expect("typed NP base address should be present");
+        assert_eq!(rec.address, "np.np1.bases[2]");
+        assert_eq!(rec.value, ChoiceValue::Base(b'G'));
+    }
+
+    #[test]
+    fn choice_record_typed_address_returns_none_for_custom_addresses() {
+        let rec = ChoiceRecord::new("custom.choice", ChoiceValue::Bool(true));
+        assert_eq!(rec.choice_address(), None);
     }
 
     #[test]
@@ -335,6 +473,85 @@ mod tests {
             let addr = format!("mutate.s5f.site[{}]", i);
             let rec = t.find(&addr).expect("indexed address should be present");
             assert_eq!(rec.value, ChoiceValue::Int(i as i64));
+        }
+    }
+
+    // ── serde round-trip ──────────────────────────────────────────
+
+    #[test]
+    fn choice_value_int_round_trips_through_json() {
+        let v = ChoiceValue::Int(42);
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"Int":42}"#);
+        let back: ChoiceValue = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn choice_value_base_serializes_as_character_string() {
+        let v = ChoiceValue::Base(b'A');
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"Base":"A"}"#);
+        let back: ChoiceValue = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn choice_value_lowercase_base_round_trips() {
+        // Quality errors write lowercase bases — must round-trip.
+        let v = ChoiceValue::Base(b'a');
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"Base":"a"}"#);
+        let back: ChoiceValue = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn choice_value_bases_serializes_as_string() {
+        let v = ChoiceValue::Bases(b"ACGTacgt".to_vec());
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"Bases":"ACGTacgt"}"#);
+        let back: ChoiceValue = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn choice_value_allele_id_and_bool_round_trip() {
+        for v in [
+            ChoiceValue::AlleleId(7),
+            ChoiceValue::Bool(true),
+            ChoiceValue::Bool(false),
+        ] {
+            let s = serde_json::to_string(&v).unwrap();
+            let back: ChoiceValue = serde_json::from_str(&s).unwrap();
+            assert_eq!(back, v);
+        }
+    }
+
+    #[test]
+    fn choice_record_round_trips_through_json() {
+        let rec = ChoiceRecord::new("mutate.uniform.base[0]", ChoiceValue::Base(b'G'));
+        let s = serde_json::to_string(&rec).unwrap();
+        let back: ChoiceRecord = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, rec);
+    }
+
+    #[test]
+    fn trace_round_trips_through_json_preserving_order() {
+        let mut t = Trace::new();
+        t.record("trim.v_3", ChoiceValue::Int(2));
+        t.record("np.np1.length", ChoiceValue::Int(5));
+        t.record("np.np1.bases[0]", ChoiceValue::Base(b'A'));
+        t.record("np.np1.bases[1]", ChoiceValue::Base(b'C'));
+        t.record("sample_allele.v", ChoiceValue::AlleleId(12));
+
+        let s = serde_json::to_string(&t).unwrap();
+        let back: Trace = serde_json::from_str(&s).unwrap();
+
+        assert_eq!(back.len(), t.len());
+        for (a, b) in t.choices().iter().zip(back.choices()) {
+            assert_eq!(a.address, b.address);
+            assert_eq!(a.value, b.value);
         }
     }
 }

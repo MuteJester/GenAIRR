@@ -5,14 +5,10 @@ fn assert_rejects_targeted_address(address: &str, target: NucHandle) {
     let c = NoStopCodonInJunction::new();
     let sim = make_assembled_sim_from_refdata(&cfg);
 
+    let context = ChoiceContext::targeted_base_substitution(0, 1, target)
+        .with_address_if_missing(ChoiceAddress::parse(address));
     let err = c
-        .admits_with_context(
-            &sim,
-            Some(&cfg),
-            address,
-            &ChoiceValue::Base(b'A'),
-            ChoiceContext::indexed_target(0, 1, target),
-        )
+        .admits_typed(&sim, Some(&cfg), context, &ChoiceValue::Base(b'A'))
         .unwrap_err();
 
     assert_eq!(err.contract_name, "no_stop_codon_in_junction");
@@ -26,14 +22,10 @@ fn no_stop_codon_admits_rejects_uniform_mutation_base_that_creates_stop() {
     let cfg = make_vj_with_anchor_codons(b"TAC", b"GGG");
     let c = NoStopCodonInJunction::new();
     let sim = make_assembled_sim_from_refdata(&cfg);
+    let context = ChoiceContext::targeted_base_substitution(0, 1, NucHandle::new(8))
+        .with_address_if_missing(ChoiceAddress::parse("mutate.uniform.base[0]"));
     assert!(c
-        .admits_with_context(
-            &sim,
-            Some(&cfg),
-            "mutate.uniform.base[0]",
-            &ChoiceValue::Base(b'C'),
-            ChoiceContext::indexed_target(0, 1, NucHandle::new(8)),
-        )
+        .admits_typed(&sim, Some(&cfg), context, &ChoiceValue::Base(b'C'))
         .is_ok());
 }
 
@@ -53,14 +45,10 @@ fn no_stop_codon_admits_rejects_contaminant_base_that_creates_stop() {
     let c = NoStopCodonInJunction::new();
     let sim = make_assembled_sim_from_refdata(&cfg);
 
+    let context = ChoiceContext::targeted_base_substitution(6, 12, NucHandle::new(6))
+        .with_address_if_missing(ChoiceAddress::parse("corrupt.contaminant.bases[6]"));
     let err = c
-        .admits_with_context(
-            &sim,
-            Some(&cfg),
-            "corrupt.contaminant.bases[6]",
-            &ChoiceValue::Base(b'T'),
-            ChoiceContext::indexed_target(6, 12, NucHandle::new(6)),
-        )
+        .admits_typed(&sim, Some(&cfg), context, &ChoiceValue::Base(b'T'))
         .unwrap_err();
 
     assert_eq!(err.contract_name, "no_stop_codon_in_junction");

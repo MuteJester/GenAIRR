@@ -1,29 +1,35 @@
-//! `EffectHook` — runtime-managed reactions to pass effects.
+//! `EffectHook` — runtime-managed reactions to a just-committed
+//! pass.
 //!
 //! In Bevy, when a system mutates a `Component`, the schedule
 //! invokes the next system that declared `Changed<Component>` — the
 //! cross-system coupling is data, not code. The engine equivalent:
 //! after each pass commits, the runtime iterates registered hooks
-//! and gives each one the freshly-emitted [`PassEffect`] list. Hooks
-//! decide for themselves whether to react and how.
+//! and gives each one both the pass's static
+//! [`PassCompileEffect`] declarations **and** the runtime
+//! [`crate::ir::SimulationEvent`] stream it emitted. Hooks decide
+//! for themselves what to react to.
 //!
-//! Stage 2 of the dep-graph scheduler migration moves the previously
-//! hand-coded `apply_live_call_updates` `match` (in `compiled/execute.rs`)
-//! into a single [`crate::live_call::LiveCallRefreshHook`]. The
-//! cross-segment biology rules ("assembling D refreshes V", "indel
-//! refreshes V/D/J unconditionally") now live next to the rest of
-//! the live-call module, where they're discoverable by the people
-//! editing that module.
+//! Today's only consumer ([`crate::live_call::LiveCallRefreshHook`])
+//! reads the event stream — **not** the compile-effect list — to
+//! decide which V/D/J segments to refresh. That inversion is the
+//! load-bearing architectural commitment: runtime derived-state
+//! refresh follows what *actually happened* (the event stream),
+//! not what a pass *claimed it would do* (the compile-effect
+//! declaration).
 //!
 //! Adding a future derived-state consumer — e.g. a junction cache,
 //! a per-allele evidence summariser — is one new file implementing
 //! `EffectHook`, plus one `compile()`-site registration. No edits to
-//! the executor.
+//! the executor. New hooks should prefer reading
+//! `simulation_events`; the `compile_effects` parameter is retained
+//! on the trait signature for hooks that legitimately need the
+//! declarative surface (e.g. a schedule-aware diagnostic).
 
-use crate::ir::Simulation;
+use crate::ir::{Simulation, SimulationEvent};
 use crate::live_call::ReferenceMatchIndex;
 
-use super::PassEffect;
+use super::PassCompileEffect;
 
 /// Borrowed context handed to every [`EffectHook::apply`] call.
 ///
@@ -38,26 +44,49 @@ pub struct HookContext<'a> {
     pub reference_index: Option<&'a ReferenceMatchIndex>,
 }
 
-/// A runtime-registered reaction to `PassEffect`s.
+/// A runtime-registered reaction to a just-committed pass.
 ///
 /// One hook instance lives in the `CompiledSimulator`. After each
 /// pass commits, the executor calls `apply` on every hook with the
-/// freshly-emitted effects. Hooks return the (possibly updated)
+/// pass's freshly-emitted [`PassEffect`]s **and** its
+/// [`SimulationEvent`] stream. Hooks return the (possibly updated)
 /// simulation; multiple hooks chain in registration order.
 ///
-/// Hooks decide internally whether to react based on the `effects`
-/// slice. Returning the input simulation unchanged is a no-op.
+/// ## `compile_effects` vs. `events` — two complementary surfaces
+///
+/// - `compile_effects` are **static, compile-time declarations**
+///   from [`crate::pass::Pass::effects`] (see
+///   [`PassCompileEffect`]). They flow into the schedule analyzer
+///   for ordering / dependency reasoning. Hooks that only need a
+///   coarse "this category of pass happened" cue may still read
+///   them — but they describe *intent*, not what happened.
+/// - `events` is the **runtime consequence stream** the pass
+///   actually emitted via its internal builders. This is the
+///   source of truth for derived-state refresh: a hook reacting
+///   to `BaseChanged` events knows exactly which sites were
+///   edited, while a hook reading `PassCompileEffect::EditBases`
+///   only knows a pass *intended* to edit.
+///
+/// New hooks should prefer `events`. The `compile_effects`
+/// parameter stays on the signature so future schedule-only hooks
+/// (e.g. a "count how many passes declared `TrimAllele`"
+/// diagnostic) can still see the declarative surface.
 pub trait EffectHook: Send + Sync {
     /// Stable, human-readable identifier for the hook. Used in
     /// diagnostics and tests.
     fn name(&self) -> &str;
 
-    /// React to the effects emitted by the just-committed pass.
+    /// React to the just-committed pass.
     ///
-    /// Hooks may inspect `effects` to decide whether to do work
-    /// (matching the structure of the previous `apply_live_call_updates`
-    /// `match`). They may also inspect the input simulation's state
-    /// (e.g. `sim.live_calls.dirty_windows`) for finer-grained
-    /// dispatch.
-    fn apply(&self, sim: Simulation, effects: &[PassEffect], ctx: HookContext) -> Simulation;
+    /// `compile_effects` are the pass's static declarations (kept
+    /// for scheduling-aware hooks). `events` is the ordered stream
+    /// of consequences the pass actually emitted via its internal
+    /// builders — the source of truth for derived-state refresh.
+    fn apply(
+        &self,
+        sim: Simulation,
+        compile_effects: &[PassCompileEffect],
+        events: &[SimulationEvent],
+        ctx: HookContext,
+    ) -> Simulation;
 }

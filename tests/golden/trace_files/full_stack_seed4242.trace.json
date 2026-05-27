@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "engine_version": "0.0.1",
+  "seed": 4242,
+  "pass_plan_signature": "sample_allele.v|sample_allele.j|trim.v_3|trim.j_5|assemble.v|generate_np.np1|assemble.j|mutate.uniform|corrupt.pcr|corrupt.quality|corrupt.indel|corrupt.ns|corrupt.end_loss.5|corrupt.contaminant|corrupt.rev_comp",
+  "refdata_signature": "chain=Vj;v=168;d=0;j=8;c=0",
+  "trace": {
+    "choices": [
+      {
+        "address": "sample_allele.v",
+        "value": {
+          "AlleleId": 141
+        }
+      },
+      {
+        "address": "sample_allele.j",
+        "value": {
+          "AlleleId": 2
+        }
+      },
+      {
+        "address": "trim.v_3",
+        "value": {
+          "Int": 1
+        }
+      },
+      {
+        "address": "trim.j_5",
+        "value": {
+          "Int": 1
+        }
+      },
+      {
+        "address": "np.np1.length",
+        "value": {
+          "Int": 2
+        }
+      },
+      {
+        "address": "np.np1.bases[0]",
+        "value": {
+          "Base": "T"
+        }
+      },
+      {
+        "address": "np.np1.bases[1]",
+        "value": {
+          "Base": "T"
+        }
+      },
+      {
+        "address": "mutate.uniform.count",
+        "value": {
+          "Int": 2
+        }
+      },
+      {
+        "address": "mutate.uniform.site[0]",
+        "value": {
+          "Int": 249
+        }
+      },
+      {
+        "address": "mutate.uniform.base[0]",
+        "value": {
+          "Base": "C"
+        }
+      },
+      {
+        "address": "mutate.uniform.site[1]",
+        "value": {
+          "Int": 247
+        }
+      },
+      {
+        "address": "mutate.uniform.base[1]",
+        "value": {
+          "Base": "A"
+        }
+      },
+      {
+        "address": "corrupt.pcr.count",
+        "value": {
+          "Int": 1
+        }
+      },
+      {
+        "address": "corrupt.pcr.error_site[0]",
+        "value": {
+          "Int": 77
+        }
+      },
+      {
+        "address": "corrupt.pcr.error_base[0]",
+        "value": {
+          "Base": "G"
+        }
+      },
+      {
+        "address": "corrupt.quality.count",
+        "value": {
+          "Int": 1
+        }
+      },
+      {
+        "address": "corrupt.quality.error_site[0]",
+        "value": {
+          "Int": 268
+        }
+      },
+      {
+        "address": "corrupt.quality.error_base[0]",
+        "value": {
+          "Base": "t"
+        }
+      },
+      {
+        "address": "corrupt.indel.count",
+        "value": {
+          "Int": 2
+        }
+      },
+      {
+        "address": "corrupt.indel.kind[0]",
+        "value": {
+          "Bool": true
+        }
+      },
+      {
+        "address": "corrupt.indel.site[0]",
+        "value": {
+          "Int": 233
+        }
+      },
+      {
+        "address": "corrupt.indel.base[0]",
+        "value": {
+          "Base": "T"
+        }
+      },
+      {
+        "address": "corrupt.indel.kind[1]",
+        "value": {
+          "Bool": false
+        }
+      },
+      {
+        "address": "corrupt.indel.site[1]",
+        "value": {
+          "Int": 151
+        }
+      },
+      {
+        "address": "corrupt.ns.count",
+        "value": {
+          "Int": 1
+        }
+      },
+      {
+        "address": "corrupt.ns.site[0]",
+        "value": {
+          "Int": 29
+        }
+      },
+      {
+        "address": "corrupt.end_loss.5",
+        "value": {
+          "Int": 2
+        }
+      },
+      {
+        "address": "corrupt.contaminant.applied",
+        "value": {
+          "Bool": false
+        }
+      },
+      {
+        "address": "corrupt.rev_comp.applied",
+        "value": {
+          "Bool": false
+        }
+      }
+    ]
+  }
+}

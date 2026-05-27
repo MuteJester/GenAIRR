@@ -475,12 +475,8 @@ fn v_overlap_into_d_bumps_v_live_call_version() {
         .iter()
         .position(|n| n == "assemble.d")
         .expect("plan must include assemble.d");
-    let post_assemble_v_version = outcome.revisions[assemble_v_idx + 1]
-        .segment_calls
-        .version;
-    let post_assemble_d_version = outcome.revisions[assemble_d_idx + 1]
-        .segment_calls
-        .version;
+    let post_assemble_v_version = outcome.revisions[assemble_v_idx + 1].segment_calls.version;
+    let post_assemble_d_version = outcome.revisions[assemble_d_idx + 1].segment_calls.version;
     assert!(
         post_assemble_d_version > post_assemble_v_version,
         "AssembleSegment(D) must bump the version (refreshing V) for \

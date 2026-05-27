@@ -90,9 +90,14 @@ impl PyEventRecord {
         event_kind_name(self.inner.kind)
     }
 
+    /// **Static compile-time effect declarations** (not runtime
+    /// consequences). Kept as `effects` on the Python surface for
+    /// API stability; the Rust-side field is `compile_effects`.
+    /// For the runtime consequence stream see
+    /// [`PyEventRecord::simulation_event_count`].
     #[getter]
     fn effects(&self) -> Vec<String> {
-        self.inner.effects.iter().map(effect_name).collect()
+        self.inner.compile_effects.iter().map(effect_name).collect()
     }
 
     #[getter]
@@ -118,6 +123,15 @@ impl PyEventRecord {
     #[getter]
     fn post(&self) -> PyStateSummary {
         PyStateSummary::new(self.inner.post)
+    }
+
+    /// Number of [`SimulationEvent`]s the pass emitted during commit.
+    /// Lightweight Python-side observability for the consequence
+    /// channel; full event payload exposure is reserved for a future
+    /// slice if/when consumers need it.
+    #[getter]
+    fn simulation_event_count(&self) -> usize {
+        self.inner.simulation_events.len()
     }
 
     fn __repr__(&self) -> String {

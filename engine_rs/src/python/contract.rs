@@ -28,14 +28,47 @@ create_exception!(
     _engine,
     StrictSamplingError,
     PyException,
-    "Raised by strict-mode runs when a pass cannot execute safely.\n\
+    "Raised by strict-mode **fresh** runs when a pass's admissible \
+     support is empty at sample time.\n\
      \n\
      Exception args are a 3-tuple ``(pass_name, address, reason)`` where:\n\
      - ``pass_name`` (str) is the name of the failing pass (e.g. \
        ``\"generate_np.np1\"``);\n\
      - ``address`` (str) is the trace address when applicable (e.g. \
        ``\"np.np1.length\"``);\n\
-     - ``reason`` (str) is a stable lowercase error reason."
+     - ``reason`` (str) is a stable lowercase error reason \
+       (one of ``\"support_unavailable\"``, \
+       ``\"empty_admissible_support\"``, ``\"invalid_filtered_support\"``, \
+       ``\"missing_refdata\"``, ``\"missing_assignment\"``, \
+       ``\"contract_violation\"``, ``\"invalid_plan_state\"``, or \
+       a pass-specific code).\n\
+     \n\
+     **When this is raised:** only by a *fresh* strict-mode run \
+     (``simulator.run(seed=..., strict=True)`` / \
+     ``Experiment.run_records(..., strict=True)``) at the moment a \
+     pass's contract-narrowed candidate set becomes empty.\n\
+     \n\
+     **When this is NOT raised:** trace replay \
+     (``replay_from_trace_file``) consumes the recorded value at each \
+     sampling slot verbatim — even with ``strict=True``. If the \
+     original run was permissive and recorded a sentinel value (e.g. \
+     indel ``site = -1`` NoOp, NP length ``0``, NP base ``N``, trim \
+     ``0``), replay reproduces that outcome without raising. Replay \
+     validates address/value-kind consistency, not contract semantics. \
+     See ``docs/productive_failure_mode_audit.md`` §5 / §6.2.\n\
+     \n\
+     **Class hierarchy:** ``StrictSamplingError`` extends ``Exception`` \
+     directly — NOT ``ValueError``. A bare ``except ValueError:`` will \
+     not catch this error. Compile-time precondition failures \
+     (e.g. distributions where *every* candidate violates a contract \
+     before runtime) raise ``ValueError`` from \
+     ``Experiment.compile()`` instead; the two paths are not unified.\n\
+     \n\
+     **Related but distinct:** ``ValueError`` from ``Experiment.compile()`` \
+     fires when the contract bundle can statically prove a sampling \
+     distribution has no admissible candidates (precondition failure). \
+     ``StrictSamplingError`` fires when an empty support emerges \
+     dynamically during sampling."
 );
 
 /// Convert a [`PassError`] into a Python [`StrictSamplingError`]
@@ -100,6 +133,25 @@ pub(crate) fn pass_error_to_pyerr(err: PassError) -> PyErr {
                 pass_name,
                 String::new(),
                 format!("contract_violation.{}", contract_names),
+            ))
+        }
+        PassError::Replay { pass_name, reason } => {
+            // `ReplayError`'s `Display` already produces a structured
+            // diagnostic; surface it as the reason payload with a
+            // stable `replay.<kind>` prefix so downstream code can
+            // dispatch on it without parsing the human-readable text.
+            let reason_tag = match reason {
+                crate::replay::ReplayError::Exhausted { .. } => "replay.exhausted",
+                crate::replay::ReplayError::AddressMismatch { .. } => "replay.address_mismatch",
+                crate::replay::ReplayError::ValueKindMismatch { .. } => "replay.value_kind_mismatch",
+                crate::replay::ReplayError::UnusedTrailingRecords { .. } => {
+                    "replay.unused_trailing_records"
+                }
+            };
+            StrictSamplingError::new_err((
+                pass_name,
+                String::new(),
+                format!("{}: {}", reason_tag, reason),
             ))
         }
     }

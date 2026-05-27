@@ -185,4 +185,13 @@ fn s5f_mutation_pass_declared_choices() {
     assert!(declared.contains(&"mutate.s5f.count".to_string()));
     assert!(declared.contains(&"mutate.s5f.site[0..n]".to_string()));
     assert!(declared.contains(&"mutate.s5f.base[0..n]".to_string()));
+
+    assert_eq!(
+        pass.declared_choice_patterns(),
+        vec![
+            address::ChoiceAddressPattern::MutateS5fCount,
+            address::ChoiceAddressPattern::MutateS5fSite,
+            address::ChoiceAddressPattern::MutateS5fBase,
+        ]
+    );
 }

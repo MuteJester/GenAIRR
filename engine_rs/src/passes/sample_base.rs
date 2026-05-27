@@ -66,6 +66,9 @@ impl Pass for SampleBasePass {
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         let base = self.distribution.sample(ctx.rng);
+        // Deliberate custom-address producer: SampleBasePass is the
+        // extension/test reference pass, so its address is runtime
+        // supplied and not part of the built-in ChoiceAddress enum.
         ctx.trace.record(&self.address[..], ChoiceValue::Base(base));
         let (next, _h) =
             sim.with_nucleotide_pushed(Nucleotide::synthetic(base, self.segment, self.flags));
@@ -89,8 +92,8 @@ mod tests {
     use super::*;
     use crate::dist::UniformBase;
     use crate::ir::{flag, NucHandle};
-    use crate::pass::PassPlan;
     use crate::pass::testing::PassRuntime;
+    use crate::pass::PassPlan;
     use crate::passes::EchoPass;
 
     #[test]

@@ -18,7 +18,7 @@ mod traits;
 pub use context::PassContext;
 pub use error::PassError;
 pub use hook::{EffectHook, HookContext};
-pub use metadata::{PassEffect, PassRequirement};
+pub use metadata::{PassCompileEffect, PassEffect, PassRequirement};
 pub use outcome::Outcome;
 pub use schedule::{NodeId, Schedule, ScheduleError};
 pub use support::{AlleleIdSupport, IntegerSupport, PassCompileFact};

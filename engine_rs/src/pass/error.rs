@@ -3,6 +3,7 @@ use std::fmt;
 use crate::contract::ContractViolation;
 use crate::dist::FilteredSampleError;
 use crate::ir::Segment;
+use crate::replay::ReplayError;
 
 /// Structured failure from a fallible pass execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -36,6 +37,15 @@ pub enum PassError {
     ContractViolation {
         pass_name: String,
         violations: Vec<ContractViolation>,
+    },
+    /// Trace-injected replay (Option B) could not consume the next
+    /// expected record. The wrapped [`ReplayError`] carries the
+    /// position, expected address, value-kind details. Surfaced at
+    /// the pass that hit the mismatch so callers can diagnose which
+    /// part of the plan went off the rails.
+    Replay {
+        pass_name: String,
+        reason: ReplayError,
     },
 }
 
@@ -104,6 +114,13 @@ impl PassError {
         }
     }
 
+    pub fn replay(pass_name: impl Into<String>, reason: ReplayError) -> Self {
+        Self::Replay {
+            pass_name: pass_name.into(),
+            reason,
+        }
+    }
+
     pub fn pass_name(&self) -> &str {
         match self {
             Self::ConstraintSampling { pass_name, .. } => pass_name,
@@ -113,6 +130,7 @@ impl PassError {
             Self::InvalidDistributionOutput { pass_name, .. } => pass_name,
             Self::InvalidPlanState { pass_name, .. } => pass_name,
             Self::ContractViolation { pass_name, .. } => pass_name,
+            Self::Replay { pass_name, .. } => pass_name,
         }
     }
 
@@ -124,7 +142,17 @@ impl PassError {
             | Self::MissingAssignment { .. }
             | Self::MissingAllele { .. }
             | Self::InvalidPlanState { .. }
-            | Self::ContractViolation { .. } => "",
+            | Self::ContractViolation { .. }
+            | Self::Replay { .. } => "",
+        }
+    }
+
+    /// The replay-specific failure reason, if this is a
+    /// [`PassError::Replay`].
+    pub fn replay_reason(&self) -> Option<&ReplayError> {
+        match self {
+            Self::Replay { reason, .. } => Some(reason),
+            _ => None,
         }
     }
 
@@ -208,6 +236,9 @@ impl fmt::Display for PassError {
                     write!(f, "; {}: {}", violation.contract_name, violation.reason)?;
                 }
                 Ok(())
+            }
+            Self::Replay { pass_name, reason } => {
+                write!(f, "{}: {}", pass_name, reason)
             }
         }
     }

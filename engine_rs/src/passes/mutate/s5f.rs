@@ -99,11 +99,11 @@ impl Pass for S5FMutationPass {
         self.execute_with_sampling_mode(sim, ctx, true)
     }
 
-    fn declared_choices(&self) -> Vec<String> {
+    fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {
         vec![
-            address::MUTATE_S5F_COUNT.to_string(),
-            address::MUTATE_S5F_SITE_PATTERN.to_string(),
-            address::MUTATE_S5F_BASE_PATTERN.to_string(),
+            address::ChoiceAddressPattern::MutateS5fCount,
+            address::ChoiceAddressPattern::MutateS5fSite,
+            address::ChoiceAddressPattern::MutateS5fBase,
         ]
     }
 

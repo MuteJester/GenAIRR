@@ -2,12 +2,35 @@
 
 use crate::address;
 use crate::assignment::TrimEnd;
-use crate::dist::{sample_filtered_result, Distribution, FilteredSampleError};
-use crate::ir::{Segment, Simulation};
+use crate::contract::{LengthSupport, TrimTarget};
+use crate::dist::{sample_filtered_with_policy, Distribution, EmptySupport};
+use crate::ir::{Segment, Simulation, SimulationBuilder};
 use crate::pass::{
     IntegerSupport, Pass, PassCompileFact, PassContext, PassEffect, PassError, PassRequirement,
 };
 use crate::trace::ChoiceValue;
+
+/// v3.0 empty-support policy for trim sampling. A zero-length trim
+/// is the only architectural no-op for a length sampler — same
+/// shape as [`GenerateNPPass`](crate::passes::GenerateNPPass)'s
+/// length policy.
+///
+/// **Permissive degradation note:** the per-candidate predicate
+/// in [`TrimPass::sample_trim`] combines the contract bundle's
+/// `admissible_trim_lengths` support with the runtime
+/// `FeasibilityContext::admits` filter. When their intersection
+/// with the natural distribution is empty, the sentinel `0` is
+/// written *without re-checking* feasibility — applying the
+/// sentinel skips the predicate entirely. The built-in
+/// feasibility filter always admits length 0 (zero trim
+/// preserves all downstream geometry), so this is safe under
+/// the canonical pipeline. A custom feasibility filter that
+/// specifically rejects length 0 would see its rejection
+/// silently bypassed under permissive empty-support; that
+/// scenario should be detected by upstream plan validation
+/// (a feasibility filter incompatible with the sentinel is a
+/// plan-construction issue, not a runtime fallback bug).
+const TRIM_LENGTH_EMPTY_SUPPORT: EmptySupport<i64> = EmptySupport::Sentinel(0);
 
 /// Sample a trim amount from a distribution and apply it to the
 /// assigned allele on the given segment / end.
@@ -76,6 +99,22 @@ impl TrimPass {
         address::trim_vdj(self.segment, self.end)
     }
 
+    fn typed_segment(&self) -> address::VdjSegment {
+        match self.segment {
+            Segment::V => address::VdjSegment::V,
+            Segment::D => address::VdjSegment::D,
+            Segment::J => address::VdjSegment::J,
+            Segment::Np1 | Segment::Np2 => unreachable!("constructor rejects NP segments"),
+        }
+    }
+
+    fn choice_address(&self) -> address::ChoiceAddress {
+        address::ChoiceAddress::Trim {
+            segment: self.typed_segment(),
+            end: self.end,
+        }
+    }
+
     fn sample_trim(
         &self,
         sim: &Simulation,
@@ -88,31 +127,71 @@ impl TrimPass {
         let pass_index = ctx.pass_index;
 
         if contracts.is_some() || feasibility.is_some() {
-            match sample_filtered_result(ctx.rng, self.distribution.as_ref(), |candidate| {
-                let choice = ChoiceValue::Int(*candidate);
-                let contract_ok = contracts.map_or(true, |contracts| {
-                    contracts
-                        .admits(sim, refdata, self.address(), &choice)
-                        .is_ok()
-                });
-                let feasible_ok = feasibility.map_or(true, |feasibility| {
-                    feasibility.admits(pass_index, sim, refdata, self.address(), &choice)
-                });
-                contract_ok && feasible_ok
-            }) {
-                Ok(value) => return Ok(value),
-                Err(reason) if strict => {
-                    return Err(self.constraint_sampling_error(reason));
-                }
-                Err(_) => {}
-            }
+            // v3.0 constrain-before-propose: ask the bundle once
+            // for the typed [`LengthSupport`] over `[0, u16::MAX]`,
+            // then filter the natural distribution to that support.
+            // Anchor-preservation gives a closed-form
+            // `Full(anchor)` / `Full(allele_len − anchor − 3)`
+            // upper bound without per-candidate trait dispatch;
+            // contracts that don't override the hook fall through
+            // to the trait default `Full(requested_max)`, so the
+            // composed support is the tightest opinion in the
+            // bundle.
+            let trim_support = contracts
+                .map(|c| {
+                    c.admissible_trim_lengths(
+                        sim,
+                        refdata,
+                        TrimTarget {
+                            segment: self.segment,
+                            end: self.end,
+                        },
+                        u16::MAX as u32,
+                    )
+                })
+                .unwrap_or(LengthSupport::Full(u16::MAX as u32));
+
+            let pass_name = self.name().to_string();
+            let address = self.address();
+            let outcome = sample_filtered_with_policy(
+                ctx.rng,
+                self.distribution.as_ref(),
+                |candidate| {
+                    // Candidates outside `[0, u16::MAX]` are
+                    // invalid; surface as a downstream
+                    // `InvalidDistributionOutput`. Drop them from
+                    // the filtered support here.
+                    if *candidate < 0 || *candidate > u16::MAX as i64 {
+                        return false;
+                    }
+                    let length = *candidate as u32;
+                    let in_support = match &trim_support {
+                        LengthSupport::Full(max) => length <= *max,
+                        LengthSupport::Subset(set) => set.binary_search(&length).is_ok(),
+                        LengthSupport::Empty => false,
+                    };
+                    if !in_support {
+                        return false;
+                    }
+                    feasibility.map_or(true, |feasibility| {
+                        feasibility.admits(
+                            pass_index,
+                            sim,
+                            refdata,
+                            address,
+                            &ChoiceValue::Int(*candidate),
+                        )
+                    })
+                },
+                strict,
+                &pass_name,
+                address,
+                TRIM_LENGTH_EMPTY_SUPPORT,
+            )?;
+            return Ok(outcome.expect("TRIM_LENGTH_EMPTY_SUPPORT is Sentinel(0), never Skip"));
         }
 
         Ok(self.distribution.sample(ctx.rng))
-    }
-
-    fn constraint_sampling_error(&self, reason: FilteredSampleError) -> PassError {
-        PassError::constraint_sampling(self.name(), self.address(), reason)
     }
 
     fn execute_with_validation(
@@ -125,7 +204,18 @@ impl TrimPass {
             return Err(PassError::missing_assignment(self.name(), self.segment));
         }
 
-        let value = self.sample_trim(sim, ctx, strict)?;
+        // Trace-injected replay: consume the recorded trim length
+        // from the cursor instead of drawing from the distribution.
+        // The downstream validation + `sim.with_trim(...)` path runs
+        // unchanged — bad recorded values still surface as
+        // `InvalidDistributionOutput` rather than corrupting the IR.
+        let value = if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
+            cursor
+                .expect_int(self.choice_address())
+                .map_err(|reason| PassError::replay(self.name(), reason))?
+        } else {
+            self.sample_trim(sim, ctx, strict)?
+        };
         if strict && value < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
@@ -156,8 +246,24 @@ impl TrimPass {
             value
         );
 
-        ctx.trace.record(self.address(), ChoiceValue::Int(value));
-        Ok(sim.with_trim(self.segment, self.end, value as u16))
+        ctx.trace
+            .record_choice(self.choice_address(), ChoiceValue::Int(value));
+        // Route the trim update through the builder so the
+        // `TrimChanged` event flows onto every attached sink. The
+        // persistent mutation is still `Simulation::with_trim`
+        // (called inside `SimulationBuilder::update_trim`).
+        // Forward the captured event into `ctx.event_log_sink` when
+        // the caller supplied one — the per-pass `EventRecord`
+        // then carries the consequence on `simulation_events`.
+        let mut builder = SimulationBuilder::from_simulation(sim.clone());
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+        builder.update_trim(self.segment, self.end, value as u16);
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(builder.seal_event_log_observer());
+        }
+        Ok(builder.seal())
     }
 }
 
@@ -179,8 +285,11 @@ impl Pass for TrimPass {
         self.execute_with_validation(sim, ctx, true)
     }
 
-    fn declared_choices(&self) -> Vec<String> {
-        vec![self.address().to_string()]
+    fn declared_choice_patterns(&self) -> Vec<crate::address::ChoiceAddressPattern> {
+        vec![crate::address::ChoiceAddressPattern::Trim {
+            segment: self.typed_segment(),
+            end: self.end,
+        }]
     }
 
     fn requirements(&self) -> Vec<PassRequirement> {
@@ -203,9 +312,9 @@ impl Pass for TrimPass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dist::{AllelePoolDist, EmpiricalLengthDist};
-    use crate::pass::{PassError, PassPlan};
+    use crate::dist::{AllelePoolDist, EmpiricalLengthDist, FilteredSampleError};
     use crate::pass::testing::PassRuntime;
+    use crate::pass::{PassError, PassPlan};
     use crate::passes::sample_allele::test_support::make_test_pool;
     use crate::passes::SampleAllelePass;
 
@@ -261,7 +370,12 @@ mod tests {
         assert_eq!(rec.value, ChoiceValue::Int(4));
 
         // Trim applied to the V allele instance.
-        let v = outcome.final_simulation().assignments.get(Segment::V).copied().unwrap();
+        let v = outcome
+            .final_simulation()
+            .assignments
+            .get(Segment::V)
+            .copied()
+            .unwrap();
         assert_eq!(v.trim_3, 4);
         assert_eq!(v.trim_5, 0);
     }
@@ -418,9 +532,229 @@ mod tests {
         let oa = PassRuntime::execute(&plan(), Simulation::new(), 0xc0ff_ee);
         let ob = PassRuntime::execute(&plan(), Simulation::new(), 0xc0ff_ee);
         assert_eq!(
-            oa.final_simulation().assignments.get(Segment::V).copied().unwrap().trim_3,
-            ob.final_simulation().assignments.get(Segment::V).copied().unwrap().trim_3
+            oa.final_simulation()
+                .assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .trim_3,
+            ob.final_simulation()
+                .assignments
+                .get(Segment::V)
+                .copied()
+                .unwrap()
+                .trim_3
         );
         assert_eq!(oa.trace.choices(), ob.trace.choices());
+    }
+
+    // v3.0 Phase E: trim lengths sampled from natural ∩ admissible.
+    // Pin that the bundle's `admissible_trim_lengths` is honored:
+    // under productive() the V's 5' trim must stay ≤ anchor offset,
+    // even when the natural distribution allows larger values.
+    mod productive_trim {
+        use super::*;
+        use crate::assignment::AlleleInstance;
+        use crate::contract::productive;
+        use crate::refdata::{Allele, AlleleId, AllelePool, ChainType, RefDataConfig};
+
+        fn vj_cfg_with_v_anchor(v_anchor: u16) -> RefDataConfig {
+            let mut cfg = RefDataConfig::empty(ChainType::Vj);
+            // V allele = 9 bytes, anchor at `v_anchor`.
+            let mut seq = Vec::new();
+            for _ in 0..v_anchor as usize {
+                seq.push(b'A');
+            }
+            seq.extend_from_slice(b"TGT"); // anchor codon Cys
+            for _ in (v_anchor as usize + 3)..9 {
+                seq.push(b'C');
+            }
+            assert_eq!(seq.len(), 9);
+            let _ = cfg.v_pool.push(Allele {
+                name: "v_trim*01".into(),
+                gene: "v_trim".into(),
+                seq,
+                segment: Segment::V,
+                anchor: Some(v_anchor),
+            });
+            let _ = cfg.j_pool.push(Allele {
+                name: "j_trim*01".into(),
+                gene: "j_trim".into(),
+                seq: b"TGGAAA".to_vec(),
+                segment: Segment::J,
+                anchor: Some(0),
+            });
+            cfg
+        }
+
+        fn make_v_assigned_sim() -> (RefDataConfig, Simulation) {
+            let cfg = vj_cfg_with_v_anchor(4);
+            // V anchor at 4 → max admissible 5' trim = 4.
+            let sim = Simulation::new()
+                .with_allele_assigned(Segment::V, AlleleInstance::new(AlleleId::new(0)))
+                .with_allele_assigned(Segment::J, AlleleInstance::new(AlleleId::new(0)));
+            (cfg, sim)
+        }
+
+        #[test]
+        fn five_prime_trim_under_productive_never_exceeds_anchor_offset() {
+            // Natural distribution puts mass on lengths 0..=8.
+            // Under productive() the support must clamp to 0..=4
+            // (anchor at offset 4). Verified empirically across
+            // many seeds.
+            let (cfg, sim) = make_v_assigned_sim();
+            let contracts = productive();
+            for seed in 0..256u64 {
+                let mut plan = PassPlan::new();
+                plan.push(Box::new(TrimPass::new(
+                    Segment::V,
+                    TrimEnd::Five,
+                    Box::new(EmpiricalLengthDist::from_pairs(vec![
+                        (0, 1.0),
+                        (1, 1.0),
+                        (2, 1.0),
+                        (3, 1.0),
+                        (4, 1.0),
+                        (5, 1.0),
+                        (6, 1.0),
+                        (7, 1.0),
+                        (8, 1.0),
+                    ])),
+                )));
+                let outcome = PassRuntime::execute_with_context(
+                    &plan,
+                    sim.clone(),
+                    seed,
+                    Some(&cfg),
+                    Some(&contracts),
+                );
+                let trim = outcome
+                    .final_simulation()
+                    .assignments
+                    .get(Segment::V)
+                    .copied()
+                    .unwrap()
+                    .trim_5;
+                assert!(
+                    trim <= 4,
+                    "seed {} produced trim_5 = {} > anchor offset 4",
+                    seed,
+                    trim
+                );
+                assert!(contracts
+                    .verify(outcome.final_simulation(), Some(&cfg))
+                    .is_ok());
+            }
+        }
+
+        #[test]
+        fn five_prime_trim_strict_errors_when_support_disjoint_from_natural() {
+            // Natural distribution puts mass ONLY on out-of-support
+            // values (5..=8 under V anchor at 4). Strict mode must
+            // surface `EmptyAdmissibleSupport`; the contract's
+            // typed support has no overlap with the natural support.
+            let (cfg, sim) = make_v_assigned_sim();
+            let contracts = productive();
+            let mut plan = PassPlan::new();
+            plan.push(Box::new(TrimPass::new(
+                Segment::V,
+                TrimEnd::Five,
+                Box::new(EmpiricalLengthDist::from_pairs(vec![
+                    (5, 1.0),
+                    (6, 1.0),
+                    (7, 1.0),
+                    (8, 1.0),
+                ])),
+            )));
+            let err = PassRuntime::execute_strict_with_context(
+                &plan,
+                sim,
+                0,
+                Some(&cfg),
+                Some(&contracts),
+            )
+            .unwrap_err();
+            assert_eq!(err.pass_name(), "trim.v_5");
+            assert_eq!(err.address(), "trim.v_5");
+            assert_eq!(
+                err.constraint_reason(),
+                Some(FilteredSampleError::EmptyAdmissibleSupport)
+            );
+        }
+
+        #[test]
+        fn five_prime_trim_permissive_noops_when_support_disjoint_from_natural() {
+            // Same disjoint support as the strict test above, but
+            // permissive mode must not fall back to an unconstrained
+            // trim. The pass records/apply a zero-length no-op.
+            let (cfg, sim) = make_v_assigned_sim();
+            let contracts = productive();
+            let mut plan = PassPlan::new();
+            plan.push(Box::new(TrimPass::new(
+                Segment::V,
+                TrimEnd::Five,
+                Box::new(EmpiricalLengthDist::from_pairs(vec![
+                    (5, 1.0),
+                    (6, 1.0),
+                    (7, 1.0),
+                    (8, 1.0),
+                ])),
+            )));
+
+            let outcome =
+                PassRuntime::execute_with_context(&plan, sim, 0, Some(&cfg), Some(&contracts));
+
+            assert_eq!(
+                outcome.trace.find("trim.v_5").unwrap().value,
+                ChoiceValue::Int(0)
+            );
+            assert_eq!(
+                outcome
+                    .final_simulation()
+                    .assignments
+                    .get(Segment::V)
+                    .copied()
+                    .unwrap()
+                    .trim_5,
+                0
+            );
+            assert!(contracts
+                .verify(outcome.final_simulation(), Some(&cfg))
+                .is_ok());
+        }
+
+        #[test]
+        fn no_contracts_path_unaffected_by_admissible_trim_lengths() {
+            // Without contracts, the constrain-before-propose
+            // helper is bypassed entirely — the raw natural
+            // distribution governs the draw.
+            let cfg = vj_cfg_with_v_anchor(4);
+            let _ = cfg;
+            let sim = Simulation::new()
+                .with_allele_assigned(Segment::V, AlleleInstance::new(AlleleId::new(0)));
+            let mut plan = PassPlan::new();
+            plan.push(Box::new(TrimPass::new(
+                Segment::V,
+                TrimEnd::Five,
+                Box::new(EmpiricalLengthDist::from_pairs(vec![(7, 1.0)])),
+            )));
+            let outcome = PassRuntime::execute(&plan, sim, 0);
+            assert_eq!(
+                outcome
+                    .final_simulation()
+                    .assignments
+                    .get(Segment::V)
+                    .copied()
+                    .unwrap()
+                    .trim_5,
+                7,
+            );
+        }
+
+        // Suppress unused-import warning on `AllelePool` — the
+        // `make_test_pool` helper isn't used here but the test
+        // module re-uses the parent's imports.
+        #[allow(dead_code)]
+        const _: Option<AllelePool> = None;
     }
 }

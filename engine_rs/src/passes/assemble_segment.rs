@@ -142,8 +142,8 @@ mod tests {
     use super::*;
     use crate::assignment::TrimEnd;
     use crate::dist::{AllelePoolDist, EmpiricalLengthDist};
-    use crate::pass::{PassError, PassPlan};
     use crate::pass::testing::PassRuntime;
+    use crate::pass::{PassError, PassPlan};
     use crate::passes::sample_allele::test_support::make_test_pool;
     use crate::passes::{SampleAllelePass, TrimPass};
 
@@ -465,5 +465,75 @@ mod tests {
         let rail = crate::ir::compute_codon_rail(&sim.sequence.regions[0], &sim.pool);
         assert_eq!(rail.amino_acids, b"KPG");
         assert!(rail.stop_codon_positions.is_empty());
+    }
+
+    // ── Pass-level event-log emission ────────────────────────────
+
+    #[test]
+    fn assemble_segment_pass_emits_region_added_with_expected_v_region() {
+        // AssembleSegmentPass for a 9-base V allele with zero
+        // trims must emit exactly one `RegionAdded` event whose
+        // region matches the V region the pass actually installs.
+        use crate::assignment::AlleleInstance;
+        use crate::pass::PassContext;
+        use crate::refdata::AlleleId;
+        use crate::rng::Rng;
+        use crate::trace::Trace;
+
+        let refdata = make_test_refdata();
+        // Pre-assign V allele 0 (zero trims via `AlleleInstance::new`).
+        let sim = Simulation::new().with_allele_assigned(
+            Segment::V,
+            AlleleInstance::new(AlleleId::new(0)),
+        );
+
+        let pass = AssembleSegmentPass::new(Segment::V);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0xc0ff_ee);
+        let mut captured: Vec<crate::ir::SimulationEvent> = Vec::new();
+        let result = {
+            let mut ctx = PassContext {
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: Some(&refdata),
+                contracts: None,
+                feasibility: None,
+                reference_index: None,
+                replay_cursor: None,
+                event_log_sink: Some(&mut captured),
+            };
+            pass.execute_checked(&sim, &mut ctx)
+        };
+        let sealed = result.expect("assembly should succeed with V allele assigned");
+
+        // The pass should have appended exactly one region.
+        assert_eq!(sealed.sequence.region_count(), 1);
+        let expected_region = sealed.sequence.regions[0].clone();
+        assert_eq!(expected_region.segment, Segment::V);
+        assert_eq!(expected_region.start, NucHandle::new(0));
+        assert_eq!(expected_region.end, NucHandle::new(9));
+
+        // Exactly one `RegionAdded` event with byte-identical
+        // payload. (The base-push builder also emits one
+        // `BasePushed` per germline base — 9 here — so the
+        // captured stream contains those plus the region event.)
+        let region_events: Vec<_> = captured
+            .iter()
+            .filter(|e| matches!(e, crate::ir::SimulationEvent::RegionAdded { .. }))
+            .collect();
+        assert_eq!(region_events.len(), 1);
+        assert_eq!(
+            *region_events[0],
+            crate::ir::SimulationEvent::RegionAdded {
+                region: expected_region
+            }
+        );
+        // Sanity: the BasePushed events are also in the stream.
+        let pushed = captured
+            .iter()
+            .filter(|e| matches!(e, crate::ir::SimulationEvent::BasePushed { .. }))
+            .count();
+        assert_eq!(pushed, 9, "9 germline bases pushed during V assembly");
     }
 }

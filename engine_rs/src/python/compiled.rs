@@ -11,11 +11,13 @@ use pyo3::prelude::*;
 use crate::compiled::{CompiledSimulator, ExecutionPolicy, OwnedCompiledSimulator};
 use crate::contract::ContractSet;
 use crate::refdata::RefDataConfig;
+use crate::trace_file::{pass_plan_signature, refdata_signature, TraceFile};
 
 use super::contract::pass_error_to_pyerr;
 use super::outcome::PyOutcome;
 use super::plan::PyPassPlan;
 use super::simulation::PySimulation;
+use super::trace_file::PyTraceFile;
 
 #[pyclass(name = "CompiledSimulator", module = "GenAIRR._engine", unsendable)]
 pub struct PyCompiledSimulator {
@@ -108,7 +110,27 @@ impl PyCompiledSimulator {
             .collect()
     }
 
-    /// Run one simulation using this compiled artifact.
+    /// Run one **fresh** simulation using this compiled artifact.
+    ///
+    /// The optional `strict` flag overrides the policy compiled into
+    /// this artifact for this call only.
+    ///
+    /// **Strict mode (`strict=True`):** raises
+    /// [`StrictSamplingError`](crate::python::contract) when a pass's
+    /// contract-narrowed candidate set becomes empty at sample time.
+    /// The exception's `args` tuple is `(pass_name, address, reason)`.
+    ///
+    /// **Permissive mode (`strict=False`, default):** when a sampler's
+    /// admissible support is empty, the pass falls back to its
+    /// declared `EmptySupport` policy and records a documented sentinel
+    /// value to the trace (e.g. indel `site = -1` NoOp, NP length `0`,
+    /// NP base `N`, trim `0`) or skips the slot.
+    ///
+    /// **Strict semantics apply only to fresh sampling.** Trace replay
+    /// via [`Self::replay_from_trace_file`] consumes recorded values
+    /// verbatim and does not re-validate them against the contract
+    /// bundle — even with `strict=True`. See that method's docstring
+    /// for details.
     #[pyo3(signature = (seed, *, strict=None))]
     fn run(&self, seed: u64, strict: Option<bool>) -> PyResult<PyOutcome> {
         let policy = policy_from_strict_override(self.inner.policy(), strict);
@@ -145,6 +167,175 @@ impl PyCompiledSimulator {
         let outcome = self
             .inner
             .run_one_from_with_policy(initial.inner.clone(), seed, policy)
+            .map_err(pass_error_to_pyerr)?;
+        Ok(PyOutcome::new(outcome))
+    }
+
+    /// Bundle the given `outcome`'s trace into a durable
+    /// [`PyTraceFile`] paired with this simulator's plan and refdata
+    /// signatures plus the `seed` it was produced from.
+    ///
+    /// The resulting file can be serialised to JSON via
+    /// `trace_file.write_to(path)` and reloaded later with
+    /// `TraceFile.read_from(path)` + this simulator's
+    /// [`Self::rerun_from_trace_file`].
+    ///
+    /// Raises `ValueError` when the simulator has no refdata
+    /// attached (trace files require both signatures to round-trip
+    /// safely).
+    fn trace_file_from(&self, outcome: &PyOutcome, seed: u64) -> PyResult<PyTraceFile> {
+        let refdata = self.inner.refdata().ok_or_else(|| {
+            PyValueError::new_err(
+                "trace_file_from: simulator has no refdata; trace files require both \
+                 plan and refdata signatures to round-trip",
+            )
+        })?;
+        let tf = TraceFile::build(
+            self.inner.plan(),
+            refdata,
+            seed,
+            outcome.inner.trace.clone(),
+        );
+        Ok(PyTraceFile::new(tf))
+    }
+
+    /// Trace-injected replay (Option B): run the plan against an
+    /// empty initial IR, consuming the recorded values in
+    /// `trace_file.trace` at every sampling site that has been
+    /// migrated to the consume-trace path. Sites that have not yet
+    /// been migrated still draw from the RNG seeded at
+    /// `trace_file.seed`.
+    ///
+    /// This is the architectural sibling of
+    /// [`Self::rerun_from_trace_file`]: same input bundle, same
+    /// signature checks, but the cursor — not the RNG — is the
+    /// source of truth for migrated sites. As more passes migrate
+    /// (per the staged plan: allele → trim/NP-length → SHM count
+    /// loops → structural), the fraction of values that come from
+    /// the cursor grows; once every site is migrated, the engine is
+    /// **deterministic in trace**, independent of RNG implementation.
+    ///
+    /// **The `strict` flag has limited effect on replay.** Replay
+    /// consumes each recorded value as a proposal at its sampling
+    /// slot and validates *address consistency* and *value-kind
+    /// consistency* with the live plan — but does NOT re-run the
+    /// contract bundle's admissibility check against the recorded
+    /// value. As a consequence:
+    ///
+    /// - A trace recorded by a permissive run that hit empty support
+    ///   and wrote a sentinel value (indel `site = -1`, NP length `0`,
+    ///   NP base `N`, trim `0`) **replays cleanly under `strict=True`**
+    ///   — the sentinel is consumed verbatim, the original outcome
+    ///   reproduces, and no `StrictSamplingError` fires. This is by
+    ///   design: replay's contract is "rebuild this exact outcome,"
+    ///   not "re-execute the sampler with these inputs."
+    /// - To get strict-mode-on-fresh-sampling semantics, call
+    ///   [`Self::run`] with `strict=True` and the trace's original
+    ///   seed instead.
+    ///
+    /// See `docs/productive_failure_mode_audit.md` §5 / §6.2 for the
+    /// failure matrix and the rationale behind this divergence.
+    ///
+    /// Raises `ValueError` on signature mismatch *or* on a
+    /// cursor-vs-plan disagreement raised by a migrated pass
+    /// (address mismatch, value-kind mismatch, exhausted trace,
+    /// trailing unused records).
+    #[pyo3(signature = (trace_file, *, strict=None))]
+    fn replay_from_trace_file(
+        &self,
+        trace_file: &PyTraceFile,
+        strict: Option<bool>,
+    ) -> PyResult<PyOutcome> {
+        // Signature checks reuse the same flow as rerun_from_trace_file.
+        let live_plan_sig = pass_plan_signature(self.inner.plan());
+        if live_plan_sig != trace_file.inner.pass_plan_signature {
+            return Err(PyValueError::new_err(format!(
+                "replay_from_trace_file: pass plan signature mismatch.\n  \
+                 expected: {}\n  got:      {}",
+                trace_file.inner.pass_plan_signature, live_plan_sig,
+            )));
+        }
+        let refdata = self.inner.refdata().ok_or_else(|| {
+            PyValueError::new_err(
+                "replay_from_trace_file: simulator has no refdata; cannot \
+                 verify refdata signature against the trace file",
+            )
+        })?;
+        let live_refdata_sig = refdata_signature(refdata);
+        if live_refdata_sig != trace_file.inner.refdata_signature {
+            return Err(PyValueError::new_err(format!(
+                "replay_from_trace_file: refdata signature mismatch.\n  \
+                 expected: {}\n  got:      {}",
+                trace_file.inner.refdata_signature, live_refdata_sig,
+            )));
+        }
+
+        let policy = policy_from_strict_override(self.inner.policy(), strict);
+        let outcome = self
+            .inner
+            .replay_from_trace_records(
+                trace_file.inner.trace.choices(),
+                trace_file.inner.seed,
+                policy,
+            )
+            .map_err(pass_error_to_pyerr)?;
+        Ok(PyOutcome::new(outcome))
+    }
+
+    /// Rerun the engine from `trace_file.seed` against this
+    /// simulator's plan + refdata, after verifying both signatures
+    /// match the trace file's recorded signatures. The replay
+    /// remains **seed-based** — engine determinism reproduces the
+    /// original `Outcome`. True trace-injected replay (consuming
+    /// recorded values instead of redrawing from the RNG) is a
+    /// follow-up; the on-disk schema already supports it.
+    ///
+    /// **`strict` semantics:** because this method re-runs the
+    /// sampler (rather than consuming recorded values), `strict=True`
+    /// here behaves the same as a fresh
+    /// [`Self::run`] with `strict=True` — it will raise
+    /// [`StrictSamplingError`](crate::python::contract) if the seed
+    /// produces an empty-support situation under the active
+    /// contracts. This is the key difference from
+    /// [`Self::replay_from_trace_file`], which consumes recorded
+    /// values and does not re-evaluate contract admissibility.
+    ///
+    /// Raises `ValueError` on signature mismatch (plan changed,
+    /// refdata changed, simulator has no refdata, …).
+    #[pyo3(signature = (trace_file, *, strict=None))]
+    fn rerun_from_trace_file(
+        &self,
+        trace_file: &PyTraceFile,
+        strict: Option<bool>,
+    ) -> PyResult<PyOutcome> {
+        // Signature checks: plan always, refdata when present.
+        let live_plan_sig = pass_plan_signature(self.inner.plan());
+        if live_plan_sig != trace_file.inner.pass_plan_signature {
+            return Err(PyValueError::new_err(format!(
+                "rerun_from_trace_file: pass plan signature mismatch.\n  \
+                 expected: {}\n  got:      {}",
+                trace_file.inner.pass_plan_signature, live_plan_sig,
+            )));
+        }
+        let refdata = self.inner.refdata().ok_or_else(|| {
+            PyValueError::new_err(
+                "rerun_from_trace_file: simulator has no refdata; cannot \
+                 verify refdata signature against the trace file",
+            )
+        })?;
+        let live_refdata_sig = refdata_signature(refdata);
+        if live_refdata_sig != trace_file.inner.refdata_signature {
+            return Err(PyValueError::new_err(format!(
+                "rerun_from_trace_file: refdata signature mismatch.\n  \
+                 expected: {}\n  got:      {}",
+                trace_file.inner.refdata_signature, live_refdata_sig,
+            )));
+        }
+
+        let policy = policy_from_strict_override(self.inner.policy(), strict);
+        let outcome = self
+            .inner
+            .run_one_with_policy(trace_file.inner.seed, policy)
             .map_err(pass_error_to_pyerr)?;
         Ok(PyOutcome::new(outcome))
     }

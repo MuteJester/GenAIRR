@@ -1,14 +1,15 @@
-use crate::address;
-use crate::contract::ChoiceContext;
 use crate::dist::FilteredSampleError;
-use crate::ir::{flag, NucHandle, Nucleotide, Simulation};
-use crate::pass::{Pass, PassContext, PassError};
-use crate::passes::constrained::{sample_contract_verified_event, PostEventCandidate};
+use crate::ir::Simulation;
+use crate::pass::PassContext;
 
 use super::event::IndelEvent;
 use super::IndelPass;
 
 impl IndelPass {
+    /// Normalize the configured insertion-base distribution's
+    /// support into a `(base, weight)` list with weights summing
+    /// to 1. Used by [`Self::sample_admissible_tuple`] when
+    /// computing per-event natural weights for the mod-3 DP.
     pub(super) fn base_support(&self) -> Result<Vec<(u8, f64)>, FilteredSampleError> {
         let support = self
             .base_dist
@@ -30,66 +31,10 @@ impl IndelPass {
             .collect())
     }
 
-    pub(super) fn constrained_candidates(
-        &self,
-        sim: &Simulation,
-        index: u32,
-        count: u32,
-    ) -> Result<Vec<PostEventCandidate<'static, IndelEvent>>, FilteredSampleError> {
-        let pool_len = sim.pool.len() as u32;
-        let mut candidates = Vec::new();
-
-        if self.insertion_prob > 0.0 {
-            let base_support = self.base_support()?;
-            let site_weight = self.insertion_prob / (pool_len + 1) as f64;
-
-            for site in 0..=pool_len {
-                let segment = Self::insertion_segment(sim, site);
-                for &(base, base_weight) in &base_support {
-                    let nuc = Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED);
-                    // Skip the codon-rail recompute on the candidate
-                    // post-sim: contracts evaluate against `sim.pool`
-                    // directly (no contract reads
-                    // `region.amino_acids` / `stop_codon_positions`),
-                    // and the candidate sim is discarded once the
-                    // weight is computed.
-                    let post_sim = sim.with_indel_inserted(site, nuc);
-                    candidates.push(PostEventCandidate::new(
-                        IndelEvent::Insertion { site, base },
-                        site_weight * base_weight,
-                        post_sim,
-                        ChoiceContext::indel_insertion(index, count, NucHandle::new(site)),
-                    ));
-                }
-            }
-        }
-
-        let deletion_prob = 1.0 - self.insertion_prob;
-        if deletion_prob > 0.0 {
-            if pool_len == 0 {
-                candidates.push(PostEventCandidate::new(
-                    IndelEvent::Deletion { site: None },
-                    deletion_prob,
-                    sim.clone(),
-                    ChoiceContext::indel_deletion_noop(index, count),
-                ));
-            } else {
-                let site_weight = deletion_prob / pool_len as f64;
-                for site in 0..pool_len {
-                    let post_sim = sim.with_indel_deleted(site);
-                    candidates.push(PostEventCandidate::new(
-                        IndelEvent::Deletion { site: Some(site) },
-                        site_weight,
-                        post_sim,
-                        ChoiceContext::indel_deletion(index, count, NucHandle::new(site)),
-                    ));
-                }
-            }
-        }
-
-        Ok(candidates)
-    }
-
+    /// Unconstrained per-step indel draw, used by the no-contracts
+    /// path in [`IndelPass::execute_with_sampling_mode`]. Under
+    /// active contracts the indel pass runs
+    /// [`Self::sample_admissible_tuple`] instead.
     pub(super) fn sample_legacy_event(
         &self,
         sim: &Simulation,
@@ -113,31 +58,5 @@ impl IndelPass {
                 site: Some(ctx.rng.range_u32(pool_len)),
             }
         }
-    }
-
-    pub(super) fn sample_event(
-        &self,
-        sim: &Simulation,
-        ctx: &mut PassContext,
-        index: u32,
-        count: u32,
-        strict: bool,
-    ) -> Result<IndelEvent, PassError> {
-        if ctx.contracts.is_some() {
-            let event_address = address::corrupt_indel_site(index);
-            let candidates = self.constrained_candidates(sim, index, count);
-            if let Some(event) = sample_contract_verified_event(
-                sim,
-                ctx,
-                self.name(),
-                &event_address,
-                strict,
-                candidates,
-            )? {
-                return Ok(event);
-            }
-        }
-
-        Ok(self.sample_legacy_event(sim, ctx))
     }
 }

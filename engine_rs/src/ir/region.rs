@@ -14,7 +14,7 @@ use super::{translate_codon, NucHandle, NucleotidePool, Segment, AMINO_STOP};
 /// confusion. The cache is now computed on demand via
 /// [`compute_codon_rail`] only when an external consumer (the Python
 /// boundary, debug tests) actually needs it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Region {
     /// Biological role of this region.
     pub segment: Segment,

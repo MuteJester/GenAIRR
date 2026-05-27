@@ -1,4 +1,4 @@
-use crate::address;
+use crate::address::ChoiceAddress;
 use crate::ir::{translate_codon, NucHandle, Simulation, AMINO_STOP};
 use crate::junction::compute_junction;
 use crate::refdata::RefDataConfig;
@@ -8,23 +8,37 @@ use super::NoStopCodonInJunction;
 use crate::contract::{ChoiceContext, ChoiceKind, Contract, ContractViolation};
 
 impl NoStopCodonInJunction {
-    fn parse_targeted_substitution_base_address(address: &str) -> Option<u32> {
-        for prefix in [
-            address::MUTATE_UNIFORM_BASE_PREFIX,
-            address::MUTATE_S5F_BASE_PREFIX,
-            address::CORRUPT_PCR_BASE_PREFIX,
-            address::CORRUPT_CONTAMINANT_BASES_PREFIX,
-        ] {
-            if let Some(index) = address::parse_indexed(address, prefix) {
-                return Some(index);
-            }
+    /// Classify a [`ChoiceContext`] as a targeted base substitution.
+    ///
+    /// Two signals are accepted:
+    /// 1. Explicit kind tag set by the substitution helper:
+    ///    [`ChoiceKind::TargetedBaseSubstitution`] — built-in
+    ///    callers via [`ChoiceContext::targeted_base_substitution`]
+    ///    flow through this branch.
+    /// 2. Typed [`ChoiceAddress`] variant matching one of the
+    ///    targeted-substitution producer addresses — picks up
+    ///    legacy string callers routed through the
+    ///    [`Contract::admits`] trait default, which attaches the
+    ///    parsed address but leaves `kind = Plain`.
+    ///
+    /// Note: `CorruptQualityBase` is intentionally excluded from
+    /// the address-variant list to match the pre-typed-migration
+    /// behavior — quality substitutions reach the contract via
+    /// the explicit kind tag from the substitution helper, not
+    /// via the address-variant fallback.
+    fn is_targeted_substitution_candidate(context: ChoiceContext<'_>) -> bool {
+        if context.kind == ChoiceKind::TargetedBaseSubstitution {
+            return true;
         }
-        None
-    }
-
-    fn is_targeted_substitution_candidate(address: &str, context: ChoiceContext<'_>) -> bool {
-        context.kind == ChoiceKind::TargetedBaseSubstitution
-            || Self::parse_targeted_substitution_base_address(address).is_some()
+        matches!(
+            context.address,
+            Some(
+                ChoiceAddress::MutateUniformBase(_)
+                    | ChoiceAddress::MutateS5fBase(_)
+                    | ChoiceAddress::CorruptPcrBase(_)
+                    | ChoiceAddress::CorruptContaminantBase(_)
+            )
+        )
     }
 
     fn pool_base_with_candidate(
@@ -44,11 +58,10 @@ impl NoStopCodonInJunction {
         &self,
         sim: &Simulation,
         refdata: Option<&RefDataConfig>,
-        address: &str,
         candidate: &ChoiceValue,
         context: ChoiceContext<'_>,
     ) -> Result<(), ContractViolation> {
-        if !Self::is_targeted_substitution_candidate(address, context) {
+        if !Self::is_targeted_substitution_candidate(context) {
             return Ok(());
         }
 
@@ -99,11 +112,12 @@ impl NoStopCodonInJunction {
 
             if let (Some(b1), Some(b2), Some(b3)) = (b1, b2, b3) {
                 if translate_codon(b1, b2, b3) == AMINO_STOP {
+                    let diagnostic_address = context.address_string().unwrap_or_default();
                     return Err(ContractViolation::new(
                         self.name(),
                         format!(
                             "candidate at {} for target {} would leave stop codon '{}{}{}' at junction position {}",
-                            address,
+                            diagnostic_address,
                             target_idx,
                             b1 as char,
                             b2 as char,

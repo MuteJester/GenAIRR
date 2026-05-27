@@ -46,11 +46,11 @@
 
 use super::reference_index::SegmentRefIndex;
 use super::walker::extensions::{walk_left_extension, walk_right_extension, ExtensionWalkState};
-use super::{
-    AlleleBitSet, EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentLiveCall,
+use super::{AlleleBitSet, EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentLiveCall};
+use crate::ir::{
+    GermlinePos, NucFlags, NucHandle, Nucleotide, Region, Segment, Simulation, SimulationEvent,
+    SimulationEventSink,
 };
-use crate::ir::builder::IrEventObserver;
-use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
 use crate::refdata::AlleleId;
 
 /// State a streaming observer accumulates as `SimulationBuilder`
@@ -240,10 +240,7 @@ impl<'idx> WalkerObserverState<'idx> {
     /// region currently assigned to this observer's segment in
     /// `sim`, which after an indel pass already reflects every
     /// `with_indel_inserted` / `with_indel_deleted` shift.
-    pub(crate) fn rebuild_if_stale(
-        self,
-        sim: &Simulation,
-    ) -> Self {
+    pub(crate) fn rebuild_if_stale(self, sim: &Simulation) -> Self {
         if !self.needs_rebuild {
             return self;
         }
@@ -371,15 +368,8 @@ impl<'idx> WalkerObserverState<'idx> {
     }
 }
 
-impl IrEventObserver for WalkerObserverState<'_> {
-    fn on_base_pushed(&mut self, handle: NucHandle, n: &Nucleotide) {
-        // Delegate to the inherent method so existing call sites
-        // (and the property-test path that re-runs the walker
-        // observer state machine standalone) keep working unchanged.
-        WalkerObserverState::on_base_pushed(self, handle, n);
-    }
-
-    /// incremental score delta on a base change.
+impl<'idx> WalkerObserverState<'idx> {
+    /// Incremental score delta on a base change.
     ///
     /// When the byte at `handle` flips from `old_n.base` to
     /// `new_base`, the walker's per-allele scores need to be
@@ -388,17 +378,23 @@ impl IrEventObserver for WalkerObserverState<'_> {
     /// the set whose germline matches the new base (increment).
     /// Alleles whose germline matched neither are unchanged.
     ///
-    /// This is the architectural payoff of a base change
-    /// no longer triggers a full from-scratch walker rebuild via
+    /// This is the architectural payoff of a base change no
+    /// longer triggering a full from-scratch walker rebuild via
     /// `PassEffect::EditBases` + `call_from_region`. The observer
     /// updates its score vector in O(matched_alleles) time.
     ///
-    /// **Scope filter.** Ignores events for nucleotides outside the
-    /// observer's segment (the walker scores only its own segment).
-    /// Also ignores events whose `germline_pos` is `None` — those
-    /// are indel-inserted bases with no allele evidence (matches
-    /// the `on_base_pushed` skip at walker.rs:66-68).
-    fn on_base_changed(&mut self, _handle: NucHandle, old_n: &Nucleotide, new_base: u8) {
+    /// **Scope filter.** Ignores events for nucleotides outside
+    /// the observer's segment (the walker scores only its own
+    /// segment). Also ignores events whose `germline_pos` is
+    /// `None` — those are indel-inserted bases with no allele
+    /// evidence (matches the `on_base_pushed` skip at
+    /// walker.rs:66-68).
+    pub(crate) fn on_base_changed(
+        &mut self,
+        _handle: NucHandle,
+        old_n: &Nucleotide,
+        new_base: u8,
+    ) {
         if self.malformed {
             return;
         }
@@ -449,14 +445,14 @@ impl IrEventObserver for WalkerObserverState<'_> {
         }
     }
 
-    /// handle an indel insertion event.
+    /// Handle an indel insertion event.
     ///
     /// Inserted nucleotides are synthetic (`germline_pos == NONE`)
     /// — they contribute zero to every allele's score. So the
     /// walker can absorb internal insertions losslessly: bump
     /// `seq_end_seen` by 1. External insertions (before our
     /// region) shift both bounds.
-    fn on_indel_inserted(&mut self, at: u32, _n: &Nucleotide) {
+    pub(crate) fn on_indel_inserted(&mut self, at: u32) {
         if self.malformed || self.needs_rebuild {
             return;
         }
@@ -468,7 +464,7 @@ impl IrEventObserver for WalkerObserverState<'_> {
         }
     }
 
-    /// handle an indel deletion event.
+    /// Handle an indel deletion event.
     ///
     /// External deletions (before our region) shift both bounds.
     /// Internal deletions invalidate observer state: removing a
@@ -476,7 +472,7 @@ impl IrEventObserver for WalkerObserverState<'_> {
     /// and the in-place score decrement is correct but doesn't fix
     /// the boundary tracking. Mark `needs_rebuild` and defer to
     /// the seal-time `from_existing_region` rebuild.
-    fn on_indel_deleted(&mut self, at: u32, _removed: &Nucleotide) {
+    pub(crate) fn on_indel_deleted(&mut self, at: u32) {
         if self.malformed || self.needs_rebuild {
             return;
         }
@@ -485,6 +481,78 @@ impl IrEventObserver for WalkerObserverState<'_> {
             self.seq_end_seen = self.seq_end_seen.saturating_sub(1);
         } else if at < self.seq_end_seen {
             self.needs_rebuild = true;
+        }
+    }
+}
+
+impl SimulationEventSink for WalkerObserverState<'_> {
+    /// Dispatch incoming [`SimulationEvent`]s to the inherent
+    /// handlers above. Reserved variants are ignored.
+    ///
+    /// The walker only inspects three fields from a nucleotide:
+    /// `base`, `segment`, and `germline_pos`. For `BasePushed` and
+    /// `BaseChanged` we reconstruct a transient `Nucleotide` from
+    /// the event payload so the inherent methods can keep their
+    /// `&Nucleotide` signatures (which are still used by
+    /// `from_existing_region` reading directly from the pool).
+    /// The `germline` byte and `flags` are filler — neither is
+    /// read by the walker's scoring loop.
+    fn on_event(&mut self, event: &SimulationEvent) {
+        match *event {
+            SimulationEvent::BasePushed {
+                handle,
+                base,
+                segment,
+                germline_pos,
+                flags,
+            } => {
+                let n = Nucleotide {
+                    base,
+                    germline: base,
+                    germline_pos: match germline_pos {
+                        Some(g) => GermlinePos::pos(g),
+                        None => GermlinePos::NONE,
+                    },
+                    segment,
+                    flags,
+                };
+                self.on_base_pushed(handle, &n);
+            }
+            SimulationEvent::BaseChanged {
+                handle,
+                old_base,
+                new_base,
+                segment,
+                germline_pos,
+            } => {
+                let old_n = Nucleotide {
+                    base: old_base,
+                    germline: old_base,
+                    germline_pos: match germline_pos {
+                        Some(g) => GermlinePos::pos(g),
+                        None => GermlinePos::NONE,
+                    },
+                    segment,
+                    flags: NucFlags::empty(),
+                };
+                self.on_base_changed(handle, &old_n, new_base);
+            }
+            SimulationEvent::IndelInserted { at, .. } => {
+                self.on_indel_inserted(at);
+            }
+            SimulationEvent::IndelDeleted { at, .. } => {
+                self.on_indel_deleted(at);
+            }
+            // Reserved (non-pool) variants describe sidecar state
+            // — they don't move the walker's score vector or
+            // boundary tracking.
+            SimulationEvent::BaseDeleted { .. }
+            | SimulationEvent::AssignmentChanged { .. }
+            | SimulationEvent::TrimChanged { .. }
+            | SimulationEvent::RegionAdded { .. }
+            | SimulationEvent::RegionReplaced { .. }
+            | SimulationEvent::ReverseComplementFlagRecorded { .. }
+            | SimulationEvent::MutationCountChanged { .. } => {}
         }
     }
 }

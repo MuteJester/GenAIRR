@@ -2,9 +2,13 @@
 
 use crate::address;
 use crate::dist::Distribution;
-use crate::ir::{NucHandle, Simulation};
+#[cfg(test)]
+use crate::ir::NucHandle;
+use crate::ir::Simulation;
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::count_source::sample_validated_count;
 use crate::passes::mutation_transaction::MutationTransaction;
+#[cfg(test)]
 use crate::trace::ChoiceValue;
 
 /// Models PCR amplification errors as a small number of random
@@ -73,38 +77,16 @@ impl PCRErrorPass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
-        let count_raw = self.count_source.sample(ctx.rng, sim.pool.len() as u32);
-        if strict && count_raw < 0 {
-            return Err(PassError::invalid_distribution_output(
-                self.name(),
-                address::CORRUPT_PCR_COUNT,
-                count_raw,
-                "negative_count",
-            ));
-        }
-        if strict && count_raw > u32::MAX as i64 {
-            return Err(PassError::invalid_distribution_output(
-                self.name(),
-                address::CORRUPT_PCR_COUNT,
-                count_raw,
-                "count_exceeds_u32",
-            ));
-        }
-        assert!(
-            count_raw >= 0,
-            "PCRErrorPass: count distribution returned negative {}",
-            count_raw
-        );
-        assert!(
-            count_raw <= u32::MAX as i64,
-            "PCRErrorPass: count distribution returned {} > u32::MAX",
-            count_raw
-        );
-        let count = count_raw as u32;
-        ctx.trace
-            .record(address::CORRUPT_PCR_COUNT, ChoiceValue::Int(count_raw));
-
         let pool_len = sim.pool.len() as u32;
+        let count = sample_validated_count(
+            &self.count_source,
+            ctx,
+            pool_len,
+            self.name(),
+            address::ChoiceAddress::CorruptPcrCount,
+            strict,
+        )?;
+
         if pool_len == 0 || count == 0 {
             return Ok(sim.clone());
         }
@@ -112,18 +94,10 @@ impl PCRErrorPass {
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
         for i in 0..count {
-            let site = tx.rng().range_u32(pool_len);
-            let site_handle = NucHandle::new(site);
-            tx.trace().record(
-                address::corrupt_pcr_site(i),
-                ChoiceValue::Int(site as i64),
-            );
-            tx.substitute_base(
-                site_handle,
+            tx.substitute_position_constrained(
                 self.base_dist.as_ref(),
-                &address::corrupt_pcr_base(i),
-                i,
-                count,
+                address::ChoiceAddress::CorruptPcrSite(i),
+                address::ChoiceAddress::CorruptPcrBase(i),
                 None,
             )?;
         }
@@ -150,11 +124,11 @@ impl Pass for PCRErrorPass {
         self.execute_with_sampling_mode(sim, ctx, true)
     }
 
-    fn declared_choices(&self) -> Vec<String> {
+    fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {
         vec![
-            address::CORRUPT_PCR_COUNT.to_string(),
-            address::CORRUPT_PCR_SITE_PATTERN.to_string(),
-            address::CORRUPT_PCR_BASE_PATTERN.to_string(),
+            address::ChoiceAddressPattern::CorruptPcrCount,
+            address::ChoiceAddressPattern::CorruptPcrSite,
+            address::ChoiceAddressPattern::CorruptPcrBase,
         ]
     }
 
@@ -169,12 +143,14 @@ mod tests {
     use crate::contract::productive;
     use crate::dist::{EmpiricalLengthDist, FilteredSampleError, UniformBase};
     use crate::ir::{Nucleotide, Region, Segment};
-    use crate::pass::PassPlan;
     use crate::pass::testing::PassRuntime;
+    use crate::pass::PassPlan;
     use crate::passes::test_support::{
-        make_substitution_productive_vj_fixture, StopOnlyMutationBaseDist,
-        StopThenSafeMutationBaseDist,
+        make_fully_locked_vj_fixture, make_substitution_productive_vj_fixture,
+        StopOnlyMutationBaseDist, StopThenSafeMutationBaseDist,
     };
+    use crate::rng::Rng;
+    use crate::trace::Trace;
 
     fn pcr_test_sim() -> Simulation {
         let mut sim = Simulation::new();
@@ -196,30 +172,52 @@ mod tests {
         plan
     }
 
-    fn pcr_error_site(seed: u64, sim: Simulation) -> u32 {
-        let outcome = PassRuntime::execute(
-            &pcr_single_error_plan(Box::new(StopOnlyMutationBaseDist)),
-            sim,
-            seed,
-        );
-        match outcome
-            .trace
-            .find("corrupt.pcr.error_site[0]")
-            .unwrap()
-            .value
-        {
-            ChoiceValue::Int(site) => site as u32,
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    fn find_seed_for_pcr_error_site(sim: &Simulation, target_site: u32) -> u64 {
-        for seed in 0..512u64 {
-            if pcr_error_site(seed, sim.clone()) == target_site {
+    /// Constrained-path seed finder for the v3.0 site-weighted
+    /// PCR path: find a seed under which the contract-aware sample
+    /// lands at `target_site` and the unconstrained sample at the
+    /// same seed produces a stop violation.
+    fn find_seed_for_constrained_pcr_error_site(
+        cfg: &crate::refdata::RefDataConfig,
+        contracts: &crate::contract::ContractSet,
+        sim: &Simulation,
+        target_site: u32,
+    ) -> u64 {
+        for seed in 0..2048u64 {
+            let outcome = PassRuntime::execute_with_context(
+                &pcr_single_error_plan(Box::new(StopThenSafeMutationBaseDist)),
+                sim.clone(),
+                seed,
+                Some(cfg),
+                Some(contracts),
+            );
+            let site = match outcome.trace.find("corrupt.pcr.error_site[0]") {
+                Some(rec) => match rec.value {
+                    ChoiceValue::Int(s) => s as u32,
+                    _ => continue,
+                },
+                None => continue,
+            };
+            if site != target_site {
+                continue;
+            }
+            let unconstrained = PassRuntime::execute_with_context(
+                &pcr_single_error_plan(Box::new(StopThenSafeMutationBaseDist)),
+                sim.clone(),
+                seed,
+                Some(cfg),
+                None,
+            );
+            if contracts
+                .verify(unconstrained.final_simulation(), Some(cfg))
+                .is_err()
+            {
                 return seed;
             }
         }
-        panic!("no seed in search range targeted PCR site {}", target_site);
+        panic!(
+            "no seed in search range produced constrained PCR site {} with unconstrained stop violation",
+            target_site
+        );
     }
 
     #[test]
@@ -255,6 +253,59 @@ mod tests {
                 .is_some());
             assert!(outcome
                 .trace
+                .find(&format!("corrupt.pcr.error_base[{}]", i))
+                .is_some());
+        }
+    }
+
+    #[test]
+    fn pcr_error_no_contracts_rng_and_trace_shape_are_characterized() {
+        let mut sim = Simulation::new();
+        for (i, b) in b"AAAACCCCGGGGTTTT".iter().enumerate() {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
+            sim = next;
+        }
+        sim = sim.with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(16),
+        ));
+
+        let pass = PCRErrorPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(2, 1.0)])),
+            Box::new(UniformBase),
+        );
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0xbeef);
+        {
+            let mut ctx = PassContext {
+                replay_cursor: None,
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: None,
+                contracts: None,
+                feasibility: None,
+                reference_index: None,
+                event_log_sink: None,
+            };
+            let _ = pass.execute(&sim, &mut ctx);
+        }
+
+        // Fixed count distribution consumes one f64. Each PCR error
+        // consumes one word for the site and one word for the base.
+        assert_eq!(rng.words_consumed(), 1 + 2 * 2);
+        assert_eq!(trace.len(), 1 + 2 * 2);
+        assert_eq!(
+            trace.find("corrupt.pcr.count").unwrap().value,
+            ChoiceValue::Int(2)
+        );
+        for i in 0..2 {
+            assert!(trace
+                .find(&format!("corrupt.pcr.error_site[{}]", i))
+                .is_some());
+            assert!(trace
                 .find(&format!("corrupt.pcr.error_base[{}]", i))
                 .is_some());
         }
@@ -347,8 +398,12 @@ mod tests {
     #[test]
     fn pcr_error_productive_filters_base_that_would_create_stop() {
         let (cfg, sim) = make_substitution_productive_vj_fixture();
-        let seed = find_seed_for_pcr_error_site(&sim, 2);
         let contracts = productive();
+        // v3.0 constrain-before-propose weights site selection by
+        // admissible mass — the seed → site map differs from raw
+        // uniform sampling, so the search runs through the
+        // contract-aware path.
+        let seed = find_seed_for_constrained_pcr_error_site(&cfg, &contracts, &sim, 2);
 
         let constrained = PassRuntime::execute_with_context(
             &pcr_single_error_plan(Box::new(StopThenSafeMutationBaseDist)),
@@ -403,14 +458,18 @@ mod tests {
 
     #[test]
     fn pcr_error_strict_errors_when_base_filter_empty() {
-        let (cfg, sim) = make_substitution_productive_vj_fixture();
-        let seed = find_seed_for_pcr_error_site(&sim, 2);
+        // Under v3.0 constrain-before-propose, strict-mode
+        // `EmptyAdmissibleSupport` fires when *no* (site, base)
+        // combination across the pool admits the draw. Use the
+        // fully-locked V=TGG / J=TGG fixture so every site rejects
+        // `{A}`.
+        let (cfg, sim) = make_fully_locked_vj_fixture();
         let contracts = productive();
 
         let err = PassRuntime::execute_strict_with_context(
             &pcr_single_error_plan(Box::new(StopOnlyMutationBaseDist)),
             sim,
-            seed,
+            0,
             Some(&cfg),
             Some(&contracts),
         )

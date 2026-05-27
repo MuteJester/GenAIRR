@@ -132,6 +132,17 @@ _DEFAULT_COLUMN_ORDER = [
     "n_pcr_errors",
     "n_quality_errors",
     "n_indels",
+    # Per-segment indel counters (docs/indel_provenance_audit.md
+    # §6.2). NP1/NP2 indels are excluded from these but still
+    # count toward `n_indels`.
+    "n_v_indels",
+    "n_d_indels",
+    "n_j_indels",
+    # Observation-stage length loss (EndLossPass / primer_trim_*).
+    # Distinct from recombination-stage v_trim_*/j_trim_*. See
+    # docs/primer_trim_end_loss_audit.md §6.1.
+    "end_loss_5_length",
+    "end_loss_3_length",
     "is_contaminant",
 ]
 

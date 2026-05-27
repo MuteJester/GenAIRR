@@ -27,12 +27,12 @@
 //!   constraints not expressible via requirements/effects, plus
 //!   named `SystemSet`s for grouping.
 
-use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 
 use crate::ir::Segment;
 
-use super::{Pass, PassEffect, PassRequirement};
+use super::{Pass, PassCompileEffect, PassEffect, PassRequirement};
 
 /// Stable identifier for a pass within a `Schedule`. The numeric
 /// value is the insertion index — sorting node IDs ascending yields
@@ -92,8 +92,12 @@ pub struct Schedule {
     /// Cached requirements per node — computed once at `push` time so
     /// `compile()` doesn't re-call the trait method per edge check.
     requirements: Vec<Vec<PassRequirement>>,
-    /// Cached effects per node — same rationale.
-    effects: Vec<Vec<PassEffect>>,
+    /// Cached **static compile-time effect** declarations per node
+    /// (see [`PassCompileEffect`]). Used by the schedule analyzer
+    /// for ordering / dependency reasoning. Distinct from
+    /// `EventRecord.simulation_events`, which is the runtime
+    /// consequence stream.
+    compile_effects: Vec<Vec<PassCompileEffect>>,
     /// User-declared explicit edges (Stage 3). Each entry forces
     /// `position(from) < position(to)` in the topo-sorted order.
     explicit_edges: Vec<Edge>,
@@ -111,7 +115,7 @@ impl Schedule {
         Self {
             nodes: Vec::new(),
             requirements: Vec::new(),
-            effects: Vec::new(),
+            compile_effects: Vec::new(),
             explicit_edges: Vec::new(),
             sets: HashMap::new(),
             set_edges: Vec::new(),
@@ -128,7 +132,7 @@ impl Schedule {
         let effs = pass.effects();
         self.nodes.push(pass);
         self.requirements.push(reqs);
-        self.effects.push(effs);
+        self.compile_effects.push(effs);
         id
     }
 
@@ -223,7 +227,7 @@ impl Schedule {
     /// Stage 2's effect-hook dispatcher.
     #[allow(dead_code)]
     pub(crate) fn effects_of(&self, id: NodeId) -> &[PassEffect] {
-        &self.effects[id.index()]
+        &self.compile_effects[id.index()]
     }
 
     /// Compile the schedule into a topologically-sorted execution
@@ -261,7 +265,7 @@ impl Schedule {
                             if from_idx == to_idx {
                                 continue;
                             }
-                            if self.effects[from_idx]
+                            if self.compile_effects[from_idx]
                                 .iter()
                                 .any(|e| matches!(e, PassEffect::AssignAllele(s) if s == seg))
                             {
@@ -282,7 +286,7 @@ impl Schedule {
 
         // Implicit: trim(seg) → assemble(seg).
         for from_idx in 0..self.nodes.len() {
-            let trims_for: Vec<Segment> = self.effects[from_idx]
+            let trims_for: Vec<Segment> = self.compile_effects[from_idx]
                 .iter()
                 .filter_map(|e| match e {
                     PassEffect::TrimAllele(s) => Some(*s),
@@ -297,7 +301,7 @@ impl Schedule {
                     continue;
                 }
                 for seg in &trims_for {
-                    if self.effects[to_idx]
+                    if self.compile_effects[to_idx]
                         .iter()
                         .any(|e| matches!(e, PassEffect::AssembleSegment(s) if s == seg))
                     {
@@ -350,7 +354,7 @@ impl Schedule {
                     PassRequirement::AlleleAssignment(seg) => {
                         let produced = (0..self.nodes.len()).any(|i| {
                             i != idx
-                                && self.effects[i]
+                                && self.compile_effects[i]
                                     .iter()
                                     .any(|e| matches!(e, PassEffect::AssignAllele(s) if s == seg))
                         });
@@ -592,7 +596,11 @@ mod tests {
         )));
         s.add_edge(d, v); // D before V
         let order = s.compile(true).unwrap();
-        assert_eq!(order, vec![d, v], "explicit edge must override insertion-order tiebreak");
+        assert_eq!(
+            order,
+            vec![d, v],
+            "explicit edge must override insertion-order tiebreak"
+        );
     }
 
     #[test]

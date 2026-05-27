@@ -35,6 +35,7 @@ mod pool;
 mod region;
 mod segment;
 mod sequence;
+pub(crate) mod sim_event;
 mod simulation;
 
 pub use crate::codon::{translate_codon, AMINO_AMBIGUOUS, AMINO_STOP};
@@ -46,6 +47,7 @@ pub use pool::NucleotidePool;
 pub use region::{compute_codon_rail, CodonRail, Region};
 pub use segment::Segment;
 pub use sequence::Sequence;
+pub use sim_event::{SimulationEvent, SimulationEventSink};
 pub use simulation::Simulation;
 
 #[cfg(test)]

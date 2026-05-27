@@ -18,16 +18,19 @@ use crate::address;
 use crate::dist::Distribution;
 use crate::ir::{NucHandle, Simulation};
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::count_source::{sample_validated_count, CountSource};
 use crate::passes::mutation_transaction::MutationTransaction;
 use crate::trace::ChoiceValue;
 
 pub struct NCorruptionPass {
-    count_dist: Box<dyn Distribution<Output = i64>>,
+    count_source: CountSource,
 }
 
 impl NCorruptionPass {
     pub fn new(count_dist: Box<dyn Distribution<Output = i64>>) -> Self {
-        Self { count_dist }
+        Self {
+            count_source: CountSource::Distribution(count_dist),
+        }
     }
 
     fn execute_with_sampling_mode(
@@ -36,55 +39,58 @@ impl NCorruptionPass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
-        let count_raw = self.count_dist.sample(ctx.rng);
-        if strict && count_raw < 0 {
-            return Err(PassError::invalid_distribution_output(
-                self.name(),
-                address::CORRUPT_NS_COUNT,
-                count_raw,
-                "negative_count",
-            ));
-        }
-        if strict && count_raw > u32::MAX as i64 {
-            return Err(PassError::invalid_distribution_output(
-                self.name(),
-                address::CORRUPT_NS_COUNT,
-                count_raw,
-                "count_exceeds_u32",
-            ));
-        }
-        assert!(
-            count_raw >= 0,
-            "NCorruptionPass: count distribution returned negative {}",
-            count_raw
-        );
-        assert!(
-            count_raw <= u32::MAX as i64,
-            "NCorruptionPass: count distribution returned {} > u32::MAX",
-            count_raw
-        );
-        let count = count_raw as u32;
-        ctx.trace
-            .record(address::CORRUPT_NS_COUNT, ChoiceValue::Int(count_raw));
-
         let pool_len = sim.pool.len() as u32;
+        let count = sample_validated_count(
+            &self.count_source,
+            ctx,
+            pool_len,
+            self.name(),
+            address::ChoiceAddress::CorruptNsCount,
+            strict,
+        )?;
+
         if pool_len == 0 || count == 0 {
             return Ok(sim.clone());
         }
 
-        // N-corruption unconditionally writes `b'N'` — no
-        // distribution, no contract filter — through the scoped
-        // MutationTransaction.
+        // N-corruption pins the candidate value to `b'N'` but lets
+        // the active contract bundle arbitrate per-site. Contracts
+        // that reject a pinned `N` write (for example an anchor
+        // codon preservation check) cause a permissive no-op at
+        // that sampled site; strict mode surfaces the rejection.
+        //
+        // Trace-injected replay (Tier 2 sub-slice 2): the per-step
+        // site Int is recorded by this pass (the pinned `N` base
+        // is not a separate trace record, so only the site needs
+        // consuming). Branching here keeps `substitute_base_admitting`
+        // unchanged — the helper still receives a known site and
+        // the pinned byte, and runs the same contract arbitration.
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
+        let pass_name = self.name();
 
         for i in 0..count {
-            let site = tx.rng().range_u32(pool_len);
+            let site_address = address::ChoiceAddress::CorruptNsSite(i);
+            let site = if let Some(cursor) = tx.replay_cursor() {
+                let s = cursor
+                    .expect_int(site_address)
+                    .map_err(|reason| PassError::replay(pass_name, reason))?;
+                if s < 0 || s >= pool_len as i64 {
+                    return Err(PassError::invalid_plan_state(
+                        pass_name.to_string(),
+                        format!(
+                            "N-corrupt: replayed site {} out of pool range [0, {})",
+                            s, pool_len
+                        ),
+                    ));
+                }
+                s as u32
+            } else {
+                tx.rng().range_u32(pool_len)
+            };
             let site_handle = NucHandle::new(site);
-            tx.trace().record(
-                address::corrupt_ns_site(i),
-                ChoiceValue::Int(site as i64),
-            );
-            tx.substitute_base_fixed(site_handle, b'N')?;
+            tx.trace()
+                .record_choice(site_address, ChoiceValue::Int(site as i64));
+            tx.substitute_base_admitting(site_handle, b'N', site_address)?;
         }
 
         tx.commit()
@@ -109,10 +115,10 @@ impl Pass for NCorruptionPass {
         self.execute_with_sampling_mode(sim, ctx, true)
     }
 
-    fn declared_choices(&self) -> Vec<String> {
+    fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {
         vec![
-            address::CORRUPT_NS_COUNT.to_string(),
-            address::CORRUPT_NS_SITE_PATTERN.to_string(),
+            address::ChoiceAddressPattern::CorruptNsCount,
+            address::ChoiceAddressPattern::CorruptNsSite,
         ]
     }
 
@@ -126,8 +132,8 @@ mod tests {
     use super::*;
     use crate::dist::EmpiricalLengthDist;
     use crate::ir::{Nucleotide, Segment};
-    use crate::pass::PassPlan;
     use crate::pass::testing::PassRuntime;
+    use crate::pass::PassPlan;
 
     fn ns_test_sim() -> Simulation {
         let mut sim = Simulation::new();

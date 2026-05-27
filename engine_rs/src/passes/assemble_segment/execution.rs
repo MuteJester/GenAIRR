@@ -109,6 +109,14 @@ impl AssembleSegmentPass {
             false
         };
 
+        // Attach an event-log observer to the base-push builder
+        // when the caller supplied a sink, so each germline
+        // `push_nucleotide` fires a `BasePushed` event into the
+        // pass's `EventRecord`. Drained before seal below.
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+
         for (i, &base) in slice.iter().enumerate() {
             let allele_pos = slice_start + i as u32;
             builder.push_nucleotide(Nucleotide::germline(base, allele_pos as u16, seg));
@@ -137,6 +145,14 @@ impl AssembleSegmentPass {
             None
         };
 
+        // Drain the per-push events into the caller-supplied sink
+        // before sealing (which consumes the builder).
+        if ctx.event_log_sink.is_some() {
+            let captured = builder.seal_event_log_observer();
+            if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+                sink.extend(captured);
+            }
+        }
         let current = builder.seal();
 
         let region_start = NucHandle::new(seq_start);
@@ -144,7 +160,27 @@ impl AssembleSegmentPass {
         // Region carries no codon-rail data. On-demand consumers call
         // `crate::ir::compute_codon_rail(&region, &pool)`.
         let region = Region::new(seg, region_start, region_end).with_frame_phase(frame_phase);
-        let current = current.with_region_added(region);
+        // Route the region append through a fresh builder so the
+        // `RegionAdded` event flows to any attached sink. The
+        // walker observer was already sealed above (`builder.seal()`)
+        // and its produced live call is staged after this block, so
+        // wrapping the region step in its own short-lived builder
+        // doesn't disturb the walker lifecycle.
+        //
+        // When the caller supplied `PassContext::event_log_sink`,
+        // attach an `EventLogObserver` to the region-add builder
+        // and forward its captured events; otherwise the broadcast
+        // is a no-op (no sink attached). This is the pass-level
+        // event-observability primitive used by event-log tests.
+        let mut builder = SimulationBuilder::from_simulation(current);
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+        builder.add_region(region);
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(builder.seal_event_log_observer());
+        }
+        let current = builder.seal();
 
         // If a walker observer was attached, stash the
         // observer-produced call on the segment_calls sidecar without

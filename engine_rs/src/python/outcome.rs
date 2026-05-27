@@ -224,6 +224,18 @@ fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> PyResult<Bou
     dict.set_item("n_pcr_errors", rec.n_pcr_errors)?;
     dict.set_item("n_quality_errors", rec.n_quality_errors)?;
     dict.set_item("n_indels", rec.n_indels)?;
+    // Per-segment indel counters (audit §6.2 fix). Count
+    // `IndelInserted` + `IndelDeleted` events attributed to V/D/J
+    // by the event's `segment` field. NP1 / NP2 events count
+    // toward `n_indels` but not these per-segment counters.
+    dict.set_item("n_v_indels", rec.n_v_indels)?;
+    dict.set_item("n_d_indels", rec.n_d_indels)?;
+    dict.set_item("n_j_indels", rec.n_j_indels)?;
+    // Observation-stage end-loss / primer-trim amounts (audit
+    // §6.1 fix). Distinct from recombination-stage v_trim_*/
+    // j_trim_*; defaults to 0 when no end-loss pass ran.
+    dict.set_item("end_loss_5_length", rec.end_loss_5_length)?;
+    dict.set_item("end_loss_3_length", rec.end_loss_3_length)?;
     dict.set_item("is_contaminant", rec.is_contaminant)?;
 
     Ok(dict)

@@ -276,12 +276,8 @@ fn append_region_np1_bumps_live_call_version() {
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
-    let post_assemble_version = outcome.revisions[3]
-        .segment_calls
-        .version;
-    let post_np1_version = outcome.revisions[4]
-        .segment_calls
-        .version;
+    let post_assemble_version = outcome.revisions[3].segment_calls.version;
+    let post_np1_version = outcome.revisions[4].segment_calls.version;
     assert!(
         post_np1_version > post_assemble_version,
         "AppendRegion(Np1) must bump live-call version: \

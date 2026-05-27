@@ -344,7 +344,9 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         .find(|h| h.flags.contains(HypothesisFlags::BOUNDARY_ELASTIC))
         .expect("D hypothesis should be flagged BOUNDARY_ELASTIC");
     assert!(
-        elastic.flags.contains(HypothesisFlags::OVERLAPS_OTHER_SEGMENT),
+        elastic
+            .flags
+            .contains(HypothesisFlags::OVERLAPS_OTHER_SEGMENT),
         "D's left-extension must set OVERLAPS_OTHER_SEGMENT when reaching into V",
     );
     // Under conservative extension, only the byte that narrows
@@ -446,7 +448,10 @@ fn overlap_into_d_keeps_airr_v_sequence_end_at_structural_boundary() {
     // Internal evidence: live hypothesis seq_end = 10
     // (1 D byte claimed under conservative).
     let seq_end = v_hypothesis_seq_end(sim).expect("V live call should exist");
-    assert_eq!(seq_end, 10, "live hypothesis records overlap into D (1 byte)");
+    assert_eq!(
+        seq_end, 10,
+        "live hypothesis records overlap into D (1 byte)"
+    );
 
     // External (AIRR) projection: v_sequence_end stays at the
     // structural V end (9), NP1 is empty (no claim because NP1
@@ -533,7 +538,11 @@ fn no_overlap_when_ample_bytes_present_but_none_match() {
 
     // And the AIRR projection reflects no extension.
     let rec = build_airr_record(&outcome, &cfg, "no-overlap");
-    assert_eq!(rec.v_sequence_end, Some(9), "no overlap; v_sequence_end at structural V end");
+    assert_eq!(
+        rec.v_sequence_end,
+        Some(9),
+        "no overlap; v_sequence_end at structural V end"
+    );
     assert_eq!(rec.v_germline_end, Some(9));
 }
 

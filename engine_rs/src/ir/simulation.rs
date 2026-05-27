@@ -108,8 +108,8 @@ impl Simulation {
                 sequence: self.sequence.clone(),
                 assignments: self.assignments,
                 segment_calls: self.segment_calls.clone(),
-            dirty_log: self.dirty_log.clone(),
-            mutation_count: self.mutation_count,
+                dirty_log: self.dirty_log.clone(),
+                mutation_count: self.mutation_count,
             },
             h,
         )
@@ -127,8 +127,8 @@ impl Simulation {
                 sequence: self.sequence.clone(),
                 assignments: self.assignments,
                 segment_calls: self.segment_calls.clone(),
-            dirty_log: self.dirty_log.clone(),
-            mutation_count: self.mutation_count,
+                dirty_log: self.dirty_log.clone(),
+                mutation_count: self.mutation_count,
             },
             range,
         )
@@ -176,9 +176,12 @@ impl Simulation {
     /// If no matching region is found the returned simulation is
     /// unchanged.
     pub fn with_region_replaced_for_segment(&self, replacement: Region) -> Self {
-        let idx = match self.sequence.regions.iter().position(|r| {
-            r.segment == replacement.segment && r.start == replacement.start
-        }) {
+        let idx = match self
+            .sequence
+            .regions
+            .iter()
+            .position(|r| r.segment == replacement.segment && r.start == replacement.start)
+        {
             Some(idx) => idx,
             None => return self.clone(),
         };
@@ -254,4 +257,3 @@ impl Simulation {
         }
     }
 }
-

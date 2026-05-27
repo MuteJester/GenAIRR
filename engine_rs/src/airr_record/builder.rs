@@ -1,6 +1,7 @@
-use crate::address;
+use crate::address::{self, ChoiceAddress, PrimeEnd, VdjSegment};
+use crate::assignment::TrimEnd;
 use crate::codon::translate_seq;
-use crate::ir::Segment;
+use crate::ir::{Segment, SimulationEvent};
 use crate::pass::Outcome;
 use crate::refdata::RefDataConfig;
 
@@ -12,7 +13,7 @@ use super::projection::{
     lookup_allele, projected_call_name, unclaimed_np_bounds, unclaimed_np_string,
 };
 use super::sequence::{apply_rev_comp_projection, bytes_to_string, pool_bases};
-use super::trace_fields::{trace_bool, trace_int};
+use super::trace_fields::{trace_bool_choice, trace_int_choice};
 use super::walk::walk_alignment_columns;
 use super::AirrRecord;
 
@@ -45,16 +46,52 @@ pub fn build_airr_record(
     // Trim values from trace. Our DSL records v_3, d_5, d_3, j_5;
     // v_5 and j_3 stay 0.
     rec.v_trim_5 = 0;
-    rec.v_trim_3 = trace_int(trace, address::TRIM_V_3);
-    rec.d_trim_5 = trace_int(trace, address::TRIM_D_5);
-    rec.d_trim_3 = trace_int(trace, address::TRIM_D_3);
-    rec.j_trim_5 = trace_int(trace, address::TRIM_J_5);
+    rec.v_trim_3 = trace_int_choice(
+        trace,
+        ChoiceAddress::Trim {
+            segment: VdjSegment::V,
+            end: TrimEnd::Three,
+        },
+    );
+    rec.d_trim_5 = trace_int_choice(
+        trace,
+        ChoiceAddress::Trim {
+            segment: VdjSegment::D,
+            end: TrimEnd::Five,
+        },
+    );
+    rec.d_trim_3 = trace_int_choice(
+        trace,
+        ChoiceAddress::Trim {
+            segment: VdjSegment::D,
+            end: TrimEnd::Three,
+        },
+    );
+    rec.j_trim_5 = trace_int_choice(
+        trace,
+        ChoiceAddress::Trim {
+            segment: VdjSegment::J,
+            end: TrimEnd::Five,
+        },
+    );
     rec.j_trim_3 = 0;
 
     // Calls + locus.
-    let v_id = sim.assignments.get(Segment::V).copied().map(|i| i.allele_id);
-    let d_id = sim.assignments.get(Segment::D).copied().map(|i| i.allele_id);
-    let j_id = sim.assignments.get(Segment::J).copied().map(|i| i.allele_id);
+    let v_id = sim
+        .assignments
+        .get(Segment::V)
+        .copied()
+        .map(|i| i.allele_id);
+    let d_id = sim
+        .assignments
+        .get(Segment::D)
+        .copied()
+        .map(|i| i.allele_id);
+    let j_id = sim
+        .assignments
+        .get(Segment::J)
+        .copied()
+        .map(|i| i.allele_id);
 
     rec.v_call = projected_call_name(refdata, sim, Segment::V, v_id);
     rec.d_call = projected_call_name(refdata, sim, Segment::D, d_id);
@@ -143,10 +180,52 @@ pub fn build_airr_record(
     } else {
         0.0
     };
-    rec.n_pcr_errors = trace_int(trace, address::CORRUPT_PCR_COUNT);
-    rec.n_quality_errors = trace_int(trace, address::CORRUPT_QUALITY_COUNT);
-    rec.n_indels = trace_int(trace, address::CORRUPT_INDEL_COUNT);
-    rec.is_contaminant = trace_bool(trace, address::CORRUPT_CONTAMINANT_APPLIED);
+    rec.n_pcr_errors = trace_int_choice(trace, ChoiceAddress::CorruptPcrCount);
+    rec.n_quality_errors = trace_int_choice(trace, ChoiceAddress::CorruptQualityCount);
+    // Count realized structural indels from the event ledger, not the
+    // trace's `corrupt.indel.count` (which is the *attempted* count
+    // and includes pool-empty / contract no-op sentinels). Scoped to
+    // the IndelPass: `EndLossPass` reuses `IndelDeleted` as its IR
+    // primitive but isn't a structural indel. See
+    // `docs/indel_provenance_audit.md` §6.1 / §6.2.
+    let mut n_indels = 0i64;
+    let mut n_v_indels = 0i64;
+    let mut n_d_indels = 0i64;
+    let mut n_j_indels = 0i64;
+    for record in outcome.events() {
+        if record.pass_name != address::CORRUPT_INDEL {
+            continue;
+        }
+        for ev in &record.simulation_events {
+            let segment = match ev {
+                SimulationEvent::IndelInserted { segment, .. } => *segment,
+                SimulationEvent::IndelDeleted { segment, .. } => *segment,
+                _ => continue,
+            };
+            n_indels += 1;
+            match segment {
+                Segment::V => n_v_indels += 1,
+                Segment::D => n_d_indels += 1,
+                Segment::J => n_j_indels += 1,
+                // NP1 / NP2 events count toward `n_indels` only.
+                Segment::Np1 | Segment::Np2 => {}
+            }
+        }
+    }
+    rec.n_indels = n_indels;
+    rec.n_v_indels = n_v_indels;
+    rec.n_d_indels = n_d_indels;
+    rec.n_j_indels = n_j_indels;
+    // Observation-stage end-loss / primer-trim amounts. Distinct
+    // provenance from recombination-stage `v_trim_5/3` /
+    // `j_trim_5/3`; carries the *realized* (post-clamp) byte count
+    // the `EndLossPass` recorded. Defaults to 0 when no end-loss
+    // pass ran. See `docs/primer_trim_end_loss_audit.md`.
+    rec.end_loss_5_length =
+        trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Five));
+    rec.end_loss_3_length =
+        trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Three));
+    rec.is_contaminant = trace_bool_choice(trace, ChoiceAddress::CorruptContaminantApplied);
 
     // Junction window: permissive semantics - compute as long as
     // both V/J anchors and regions exist, even when ``j_trim_5 >
@@ -299,6 +378,19 @@ pub fn build_airr_record(
         rec.v_germline_start = Some(g_start);
         rec.v_germline_end = Some(g_end);
     } else if let Some(allele) = lookup_allele(refdata, Segment::V, v_id) {
+        // Trim-only fallback for partial-state outcomes where the
+        // walker couldn't compute `ref_ranges[V]` (e.g. no V
+        // region present, allele assigned for projection only).
+        //
+        // **End-loss interaction.** The walker encodes a 5'
+        // end-loss as `D` (deletion) ops at the start of V's
+        // CIGAR — those positions are "covered by the
+        // alignment" in the AIRR sense even though they were
+        // removed from the read. The walker therefore reports
+        // `v_germline_start = v_trim_5` regardless of end-loss.
+        // This fallback matches that semantic intentionally: a
+        // shift-by-end-loss formulation would diverge from the
+        // walker and break AIRR-tool parity.
         rec.v_germline_start = Some(rec.v_trim_5);
         rec.v_germline_end = Some(allele.seq.len() as i64 - rec.v_trim_3);
     }
@@ -313,6 +405,9 @@ pub fn build_airr_record(
         rec.j_germline_start = Some(g_start);
         rec.j_germline_end = Some(g_end);
     } else if let Some(allele) = lookup_allele(refdata, Segment::J, j_id) {
+        // Mirror of the V fallback: walker encodes 3' end-loss as
+        // trailing `D` ops, keeping `j_germline_end` at
+        // `allele_len - j_trim_3`. Fallback matches.
         rec.j_germline_start = Some(rec.j_trim_5);
         rec.j_germline_end = Some(allele.seq.len() as i64 - rec.j_trim_3);
     }
@@ -334,7 +429,7 @@ pub fn build_airr_record(
     //   - `sequence_alignment`, `germline_alignment`, CIGAR,
     //     `*_alignment_start/end`, `*_germline_start/end`,
     //     identity -> unchanged (forward orientation per spec)
-    if trace_bool(trace, address::CORRUPT_REV_COMP_APPLIED) {
+    if trace_bool_choice(trace, ChoiceAddress::CorruptRevCompApplied) {
         apply_rev_comp_projection(&mut rec);
     }
 

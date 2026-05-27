@@ -2,9 +2,13 @@
 
 use crate::address;
 use crate::dist::Distribution;
-use crate::ir::{NucHandle, Simulation};
+#[cfg(test)]
+use crate::ir::NucHandle;
+use crate::ir::Simulation;
 use crate::pass::{Pass, PassContext, PassEffect, PassError};
+use crate::passes::count_source::sample_validated_count;
 use crate::passes::mutation_transaction::MutationTransaction;
+#[cfg(test)]
 use crate::trace::ChoiceValue;
 
 /// The simplest mutation pass: pick `N` positions uniformly across
@@ -62,10 +66,7 @@ impl UniformMutationPass {
     /// SHM). The count is drawn from `Poisson(rate * pool_len)` per
     /// pass execution — matching how immunologists report SHM in
     /// the literature. See [`super::CountSource`].
-    pub fn new_rate(
-        rate: f64,
-        base_dist: Box<dyn Distribution<Output = u8>>,
-    ) -> Self {
+    pub fn new_rate(rate: f64, base_dist: Box<dyn Distribution<Output = u8>>) -> Self {
         assert!(
             rate.is_finite() && (0.0..=1.0).contains(&rate),
             "UniformMutationPass: rate must be in [0.0, 1.0], got {}",
@@ -85,72 +86,54 @@ impl UniformMutationPass {
     ) -> Result<Simulation, PassError> {
         // 1. Sample the number of mutations to apply. Rate-mode
         //    consults the current pool length; distribution-mode
-        //    ignores it.
-        let count_raw = self.count_source.sample(ctx.rng, sim.pool.len() as u32);
-        if strict && count_raw < 0 {
-            return Err(PassError::invalid_distribution_output(
-                self.name(),
-                address::MUTATE_UNIFORM_COUNT,
-                count_raw,
-                "negative_count",
-            ));
-        }
-        if strict && count_raw > u32::MAX as i64 {
-            return Err(PassError::invalid_distribution_output(
-                self.name(),
-                address::MUTATE_UNIFORM_COUNT,
-                count_raw,
-                "count_exceeds_u32",
-            ));
-        }
-        assert!(
-            count_raw >= 0,
-            "UniformMutationPass: count distribution returned negative {}",
-            count_raw
-        );
-        assert!(
-            count_raw <= u32::MAX as i64,
-            "UniformMutationPass: count distribution returned {} > u32::MAX",
-            count_raw
-        );
-        let count = count_raw as u32;
-        ctx.trace
-            .record(address::MUTATE_UNIFORM_COUNT, ChoiceValue::Int(count_raw));
+        //    ignores it. Validation + trace recording shared with
+        //    PCR / quality / N-corrupt via `sample_validated_count`.
+        let pool_len = sim.pool.len() as u32;
+        let count = sample_validated_count(
+            &self.count_source,
+            ctx,
+            pool_len,
+            self.name(),
+            address::ChoiceAddress::MutateUniformCount,
+            strict,
+        )?;
 
         // No-op if the pool is empty — nothing to mutate.
-        let pool_len = sim.pool.len() as u32;
         if pool_len == 0 || count == 0 {
             return Ok(sim.clone());
         }
 
         // 2. Apply `count` mutations sequentially through a scoped
-        //    MutationTransaction. The TX owns the
-        //    builder + attach observers + seal protocol, contract
-        //    filtering for each substitute, and the mutation-count
-        //    sidecar writeback. Out-of-range site handles surface as
-        //    `PassError::invalid_plan_state` rather than panicking.
+        //    MutationTransaction. Under v3.0 constrain-before-propose,
+        //    `substitute_position_constrained` weights the per-site
+        //    selection by admissible mass so sites with narrower
+        //    masks (e.g. only 1 base admissible vs the full 4) draw
+        //    proportionally less of the per-step probability. When
+        //    no contracts are active the helper takes the original
+        //    uniform-site + base-sample fast path, preserving the
+        //    legacy RNG consumption shape.
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
+        let mut applied: u32 = 0;
 
         for i in 0..count {
-            let site = tx.rng().range_u32(pool_len);
-            let site_handle = NucHandle::new(site);
-            tx.trace().record(
-                address::mutate_uniform_site(i),
-                ChoiceValue::Int(site as i64),
-            );
-            let base_address = address::mutate_uniform_base(i);
-            tx.substitute_base(
-                site_handle,
+            let wrote = tx.substitute_position_constrained(
                 self.base_dist.as_ref(),
-                &base_address,
-                i,
-                count,
+                address::ChoiceAddress::MutateUniformSite(i),
+                address::ChoiceAddress::MutateUniformBase(i),
                 None,
             )?;
+            if wrote {
+                applied += 1;
+            }
         }
 
-        if count_raw > 0 {
-            tx.add_to_mutation_count(count_raw as u32);
+        // Realized-count semantics: bump n_mutations by the number
+        // of mutations actually written, not the count drawn. When
+        // contracts narrow the admissible support to empty across
+        // every site, permissive mode skips the slot silently and
+        // strict mode surfaces a ConstraintSampling error above.
+        if applied > 0 {
+            tx.add_to_mutation_count(applied);
         }
         tx.commit()
     }
@@ -174,13 +157,11 @@ impl Pass for UniformMutationPass {
         self.execute_with_sampling_mode(sim, ctx, true)
     }
 
-    fn declared_choices(&self) -> Vec<String> {
-        // Count is fixed-address; site and base are variable per
-        // mutation. Use the [0..n] expansion convention from D3.
+    fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {
         vec![
-            address::MUTATE_UNIFORM_COUNT.to_string(),
-            address::MUTATE_UNIFORM_SITE_PATTERN.to_string(),
-            address::MUTATE_UNIFORM_BASE_PATTERN.to_string(),
+            address::ChoiceAddressPattern::MutateUniformCount,
+            address::ChoiceAddressPattern::MutateUniformSite,
+            address::ChoiceAddressPattern::MutateUniformBase,
         ]
     }
 
@@ -195,12 +176,14 @@ mod tests {
     use crate::contract::productive;
     use crate::dist::{EmpiricalLengthDist, FilteredSampleError, UniformBase};
     use crate::ir::{compute_codon_rail, Nucleotide, Region, Segment};
-    use crate::pass::PassPlan;
     use crate::pass::testing::PassRuntime;
+    use crate::pass::PassPlan;
     use crate::passes::test_support::{
-        make_substitution_productive_vj_fixture, StopOnlyMutationBaseDist,
-        StopThenSafeMutationBaseDist,
+        make_fully_locked_vj_fixture, make_substitution_productive_vj_fixture,
+        StopOnlyMutationBaseDist, StopThenSafeMutationBaseDist,
     };
+    use crate::rng::Rng;
+    use crate::trace::Trace;
 
     fn uniform_mutation_plan(base_dist: Box<dyn Distribution<Output = u8>>) -> PassPlan {
         let mut plan = PassPlan::new();
@@ -211,25 +194,56 @@ mod tests {
         plan
     }
 
-    fn uniform_mutation_site(seed: u64, sim: Simulation) -> u32 {
-        let outcome = PassRuntime::execute(
-            &uniform_mutation_plan(Box::new(StopOnlyMutationBaseDist)),
-            sim,
-            seed,
-        );
-        match outcome.trace.find("mutate.uniform.site[0]").unwrap().value {
-            ChoiceValue::Int(site) => site as u32,
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    fn find_seed_for_uniform_mutation_site(sim: &Simulation, target_site: u32) -> u64 {
-        for seed in 0..512u64 {
-            if uniform_mutation_site(seed, sim.clone()) == target_site {
+    /// Constrained-path seed finder: search for a seed under which the
+    /// v3.0 contract-aware uniform pass lands at `target_site`.
+    /// Unlike the unconstrained finder, the constrained path weights
+    /// site selection by admissible mass, so its seed→site mapping
+    /// differs from raw uniform sampling.
+    fn find_seed_for_constrained_uniform_mutation_site(
+        cfg: &crate::refdata::RefDataConfig,
+        contracts: &crate::contract::ContractSet,
+        sim: &Simulation,
+        target_site: u32,
+    ) -> u64 {
+        for seed in 0..2048u64 {
+            let outcome = PassRuntime::execute_with_context(
+                &uniform_mutation_plan(Box::new(StopThenSafeMutationBaseDist)),
+                sim.clone(),
+                seed,
+                Some(cfg),
+                Some(contracts),
+            );
+            let site = match outcome.trace.find("mutate.uniform.site[0]") {
+                Some(rec) => match rec.value {
+                    ChoiceValue::Int(s) => s as u32,
+                    _ => continue,
+                },
+                None => continue,
+            };
+            if site != target_site {
+                continue;
+            }
+            // Also verify the unconstrained run at the same seed
+            // produces a stop violation — so the comparison test can
+            // demonstrate the contract is what diverts the outcome.
+            let unconstrained = PassRuntime::execute_with_context(
+                &uniform_mutation_plan(Box::new(StopThenSafeMutationBaseDist)),
+                sim.clone(),
+                seed,
+                Some(cfg),
+                None,
+            );
+            if contracts
+                .verify(unconstrained.final_simulation(), Some(cfg))
+                .is_err()
+            {
                 return seed;
             }
         }
-        panic!("no seed in search range targeted site {}", target_site);
+        panic!(
+            "no seed in search range produced constrained site {} with unconstrained stop violation",
+            target_site
+        );
     }
 
     #[test]
@@ -316,6 +330,56 @@ mod tests {
                 _ => panic!("wrong variant"),
             }
         }
+    }
+
+    #[test]
+    fn uniform_mutation_no_contracts_rng_and_trace_shape_are_characterized() {
+        let mut sim = Simulation::new();
+        for (i, b) in b"AAAACCCCGGGGTTTT".iter().enumerate() {
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
+            sim = next;
+        }
+        sim = sim.with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(16),
+        ));
+
+        let pass = UniformMutationPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(3, 1.0)])),
+            Box::new(UniformBase),
+        );
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0x1234);
+        let final_sim = {
+            let mut ctx = PassContext {
+                replay_cursor: None,
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: None,
+                contracts: None,
+                feasibility: None,
+                reference_index: None,
+                event_log_sink: None,
+            };
+            pass.execute(&sim, &mut ctx)
+        };
+
+        // Fixed count distribution consumes one f64. Each mutation
+        // consumes one word for the site and one word for the base.
+        assert_eq!(rng.words_consumed(), 1 + 3 * 2);
+        assert_eq!(trace.len(), 1 + 3 * 2);
+        assert_eq!(
+            trace.find("mutate.uniform.count").unwrap().value,
+            ChoiceValue::Int(3)
+        );
+        for i in 0..3 {
+            assert!(trace.find(&format!("mutate.uniform.site[{}]", i)).is_some());
+            assert!(trace.find(&format!("mutate.uniform.base[{}]", i)).is_some());
+        }
+        assert_eq!(final_sim.mutation_count, 3);
     }
 
     #[test]
@@ -490,13 +554,26 @@ mod tests {
         assert!(declared.contains(&"mutate.uniform.count".to_string()));
         assert!(declared.contains(&"mutate.uniform.site[0..n]".to_string()));
         assert!(declared.contains(&"mutate.uniform.base[0..n]".to_string()));
+
+        assert_eq!(
+            pass.declared_choice_patterns(),
+            vec![
+                address::ChoiceAddressPattern::MutateUniformCount,
+                address::ChoiceAddressPattern::MutateUniformSite,
+                address::ChoiceAddressPattern::MutateUniformBase,
+            ]
+        );
     }
 
     #[test]
     fn uniform_mutation_productive_filters_base_that_would_create_stop() {
         let (cfg, sim) = make_substitution_productive_vj_fixture();
-        let seed = find_seed_for_uniform_mutation_site(&sim, 2);
         let contracts = productive();
+        // Under v3.0 constrain-before-propose, site selection is
+        // weighted by per-site admissible mass — the seed → site
+        // map differs from raw uniform sampling, so the search has
+        // to run through the constrained path.
+        let seed = find_seed_for_constrained_uniform_mutation_site(&cfg, &contracts, &sim, 2);
 
         let constrained = PassRuntime::execute_with_context(
             &uniform_mutation_plan(Box::new(StopThenSafeMutationBaseDist)),
@@ -549,16 +626,91 @@ mod tests {
             .any(|v| v.contract_name == "no_stop_codon_in_junction"));
     }
 
+    /// Custom base distribution that draws uniformly but does NOT
+    /// expose `support()`. Used to exercise the
+    /// constrain-before-propose helper's behavior when the
+    /// distribution can't be enumerated — under v3.0 that path must
+    /// either skip (permissive) or error (strict), never fall
+    /// through to the reject-after-propose loop.
+    #[derive(Clone, Debug)]
+    struct NoSupportBaseDist;
+
+    impl Distribution for NoSupportBaseDist {
+        type Output = u8;
+
+        fn sample(&self, rng: &mut crate::rng::Rng) -> u8 {
+            const BASES: [u8; 4] = [b'A', b'C', b'G', b'T'];
+            BASES[rng.range_u32(4) as usize]
+        }
+
+        // Deliberately no `support()` override — returns `None` via
+        // the trait default. This is the architectural escape hatch
+        // we are pinning down.
+    }
+
+    #[test]
+    fn uniform_mutation_support_unavailable_under_contracts_permissive_skips_slot() {
+        let (cfg, sim) = make_substitution_productive_vj_fixture();
+        let contracts = productive();
+        let outcome = PassRuntime::execute_with_context(
+            &uniform_mutation_plan(Box::new(NoSupportBaseDist)),
+            sim.clone(),
+            0,
+            Some(&cfg),
+            Some(&contracts),
+        );
+        // No per-event trace entries: the slot was skipped, not
+        // sampled via a contract-blind fallback.
+        assert!(outcome.trace.find("mutate.uniform.site[0]").is_none());
+        assert!(outcome.trace.find("mutate.uniform.base[0]").is_none());
+        // Realized-count semantics: zero mutations applied.
+        assert_eq!(outcome.final_simulation().mutation_count, 0);
+        // Pool unchanged.
+        for i in 0..sim.pool.len() {
+            let h = NucHandle::new(i as u32);
+            assert_eq!(
+                outcome.final_simulation().pool.get(h).unwrap().base,
+                sim.pool.get(h).unwrap().base,
+            );
+        }
+    }
+
+    #[test]
+    fn uniform_mutation_support_unavailable_under_contracts_strict_errors() {
+        let (cfg, sim) = make_substitution_productive_vj_fixture();
+        let contracts = productive();
+        let err = PassRuntime::execute_strict_with_context(
+            &uniform_mutation_plan(Box::new(NoSupportBaseDist)),
+            sim,
+            0,
+            Some(&cfg),
+            Some(&contracts),
+        )
+        .unwrap_err();
+        assert_eq!(err.pass_name(), "mutate.uniform");
+        assert_eq!(err.address(), "mutate.uniform.base[0]");
+        assert_eq!(
+            err.constraint_reason(),
+            Some(FilteredSampleError::SupportUnavailable)
+        );
+    }
+
     #[test]
     fn uniform_mutation_strict_errors_when_base_filter_empty() {
-        let (cfg, sim) = make_substitution_productive_vj_fixture();
-        let seed = find_seed_for_uniform_mutation_site(&sim, 2);
+        // v3.0 constrain-before-propose: strict-mode
+        // `EmptyAdmissibleSupport` fires when *no* (site, base)
+        // combination across the pool admits a draw — not just the
+        // one site the seed-uniform path happened to pick. The
+        // locked-down V=TGG / J=TGG fixture has every junction site
+        // restricted to `{T}` or `{G}`, so a dist whose support is
+        // `{A}` is rejected everywhere.
+        let (cfg, sim) = make_fully_locked_vj_fixture();
         let contracts = productive();
 
         let err = PassRuntime::execute_strict_with_context(
             &uniform_mutation_plan(Box::new(StopOnlyMutationBaseDist)),
             sim,
-            seed,
+            0,
             Some(&cfg),
             Some(&contracts),
         )

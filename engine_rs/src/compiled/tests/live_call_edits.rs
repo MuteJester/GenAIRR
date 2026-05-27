@@ -34,8 +34,20 @@ impl Pass for EditBaseAtPass {
         "test.edit_base_at"
     }
 
-    fn execute(&self, sim: &Simulation, _ctx: &mut crate::pass::PassContext) -> Simulation {
-        sim.with_base_changed(self.handle, self.new_base)
+    fn execute(&self, sim: &Simulation, ctx: &mut crate::pass::PassContext) -> Simulation {
+        // Route through `SimulationBuilder::change_base` so the
+        // `BaseChanged` event reaches `ctx.event_log_sink` — the
+        // event-driven `LiveCallRefreshHook` reads that stream
+        // (not `effects`) to decide whether to refresh.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+        builder.change_base(self.handle, self.new_base);
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(builder.seal_event_log_observer());
+        }
+        builder.seal()
     }
 
     fn effects(&self) -> Vec<PassEffect> {
@@ -252,12 +264,8 @@ fn real_uniform_mutation_pass_increments_live_call_version() {
     let outcome = compiled.run_one(0).expect("plan should run");
 
     // revisions: [initial, post-sample, post-assemble, post-mutate].
-    let post_assemble_version = outcome.revisions[2]
-        .segment_calls
-        .version;
-    let post_mutate_version = outcome.revisions[3]
-        .segment_calls
-        .version;
+    let post_assemble_version = outcome.revisions[2].segment_calls.version;
+    let post_mutate_version = outcome.revisions[3].segment_calls.version;
     assert!(
         post_mutate_version > post_assemble_version,
         "EditBases pass must bump live-call evidence_version \
@@ -295,4 +303,198 @@ fn edit_outside_assembled_segment_leaves_live_call_unchanged() {
     let mut actual = v_call.allele_call.to_ids();
     actual.sort_by_key(|id| id.index());
     assert_eq!(actual, expected);
+}
+
+// ──────────────────────────────────────────────────────────────
+// PassEffect / SimulationEvent divergence
+//
+// These two test-only passes prove the architectural commitment of
+// the slice: the live-call refresh now follows the runtime event
+// stream, **not** the declarative `PassEffect` list. A pass can
+// declare an effect with no matching event (→ no refresh) or emit
+// an event with no matching effect (→ refresh fires anyway).
+// ──────────────────────────────────────────────────────────────
+
+/// Declares `PassEffect::EditBases` but mutates `Simulation`
+/// directly via `with_base_changed` — bypassing the builder, so no
+/// `BaseChanged` event reaches `ctx.event_log_sink`. Used to prove
+/// "effect without event ⇒ no refresh".
+#[derive(Clone, Debug)]
+struct EditBaseEffectOnlyPass {
+    handle: crate::ir::NucHandle,
+    new_base: u8,
+}
+
+impl Pass for EditBaseEffectOnlyPass {
+    fn name(&self) -> &str {
+        "test.edit_base_effect_only"
+    }
+    fn execute(&self, sim: &Simulation, _ctx: &mut crate::pass::PassContext) -> Simulation {
+        // Direct persistent mutation. No builder, no event sink.
+        sim.with_base_changed(self.handle, self.new_base)
+    }
+    fn effects(&self) -> Vec<PassEffect> {
+        // Declared, but the event stream will be empty.
+        vec![PassEffect::EditBases]
+    }
+}
+
+/// Routes through `SimulationBuilder::change_base` so a
+/// `BaseChanged` event is emitted, but declares **no** effects.
+/// Used to prove "event without matching effect ⇒ refresh still
+/// fires".
+#[derive(Clone, Debug)]
+struct EditBaseEventOnlyPass {
+    handle: crate::ir::NucHandle,
+    new_base: u8,
+}
+
+impl Pass for EditBaseEventOnlyPass {
+    fn name(&self) -> &str {
+        "test.edit_base_event_only"
+    }
+    fn execute(&self, sim: &Simulation, ctx: &mut crate::pass::PassContext) -> Simulation {
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+        builder.change_base(self.handle, self.new_base);
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(builder.seal_event_log_observer());
+        }
+        builder.seal()
+    }
+    fn effects(&self) -> Vec<PassEffect> {
+        // Deliberately empty — schedule analyzer sees no edit, the
+        // hook should still refresh because a `BaseChanged` flows.
+        Vec::new()
+    }
+}
+
+#[test]
+fn refresh_follows_events_not_effects_effect_without_event_skips_refresh() {
+    // Two alleles distinguishable at position 3. Sampling V*01
+    // assembles "AAAGAAAAA" → pre-edit live call = {V*01}.
+    //
+    // The `EditBaseEffectOnlyPass` declares `PassEffect::EditBases`
+    // but mutates the pool via `sim.with_base_changed` directly —
+    // no `BaseChanged` event is emitted. Under event-driven
+    // refresh the hook does NOTHING, so the live call stays
+    // pointing at the (now stale-but-not-refreshed) {V*01}.
+    //
+    // Critically: the pool itself reflects the edit, but the
+    // sidecar wasn't updated. This is the contract — the hook
+    // trusts the event stream, not the declaration.
+    let cfg = distinct_v_refdata(&[("V*01", b"AAAGAAAAA"), ("V*02", b"AAACAAAAA")]);
+    let v01 = AlleleId::new(0);
+
+    let mut plan = PassPlan::new();
+    plan.push(Box::new(SampleAllelePass::new(
+        Segment::V,
+        Box::new(AllelePoolDist::restricted_uniform(
+            &cfg.v_pool,
+            vec![v01],
+        )),
+    )));
+    plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+    plan.push(Box::new(EditBaseEffectOnlyPass {
+        handle: crate::ir::NucHandle::new(3),
+        new_base: b'C',
+    }));
+
+    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+        .expect("plan should compile");
+    let outcome = compiled.run_one(0).expect("plan should run");
+    let final_sim = outcome.final_simulation();
+
+    // Pool reflects the edit.
+    assert_eq!(final_sim.pool.as_slice()[3].base, b'C');
+
+    // Live call sidecar was NOT refreshed: still {V*01} (the
+    // pre-edit call), even though the post-edit bases would
+    // narrow to V*02.
+    let v_call = final_sim.segment_calls.get(Segment::V).unwrap();
+    assert_eq!(
+        v_call.allele_call.to_ids(),
+        vec![v01],
+        "no event → no refresh: live call stays pre-edit"
+    );
+
+    // The pass's EventRecord also has an empty consequence stream
+    // — this is the audit-side proof that nothing flowed through.
+    let edit_event = outcome
+        .events
+        .iter()
+        .find(|e| e.pass_name == "test.edit_base_effect_only")
+        .unwrap();
+    assert!(
+        edit_event.simulation_events.is_empty(),
+        "EditBaseEffectOnlyPass emits no events by construction"
+    );
+    // ... yet it still declared an effect, which the scheduler
+    // would have read.
+    assert_eq!(
+        edit_event.compile_effects,
+        vec![PassEffect::EditBases]
+    );
+}
+
+#[test]
+fn refresh_follows_events_not_effects_event_without_effect_triggers_refresh() {
+    // Same fixture, but the pass declares NO effects while still
+    // emitting a `BaseChanged` event via the builder. The event-
+    // driven hook builds an `EditedSegments` step from the event
+    // stream and refreshes V — so the post-edit live call lands
+    // at {V*02}, the allele the new bases match.
+    let cfg = distinct_v_refdata(&[("V*01", b"AAAGAAAAA"), ("V*02", b"AAACAAAAA")]);
+    let v01 = AlleleId::new(0);
+    let v02 = AlleleId::new(1);
+
+    let mut plan = PassPlan::new();
+    plan.push(Box::new(SampleAllelePass::new(
+        Segment::V,
+        Box::new(AllelePoolDist::restricted_uniform(
+            &cfg.v_pool,
+            vec![v01],
+        )),
+    )));
+    plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+    plan.push(Box::new(EditBaseEventOnlyPass {
+        handle: crate::ir::NucHandle::new(3),
+        new_base: b'C',
+    }));
+
+    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+        .expect("plan should compile");
+    let outcome = compiled.run_one(0).expect("plan should run");
+    let final_sim = outcome.final_simulation();
+
+    // Pool reflects the edit AND the live call reflects the
+    // refresh — even though `effects` was empty.
+    assert_eq!(final_sim.pool.as_slice()[3].base, b'C');
+    let v_call = final_sim.segment_calls.get(Segment::V).unwrap();
+    assert_eq!(
+        v_call.allele_call.to_ids(),
+        vec![v02],
+        "event without effect → refresh still fires because the \
+         hook reads events, not declarations"
+    );
+
+    // The pass declared no effects but emitted one BaseChanged
+    // event — the audit-side proof of the inversion.
+    let edit_event = outcome
+        .events
+        .iter()
+        .find(|e| e.pass_name == "test.edit_base_event_only")
+        .unwrap();
+    assert!(
+        edit_event.compile_effects.is_empty(),
+        "no compile-effect declared"
+    );
+    let base_changed_count = edit_event
+        .simulation_events
+        .iter()
+        .filter(|e| matches!(e, crate::ir::SimulationEvent::BaseChanged { .. }))
+        .count();
+    assert_eq!(base_changed_count, 1, "exactly one BaseChanged emitted");
 }

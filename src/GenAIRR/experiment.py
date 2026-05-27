@@ -24,13 +24,44 @@ In all three cases the input is normalised to a
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 from GenAIRR import _engine  # private Rust extension submodule
 
 from .dataconfig import DataConfig
-from .dataconfig.enums import ChainType
+from ._describe import (
+    _describe_experiment_header,
+    _describe_step_sequence,
+    _format_declared_contracts,
+)
+from ._normalize import (
+    _normalize_count,
+    _normalize_lengths,
+    _to_immutable_pairs,
+)
+from ._compile import lower_step
+from ._compiled import CompiledClonalExperiment, CompiledExperiment
+from ._refdata_resolver import (
+    _CONFIG_ALIASES,
+    ExperimentInput,
+    _coerce_to_refdata_and_dataconfig,
+    dataconfig_to_refdata,
+)
+from ._pipeline_ir import (
+    _CORRUPT_KIND_3PRIME_LOSS,
+    _CORRUPT_KIND_5PRIME_LOSS,
+    _CORRUPT_KIND_CONTAMINANT,
+    _CORRUPT_KIND_INDEL,
+    _CORRUPT_KIND_NS,
+    _CORRUPT_KIND_PCR,
+    _CORRUPT_KIND_QUALITY,
+    _CORRUPT_KIND_REV_COMP,
+    _DEFAULT_NP_LENGTHS,
+    _ClonalForkStep,
+    _CorruptStep,
+    _MutateStep,
+    _RecombineStep,
+)
 
 
 # Sentinel for `using(...)` arguments that the caller did not pass at
@@ -53,798 +84,12 @@ _UNSET: _Unset = _Unset()
 _LockInput = Union[str, Iterable[str], None, _Unset]
 
 
-# ──────────────────────────────────────────────────────────────────
-# Config-name resolver — string → DataConfig
-# ──────────────────────────────────────────────────────────────────
-
-# Short aliases (preferred defaults). Heavy / light / TCR for human
-# fall back to OGRDB when present, otherwise IMGT V-QUEST.
-_CONFIG_ALIASES = {
-    # Human (OGRDB preferred for IG, IMGT for TCR)
-    "human_igh": "HUMAN_IGH_OGRDB",
-    "human_igk": "HUMAN_IGK_OGRDB",
-    "human_igl": "HUMAN_IGL_OGRDB",
-    "human_tcra": "HUMAN_TCRA_IMGT",
-    "human_tcrb": "HUMAN_TCRB_IMGT",
-    "human_tcrd": "HUMAN_TCRD_IMGT",
-    "human_tcrg": "HUMAN_TCRG_IMGT",
-    # Mouse
-    "mouse_igh": "MOUSE_IGH_IMGT",
-    "mouse_igk": "MOUSE_IGK_IMGT",
-    "mouse_igl": "MOUSE_IGL_IMGT",
-    "mouse_tcra": "MOUSE_TCRA_IMGT",
-    "mouse_tcrb": "MOUSE_TCRB_IMGT",
-    "mouse_tcrd": "MOUSE_TCRD_IMGT",
-    "mouse_tcrg": "MOUSE_TCRG_IMGT",
-    # Rat
-    "rat_igh": "RAT_IGH_IMGT",
-    "rat_igk": "RAT_IGK_IMGT",
-    "rat_igl": "RAT_IGL_IMGT",
-    # Rabbit
-    "rabbit_igh": "RABBIT_IGH_IMGT",
-    "rabbit_igk": "RABBIT_IGK_IMGT",
-    "rabbit_igl": "RABBIT_IGL_IMGT",
-    "rabbit_tcrb": "RABBIT_TCRB_IMGT",
-    # Rhesus macaque
-    "rhesus_igh": "RHESUS_IGH_IMGT",
-    "rhesus_igk": "RHESUS_IGK_IMGT",
-    "rhesus_igl": "RHESUS_IGL_IMGT",
-    "rhesus_tcrb": "RHESUS_TCRB_IMGT",
-    # Cow
-    "cow_igh": "COW_IGH_IMGT",
-    "cow_igk": "COW_IGK_IMGT",
-    "cow_igl": "COW_IGL_IMGT",
-    "cow_tcrb": "COW_TCRB_IMGT",
-    # Dog
-    "dog_igh": "DOG_IGH_IMGT",
-    "dog_igk": "DOG_IGK_IMGT",
-    "dog_igl": "DOG_IGL_IMGT",
-    "dog_tcrb": "DOG_TCRB_IMGT",
-    # Cat
-    "cat_igk": "CAT_IGK_IMGT",
-    "cat_igl": "CAT_IGL_IMGT",
-    "cat_tcrb": "CAT_TCRB_IMGT",
-    # Pig
-    "pig_igh": "PIG_IGH_IMGT",
-    "pig_igk": "PIG_IGK_IMGT",
-    "pig_igl": "PIG_IGL_IMGT",
-    "pig_tcrb": "PIG_TCRB_IMGT",
-}
-
-
-def _build_full_aliases() -> None:
-    """Auto-register every builtin DataConfig under both its full and
-    short ``_imgt`` / ``_ogrdb``-stripped lowercase names."""
-    from .data import _CONFIG_NAMES
-
-    for name in _CONFIG_NAMES:
-        lower = name.lower()
-        if lower not in _CONFIG_ALIASES:
-            _CONFIG_ALIASES[lower] = name
-        for suffix in ("_imgt", "_ogrdb"):
-            if lower.endswith(suffix):
-                short = lower[: -len(suffix)]
-                if short not in _CONFIG_ALIASES:
-                    _CONFIG_ALIASES[short] = name
-
-
-_build_full_aliases()
-
-
-def _resolve_config_name(name: str) -> DataConfig:
-    """Resolve a config-name string to its loaded :class:`DataConfig`.
-
-    Hyphens and case are normalised. Unknown names raise ``ValueError``
-    with a hint.
-    """
-    key = name.lower().replace("-", "_")
-    const_name = _CONFIG_ALIASES.get(key)
-    if const_name is None:
-        from .data import list_configs
-
-        available = list_configs()
-        raise ValueError(
-            f"Unknown config name {name!r}. "
-            f"Available configs ({len(available)} total): "
-            f"{', '.join(a.lower() for a in available[:10])}... "
-            f"Use GenAIRR.list_configs() for the full list, "
-            f"or pass a DataConfig object directly."
-        )
-    from . import data as _data
-
-    return getattr(_data, const_name)
-
-
-# ──────────────────────────────────────────────────────────────────
-# DataConfig → GenAIRR._engine.RefDataConfig translator
-# ──────────────────────────────────────────────────────────────────
-
-
-def _chain_type_label(chain_type: Optional[ChainType]) -> str:
-    """Map a :class:`GenAIRR.dataconfig.enums.ChainType` to the
-    lowercase ``"vj"`` / ``"vdj"`` label expected by ``RefDataConfig``.
-
-    Heavy chain (BCR_HEAVY) and TCR β / δ have a D segment → ``"vdj"``.
-    Everything else → ``"vj"``. ``None`` (older pickles missing
-    metadata) defaults to ``"vdj"`` so the more general builder is
-    selected.
-    """
-    if chain_type is None:
-        return "vdj"
-    if chain_type in (
-        ChainType.BCR_HEAVY,
-        ChainType.TCR_BETA,
-        ChainType.TCR_DELTA,
-    ):
-        return "vdj"
-    return "vj"
-
-
-def _push_alleles(alleles_by_gene, add_method) -> int:
-    """Walk ``Dict[str, List[Allele]]`` and push every allele through
-    ``add_method``. Returns the count of pushed alleles.
-    """
-    count = 0
-    if not alleles_by_gene:
-        return count
-    for _gene, allele_list in alleles_by_gene.items():
-        for allele in allele_list:
-            seq_str = allele.ungapped_seq
-            seq = seq_str.encode("ascii") if isinstance(seq_str, str) else bytes(seq_str)
-            anchor = allele.anchor
-            if anchor is None:
-                add_method(allele.name, allele.gene, seq)
-            else:
-                add_method(allele.name, allele.gene, seq, anchor=int(anchor))
-            count += 1
-    return count
-
-
-def dataconfig_to_refdata(cfg: DataConfig) -> "_engine.RefDataConfig":
-    """Translate a :class:`DataConfig` species pickle into an
-    engine-native :class:`GenAIRR._engine.RefDataConfig`.
-
-    All V / D / J alleles are copied; the C segment is dropped (the
-    engine has no C-segment passes). Anchorless alleles are preserved
-    with ``anchor=None`` — they pass through but cannot satisfy the
-    ``AnchorPreserved`` contract.
-    """
-    chain = _chain_type_label(cfg.metadata.chain_type if cfg.metadata else None)
-    refdata = _engine.RefDataConfig(chain)
-
-    _push_alleles(cfg.v_alleles, refdata.add_v_allele)
-    if chain == "vdj":
-        _push_alleles(cfg.d_alleles, refdata.add_d_allele)
-    _push_alleles(cfg.j_alleles, refdata.add_j_allele)
-    return refdata
-
-
-# ──────────────────────────────────────────────────────────────────
-# Build steps
-# ──────────────────────────────────────────────────────────────────
-
-# Default NP-length distribution: lengths 0..6 with equal weight.
-_DEFAULT_NP_LENGTHS: Sequence[Tuple[int, float]] = tuple((i, 1.0) for i in range(7))
-
-
-@dataclass(frozen=True)
-class _RecombineStep:
-    """One ``recombine()`` invocation, captured for later compilation.
-
-    ``np1_lengths`` / ``np2_lengths`` are the empirical NP-length
-    distributions to use. ``trim_*`` are optional empirical trim
-    distributions; when ``None`` the corresponding trim pass is
-    omitted (so a synthetic refdata without trim data still works).
-
-    ``locks_*`` are optional allele-ID subsets supplied by
-    :meth:`Experiment.restrict_alleles`. When set, the matching
-    ``push_sample_allele`` call samples uniformly only from those
-    IDs instead of the full pool.
-    """
-
-    np1_lengths: Tuple[Tuple[int, float], ...]
-    np2_lengths: Tuple[Tuple[int, float], ...]
-    trim_v_3: Optional[Tuple[Tuple[int, float], ...]]
-    trim_d_5: Optional[Tuple[Tuple[int, float], ...]]
-    trim_d_3: Optional[Tuple[Tuple[int, float], ...]]
-    trim_j_5: Optional[Tuple[Tuple[int, float], ...]]
-    locks_v: Optional[Tuple[int, ...]] = None
-    locks_d: Optional[Tuple[int, ...]] = None
-    locks_j: Optional[Tuple[int, ...]] = None
-    weights_v: Optional[Tuple[float, ...]] = None
-    weights_d: Optional[Tuple[float, ...]] = None
-    weights_j: Optional[Tuple[float, ...]] = None
-    # Set to True by ``Experiment.trim(...)``. Drives the
-    # raw-RefDataConfig trim-noop warning at compile() time: when the
-    # user explicitly called .trim(), silence the warning regardless
-    # of whether trim is enabled or disabled.
-    trim_overridden: bool = False
-
-    def apply(
-        self,
-        plan: "_engine.PassPlan",
-        refdata: "_engine.RefDataConfig",
-    ) -> None:
-        chain = refdata.chain_type
-        np1 = list(self.np1_lengths)
-        np2 = list(self.np2_lengths)
-
-        v_ids = list(self.locks_v) if self.locks_v is not None else None
-        d_ids = list(self.locks_d) if self.locks_d is not None else None
-        j_ids = list(self.locks_j) if self.locks_j is not None else None
-        v_weights = list(self.weights_v) if self.weights_v is not None else None
-        d_weights = list(self.weights_d) if self.weights_d is not None else None
-        j_weights = list(self.weights_j) if self.weights_j is not None else None
-
-        if chain == "vj":
-            plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
-            plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
-            if self.trim_v_3:
-                plan.push_trim("V", "3", list(self.trim_v_3))
-            if self.trim_j_5:
-                plan.push_trim("J", "5", list(self.trim_j_5))
-            plan.push_assemble("V")
-            plan.push_generate_np("NP1", np1)
-            plan.push_assemble("J")
-        elif chain == "vdj":
-            plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
-            plan.push_sample_allele("D", refdata, allowed_ids=d_ids, weights=d_weights)
-            plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
-            if self.trim_v_3:
-                plan.push_trim("V", "3", list(self.trim_v_3))
-            if self.trim_d_5:
-                plan.push_trim("D", "5", list(self.trim_d_5))
-            if self.trim_d_3:
-                plan.push_trim("D", "3", list(self.trim_d_3))
-            if self.trim_j_5:
-                plan.push_trim("J", "5", list(self.trim_j_5))
-            plan.push_assemble("V")
-            plan.push_generate_np("NP1", np1)
-            plan.push_assemble("D")
-            plan.push_generate_np("NP2", np2)
-            plan.push_assemble("J")
-        else:  # pragma: no cover — RefDataConfig only constructs vj/vdj.
-            raise ValueError(f"unsupported chain_type {chain!r}")
-
-
-@dataclass(frozen=True)
-class _MutateStep:
-    """One ``mutate()`` invocation, captured for later compilation.
-
-    ``model`` is either ``"uniform"`` (position-independent SHM via
-    ``UniformMutationPass``) or ``"s5f"`` (context-dependent SHM via
-    ``S5FMutationPass`` with the bundled S5F kernel named in
-    ``s5f_model_name``).
-
-    Exactly one of ``count_pairs`` and ``rate`` is set; the other is
-    ``None``. ``count_pairs`` is the empirical distribution over the
-    number of mutations per simulation, expressed as
-    ``((count, weight), ...)``. ``rate`` is a per-base mutation rate
-    (e.g. ``0.03`` for 3 % SHM); at execute time the engine draws
-    ``count ~ Poisson(rate × pool_len)`` against the current pool
-    length so the realized mutation count scales with each record's
-    own sequence length — matching how immunologists report SHM in
-    the literature.
-    """
-
-    model: str
-    s5f_model_name: str
-    # Exactly one of the two below is non-None.
-    count_pairs: Optional[Tuple[Tuple[int, float], ...]] = None
-    rate: Optional[float] = None
-
-    def apply(
-        self,
-        plan: "_engine.PassPlan",
-        refdata: "_engine.RefDataConfig",
-    ) -> None:
-        del refdata  # not needed for mutation passes
-        if self.model == "uniform":
-            if self.rate is not None:
-                plan.push_mutate_uniform_rate(self.rate)
-            else:
-                plan.push_mutate_uniform(list(self.count_pairs or ()))
-        elif self.model == "s5f":
-            from ._s5f_loader import load_builtin_s5f_kernel
-
-            mutability, substitution = load_builtin_s5f_kernel(self.s5f_model_name)
-            if self.rate is not None:
-                plan.push_mutate_s5f_rate(self.rate, mutability, substitution)
-            else:
-                plan.push_mutate_s5f(
-                    list(self.count_pairs or ()), mutability, substitution
-                )
-        else:  # pragma: no cover — guarded at builder time.
-            raise ValueError(f"unsupported mutation model {self.model!r}")
-
-
-# Names of the four corruption passes the Rust kernel exposes. Used
-# both as a discriminator on `_CorruptStep` and as the Python-facing
-# kwarg name on the `Experiment` builder.
-@dataclass(frozen=True)
-class _ClonalForkStep:
-    """Marks the boundary between "per-clone" passes (run once per
-    clonal family — typically `recombine`) and "per-descendant" passes
-    (run once per read inside the family — typically `mutate` and the
-    library-prep / sequencing-stage steps).
-
-    The compile pipeline splits the experiment's step list at this
-    marker, builds two `CompiledExperiment`s, and the runtime
-    forks the parent IR into descendants for each clone.
-    """
-
-    n_clones: int
-    size: int
-
-
-_CORRUPT_KIND_PCR = "pcr"
-_CORRUPT_KIND_QUALITY = "quality"
-_CORRUPT_KIND_INDEL = "indel"
-_CORRUPT_KIND_CONTAMINANT = "contaminant"
-_CORRUPT_KIND_REV_COMP = "rev_comp"
-_CORRUPT_KIND_5PRIME_LOSS = "5prime_loss"
-_CORRUPT_KIND_3PRIME_LOSS = "3prime_loss"
-_CORRUPT_KIND_NS = "ns"
-
-
-@dataclass(frozen=True)
-class _CorruptStep:
-    """One library-prep / sequencing-stage step, captured for later compilation.
-
-    ``kind`` selects which Rust corruption pass to construct:
-    ``"pcr"``, ``"quality"``, ``"indel"``, or ``"contaminant"``.
-    Other fields are pass-specific:
-
-    - PCR / quality each use exactly one of ``count_pairs`` *or*
-      ``rate``; when ``rate`` is set the engine draws
-      ``count ~ Poisson(rate × pool_len)`` per record.
-    - Indel uses ``count_pairs`` + ``insertion_prob``.
-    - Contaminant / reverse-complement use ``apply_prob``.
-    """
-
-    kind: str
-    count_pairs: Optional[Tuple[Tuple[int, float], ...]] = None
-    insertion_prob: float = 0.0
-    apply_prob: float = 0.0
-    rate: Optional[float] = None
-
-    def apply(
-        self,
-        plan: "_engine.PassPlan",
-        refdata: "_engine.RefDataConfig",
-    ) -> None:
-        del refdata  # not used by corruption passes
-        if self.kind == _CORRUPT_KIND_PCR:
-            if self.rate is not None:
-                plan.push_corrupt_pcr_rate(self.rate)
-            else:
-                plan.push_corrupt_pcr(list(self.count_pairs or ()))
-        elif self.kind == _CORRUPT_KIND_QUALITY:
-            if self.rate is not None:
-                plan.push_corrupt_quality_rate(self.rate)
-            else:
-                plan.push_corrupt_quality(list(self.count_pairs or ()))
-        elif self.kind == _CORRUPT_KIND_INDEL:
-            plan.push_corrupt_indel(
-                list(self.count_pairs or ()), insertion_prob=self.insertion_prob
-            )
-        elif self.kind == _CORRUPT_KIND_CONTAMINANT:
-            plan.push_corrupt_contaminant(self.apply_prob)
-        elif self.kind == _CORRUPT_KIND_REV_COMP:
-            plan.push_corrupt_rev_comp(self.apply_prob)
-        elif self.kind == _CORRUPT_KIND_5PRIME_LOSS:
-            plan.push_corrupt_5prime_loss(list(self.count_pairs or ()))
-        elif self.kind == _CORRUPT_KIND_3PRIME_LOSS:
-            plan.push_corrupt_3prime_loss(list(self.count_pairs or ()))
-        elif self.kind == _CORRUPT_KIND_NS:
-            plan.push_corrupt_ns(list(self.count_pairs or ()))
-        else:  # pragma: no cover — guarded at builder time.
-            raise ValueError(f"unsupported corruption kind {self.kind!r}")
-
-
-# ──────────────────────────────────────────────────────────────────
-# describe() helpers — render step configurations as biology-style
-# narrative strings. The output is the diagnostic instrument we use
-# to grade DSL readability: if a chain reads weird in describe(), the
-# chain itself reads weird.
-# ──────────────────────────────────────────────────────────────────
-
-
-def _describe_distribution(pairs: Tuple[Tuple[int, float], ...]) -> str:
-    """Render a ``(value, weight)`` distribution as a short
-    biology-friendly string: ``"5"`` for a fixed count, ``"5–15"``
-    for a uniform range, ``"0–8 weighted"`` for non-uniform."""
-    if not pairs:
-        return "<empty>"
-    values = [v for v, _ in pairs]
-    weights = [w for _, w in pairs]
-    lo, hi = min(values), max(values)
-    if lo == hi:
-        return str(lo)
-    uniform = all(abs(w - weights[0]) < 1e-9 for w in weights)
-    covers_range = sorted(values) == list(range(lo, hi + 1))
-    if uniform and covers_range:
-        return f"{lo}–{hi}"
-    return f"{lo}–{hi} weighted"
-
-
-def _describe_recombine_step(step: "_RecombineStep", chain_type: str) -> str:
-    segs = "V/J" if chain_type == "vj" else "V/D/J"
-    parts: List[str] = [f"sample {segs} alleles"]
-
-    locked_segs = []
-    if step.locks_v is not None:
-        locked_segs.append(f"V ({len(step.locks_v)})")
-    if step.locks_d is not None:
-        locked_segs.append(f"D ({len(step.locks_d)})")
-    if step.locks_j is not None:
-        locked_segs.append(f"J ({len(step.locks_j)})")
-    if locked_segs:
-        parts.append(f"locked to {', '.join(locked_segs)}")
-
-    weighted_segs = []
-    for seg, weights in (("V", step.weights_v), ("D", step.weights_d), ("J", step.weights_j)):
-        if weights is not None:
-            weighted_segs.append(seg)
-    if weighted_segs:
-        parts.append(f"custom {'/'.join(weighted_segs)} allele weights")
-
-    trim_bits = []
-    if step.trim_v_3:
-        trim_bits.append("V3'")
-    if step.trim_d_5:
-        trim_bits.append("D5'")
-    if step.trim_d_3:
-        trim_bits.append("D3'")
-    if step.trim_j_5:
-        trim_bits.append("J5'")
-    if trim_bits:
-        parts.append(f"empirical exonuclease trim ({', '.join(trim_bits)})")
-
-    np1_desc = _describe_distribution(step.np1_lengths)
-    np1_source = _np_source_tag(step.np1_lengths)
-    if chain_type == "vdj":
-        np2_desc = _describe_distribution(step.np2_lengths)
-        np2_source = _np_source_tag(step.np2_lengths)
-        parts.append(
-            f"insert NP1 ({np1_desc} bases{np1_source}) and "
-            f"NP2 ({np2_desc} bases{np2_source})"
-        )
-    else:
-        parts.append(f"insert NP1 ({np1_desc} bases{np1_source})")
-
-    return "V(D)J recombination: " + "; ".join(parts)
-
-
-def _np_source_tag(np_lengths: Tuple[Tuple[int, float], ...]) -> str:
-    """Return ``", empirical"`` or ``", uniform fallback"`` to clarify
-    whether the NP-length distribution came from the bound DataConfig
-    (empirical) or the synthetic [(0,1.0)..(6,1.0)] fallback used on
-    raw RefDataConfig with no empirical data. Empty string when the
-    user supplied an explicit distribution we can't classify."""
-    if tuple(np_lengths) == tuple(_DEFAULT_NP_LENGTHS):
-        return ", uniform fallback"
-    # User-supplied or empirical; we can't distinguish them at this
-    # point without threading more state, but the "weighted" suffix
-    # in the distribution describer already tells the reader it's a
-    # non-uniform empirical distribution when the weights aren't equal.
-    return ", empirical"
-
-
-_S5F_KERNEL_LABELS = {
-    "hh_s5f": "human heavy-chain (HH_S5F)",
-    "hkl_s5f": "human kappa/lambda (HKL_S5F)",
-    "mk_rs5nf": "mouse (MK_RS5NF)",
-}
-
-
-def _describe_mutate_step(step: "_MutateStep") -> str:
-    if step.rate is not None:
-        intensity = f"{step.rate:.1%} of bases (Poisson)"
-    elif step.count_pairs is not None:
-        intensity = f"{_describe_distribution(step.count_pairs)} mutations"
-    else:
-        intensity = "<unset>"  # pragma: no cover — guarded at builder time
-    if step.model == "s5f":
-        kernel_label = _S5F_KERNEL_LABELS.get(step.s5f_model_name, step.s5f_model_name)
-        return f"Somatic hypermutation (S5F context model, {kernel_label}): {intensity}/record"
-    if step.model == "uniform":
-        return f"Somatic hypermutation (uniform, position-independent): {intensity}/record"
-    return f"Mutation ({step.model}): {intensity}/record"
-
-
-_CORRUPT_NARRATIVE_LABELS = {
-    _CORRUPT_KIND_PCR: ("PCR substitution errors", "errors/record"),
-    _CORRUPT_KIND_QUALITY: ("Sequencing quality errors", "errors/record"),
-    _CORRUPT_KIND_5PRIME_LOSS: ("5'-end loss (primer/adapter trim)", "bases trimmed"),
-    _CORRUPT_KIND_3PRIME_LOSS: ("3'-end loss", "bases trimmed"),
-    _CORRUPT_KIND_NS: ("Ambiguous base calls (low-Q positions)", "positions/record"),
-}
-
-
-def _describe_corrupt_step(step: "_CorruptStep") -> str:
-    if step.kind in _CORRUPT_NARRATIVE_LABELS:
-        label, unit = _CORRUPT_NARRATIVE_LABELS[step.kind]
-        intensity = _describe_count_or_rate(step, default_unit=unit)
-        return f"{label}: {intensity}"
-    if step.kind == _CORRUPT_KIND_INDEL:
-        count = _describe_distribution(step.count_pairs or ())
-        return (
-            f"Polymerase indels (PCR slippage): {count} events/record, "
-            f"insertion fraction {step.insertion_prob:.2f}"
-        )
-    if step.kind == _CORRUPT_KIND_CONTAMINANT:
-        return (
-            f"Cross-sample contamination: {step.apply_prob:.0%} of records "
-            f"replaced with a random allele sequence"
-        )
-    if step.kind == _CORRUPT_KIND_REV_COMP:
-        return f"Random strand orientation: {step.apply_prob:.0%} of records reverse-complemented"
-    return f"Corruption ({step.kind})"  # pragma: no cover — guarded at builder time
-
-
-def _describe_count_or_rate(step: "_CorruptStep", *, default_unit: str) -> str:
-    """Render the count / rate / events portion of a corruption step
-    line, depending on which mode was selected at builder time."""
-    if step.rate is not None:
-        return f"{step.rate:.2%} of bases (Poisson)/record"
-    return f"{_describe_distribution(step.count_pairs or ())} {default_unit}"
-
-
-def _describe_clonal_fork_step(step: "_ClonalForkStep") -> str:
-    return f"Clonal expansion: {step.n_clones} lineages × {step.size} reads/clone"
-
-
-def _describe_step(step: Any, chain_type: str) -> str:
-    """Dispatch to the right step-describer based on the step type."""
-    if isinstance(step, _RecombineStep):
-        return _describe_recombine_step(step, chain_type)
-    if isinstance(step, _MutateStep):
-        return _describe_mutate_step(step)
-    if isinstance(step, _CorruptStep):
-        return _describe_corrupt_step(step)
-    if isinstance(step, _ClonalForkStep):
-        return _describe_clonal_fork_step(step)
-    return f"Unknown step: {type(step).__name__}"  # pragma: no cover
-
-
-_CHAIN_TYPE_BIOLOGY_LABELS = {
-    "BCR_HEAVY": "heavy-chain BCR",
-    "BCR_LIGHT_KAPPA": "kappa light-chain BCR",
-    "BCR_LIGHT_LAMBDA": "lambda light-chain BCR",
-    "TCR_ALPHA": "alpha-chain TCR",
-    "TCR_BETA": "beta-chain TCR",
-    "TCR_GAMMA": "gamma-chain TCR",
-    "TCR_DELTA": "delta-chain TCR",
-}
-
-
-def _describe_experiment_header(
-    refdata: "_engine.RefDataConfig",
-    dataconfig: Optional[DataConfig],
-) -> str:
-    """One-line header naming the refdata source and chain type."""
-    chain = refdata.chain_type
-    if dataconfig is not None and getattr(dataconfig, "metadata", None) is not None:
-        meta = dataconfig.metadata
-        species_label: Optional[str] = None
-        species = getattr(meta, "species", None)
-        if species is not None:
-            species_label = getattr(species, "value", None) or str(species)
-        chain_enum = getattr(meta, "chain_type", None)
-        chain_key = getattr(chain_enum, "value", None) if chain_enum is not None else None
-        chain_label = _CHAIN_TYPE_BIOLOGY_LABELS.get(chain_key or "", f"{chain.upper()} chain")
-        if species_label:
-            return f"Experiment on {species_label} {chain_label}"
-        return f"Experiment on {chain_label}"
-    return f"Experiment on raw RefDataConfig ({chain.upper()})"
-
-
-def _describe_step_sequence(
-    steps: Sequence[Any],
-    chain_type: str,
-    *,
-    indent: str = "  ",
-    start_index: int = 1,
-) -> List[str]:
-    """Render a sequence of steps as numbered narrative lines. The
-    clonal-fork step gets a visual divider so the pre/post boundary
-    is obvious; subsequent steps continue numbering.
-
-    Returns one string per output line (no trailing newlines).
-    """
-    out: List[str] = []
-    step_no = start_index
-    for step in steps:
-        if isinstance(step, _ClonalForkStep):
-            out.append(f"{indent}── {_describe_clonal_fork_step(step)} ──")
-            out.append(f"{indent}    (steps above run once per clone; "
-                       f"steps below run once per descendant)")
-            continue
-        out.append(f"{indent}{step_no}. {_describe_step(step, chain_type)}")
-        step_no += 1
-    return out
-
-
-_PRODUCTIVE_BUNDLE_NAMES = frozenset({
-    "productive_junction_frame",
-    "no_stop_codon_in_junction",
-    "anchor_preserved.v",
-    "anchor_preserved.j",
-})
-
-
-def _format_declared_contracts(declared: Sequence[str]) -> Optional[str]:
-    """Render the contract bundles declared by `.productive_only()`
-    etc. on an uncompiled Experiment as a biology-style line.
-
-    Companion to :func:`_format_active_contracts`, which renders the
-    compiled simulator's per-pass contract names (the underlying
-    primitives the bundles expand into). On the Experiment side we
-    show the bundle name directly because that's what the user typed.
-    """
-    if not declared:
-        return None
-    labels = []
-    for bundle in declared:
-        if bundle == "productive":
-            labels.append("productive sequences only")
-        else:
-            labels.append(bundle)
-    return "; ".join(labels)
-
-
-def _format_active_contracts(active: Sequence[str]) -> Optional[str]:
-    """Render the compiled simulator's active-contracts tuple as a
-    biology-style line, or ``None`` if no contracts are bound. The
-    `ga.productive()` bundle's four underlying contracts
-    (productive_junction_frame, no_stop_codon_in_junction, and the
-    two anchor_preserved contracts) collapse to the single label
-    "productive sequences only" so the line reads naturally."""
-    if not active:
-        return None
-    names = list(active)
-    extras: List[str] = []
-    productive_present = _PRODUCTIVE_BUNDLE_NAMES.issubset(set(names))
-    bundle_names = _PRODUCTIVE_BUNDLE_NAMES if productive_present else frozenset()
-    for n in names:
-        if n in bundle_names:
-            continue
-        extras.append(n)
-    labels: List[str] = []
-    if productive_present:
-        labels.append("productive sequences only")
-    labels.extend(extras)
-    if not labels:
-        return None
-    return "; ".join(labels)
-
-
-def _normalize_count(
-    count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
-) -> Tuple[Tuple[int, float], ...]:
-    """Normalise the user-friendly ``count=`` argument to the
-    list-of-pairs shape ``PyPassPlan.push_mutate_*`` expects.
-
-    Accepts:
-    - ``count=15`` — fixed count.
-    - ``count=(5, 25)`` — uniform integer in ``[5, 25]``
-      (high inclusive, matches the Pythonic ``range``-with-stop
-      conventions; both endpoints are valid sample values).
-    - ``count=[(5, 1.0), (10, 1.0), (15, 1.0)]`` — explicit
-      empirical distribution.
-    """
-    # Single int: fixed count. Reject bools (which are int subclasses)
-    # so a stray True/False raises TypeError instead of silently
-    # becoming ``count=1`` / ``count=0``.
-    if isinstance(count, bool) or not isinstance(count, (int, tuple, list)):
-        raise TypeError(
-            f"count: expected int, (low, high) tuple, or list of "
-            f"(count, weight) pairs, got {type(count).__name__}"
-        )
-    if isinstance(count, int):
-        if count < 0:
-            raise ValueError(f"count must be non-negative, got {count}")
-        return ((int(count), 1.0),)
-    # Tuple form: must be (low, high) of two ints OR a single
-    # (count, weight) pair we promote to a 1-element list.
-    if isinstance(count, tuple) and len(count) == 2:
-        a, b = count[0], count[1]
-        if (
-            isinstance(a, int)
-            and isinstance(b, int)
-            and not isinstance(a, bool)
-            and not isinstance(b, bool)
-        ):
-            low, high = a, b
-            if low < 0 or high < low:
-                raise ValueError(
-                    f"count range must satisfy 0 <= low <= high, got ({low}, {high})"
-                )
-            return tuple((c, 1.0) for c in range(low, high + 1))
-    # Otherwise: empirical (count, weight) list/tuple.
-    pairs: List[Tuple[int, float]] = []
-    for pair in count:
-        if not (isinstance(pair, (tuple, list)) and len(pair) == 2):
-            raise TypeError(
-                f"count entries must be (count, weight) pairs, got {pair!r}"
-            )
-        c, w = pair
-        if isinstance(c, bool) or not isinstance(c, int) or c < 0:
-            raise ValueError(
-                f"count entry must have a non-negative int count, got {c!r}"
-            )
-        pairs.append((int(c), float(w)))
-    if not pairs:
-        raise ValueError("count distribution must contain at least one entry")
-    return tuple(pairs)
-
-
-def _to_immutable_pairs(
-    pairs: Optional[List[Tuple[int, float]]],
-) -> Optional[Tuple[Tuple[int, float], ...]]:
-    """Convert an optional ``list[(int, float)]`` (the shape returned
-    by :mod:`._dataconfig_extract`) into the hashable tuple-of-tuples
-    form that :class:`_RecombineStep`'s frozen dataclass requires.
-    ``None`` passes through unchanged so the step can omit the trim
-    pass entirely when no empirical distribution is available.
-    """
-    if not pairs:
-        return None
-    return tuple((int(c), float(w)) for c, w in pairs)
-
-
-def _normalize_lengths(
-    lengths: Optional[Iterable[Tuple[int, float]]],
-) -> Tuple[Tuple[int, float], ...]:
-    """Convert a user-supplied length iterable into a hashable tuple of
-    ``(int, float)`` pairs. ``None`` falls back to the module default;
-    empty iterables raise ``ValueError`` here so the error surfaces at
-    builder time."""
-    if lengths is None:
-        return tuple(_DEFAULT_NP_LENGTHS)
-    pairs: List[Tuple[int, float]] = []
-    for pair in lengths:
-        length, weight = pair
-        pairs.append((int(length), float(weight)))
-    if not pairs:
-        raise ValueError(
-            "length distribution must contain at least one (length, weight) pair"
-        )
-    return tuple(pairs)
-
-
-# ──────────────────────────────────────────────────────────────────
-# Public API: Experiment + CompiledExperiment
-# ──────────────────────────────────────────────────────────────────
-
-# Anything :meth:`Experiment.on` accepts.
-ExperimentInput = Union[str, DataConfig, "_engine.RefDataConfig"]
-
-
-def _coerce_to_refdata_and_dataconfig(
-    source: ExperimentInput,
-) -> Tuple["_engine.RefDataConfig", Optional[DataConfig]]:
-    """Normalise ``Experiment.on`` input to ``(refdata, dataconfig)``.
-
-    The DataConfig — when available — carries the empirical
-    distributions (NP lengths, per-gene trims) that ``recombine()``
-    uses by default. A bare ``RefDataConfig`` from the user has no
-    DataConfig backing, so empirical distributions fall through to
-    the uniform ``[0..6]`` placeholder.
-    """
-    if isinstance(source, _engine.RefDataConfig):
-        return source, None
-    if isinstance(source, str):
-        cfg = _resolve_config_name(source)
-        return dataconfig_to_refdata(cfg), cfg
-    if isinstance(source, DataConfig):
-        return dataconfig_to_refdata(source), source
-    raise TypeError(
-        f"Experiment.on(...): expected a config-name string, "
-        f"GenAIRR.DataConfig, or GenAIRR._engine.RefDataConfig, "
-        f"got {type(source).__name__}"
-    )
+# Refdata-resolver helpers (``_CONFIG_ALIASES``, ``_resolve_config_name``,
+# ``dataconfig_to_refdata``, ``_coerce_to_refdata_and_dataconfig``,
+# ``ExperimentInput``) live in :mod:`._refdata_resolver`. Re-exported
+# below so the public surface (``GenAIRR.dataconfig_to_refdata``) and
+# legacy internal callers (e.g. ``mcp_server`` reaching for
+# ``_CONFIG_ALIASES``) keep working.
 
 
 class Experiment:
@@ -1270,11 +515,31 @@ class Experiment:
         Attaches the canonical productive-sequence contract bundle to
         the experiment: junction frame in-register, no stop codons in
         the junction, and V/J anchor amino acids preserved. The bundle
-        is enforced during recombination and SHM passes, so
-        non-admissible candidates are filtered before commit (the
-        runtime falls back to permissive sampling if no admissible
-        candidate exists; use ``strict=True`` at run time to raise
-        instead).
+        is enforced during recombination, mutation, and corruption
+        passes by narrowing each pass's action support before
+        sampling. If a constrained support is empty, permissive
+        execution uses the pass's explicit no-op / sentinel behavior;
+        use ``strict=True`` at run time to raise instead.
+
+        **Failure surfaces** (see
+        ``docs/productive_failure_mode_audit.md`` for the full matrix):
+
+        - *Compile-time precondition* — when a sampling distribution
+          is statically impossible under the bundle (e.g. every NP1
+          length violates frame), :meth:`compile` raises
+          ``ValueError`` regardless of the ``strict`` flag.
+        - *Runtime fresh strict* (``run(..., strict=True)``) — when
+          dynamic state makes a sampler's admissible support empty,
+          raises :class:`GenAIRR._engine.StrictSamplingError` with
+          structured ``(pass_name, address, reason)`` args.
+        - *Runtime fresh permissive* (``strict=False``, default) —
+          the pass records its declared sentinel (indel ``site=-1``,
+          NP length ``0``, NP base ``N``, trim ``0``) or skips the
+          slot; the record continues.
+        - *Trace replay* (``replay_from_trace_file``) — consumes
+          recorded values verbatim, does not re-evaluate
+          admissibility. A permissive-sentinel trace replays cleanly
+          even with ``strict=True``.
 
         **Order-independent.** This method is a constraint declaration,
         not a pipeline step — it can be called anywhere in the chain
@@ -1975,15 +1240,25 @@ class Experiment:
             pre_simulator = self._build_simulator(
                 pre_steps, contracts, any_lock, replace_fn=_replace
             )
-            # post-fork plan inherits the parent's V/D/J/NP backbone, so
-            # the recombination-time contracts have already been enforced
-            # upstream. Re-passing them here would force the compiler to
-            # look for support (np.np1.length, anchor trims) in passes
-            # the post-fork plan doesn't contain — which would fail any
-            # pipeline that combines `expand_clones()` with
-            # `.productive_only()`.
+            # The post-fork plan inherits the parent's V/D/J/NP
+            # backbone (recombination already happened in the
+            # pre-fork half). The recombination-time precondition
+            # facts (np.np1.length residues, anchor trim supports)
+            # aren't produced here. v2 used to drop the contract
+            # bundle entirely on this side to avoid the compile-time
+            # precondition failure — but doing so left every
+            # post-fork mutation / corruption pass unfiltered, which
+            # was the dominant cause of non-productive output under
+            # `productive_only()`. We now pass the same bundle
+            # through; the engine analyzer (in
+            # `compiled/analyze.rs::validate_contract_preconditions`)
+            # skips the productive-frame check when no recombination
+            # facts are present in the plan, and the runtime
+            # admit_with_context / admits_post_event paths still
+            # enforce no-stop-codon-in-junction and anchor-preserved
+            # for every substitution and indel in the post-fork pipeline.
             post_simulator = self._build_simulator(
-                post_steps, None, any_lock=False, replace_fn=_replace
+                post_steps, contracts, any_lock=False, replace_fn=_replace
             )
             return CompiledClonalExperiment(
                 pre_simulator,
@@ -2030,7 +1305,7 @@ class Experiment:
                     locks_d=self._locks["D"],
                     locks_j=self._locks["J"],
                 )
-            step.apply(plan, self._refdata)
+            lower_step(step, plan, self._refdata)
         return plan.compile(refdata=self._refdata, respect=contracts)
 
     def run_records(
@@ -2057,6 +1332,13 @@ class Experiment:
         evidence-driven ``v_call`` / ``d_call`` / ``j_call`` fields
         an aligner would produce. Useful for benchmarking aligners
         against ground truth without keeping a side truth file.
+
+        ``strict`` semantics match :meth:`run` — strict-mode applies
+        only to **fresh sampling**. Trace replay
+        (:meth:`CompiledExperiment.replay_from_trace_file`) consumes
+        recorded sentinel values verbatim, so a permissive trace
+        replays cleanly even with ``strict=True``. See
+        ``docs/productive_failure_mode_audit.md`` §5.
 
         Returns a :class:`SimulationResult`; clonal records carry
         an integer ``clone_id`` field per row.
@@ -2103,11 +1385,25 @@ class Experiment:
         sequences satisfy the bundle by construction.
 
         Statically impossible contract configurations fail during
-        ``compile()`` with ``ValueError``. For runtime residue,
-        ``strict=False`` (default) lets a pass fall back to
-        unconstrained sampling when no admissible candidate exists;
-        ``strict=True`` raises
-        :class:`GenAIRR._engine.StrictSamplingError` instead.
+        ``compile()`` with ``ValueError``. For runtime residue
+        — i.e., empty admissible support emerging dynamically at
+        sample time — ``strict=False`` (default) lets a pass consume
+        the slot as its explicit no-op / sentinel; ``strict=True``
+        raises :class:`GenAIRR._engine.StrictSamplingError` instead.
+
+        Note the two error paths use **different exception classes**:
+        ``ValueError`` for compile-time preconditions,
+        ``StrictSamplingError`` (subclass of ``Exception``, NOT of
+        ``ValueError``) for runtime empty-support. A bare
+        ``except ValueError:`` will not catch the runtime case. See
+        ``docs/productive_failure_mode_audit.md`` §6.1.
+
+        ``strict`` only governs **fresh sampling**. Trace replay
+        (:meth:`CompiledExperiment.replay_from_trace_file`) consumes
+        recorded values verbatim; a permissive-recorded sentinel
+        trace replays cleanly even with ``strict=True``. To re-execute
+        a trace under strict-fresh semantics, call
+        ``simulator.run(seed=<original_seed>, strict=True)`` instead.
         """
         compiled = self.compile()
         if isinstance(compiled, CompiledClonalExperiment):
@@ -2208,379 +1504,3 @@ class Experiment:
     def __repr__(self) -> str:
         return f"<Experiment chain={self.chain_type} steps={self.step_count}>"
 
-
-class CompiledExperiment:
-    """A frozen ``Experiment`` ready for execution.
-
-    Holds the owning :class:`GenAIRR._engine.CompiledSimulator` and the
-    refdata it was built against. Contracts are captured at compile
-    time; ``run()`` only accepts execution parameters.
-    """
-
-    __slots__ = ("_simulator", "_refdata", "_steps", "_dataconfig", "_metadata")
-
-    def __init__(
-        self,
-        simulator: "_engine.CompiledSimulator",
-        refdata: "_engine.RefDataConfig",
-        steps: Sequence[Any] = (),
-        dataconfig: Optional[DataConfig] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        self._simulator = simulator
-        self._refdata = refdata
-        # Source steps stashed for `describe()`. The compiled simulator
-        # itself can render pass names but not biology — keeping the
-        # builder steps around is the cheapest way to give a faithful
-        # narrative back.
-        self._steps: Tuple[Any, ...] = tuple(steps)
-        self._dataconfig = dataconfig
-        self._metadata = dict(metadata) if metadata else {}
-
-    @property
-    def simulator(self) -> "_engine.CompiledSimulator":
-        """The owning Rust compiled simulator."""
-        return self._simulator
-
-    @property
-    def pass_plan(self) -> Tuple[str, ...]:
-        """Read-only pass-name summary of the compiled pipeline."""
-        return tuple(self._simulator.pass_names())
-
-    @property
-    def pass_names(self) -> Tuple[str, ...]:
-        """Stable names of the compiled pass sequence."""
-        return self.pass_plan
-
-    @property
-    def active_contracts(self) -> Tuple[str, ...]:
-        """Stable names of the contract bundle captured at compile time."""
-        return tuple(self._simulator.active_contracts())
-
-    @property
-    def refdata(self) -> "_engine.RefDataConfig":
-        """The :class:`GenAIRR._engine.RefDataConfig` the plan was built against."""
-        return self._refdata
-
-    def describe(self) -> str:
-        """Render a biology-style narrative of the compiled experiment.
-
-        Equivalent to ``Experiment.describe()`` but additionally
-        surfaces compile-time constraints (e.g. ``productive_only``)
-        attached via ``compile(respect=...)``. See
-        :meth:`Experiment.describe` for the output shape.
-        """
-        header = _describe_experiment_header(self._refdata, self._dataconfig)
-        if not self._steps:
-            body = ["  (no steps recorded)"]
-        else:
-            body = _describe_step_sequence(self._steps, self._refdata.chain_type)
-        lines = [header, *body]
-        contracts_line = _format_active_contracts(self.active_contracts)
-        if contracts_line:
-            lines.append(f"  Constraints: {contracts_line}")
-        if self._metadata:
-            stamps = ", ".join(f"{k}={v!r}" for k, v in self._metadata.items())
-            lines.append(f"  Metadata stamped on every record: {stamps}")
-        return "\n".join(lines)
-
-    def run(
-        self,
-        *,
-        n: int = 1,
-        seed: int = 0,
-        strict: bool = False,
-    ) -> List["_engine.Outcome"]:
-        """Run the compiled simulator ``n`` times.
-
-        Each iteration uses ``seed + i`` as the per-run seed so
-        consecutive batches stitch together by offsetting ``seed``.
-
-        ``strict`` controls the failure mode when filtering yields
-        no admissible candidate:
-        - ``False`` (default, **permissive**) — fall back to
-          unconstrained sampling and continue.
-        - ``True`` (**strict**) — raise
-          :class:`GenAIRR._engine.StrictSamplingError` carrying the
-          failing pass name, trace address, and failure reason.
-
-        Raises ``ValueError`` for ``n < 1``.
-        """
-        if n < 1:
-            raise ValueError(f"n must be at least 1, got {n}")
-        return self._simulator.run_batch(n, seed, strict=strict)
-
-    def run_records(
-        self,
-        *,
-        n: int = 1,
-        seed: int = 0,
-        strict: bool = False,
-        expose_provenance: bool = False,
-    ) -> "SimulationResult":
-        """Run the compiled simulator ``n`` times and return the batch as
-        a :class:`SimulationResult` ready for ``.to_csv`` /
-        ``.to_fasta`` / ``.to_dataframe`` export.
-
-        Same arguments as :meth:`run`. ``expose_provenance=True``
-        appends `truth_v_call/d_call/j_call` columns reflecting the
-        originally-sampled allele names.
-        """
-        from .result import SimulationResult
-
-        outcomes = self.run(n=n, seed=seed, strict=strict)
-        return SimulationResult.from_outcomes(
-            outcomes, self._refdata, expose_provenance=expose_provenance
-        )
-
-    def stream(
-        self,
-        *,
-        n: Optional[int] = None,
-        seed: int = 0,
-        strict: bool = False,
-    ) -> Iterator["_engine.Outcome"]:
-        """Lazily yield :class:`GenAIRR._engine.Outcome` objects one at
-        a time, without materialising the full batch in memory.
-
-        Useful for large simulations where holding ``n`` outcomes
-        would be wasteful — typical pattern is
-
-        >>> for outcome in compiled.stream(n=1_000_000, seed=0):
-        ...     write_to_disk(outcome)
-
-        ``n=None`` (the default) yields outcomes indefinitely; the
-        caller is expected to stop with ``itertools.islice``,
-        ``break``, or similar. ``n=N`` yields exactly ``N`` outcomes
-        with seeds ``seed`` … ``seed + N - 1``.
-
-        ``strict`` behaves as in :meth:`run`.
-
-        Raises ``ValueError`` when ``n`` is set to a value below 1.
-        """
-        if n is not None and n < 1:
-            raise ValueError(f"n must be at least 1, got {n}")
-        i = 0
-        while n is None or i < n:
-            yield self._simulator.run(seed + i, strict=strict)
-            i += 1
-
-    def stream_records(
-        self,
-        *,
-        n: Optional[int] = None,
-        seed: int = 0,
-        strict: bool = False,
-        id_prefix: str = "seq",
-    ) -> Iterator[Dict[str, Any]]:
-        """Lazily yield AIRR-format record dicts (one per outcome).
-
-        Same shape as the records inside a :class:`SimulationResult`,
-        but yielded one at a time so callers can write each record to
-        disk without retaining the prior ones. Pairs naturally with
-        :func:`csv.DictWriter` for streaming TSV/CSV output.
-
-        Each record's ``sequence_id`` is set to
-        ``f"{id_prefix}{i}"`` so streamed batches have unique
-        AIRR-style identifiers without buffering.
-        """
-        from ._airr_record import outcome_to_airr_record
-
-        for i, outcome in enumerate(
-            self.stream(n=n, seed=seed, strict=strict)
-        ):
-            yield outcome_to_airr_record(
-                outcome, self._refdata, sequence_id=f"{id_prefix}{i}"
-            )
-
-    def __repr__(self) -> str:
-        return (
-            f"<CompiledExperiment plan_len={len(self.pass_plan)} "
-            f"chain={self._refdata.chain_type} "
-            f"contracts={len(self.active_contracts)}>"
-        )
-
-
-class CompiledClonalExperiment:
-    """A compiled experiment with a clonal-fork structure.
-
-    Wraps two :class:`GenAIRR._engine.CompiledSimulator`s — the
-    pre-fork plan (run once per clone, typically the recombine
-    step) and the post-fork plan (run once per descendant inside
-    the clone, typically mutate / corrupt_*).
-
-    :meth:`run_records` orchestrates the parent → descendants loop
-    and tags every record with a ``clone_id`` integer so downstream
-    clonotype-clustering tools can be benchmarked against the true
-    clonal structure.
-    """
-
-    __slots__ = (
-        "_pre",
-        "_post",
-        "_fork",
-        "_refdata",
-        "_pre_steps",
-        "_post_steps",
-        "_dataconfig",
-        "_metadata",
-    )
-
-    def __init__(
-        self,
-        pre_simulator: "_engine.CompiledSimulator",
-        post_simulator: "_engine.CompiledSimulator",
-        fork: "_ClonalForkStep",
-        refdata: "_engine.RefDataConfig",
-        pre_steps: Sequence[Any] = (),
-        post_steps: Sequence[Any] = (),
-        dataconfig: Optional[DataConfig] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        self._pre = pre_simulator
-        self._post = post_simulator
-        self._fork = fork
-        self._refdata = refdata
-        self._pre_steps: Tuple[Any, ...] = tuple(pre_steps)
-        self._post_steps: Tuple[Any, ...] = tuple(post_steps)
-        self._dataconfig = dataconfig
-        self._metadata = dict(metadata) if metadata else {}
-
-    @property
-    def n_clones(self) -> int:
-        return self._fork.n_clones
-
-    @property
-    def size(self) -> int:
-        return self._fork.size
-
-    @property
-    def total_records(self) -> int:
-        """Number of records produced per :meth:`run_records` call."""
-        return self._fork.n_clones * self._fork.size
-
-    @property
-    def refdata(self) -> "_engine.RefDataConfig":
-        return self._refdata
-
-    def describe(self) -> str:
-        """Render a biology-style narrative of the compiled clonal
-        experiment, with an explicit divider at the fork. See
-        :meth:`Experiment.describe` for the basic shape."""
-        header = _describe_experiment_header(self._refdata, self._dataconfig)
-        lines = [header]
-        # pre-fork section (per-clone)
-        pre_lines = _describe_step_sequence(
-            self._pre_steps, self._refdata.chain_type, start_index=1
-        )
-        lines.extend(pre_lines)
-        # the fork itself
-        lines.append(f"  ── {_describe_clonal_fork_step(self._fork)} ──")
-        lines.append(
-            "      (steps above run once per clone; "
-            "steps below run once per descendant)"
-        )
-        # post-fork section (per-descendant)
-        post_start = sum(
-            1 for s in self._pre_steps if not isinstance(s, _ClonalForkStep)
-        ) + 1
-        post_lines = _describe_step_sequence(
-            self._post_steps, self._refdata.chain_type, start_index=post_start
-        )
-        lines.extend(post_lines)
-        if self._metadata:
-            stamps = ", ".join(f"{k}={v!r}" for k, v in self._metadata.items())
-            lines.append(f"  Metadata stamped on every record: {stamps}")
-        return "\n".join(lines)
-
-    def run(
-        self,
-        *,
-        n: Optional[int] = None,
-        seed: int = 0,
-        strict: bool = False,
-    ) -> List["_engine.Outcome"]:
-        """Run all clonal descendants and return their outcomes in
-        clone-major order (clone 0's descendants 0..size-1, clone 1's
-        descendants 0..size-1, …).
-
-        ``n`` is optional: when omitted the runtime expands
-        ``n_clones * size`` outcomes. Passing ``n`` is allowed only
-        when ``n == n_clones * size`` (otherwise raises).
-        """
-        total = self.total_records
-        if n is not None and n != total:
-            raise ValueError(
-                f"clonal pipeline produces n_clones * size = "
-                f"{self._fork.n_clones} * {self._fork.size} = {total} "
-                f"records; passing n={n} is inconsistent. Drop the n "
-                f"argument or pass n={total}."
-            )
-
-        outcomes: List["_engine.Outcome"] = []
-        for clone_idx in range(self._fork.n_clones):
-            clone_seed = int(seed) + clone_idx * 1_000_000
-            parent = self._pre.run(seed=clone_seed, strict=strict)
-            parent_sim = parent.final_simulation()
-            for desc_idx in range(self._fork.size):
-                desc_seed = clone_seed + 1 + desc_idx
-                desc = self._post.run_from(
-                    parent_sim, desc_seed, strict=strict
-                )
-                outcomes.append(desc)
-        return outcomes
-
-    def run_records(
-        self,
-        *,
-        n: Optional[int] = None,
-        seed: int = 0,
-        strict: bool = False,
-        expose_provenance: bool = False,
-    ) -> "SimulationResult":
-        """Same as :meth:`run` but returns a :class:`SimulationResult`
-        with each record dict carrying an integer ``clone_id`` field
-        in ``[0, n_clones)``. ``expose_provenance=True`` also
-        appends `truth_v_call` / `truth_d_call` / `truth_j_call`
-        columns from the originally-sampled allele names.
-        """
-        from ._airr_record import outcome_to_airr_record
-        from .result import SimulationResult, _inject_truth_columns
-
-        total = self.total_records
-        if n is not None and n != total:
-            raise ValueError(
-                f"clonal pipeline produces n_clones * size = "
-                f"{self._fork.n_clones} * {self._fork.size} = {total} "
-                f"records; passing n={n} is inconsistent. Drop the n "
-                f"argument or pass n={total}."
-            )
-
-        records: List[Dict[str, Any]] = []
-        outcomes: List["_engine.Outcome"] = []
-        for clone_idx in range(self._fork.n_clones):
-            clone_seed = int(seed) + clone_idx * 1_000_000
-            parent = self._pre.run(seed=clone_seed, strict=strict)
-            parent_sim = parent.final_simulation()
-            for desc_idx in range(self._fork.size):
-                desc_seed = clone_seed + 1 + desc_idx
-                desc = self._post.run_from(
-                    parent_sim, desc_seed, strict=strict
-                )
-                outcomes.append(desc)
-                rec = outcome_to_airr_record(
-                    desc,
-                    self._refdata,
-                    sequence_id=f"clone{clone_idx}_desc{desc_idx}",
-                )
-                rec["clone_id"] = clone_idx
-                if expose_provenance:
-                    _inject_truth_columns(desc, self._refdata, rec)
-                records.append(rec)
-        return SimulationResult(records, outcomes=outcomes)
-
-    def __repr__(self) -> str:
-        return (
-            f"<CompiledClonalExperiment n_clones={self._fork.n_clones} "
-            f"size={self._fork.size} chain={self._refdata.chain_type}>"
-        )

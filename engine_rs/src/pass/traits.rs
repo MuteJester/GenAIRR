@@ -1,3 +1,4 @@
+use crate::address::ChoiceAddressPattern;
 use crate::ir::Simulation;
 
 use super::{PassCompileFact, PassContext, PassEffect, PassError, PassRequirement};
@@ -21,6 +22,23 @@ pub trait Pass {
 
     /// Address specs for the random choices this pass intends to make.
     fn declared_choices(&self) -> Vec<String> {
+        self.declared_choice_patterns()
+            .into_iter()
+            .map(String::from)
+            .collect()
+    }
+
+    /// Typed address specs for the random choices this pass intends
+    /// to make.
+    ///
+    /// Built-in stochastic passes override this method and the
+    /// compile/report path projects these typed patterns to the
+    /// stable public string surface. Custom-address passes that do
+    /// not use the built-in address vocabulary may still override
+    /// [`Self::declared_choices`] directly, but they will not appear
+    /// in typed compile-report metadata until they also expose a
+    /// typed pattern.
+    fn declared_choice_patterns(&self) -> Vec<ChoiceAddressPattern> {
         Vec::new()
     }
 

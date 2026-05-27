@@ -6,9 +6,7 @@
 //! entry point used by both `CompiledSimulator::compile` and
 //! `OwnedCompiledSimulator::compile`.
 
-use super::error::{
-    invalid_parameter, plan_scoped_error, CompileError, CompileErrorKind,
-};
+use super::error::{invalid_parameter, plan_scoped_error, CompileError, CompileErrorKind};
 use super::feasibility_builder::{
     anchor_head_residues, anchor_tail_residues, build_feasibility_context, d_length_residues,
     optional_np_length_residues, required_np_length_residues, residues_admit_frame,
@@ -54,6 +52,18 @@ pub(super) struct CompileFactIndex {
     pub(super) trim_supports: HashMap<(Segment, TrimEnd), Located<IntegerSupport>>,
     pub(super) np_length_supports: HashMap<Segment, Located<IntegerSupport>>,
     pub(super) assigned_segments: HashSet<Segment>,
+}
+
+impl CompileFactIndex {
+    /// True iff the plan contains the recombination passes that
+    /// produce the V/J anchor + NP-length facts the
+    /// `productive_junction_frame` precondition check requires.
+    /// Post-fork clonal plans inherit a pre-recombined IR and won't
+    /// have any of these facts; we use this to skip preconditions
+    /// that can't be evaluated rather than fail compile.
+    pub(super) fn has_recombination_support(&self) -> bool {
+        !self.allele_supports.is_empty() || !self.np_length_supports.is_empty()
+    }
 }
 
 impl CompileFactIndex {
@@ -195,7 +205,19 @@ fn validate_contract_preconditions(
     };
 
     if contracts.contains_kind(ContractKind::ProductiveJunctionFrame) {
-        validate_productive_frame_preconditions(refdata, facts, errors);
+        // Only validate productive-frame preconditions when the plan
+        // actually contains the recombination passes that produce the
+        // anchor / NP-length facts the check consumes. Post-fork plans
+        // (the per-descendant half of a clonal fork) inherit the
+        // assembled IR from the parent and only run mutation /
+        // corruption passes, so those facts will be absent. The
+        // contract bundle itself stays active at runtime — every
+        // substitution and indel still gets contract-filtered against
+        // the productive shape — but the build-time precondition
+        // can't be evaluated without recombination support.
+        if facts.has_recombination_support() {
+            validate_productive_frame_preconditions(refdata, facts, errors);
+        }
     }
 }
 
@@ -275,7 +297,11 @@ pub(super) fn analyze_plan(
 
     for (index, pass) in plan.passes().iter().enumerate() {
         let name = pass.name().to_string();
-        let choices = pass.declared_choices();
+        let choices: Vec<String> = pass
+            .declared_choice_patterns()
+            .into_iter()
+            .map(String::from)
+            .collect();
         let requirements = pass.requirements();
         let effects = pass.effects();
         let compile_facts = pass.compile_facts();

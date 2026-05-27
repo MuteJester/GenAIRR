@@ -92,5 +92,29 @@ pub struct AirrRecord {
     pub n_pcr_errors: i64,
     pub n_quality_errors: i64,
     pub n_indels: i64,
+    /// Per-segment indel counters: the count of `IndelInserted` +
+    /// `IndelDeleted` events emitted by the `corrupt.indel` pass
+    /// whose `segment` attributes the event to V / D / J.
+    /// Insertions attribute via [`insertion_segment`] (region-
+    /// containment with end-of-region falling to the following
+    /// region); deletions attribute to the deleted nucleotide's
+    /// own segment. Events landing in NP1 / NP2 are excluded from
+    /// these counters but still contribute to `n_indels`. See
+    /// [`docs/indel_provenance_audit.md`](../../../docs/indel_provenance_audit.md)
+    /// §6.2.
+    pub n_v_indels: i64,
+    pub n_d_indels: i64,
+    pub n_j_indels: i64,
+    /// Number of bases removed from the 5' end of the assembled
+    /// sequence by the observation-stage `EndLossPass` (the same
+    /// engine pass that backs `Experiment.primer_trim_5prime`).
+    /// Distinct from `v_trim_5`, which is the recombination-stage
+    /// exonuclease trim — see
+    /// [`docs/primer_trim_end_loss_audit.md`](../../../docs/primer_trim_end_loss_audit.md)
+    /// §6.1. Defaults to `0` when no end-loss pass ran.
+    pub end_loss_5_length: i64,
+    /// Number of bases removed from the 3' end. Mirror of
+    /// `end_loss_5_length`.
+    pub end_loss_3_length: i64,
     pub is_contaminant: bool,
 }

@@ -3,7 +3,6 @@ use crate::ir::{flag, NucHandle, Nucleotide, Region, Simulation, SimulationBuild
 use crate::pass::{PassContext, PassError};
 use crate::trace::ChoiceValue;
 
-
 use super::GenerateNPPass;
 
 impl GenerateNPPass {
@@ -14,7 +13,19 @@ impl GenerateNPPass {
         strict: bool,
     ) -> Result<Simulation, PassError> {
         let address = self.length_address();
-        let length = self.sample_length(sim, ctx, address, strict)?;
+        // Trace-injected replay (length only — base draws still go
+        // through the RNG path in this tier). Consume the recorded
+        // length from the cursor; the downstream validation +
+        // assertion path runs unchanged, so bad recorded values
+        // still surface as `InvalidDistributionOutput` rather than
+        // corrupting the IR.
+        let length = if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
+            cursor
+                .expect_int(self.length_choice_address())
+                .map_err(|reason| PassError::replay(self.pass_name(), reason))?
+        } else {
+            self.sample_length(sim, ctx, address, strict)?
+        };
         if strict && length < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.pass_name(),
@@ -43,7 +54,8 @@ impl GenerateNPPass {
             address,
             length
         );
-        ctx.trace.record(address, ChoiceValue::Int(length));
+        ctx.trace
+            .record_choice(self.length_choice_address(), ChoiceValue::Int(length));
 
         let length = length as u32;
         let region_start = NucHandle::new(sim.pool.len() as u32);
@@ -74,8 +86,21 @@ impl GenerateNPPass {
             builder.attach_admit_mask_observer(state, self.np_segment);
         }
 
+        // Attach an event-log observer to the base-push builder
+        // when a caller-supplied sink is present, so each NP
+        // `push_nucleotide` fires a `BasePushed` event into the
+        // pass's `EventRecord`. Drained right before the seal
+        // below (which consumes the builder).
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+
         for i in 0..length {
-            let base_address = format!("{}[{}]", self.bases_prefix(), i);
+            let base_choice_address = crate::address::ChoiceAddress::NpBase {
+                segment: self.typed_np_segment(),
+                index: i,
+            };
+            let base_address = base_choice_address.to_string();
             // Pull the current admit mask BEFORE sampling so the
             // sampler can route through the fast path. The mask
             // reflects every previously-committed NP byte (via
@@ -91,18 +116,43 @@ impl GenerateNPPass {
                 junction_stop_state.as_ref(),
                 admit_mask,
             )?;
-            ctx.trace.record(base_address, ChoiceValue::Base(base));
+            ctx.trace
+                .record_choice(base_choice_address, ChoiceValue::Base(base));
             builder.push_nucleotide(Nucleotide::synthetic(base, self.np_segment, flag::N_NUC));
         }
 
+        // Drain the per-push events into the caller-supplied sink
+        // before sealing (which consumes the builder).
+        if ctx.event_log_sink.is_some() {
+            let captured = builder.seal_event_log_observer();
+            if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+                sink.extend(captured);
+            }
+        }
         let current = builder.seal();
 
         let region_end = NucHandle::new(current.pool.len() as u32);
         // Region carries no codon-rail data; the pool is the
         // authoritative source. Callers that need translation call
         // `crate::ir::compute_codon_rail(&region, &pool)` on demand.
-        let region = Region::new(self.np_segment, region_start, region_end)
-            .with_frame_phase(frame_phase);
-        Ok(current.with_region_added(region))
+        let region =
+            Region::new(self.np_segment, region_start, region_end).with_frame_phase(frame_phase);
+        // Route the region append through a fresh builder so the
+        // `RegionAdded` event flows to any attached sink. The
+        // base-sampling builder above was already sealed; this
+        // second builder exists solely to broadcast the consequence.
+        //
+        // Forward the captured event into `ctx.event_log_sink` when
+        // the caller supplied one — same pass-level event-
+        // observability primitive used by `AssembleSegmentPass`.
+        let mut region_builder = SimulationBuilder::from_simulation(current);
+        if ctx.event_log_sink.is_some() {
+            region_builder.attach_event_log_observer();
+        }
+        region_builder.add_region(region);
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(region_builder.seal_event_log_observer());
+        }
+        Ok(region_builder.seal())
     }
 }

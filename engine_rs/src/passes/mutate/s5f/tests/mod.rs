@@ -2,8 +2,8 @@ use super::*;
 use crate::assignment::AlleleInstance;
 use crate::dist::EmpiricalLengthDist;
 use crate::ir::{NucHandle, Nucleotide, Region, Segment};
+use crate::pass::testing::PassRuntime;
 use crate::pass::PassPlan;
-    use crate::pass::testing::PassRuntime;
 use crate::refdata::{Allele, AlleleId, ChainType, RefDataConfig};
 use crate::s5f::{S5F_NUM_CONTEXTS, S5F_SUBSTITUTION_LEN};
 use crate::trace::ChoiceValue;
@@ -11,6 +11,7 @@ use crate::trace::ChoiceValue;
 mod constraints;
 mod core;
 mod provenance;
+mod replay;
 
 fn s5f_uniform_kernel() -> S5FKernel {
     S5FKernel::new(

@@ -22,8 +22,11 @@
 //! compile-time conversion via mean refdata length on the grounds
 //! that it "silently breaks for non-IGH and trimmed records."
 
+use crate::address::ChoiceAddress;
 use crate::dist::Distribution;
+use crate::pass::{PassContext, PassError};
 use crate::rng::Rng;
+use crate::trace::ChoiceValue;
 
 pub enum CountSource {
     /// Empirical / explicit count distribution. Sampled once per
@@ -58,6 +61,82 @@ impl CountSource {
     pub fn is_rate(&self) -> bool {
         matches!(self, Self::Rate(_))
     }
+}
+
+/// Sample a mutation count for a count-driven pass, validate it,
+/// and record it to the trace at `count_address`.
+///
+/// Shared prelude for the count-driven passes: uniform / S5F / PCR /
+/// quality / N-corrupt. Each pass continues with its own pool-length
+/// / zero-count short-circuit, transaction open, and per-step loop
+/// after this returns.
+///
+/// Behavior:
+/// - **Replay mode** (`ctx.replay_cursor.is_some()`): consumes the
+///   recorded `Int` at `count_address` from the cursor instead of
+///   drawing from `count_source`. The downstream validation path
+///   (strict-mode range checks, debug asserts, trace record) runs
+///   unchanged so a bad recorded count surfaces as
+///   `InvalidDistributionOutput` rather than corrupting the IR.
+/// - **Fresh-RNG mode** (`ctx.replay_cursor.is_none()`): draws
+///   `count_raw: i64` from `count_source` (`Rate` mode consults
+///   `pool_len`; `Distribution` mode ignores it).
+/// - **Strict mode**: returns `PassError::InvalidDistributionOutput`
+///   if `count_raw` is negative or exceeds `u32::MAX`.
+/// - **Permissive mode**: the same out-of-range values trip
+///   debug asserts (existing per-pass behavior).
+/// - Records `ChoiceValue::Int(count_raw)` at `count_address`.
+/// - Returns `count_raw as u32` on success.
+pub(crate) fn sample_validated_count(
+    count_source: &CountSource,
+    ctx: &mut PassContext,
+    pool_len: u32,
+    pass_name: &str,
+    count_address: ChoiceAddress,
+    strict: bool,
+) -> Result<u32, PassError> {
+    // Trace-injected replay (Tier 2): consume the recorded count
+    // from the cursor instead of drawing from `count_source`. The
+    // post-consume validation path is identical so bad recorded
+    // values still surface as `InvalidDistributionOutput`.
+    let count_raw = if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
+        cursor
+            .expect_int(count_address)
+            .map_err(|reason| PassError::replay(pass_name, reason))?
+    } else {
+        count_source.sample(ctx.rng, pool_len)
+    };
+    if strict && count_raw < 0 {
+        return Err(PassError::invalid_distribution_output(
+            pass_name,
+            count_address.to_string(),
+            count_raw,
+            "negative_count",
+        ));
+    }
+    if strict && count_raw > u32::MAX as i64 {
+        return Err(PassError::invalid_distribution_output(
+            pass_name,
+            count_address.to_string(),
+            count_raw,
+            "count_exceeds_u32",
+        ));
+    }
+    assert!(
+        count_raw >= 0,
+        "{}: count distribution returned negative {}",
+        pass_name,
+        count_raw
+    );
+    assert!(
+        count_raw <= u32::MAX as i64,
+        "{}: count distribution returned {} > u32::MAX",
+        pass_name,
+        count_raw
+    );
+    ctx.trace
+        .record_choice(count_address, ChoiceValue::Int(count_raw));
+    Ok(count_raw as u32)
 }
 
 /// Sample a `Poisson(lambda)`-distributed value using Knuth's
@@ -99,9 +178,7 @@ mod tests {
     use crate::dist::EmpiricalLengthDist;
 
     fn fixed(n: i64) -> CountSource {
-        CountSource::Distribution(Box::new(EmpiricalLengthDist::from_pairs(vec![
-            (n, 1.0),
-        ])))
+        CountSource::Distribution(Box::new(EmpiricalLengthDist::from_pairs(vec![(n, 1.0)])))
     }
 
     #[test]
@@ -159,5 +236,216 @@ mod tests {
     fn is_rate_discriminates_variants() {
         assert!(CountSource::Rate(0.05).is_rate());
         assert!(!fixed(8).is_rate());
+    }
+
+    // ── Trace-injected replay (Tier 2, count-only) ────────────────
+    //
+    // Direct unit tests of `sample_validated_count` so the count
+    // consume path is verified without relying on full-plan
+    // execution (the strict-positional cursor blocks count-pass
+    // e2e replay during staged migration when unmigrated indexed
+    // children come between the count and any earlier migrated
+    // record). Tests construct a `PassContext` with a cursor in
+    // isolation and assert:
+    //  1. Replay consumes the recorded count and bypasses the RNG.
+    //  2. Bad recorded counts still surface as
+    //     `InvalidDistributionOutput` — proving the shared
+    //     validation path runs.
+    //  3. Wrong-kind / exhausted cursors surface as
+    //     `PassError::Replay` with the expected `ReplayError`
+    //     reason.
+
+    use crate::pass::{PassContext, PassError};
+    use crate::replay::{ReplayError, TraceCursor};
+    use crate::trace::{ChoiceRecord, ChoiceValue, Trace};
+
+    fn run_with_replay(
+        records: Vec<ChoiceRecord>,
+        source: CountSource,
+        pool_len: u32,
+        addr: ChoiceAddress,
+        strict: bool,
+    ) -> Result<(u32, Trace, u64), PassError> {
+        // Use a deterministic seed so we can detect whether the
+        // helper drew from the RNG (it shouldn't, in replay mode).
+        let mut cursor = TraceCursor::from_owned(records);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0xc0ff_ee);
+        let result;
+        let rng_words_after;
+        {
+            let mut ctx = PassContext {
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: None,
+                contracts: None,
+                feasibility: None,
+                reference_index: None,
+                replay_cursor: Some(&mut cursor),
+                event_log_sink: None,
+            };
+            result = sample_validated_count(&source, &mut ctx, pool_len, "test.pass", addr, strict);
+        }
+        rng_words_after = rng.words_consumed();
+        result.map(|count| (count, trace, rng_words_after))
+    }
+
+    fn rec(addr: ChoiceAddress, value: ChoiceValue) -> ChoiceRecord {
+        ChoiceRecord::new(addr.to_string(), value)
+    }
+
+    #[test]
+    fn helper_replay_consumes_recorded_count() {
+        let addr = ChoiceAddress::MutateUniformCount;
+        // `fixed(99)` would draw 99 under RNG mode; the cursor
+        // overrides with 17. The returned count must be 17.
+        let (count, trace, rng_words) =
+            run_with_replay(vec![rec(addr, ChoiceValue::Int(17))], fixed(99), 0, addr, true)
+                .unwrap();
+        assert_eq!(count, 17);
+        // The helper still records to the output trace.
+        let rec = trace.find("mutate.uniform.count").unwrap();
+        assert_eq!(rec.value, ChoiceValue::Int(17));
+        // The RNG was not touched — replay bypassed `count_source.sample`.
+        assert_eq!(rng_words, 0);
+    }
+
+    #[test]
+    fn helper_replay_consumes_zero_count_record() {
+        let addr = ChoiceAddress::CorruptPcrCount;
+        let (count, _trace, rng_words) =
+            run_with_replay(vec![rec(addr, ChoiceValue::Int(0))], fixed(5), 0, addr, true)
+                .unwrap();
+        assert_eq!(count, 0);
+        assert_eq!(rng_words, 0);
+    }
+
+    #[test]
+    fn helper_replay_negative_recorded_count_surfaces_validation_error() {
+        // The invariant: replay consumes the recorded value, then
+        // runs the same validation path as fresh sampling. A
+        // recorded negative count must trip strict-mode
+        // `InvalidDistributionOutput`, not corrupt the engine.
+        let addr = ChoiceAddress::MutateS5fCount;
+        let err = run_with_replay(
+            vec![rec(addr, ChoiceValue::Int(-3))],
+            fixed(0),
+            0,
+            addr,
+            true,
+        )
+        .unwrap_err();
+        match err {
+            PassError::InvalidDistributionOutput { value, reason, .. } => {
+                assert_eq!(value, -3);
+                assert_eq!(reason, "negative_count");
+            }
+            other => panic!("expected InvalidDistributionOutput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn helper_replay_oversized_recorded_count_surfaces_validation_error() {
+        let addr = ChoiceAddress::CorruptQualityCount;
+        let too_big: i64 = (u32::MAX as i64) + 1;
+        let err = run_with_replay(
+            vec![rec(addr, ChoiceValue::Int(too_big))],
+            fixed(0),
+            0,
+            addr,
+            true,
+        )
+        .unwrap_err();
+        match err {
+            PassError::InvalidDistributionOutput { value, reason, .. } => {
+                assert_eq!(value, too_big);
+                assert_eq!(reason, "count_exceeds_u32");
+            }
+            other => panic!("expected InvalidDistributionOutput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn helper_replay_wrong_value_kind_surfaces_replay_error() {
+        // Cursor has Base instead of Int — kind mismatch.
+        let addr = ChoiceAddress::MutateUniformCount;
+        let err = run_with_replay(
+            vec![rec(addr, ChoiceValue::Base(b'A'))],
+            fixed(0),
+            0,
+            addr,
+            true,
+        )
+        .unwrap_err();
+        match err {
+            PassError::Replay { pass_name, reason } => {
+                assert_eq!(pass_name, "test.pass");
+                assert!(matches!(reason, ReplayError::ValueKindMismatch { .. }));
+            }
+            other => panic!("expected PassError::Replay, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn helper_replay_exhausted_cursor_surfaces_replay_error() {
+        let addr = ChoiceAddress::MutateUniformCount;
+        let err =
+            run_with_replay(Vec::new(), fixed(5), 0, addr, true).unwrap_err();
+        match err {
+            PassError::Replay { reason, .. } => {
+                assert!(matches!(reason, ReplayError::Exhausted { .. }));
+            }
+            other => panic!("expected PassError::Replay, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn helper_replay_address_mismatch_surfaces_replay_error() {
+        // Cursor has the wrong typed address for what the pass asks.
+        let cursor_addr = ChoiceAddress::CorruptPcrCount;
+        let expected = ChoiceAddress::MutateUniformCount;
+        let err = run_with_replay(
+            vec![rec(cursor_addr, ChoiceValue::Int(3))],
+            fixed(0),
+            0,
+            expected,
+            true,
+        )
+        .unwrap_err();
+        match err {
+            PassError::Replay { reason, .. } => {
+                assert!(matches!(reason, ReplayError::AddressMismatch { .. }));
+            }
+            other => panic!("expected PassError::Replay, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn helper_fresh_rng_path_still_works_when_cursor_absent() {
+        // Direct call without replay_cursor (parallel test path).
+        let addr = ChoiceAddress::MutateUniformCount;
+        let source = fixed(11);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0);
+        let count = {
+            let mut ctx = PassContext {
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: None,
+                contracts: None,
+                feasibility: None,
+                reference_index: None,
+                replay_cursor: None,
+                event_log_sink: None,
+            };
+            sample_validated_count(&source, &mut ctx, 0, "test.pass", addr, true).unwrap()
+        };
+        assert_eq!(count, 11);
+        assert_eq!(
+            trace.find("mutate.uniform.count").unwrap().value,
+            ChoiceValue::Int(11)
+        );
     }
 }

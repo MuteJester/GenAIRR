@@ -187,7 +187,9 @@ fn vdj_plan(
 fn run_vj(cfg: &RefDataConfig, plan: PassPlan) -> genairr_engine::pass::Outcome {
     let compiled = CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
-    compiled.run_one(common::DEFAULT_SEED).expect("plan should run")
+    compiled
+        .run_one(common::DEFAULT_SEED)
+        .expect("plan should run")
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -329,7 +331,9 @@ fn v_sequence_end_reflects_live_hypothesis_after_trim() {
     let plan = vj_plan(&cfg, v01, j01, 3, 0, 0, b'A');
     let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
-    let outcome = compiled.run_one(common::DEFAULT_SEED).expect("plan should run");
+    let outcome = compiled
+        .run_one(common::DEFAULT_SEED)
+        .expect("plan should run");
     let rec = build_airr_record(&outcome, &cfg, "trim-test");
     assert_eq!(rec.v_trim_3, 3, "trim should record 3");
     assert_eq!(
@@ -350,7 +354,9 @@ fn v_germline_end_shifts_inward_with_trim() {
     let plan = vj_plan(&cfg, v01, j01, 3, 0, 0, b'A');
     let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
-    let outcome = compiled.run_one(common::DEFAULT_SEED).expect("plan should run");
+    let outcome = compiled
+        .run_one(common::DEFAULT_SEED)
+        .expect("plan should run");
     let rec = build_airr_record(&outcome, &cfg, "trim-test");
     assert_eq!(
         rec.v_germline_end,
@@ -375,7 +381,9 @@ fn trimmed_5_prime_j_widens_j_call_vj_chain() {
     let plan = vj_plan(&cfg, v01, j01, 0, 3, 1, b'C');
     let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
-    let outcome = compiled.run_one(common::DEFAULT_SEED).expect("plan should run");
+    let outcome = compiled
+        .run_one(common::DEFAULT_SEED)
+        .expect("plan should run");
     let sim = outcome.final_simulation();
     let names = common::j_call_names(sim, &cfg);
     assert_eq!(
@@ -505,7 +513,9 @@ fn d_trim_both_sides_widens_d_call_vdj_chain() {
     let plan = vdj_plan(&cfg, v01, d01, j01, 0, 3, 3, 0, 0, b'A', 0, b'A');
     let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
-    let outcome = compiled.run_one(common::DEFAULT_SEED).expect("plan should run");
+    let outcome = compiled
+        .run_one(common::DEFAULT_SEED)
+        .expect("plan should run");
     let sim = outcome.final_simulation();
     let names = common::d_call_names(sim, &cfg);
     assert_eq!(
@@ -525,4 +535,3 @@ fn d_trim_both_sides_widens_d_call_vdj_chain() {
     assert_eq!(rec.d_germline_start, Some(3));
     assert_eq!(rec.d_germline_end, Some(6));
 }
-

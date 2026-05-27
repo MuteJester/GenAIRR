@@ -40,9 +40,21 @@ pub(super) fn projected_allele_id(
     // that's the genuine aligner-drift case the divergence narrative
     // captures.
     let truth_id = match segment {
-        Segment::V => sim.assignments.get(Segment::V).copied().map(|i| i.allele_id),
-        Segment::D => sim.assignments.get(Segment::D).copied().map(|i| i.allele_id),
-        Segment::J => sim.assignments.get(Segment::J).copied().map(|i| i.allele_id),
+        Segment::V => sim
+            .assignments
+            .get(Segment::V)
+            .copied()
+            .map(|i| i.allele_id),
+        Segment::D => sim
+            .assignments
+            .get(Segment::D)
+            .copied()
+            .map(|i| i.allele_id),
+        Segment::J => sim
+            .assignments
+            .get(Segment::J)
+            .copied()
+            .map(|i| i.allele_id),
         _ => None,
     };
     if let Some(call) = sim.segment_calls.get(segment) {
@@ -71,13 +83,8 @@ pub(super) fn projected_call_name(
     // `v_call.split(",")[0]` see the same allele that
     // `germline_alignment`, `v_identity`, and `v_cigar` are computed
     // against.
-    live_call_name(
-        refdata,
-        sim.segment_calls.get(segment),
-        segment,
-        origin_id,
-    )
-    .unwrap_or_else(|| lookup_name(refdata, segment, origin_id))
+    live_call_name(refdata, sim.segment_calls.get(segment), segment, origin_id)
+        .unwrap_or_else(|| lookup_name(refdata, segment, origin_id))
 }
 
 /// Figure out which V/D/J segment (if any) has an extension

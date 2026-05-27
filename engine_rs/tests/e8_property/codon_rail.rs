@@ -3,8 +3,8 @@ use super::common::{
     SEED_RANGE,
 };
 use genairr_engine::dist::{EmpiricalLengthDist, UniformBase};
-use genairr_engine::pass::PassPlan;
 use genairr_engine::pass::testing::PassRuntime;
+use genairr_engine::pass::PassPlan;
 use genairr_engine::passes::{
     ContaminantPass, IndelPass, PCRErrorPass, QualityErrorPass, S5FMutationPass,
     UniformMutationPass,

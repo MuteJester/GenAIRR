@@ -32,5 +32,20 @@ pub struct JunctionStopState {
     static_violation: Option<StaticViolation>,
 }
 
+impl JunctionStopState {
+    /// Empty state with no junction slots and no static violation —
+    /// only used by sibling-module unit tests that need a borrowable
+    /// `JunctionStopState` but never call into the query API. The
+    /// regular construction path is [`Self::build`].
+    #[cfg(test)]
+    pub(crate) fn empty_for_observer_tests() -> Self {
+        Self {
+            slots: Vec::new(),
+            fixed_bytes: Vec::new(),
+            static_violation: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

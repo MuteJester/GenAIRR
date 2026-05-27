@@ -8,7 +8,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::address;
+use crate::address::{ChoiceAddress, NpSegment};
 use crate::compiled::{CompiledSimulator, ExecutionPolicy};
 use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
 use crate::ir::{flag, Segment};
@@ -49,7 +49,11 @@ fn run_smoke_plan(seed: u64) -> PyOutcome {
     for i in 0..8 {
         plan.push(Box::new(EchoPass::new(b'A', i as u16, Segment::V)));
         plan.push(Box::new(SampleBasePass::new(
-            address::np_base(Segment::Np1, i).expect("NP1 base address"),
+            ChoiceAddress::NpBase {
+                segment: NpSegment::Np1,
+                index: i,
+            }
+            .to_string(),
             Box::new(UniformBase),
             Segment::Np1,
             flag::N_NUC,
@@ -207,8 +211,8 @@ fn run_vj_recombination(
 ///
 /// `strict` controls the failure semantics when filtering produces no
 /// admissible candidate:
-/// - ``False`` (default, **permissive**) — the pass falls back to
-///   unconstrained sampling and the run continues.
+/// - ``False`` (default, **permissive**) — the pass uses its explicit
+///   no-op / sentinel behavior and the run continues.
 /// - ``True`` (**strict**) — the pass raises
 ///   ``StrictSamplingError`` carrying ``(pass_name, address, reason)``
 ///   so the caller can react to or surface the failure.

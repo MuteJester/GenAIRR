@@ -2,6 +2,36 @@
 //!
 //! This crate implements the simulation architecture described in
 //! `.private/engine_v6_living_design_2026-05-05.md`.
+//!
+//! # Contributor-facing architecture
+//!
+//! Two companion docs at the repository root:
+//!
+//! - **`docs/engine_architecture.md`** — the architectural spine
+//!   (read once, refer back to when you need to justify a design
+//!   choice).
+//! - **`docs/adding_a_pass.md`** — copy-pasteable template,
+//!   required test patterns using
+//!   [`crate::passes::test_support`] helpers, and a per-mechanism
+//!   crib sheet of which existing pass to model the new one on
+//!   (read each time you start a new pass).
+//!
+//! The architecture doc codifies:
+//!
+//! - The seven engine invariants (contracts narrow support before
+//!   proposals; trace = choices; replay = validated proposal
+//!   consumption; simulation events = consequences; compile
+//!   effects = scheduling facts; live-call refresh follows events;
+//!   built-in mutating passes route through [`crate::ir::SimulationBuilder`]).
+//! - A six-step checklist for adding a new pass.
+//! - The anti-patterns CI lockdowns and policy-conformance tests
+//!   catch (direct `sim.with_*` in production passes, replay
+//!   force-apply, declaring an effect without emitting matching
+//!   events, etc.).
+//!
+//! The code enforces most rules — `boundary_lockdown`, the
+//! event-emission policy test, the divergence tests — but the doc
+//! teaches the right way before CI yells.
 
 use pyo3::prelude::*;
 
@@ -21,9 +51,11 @@ pub mod pass;
 pub mod passes;
 pub mod python;
 pub mod refdata;
+pub mod replay;
 pub mod rng;
 pub mod s5f;
 pub mod trace;
+pub mod trace_file;
 
 /// Crate version string. Used as a smoke-test target to confirm the
 /// Cargo → maturin → Python import chain is functional end to end.

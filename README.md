@@ -203,6 +203,32 @@ batch_b = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=100)
 
 ---
 
+## Validation posture
+
+GenAIRR's release readiness rests on five guardrails, each backed by
+an audit doc and a golden-test file. Every PR runs the full suite;
+every release additionally runs the golden trace compatibility
+fixtures so on-disk formats stay byte-stable.
+
+- **Productive validity** — junction-frame, no-stop, anchor-preserved bundle, with strict / permissive failure modes pinned per pass.
+- **Provenance correctness** — indels, end-loss, allele-call ambiguity, junction fields, and per-pass event ledger each have isolated-scenario tests.
+- **Reproducibility** — every audit slice includes trace-replay round-trips that reproduce sequence, AIRR coordinates, and per-pass event counts.
+- **Distribution invariants** — Monte-Carlo tests (±5σ) prove the constrained samplers draw from `natural_weight × admissibility`, with explicit negative controls against renormalization bugs.
+- **Performance budgets** — wall-time regression guards on seven representative workloads catch ~10× slowdowns before they ship.
+
+The navigable index — guarantees → audit docs → test files — lives in
+[`docs/validation_matrix.md`](docs/validation_matrix.md). Use it to
+locate the right test for a change you're making, or to scope a
+follow-up that touches an open drift item in any audit's §6.
+
+```bash
+make validate-fast      # correctness only (~60s)
+make validate-full      # + performance budgets (regression guard)
+make validate-release   # + golden trace compat + wheel build
+```
+
+---
+
 ## Compile once, run many times
 
 For a hot loop, `compile()` once and reuse the plan. Contracts (`respect=`) are baked into the compiled plan, so they only need to be passed once:
@@ -452,7 +478,10 @@ If GenAIRR is useful in your research, please cite:
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines. If you're adding a pass, a contract, or any code that mutates the simulation IR:
+
+- **Read first**: [docs/engine_architecture.md](docs/engine_architecture.md) — codifies the invariants (contracts constrain support, trace = choices, events = consequences, live-call refresh follows events) and lists the anti-patterns CI catches.
+- **Then copy from**: [docs/adding_a_pass.md](docs/adding_a_pass.md) — minimal pass template, three required test patterns with `passes::test_support` helpers, and a crib sheet of which existing pass to model the new one on.
 
 ## License
 

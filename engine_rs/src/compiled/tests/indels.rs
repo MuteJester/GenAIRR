@@ -33,8 +33,18 @@ impl Pass for DeleteAtPass {
     fn name(&self) -> &str {
         "test.delete_at"
     }
-    fn execute(&self, sim: &Simulation, _ctx: &mut crate::pass::PassContext) -> Simulation {
-        sim.with_indel_deleted(self.at)
+    fn execute(&self, sim: &Simulation, ctx: &mut crate::pass::PassContext) -> Simulation {
+        // Route through `SimulationBuilder::delete_indel` so the
+        // `IndelDeleted` event reaches `ctx.event_log_sink`.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+        builder.delete_indel(self.at);
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(builder.seal_event_log_observer());
+        }
+        builder.seal()
     }
     fn effects(&self) -> Vec<PassEffect> {
         vec![PassEffect::StructuralIndel]
@@ -62,13 +72,23 @@ impl Pass for InsertAtPass {
     fn name(&self) -> &str {
         "test.insert_at"
     }
-    fn execute(&self, sim: &Simulation, _ctx: &mut crate::pass::PassContext) -> Simulation {
+    fn execute(&self, sim: &Simulation, ctx: &mut crate::pass::PassContext) -> Simulation {
         let nuc = crate::ir::Nucleotide::synthetic(
             self.base,
             self.segment,
             crate::ir::flag::INDEL_INSERTED,
         );
-        sim.with_indel_inserted(self.at, nuc)
+        // Route through `SimulationBuilder::insert_indel` so the
+        // `IndelInserted` event reaches `ctx.event_log_sink`.
+        let mut builder = crate::ir::SimulationBuilder::from_simulation(sim.clone());
+        if ctx.event_log_sink.is_some() {
+            builder.attach_event_log_observer();
+        }
+        builder.insert_indel(self.at, nuc);
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(builder.seal_event_log_observer());
+        }
+        builder.seal()
     }
     fn effects(&self) -> Vec<PassEffect> {
         vec![PassEffect::StructuralIndel]
@@ -229,12 +249,8 @@ fn structural_indel_bumps_live_call_version() {
         .iter()
         .position(|n| n == "test.delete_at")
         .expect("plan must include test.delete_at");
-    let post_assemble_version = outcome.revisions[assemble_idx + 1]
-        .segment_calls
-        .version;
-    let post_indel_version = outcome.revisions[indel_idx + 1]
-        .segment_calls
-        .version;
+    let post_assemble_version = outcome.revisions[assemble_idx + 1].segment_calls.version;
+    let post_indel_version = outcome.revisions[indel_idx + 1].segment_calls.version;
     assert!(
         post_indel_version > post_assemble_version,
         "StructuralIndel must bump live-call version: \

@@ -79,9 +79,8 @@ fn run_compiled(
     plan: PassPlan,
     seed: u64,
 ) -> genairr_engine::airr_record::AirrRecord {
-    let compiled =
-        CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
-            .expect("plan should compile");
+    let compiled = CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
+        .expect("plan should compile");
     let outcome = compiled.run_one(seed).expect("plan should run");
     build_airr_record(&outcome, cfg, "proj")
 }
@@ -431,9 +430,8 @@ fn n_mutations_reflects_live_call_state_mutation_count() {
         Box::new(UniformBase),
     )));
 
-    let compiled =
-        CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-            .expect("plan should compile");
+    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+        .expect("plan should compile");
     let outcome = compiled.run_one(7).expect("plan should run");
     let rec = build_airr_record(&outcome, &cfg, "n_mut");
 

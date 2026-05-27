@@ -76,8 +76,15 @@ impl PassRuntime {
         refdata: Option<&RefDataConfig>,
         contracts: Option<&ContractSet>,
     ) -> Outcome {
-        Self::run(plan, initial, seed, refdata, contracts, ExecutionPolicy::Permissive)
-            .expect("PassRuntime::execute_with_context: permissive run should not return PassError")
+        Self::run(
+            plan,
+            initial,
+            seed,
+            refdata,
+            contracts,
+            ExecutionPolicy::Permissive,
+        )
+        .expect("PassRuntime::execute_with_context: permissive run should not return PassError")
     }
 
     /// Strict counterpart to [`Self::execute_with_context`]. Returns
@@ -89,7 +96,14 @@ impl PassRuntime {
         refdata: Option<&RefDataConfig>,
         contracts: Option<&ContractSet>,
     ) -> Result<Outcome, PassError> {
-        Self::run(plan, initial, seed, refdata, contracts, ExecutionPolicy::Strict)
+        Self::run(
+            plan,
+            initial,
+            seed,
+            refdata,
+            contracts,
+            ExecutionPolicy::Strict,
+        )
     }
 
     fn run(
@@ -113,6 +127,7 @@ impl PassRuntime {
             feasibility: None,
             reference_index: None,
             policy,
+            replay_records: None,
         };
         execute_transactional(inputs, initial, seed).map_err(|abort| abort.error)
     }

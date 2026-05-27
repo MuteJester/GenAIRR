@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "engine_version": "0.0.1",
+  "seed": 4242,
+  "pass_plan_signature": "sample_allele.v|sample_allele.j|trim.v_3|trim.j_5|assemble.v|generate_np.np1|assemble.j",
+  "refdata_signature": "chain=Vj;v=168;d=0;j=8;c=0",
+  "trace": {
+    "choices": [
+      {
+        "address": "sample_allele.v",
+        "value": {
+          "AlleleId": 141
+        }
+      },
+      {
+        "address": "sample_allele.j",
+        "value": {
+          "AlleleId": 2
+        }
+      },
+      {
+        "address": "trim.v_3",
+        "value": {
+          "Int": 1
+        }
+      },
+      {
+        "address": "trim.j_5",
+        "value": {
+          "Int": 1
+        }
+      },
+      {
+        "address": "np.np1.length",
+        "value": {
+          "Int": 2
+        }
+      },
+      {
+        "address": "np.np1.bases[0]",
+        "value": {
+          "Base": "T"
+        }
+      },
+      {
+        "address": "np.np1.bases[1]",
+        "value": {
+          "Base": "T"
+        }
+      }
+    ]
+  }
+}
