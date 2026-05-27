@@ -27,7 +27,7 @@ except _PackageNotFoundError:
 
 # The simulation entry point.
 from .experiment import CompiledExperiment, Experiment, dataconfig_to_refdata
-from .result import SimulationResult
+from .result import SimulationResult, ValidationReport
 
 # Engine types that users may need to construct or import directly.
 # Re-exported here so users don't have to reach into ``GenAIRR._engine``.
@@ -77,6 +77,7 @@ __all__ = [
     "Experiment",
     "CompiledExperiment",
     "SimulationResult",
+    "ValidationReport",
     "dataconfig_to_refdata",
     "productive",
     "StrictSamplingError",

@@ -330,3 +330,149 @@ fn walker_and_kernel_agree_on_synthetic_fixture() {
     let walker_tie = tie_set_ids_at_max_score(&walker_scores);
     assert_eq!(kernel_tie, walker_tie);
 }
+
+#[test]
+fn extension_narrows_tie_set_basics() {
+    use crate::live_call::scoring::extension_narrows_tie_set;
+    // No evidence yet — extensions can't narrow from zero.
+    assert!(!extension_narrows_tie_set(&[0, 0, 0], &[true, true, false]));
+
+    // Two alleles tied at 5; only one matches at the next byte.
+    // Strictly narrows: the matched one moves to 6, the missed one
+    // stays at 5 → new tie set is the matched-only allele.
+    assert!(extension_narrows_tie_set(&[5, 5, 3], &[true, false, false]));
+
+    // All current max-tied alleles match — extension would just
+    // shift the tie set up by 1, not narrow it.
+    assert!(!extension_narrows_tie_set(&[5, 5, 3], &[true, true, false]));
+
+    // No current max-tied allele matches — extension would widen
+    // (pre_max+1 unreachable from current ties).
+    assert!(!extension_narrows_tie_set(&[5, 5, 3], &[false, false, true]));
+}
+
+#[test]
+fn alleles_compatible_at_matches_per_allele_byte() {
+    use crate::live_call::scoring::alleles_compatible_at;
+    let alleles = vec![
+        allele("v1*01", b"AAACCCGGG"),
+        allele("v2*01", b"AAACTCGGG"),
+    ];
+    // ref_pos 4: v1='C', v2='T'. Observed 'C' matches v1 only.
+    assert_eq!(alleles_compatible_at(&alleles, 4, b'C'), vec![true, false]);
+    // Observed 'T' matches v2 only.
+    assert_eq!(alleles_compatible_at(&alleles, 4, b'T'), vec![false, true]);
+    // Observed 'N' wildcards both.
+    assert_eq!(alleles_compatible_at(&alleles, 4, b'N'), vec![true, true]);
+    // ref_pos past allele length: no match.
+    assert_eq!(alleles_compatible_at(&alleles, 100, b'A'), vec![false, false]);
+}
+
+#[test]
+fn extension_aware_oracle_narrows_tie_under_right_extension() {
+    //! V alleles tie on the structural region but differ at a
+    //! position that's trimmed off the 3' end. NP1 follows V with
+    //! a byte that matches one allele's trimmed-off position.
+    //! Under trim_3=1 the right extension recovers that byte's
+    //! evidence and narrows the tie.
+    use crate::ir::Region;
+    use crate::live_call::scoring::score_alleles_with_extensions;
+
+    // v1 has 'A' at pos 8, v2 has 'C' at pos 8. Both have 'T' at
+    // pos 9. Identical at positions 0-7.
+    let alleles = vec![
+        allele("v1*01", b"AAACCCGGAT"),
+        allele("v2*01", b"AAACCCGGCT"),
+    ];
+
+    // V structural region: 8 bytes at germline_pos 0..8 (trim_3=2
+    // → positions 8 and 9 trimmed). NP1 follows immediately, with
+    // its first byte = 'A' (which matches v1[8]='A' but not
+    // v2[8]='C').
+    let mut sim = Simulation::new();
+    for (i, &b) in b"AAACCCGG".iter().enumerate() {
+        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
+            b,
+            i as u16,
+            Segment::V,
+        ));
+        sim = next;
+    }
+    let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
+        b'A', 0, Segment::Np1,
+    ));
+    sim = next;
+    let v_region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(8));
+    let np_region = Region::new(Segment::Np1, NucHandle::new(8), NucHandle::new(9));
+    sim = sim.with_region_added(v_region.clone());
+    sim = sim.with_region_added(np_region);
+
+    // Without extension cap: both alleles tie at 8 (identical on
+    // structural positions 0..7).
+    let structural_only =
+        score_alleles_with_extensions(&sim, Segment::V, &alleles, &v_region, 0, 0);
+    assert_eq!(structural_only, vec![8, 8]);
+
+    // With trim_3=1: right extension steps 1 byte into NP1 at
+    // ref_pos=8. v1[8]='A' matches the observed 'A'; v2[8]='C'
+    // does not. Extension narrows the tie set → v1 to 9, v2 stays
+    // at 8.
+    let with_extension =
+        score_alleles_with_extensions(&sim, Segment::V, &alleles, &v_region, 0, 1);
+    assert_eq!(with_extension, vec![9, 8]);
+    let tie = tie_set_ids_at_max_score(&with_extension);
+    assert_eq!(tie, vec![AlleleId::new(0)]);
+}
+
+#[test]
+fn extension_aware_oracle_skips_extension_when_no_narrowing() {
+    //! When the NP byte matches BOTH alleles, the extension
+    //! doesn't narrow the tie set and the walker (per its
+    //! conservative policy) skips it. The oracle must do the same.
+    use crate::ir::Region;
+    use crate::live_call::scoring::score_alleles_with_extensions;
+
+    // v1[8] = v2[8] = 'A'. NP1 byte = 'A' matches both → no
+    // narrowing.
+    let alleles = vec![
+        allele("v1*01", b"AAACCCGGAT"),
+        allele("v2*01", b"GAACCCGGAT"),  // differs at pos 0 only
+    ];
+
+    let mut sim = Simulation::new();
+    for (i, &b) in b"AAACCCGG".iter().enumerate() {
+        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
+            b,
+            i as u16,
+            Segment::V,
+        ));
+        sim = next;
+    }
+    let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
+        b'A', 0, Segment::Np1,
+    ));
+    sim = next;
+    let v_region = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(8));
+    let np_region = Region::new(Segment::Np1, NucHandle::new(8), NucHandle::new(9));
+    sim = sim.with_region_added(v_region.clone());
+    sim = sim.with_region_added(np_region);
+
+    // v2[0]='G' differs from observed 'A' at structural pos 0 →
+    // v1 scores 8, v2 scores 7. Already not tied. Extension at
+    // ref_pos 8 would match v1 (A=A); v2 also matches (A=A) but
+    // v2 is not at max → not a narrowing concern.
+    //
+    // Pre-max = 8 (v1 only). matched at pos 8 = [v1, v2] (both A).
+    // Per the narrowing rule, the byte must:
+    //   - have at least one max-tied allele matching (v1: yes)
+    //   - have at least one max-tied allele NOT matching (no; v1
+    //     is the only max-tied and it matches)
+    // → no narrowing → extension skipped.
+    let scores =
+        score_alleles_with_extensions(&sim, Segment::V, &alleles, &v_region, 0, 1);
+    assert_eq!(
+        scores,
+        vec![8, 7],
+        "extension should be skipped because it doesn't narrow"
+    );
+}

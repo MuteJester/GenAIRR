@@ -12,7 +12,7 @@
 use crate::address::{ChoiceAddress, PrimeEnd, VdjSegment};
 use crate::ir::{Segment, SimulationEvent};
 use crate::live_call::scoring::{
-    allele_pool_for_segment, score_alleles_in_region, tie_set_ids_at_max_score,
+    allele_pool_for_segment, score_alleles_with_extensions, tie_set_ids_at_max_score,
 };
 use crate::pass::Outcome;
 use crate::refdata::RefDataConfig;
@@ -659,17 +659,18 @@ fn oracle_check_segment(
     if allele_pool.is_empty() {
         return;
     }
-    let truth_id = sim.assignments.get(segment).map(|i| i.allele_id);
+    let assignment = sim.assignments.get(segment);
+    let truth_id = assignment.map(|a| a.allele_id);
+    let trim_5_cap = assignment.map(|a| a.trim_5 as u32).unwrap_or(0);
+    let trim_3_cap = assignment.map(|a| a.trim_3 as u32).unwrap_or(0);
 
-    // Independent rescore via the shared scoring kernel — the same
-    // match semantics the walker uses (canonical A/C/G/T, N wildcard,
-    // lowercase = uppercase).
-    let scores = score_alleles_in_region(
-        sim.pool.as_slice(),
-        region.start.index(),
-        region.end.index(),
-        allele_pool,
-    );
+    // Independent rescore via the shared scoring kernel: structural
+    // region + NP-region extensions under the assigned allele's trim
+    // caps. Mirrors `live_call::walker::call_from_region` so the
+    // oracle and the walker agree on the tie-set under arbitrary
+    // trim.
+    let scores =
+        score_alleles_with_extensions(sim, segment, allele_pool, region, trim_5_cap, trim_3_cap);
     let tied_ids = tie_set_ids_at_max_score(&scores);
     if tied_ids.is_empty() {
         return; // No germline evidence; oracle abstains.

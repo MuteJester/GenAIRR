@@ -706,9 +706,22 @@ fn segment_region_overlaps_dirty(
     };
     let region_start = region.start.index();
     let region_end = region.end.index();
+    // Upper bound is INCLUSIVE: a dirty window whose start == region.end
+    // represents an IndelDeleted at exactly the boundary byte the
+    // deletion just shrunk out of the region. The pre-deletion position
+    // was inside the region; the dirty signal must trigger a refresh
+    // even though post-deletion the region.end equals the dirty site.
+    // (Strict `<` here was the bug behind the IGK J residual: end-loss
+    // 3' deletions at the J boundary silently slipped past the overlap
+    // check, leaving the stale pre-deletion live call committed.)
+    //
+    // Lower bound stays strict (`>`): a dirty window at position
+    // region.start - 1 represents a byte JUST BEFORE the region whose
+    // deletion shifts the whole region down without changing its
+    // content, so no refresh is needed.
     windows
         .iter()
-        .any(|w| w.start < region_end && w.end > region_start)
+        .any(|w| w.start <= region_end && w.end > region_start)
 }
 
 #[cfg(test)]

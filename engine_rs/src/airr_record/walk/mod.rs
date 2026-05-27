@@ -272,8 +272,55 @@ pub(super) fn walk_alignment_columns(
                             }
                             None => (ref_pos_proj, allele_byte_proj),
                         };
+                        // Extension-territory bounds: NP claims must
+                        // project to ref positions OUTSIDE both ends
+                        // of the structural region [trim_5, allele_len
+                        // - trim_3) AND inside [0, allele_len). Two
+                        // boundary failures the refreshed live-call +
+                        // indel + end-loss combinations can produce:
+                        //
+                        //   1. claim_in_structural: projected ref_pos
+                        //      falls inside the structural range. The
+                        //      structural walk WILL push an M op at
+                        //      that ref_pos, so letting the NP claim
+                        //      count it now would double-count one ref
+                        //      position (two M ops, one extend_ref_range
+                        //      growth) and break
+                        //      `germline_span == M + D`.
+                        //
+                        //   2. claim_past_allele: the override path
+                        //      (when ref_ranges[claim_idx] is Some)
+                        //      uses `e` as the next ref_pos. `e` can
+                        //      step past the allele's last byte; the
+                        //      byte falls back to `b'N'` but the M op
+                        //      still fires, claiming a ref position
+                        //      the allele doesn't have and breaking
+                        //      `germline_alignment[a_s:a_e] ==
+                        //      ref[g_s:g_e]`.
+                        let (claim_in_structural, claim_past_allele) = {
+                            let claim_alid = projected_allele_id(sim, claim_seg);
+                            let claim_allele =
+                                claim_alid.and_then(|aid| refdata.get(claim_seg, aid));
+                            let claim_allele_len = claim_allele
+                                .map(|a| a.seq.len() as i64)
+                                .unwrap_or(0);
+                            let (claim_t5, claim_t3) = match claim_seg {
+                                Segment::V => (rec.v_trim_5, rec.v_trim_3),
+                                Segment::D => (rec.d_trim_5, rec.d_trim_3),
+                                Segment::J => (rec.j_trim_5, rec.j_trim_3),
+                                _ => (0, 0),
+                            };
+                            let structural_start = claim_t5;
+                            let structural_end = claim_allele_len - claim_t3;
+                            let rp = ref_pos as i64;
+                            let in_structural = rp >= structural_start && rp < structural_end;
+                            let past_allele = rp >= claim_allele_len;
+                            (in_structural, past_allele)
+                        };
                         if np_blocked[claim_idx]
                             || ref_pos_already_covered(&ref_ranges, claim_idx, ref_pos as i64)
+                            || claim_in_structural
+                            || claim_past_allele
                         {
                             np_blocked[claim_idx] = true;
                             galn.push(b'N');

@@ -14,6 +14,7 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from GenAIRR.result import SimulationResult, ValidationReport
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -311,3 +312,148 @@ def test_allele_oracle_agrees_with_reported_call_under_shm():
         assert oracle == [], (
             f"seed={seed}: allele oracle disagrees with projection {oracle}"
         )
+
+
+# ──────────────────────────────────────────────────────────────────
+# 7. Batch validation API — SimulationResult.validate_records
+# ──────────────────────────────────────────────────────────────────
+
+
+def test_batch_validate_clean_result_returns_ok_report():
+    """A clean batch produces an ok=True report with empty
+    failures and total count = N records."""
+    exp = (
+        _baseline_vj()
+        .mutate(rate=0.1)
+        .polymerase_indels(count=2, insertion_prob=0.5)
+        .productive_only()
+    )
+    refdata = exp._refdata
+    result = exp.run_records(n=50, seed=0)
+    report = result.validate_records(refdata)
+
+    assert isinstance(report, ValidationReport)
+    assert report.ok is True
+    assert bool(report) is True
+    assert report.count == 50
+    assert report.failures == []
+    assert len(report) == 0  # __len__ returns number of failures
+    assert report.summary() == {}
+
+
+def test_batch_validate_report_repr_distinguishes_pass_and_fail():
+    """The repr should make it obvious at a glance whether the
+    batch passed or failed."""
+    ok = ValidationReport(count=10, failures=[])
+    bad = ValidationReport(
+        count=10,
+        failures=[
+            {
+                "record_index": 3,
+                "sequence_id": "seq3",
+                "issues": [{"kind": "ProductiveMismatch", "details": {}}],
+            }
+        ],
+    )
+    assert "ok=True" in repr(ok)
+    assert "count=10" in repr(ok)
+    assert "ok=False" in repr(bad)
+    assert "failures=1" in repr(bad)
+    # Truthy/falsy interplay — assert report works as a CI guard.
+    assert ok
+    assert not bad
+
+
+def test_batch_validate_summary_buckets_issue_kinds_across_failures():
+    """`.summary()` returns a histogram of issue kinds across the
+    whole batch. Useful for the typical 'what went wrong overall'
+    glance in CI logs."""
+    report = ValidationReport(
+        count=3,
+        failures=[
+            {
+                "record_index": 0,
+                "sequence_id": "seq0",
+                "issues": [
+                    {"kind": "ProductiveMismatch"},
+                    {"kind": "JunctionLengthMismatch"},
+                ],
+            },
+            {
+                "record_index": 2,
+                "sequence_id": "seq2",
+                "issues": [{"kind": "ProductiveMismatch"}],
+            },
+        ],
+    )
+    assert report.summary() == {
+        "ProductiveMismatch": 2,
+        "JunctionLengthMismatch": 1,
+    }
+
+
+def test_batch_validate_propagates_sequence_id_to_failures():
+    """Each failure carries the record's sequence_id so users can
+    cross-reference back to the original record without recomputing."""
+    # Build a result with custom-prefixed sequence ids.
+    exp = _baseline_vj()
+    refdata = exp._refdata
+    result = exp.run_records(n=5, seed=0)
+    report = result.validate_records(refdata)
+
+    # All clean, so no failures. But the report's count matches the
+    # batch size, and if we manually construct a failure it carries
+    # the sequence_id field.
+    assert report.count == 5
+    # Synthesize a failure with the record's actual sequence_id to
+    # confirm the field name is what we documented.
+    synthetic = {
+        "record_index": 0,
+        "sequence_id": result.records[0]["sequence_id"],
+        "issues": [{"kind": "ProductiveMismatch", "details": {}}],
+    }
+    fake_report = ValidationReport(count=5, failures=[synthetic])
+    assert "sequence_id" in fake_report.failures[0]
+    assert fake_report.failures[0]["sequence_id"] == result.records[0]["sequence_id"]
+
+
+def test_batch_validate_raises_when_outcomes_missing():
+    """`validate_records` requires the original Outcome objects.
+    A SimulationResult built from records only (e.g. loaded from
+    TSV) can't be validated — raises RuntimeError with a clear
+    message pointing at run_records."""
+    result_without_outcomes = SimulationResult(
+        records=[{"sequence_id": "seq0"}], outcomes=None
+    )
+    cfg = ge.RefDataConfig.vj()
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
+    cfg.add_j_allele("j1*01", "j1", b"TGGAAA", anchor=0)
+    with pytest.raises(RuntimeError, match="validate_records requires"):
+        result_without_outcomes.validate_records(cfg)
+
+
+def test_batch_validate_report_is_json_serializable():
+    """The report's `failures` list is JSON-serializable
+    end-to-end — useful for CI artifacts and dashboards."""
+    import json
+    report = ValidationReport(
+        count=2,
+        failures=[
+            {
+                "record_index": 0,
+                "sequence_id": "seq0",
+                "issues": [
+                    {
+                        "kind": "ProductiveMismatch",
+                        "reported": True,
+                        "expected": False,
+                        "details": {"reason": "out_of_frame"},
+                    }
+                ],
+            }
+        ],
+    )
+    blob = json.dumps(report.failures)
+    parsed = json.loads(blob)
+    assert parsed[0]["sequence_id"] == "seq0"
+    assert parsed[0]["issues"][0]["kind"] == "ProductiveMismatch"

@@ -178,6 +178,60 @@ def _inject_truth_columns(outcome: Any, refdata: Any, record: Dict[str, Any]) ->
     record["truth_j_call"] = _allele_name_or_empty(refdata, "J", sim.j_allele_id())
 
 
+class ValidationReport:
+    """Aggregate report from :meth:`SimulationResult.validate_records`.
+
+    Attributes:
+      ``count``    — total records checked.
+      ``failures`` — list of failing records, each as a dict with
+                     ``record_index``, ``sequence_id``, and ``issues``
+                     (the list of dicts returned by
+                     :meth:`Outcome.validate_record`).
+      ``ok``       — True iff every record passed (``failures`` is
+                     empty).
+
+    The report is truthy iff ``ok`` is True, so ``assert report``
+    works as a one-line CI guard.
+    """
+
+    __slots__ = ("count", "failures")
+
+    def __init__(self, count: int, failures: List[Dict[str, Any]]) -> None:
+        self.count = count
+        self.failures: List[Dict[str, Any]] = failures
+
+    @property
+    def ok(self) -> bool:
+        """True iff every record validated without issues."""
+        return not self.failures
+
+    def __bool__(self) -> bool:
+        return self.ok
+
+    def __len__(self) -> int:
+        """Number of failing records (not total). Use ``.count`` for
+        the total."""
+        return len(self.failures)
+
+    def __repr__(self) -> str:
+        if self.ok:
+            return f"<ValidationReport ok=True count={self.count}>"
+        return (
+            f"<ValidationReport ok=False count={self.count} "
+            f"failures={len(self.failures)}>"
+        )
+
+    def summary(self) -> Dict[str, int]:
+        """Histogram of issue kinds across all failures. Useful for
+        ``print(report.summary())`` to see what's wrong at a glance."""
+        counts: Dict[str, int] = {}
+        for failure in self.failures:
+            for issue in failure["issues"]:
+                kind = issue.get("kind", "Unknown")
+                counts[kind] = counts.get(kind, 0) + 1
+        return counts
+
+
 class SimulationResult:
     """List-like wrapper around a batch of AIRR records.
 
@@ -273,6 +327,52 @@ class SimulationResult:
 
     def __repr__(self) -> str:
         return f"<SimulationResult n={len(self._records)}>"
+
+    # ── validation ──────────────────────────────────────────────────
+
+    def validate_records(self, refdata: Any) -> "ValidationReport":
+        """Run the AIRR-record postcondition validator over every
+        record in this result. Returns a :class:`ValidationReport`.
+
+        Each record is validated against its original ``Outcome``
+        (which carries the trace, event ledger, and final
+        ``Simulation`` the validator needs). A record passes the
+        report when its outcome's
+        ``validate_record(refdata, sequence_id=...)`` returns an
+        empty issue list. Failures are collected with their
+        ``record_index``, ``sequence_id``, and the list of issue
+        dicts.
+
+        ``refdata`` must be the same :class:`RefDataConfig` the
+        outcomes were produced against; passing a different refdata
+        will misreport mismatches against an unrelated allele pool.
+
+        Raises ``RuntimeError`` when this result was built without
+        attached outcomes (e.g. loaded from a TSV); the validator
+        needs the engine state, not just the projected record.
+        """
+        if self._outcomes is None:
+            raise RuntimeError(
+                "validate_records requires the original Outcome objects "
+                "(with their trace + event ledger), but this "
+                "SimulationResult was built from records only (e.g. "
+                "loaded from TSV). Re-run the simulation with "
+                "Experiment.run_records() to get a result with attached "
+                "outcomes."
+            )
+        failures: List[Dict[str, Any]] = []
+        for i, (outcome, record) in enumerate(zip(self._outcomes, self._records)):
+            sequence_id = str(record.get("sequence_id", ""))
+            issues = outcome.validate_record(refdata, sequence_id=sequence_id)
+            if issues:
+                failures.append(
+                    {
+                        "record_index": i,
+                        "sequence_id": sequence_id,
+                        "issues": issues,
+                    }
+                )
+        return ValidationReport(count=len(self._outcomes), failures=failures)
 
     # ── exports ─────────────────────────────────────────────────────
 

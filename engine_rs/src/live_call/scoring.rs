@@ -35,7 +35,7 @@
 //!   on top of these primitives, not part of the scoring model.
 
 use super::bitset::AlleleBitSet;
-use crate::ir::{Nucleotide, Segment, Simulation};
+use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
 use crate::refdata::{Allele, AlleleId, RefDataConfig};
 
 /// Classification of a single observed byte.
@@ -179,6 +179,271 @@ pub fn allele_pool_for_segment<'a>(
         Segment::J => Some(refdata.j_pool.as_slice()),
         _ => None,
     }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// NP-extension-aware scoring (mirrors walker/extensions.rs)
+//
+// The live-call walker doesn't just score the structural V/D/J
+// region — it walks BACKWARDS into the preceding NP region (capped
+// by the assigned allele's `trim_5`) and FORWARDS into the
+// following NP region (capped by `trim_3`), counting matches against
+// each allele's reference at the extended ref positions. Each
+// extension step is gated by `extension_narrows_tie_set`: extend
+// only when the new byte strictly narrows the current max-score
+// tie set (so NP bytes can discriminate but never widen).
+//
+// The validator's allele-call oracle (C4) must match the walker
+// to avoid spurious tie-set mismatches under non-zero trim. Both
+// paths now share the rules below.
+// ──────────────────────────────────────────────────────────────────
+
+/// Returns a boolean mask (one entry per allele in `alleles`)
+/// indicating which alleles' reference byte at `ref_pos` matches
+/// the `observed` pool byte under the shared
+/// [`matches_observed`] semantics.
+pub fn alleles_compatible_at(alleles: &[Allele], ref_pos: u32, observed: u8) -> Vec<bool> {
+    alleles
+        .iter()
+        .map(|a| {
+            a.seq
+                .get(ref_pos as usize)
+                .map(|&ref_byte| matches_observed(observed, ref_byte))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+/// Mirror of `walker/extensions.rs::extension_narrows_tie_set`.
+///
+/// Returns `true` iff incrementing scores for the alleles in
+/// `matched` would strictly narrow the current max-score tie set.
+/// Three conditions must all hold:
+///
+/// 1. `pre_max > 0` — extensions don't operate from an empty
+///    evidence floor (the structural walk seeds the scores).
+/// 2. At least one allele tied at `pre_max` is in `matched` —
+///    so a new `pre_max + 1` plateau exists after the increment.
+/// 3. At least one allele tied at `pre_max` is NOT in `matched` —
+///    so the new plateau excludes them (strict narrowing).
+pub fn extension_narrows_tie_set(scores: &[u32], matched: &[bool]) -> bool {
+    let pre_max = scores.iter().copied().max().unwrap_or(0);
+    if pre_max == 0 {
+        return false;
+    }
+    let mut any_matched = false;
+    let mut any_missed = false;
+    for (i, &score) in scores.iter().enumerate() {
+        if score != pre_max {
+            continue;
+        }
+        if matched.get(i).copied().unwrap_or(false) {
+            any_matched = true;
+        } else {
+            any_missed = true;
+        }
+        if any_matched && any_missed {
+            return true;
+        }
+    }
+    false
+}
+
+/// Score every allele against a segment's structural region plus
+/// the walker's NP-region extensions. Mirrors
+/// `live_call::walker::call_from_region` (structural walk +
+/// `walk_left_extension` + `walk_right_extension`) but uses
+/// per-byte allele scans instead of the walker's inverted
+/// `ReferenceMatchIndex`. The per-allele match counts match the
+/// walker by construction (same match semantics via
+/// [`matches_observed`], same extension gating via
+/// [`extension_narrows_tie_set`], same trim caps).
+///
+/// Used by the validator's C4 allele-call oracle so the oracle
+/// agrees with the walker under arbitrary trim_5/trim_3 caps.
+///
+/// Returns the per-allele score vector. The caller selects the
+/// tie-set via [`tie_set_ids_at_max_score`].
+pub fn score_alleles_with_extensions(
+    sim: &Simulation,
+    segment: Segment,
+    alleles: &[Allele],
+    structural_region: &Region,
+    trim_5_cap: u32,
+    trim_3_cap: u32,
+) -> Vec<u32> {
+    let pool = sim.pool.as_slice();
+    let mut scores = vec![0u32; alleles.len()];
+
+    // ── Structural walk ─────────────────────────────────────────
+    // Iterate the structural region's pool bytes, score each allele
+    // against its reference at the byte's germline_pos. Indel-
+    // inserted bytes (germline_pos == None) carry no evidence and
+    // are skipped, matching walker.rs:72-74.
+    let mut ref_start: Option<u32> = None;
+    let mut next_ref_pos: Option<u32> = None;
+    for seq_pos in structural_region.start.index()..structural_region.end.index() {
+        let Some(nuc) = pool.get(seq_pos as usize) else {
+            break;
+        };
+        if nuc.segment != segment {
+            // walker.rs:64 returns unsupported_call here; for the
+            // validator's oracle we abort scoring (no tie set will
+            // be meaningful against a malformed region).
+            return scores;
+        }
+        let Some(ref_pos) = nuc.germline_pos.get().map(|p| p as u32) else {
+            continue;
+        };
+        // Backwards ref_pos motion is unsupported (walker.rs:81).
+        if let Some(expected) = next_ref_pos {
+            if ref_pos < expected {
+                return scores;
+            }
+        }
+        next_ref_pos = Some(ref_pos.saturating_add(1));
+        if ref_start.is_none() {
+            ref_start = Some(ref_pos);
+        }
+        // Per-position score increment via the shared kernel rules.
+        for (allele_idx, allele) in alleles.iter().enumerate() {
+            if let Some(&ref_byte) = allele.seq.get(ref_pos as usize) {
+                if matches_observed(nuc.base, ref_byte) {
+                    scores[allele_idx] += 1;
+                }
+            }
+        }
+    }
+
+    // No structural evidence (every byte was an indel-insert)
+    // means no ref window to extend from — return the zero scores.
+    let (Some(mut current_ref_start), Some(mut current_ref_end)) = (ref_start, next_ref_pos)
+    else {
+        return scores;
+    };
+    let mut current_seq_start = structural_region.start.index();
+    let mut current_seq_end = structural_region.end.index();
+
+    // ── Left extension ──────────────────────────────────────────
+    // Mirrors walker/extensions.rs::walk_left_extension. Look for an
+    // NP region whose end == current_seq_start; walk backwards
+    // through it (and into the previous V/D/J region in the overlap
+    // case), capped by trim_5_cap, extending only when the byte
+    // strictly narrows the current max-score tie set.
+    if let Some(np_region) = find_left_extension(sim, current_seq_start) {
+        // Lower bound: the start of the V/D/J region whose end
+        // touches np_region.start (overlap-into-neighbor case), or 0.
+        let lower_bound = sim
+            .sequence
+            .regions
+            .iter()
+            .find(|r| {
+                matches!(r.segment, Segment::V | Segment::D | Segment::J)
+                    && r.end == np_region.start
+            })
+            .map(|r| r.start.index())
+            .unwrap_or(0);
+
+        let mut steps_taken: u32 = 0;
+        for seq_pos in (lower_bound..np_region.end.index()).rev() {
+            if steps_taken >= trim_5_cap {
+                break;
+            }
+            if current_ref_start == 0 {
+                break;
+            }
+            let candidate_ref_pos = current_ref_start - 1;
+            let Some(nuc) = pool.get(seq_pos as usize) else {
+                break;
+            };
+            let matched = alleles_compatible_at(alleles, candidate_ref_pos, nuc.base);
+            if !matched.iter().any(|&m| m) {
+                break;
+            }
+            if !extension_narrows_tie_set(&scores, &matched) {
+                break;
+            }
+            for (idx, &m) in matched.iter().enumerate() {
+                if m {
+                    scores[idx] = scores[idx].saturating_add(1);
+                }
+            }
+            current_seq_start = seq_pos;
+            current_ref_start = candidate_ref_pos;
+            steps_taken = steps_taken.saturating_add(1);
+        }
+    }
+
+    // ── Right extension ─────────────────────────────────────────
+    // Mirrors walker/extensions.rs::walk_right_extension.
+    if let Some(np_region) = find_right_extension(sim, current_seq_end) {
+        let pool_len = pool.len() as u32;
+        let upper_bound = sim
+            .sequence
+            .regions
+            .iter()
+            .find(|r| {
+                matches!(r.segment, Segment::V | Segment::D | Segment::J)
+                    && r.start == np_region.end
+            })
+            .map(|r| r.end.index())
+            .unwrap_or(pool_len)
+            .min(pool_len);
+
+        let mut steps_taken: u32 = 0;
+        for seq_pos in np_region.start.index()..upper_bound {
+            if steps_taken >= trim_3_cap {
+                break;
+            }
+            let Some(nuc) = pool.get(seq_pos as usize) else {
+                break;
+            };
+            let matched = alleles_compatible_at(alleles, current_ref_end, nuc.base);
+            if !matched.iter().any(|&m| m) {
+                break;
+            }
+            if !extension_narrows_tie_set(&scores, &matched) {
+                break;
+            }
+            for (idx, &m) in matched.iter().enumerate() {
+                if m {
+                    scores[idx] = scores[idx].saturating_add(1);
+                }
+            }
+            current_seq_end = seq_pos.saturating_add(1);
+            current_ref_end = current_ref_end.saturating_add(1);
+            steps_taken = steps_taken.saturating_add(1);
+        }
+    }
+
+    let _ = (current_seq_start, current_seq_end, NucHandle::new(0));
+    scores
+}
+
+/// Find an NP region whose end touches `seq_start` (i.e. the NP is
+/// the immediate left neighbor of a structural region starting at
+/// `seq_start`).
+fn find_left_extension(sim: &Simulation, seq_start: u32) -> Option<Region> {
+    sim.sequence
+        .regions
+        .iter()
+        .find(|r| {
+            matches!(r.segment, Segment::Np1 | Segment::Np2) && r.end.index() == seq_start
+        })
+        .cloned()
+}
+
+/// Find an NP region whose start touches `seq_end` (i.e. the NP is
+/// the immediate right neighbor of a structural region ending at
+/// `seq_end`).
+fn find_right_extension(sim: &Simulation, seq_end: u32) -> Option<Region> {
+    sim.sequence
+        .regions
+        .iter()
+        .find(|r| {
+            matches!(r.segment, Segment::Np1 | Segment::Np2) && r.start.index() == seq_end
+        })
+        .cloned()
 }
 
 /// Convenience: rescore every allele in a segment's pool against
