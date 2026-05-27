@@ -18,10 +18,14 @@ mod projection;
 mod record;
 mod sequence;
 mod trace_fields;
+mod validate;
 mod walk;
 
 pub use builder::build_airr_record;
 pub use record::AirrRecord;
+pub use validate::{
+    validate_airr_record, AlleleOrderReason, ProductiveDecidedBy, RecordValidationIssue,
+};
 
 #[cfg(test)]
 mod tests;

@@ -119,6 +119,23 @@ impl PyOutcome {
         airr_record_to_pydict(py, &rec)
     }
 
+    /// Build the AIRR record and validate it against this outcome.
+    /// Returns a list of issue strings (each issue formatted with
+    /// `Debug`). Empty list means the record passed every check.
+    ///
+    /// See `docs/airr_record_validator.md` for the check catalogue.
+    #[pyo3(signature = (refdata, *, sequence_id = ""))]
+    fn validate_record(
+        &self,
+        refdata: &PyRefDataConfig,
+        sequence_id: &str,
+    ) -> PyResult<Vec<String>> {
+        use crate::airr_record::validate_airr_record;
+        let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
+        let issues = validate_airr_record(&rec, &self.inner, refdata.inner());
+        Ok(issues.into_iter().map(|i| format!("{:?}", i)).collect())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "<Outcome revisions={} passes={} trace_len={} events={}>",
