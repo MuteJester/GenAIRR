@@ -12,6 +12,7 @@ mod model;
 mod reference_index;
 mod refresh_hook;
 mod refresh_plan;
+pub(crate) mod scoring;
 mod walker;
 pub(crate) mod walker_observer;
 

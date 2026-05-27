@@ -349,12 +349,21 @@ enum ObservedBaseKind {
 }
 
 fn observed_base_kind(base: u8) -> Option<ObservedBaseKind> {
-    canonical_base_index(base)
-        .map(ObservedBaseKind::Canonical)
-        .or_else(|| (base == b'N' || base == b'n').then_some(ObservedBaseKind::Wildcard))
+    // Route through the shared scoring kernel: scoring::classify_base
+    // is the single source of truth for "what counts as canonical /
+    // wildcard / invalid". The inverted-index lookup just needs the
+    // 0..4 slot index for canonical bases.
+    match super::scoring::classify_base(base) {
+        super::scoring::BaseKind::Canonical(b) => canonical_base_index(b).map(ObservedBaseKind::Canonical),
+        super::scoring::BaseKind::Wildcard => Some(ObservedBaseKind::Wildcard),
+        super::scoring::BaseKind::Invalid => None,
+    }
 }
 
 fn canonical_base_index(base: u8) -> Option<usize> {
+    // Slot index for the inverted-index data structure (A=0..T=3).
+    // The "is this canonical" question is delegated to scoring::classify_base
+    // via observed_base_kind; this function is purely the slot lookup.
     match base.to_ascii_uppercase() {
         b'A' => Some(0),
         b'C' => Some(1),

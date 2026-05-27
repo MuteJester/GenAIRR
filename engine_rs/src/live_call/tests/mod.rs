@@ -4,6 +4,7 @@ use crate::refdata::{Allele, AlleleId};
 mod bitset;
 mod caller;
 mod reference_index;
+mod scoring;
 mod state;
 mod walker_observer_change_base;
 mod walker_observer_from_existing_region;

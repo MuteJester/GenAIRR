@@ -11,6 +11,9 @@
 
 use crate::address::{ChoiceAddress, PrimeEnd, VdjSegment};
 use crate::ir::{Segment, SimulationEvent};
+use crate::live_call::scoring::{
+    allele_pool_for_segment, score_alleles_in_region, tie_set_ids_at_max_score,
+};
 use crate::pass::Outcome;
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
@@ -642,58 +645,40 @@ fn oracle_check_segment(
     reported_call: &str,
     issues: &mut Vec<RecordValidationIssue>,
 ) {
-    let region = sim
+    let Some(region) = sim
         .sequence
         .regions
         .iter()
-        .find(|r| r.segment == segment);
-    let Some(region) = region else {
+        .find(|r| r.segment == segment)
+    else {
         return;
     };
-    let truth_id = sim.assignments.get(segment).map(|i| i.allele_id);
-
-    // Score every allele in the pool by per-position match against
-    // the region's pool bytes. Insertions (germline_pos == None) are
-    // skipped; otherwise the byte at germline_pos is compared to the
-    // allele's reference byte at that position.
-    let allele_pool: &[crate::refdata::Allele] = match segment {
-        Segment::V => refdata.v_pool.as_slice(),
-        Segment::D => refdata.d_pool.as_slice(),
-        Segment::J => refdata.j_pool.as_slice(),
-        _ => return,
+    let Some(allele_pool) = allele_pool_for_segment(refdata, segment) else {
+        return;
     };
     if allele_pool.is_empty() {
         return;
     }
-    let pool = sim.pool.as_slice();
-    let mut scores = vec![0u32; allele_pool.len()];
-    for nuc_idx in region.start.index()..region.end.index() {
-        let nuc = &pool[nuc_idx as usize];
-        let Some(gp) = nuc.germline_pos.get() else {
-            continue;
-        };
-        let observed = canonicalize(nuc.base);
-        for (allele_idx, allele) in allele_pool.iter().enumerate() {
-            if let Some(&ref_byte) = allele.seq.get(gp as usize) {
-                if matches_observed(observed, ref_byte) {
-                    scores[allele_idx] += 1;
-                }
-            }
-        }
-    }
+    let truth_id = sim.assignments.get(segment).map(|i| i.allele_id);
 
-    let max_score = *scores.iter().max().unwrap_or(&0);
-    if max_score == 0 {
-        return; // No germline evidence; live call returns unresolved.
+    // Independent rescore via the shared scoring kernel — the same
+    // match semantics the walker uses (canonical A/C/G/T, N wildcard,
+    // lowercase = uppercase).
+    let scores = score_alleles_in_region(
+        sim.pool.as_slice(),
+        region.start.index(),
+        region.end.index(),
+        allele_pool,
+    );
+    let tied_ids = tie_set_ids_at_max_score(&scores);
+    if tied_ids.is_empty() {
+        return; // No germline evidence; oracle abstains.
     }
-    let mut tied_indices: Vec<usize> = (0..allele_pool.len())
-        .filter(|&i| scores[i] == max_score)
-        .collect();
-    tied_indices.sort();
+    let tied_indices: Vec<usize> = tied_ids.iter().map(|id| id.as_usize()).collect();
 
     // Expected CSV order: truth allele first when in tie-set,
-    // otherwise ascending by allele id. AlleleId stores the pool
-    // index directly.
+    // otherwise ascending by allele id (already sorted by the
+    // kernel's iteration order).
     let truth_idx = truth_id
         .map(|id| id.as_usize())
         .filter(|&i| i < allele_pool.len());
@@ -755,25 +740,8 @@ fn oracle_check_segment(
     }
 }
 
-/// Per the allele-call audit §1.3: A/C/G/T case-insensitive →
-/// canonical; N/n → wildcard. Anything else → none (no match).
-fn canonicalize(b: u8) -> Option<u8> {
-    let upper = b.to_ascii_uppercase();
-    match upper {
-        b'A' | b'C' | b'G' | b'T' => Some(upper),
-        b'N' => Some(b'N'),
-        _ => None,
-    }
-}
-
-fn matches_observed(observed: Option<u8>, reference: u8) -> bool {
-    let r = reference.to_ascii_uppercase();
-    match observed {
-        Some(b'N') => matches!(r, b'A' | b'C' | b'G' | b'T'),
-        Some(o) => o == r,
-        None => false,
-    }
-}
+// Match semantics live in crate::live_call::scoring; this module
+// uses them via score_alleles_in_region / tie_set_ids_at_max_score.
 
 // ──────────────────────────────────────────────────────────────────
 // C5: Region / live-call structural invariants
