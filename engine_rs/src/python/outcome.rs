@@ -151,6 +151,44 @@ impl PyOutcome {
             .collect()
     }
 
+    /// Compare the cached `SegmentLiveCall` on the final simulation
+    /// against a fresh from-scratch recomputation, per V/D/J. Returns
+    /// a list of per-segment parity dicts:
+    ///
+    ///   {
+    ///     "segment": "V"/"D"/"J",
+    ///     "tie_set_matches": bool,
+    ///     "cached_tie_set": [allele_id, ...],
+    ///     "fresh_tie_set": [allele_id, ...],
+    ///     "cached_present": bool,
+    ///     "fresh_present": bool,
+    ///     "hypothesis_bounds_match": bool | None,
+    ///     "cached_hypothesis": {seq_start, seq_end, ref_start, ref_end} | None,
+    ///     "fresh_hypothesis": {seq_start, seq_end, ref_start, ref_end} | None,
+    ///   }
+    ///
+    /// Use this in tests as an explicit cache-equivalence guard:
+    ///
+    /// ```text
+    /// for p in outcome.check_live_call_cache_parity(refdata):
+    ///     assert p["tie_set_matches"], p
+    /// ```
+    ///
+    /// See `docs/airr_record_validator.md` §5.2 for the history.
+    fn check_live_call_cache_parity<'py>(
+        &self,
+        py: Python<'py>,
+        refdata: &PyRefDataConfig,
+    ) -> PyResult<Vec<Bound<'py, PyDict>>> {
+        use crate::live_call::check_segment_calls_parity;
+        let sim = self.inner.final_simulation();
+        let results = check_segment_calls_parity(sim, refdata.inner());
+        results
+            .into_iter()
+            .map(|r| parity_to_pydict(py, r))
+            .collect()
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "<Outcome revisions={} passes={} trace_len={} events={}>",
@@ -542,5 +580,61 @@ fn issue_to_pydict<'py>(
         }
     }
     d.set_item("details", details)?;
+    Ok(d)
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Live-call cache parity serialization
+// ──────────────────────────────────────────────────────────────────
+
+fn hypothesis_bounds_to_pydict<'py>(
+    py: Python<'py>,
+    bounds: crate::live_call::HypothesisBounds,
+) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new_bound(py);
+    d.set_item("seq_start", bounds.seq_start)?;
+    d.set_item("seq_end", bounds.seq_end)?;
+    d.set_item("ref_start", bounds.ref_start)?;
+    d.set_item("ref_end", bounds.ref_end)?;
+    Ok(d)
+}
+
+fn parity_to_pydict<'py>(
+    py: Python<'py>,
+    parity: crate::live_call::SegmentParity,
+) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new_bound(py);
+    d.set_item("segment", segment_str(parity.segment))?;
+    d.set_item("tie_set_matches", parity.tie_set_matches)?;
+    d.set_item("cached_present", parity.cached_present)?;
+    d.set_item("fresh_present", parity.fresh_present)?;
+    d.set_item(
+        "cached_tie_set",
+        parity
+            .cached_tie_set
+            .iter()
+            .map(|id| id.as_usize() as i64)
+            .collect::<Vec<i64>>(),
+    )?;
+    d.set_item(
+        "fresh_tie_set",
+        parity
+            .fresh_tie_set
+            .iter()
+            .map(|id| id.as_usize() as i64)
+            .collect::<Vec<i64>>(),
+    )?;
+    match parity.hypothesis_bounds_match {
+        Some(v) => d.set_item("hypothesis_bounds_match", v)?,
+        None => d.set_item("hypothesis_bounds_match", py.None())?,
+    }
+    match parity.cached_hypothesis {
+        Some(b) => d.set_item("cached_hypothesis", hypothesis_bounds_to_pydict(py, b)?)?,
+        None => d.set_item("cached_hypothesis", py.None())?,
+    }
+    match parity.fresh_hypothesis {
+        Some(b) => d.set_item("fresh_hypothesis", hypothesis_bounds_to_pydict(py, b)?)?,
+        None => d.set_item("fresh_hypothesis", py.None())?,
+    }
     Ok(d)
 }

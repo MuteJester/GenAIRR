@@ -459,7 +459,16 @@ impl<'idx> WalkerObserverState<'idx> {
         if at < self.seq_start {
             self.seq_start = self.seq_start.saturating_add(1);
             self.seq_end_seen = self.seq_end_seen.saturating_add(1);
-        } else if at <= self.seq_end_seen {
+        } else if at < self.seq_end_seen {
+            // Strict `<`: an insertion at `at == seq_end_seen` lands
+            // JUST PAST the walker's tracked range. `Sequence::with_indel_inserted`
+            // doesn't grow `region.end` in this case either (the
+            // `region.end > at` shift rule is strict), so the new
+            // byte stays outside the segment's region. Bumping
+            // `seq_end_seen` here would diverge the cached
+            // hypothesis from a from-scratch recompute by one
+            // position. (Caught by the live-call cache-parity
+            // harness on IGH J under indel events.)
             self.seq_end_seen = self.seq_end_seen.saturating_add(1);
         }
     }

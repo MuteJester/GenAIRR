@@ -6,6 +6,7 @@
 use crate::ir::Segment;
 
 mod bitset;
+mod cache_parity;
 mod call;
 pub(crate) mod dirty_signal_observer;
 mod model;
@@ -17,6 +18,7 @@ mod walker;
 pub(crate) mod walker_observer;
 
 pub use bitset::AlleleBitSet;
+pub use cache_parity::{check_segment_calls_parity, HypothesisBounds, SegmentParity};
 pub use call::{assembled_segment_live_call, with_assembled_segment_live_call};
 pub use model::{
     BoundarySummary, BoundaryValue, DirtyLog, DirtyReason, DirtyWindow, EvidenceScore,
