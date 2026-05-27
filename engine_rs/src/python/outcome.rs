@@ -4,7 +4,11 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::airr_record::{build_airr_record, AirrRecord};
+use crate::address::PrimeEnd;
+use crate::airr_record::{
+    build_airr_record, AirrRecord, AlleleOrderReason, ProductiveDecidedBy, RecordValidationIssue,
+};
+use crate::ir::Segment;
 use crate::pass::Outcome;
 
 use super::event::PyEventRecord;
@@ -120,20 +124,31 @@ impl PyOutcome {
     }
 
     /// Build the AIRR record and validate it against this outcome.
-    /// Returns a list of issue strings (each issue formatted with
-    /// `Debug`). Empty list means the record passed every check.
+    /// Returns a list of issue dicts. Empty list means the record
+    /// passed every check.
+    ///
+    /// Each issue is a dict with at least `kind` (stable identifier
+    /// matching the Rust enum variant name). Variants that involve
+    /// a segment include `segment` (`"V"`, `"D"`, or `"J"`). Variants
+    /// that compare engine-reported vs validator-recomputed values
+    /// include `reported` and `expected`. Variant-specific extras
+    /// land under `details`.
     ///
     /// See `docs/airr_record_validator.md` for the check catalogue.
     #[pyo3(signature = (refdata, *, sequence_id = ""))]
-    fn validate_record(
+    fn validate_record<'py>(
         &self,
+        py: Python<'py>,
         refdata: &PyRefDataConfig,
         sequence_id: &str,
-    ) -> PyResult<Vec<String>> {
+    ) -> PyResult<Vec<Bound<'py, PyDict>>> {
         use crate::airr_record::validate_airr_record;
         let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
         let issues = validate_airr_record(&rec, &self.inner, refdata.inner());
-        Ok(issues.into_iter().map(|i| format!("{:?}", i)).collect())
+        issues
+            .into_iter()
+            .map(|i| issue_to_pydict(py, i))
+            .collect()
     }
 
     fn __repr__(&self) -> String {
@@ -280,4 +295,252 @@ fn set_opt_bool(dict: &Bound<'_, PyDict>, key: &str, val: Option<bool>) -> PyRes
         Some(v) => dict.set_item(key, v),
         None => dict.set_item(key, dict.py().None()),
     }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Validator issue serialization
+//
+// Each `RecordValidationIssue` variant becomes a Python dict shaped
+// as `{ "kind": <PascalCase variant>, ... }`. Variants that involve
+// a segment include `segment` ("V" / "D" / "J"). Variants that
+// compare engine-reported vs validator-recomputed values surface
+// `reported` / `expected` at the top level. Variant-specific extras
+// land under `details`.
+// ──────────────────────────────────────────────────────────────────
+
+fn segment_str(s: Segment) -> &'static str {
+    match s {
+        Segment::V => "V",
+        Segment::Np1 => "NP1",
+        Segment::D => "D",
+        Segment::Np2 => "NP2",
+        Segment::J => "J",
+    }
+}
+
+fn prime_end_str(e: PrimeEnd) -> &'static str {
+    match e {
+        PrimeEnd::Five => "5'",
+        PrimeEnd::Three => "3'",
+    }
+}
+
+fn productive_reason_str(r: &ProductiveDecidedBy) -> &'static str {
+    match r {
+        ProductiveDecidedBy::OutOfFrame => "out_of_frame",
+        ProductiveDecidedBy::JunctionStopCodon => "junction_stop_codon",
+        ProductiveDecidedBy::VAnchorAaChanged => "v_anchor_aa_changed",
+        ProductiveDecidedBy::JAnchorAaChanged => "j_anchor_aa_changed",
+        ProductiveDecidedBy::InFrameAndAnchorsPreserved => "in_frame_and_anchors_preserved",
+    }
+}
+
+fn allele_order_reason_str(r: &AlleleOrderReason) -> &'static str {
+    match r {
+        AlleleOrderReason::TruthFirstIfInTieSet => "truth_first_if_in_tie_set",
+        AlleleOrderReason::AscendingAlleleIdOtherwise => "ascending_allele_id_otherwise",
+    }
+}
+
+fn issue_to_pydict<'py>(
+    py: Python<'py>,
+    issue: RecordValidationIssue,
+) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new_bound(py);
+    let details = PyDict::new_bound(py);
+    match issue {
+        // ── C1: Structural ───────────────────────────────────────
+        RecordValidationIssue::SequenceLengthMismatch {
+            reported,
+            actual_bytes,
+        } => {
+            d.set_item("kind", "SequenceLengthMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", actual_bytes as i64)?;
+        }
+        RecordValidationIssue::SequenceContentMismatch {
+            reported_prefix,
+            actual_prefix,
+        } => {
+            d.set_item("kind", "SequenceContentMismatch")?;
+            d.set_item("reported", reported_prefix)?;
+            d.set_item("expected", actual_prefix)?;
+        }
+        RecordValidationIssue::SegmentCoordinatesOutOfOrder { segment, start, end } => {
+            d.set_item("kind", "SegmentCoordinatesOutOfOrder")?;
+            d.set_item("segment", segment_str(segment))?;
+            details.set_item("start", start)?;
+            details.set_item("end", end)?;
+        }
+        RecordValidationIssue::GermlineCoordinatesOutOfOrder { segment, start, end } => {
+            d.set_item("kind", "GermlineCoordinatesOutOfOrder")?;
+            d.set_item("segment", segment_str(segment))?;
+            details.set_item("start", start)?;
+            details.set_item("end", end)?;
+        }
+        RecordValidationIssue::CigarReadsInvalid { segment, reason } => {
+            d.set_item("kind", "CigarReadsInvalid")?;
+            d.set_item("segment", segment_str(segment))?;
+            details.set_item("reason", reason)?;
+        }
+        RecordValidationIssue::CigarSpanMismatch {
+            segment,
+            cigar_query_span,
+            sequence_span,
+        } => {
+            d.set_item("kind", "CigarSpanMismatch")?;
+            d.set_item("segment", segment_str(segment))?;
+            d.set_item("reported", cigar_query_span as i64)?;
+            d.set_item("expected", sequence_span as i64)?;
+        }
+
+        // ── C2: Counter provenance ──────────────────────────────
+        RecordValidationIssue::NMutationsMismatch {
+            reported,
+            sim_count,
+        } => {
+            d.set_item("kind", "NMutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", sim_count)?;
+            details.set_item("source", "sim.mutation_count")?;
+        }
+        RecordValidationIssue::NPcrErrorsMismatch {
+            reported,
+            trace_count,
+        } => {
+            d.set_item("kind", "NPcrErrorsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", trace_count)?;
+            details.set_item("source", "trace:corrupt.pcr.count")?;
+        }
+        RecordValidationIssue::NQualityErrorsMismatch {
+            reported,
+            trace_count,
+        } => {
+            d.set_item("kind", "NQualityErrorsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", trace_count)?;
+            details.set_item("source", "trace:corrupt.quality.count")?;
+        }
+        RecordValidationIssue::NIndelsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NIndelsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("source", "events:corrupt.indel")?;
+        }
+        RecordValidationIssue::NSegmentIndelsMismatch {
+            segment,
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NSegmentIndelsMismatch")?;
+            d.set_item("segment", segment_str(segment))?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("source", "events:corrupt.indel")?;
+        }
+        RecordValidationIssue::EndLossLengthMismatch {
+            side,
+            reported,
+            trace_count,
+        } => {
+            d.set_item("kind", "EndLossLengthMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", trace_count)?;
+            details.set_item("side", prime_end_str(side))?;
+        }
+
+        // ── C3: Junction truth ──────────────────────────────────
+        RecordValidationIssue::JunctionLengthMismatch {
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "JunctionLengthMismatch")?;
+            set_opt_i64(&d, "reported", reported)?;
+            d.set_item("expected", recomputed as i64)?;
+        }
+        RecordValidationIssue::JunctionContentMismatch {
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "JunctionContentMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", recomputed)?;
+        }
+        RecordValidationIssue::JunctionAaMismatch {
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "JunctionAaMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", recomputed)?;
+        }
+        RecordValidationIssue::VjInFrameMismatch {
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "VjInFrameMismatch")?;
+            set_opt_bool(&d, "reported", reported)?;
+            d.set_item("expected", recomputed)?;
+        }
+        RecordValidationIssue::StopCodonMismatch {
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "StopCodonMismatch")?;
+            set_opt_bool(&d, "reported", reported)?;
+            d.set_item("expected", recomputed)?;
+        }
+        RecordValidationIssue::ProductiveMismatch {
+            reported,
+            recomputed,
+            reason,
+        } => {
+            d.set_item("kind", "ProductiveMismatch")?;
+            set_opt_bool(&d, "reported", reported)?;
+            d.set_item("expected", recomputed)?;
+            details.set_item("reason", productive_reason_str(&reason))?;
+        }
+
+        // ── C4: Allele oracle ───────────────────────────────────
+        RecordValidationIssue::AlleleCallTieSetMismatch {
+            segment,
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "AlleleCallTieSetMismatch")?;
+            d.set_item("segment", segment_str(segment))?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", recomputed)?;
+        }
+        RecordValidationIssue::AlleleCallOrderMismatch {
+            segment,
+            reported_first,
+            expected_first,
+            reason,
+        } => {
+            d.set_item("kind", "AlleleCallOrderMismatch")?;
+            d.set_item("segment", segment_str(segment))?;
+            d.set_item("reported", reported_first)?;
+            d.set_item("expected", expected_first)?;
+            details.set_item("reason", allele_order_reason_str(&reason))?;
+        }
+
+        // ── C5: Structural invariants ───────────────────────────
+        RecordValidationIssue::MultipleRegionsForSegment { segment, count } => {
+            d.set_item("kind", "MultipleRegionsForSegment")?;
+            d.set_item("segment", segment_str(segment))?;
+            details.set_item("count", count as i64)?;
+        }
+        RecordValidationIssue::MultipleHypothesesInLiveCall { segment, count } => {
+            d.set_item("kind", "MultipleHypothesesInLiveCall")?;
+            d.set_item("segment", segment_str(segment))?;
+            details.set_item("count", count as i64)?;
+        }
+    }
+    d.set_item("details", details)?;
+    Ok(d)
 }

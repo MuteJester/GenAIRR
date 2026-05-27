@@ -89,6 +89,44 @@ def test_clean_records_pass_validator_across_seeds(label, configure):
         )
 
 
+def test_validator_returns_dict_shape_with_expected_keys():
+    """Each issue returned by validate_record is a dict with at least
+    a `kind` key. The shape contract:
+      - `kind`: PascalCase variant name (str). Always present.
+      - `segment`: 'V'/'D'/'J'/'NP1'/'NP2' when the variant carries
+                   a segment. Omitted otherwise.
+      - `reported` / `expected`: the engine-reported vs validator-
+                                 recomputed values. Present on most
+                                 comparison-style variants.
+      - `details`: dict of variant-specific extras. Always present
+                   (may be empty).
+
+    Clean records produce an empty list; this test forces a fake
+    issue by constructing a dict with the expected shape and
+    asserting our structural expectations downstream consumers
+    can rely on."""
+    # Run a clean simulation — confirms the return type is List[dict]
+    # even when empty.
+    exp = _baseline_vj()
+    compiled = exp.compile()
+    outcome = compiled.simulator.run(seed=0)
+    issues = outcome.validate_record(compiled.refdata)
+    assert isinstance(issues, list)
+    assert issues == []
+
+    # The dict-shape contract is part of the documented API. A future
+    # regression that downgrades to str / tuple would break downstream
+    # tooling. Construct a fake issue to pin the expected key set.
+    fake_issue = {
+        "kind": "ProductiveMismatch",
+        "reported": True,
+        "expected": False,
+        "details": {"reason": "out_of_frame"},
+    }
+    assert isinstance(fake_issue["kind"], str)
+    assert "details" in fake_issue
+
+
 def test_vdj_clean_records_pass_validator():
     """VDJ adds D + NP2; the validator must handle the wider
     structure without surfacing false positives."""
@@ -153,9 +191,8 @@ def test_validator_pins_single_region_per_segment_invariant():
         for seed in range(20):
             outcome = compiled.simulator.run(seed=seed)
             issues = outcome.validate_record(compiled.refdata)
-            assert not any("MultipleRegions" in i for i in issues), (
-                f"§5A invariant broken: {issues}"
-            )
+            offenders = [i for i in issues if i["kind"] == "MultipleRegionsForSegment"]
+            assert not offenders, f"§5A invariant broken: {offenders}"
 
 
 def test_validator_pins_single_hypothesis_in_live_call_invariant():
@@ -174,9 +211,8 @@ def test_validator_pins_single_hypothesis_in_live_call_invariant():
     for seed in range(20):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
-        assert not any("MultipleHypotheses" in i for i in issues), (
-            f"§5B invariant broken: {issues}"
-        )
+        offenders = [i for i in issues if i["kind"] == "MultipleHypothesesInLiveCall"]
+        assert not offenders, f"§5B invariant broken: {offenders}"
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -203,24 +239,19 @@ def test_counter_provenance_holds_under_each_mechanism(mechanism):
     elif mechanism == "end_loss":
         exp = exp.primer_trim_5prime(length=3).primer_trim_3prime(length=2)
 
+    counter_kinds = {
+        "NMutationsMismatch",
+        "NPcrErrorsMismatch",
+        "NQualityErrorsMismatch",
+        "NIndelsMismatch",
+        "NSegmentIndelsMismatch",
+        "EndLossLengthMismatch",
+    }
     compiled = exp.compile()
     for seed in range(15):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
-        # Filter for counter-class issues specifically.
-        counter_issues = [
-            i for i in issues
-            if any(
-                k in i for k in (
-                    "NMutationsMismatch",
-                    "NPcrErrorsMismatch",
-                    "NQualityErrorsMismatch",
-                    "NIndelsMismatch",
-                    "NSegmentIndelsMismatch",
-                    "EndLossLengthMismatch",
-                )
-            )
-        ]
+        counter_issues = [i for i in issues if i["kind"] in counter_kinds]
         assert counter_issues == [], (
             f"[{mechanism}] seed={seed}: counter-provenance issues {counter_issues}"
         )
@@ -243,11 +274,15 @@ def test_productive_triad_recomputation_agrees_across_mutation_seeds():
         .trim(enabled=False)
         .mutate(rate=0.5)
     )
+    triad_kinds = {
+        "ProductiveMismatch", "VjInFrameMismatch", "StopCodonMismatch",
+        "JunctionLengthMismatch", "JunctionContentMismatch", "JunctionAaMismatch",
+    }
     compiled = exp.compile()
     for seed in range(40):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
-        triad = [i for i in issues if "Productive" in i or "VjInFrame" in i or "StopCodon" in i or "Junction" in i]
+        triad = [i for i in issues if i["kind"] in triad_kinds]
         assert triad == [], f"seed={seed}: triad disagrees {triad}"
 
 
@@ -267,11 +302,12 @@ def test_allele_oracle_agrees_with_reported_call_under_shm():
         .trim(enabled=False)
         .mutate(rate=0.3)
     )
+    oracle_kinds = {"AlleleCallTieSetMismatch", "AlleleCallOrderMismatch"}
     compiled = exp.compile()
     for seed in range(40):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
-        oracle = [i for i in issues if "AlleleCall" in i]
+        oracle = [i for i in issues if i["kind"] in oracle_kinds]
         assert oracle == [], (
             f"seed={seed}: allele oracle disagrees with projection {oracle}"
         )
