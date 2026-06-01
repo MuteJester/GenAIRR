@@ -35,6 +35,8 @@ fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId) {
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -42,6 +44,8 @@ fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId) {
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // D*01 starts with "TTT" — that's exactly the trimmed-off
     // V*01 suffix, so V right-extension into D produces overlap.
@@ -51,6 +55,8 @@ fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId) {
         seq: b"TTTACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // Stub J — never executed in fixtures that stop after
     // AssembleSegment(D).
@@ -60,6 +66,8 @@ fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId) {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     (cfg, v01, v02, d01)
 }
@@ -123,7 +131,7 @@ fn v_right_overlaps_d_when_d_starts_with_v_suffix() {
     let (cfg, v01, _v02, d01) = v_d_overlap_refdata();
     let plan = v_overlap_plan(&cfg, v01, d01, 3, 0);
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -190,6 +198,8 @@ fn v_right_does_not_overlap_when_d_does_not_match_v_suffix() {
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -197,6 +207,8 @@ fn v_right_does_not_overlap_when_d_does_not_match_v_suffix() {
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // D starts with C — neither V allele has C at ref pos 9
     // (V*01[9]=T, V*02[9]=A) → walker halts on first attempt.
@@ -206,6 +218,8 @@ fn v_right_does_not_overlap_when_d_does_not_match_v_suffix() {
         seq: b"CCCACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -213,10 +227,12 @@ fn v_right_does_not_overlap_when_d_does_not_match_v_suffix() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let plan = v_overlap_plan(&cfg, v01, d01, 3, 0);
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
     let v_call = outcome
@@ -262,6 +278,8 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -269,6 +287,8 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         seq: b"GGGACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "D*02".into(),
@@ -276,6 +296,8 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         seq: b"TTTACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -283,6 +305,8 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d01 = AlleleId::new(0);
 
@@ -308,7 +332,7 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::D)));
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -390,6 +414,8 @@ fn overlap_walker_halts_at_pool_end() {
         },
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -399,6 +425,8 @@ fn overlap_walker_halts_at_pool_end() {
         seq: vec![b'A'; 12],
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -406,6 +434,8 @@ fn overlap_walker_halts_at_pool_end() {
         seq: vec![b'T'; 5],
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -413,13 +443,15 @@ fn overlap_walker_halts_at_pool_end() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d01 = AlleleId::new(0);
     // Trim V_3 by 7 so V's structural region is just the first
     // 5 'A's (shared between both alleles → tie set has 2).
     let plan = v_overlap_plan(&cfg, v01, d01, 7, 0);
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
     let v_call = outcome
@@ -462,7 +494,7 @@ fn v_overlap_into_d_bumps_v_live_call_version() {
     let (cfg, v01, _v02, d01) = v_d_overlap_refdata();
     let plan = v_overlap_plan(&cfg, v01, d01, 3, 0);
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 

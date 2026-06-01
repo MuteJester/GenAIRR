@@ -51,6 +51,19 @@ pub(super) fn call_from_region(
     let mut wildcard_matches = 0u32;
     let mut ref_start: Option<u32> = None;
     let mut next_ref_pos: Option<u32> = None;
+    // Orientation drives the per-byte score comparison. Inverted-D
+    // bytes were emitted by `AssembleSegmentPass(D)` as
+    // `complement(allele[allele_pos])` while keeping
+    // `germline_pos = allele_pos`; the orientation-aware lookup in
+    // `compatible_alleles_at_oriented` pre-complements the observed
+    // byte so the inverted-index entry for the original allele
+    // coordinate matches. Defaults to `Forward` for un-assigned
+    // segments (unit fixtures).
+    let orientation = sim
+        .assignments
+        .get(segment)
+        .map(|a| a.orientation)
+        .unwrap_or(crate::assignment::SegmentOrientation::Forward);
 
     for seq_pos in region.start.index()..region.end.index() {
         let nucleotide = sim
@@ -73,18 +86,42 @@ pub(super) fn call_from_region(
             continue;
         };
 
+        // Orientation-aware motion check. Under `Forward` we
+        // expect monotonically increasing `germline_pos` (with
+        // gap-up allowed for deletions). Under `ReverseComplement`
+        // (inverted-D path) the assembly emits bytes in reverse
+        // allele order so `germline_pos` decreases monotonically;
+        // mirror the malformed-IR check by flipping the
+        // direction. `ref_start` / `next_ref_pos` then track the
+        // half-open allele-coord interval as `min` / `max + 1`
+        // regardless of iteration direction.
+        let is_rc = matches!(
+            orientation,
+            crate::assignment::SegmentOrientation::ReverseComplement
+        );
         match next_ref_pos {
-            // ref_pos may *jump forward* if a base was
-            // deleted between this position and the previous one.
-            // We allow gap-up but still reject backwards motion,
-            // which would indicate a genuinely-broken IR.
-            Some(expected) if ref_pos < expected => {
-                return unsupported_call(segment, allele_universe_len, evidence_version);
+            Some(expected) => {
+                let backwards = if is_rc {
+                    ref_pos > expected
+                } else {
+                    ref_pos < expected
+                };
+                if backwards {
+                    return unsupported_call(segment, allele_universe_len, evidence_version);
+                }
             }
-            Some(_) => {}
             None => ref_start = Some(ref_pos),
         }
-        next_ref_pos = Some(ref_pos.saturating_add(1));
+        if let Some(rs) = ref_start {
+            if ref_pos < rs {
+                ref_start = Some(ref_pos);
+            }
+        }
+        let new_end_candidate = ref_pos.saturating_add(1);
+        next_ref_pos = Some(match next_ref_pos {
+            Some(prev) => prev.max(new_end_candidate),
+            None => new_end_candidate,
+        });
 
         // Score increment: every allele whose germline at this ref_pos
         // matches the observed (current) base picks up +1. If no allele
@@ -92,7 +129,11 @@ pub(super) fn call_from_region(
         // and keep walking. We never abort the call on a single
         // unmatched position; only an explicitly malformed IR (above)
         // produces `unsupported_call`.
-        let Some(evidence) = segment_index.compatible_alleles_at(ref_pos as usize, nucleotide.base)
+        let Some(evidence) = segment_index.compatible_alleles_at_oriented(
+            ref_pos as usize,
+            nucleotide.base,
+            orientation,
+        )
         else {
             continue;
         };
@@ -141,6 +182,20 @@ pub(super) fn call_from_region(
     // mutate `scores`, `informative_matches`, `wildcard_matches`,
     // `ref_start`/`ref_end`, `seq_start`/`seq_end`, and `flags`
     // in-place via `ExtensionWalkState` borrows.
+    // Per audit §3, the trim caps swap by allele direction under
+    // RC. `walk_left_extension` always extends in pool-left order,
+    // but pool-left maps to allele-left under Forward and to
+    // allele-right under RC — so the cap that bounds the pool-left
+    // walk is `trim_5` under Forward and `trim_3` under RC. Same
+    // logic mirrored on the right side.
+    let (left_cap, right_cap) = if matches!(
+        orientation,
+        crate::assignment::SegmentOrientation::ReverseComplement
+    ) {
+        (trim_cap_3, trim_cap_5)
+    } else {
+        (trim_cap_5, trim_cap_3)
+    };
     if let Some(np_region) = left_extension {
         let mut state = ExtensionWalkState {
             scores: &mut scores,
@@ -151,8 +206,9 @@ pub(super) fn call_from_region(
             seq_start: &mut seq_start,
             seq_end: &mut seq_end,
             flags: &mut flags,
+            orientation,
         };
-        walk_left_extension(sim, segment_index, np_region, trim_cap_5, &mut state);
+        walk_left_extension(sim, segment_index, np_region, left_cap, &mut state);
     }
     if let Some(np_region) = right_extension {
         let mut state = ExtensionWalkState {
@@ -164,8 +220,9 @@ pub(super) fn call_from_region(
             seq_start: &mut seq_start,
             seq_end: &mut seq_end,
             flags: &mut flags,
+            orientation,
         };
-        walk_right_extension(sim, segment_index, np_region, trim_cap_3, &mut state);
+        walk_right_extension(sim, segment_index, np_region, right_cap, &mut state);
     }
 
     if wildcard_matches > 0 {

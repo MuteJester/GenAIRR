@@ -22,6 +22,8 @@ pub fn make_v_anchor_at(len: u32, anchor: Option<u16>) -> RefDataConfig {
         seq: vec![b'A'; len as usize],
         segment: Segment::V,
         anchor,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }
@@ -37,6 +39,8 @@ pub fn make_vj_for_frame_test(v_anchor: Option<u16>, j_anchor: Option<u16>) -> R
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: v_anchor,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -44,6 +48,8 @@ pub fn make_vj_for_frame_test(v_anchor: Option<u16>, j_anchor: Option<u16>) -> R
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: j_anchor,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }
@@ -119,6 +125,8 @@ pub fn make_vj_with_anchor_codons(
         seq: v_seq,
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -126,6 +134,8 @@ pub fn make_vj_with_anchor_codons(
         seq: j_seq,
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }

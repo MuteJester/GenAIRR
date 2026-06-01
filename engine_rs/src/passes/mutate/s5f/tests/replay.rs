@@ -289,6 +289,8 @@ fn anchor_locked_v_sim() -> (RefDataConfig, Simulation) {
         seq: b"TGGAAAAA".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_lock*01".into(),
@@ -296,6 +298,8 @@ fn anchor_locked_v_sim() -> (RefDataConfig, Simulation) {
         seq: b"TGG".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let mut sim = Simulation::new();
     for (i, &b) in b"TGGAAAAA".iter().enumerate() {

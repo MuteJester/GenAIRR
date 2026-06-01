@@ -19,6 +19,57 @@
 
 use crate::ir::Segment;
 
+mod validation;
+
+pub use validation::{
+    AnchorRule, RefDataIssueSeverity, RefDataValidationErrors, RefDataValidationIssue,
+    RefDataValidationMode, ReferenceAlphabet, ReferenceRules,
+};
+
+// ──────────────────────────────────────────────────────────────────
+// ReferenceIdentity — self-describing cartridge metadata
+// ──────────────────────────────────────────────────────────────────
+
+/// Self-describing identity for a reference cartridge.
+///
+/// Every field is `Option<String>` because identity is opt-in:
+/// synthetic test cartridges and user-built configs may carry none
+/// of it, while bundled `Experiment.on("human_igh")` data has all
+/// five fields populated by the loader. Identity participates in the
+/// content hash — two cartridges with identical catalogues + rules
+/// but different declared species/locus/source produce different
+/// hashes — so trace-replay integrity and debugging both benefit.
+///
+/// The fields are deliberately strings, not enums: an enum would
+/// pin biology into engine code, exactly the implicit-knowledge
+/// problem the cartridge architecture exists to eliminate. The
+/// Python loader's enum (`Species`, `ChainType`) is stringified at
+/// the bridge.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub struct ReferenceIdentity {
+    /// Common species label (e.g., `"Human"`, `"Mouse"`,
+    /// `"Cynomolgus Macaque"`). Free-form by design; whoever ships
+    /// the cartridge defines the vocabulary.
+    pub species: Option<String>,
+    /// AIRR locus prefix (`"IGH"`, `"IGK"`, `"IGL"`, `"TRA"`,
+    /// `"TRB"`, `"TRG"`, `"TRD"`). When set, the validator
+    /// cross-checks it against `chain_type` and feeds
+    /// [`ReferenceRules::for_locus`] when no explicit rules are
+    /// attached.
+    pub locus: Option<String>,
+    /// Reference catalogue family — `"IMGT"`, `"OGRDB"`,
+    /// `"AIRR-C"`, `"custom"`, etc. Useful for cross-source
+    /// provenance.
+    pub reference_set: Option<String>,
+    /// Human-readable cartridge name (e.g., `"human_igh"`,
+    /// `"my_custom_kappa"`). Often the path or alias the cartridge
+    /// was loaded from.
+    pub name: Option<String>,
+    /// Loader / file / user that produced this cartridge
+    /// (`"DataConfig"`, `"v6dat"`, `"user_python"`).
+    pub source: Option<String>,
+}
+
 // ──────────────────────────────────────────────────────────────────
 // AlleleId — typed u32 newtype, distinct from NucHandle / RegionHandle
 // ──────────────────────────────────────────────────────────────────
@@ -76,6 +127,46 @@ impl ChainType {
 // Allele — one germline allele entry
 // ──────────────────────────────────────────────────────────────────
 
+/// IMGT functional classification carried per-allele.
+///
+/// `Functional`, `Orf`, `Pseudogene` mirror IMGT's `F` / `ORF` / `P`
+/// labels. `Unknown` is the explicit "annotation present but value
+/// unrecognised" placeholder — distinct from absence.
+///
+/// At the `Allele` level the field is `Option<FunctionalStatus>`:
+/// - `None` means *the cartridge did not provide this annotation*,
+///   so curation policies that filter on status either keep or drop
+///   the entry according to their `keep_unannotated` flag.
+/// - `Some(Unknown)` means *the cartridge explicitly says unknown*,
+///   so the entry is filterable as Unknown — different semantics from
+///   no-annotation.
+///
+/// The enum is deliberately closed: bundled catalogues that ship with
+/// any future label (e.g. `[F]` shadowed) round-trip into `Unknown`,
+/// preserving the audit trail without leaking unknown labels into the
+/// engine.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum FunctionalStatus {
+    Functional,
+    Orf,
+    Pseudogene,
+    Unknown,
+}
+
+impl FunctionalStatus {
+    /// Stable lowercase identifier used in the content hash and
+    /// curation tag strings. Stable across engine versions so trace
+    /// files round-trip.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FunctionalStatus::Functional => "functional",
+            FunctionalStatus::Orf => "orf",
+            FunctionalStatus::Pseudogene => "pseudogene",
+            FunctionalStatus::Unknown => "unknown",
+        }
+    }
+}
+
 /// One germline allele in a reference data set.
 ///
 /// Immutable once constructed. Per-simulation state (which allele was
@@ -94,6 +185,15 @@ impl ChainType {
 /// - `name` is the canonical allele identifier (e.g.,
 ///   `"IGHV1-2*01"`). `gene` is the truncation to the gene level
 ///   (e.g., `"IGHV1-2"`).
+/// - `functional_status` is `Some(...)` when the cartridge carries
+///   an IMGT-style annotation, `None` when it doesn't. The
+///   distinction matters for `RefDataCurationPolicy::FunctionalStatus`
+///   which can opt to keep or drop unannotated entries.
+/// - `subregions` holds IMGT-derived V-region substructure
+///   (FWR1 / CDR1 / FWR2 / CDR2 / FWR3) when the cartridge carries
+///   gapped sequence data. Empty `Vec` for D / J / C alleles and
+///   for V alleles without gapped-sequence metadata. See
+///   `docs/v_region_substructure_audit.md`.
 #[derive(Clone, Debug)]
 pub struct Allele {
     pub name: String,
@@ -101,6 +201,63 @@ pub struct Allele {
     pub seq: Vec<u8>,
     pub segment: Segment,
     pub anchor: Option<u16>,
+    pub functional_status: Option<FunctionalStatus>,
+    pub subregions: Vec<VSubregion>,
+}
+
+/// Canonical V-region substructure labels (IMGT convention).
+///
+/// Discriminants are explicit so the type can be used as a
+/// `PerLabel`-style array index and serialised stably to wire
+/// formats. Order matches biological 5'→3' order on the V allele.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[repr(u8)]
+pub enum VSubregionLabel {
+    Fwr1 = 0,
+    Cdr1 = 1,
+    Fwr2 = 2,
+    Cdr2 = 3,
+    Fwr3 = 4,
+}
+
+impl VSubregionLabel {
+    /// Canonical string name (uppercase IMGT label). Used by the
+    /// content hash, PyO3 serialisation, and the manifest layer.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            VSubregionLabel::Fwr1 => "FWR1",
+            VSubregionLabel::Cdr1 => "CDR1",
+            VSubregionLabel::Fwr2 => "FWR2",
+            VSubregionLabel::Cdr2 => "CDR2",
+            VSubregionLabel::Fwr3 => "FWR3",
+        }
+    }
+
+    /// Parse a canonical string name back into the enum. Returns
+    /// `None` for unknown labels (case-sensitive — the bridge
+    /// normalises to uppercase before reaching this point).
+    pub fn from_str(label: &str) -> Option<Self> {
+        match label {
+            "FWR1" => Some(VSubregionLabel::Fwr1),
+            "CDR1" => Some(VSubregionLabel::Cdr1),
+            "FWR2" => Some(VSubregionLabel::Fwr2),
+            "CDR2" => Some(VSubregionLabel::Cdr2),
+            "FWR3" => Some(VSubregionLabel::Fwr3),
+            _ => None,
+        }
+    }
+}
+
+/// One V-region substructure annotation. Coordinates are ungapped,
+/// allele-relative, half-open. The `RefDataConfig::validate` pass
+/// rejects malformed annotations (start >= end, out-of-bounds end,
+/// overlap with another annotation on the same allele, duplicate
+/// label).
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub struct VSubregion {
+    pub label: VSubregionLabel,
+    pub start: u16,
+    pub end: u16,
 }
 
 impl Allele {
@@ -212,6 +369,16 @@ impl AllelePool {
 #[derive(Clone, Debug)]
 pub struct RefDataConfig {
     pub chain_type: ChainType,
+    /// Self-describing identity (species, locus, reference set,
+    /// name, source). Default is empty; the bundled-data loader and
+    /// user code populate it. See [`ReferenceIdentity`].
+    pub identity: ReferenceIdentity,
+    /// Programmable interpretation rules — anchor expectations,
+    /// allowed alphabet. Drives both the validator and downstream
+    /// projection layers. Default constructs a lenient set; bundled
+    /// loaders override with locus-appropriate rules. See
+    /// [`ReferenceRules`].
+    pub rules: ReferenceRules,
     pub v_pool: AllelePool,
     pub d_pool: AllelePool,
     pub j_pool: AllelePool,
@@ -220,10 +387,15 @@ pub struct RefDataConfig {
 
 impl RefDataConfig {
     /// Empty config for the given chain type. Use the builder /
-    /// direct field assignment to populate the pools.
+    /// direct field assignment to populate the pools. `identity`
+    /// initialises to [`ReferenceIdentity::default`] (all fields
+    /// `None`); `rules` initialises to [`ReferenceRules::default`]
+    /// (lenient alphabet, Cys V, W-or-F J).
     pub fn empty(chain_type: ChainType) -> Self {
         Self {
             chain_type,
+            identity: ReferenceIdentity::default(),
+            rules: ReferenceRules::default(),
             v_pool: AllelePool::new(),
             d_pool: AllelePool::new(),
             j_pool: AllelePool::new(),
@@ -255,6 +427,205 @@ impl RefDataConfig {
             Segment::Np1 | Segment::Np2 => None,
         }
     }
+
+    /// Return a curated copy of this cartridge under `policy`.
+    ///
+    /// Curation selects which alleles participate in simulation; it
+    /// does NOT fix structural problems. Specifically:
+    ///
+    /// - [`RefDataCurationPolicy::Raw`] is identity — returns a clone.
+    /// - [`RefDataCurationPolicy::FunctionalAnchorsOnly`] removes V
+    ///   and J alleles that fail the active [`AnchorRule`] for their
+    ///   segment: missing anchor, anchor codon out of bounds, or
+    ///   anchor codon translating to an amino acid outside
+    ///   `expected_amino_acids`. D and C pools pass through unchanged.
+    ///
+    /// Fatal structural issues (duplicate names, invalid sequence
+    /// bytes, `LocusChainTypeMismatch`) are NOT filtered — they
+    /// surface from [`Self::validate`] both before and after
+    /// curation. Curation must never silently hide corruption.
+    ///
+    /// Identity carries a curation tag: `identity.source` is
+    /// extended with `|curated:<policy>` (or set to that string if
+    /// previously empty). This guarantees a curated cartridge's
+    /// content hash differs from the raw one and that downstream
+    /// trace files attribute outputs to the right artefact.
+    ///
+    /// Curation can leave a required pool empty — strict compile
+    /// will then fail with `EmptyRequiredPool`, which is the
+    /// intended diagnostic (the catalogue couldn't support a
+    /// functional simulation under these rules).
+    pub fn curated(&self, policy: RefDataCurationPolicy) -> RefDataConfig {
+        let mut out = self.clone();
+        match &policy {
+            RefDataCurationPolicy::Raw => {
+                // No filtering, no provenance tag. A no-op pass; the
+                // user explicitly chose to bypass curation.
+                out
+            }
+            RefDataCurationPolicy::FunctionalAnchorsOnly => {
+                out.v_pool = filter_pool_by_anchor_rule(&self.v_pool, &self.rules.v_anchor);
+                out.j_pool = filter_pool_by_anchor_rule(&self.j_pool, &self.rules.j_anchor);
+                // D + C pools pass through unchanged.
+                tag_identity_source(&mut out.identity, &policy.tag());
+                out
+            }
+            RefDataCurationPolicy::FunctionalStatus { allowed, keep_unannotated } => {
+                out.v_pool =
+                    filter_pool_by_functional_status(&self.v_pool, allowed, *keep_unannotated);
+                out.d_pool =
+                    filter_pool_by_functional_status(&self.d_pool, allowed, *keep_unannotated);
+                out.j_pool =
+                    filter_pool_by_functional_status(&self.j_pool, allowed, *keep_unannotated);
+                // C pool passes through unchanged.
+                tag_identity_source(&mut out.identity, &policy.tag());
+                out
+            }
+        }
+    }
+}
+
+/// Curation policy — which subset of the catalogue participates in
+/// simulation.
+///
+/// Curation is distinct from validation: validation **describes** the
+/// catalogue, curation **selects** from it. A pseudogene-bearing
+/// catalogue can fail strict validation but pass a curated
+/// simulation; conversely, structural corruption (duplicate names,
+/// invalid bytes) is not fixable by curation and continues to fail
+/// validation either way.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum RefDataCurationPolicy {
+    /// Identity policy — keep every allele. Existing behaviour.
+    Raw,
+    /// Drop V/J alleles whose anchor doesn't satisfy the active
+    /// [`AnchorRule`]: missing anchor, anchor out of bounds, or
+    /// anchor codon AA outside `expected_amino_acids`. D and C
+    /// pools pass through unchanged.
+    FunctionalAnchorsOnly,
+    /// Filter V/D/J pools by per-allele [`FunctionalStatus`].
+    ///
+    /// `allowed` is the set of statuses to keep (e.g.
+    /// `[Functional]`, `[Functional, Orf]`).
+    ///
+    /// `keep_unannotated` controls what happens to alleles whose
+    /// `functional_status == None`. Bundled `.pkl` cartridges leave
+    /// status unannotated for now; setting `keep_unannotated=true`
+    /// preserves backward compatibility with those catalogues, while
+    /// `keep_unannotated=false` lets a curated cartridge enforce
+    /// "annotation required".
+    ///
+    /// C pool passes through unchanged.
+    FunctionalStatus {
+        allowed: Vec<FunctionalStatus>,
+        keep_unannotated: bool,
+    },
+}
+
+impl RefDataCurationPolicy {
+    /// Short identifier used in [`ReferenceIdentity::source`]
+    /// curation tags. Stable strings so trace files written with one
+    /// engine version replay under another.
+    ///
+    /// For [`Self::FunctionalStatus`] the tag is the parametrised
+    /// form `functional_status:functional,orf|keep_unannotated=true`
+    /// (allowed list joined by `,` in canonical lowercase order,
+    /// followed by the `keep_unannotated` flag). Two inputs that
+    /// produce identical curated catalogues produce identical tags.
+    pub fn tag(&self) -> String {
+        match self {
+            RefDataCurationPolicy::Raw => "raw".to_string(),
+            RefDataCurationPolicy::FunctionalAnchorsOnly => {
+                "functional_anchors_only".to_string()
+            }
+            RefDataCurationPolicy::FunctionalStatus { allowed, keep_unannotated } => {
+                let mut canonical: Vec<&'static str> =
+                    allowed.iter().map(|s| s.as_str()).collect();
+                canonical.sort_unstable();
+                canonical.dedup();
+                format!(
+                    "functional_status:{}|keep_unannotated={}",
+                    canonical.join(","),
+                    keep_unannotated,
+                )
+            }
+        }
+    }
+}
+
+/// Apply `rule` against each allele in `pool`; keep alleles whose
+/// anchor passes the rule.
+///
+/// "Passes" means:
+/// - if the rule has `required=false`, anchorless alleles are kept;
+/// - the anchor position (if present) must leave room for a full
+///   codon (`anchor + 3 <= seq.len()`);
+/// - the anchor codon must translate to an AA in
+///   `expected_amino_acids`.
+///
+/// Alleles whose sequence is shorter than 3 bytes or whose codon
+/// can't translate (synthetic non-DNA bytes) fail the rule
+/// regardless — they can't participate in a functional projection.
+fn filter_pool_by_anchor_rule(pool: &AllelePool, rule: &validation::AnchorRule) -> AllelePool {
+    let kept: Vec<Allele> = pool
+        .iter()
+        .filter(|(_, allele)| anchor_passes_rule(allele, rule))
+        .map(|(_, a)| a.clone())
+        .collect();
+    AllelePool::from_vec(kept)
+}
+
+/// Apply functional-status filtering to a pool.
+///
+/// An allele is kept iff:
+/// - `allele.functional_status == Some(s)` and `s` is in `allowed`; OR
+/// - `allele.functional_status.is_none()` and `keep_unannotated` is true.
+///
+/// Order is preserved so trace-replay determinism is unaffected by
+/// the filter step.
+fn filter_pool_by_functional_status(
+    pool: &AllelePool,
+    allowed: &[FunctionalStatus],
+    keep_unannotated: bool,
+) -> AllelePool {
+    let kept: Vec<Allele> = pool
+        .iter()
+        .filter(|(_, allele)| match allele.functional_status {
+            Some(s) => allowed.contains(&s),
+            None => keep_unannotated,
+        })
+        .map(|(_, a)| a.clone())
+        .collect();
+    AllelePool::from_vec(kept)
+}
+
+fn anchor_passes_rule(allele: &Allele, rule: &validation::AnchorRule) -> bool {
+    use crate::codon::translate_codon;
+    let Some(anchor) = allele.anchor else {
+        // No anchor: only keep when the rule treats anchors as optional.
+        return !rule.required;
+    };
+    let len = allele.seq.len() as u32;
+    let anchor_u32 = anchor as u32;
+    if anchor_u32 + 3 > len {
+        return false;
+    }
+    let a = anchor as usize;
+    let codon = [allele.seq[a], allele.seq[a + 1], allele.seq[a + 2]];
+    let aa = translate_codon(codon[0], codon[1], codon[2]) as char;
+    rule.expected_amino_acids.contains(&aa)
+}
+
+/// Append `|curated:<tag>` to `identity.source`, or set it to
+/// `curated:<tag>` if no source was previously declared. Repeated
+/// curation appends each pass so trace consumers can read the full
+/// curation chain.
+fn tag_identity_source(identity: &mut ReferenceIdentity, tag: &str) {
+    let suffix = format!("curated:{tag}");
+    identity.source = Some(match identity.source.as_deref() {
+        Some(prev) if !prev.is_empty() => format!("{prev}|{suffix}"),
+        _ => suffix,
+    });
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -274,6 +645,8 @@ mod tests {
             seq: seq.to_vec(),
             segment: Segment::V,
             anchor,
+            functional_status: None,
+            subregions: Vec::new(),
         }
     }
 
@@ -406,6 +779,8 @@ mod tests {
             seq: b"GG".to_vec(),
             segment: Segment::D,
             anchor: None,
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = cfg.j_pool.push(Allele {
             name: "j*01".into(),
@@ -413,6 +788,8 @@ mod tests {
             seq: b"TT".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
 
         assert_eq!(cfg.pool_for(Segment::V).unwrap().len(), 1);
@@ -437,6 +814,349 @@ mod tests {
         assert!(cfg.get(Segment::Np1, v_id).is_none());
     }
 
+    // ── Curation policy ───────────────────────────────────────────
+
+    fn allele_with_anchor(name: &str, seq: &[u8], anchor: Option<u16>, segment: Segment) -> Allele {
+        Allele {
+            name: name.to_string(),
+            gene: name.split('*').next().unwrap_or(name).to_string(),
+            seq: seq.to_vec(),
+            segment,
+            anchor,
+            functional_status: None,
+            subregions: Vec::new(),
+        }
+    }
+
+    fn vj_cfg_for_curation() -> RefDataConfig {
+        // Two V alleles: one Cys-anchored, one Gly-anchored.
+        // Two J alleles: one W-anchored, one anchorless.
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        let _ = cfg
+            .v_pool
+            .push(allele_with_anchor("MYV-good*01", b"TGTAAACCC", Some(0), Segment::V));
+        let _ = cfg
+            .v_pool
+            .push(allele_with_anchor("MYV-gly*01", b"GGGAAACCC", Some(0), Segment::V));
+        let _ = cfg
+            .j_pool
+            .push(allele_with_anchor("MYJ-good*01", b"TGGAAACCC", Some(0), Segment::J));
+        let _ = cfg
+            .j_pool
+            .push(allele_with_anchor("MYJ-orphan*01", b"GGG", None, Segment::J));
+        cfg
+    }
+
+    #[test]
+    fn curation_raw_is_identity() {
+        let cfg = vj_cfg_for_curation();
+        let curated = cfg.curated(RefDataCurationPolicy::Raw);
+        assert_eq!(curated.v_pool.len(), 2);
+        assert_eq!(curated.j_pool.len(), 2);
+        // Raw policy does NOT touch identity.
+        assert_eq!(curated.identity.source, None);
+    }
+
+    #[test]
+    fn curation_functional_anchors_only_filters_v_and_j() {
+        let cfg = vj_cfg_for_curation();
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        assert_eq!(curated.v_pool.len(), 1);
+        assert_eq!(curated.v_pool.iter().next().unwrap().1.name, "MYV-good*01");
+        assert_eq!(curated.j_pool.len(), 1);
+        assert_eq!(curated.j_pool.iter().next().unwrap().1.name, "MYJ-good*01");
+    }
+
+    #[test]
+    fn curation_tags_identity_source() {
+        let cfg = vj_cfg_for_curation();
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        assert_eq!(
+            curated.identity.source.as_deref(),
+            Some("curated:functional_anchors_only"),
+        );
+    }
+
+    #[test]
+    fn curation_extends_existing_identity_source() {
+        let mut cfg = vj_cfg_for_curation();
+        cfg.identity.source = Some("DataConfig".to_string());
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        assert_eq!(
+            curated.identity.source.as_deref(),
+            Some("DataConfig|curated:functional_anchors_only"),
+        );
+    }
+
+    #[test]
+    fn curation_preserves_other_identity_fields() {
+        let mut cfg = vj_cfg_for_curation();
+        cfg.identity.species = Some("Human".into());
+        cfg.identity.locus = Some("IGK".into());
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        assert_eq!(curated.identity.species.as_deref(), Some("Human"));
+        assert_eq!(curated.identity.locus.as_deref(), Some("IGK"));
+    }
+
+    #[test]
+    fn curation_does_not_silently_fix_duplicate_names() {
+        // Add a duplicate V allele AFTER the good one. Both are
+        // Cys-anchored — they survive curation, then validation
+        // surfaces the duplicate as a Fatal issue. Curation never
+        // removes a structurally-corrupt entry to make a catalogue
+        // look healthier.
+        let mut cfg = vj_cfg_for_curation();
+        let _ = cfg.v_pool.push(allele_with_anchor(
+            "MYV-good*01",
+            b"TGTAAACCC",
+            Some(0),
+            Segment::V,
+        ));
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        let issues = curated.validate();
+        assert!(issues.iter().any(|i| matches!(
+            i,
+            RefDataValidationIssue::DuplicateAlleleName { .. }
+        )));
+    }
+
+    #[test]
+    fn curation_does_not_silently_fix_invalid_bytes() {
+        // Add an allele with a gap byte ('.') and a valid Cys anchor.
+        // The invalid byte is Fatal and must still surface post-curation.
+        let mut cfg = vj_cfg_for_curation();
+        let _ = cfg.v_pool.push(allele_with_anchor(
+            "MYV-badbyte*01",
+            b"TGT.AAACC",
+            Some(0),
+            Segment::V,
+        ));
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        assert!(curated.validate().iter().any(|i| matches!(
+            i,
+            RefDataValidationIssue::InvalidAlleleByte { .. }
+        )));
+    }
+
+    #[test]
+    fn curation_to_empty_pool_surfaces_empty_required_pool() {
+        // Every V allele is non-Cys — curation empties V.
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        let _ = cfg
+            .v_pool
+            .push(allele_with_anchor("MYV-gly*01", b"GGGAAACCC", Some(0), Segment::V));
+        let _ = cfg
+            .j_pool
+            .push(allele_with_anchor("MYJ-good*01", b"TGGAAACCC", Some(0), Segment::J));
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        assert_eq!(curated.v_pool.len(), 0);
+        let issues = curated.validate();
+        assert!(issues.iter().any(|i| matches!(
+            i,
+            RefDataValidationIssue::EmptyRequiredPool { segment: Segment::V }
+        )));
+    }
+
+    #[test]
+    fn curation_d_pool_passes_through_unchanged() {
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        let _ = cfg
+            .v_pool
+            .push(allele_with_anchor("MYV*01", b"TGTAAACCC", Some(0), Segment::V));
+        let _ = cfg.d_pool.push(allele_with_anchor(
+            "MYD*01",
+            b"GGGCCCAAA",
+            None,
+            Segment::D,
+        ));
+        let _ = cfg
+            .j_pool
+            .push(allele_with_anchor("MYJ*01", b"TGGAAACCC", Some(0), Segment::J));
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        // Anchorless D survives — D pool is never filtered.
+        assert_eq!(curated.d_pool.len(), 1);
+    }
+
+    #[test]
+    fn curation_respects_custom_j_anchor_rule() {
+        // Rule expects Y at J anchor. TGG (W) and TTC (F) are dropped;
+        // TAT (Y) is kept.
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        cfg.rules.j_anchor.expected_amino_acids = vec!['Y'];
+        let _ = cfg
+            .v_pool
+            .push(allele_with_anchor("MYV*01", b"TGTAAACCC", Some(0), Segment::V));
+        let _ = cfg
+            .j_pool
+            .push(allele_with_anchor("MYJ-w*01", b"TGGAAACCC", Some(0), Segment::J));
+        let _ = cfg
+            .j_pool
+            .push(allele_with_anchor("MYJ-y*01", b"TATAAACCC", Some(0), Segment::J));
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        assert_eq!(curated.j_pool.len(), 1);
+        assert_eq!(curated.j_pool.iter().next().unwrap().1.name, "MYJ-y*01");
+    }
+
+    #[test]
+    fn curation_anchor_required_false_keeps_anchorless_alleles() {
+        // If the rule says anchor is optional, anchorless alleles
+        // are kept under FunctionalAnchorsOnly.
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        cfg.rules.j_anchor.required = false;
+        let _ = cfg
+            .v_pool
+            .push(allele_with_anchor("MYV*01", b"TGTAAACCC", Some(0), Segment::V));
+        let _ = cfg
+            .j_pool
+            .push(allele_with_anchor("MYJ-orphan*01", b"GGG", None, Segment::J));
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalAnchorsOnly);
+        assert_eq!(curated.j_pool.len(), 1);
+    }
+
+    // ── Functional-status curation ────────────────────────────────
+
+    fn allele_with_status(
+        name: &str,
+        seq: &[u8],
+        segment: Segment,
+        anchor: Option<u16>,
+        status: Option<FunctionalStatus>,
+    ) -> Allele {
+        Allele {
+            name: name.to_string(),
+            gene: name.split('*').next().unwrap_or(name).to_string(),
+            seq: seq.to_vec(),
+            segment,
+            anchor,
+            functional_status: status,
+            subregions: Vec::new(),
+        }
+    }
+
+    fn mixed_status_cfg() -> RefDataConfig {
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        let _ = cfg.v_pool.push(allele_with_status(
+            "v-f*01", b"TGTAAACCC", Segment::V, Some(0),
+            Some(FunctionalStatus::Functional),
+        ));
+        let _ = cfg.v_pool.push(allele_with_status(
+            "v-o*01", b"TGTAAACCC", Segment::V, Some(0),
+            Some(FunctionalStatus::Orf),
+        ));
+        let _ = cfg.v_pool.push(allele_with_status(
+            "v-p*01", b"TGTAAACCC", Segment::V, Some(0),
+            Some(FunctionalStatus::Pseudogene),
+        ));
+        let _ = cfg.v_pool.push(allele_with_status(
+            "v-na*01", b"TGTAAACCC", Segment::V, Some(0), None,
+        ));
+        let _ = cfg.d_pool.push(allele_with_status(
+            "d-f*01", b"GGG", Segment::D, None,
+            Some(FunctionalStatus::Functional),
+        ));
+        let _ = cfg.d_pool.push(allele_with_status(
+            "d-p*01", b"GGG", Segment::D, None,
+            Some(FunctionalStatus::Pseudogene),
+        ));
+        let _ = cfg.j_pool.push(allele_with_status(
+            "j-f*01", b"TGGAAACCC", Segment::J, Some(0),
+            Some(FunctionalStatus::Functional),
+        ));
+        cfg
+    }
+
+    #[test]
+    fn curation_functional_status_filters_v_d_j() {
+        let cfg = mixed_status_cfg();
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalStatus {
+            allowed: vec![FunctionalStatus::Functional],
+            keep_unannotated: false,
+        });
+        let v_names: Vec<&str> =
+            curated.v_pool.iter().map(|(_, a)| a.name.as_str()).collect();
+        let d_names: Vec<&str> =
+            curated.d_pool.iter().map(|(_, a)| a.name.as_str()).collect();
+        let j_names: Vec<&str> =
+            curated.j_pool.iter().map(|(_, a)| a.name.as_str()).collect();
+        assert_eq!(v_names, vec!["v-f*01"]);
+        assert_eq!(d_names, vec!["d-f*01"]);
+        assert_eq!(j_names, vec!["j-f*01"]);
+    }
+
+    #[test]
+    fn curation_functional_status_keeps_unannotated_when_flagged() {
+        let cfg = mixed_status_cfg();
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalStatus {
+            allowed: vec![FunctionalStatus::Functional],
+            keep_unannotated: true,
+        });
+        let v_names: Vec<&str> =
+            curated.v_pool.iter().map(|(_, a)| a.name.as_str()).collect();
+        assert_eq!(v_names, vec!["v-f*01", "v-na*01"]);
+    }
+
+    #[test]
+    fn curation_functional_status_tag_is_canonical() {
+        let p = RefDataCurationPolicy::FunctionalStatus {
+            allowed: vec![FunctionalStatus::Orf, FunctionalStatus::Functional],
+            keep_unannotated: false,
+        };
+        // allowed list is sorted into canonical lexical order; the
+        // policy tag is the source of identity-source provenance, so
+        // two policies producing identical curated catalogues must
+        // produce identical tags regardless of input order.
+        assert_eq!(
+            p.tag(),
+            "functional_status:functional,orf|keep_unannotated=false",
+        );
+    }
+
+    #[test]
+    fn curation_functional_status_dedupes_allowed_in_tag() {
+        let p = RefDataCurationPolicy::FunctionalStatus {
+            allowed: vec![
+                FunctionalStatus::Functional,
+                FunctionalStatus::Functional,
+            ],
+            keep_unannotated: true,
+        };
+        assert_eq!(p.tag(), "functional_status:functional|keep_unannotated=true");
+    }
+
+    #[test]
+    fn curation_functional_status_empty_v_surfaces_empty_required_pool() {
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        let _ = cfg.v_pool.push(allele_with_status(
+            "v-p*01", b"TGTAAACCC", Segment::V, Some(0),
+            Some(FunctionalStatus::Pseudogene),
+        ));
+        let _ = cfg.j_pool.push(allele_with_status(
+            "j-f*01", b"TGGAAACCC", Segment::J, Some(0),
+            Some(FunctionalStatus::Functional),
+        ));
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalStatus {
+            allowed: vec![FunctionalStatus::Functional],
+            keep_unannotated: false,
+        });
+        assert!(curated.v_pool.is_empty());
+        let issues = curated.validate();
+        assert!(issues.iter().any(|i| matches!(
+            i,
+            RefDataValidationIssue::EmptyRequiredPool { segment: Segment::V }
+        )));
+    }
+
+    #[test]
+    fn curation_functional_status_tags_identity_source() {
+        let cfg = mixed_status_cfg();
+        let curated = cfg.curated(RefDataCurationPolicy::FunctionalStatus {
+            allowed: vec![FunctionalStatus::Functional],
+            keep_unannotated: true,
+        });
+        let src = curated.identity.source.as_deref().unwrap_or("");
+        assert!(src.contains("curated:functional_status:functional|keep_unannotated=true"));
+    }
+
     #[test]
     fn ref_data_config_supports_vj_chain_with_empty_d_pool() {
         // VJ chains: d_pool is conventionally empty. Construction
@@ -450,6 +1170,8 @@ mod tests {
             seq: b"TT".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
 
         assert!(!cfg.chain_type.has_d());

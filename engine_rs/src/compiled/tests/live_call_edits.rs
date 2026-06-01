@@ -67,6 +67,8 @@ fn distinct_v_refdata(seqs: &[(&str, &[u8])]) -> RefDataConfig {
             seq: seq.to_vec(),
             segment: Segment::V,
             anchor: None,
+            functional_status: None,
+            subregions: Vec::new(),
         });
     }
     cfg
@@ -93,7 +95,7 @@ fn run_edit(
         plan.push(Box::new(EditBaseAtPass::new(pos, new_base)));
     }
 
-    let compiled = CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
         .expect("fixture plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
     let final_sim = outcome.final_simulation().clone();
@@ -259,7 +261,7 @@ fn real_uniform_mutation_pass_increments_live_call_version() {
         Box::new(ConstBaseDist(b'A')),
     )));
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("integration plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -402,7 +404,7 @@ fn refresh_follows_events_not_effects_effect_without_event_skips_refresh() {
         new_base: b'C',
     }));
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
     let final_sim = outcome.final_simulation();
@@ -464,7 +466,7 @@ fn refresh_follows_events_not_effects_event_without_effect_triggers_refresh() {
         new_base: b'C',
     }));
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
     let final_sim = outcome.final_simulation();

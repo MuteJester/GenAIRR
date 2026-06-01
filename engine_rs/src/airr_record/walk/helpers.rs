@@ -1,6 +1,6 @@
 use crate::ir::Segment;
 
-pub(super) fn bytes_uppercase_in_place(bytes: &mut [u8]) {
+pub(in crate::airr_record) fn bytes_uppercase_in_place(bytes: &mut [u8]) {
     for b in bytes.iter_mut() {
         if (*b).is_ascii_lowercase() {
             *b = (*b).to_ascii_uppercase();
@@ -8,11 +8,11 @@ pub(super) fn bytes_uppercase_in_place(bytes: &mut [u8]) {
     }
 }
 
-pub(super) fn eq_ascii_case_insensitive(a: u8, b: u8) -> bool {
+pub(in crate::airr_record) fn eq_ascii_case_insensitive(a: u8, b: u8) -> bool {
     a.to_ascii_uppercase() == b.to_ascii_uppercase()
 }
 
-pub(super) fn push_cigar_op(runs: &mut Vec<(u32, u8)>, op: u8) {
+pub(in crate::airr_record) fn push_cigar_op(runs: &mut Vec<(u32, u8)>, op: u8) {
     if let Some(last) = runs.last_mut() {
         if last.1 == op {
             last.0 += 1;
@@ -31,7 +31,7 @@ pub(in crate::airr_record) fn runlength_to_string(runs: &[(u32, u8)]) -> String 
     s
 }
 
-pub(super) fn push_dmask_for_seg(dmask: &mut Vec<u8>, seg: Segment, ga_char: u8) {
+pub(in crate::airr_record) fn push_dmask_for_seg(dmask: &mut Vec<u8>, seg: Segment, ga_char: u8) {
     if seg == Segment::D && ga_char != b'-' {
         dmask.push(b'N');
     } else {
@@ -43,7 +43,7 @@ pub(super) fn push_dmask_for_seg(dmask: &mut Vec<u8>, seg: Segment, ga_char: u8)
 /// `ref_pos`. Used for `ref_ranges` in the column walker — every
 /// `M` and `D` op consumes one ref position; this helper folds that
 /// into the per-segment span.
-pub(super) fn extend_ref_range(ranges: &mut [Option<(i64, i64)>; 3], idx: usize, ref_pos: i64) {
+pub(in crate::airr_record) fn extend_ref_range(ranges: &mut [Option<(i64, i64)>; 3], idx: usize, ref_pos: i64) {
     ranges[idx] = Some(match ranges[idx] {
         Some((s, e)) => (s.min(ref_pos), e.max(ref_pos + 1)),
         None => (ref_pos, ref_pos + 1),
@@ -59,7 +59,7 @@ pub(super) fn extend_ref_range(ranges: &mut [Option<(i64, i64)>; 3], idx: usize,
 /// deletion breaks that mapping). When detected, the NP claim is
 /// skipped — structural CIGAR ops take precedence over extension
 /// ops on overlap.
-pub(super) fn ref_pos_already_covered(
+pub(in crate::airr_record) fn ref_pos_already_covered(
     ranges: &[Option<(i64, i64)>; 3],
     idx: usize,
     ref_pos: i64,

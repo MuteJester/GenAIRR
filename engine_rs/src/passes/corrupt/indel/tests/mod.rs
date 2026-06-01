@@ -90,6 +90,8 @@ pub(super) fn balanced_dp_distribution_fixture(
         seq: b"TGTGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_dp*01".into(),
@@ -97,6 +99,8 @@ pub(super) fn balanced_dp_distribution_fixture(
         seq: b"TGGAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();
@@ -170,6 +174,8 @@ pub(super) fn make_productive_indel_balance_fixture(
         seq: b"TGTAAACCC".to_vec(), // V_anchor=0 → codon TGT (Cys)
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_balance*01".into(),
@@ -177,6 +183,8 @@ pub(super) fn make_productive_indel_balance_fixture(
         seq: b"TGGAAA".to_vec(), // J_anchor=0 → codon TGG (Trp)
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();

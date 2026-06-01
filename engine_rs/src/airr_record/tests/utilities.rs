@@ -35,6 +35,8 @@ fn locus_from_refdata_falls_back_to_pool_allele_names() {
         seq: b"AAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     assert_eq!(locus_from_refdata(&cfg), "IGH");
 
@@ -45,6 +47,8 @@ fn locus_from_refdata_falls_back_to_pool_allele_names() {
         seq: b"AAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     assert_eq!(locus_from_refdata(&alien), "");
 
@@ -55,12 +59,12 @@ fn locus_from_refdata_falls_back_to_pool_allele_names() {
 #[test]
 fn runlength_collapses_repeated_ops() {
     let runs = vec![(5, b'M'), (2, b'I'), (3, b'M'), (1, b'D')];
-    assert_eq!(walk::runlength_to_string(&runs), "5M2I3M1D");
+    assert_eq!(walk::helpers::runlength_to_string(&runs), "5M2I3M1D");
 }
 
 #[test]
 fn runlength_empty_is_empty_string() {
-    assert_eq!(walk::runlength_to_string(&[]), "");
+    assert_eq!(walk::helpers::runlength_to_string(&[]), "");
 }
 
 #[test]

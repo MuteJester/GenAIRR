@@ -38,6 +38,40 @@ pub fn build_airr_record(
     rec.sequence = bytes_to_string(&pool_bases(sim));
     rec.sequence_length = rec.sequence.len() as i64;
 
+    // D inversion (Slice E). Sourced from the final IR's
+    // `AlleleAssignments.D.orientation` — independent of the pool's
+    // post-assembly bytes. Set BEFORE the pre-recombine early return
+    // so a sim that has D assigned but hasn't run assembly yet
+    // still surfaces a correct `d_inverted` value (instrumentation
+    // and unit-test fixtures both rely on this).
+    rec.d_inverted = sim
+        .assignments
+        .get(Segment::D)
+        .map(|inst| inst.orientation.is_reverse())
+        .unwrap_or(false);
+
+    // Receptor revision provenance — IR-sourced (Bug D fix).
+    // Originally this read from the descendant's trace, but the
+    // descendant trace omits pre-fork choices, which silently
+    // dropped revision provenance on clonal descendants whose
+    // receptor revision had run in the parent. The assignments
+    // slot is part of the persistent IR and survives the
+    // parent→descendant boundary, so reading from it gives
+    // identical results for non-clonal and clonal pipelines.
+    // Same pattern as `d_inverted` above.
+    let v_inst = sim.assignments.get(Segment::V);
+    rec.receptor_revision_applied = v_inst
+        .map(|inst| inst.receptor_revision_original_id.is_some())
+        .unwrap_or(false);
+    rec.original_v_call = if rec.receptor_revision_applied {
+        original_v_call_from_assignment(
+            v_inst.expect("receptor_revision_applied implies v_inst is Some"),
+            refdata,
+        )
+    } else {
+        String::new()
+    };
+
     if rec.sequence.is_empty() {
         // Pre-recombine sim: nothing else to fill in.
         return rec;
@@ -216,6 +250,155 @@ pub fn build_airr_record(
     rec.n_v_indels = n_v_indels;
     rec.n_d_indels = n_d_indels;
     rec.n_j_indels = n_j_indels;
+
+    // Per-segment biological-SHM mutation counters. Same shape as
+    // the indel walk above: scan the per-pass event ledger, filter
+    // to the two SHM passes by their canonical pass-name constants,
+    // bucket every `BaseChanged` event by its carried segment. NP1
+    // + NP2 roll into a single `n_np_mutations` bucket — same
+    // collapse the `segment_rates` DSL uses (per the audit's
+    // `n_v/d/j_mutations` + `n_np_mutations` recommendation).
+    // Corruption-stage `BaseChanged` events (PCR, quality, contaminant)
+    // are excluded by the pass-name filter. By construction the
+    // four fields partition `n_mutations`; the validator surfaces
+    // any divergence via `MutationCountSumMismatch`.
+    let mut n_v_mutations = 0i64;
+    let mut n_d_mutations = 0i64;
+    let mut n_j_mutations = 0i64;
+    let mut n_np_mutations = 0i64;
+    // V-subregion partition of `n_v_mutations` (Slice — V-Subregion
+    // Mutation Counters). Aggregated in the same pass as the
+    // per-segment counters: each V `BaseChanged` event's
+    // `germline_pos: Option<u16>` is matched against the assigned V
+    // allele's `subregions` table; events landing in one of the five
+    // canonical IMGT intervals route to the matching bucket,
+    // everything else (missing assignment, empty annotations,
+    // `germline_pos = None`, V-side CDR3 stretch outside FWR1..FWR3)
+    // routes to `n_v_unannotated_mutations`. See
+    // `docs/v_subregion_mutation_counters_audit.md`.
+    let mut n_fwr1_mutations = 0i64;
+    let mut n_cdr1_mutations = 0i64;
+    let mut n_fwr2_mutations = 0i64;
+    let mut n_cdr2_mutations = 0i64;
+    let mut n_fwr3_mutations = 0i64;
+    let mut n_v_unannotated_mutations = 0i64;
+    // Hoist the assigned V allele's subregion table out of the
+    // event loop — it's invariant within a record. `None` is the
+    // pre-recombine state (no V assignment); under that condition
+    // every V `BaseChanged` (rare but possible in pathological
+    // plans) routes to the unannotated bucket.
+    let v_subregions: Option<&[crate::refdata::VSubregion]> = sim
+        .assignments
+        .get(Segment::V)
+        .and_then(|inst| refdata.v_pool.get(inst.allele_id))
+        .map(|allele| allele.subregions.as_slice());
+    for record in outcome.events() {
+        if record.pass_name != address::MUTATE_UNIFORM
+            && record.pass_name != address::MUTATE_S5F
+        {
+            continue;
+        }
+        for ev in &record.simulation_events {
+            let SimulationEvent::BaseChanged {
+                segment,
+                germline_pos,
+                ..
+            } = ev
+            else {
+                continue;
+            };
+            match segment {
+                Segment::V => {
+                    n_v_mutations += 1;
+                    // Dispatch into the V-subregion partition.
+                    // Three "unannotated" cases collapse into the
+                    // same arm:
+                    //   1. No V allele assigned (v_subregions is None).
+                    //   2. germline_pos is None (indel-inserted base).
+                    //   3. The position falls outside every subregion
+                    //      interval (V-side CDR3 stretch, or an
+                    //      allele with empty `subregions`).
+                    let label = v_subregions.and_then(|subs| {
+                        germline_pos.and_then(|pos| {
+                            subs.iter()
+                                .find(|s| {
+                                    s.start <= pos && pos < s.end
+                                })
+                                .map(|s| s.label)
+                        })
+                    });
+                    match label {
+                        Some(crate::refdata::VSubregionLabel::Fwr1) => {
+                            n_fwr1_mutations += 1
+                        }
+                        Some(crate::refdata::VSubregionLabel::Cdr1) => {
+                            n_cdr1_mutations += 1
+                        }
+                        Some(crate::refdata::VSubregionLabel::Fwr2) => {
+                            n_fwr2_mutations += 1
+                        }
+                        Some(crate::refdata::VSubregionLabel::Cdr2) => {
+                            n_cdr2_mutations += 1
+                        }
+                        Some(crate::refdata::VSubregionLabel::Fwr3) => {
+                            n_fwr3_mutations += 1
+                        }
+                        None => n_v_unannotated_mutations += 1,
+                    }
+                }
+                Segment::D => n_d_mutations += 1,
+                Segment::J => n_j_mutations += 1,
+                Segment::Np1 | Segment::Np2 => n_np_mutations += 1,
+            }
+        }
+    }
+    rec.n_v_mutations = n_v_mutations;
+    rec.n_d_mutations = n_d_mutations;
+    rec.n_j_mutations = n_j_mutations;
+    rec.n_np_mutations = n_np_mutations;
+    rec.n_fwr1_mutations = n_fwr1_mutations;
+    rec.n_cdr1_mutations = n_cdr1_mutations;
+    rec.n_fwr2_mutations = n_fwr2_mutations;
+    rec.n_cdr2_mutations = n_cdr2_mutations;
+    rec.n_fwr3_mutations = n_fwr3_mutations;
+    rec.n_v_unannotated_mutations = n_v_unannotated_mutations;
+
+    // Per-end P-nucleotide length counters (Slice — P-nucleotide
+    // v1). Walk the event ledger for `PRegionAdded` events and
+    // sum `region.len()` per `end`. Symmetric with the
+    // per-segment indel / mutation walks above. The pass-name
+    // filter selects the four `p_addition.*` passes by the
+    // canonical name constants. Records from cartridges with
+    // no P-plane authored carry zeros (no events emitted).
+    let mut p_v_3_length = 0i64;
+    let mut p_d_5_length = 0i64;
+    let mut p_d_3_length = 0i64;
+    let mut p_j_5_length = 0i64;
+    for record in outcome.events() {
+        let is_p_addition = record.pass_name == crate::address::P_ADDITION_V_3
+            || record.pass_name == crate::address::P_ADDITION_D_5
+            || record.pass_name == crate::address::P_ADDITION_D_3
+            || record.pass_name == crate::address::P_ADDITION_J_5;
+        if !is_p_addition {
+            continue;
+        }
+        for ev in &record.simulation_events {
+            if let SimulationEvent::PRegionAdded { end, region } = ev {
+                let len = region.len() as i64;
+                match end {
+                    crate::address::PEnd::V3 => p_v_3_length += len,
+                    crate::address::PEnd::D5 => p_d_5_length += len,
+                    crate::address::PEnd::D3 => p_d_3_length += len,
+                    crate::address::PEnd::J5 => p_j_5_length += len,
+                }
+            }
+        }
+    }
+    rec.p_v_3_length = p_v_3_length;
+    rec.p_d_5_length = p_d_5_length;
+    rec.p_d_3_length = p_d_3_length;
+    rec.p_j_5_length = p_j_5_length;
+
     // Observation-stage end-loss / primer-trim amounts. Distinct
     // provenance from recombination-stage `v_trim_5/3` /
     // `j_trim_5/3`; carries the *realized* (post-clamp) byte count
@@ -226,6 +409,11 @@ pub fn build_airr_record(
     rec.end_loss_3_length =
         trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Three));
     rec.is_contaminant = trace_bool_choice(trace, ChoiceAddress::CorruptContaminantApplied);
+    // `rec.d_inverted` / `rec.receptor_revision_applied` /
+    // `rec.original_v_call` are populated earlier (before the
+    // pre-recombine early return) — `d_inverted` is sim-level
+    // metadata and the receptor-revision fields are trace-sourced;
+    // neither needs the pool to be assembled to read its value.
 
     // Junction window: permissive semantics - compute as long as
     // both V/J anchors and regions exist, even when ``j_trim_5 >
@@ -325,9 +513,10 @@ pub fn build_airr_record(
         }
     }
 
-    // Single column walk: fills sequence_alignment, germline_alignment,
-    // germline_alignment_d_mask, per-segment CIGARs, identity counts,
-    // and alignment-coord pairs.
+    // Single column walk: renders sequence_alignment, germline_alignment,
+    // and germline_alignment_d_mask. Per-segment CIGARs, identities,
+    // and ranges come from the segment-projection kernel that the
+    // walker internally pre-calls.
     let walk = walk_alignment_columns(sim, refdata, &rec);
 
     rec.sequence_alignment = walk.sa;
@@ -433,5 +622,97 @@ pub fn build_airr_record(
         apply_rev_comp_projection(&mut rec);
     }
 
+    // Paired-end / read-layout projection (Slice C). The
+    // `PairedEndSamplingPass` writes three Int records on the
+    // trace; if all three are present, the kernel populates the
+    // eight AIRR fields. Absent records leave the fields at their
+    // Slice A defaults (`""` / `None` / `0`) — the canonical
+    // no-paired-end baseline path.
+    //
+    // Runs AFTER `apply_rev_comp_projection` per the audit §7
+    // composition order: paired-end windows are drawn against the
+    // finalised, possibly rev-comped, molecule.
+    apply_paired_end_projection_from_trace(&mut rec, trace);
+
     rec
+}
+
+/// Read the three paired-end trace records and apply the
+/// projection kernel when all three are present.
+///
+/// - All three absent → no-paired-end baseline; `rec` stays at
+///   Slice A defaults.
+/// - All three present + kernel succeeds → populate the eight
+///   fields.
+/// - All three present + kernel rejects (e.g. `insert_size >
+///   sequence_length` from a refdata swap) → set
+///   `read_layout = "paired_end"` and leave coords / strings
+///   empty so the Slice B validator surfaces the divergence as
+///   `ReadWindowOutOfBounds` rather than silently producing
+///   defaults that look like the no-layout baseline.
+/// - Partial (one or two of three) → treated as not-opted-in;
+///   the `PairedEndSamplingPass` validates atomicity before
+///   recording, so this case can only arise from a hand-edited
+///   trace. Leaving the fields at their Slice A defaults makes
+///   the no-layout validator catch the partial trace through the
+///   `PairedEndFieldWithoutLayout` channel.
+fn apply_paired_end_projection_from_trace(
+    rec: &mut super::AirrRecord,
+    trace: &crate::trace::Trace,
+) {
+    use crate::airr_record::sequence::project_paired_end_layout;
+    use crate::airr_record::trace_fields::trace_int_choice_opt;
+
+    let r1_length = trace_int_choice_opt(trace, ChoiceAddress::PairedEndR1Length);
+    let r2_length = trace_int_choice_opt(trace, ChoiceAddress::PairedEndR2Length);
+    let insert_size = trace_int_choice_opt(trace, ChoiceAddress::PairedEndInsertSize);
+    let (Some(r1), Some(r2), Some(insert)) = (r1_length, r2_length, insert_size) else {
+        return;
+    };
+
+    match project_paired_end_layout(rec, r1, r2, insert) {
+        Ok(p) => {
+            rec.read_layout = p.read_layout;
+            rec.r1_sequence = p.r1_sequence;
+            rec.r2_sequence = p.r2_sequence;
+            rec.r1_start = p.r1_start;
+            rec.r1_end = p.r1_end;
+            rec.r2_start = p.r2_start;
+            rec.r2_end = p.r2_end;
+            rec.insert_size = p.insert_size;
+        }
+        Err(_) => {
+            // The kernel rejected the geometry against the
+            // finalised `rec.sequence` (e.g. `insert_size >
+            // sequence_length`). Surface the failure to the
+            // validator by tagging the layout without populating
+            // coords/strings — `ReadWindowOutOfBounds` fires for
+            // the missing coord pair.
+            rec.read_layout = "paired_end".to_string();
+        }
+    }
+}
+
+/// Resolve the pre-revision V allele's refdata name from the IR
+/// assignments. The caller has already established that receptor
+/// revision applied (i.e. `inst.receptor_revision_original_id` is
+/// `Some`); a missing or unresolvable id at that point is a
+/// structural bug.
+///
+/// Returns an empty string when the recorded id doesn't resolve in
+/// refdata — the same documented fallback the old
+/// trace-sourced helper used for refdata swaps between record and
+/// replay. The validator's `OriginalVCallMismatch` continues to
+/// catch divergence between the record value and the expected.
+fn original_v_call_from_assignment(
+    v_inst: &crate::assignment::AlleleInstance,
+    refdata: &RefDataConfig,
+) -> String {
+    let Some(original_id) = v_inst.receptor_revision_original_id else {
+        return String::new();
+    };
+    refdata
+        .get(Segment::V, original_id)
+        .map(|a| a.name.clone())
+        .unwrap_or_default()
 }

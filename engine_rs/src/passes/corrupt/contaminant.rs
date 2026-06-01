@@ -145,6 +145,14 @@ impl Pass for ContaminantPass {
         address::CORRUPT_CONTAMINANT
     }
 
+    fn parameter_signature(&self) -> String {
+        use crate::passes::paramsig::{fmt_byte_dist, fmt_prob, join_parts};
+        join_parts([
+            fmt_prob("apply_prob", self.apply_prob),
+            format!("base={}", fmt_byte_dist(self.base_dist.as_ref())),
+        ])
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("ContaminantPass permissive execution must not return PassError")
@@ -221,6 +229,8 @@ mod tests {
             seq: b"AAA".to_vec(),
             segment: Segment::V,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = cfg.j_pool.push(Allele {
             name: "j_contam*01".into(),
@@ -228,6 +238,8 @@ mod tests {
             seq: b"TGG".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
 
         let mut sim = Simulation::new();

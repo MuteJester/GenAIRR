@@ -319,6 +319,20 @@ impl Pass for SampleAllelePass {
         self.address()
     }
 
+    fn parameter_signature(&self) -> String {
+        // The sampling distribution is opaque (typically the pool's
+        // uniform `AllelePoolDist`). We deliberately do NOT fold
+        // the distribution's `support()` into the signature: the
+        // pool identity is already covered by
+        // `refdata_content_hash`, and emitting the entire allele-id
+        // ↔ weight table per V/D/J pass would inflate signatures
+        // without adding information beyond what the content hash
+        // already gates. The pass's segment is encoded in
+        // `name()` (`sample_allele.v` / `.d` / `.j`), so no
+        // additional parameter signature is needed.
+        String::new()
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("SampleAllelePass permissive execution must not return PassError")
@@ -365,6 +379,8 @@ pub(super) mod test_support {
                 seq: vec![b'A'; 30],
                 segment,
                 anchor: Some(10),
+                functional_status: None,
+                subregions: Vec::new(),
             });
         }
         p
@@ -656,6 +672,8 @@ mod tests {
                 seq: vec![b'A'; 30],
                 segment: Segment::V,
                 anchor: Some(10),
+                functional_status: None,
+                subregions: Vec::new(),
             });
         }
         rd

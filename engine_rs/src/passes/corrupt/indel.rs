@@ -194,6 +194,17 @@ impl Pass for IndelPass {
         address::CORRUPT_INDEL
     }
 
+    fn parameter_signature(&self) -> String {
+        use crate::passes::paramsig::{
+            fmt_byte_dist, fmt_count_source, fmt_prob, join_parts,
+        };
+        join_parts([
+            fmt_count_source(&self.count_source),
+            fmt_prob("insertion_prob", self.insertion_prob),
+            format!("base={}", fmt_byte_dist(self.base_dist.as_ref())),
+        ])
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("IndelPass permissive execution must not return PassError")

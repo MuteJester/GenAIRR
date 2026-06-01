@@ -46,6 +46,18 @@ use crate::trace::ChoiceValue;
 pub struct UniformMutationPass {
     count_source: super::CountSource,
     base_dist: Box<dyn Distribution<Output = u8>>,
+    /// Per-biological-segment SHM rate scalars (V / D / J / NP).
+    /// Default is flat (all 1.0) — produces byte-identical output
+    /// to the pre-slice engine. Non-default values weight site
+    /// selection by segment; zero-rate sites drop from support
+    /// before contract admissibility.
+    segment_rates: super::SegmentRateWeights,
+    /// Per-V-subregion SHM rate scalars (Slice B). Default is
+    /// flat (all 1.0) — byte-identical to the pre-slice engine.
+    /// Composes multiplicatively with `segment_rates` for V
+    /// sites; non-V sites are unaffected. V sites on alleles
+    /// without subregion annotations receive factor `1.0`.
+    v_subregion_rates: super::VSubregionRateWeights,
 }
 
 impl UniformMutationPass {
@@ -59,6 +71,8 @@ impl UniformMutationPass {
         Self {
             count_source: super::CountSource::Distribution(count_dist),
             base_dist,
+            segment_rates: super::SegmentRateWeights::default(),
+            v_subregion_rates: super::VSubregionRateWeights::default(),
         }
     }
 
@@ -75,7 +89,35 @@ impl UniformMutationPass {
         Self {
             count_source: super::CountSource::Rate(rate),
             base_dist,
+            segment_rates: super::SegmentRateWeights::default(),
+            v_subregion_rates: super::VSubregionRateWeights::default(),
         }
+    }
+
+    /// Persistent setter for per-segment SHM rate scalars. The DSL
+    /// boundary in Python validates the four-bucket dict; the
+    /// engine binding constructs the [`super::SegmentRateWeights`]
+    /// value and installs it via this method. Default (flat 1.0
+    /// across V/D/J/NP) is byte-identical to the pre-slice engine.
+    #[must_use]
+    pub fn with_segment_rates(mut self, rates: super::SegmentRateWeights) -> Self {
+        self.segment_rates = rates;
+        self
+    }
+
+    /// Persistent setter for per-V-subregion SHM rate scalars
+    /// (Slice B — `docs/v_subregion_shm_rate_design.md`). The
+    /// Python DSL boundary
+    /// (`experiment._validate_v_subregion_rates`) validates the
+    /// five-label dict with `FWR` / `CDR` alias expansion and
+    /// override semantics; the engine binding constructs the
+    /// [`super::VSubregionRateWeights`] tuple and installs it via
+    /// this method. Default (flat 1.0 across FWR1 / CDR1 / FWR2 /
+    /// CDR2 / FWR3) is byte-identical to the pre-slice engine.
+    #[must_use]
+    pub fn with_v_subregion_rates(mut self, rates: super::VSubregionRateWeights) -> Self {
+        self.v_subregion_rates = rates;
+        self
     }
 
     fn execute_with_sampling_mode(
@@ -115,12 +157,22 @@ impl UniformMutationPass {
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
         let mut applied: u32 = 0;
 
+        // Pass the configured segment-rate + V-subregion-rate
+        // vectors into each per-site sampling call. Flat-default
+        // vectors are detected inside the transaction's fast path
+        // and skip the per-position lookup. Slice B (the
+        // v_subregion_rates kwarg) composes multiplicatively with
+        // segment_rates on V sites.
+        let seg_rates_ref = Some(&self.segment_rates);
+        let v_sub_rates_ref = Some(&self.v_subregion_rates);
         for i in 0..count {
             let wrote = tx.substitute_position_constrained(
                 self.base_dist.as_ref(),
                 address::ChoiceAddress::MutateUniformSite(i),
                 address::ChoiceAddress::MutateUniformBase(i),
                 None,
+                seg_rates_ref,
+                v_sub_rates_ref,
             )?;
             if wrote {
                 applied += 1;
@@ -142,6 +194,19 @@ impl UniformMutationPass {
 impl Pass for UniformMutationPass {
     fn name(&self) -> &str {
         address::MUTATE_UNIFORM
+    }
+
+    fn parameter_signature(&self) -> String {
+        use crate::passes::paramsig::{
+            fmt_byte_dist, fmt_count_source, fmt_segment_rates,
+            fmt_v_subregion_rates, join_parts,
+        };
+        join_parts([
+            fmt_count_source(&self.count_source),
+            format!("base={}", fmt_byte_dist(self.base_dist.as_ref())),
+            fmt_segment_rates(&self.segment_rates),
+            fmt_v_subregion_rates(&self.v_subregion_rates),
+        ])
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {

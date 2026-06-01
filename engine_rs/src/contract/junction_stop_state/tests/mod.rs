@@ -23,6 +23,8 @@ fn make_vj_refdata(v_anchor_codon: &[u8; 3], j_anchor_codon: &[u8; 3]) -> RefDat
         seq: v_seq,
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -30,6 +32,8 @@ fn make_vj_refdata(v_anchor_codon: &[u8; 3], j_anchor_codon: &[u8; 3]) -> RefDat
         seq: j_seq,
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }
@@ -53,6 +57,8 @@ fn make_vdj_refdata(
         seq: v_seq,
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "d_test*01".into(),
@@ -60,6 +66,8 @@ fn make_vdj_refdata(
         seq: d_body.to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -67,6 +75,8 @@ fn make_vdj_refdata(
         seq: j_seq,
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }

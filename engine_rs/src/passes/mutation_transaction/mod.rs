@@ -37,7 +37,7 @@
 //!   `delete_base_admitting`.
 
 mod indel;
-mod substitution;
+pub(crate) mod substitution;
 
 use crate::ir::{Simulation, SimulationBuilder};
 use crate::pass::{PassContext, PassError};

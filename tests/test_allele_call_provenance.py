@@ -75,7 +75,7 @@ def _vdj_two_d_one_distinguishing() -> "ge.RefDataConfig":
 
 def _baseline_vj_experiment(cfg) -> "ga.Experiment":
     return (
-        ga.Experiment.on(cfg)
+        ga.Experiment.on(cfg).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
     )
@@ -420,7 +420,7 @@ def test_vdj_d_call_resolves_to_truth_without_mutation() -> None:
     VDJ refdata. Without mutation, d_call equals truth_d_call."""
     cfg = _vdj_two_d_one_distinguishing()
     exp = (
-        ga.Experiment.on(cfg)
+        ga.Experiment.on(cfg).allow_curatable_refdata()
         .recombine(np1_lengths=[(2, 1.0)], np2_lengths=[(2, 1.0)])
         .trim(enabled=False)
     )
@@ -469,7 +469,7 @@ def test_replay_reproduces_call_set_and_identity_and_counters(
     would have hidden RNG state outside the trace."""
     cfg = _two_v_one_distinguishing()
     base = _baseline_vj_experiment(cfg)
-    compiled = configure(base).compile()
+    compiled = configure(base).compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
 
     out_a = compiled.simulator.run(seed=seed)

@@ -15,6 +15,8 @@ pub fn vj_refdata() -> RefDataConfig {
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -22,6 +24,8 @@ pub fn vj_refdata() -> RefDataConfig {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }

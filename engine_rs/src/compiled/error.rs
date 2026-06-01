@@ -7,6 +7,7 @@
 
 use crate::ir::Segment;
 use crate::pass::ScheduleError;
+use crate::refdata::RefDataValidationErrors;
 use std::fmt;
 
 /// Fatal compile-time error.
@@ -35,6 +36,19 @@ pub enum CompileErrorKind {
         contract_name: String,
         reason: String,
     },
+    /// Reference data failed structural validation (empty required
+    /// pools, malformed bytes, anchor mismatches, etc.). Carries the
+    /// full [`RefDataValidationErrors`] so consumers see every
+    /// problem in one diagnostic — both Fatal (always-blocking) and
+    /// Curatable (pseudogene-shaped) issues — plus the mode the gate
+    /// was run under so the remediation message can suggest
+    /// `allow_curatable_refdata` when only curatable issues remain.
+    /// Emitted at the very start of compile, before schedule or
+    /// precondition checks; bad refdata is a root input problem, not
+    /// a pass-order problem.
+    RefDataValidation {
+        errors: RefDataValidationErrors,
+    },
 }
 
 /// All fatal compile-time errors found in one plan scan.
@@ -46,6 +60,17 @@ pub struct CompileErrors {
 impl CompileErrors {
     pub fn is_empty(&self) -> bool {
         self.errors.is_empty()
+    }
+
+    /// Wrap a refdata-validation error aggregate as a single
+    /// plan-scoped compile error. The aggregated form is intentional:
+    /// users get every malformed-refdata issue in one diagnostic —
+    /// fatal and curatable alike — instead of having to fix-and-
+    /// recompile per issue.
+    pub fn from_refdata_validation(errors: RefDataValidationErrors) -> Self {
+        Self {
+            errors: vec![plan_scoped_error(CompileErrorKind::RefDataValidation { errors })],
+        }
     }
 }
 
@@ -86,6 +111,14 @@ impl fmt::Display for CompileErrors {
                     f,
                     "; contract {contract_name} precondition failed: {reason}",
                 )?,
+                CompileErrorKind::RefDataValidation { errors } => {
+                    // Delegate to `RefDataValidationErrors::Display`
+                    // so the per-issue severity tags and the
+                    // pseudogene/ORF remediation hint stay in one
+                    // place. Indented under the per-error semicolon
+                    // for readability.
+                    write!(f, "; {errors}")?;
+                }
             }
         }
         Ok(())

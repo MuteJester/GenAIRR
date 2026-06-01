@@ -26,6 +26,8 @@ fn v_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -33,6 +35,8 @@ fn v_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // Minimal J entry — required by ChainType::Vdj construction
     // (refdata builder does not enforce this) but never executed
@@ -43,6 +47,8 @@ fn v_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     (cfg, v01, v02)
 }
@@ -98,7 +104,7 @@ fn v_call_shrinks_when_np1_recreates_trimmed_suffix() {
     let (cfg, v01, _v02) = v_extension_refdata();
 
     let plan = v_extension_plan(&cfg, v01, 3, 3, b'T');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -167,7 +173,7 @@ fn v_call_stays_widened_when_np1_does_not_match_any_allele() {
     let (cfg, v01, v02) = v_extension_refdata();
 
     let plan = v_extension_plan(&cfg, v01, 3, 3, b'C');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -203,7 +209,7 @@ fn v_call_partially_extends_when_np1_matches_only_a_prefix() {
     let (cfg, v01, _v02) = v_extension_refdata();
 
     let plan = v_extension_plan(&cfg, v01, 3, 5, b'T');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -242,7 +248,7 @@ fn v_call_extension_no_op_when_no_trim() {
     let (cfg, v01, _v02) = v_extension_refdata();
 
     let plan = v_extension_plan(&cfg, v01, 0, 3, b'T');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -272,7 +278,7 @@ fn append_region_np1_bumps_live_call_version() {
     let (cfg, v01, _v02) = v_extension_refdata();
     let plan = v_extension_plan(&cfg, v01, 3, 3, b'T');
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 

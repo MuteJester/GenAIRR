@@ -18,6 +18,8 @@ fn make_partial_np_stop_filter_case() -> (RefDataConfig, Simulation) {
         seq: b"GGGTA".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -25,6 +27,8 @@ fn make_partial_np_stop_filter_case() -> (RefDataConfig, Simulation) {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();
@@ -52,6 +56,8 @@ fn make_partial_np1_future_d_stop_case(v_seq: &[u8]) -> (RefDataConfig, Simulati
         seq: v_seq.to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "d_test*01".into(),
@@ -59,6 +65,8 @@ fn make_partial_np1_future_d_stop_case(v_seq: &[u8]) -> (RefDataConfig, Simulati
         seq: b"AAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -66,6 +74,8 @@ fn make_partial_np1_future_d_stop_case(v_seq: &[u8]) -> (RefDataConfig, Simulati
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();

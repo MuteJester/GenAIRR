@@ -272,6 +272,16 @@ impl Pass for TrimPass {
         self.address()
     }
 
+    fn parameter_signature(&self) -> String {
+        // Segment + end are already encoded in `name()`
+        // (`trim.v_3` etc.); the only parameter left is the
+        // empirical trim-length distribution.
+        format!(
+            "length={}",
+            crate::passes::paramsig::fmt_int_dist(self.distribution.as_ref())
+        )
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_validation(sim, ctx, false)
             .expect("TrimPass permissive execution must not return PassError")
@@ -576,6 +586,8 @@ mod tests {
                 seq,
                 segment: Segment::V,
                 anchor: Some(v_anchor),
+                functional_status: None,
+                subregions: Vec::new(),
             });
             let _ = cfg.j_pool.push(Allele {
                 name: "j_trim*01".into(),
@@ -583,6 +595,8 @@ mod tests {
                 seq: b"TGGAAA".to_vec(),
                 segment: Segment::J,
                 anchor: Some(0),
+                functional_status: None,
+                subregions: Vec::new(),
             });
             cfg
         }

@@ -61,22 +61,54 @@ pub(crate) struct ExtensionWalkState<'a> {
     pub seq_start: &'a mut u32,
     pub seq_end: &'a mut u32,
     pub flags: &'a mut HypothesisFlags,
+    /// Segment orientation copied from the owning
+    /// `ResolvedWalkerState`. Routes the extension walks through
+    /// `SegmentRefIndex::compatible_alleles_at_oriented` so
+    /// inverted-D NP extensions score against the original allele
+    /// coordinates without a parallel inverted index.
+    pub orientation: crate::assignment::SegmentOrientation,
 }
 
+/// Walk the NP region immediately to the **pool-left** of the
+/// structural region one byte at a time.
+///
+/// `trim_cap` is the per-orientation cap that bounds this walk
+/// (the caller in `call_from_region` swaps which `trim_5` / `trim_3`
+/// budget drives this walk per audit §3):
+/// - Forward: `trim_cap = trim_5` (extending into lower allele coords).
+/// - ReverseComplement: `trim_cap = trim_3` (extending into higher
+///   allele coords).
+///
+/// Pool iteration is orientation-agnostic — the function always
+/// walks backwards through the NP region's pool indices. What
+/// changes under `ReverseComplement` is which allele coordinate the
+/// next byte targets and which `ref_*` boundary moves on accept:
+///
+/// | Step | Forward (pool-left ≡ allele-left) | RC (pool-left ≡ allele-right) |
+/// |---|---|---|
+/// | candidate `ref_pos` | `*state.ref_start - 1` | `*state.ref_end` |
+/// | on accept | `extended_ref_start = candidate` (decreases) | `extended_ref_end = candidate + 1` (increases) |
+/// | writeback target | `*state.ref_start` | `*state.ref_end` |
 pub(crate) fn walk_left_extension(
     sim: &Simulation,
     segment_index: &SegmentRefIndex,
     np_region: &Region,
-    trim_cap_5: Option<u32>,
+    trim_cap: Option<u32>,
     state: &mut ExtensionWalkState<'_>,
 ) {
     if np_region.end.index() != *state.seq_start {
         return;
     }
 
+    let is_rc = matches!(
+        state.orientation,
+        crate::assignment::SegmentOrientation::ReverseComplement
+    );
+
     let np_start = np_region.start.index();
     let mut extended_seq_start = *state.seq_start;
     let mut extended_ref_start = *state.ref_start;
+    let mut extended_ref_end = *state.ref_end;
     let mut extended_inform = *state.informative_matches;
     let mut extended_wildcard = *state.wildcard_matches;
     let mut extension_added = false;
@@ -94,22 +126,36 @@ pub(crate) fn walk_left_extension(
         .unwrap_or(0);
 
     for seq_pos in (lower_bound..np_region.end.index()).rev() {
-        if let Some(cap) = trim_cap_5 {
+        if let Some(cap) = trim_cap {
             if steps_taken >= cap {
                 break;
             }
         }
-        if extended_ref_start == 0 {
-            break;
-        }
-        let candidate_ref_pos = extended_ref_start - 1;
+        // Candidate allele position depends on orientation per
+        // audit §2. The `compatible_alleles_at_oriented` lookup
+        // is None when `candidate_ref_pos` falls past every
+        // allele's `seq.len()`, so the upper-bound check on
+        // `extended_ref_end` is implicit. The lower-bound check
+        // on `extended_ref_start - 1` is explicit (saturating
+        // sub at 0 would silently wrap if we let it).
+        let candidate_ref_pos = if is_rc {
+            extended_ref_end
+        } else {
+            if extended_ref_start == 0 {
+                break;
+            }
+            extended_ref_start - 1
+        };
+
         let nucleotide = sim
             .pool
             .get(NucHandle::new(seq_pos))
             .expect("extension range must point into the nucleotide pool");
-        let Some(evidence) =
-            segment_index.compatible_alleles_at(candidate_ref_pos as usize, nucleotide.base)
-        else {
+        let Some(evidence) = segment_index.compatible_alleles_at_oriented(
+            candidate_ref_pos as usize,
+            nucleotide.base,
+            state.orientation,
+        ) else {
             break;
         };
         if evidence.allele_ids.is_empty() {
@@ -128,7 +174,11 @@ pub(crate) fn walk_left_extension(
             *slot = slot.saturating_add(1);
         });
         extended_seq_start = seq_pos;
-        extended_ref_start = candidate_ref_pos;
+        if is_rc {
+            extended_ref_end = candidate_ref_pos.saturating_add(1);
+        } else {
+            extended_ref_start = candidate_ref_pos;
+        }
         if evidence.informative {
             extended_inform = extended_inform.saturating_add(1);
         } else {
@@ -143,7 +193,11 @@ pub(crate) fn walk_left_extension(
 
     if extension_added {
         *state.seq_start = extended_seq_start;
-        *state.ref_start = extended_ref_start;
+        if is_rc {
+            *state.ref_end = extended_ref_end;
+        } else {
+            *state.ref_start = extended_ref_start;
+        }
         *state.informative_matches = extended_inform;
         *state.wildcard_matches = extended_wildcard;
         state.flags.insert(HypothesisFlags::BOUNDARY_ELASTIC);
@@ -153,21 +207,44 @@ pub(crate) fn walk_left_extension(
     }
 }
 
+/// Walk the NP region immediately to the **pool-right** of the
+/// structural region one byte at a time.
+///
+/// `trim_cap` is the per-orientation cap that bounds this walk
+/// (the caller in `call_from_region` swaps `trim_5` / `trim_3`
+/// per audit §3):
+/// - Forward: `trim_cap = trim_3` (extending into higher allele coords).
+/// - ReverseComplement: `trim_cap = trim_5` (extending into lower
+///   allele coords).
+///
+/// Mirror of [`walk_left_extension`]:
+///
+/// | Step | Forward (pool-right ≡ allele-right) | RC (pool-right ≡ allele-left) |
+/// |---|---|---|
+/// | candidate `ref_pos` | `*state.ref_end` | `*state.ref_start - 1` |
+/// | on accept | `extended_ref_end = candidate + 1` | `extended_ref_start = candidate` |
+/// | writeback target | `*state.ref_end` | `*state.ref_start` |
 pub(crate) fn walk_right_extension(
     sim: &Simulation,
     segment_index: &SegmentRefIndex,
     np_region: &Region,
-    trim_cap_3: Option<u32>,
+    trim_cap: Option<u32>,
     state: &mut ExtensionWalkState<'_>,
 ) {
     if np_region.start.index() != *state.seq_end {
         return;
     }
 
+    let is_rc = matches!(
+        state.orientation,
+        crate::assignment::SegmentOrientation::ReverseComplement
+    );
+
     let np_end = np_region.end.index();
     let pool_len = sim.pool.len() as u32;
     let mut extended_seq_end = *state.seq_end;
-    let mut extended_ref_pos = *state.ref_end;
+    let mut extended_ref_start = *state.ref_start;
+    let mut extended_ref_end = *state.ref_end;
     let mut extended_inform = *state.informative_matches;
     let mut extended_wildcard = *state.wildcard_matches;
     let mut extension_added = false;
@@ -186,18 +263,29 @@ pub(crate) fn walk_right_extension(
         .min(pool_len);
 
     for seq_pos in np_region.start.index()..upper_bound {
-        if let Some(cap) = trim_cap_3 {
+        if let Some(cap) = trim_cap {
             if steps_taken >= cap {
                 break;
             }
         }
+        let candidate_ref_pos = if is_rc {
+            if extended_ref_start == 0 {
+                break;
+            }
+            extended_ref_start - 1
+        } else {
+            extended_ref_end
+        };
+
         let nucleotide = sim
             .pool
             .get(NucHandle::new(seq_pos))
             .expect("extension range must point into the nucleotide pool");
-        let Some(evidence) =
-            segment_index.compatible_alleles_at(extended_ref_pos as usize, nucleotide.base)
-        else {
+        let Some(evidence) = segment_index.compatible_alleles_at_oriented(
+            candidate_ref_pos as usize,
+            nucleotide.base,
+            state.orientation,
+        ) else {
             break;
         };
         if evidence.allele_ids.is_empty() {
@@ -212,7 +300,11 @@ pub(crate) fn walk_right_extension(
             *slot = slot.saturating_add(1);
         });
         extended_seq_end = seq_pos.saturating_add(1);
-        extended_ref_pos = extended_ref_pos.saturating_add(1);
+        if is_rc {
+            extended_ref_start = candidate_ref_pos;
+        } else {
+            extended_ref_end = candidate_ref_pos.saturating_add(1);
+        }
         if evidence.informative {
             extended_inform = extended_inform.saturating_add(1);
         } else {
@@ -227,7 +319,11 @@ pub(crate) fn walk_right_extension(
 
     if extension_added {
         *state.seq_end = extended_seq_end;
-        *state.ref_end = extended_ref_pos;
+        if is_rc {
+            *state.ref_start = extended_ref_start;
+        } else {
+            *state.ref_end = extended_ref_end;
+        }
         *state.informative_matches = extended_inform;
         *state.wildcard_matches = extended_wildcard;
         state.flags.insert(HypothesisFlags::BOUNDARY_ELASTIC);

@@ -80,6 +80,8 @@ pub(crate) fn make_substitution_productive_vj_fixture() -> (RefDataConfig, Simul
         seq: b"TAC".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_mut*01".into(),
@@ -87,6 +89,8 @@ pub(crate) fn make_substitution_productive_vj_fixture() -> (RefDataConfig, Simul
         seq: b"TGG".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();
@@ -125,6 +129,8 @@ pub(crate) fn make_fully_locked_vj_fixture() -> (RefDataConfig, Simulation) {
         seq: b"TGG".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_lock*01".into(),
@@ -132,6 +138,8 @@ pub(crate) fn make_fully_locked_vj_fixture() -> (RefDataConfig, Simulation) {
         seq: b"TGG".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();
@@ -365,7 +373,7 @@ pub(crate) fn assert_compiled_simulator_replay_round_trip(
 mod helper_tests {
     use super::*;
     use crate::address::ChoiceAddress;
-    use crate::compiled::{ExecutionPolicy, OwnedCompiledSimulator};
+    use crate::compiled::{CompileOptions, ExecutionPolicy, OwnedCompiledSimulator};
     use crate::dist::AllelePoolDist;
     use crate::pass::PassPlan;
     use crate::passes::sample_allele::test_support::make_test_pool;
@@ -380,6 +388,8 @@ mod helper_tests {
             seq: b"AAACCCGGG".to_vec(),
             segment: Segment::V,
             anchor: Some(6),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = cfg.j_pool.push(Allele {
             name: "j*01".into(),
@@ -387,6 +397,8 @@ mod helper_tests {
             seq: b"TTTAAA".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         cfg
     }
@@ -491,11 +503,12 @@ mod helper_tests {
         )));
         plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
         plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
-        let compiled = OwnedCompiledSimulator::compile(
+        let compiled = OwnedCompiledSimulator::compile_with_options(
             plan,
             Some(cfg),
             None,
             ExecutionPolicy::Permissive,
+            CompileOptions::skip_refdata_validation(),
         )
         .expect("plan compiles");
         assert_compiled_simulator_replay_round_trip(&compiled, 1234);

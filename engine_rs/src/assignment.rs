@@ -34,10 +34,47 @@ use crate::ir::{PerSegment, Segment};
 use crate::refdata::AlleleId;
 
 // ──────────────────────────────────────────────────────────────────
+// SegmentOrientation — Forward vs ReverseComplement for one assignment
+// ──────────────────────────────────────────────────────────────────
+
+/// Orientation of a sampled segment relative to its reference
+/// allele. Lives on [`AlleleInstance`] — same allele can be sampled
+/// forward in one simulation and reverse-complemented in the next.
+///
+/// `Forward` is the established biology default. `ReverseComplement`
+/// models V(D)J inversion (RSS-symmetric inversion event for D
+/// segments, biologically real with low prevalence; rare but
+/// documented for V/J).
+///
+/// **Slice A scope (IR primitives only).** Adding this enum and the
+/// `AlleleInstance.orientation` field is data-model preparation; no
+/// pass reads or writes it yet. Assembly emission, trace recording,
+/// AIRR projection, and the DSL surface arrive in later slices.
+/// See [`docs/d_inversion_design.md`](../../../docs/d_inversion_design.md)
+/// for the full plan.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
+pub enum SegmentOrientation {
+    /// Reference orientation. Default for every `AlleleInstance`.
+    #[default]
+    Forward,
+    /// Reverse-complemented relative to the reference allele.
+    ReverseComplement,
+}
+
+impl SegmentOrientation {
+    /// Whether this orientation reverses the reference allele.
+    /// `true` only for [`Self::ReverseComplement`].
+    pub fn is_reverse(self) -> bool {
+        matches!(self, SegmentOrientation::ReverseComplement)
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────
 // AlleleInstance — per-simulation state of one sampled allele
 // ──────────────────────────────────────────────────────────────────
 
-/// One sampled allele plus the trim choices applied to it.
+/// One sampled allele plus the trim and orientation choices applied
+/// to it.
 ///
 /// `allele_id` indexes into the appropriate `AllelePool` of the
 /// `RefDataConfig` the simulation was built against. The trim fields
@@ -49,21 +86,50 @@ use crate::refdata::AlleleId;
 /// the reference data sit comfortably within that range (~300 bases
 /// for V, ~100 for J, etc.). A trim larger than the reference
 /// length is a caller bug; assembly will catch it.
+///
+/// `orientation` carries Slice A's prepared D-inversion data model.
+/// Default [`SegmentOrientation::Forward`]; no pass reads or writes
+/// it yet (the D-inversion implementation phases land in later
+/// slices — see [`docs/d_inversion_design.md`](../../../docs/d_inversion_design.md)).
+///
+/// `receptor_revision_original_id` is the pre-revision V allele
+/// when receptor revision rewrote this slot, or `None` otherwise.
+/// It is the IR-side source of truth for the AIRR
+/// `receptor_revision_applied` / `original_v_call` projection
+/// (see [`docs/clonal_plan_split_design.md`](../../../docs/clonal_plan_split_design.md)
+/// / Bug D — trace-sourced provenance silently dropped on
+/// post-fork clonal descendants because the descendant trace
+/// doesn't carry pre-fork choices, but the assignments do).
+/// Only the V slot ever has a non-`None` value today — D / J
+/// receptor revision is out of scope.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct AlleleInstance {
     pub allele_id: AlleleId,
     pub trim_5: u16,
     pub trim_3: u16,
+    pub orientation: SegmentOrientation,
+    /// Pre-revision allele id when receptor revision applied; `None`
+    /// when revision did not run on this slot. Preserves the
+    /// *first* original id across hypothetical chained revisions
+    /// (today the DSL prevents chaining, but the field stays
+    /// stable under any future relaxation).
+    pub receptor_revision_original_id: Option<AlleleId>,
 }
 
 impl AlleleInstance {
-    /// Construct a fresh instance with both trims at zero. Trim
-    /// passes (C.6) update the trim fields via the persistent API.
+    /// Construct a fresh instance with both trims at zero, forward
+    /// orientation, and no receptor-revision provenance. Trim
+    /// passes (C.6) update the trim fields; the future D-inversion
+    /// pass updates `orientation` via [`Self::with_orientation`];
+    /// receptor revision installs provenance via
+    /// [`Self::with_receptor_revision_original_id`].
     pub fn new(allele_id: AlleleId) -> Self {
         Self {
             allele_id,
             trim_5: 0,
             trim_3: 0,
+            orientation: SegmentOrientation::Forward,
+            receptor_revision_original_id: None,
         }
     }
 
@@ -79,6 +145,27 @@ impl AlleleInstance {
     #[must_use]
     pub fn with_trim_3(self, trim_3: u16) -> Self {
         Self { trim_3, ..self }
+    }
+
+    /// Return a new instance with `orientation` updated; receiver
+    /// unchanged. Mirror of [`Self::with_trim_5`] / [`Self::with_trim_3`].
+    #[must_use]
+    pub fn with_orientation(self, orientation: SegmentOrientation) -> Self {
+        Self { orientation, ..self }
+    }
+
+    /// Return a new instance with the receptor-revision pre-revision
+    /// allele id set to `original_id`; receiver unchanged. Mirrors
+    /// the existing persistent setters. Pass-level helper — the
+    /// receptor-revision pass installs this after capturing the
+    /// pre-revision V identity; the AIRR builder reads it back via
+    /// the field directly.
+    #[must_use]
+    pub fn with_receptor_revision_original_id(self, original_id: AlleleId) -> Self {
+        Self {
+            receptor_revision_original_id: Some(original_id),
+            ..self
+        }
     }
 }
 
@@ -190,6 +277,19 @@ impl AlleleAssignments {
             TrimEnd::Five => inst.with_trim_5(value),
             TrimEnd::Three => inst.with_trim_3(value),
         })
+    }
+
+    /// Return new assignments with the given segment's orientation
+    /// updated. Convenience wrapper over `with_updated`. Panics if
+    /// no instance is currently assigned to that segment, with the
+    /// same wording as the trim setters so a caller misusing the
+    /// API sees a uniform diagnostic.
+    pub fn with_orientation(
+        &self,
+        segment: Segment,
+        orientation: SegmentOrientation,
+    ) -> Self {
+        self.with_updated(segment, |inst| inst.with_orientation(orientation))
     }
 }
 
@@ -363,5 +463,142 @@ mod tests {
 
         assert_eq!(a.get(Segment::V).unwrap().allele_id, AlleleId::new(1));
         assert_eq!(b.get(Segment::V).unwrap().allele_id, AlleleId::new(2));
+    }
+
+    // ── SegmentOrientation + AlleleInstance.orientation ──────────────
+
+    #[test]
+    fn segment_orientation_default_is_forward() {
+        // Pin the `Default` impl: the enum's #[default] is the
+        // load-bearing knob that keeps every existing
+        // `AlleleInstance::new(...)` byte-identical.
+        assert_eq!(SegmentOrientation::default(), SegmentOrientation::Forward);
+    }
+
+    #[test]
+    fn segment_orientation_is_reverse_only_for_reverse_complement() {
+        assert!(!SegmentOrientation::Forward.is_reverse());
+        assert!(SegmentOrientation::ReverseComplement.is_reverse());
+    }
+
+    #[test]
+    fn new_allele_instance_defaults_to_forward_orientation() {
+        let inst = AlleleInstance::new(AlleleId::new(7));
+        assert_eq!(inst.orientation, SegmentOrientation::Forward);
+        assert!(!inst.orientation.is_reverse());
+    }
+
+    #[test]
+    fn with_orientation_persists_without_touching_other_fields() {
+        let a = AlleleInstance::new(AlleleId::new(3))
+            .with_trim_5(2)
+            .with_trim_3(5);
+        let b = a.with_orientation(SegmentOrientation::ReverseComplement);
+        // Receiver untouched (persistent IR contract).
+        assert_eq!(a.orientation, SegmentOrientation::Forward);
+        assert_eq!(b.orientation, SegmentOrientation::ReverseComplement);
+        // Trims survive the orientation update.
+        assert_eq!(b.trim_5, 2);
+        assert_eq!(b.trim_3, 5);
+        assert_eq!(b.allele_id, AlleleId::new(3));
+    }
+
+    #[test]
+    fn with_orientation_round_trip_back_to_forward() {
+        let a = AlleleInstance::new(AlleleId::new(0))
+            .with_orientation(SegmentOrientation::ReverseComplement)
+            .with_orientation(SegmentOrientation::Forward);
+        assert_eq!(a.orientation, SegmentOrientation::Forward);
+    }
+
+    #[test]
+    fn with_trim_setters_preserve_orientation() {
+        let a = AlleleInstance::new(AlleleId::new(0))
+            .with_orientation(SegmentOrientation::ReverseComplement);
+        let b = a.with_trim_5(4);
+        let c = b.with_trim_3(6);
+        // Orientation survives both trim updates.
+        assert_eq!(b.orientation, SegmentOrientation::ReverseComplement);
+        assert_eq!(c.orientation, SegmentOrientation::ReverseComplement);
+        assert_eq!(c.trim_5, 4);
+        assert_eq!(c.trim_3, 6);
+    }
+
+    // ── AlleleAssignments::with_orientation ──────────────────────────
+
+    #[test]
+    fn assignments_with_orientation_updates_only_target_segment() {
+        let a = AlleleAssignments::new()
+            .with_assigned(Segment::V, AlleleInstance::new(AlleleId::new(0)))
+            .with_assigned(Segment::D, AlleleInstance::new(AlleleId::new(1)))
+            .with_assigned(Segment::J, AlleleInstance::new(AlleleId::new(2)));
+        let b = a.with_orientation(Segment::D, SegmentOrientation::ReverseComplement);
+
+        // D flipped; V and J unchanged.
+        assert_eq!(
+            b.get(Segment::D).unwrap().orientation,
+            SegmentOrientation::ReverseComplement,
+        );
+        assert_eq!(
+            b.get(Segment::V).unwrap().orientation,
+            SegmentOrientation::Forward,
+        );
+        assert_eq!(
+            b.get(Segment::J).unwrap().orientation,
+            SegmentOrientation::Forward,
+        );
+        // Receiver still has every segment in Forward.
+        assert_eq!(
+            a.get(Segment::D).unwrap().orientation,
+            SegmentOrientation::Forward,
+        );
+    }
+
+    #[test]
+    fn assignments_with_orientation_preserves_trims_and_allele_id() {
+        let v = AlleleInstance::new(AlleleId::new(11))
+            .with_trim_5(3)
+            .with_trim_3(7);
+        let a = AlleleAssignments::new().with_assigned(Segment::V, v);
+        let b = a.with_orientation(Segment::V, SegmentOrientation::ReverseComplement);
+        let updated = b.get(Segment::V).unwrap();
+        assert_eq!(updated.orientation, SegmentOrientation::ReverseComplement);
+        assert_eq!(updated.allele_id, AlleleId::new(11));
+        assert_eq!(updated.trim_5, 3);
+        assert_eq!(updated.trim_3, 7);
+    }
+
+    #[test]
+    #[should_panic(expected = "no instance assigned to segment")]
+    fn assignments_with_orientation_panics_on_unassigned_segment() {
+        // Mirror of `with_updated_panics_on_unassigned` — orientation
+        // setter must surface the same wording so a caller misusing
+        // either setter sees a uniform diagnostic.
+        let a = AlleleAssignments::new();
+        let _ = a.with_orientation(Segment::D, SegmentOrientation::ReverseComplement);
+    }
+
+    #[test]
+    fn assignments_orientation_branching_revisions_are_independent() {
+        let base = AlleleAssignments::new()
+            .with_assigned(Segment::D, AlleleInstance::new(AlleleId::new(5)));
+        let branch_a = base.with_orientation(Segment::D, SegmentOrientation::Forward);
+        let branch_b =
+            base.with_orientation(Segment::D, SegmentOrientation::ReverseComplement);
+
+        // Base unchanged.
+        assert_eq!(
+            base.get(Segment::D).unwrap().orientation,
+            SegmentOrientation::Forward,
+        );
+        // Branches independent.
+        assert_eq!(
+            branch_a.get(Segment::D).unwrap().orientation,
+            SegmentOrientation::Forward,
+        );
+        assert_eq!(
+            branch_b.get(Segment::D).unwrap().orientation,
+            SegmentOrientation::ReverseComplement,
+        );
     }
 }

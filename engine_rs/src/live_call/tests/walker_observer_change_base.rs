@@ -24,7 +24,7 @@ fn build_v_index() -> SegmentRefIndex {
 /// edits, returning the sealed scores + match counts.
 fn drive(index: &SegmentRefIndex, bases: &[u8], edits: &[(u32, u8)]) -> (Vec<u32>, u32, u32) {
     let mut builder = SimulationBuilder::from_simulation(Simulation::new());
-    builder.attach_walker_observer(index, 0);
+    builder.attach_walker_observer(index, 0, crate::assignment::SegmentOrientation::Forward);
     for (i, &b) in bases.iter().enumerate() {
         builder.push_nucleotide(Nucleotide::germline(b, i as u16, Segment::V));
     }
@@ -120,7 +120,7 @@ fn change_base_against_callfromregion_oracle() {
     // from-scratch oracle on the equivalent mutated Simulation.
     let mut builder = SimulationBuilder::from_simulation(Simulation::new());
     let seg_index = ref_index.get(Segment::V).expect("V index exists");
-    builder.attach_walker_observer(seg_index, 0);
+    builder.attach_walker_observer(seg_index, 0, crate::assignment::SegmentOrientation::Forward);
     for (i, &b) in b"AACT".iter().enumerate() {
         builder.push_nucleotide(Nucleotide::germline(b, i as u16, Segment::V));
     }

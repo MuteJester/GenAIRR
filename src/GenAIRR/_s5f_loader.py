@@ -21,10 +21,17 @@ same base ordering.
 """
 from __future__ import annotations
 
+import hashlib
 import pickle
 from functools import lru_cache
 from importlib.resources import files
-from typing import List, Tuple
+from typing import List, Optional, Tuple
+
+
+# Canonical default for ``Experiment.mutate(model="s5f", ...)``.
+# Documented here so the cartridge-manifest builder and the DSL
+# share a single source of truth.
+DEFAULT_S5F_KERNEL = "hh_s5f"
 
 # A/C/G/T ↔ 0/1/2/3, matching crate::ir::encode_base in Rust.
 _BASE_INDEX = {"A": 0, "C": 1, "G": 2, "T": 3}
@@ -115,3 +122,43 @@ def load_builtin_s5f_kernel(name: str) -> Tuple[List[float], List[float]]:
         )
     mutability_dict, substitution_dict = obj[0], obj[1]
     return _build_kernel_lists(mutability_dict, substitution_dict)
+
+
+def available_s5f_kernels() -> List[str]:
+    """Sorted list of bundled S5F kernel short names.
+
+    Used by the cartridge manifest's ``models.shm`` block as the
+    canonical inventory of S5F kernels available to the engine.
+    """
+    return sorted(_BUILTIN_S5F_MODELS)
+
+
+@lru_cache(maxsize=None)
+def builtin_s5f_kernel_digest(name: str) -> Optional[str]:
+    """Deterministic SHA-256 digest of a bundled S5F kernel's
+    ``.pkl`` bytes, formatted as ``"sha256:{hex}"``. Returns
+    ``None`` when the name is unknown or the bytes can't be read
+    (e.g. corrupted install).
+
+    The digest is over the **raw pickle bytes**, not the parsed +
+    flattened kernel arrays. This is the cheapest stable identity
+    for the bundled file: two installs with the same digest carry
+    the same kernel; a refactor that re-pickles with different
+    options would change the digest even if the resulting kernel
+    arrays are numerically equivalent. That's an acceptable
+    over-sensitivity for a "did this kernel file change?" check;
+    if a future slice wants kernel-array-level identity it can add
+    a separate digest computed after ``_build_kernel_lists``.
+
+    Cached so repeated manifest calls don't re-hash the bytes.
+    """
+    key = name.lower().strip()
+    if key not in _BUILTIN_S5F_MODELS:
+        return None
+    try:
+        pkg = "GenAIRR.data.mutation_model_parameters"
+        fname = _BUILTIN_S5F_MODELS[key]
+        raw = files(pkg).joinpath(fname).read_bytes()
+    except Exception:
+        return None
+    return f"sha256:{hashlib.sha256(raw).hexdigest()}"

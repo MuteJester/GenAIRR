@@ -89,6 +89,8 @@ fn allele(name: &str, seq: &[u8]) -> Allele {
         seq: seq.to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     }
 }
 
@@ -359,13 +361,26 @@ fn alleles_compatible_at_matches_per_allele_byte() {
         allele("v2*01", b"AAACTCGGG"),
     ];
     // ref_pos 4: v1='C', v2='T'. Observed 'C' matches v1 only.
-    assert_eq!(alleles_compatible_at(&alleles, 4, b'C'), vec![true, false]);
+    use crate::assignment::SegmentOrientation::Forward;
+    assert_eq!(
+        alleles_compatible_at(&alleles, 4, b'C', Forward),
+        vec![true, false]
+    );
     // Observed 'T' matches v2 only.
-    assert_eq!(alleles_compatible_at(&alleles, 4, b'T'), vec![false, true]);
+    assert_eq!(
+        alleles_compatible_at(&alleles, 4, b'T', Forward),
+        vec![false, true]
+    );
     // Observed 'N' wildcards both.
-    assert_eq!(alleles_compatible_at(&alleles, 4, b'N'), vec![true, true]);
+    assert_eq!(
+        alleles_compatible_at(&alleles, 4, b'N', Forward),
+        vec![true, true]
+    );
     // ref_pos past allele length: no match.
-    assert_eq!(alleles_compatible_at(&alleles, 100, b'A'), vec![false, false]);
+    assert_eq!(
+        alleles_compatible_at(&alleles, 100, b'A', Forward),
+        vec![false, false]
+    );
 }
 
 #[test]
@@ -410,7 +425,15 @@ fn extension_aware_oracle_narrows_tie_under_right_extension() {
     // Without extension cap: both alleles tie at 8 (identical on
     // structural positions 0..7).
     let structural_only =
-        score_alleles_with_extensions(&sim, Segment::V, &alleles, &v_region, 0, 0);
+        score_alleles_with_extensions(
+            &sim,
+            Segment::V,
+            &alleles,
+            &v_region,
+            0,
+            0,
+            crate::assignment::SegmentOrientation::Forward,
+        );
     assert_eq!(structural_only, vec![8, 8]);
 
     // With trim_3=1: right extension steps 1 byte into NP1 at
@@ -418,7 +441,15 @@ fn extension_aware_oracle_narrows_tie_under_right_extension() {
     // does not. Extension narrows the tie set → v1 to 9, v2 stays
     // at 8.
     let with_extension =
-        score_alleles_with_extensions(&sim, Segment::V, &alleles, &v_region, 0, 1);
+        score_alleles_with_extensions(
+            &sim,
+            Segment::V,
+            &alleles,
+            &v_region,
+            0,
+            1,
+            crate::assignment::SegmentOrientation::Forward,
+        );
     assert_eq!(with_extension, vec![9, 8]);
     let tie = tie_set_ids_at_max_score(&with_extension);
     assert_eq!(tie, vec![AlleleId::new(0)]);
@@ -469,10 +500,321 @@ fn extension_aware_oracle_skips_extension_when_no_narrowing() {
     //     is the only max-tied and it matches)
     // → no narrowing → extension skipped.
     let scores =
-        score_alleles_with_extensions(&sim, Segment::V, &alleles, &v_region, 0, 1);
+        score_alleles_with_extensions(
+            &sim,
+            Segment::V,
+            &alleles,
+            &v_region,
+            0,
+            1,
+            crate::assignment::SegmentOrientation::Forward,
+        );
     assert_eq!(
         scores,
         vec![8, 7],
         "extension should be skipped because it doesn't narrow"
+    );
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Orientation-aware scoring (D-inversion cleanup)
+// ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn matches_observed_with_orientation_handles_forward_and_rc() {
+    use crate::assignment::SegmentOrientation::*;
+    use crate::live_call::scoring::matches_observed_with_orientation;
+    // Forward: identical to matches_observed.
+    assert!(matches_observed_with_orientation(b'A', b'A', Forward));
+    assert!(!matches_observed_with_orientation(b'A', b'T', Forward));
+    // RC: observed pre-complemented before comparison.
+    // observed='A' → complement='T' → must equal germline 'T'.
+    assert!(matches_observed_with_orientation(b'A', b'T', ReverseComplement));
+    assert!(matches_observed_with_orientation(b'T', b'A', ReverseComplement));
+    assert!(matches_observed_with_orientation(b'C', b'G', ReverseComplement));
+    assert!(matches_observed_with_orientation(b'G', b'C', ReverseComplement));
+    // Non-complement pair fails under RC.
+    assert!(!matches_observed_with_orientation(b'A', b'A', ReverseComplement));
+    // Wildcards pass through both modes.
+    assert!(matches_observed_with_orientation(b'N', b'A', Forward));
+    assert!(matches_observed_with_orientation(b'N', b'A', ReverseComplement));
+}
+
+#[test]
+fn rc_orientation_recovers_truth_call_on_synthetic_inverted_d() {
+    // Synthetic 6-base D allele with a unique distinguishing byte.
+    // Two D candidates differ at position 2. The assembled inverted
+    // D bytes are `complement(allele[5..0])`. Under Forward scoring
+    // the walker sees zero matches (the complemented bytes don't
+    // equal any allele's reference). Under RC scoring the truth
+    // allele wins decisively, mirroring the assembly's intent.
+    use crate::assignment::AlleleInstance;
+    use crate::assignment::SegmentOrientation;
+    use crate::ir::{complement_base, NucHandle, Nucleotide, Region, Segment};
+    use crate::live_call::scoring::score_alleles_with_extensions;
+    use crate::refdata::AlleleId;
+
+    let alleles = vec![
+        allele("d1*01", b"ACGTTA"), // truth
+        allele("d2*01", b"AGGTTA"), // differs at pos 1
+    ];
+
+    let mut sim = Simulation::new();
+    // Emit complemented bytes in reverse allele order, mirroring
+    // AssembleSegmentPass(D) under invert=true.
+    let truth = &alleles[0].seq;
+    for i in 0..truth.len() {
+        let allele_pos = (truth.len() - 1 - i) as u16;
+        let emitted = complement_base(truth[allele_pos as usize]);
+        let (next, _) =
+            sim.with_nucleotide_pushed(Nucleotide::germline(emitted, allele_pos, Segment::D));
+        sim = next;
+    }
+    let d_region = Region::new(
+        Segment::D,
+        NucHandle::new(0),
+        NucHandle::new(truth.len() as u32),
+    );
+    sim = sim.with_region_added(d_region.clone());
+    sim = sim.with_allele_assigned(Segment::D, AlleleInstance::new(AlleleId::new(0)));
+
+    let scores_rc = score_alleles_with_extensions(
+        &sim,
+        Segment::D,
+        &alleles,
+        &d_region,
+        0,
+        0,
+        SegmentOrientation::ReverseComplement,
+    );
+    // Truth (d1) matches at all 6 positions; d2 mismatches at pos 1.
+    assert_eq!(scores_rc, vec![6, 5]);
+
+    // Sanity: scoring the SAME pool under Forward gives 0 for both
+    // (the complemented bytes never equal the allele's reference).
+    let scores_forward = score_alleles_with_extensions(
+        &sim,
+        Segment::D,
+        &alleles,
+        &d_region,
+        0,
+        0,
+        SegmentOrientation::Forward,
+    );
+    // Under Forward we additionally bail at the first byte because
+    // the reverse-iterated germline_pos triggers the
+    // decreasing-monotonic backwards check. Either way, both
+    // alleles must score strictly less than 6.
+    for &s in &scores_forward {
+        assert!(s < 6, "Forward scoring must not match an inverted-D pool");
+    }
+}
+
+#[test]
+fn rc_extensions_narrow_truth_allele() {
+    // The audit's canonical missed-evidence fixture. The structural
+    // D bytes alone already give d1 a higher score than d2 (the
+    // structural region includes the distinguishing position) — so
+    // a Forward-mirror fixture is needed to demonstrate "extension
+    // narrowing only" cleanly. The minimal version: two D alleles
+    // tied on the retained structural region but distinguished by
+    // one position to the **right** of the structural slice in
+    // allele coordinates. Under Forward, an NP byte to the
+    // pool-right of D would extend into that position via
+    // `walk_right_extension`. Under inverted D, that same allele-
+    // right position is reached by an NP byte to the **pool-left**
+    // of D via the orientation-swapped `walk_left_extension`.
+    //
+    // Fixture shape:
+    //   d1 = "GGGGGT"   (the truth)
+    //   d2 = "GGGGGA"
+    //   slice_start = 0, slice_end = 5 (trim_3 = 1 retains 5 bytes)
+    //   structural pool bytes = complement(d1[4..=0]) emitted in
+    //                            reverse allele order =
+    //                            complement of "G,G,G,G,G" = "C,C,C,C,C"
+    //   Both d1 and d2 share `GGGGG` in [0..5], so structural
+    //   scoring ties them at 5.
+    //
+    //   Plant one NP byte at the pool-LEFT of D. Under RC,
+    //   pool-left extension targets allele coord `ref_end = 5`
+    //   (the trimmed-off byte). The NP byte we plant must:
+    //     - Be `complement(d1[5]) = complement(T) = A` (matches d1 only).
+    //   So byte 'A' narrows: only d1 has 'T' at pos 5.
+    use crate::assignment::AlleleInstance;
+    use crate::assignment::SegmentOrientation;
+    use crate::ir::{complement_base, flag, NucHandle, Nucleotide, Region, Segment};
+    use crate::live_call::scoring::score_alleles_with_extensions;
+    use crate::refdata::AlleleId;
+
+    let alleles = vec![
+        allele("d1*01", b"GGGGGT"), // truth — A at allele pos 5
+        allele("d2*01", b"GGGGGA"), // sibling — differs at pos 5
+    ];
+
+    // Emit RC'd structural bytes for d1, retaining bytes
+    // [slice_start=0..slice_end=5] (trim_3 = 1). Reverse allele
+    // order means germline_pos = 4, 3, 2, 1, 0 at pool positions
+    // 0, 1, 2, 3, 4.
+    let mut sim = Simulation::new();
+    let slice_start = 0u16;
+    let slice_end = 5u16;
+    let slice_len = slice_end - slice_start;
+    for i in 0..slice_len {
+        let allele_pos = slice_end - 1 - i;
+        let emitted = complement_base(alleles[0].seq[allele_pos as usize]);
+        let (next, _) =
+            sim.with_nucleotide_pushed(Nucleotide::germline(emitted, allele_pos, Segment::D));
+        sim = next;
+    }
+    // Plant one NP byte at the pool-LEFT of D. Wait — we already
+    // pushed the D bytes first; we need to lay out so D's pool-left
+    // is reachable. Re-build the sim with NP region FIRST, then D.
+    let mut sim = Simulation::new();
+    // Plant `complement(d1[5]) = complement(T) = A` at pool 0 (NP1).
+    let np_byte = complement_base(alleles[0].seq[5]); // 'A'
+    let (next, _) = sim.with_nucleotide_pushed(Nucleotide::synthetic(
+        np_byte,
+        Segment::Np1,
+        flag::N_NUC,
+    ));
+    sim = next;
+    // Now D structural bytes, in reverse-allele order.
+    for i in 0..slice_len {
+        let allele_pos = slice_end - 1 - i;
+        let emitted = complement_base(alleles[0].seq[allele_pos as usize]);
+        let (next, _) =
+            sim.with_nucleotide_pushed(Nucleotide::germline(emitted, allele_pos, Segment::D));
+        sim = next;
+    }
+    let d_region = Region::new(
+        Segment::D,
+        NucHandle::new(1),                              // skip past NP1
+        NucHandle::new(1 + slice_len as u32),
+    );
+    let np_region = Region::new(
+        Segment::Np1,
+        NucHandle::new(0),
+        NucHandle::new(1),
+    );
+    let sim = sim
+        .with_region_added(np_region)
+        .with_region_added(d_region.clone())
+        .with_allele_assigned(Segment::D, AlleleInstance::new(AlleleId::new(0)));
+
+    // Run kernel scoring under RC with trim_3 = 1 (allows one
+    // pool-left extension step under RC, which maps to allele-
+    // right per audit §3).
+    let scores_rc = score_alleles_with_extensions(
+        &sim,
+        Segment::D,
+        &alleles,
+        &d_region,
+        0, // trim_5
+        1, // trim_3 — drives the pool-left RC walk
+        SegmentOrientation::ReverseComplement,
+    );
+    // Structural: both tie at 5 (every byte matches both alleles
+    // in [0..5)). Extension at allele pos 5 narrows: d1 matches
+    // ('T'), d2 doesn't ('A'). Post-extension: d1=6, d2=5.
+    assert_eq!(
+        scores_rc,
+        vec![6, 5],
+        "RC extension must narrow to the truth allele via the \
+         trim_3-budgeted pool-left walk."
+    );
+
+    // Sanity: with trim_3 = 0 the extension never fires, so the
+    // tie set stays at 5/5.
+    let scores_rc_no_cap = score_alleles_with_extensions(
+        &sim,
+        Segment::D,
+        &alleles,
+        &d_region,
+        0, // trim_5
+        0, // trim_3 = 0 — extension budget exhausted immediately
+        SegmentOrientation::ReverseComplement,
+    );
+    assert_eq!(
+        scores_rc_no_cap,
+        vec![5, 5],
+        "RC trim_3 = 0 must disable the pool-left extension entirely."
+    );
+}
+
+#[test]
+fn rc_extension_trim_cap_swap_pool_left_consumes_trim_3() {
+    // Targeted regression for audit §3: under RC, the pool-LEFT
+    // extension walk consumes the `trim_3` budget (not `trim_5`).
+    // Pin this via the kernel: with trim_3 = 1 the pool-left walk
+    // takes a step; with trim_3 = 0 it doesn't, regardless of
+    // trim_5.
+    use crate::assignment::AlleleInstance;
+    use crate::assignment::SegmentOrientation;
+    use crate::ir::{complement_base, flag, NucHandle, Nucleotide, Region, Segment};
+    use crate::live_call::scoring::score_alleles_with_extensions;
+    use crate::refdata::AlleleId;
+
+    let alleles = vec![
+        allele("d1*01", b"GGGGGT"),
+        allele("d2*01", b"GGGGGA"),
+    ];
+
+    let mut sim = Simulation::new();
+    let np_byte = complement_base(b'T'); // distinguishes d1
+    let (next, _) = sim.with_nucleotide_pushed(Nucleotide::synthetic(
+        np_byte,
+        Segment::Np1,
+        flag::N_NUC,
+    ));
+    sim = next;
+    for i in 0..5u16 {
+        let allele_pos = 4 - i;
+        let emitted = complement_base(alleles[0].seq[allele_pos as usize]);
+        let (next, _) =
+            sim.with_nucleotide_pushed(Nucleotide::germline(emitted, allele_pos, Segment::D));
+        sim = next;
+    }
+    let d_region = Region::new(Segment::D, NucHandle::new(1), NucHandle::new(6));
+    let np_region = Region::new(Segment::Np1, NucHandle::new(0), NucHandle::new(1));
+    let sim = sim
+        .with_region_added(np_region)
+        .with_region_added(d_region.clone())
+        .with_allele_assigned(Segment::D, AlleleInstance::new(AlleleId::new(0)));
+
+    // trim_5 = 99, trim_3 = 0 — under v1's wrong-cap routing this
+    // would have let the pool-left walk consume trim_5 budget and
+    // narrow. Under audit §3 it should NOT extend.
+    let scores = score_alleles_with_extensions(
+        &sim,
+        Segment::D,
+        &alleles,
+        &d_region,
+        99, // trim_5 — irrelevant for pool-LEFT walk under RC
+        0,  // trim_3 — the cap that actually bounds the RC pool-left walk
+        SegmentOrientation::ReverseComplement,
+    );
+    assert_eq!(
+        scores,
+        vec![5, 5],
+        "Under RC, trim_5 must not drive the pool-LEFT walk; the \
+         budget that bounds it is trim_3 (audit §3)."
+    );
+
+    // Same fixture, swap caps: trim_5 = 0, trim_3 = 1 — extension
+    // fires per audit §3.
+    let scores = score_alleles_with_extensions(
+        &sim,
+        Segment::D,
+        &alleles,
+        &d_region,
+        0, // trim_5
+        1, // trim_3
+        SegmentOrientation::ReverseComplement,
+    );
+    assert_eq!(
+        scores,
+        vec![6, 5],
+        "Under RC, trim_3 = 1 must permit one pool-left extension \
+         step (audit §3)."
     );
 }

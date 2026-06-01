@@ -163,6 +163,7 @@ class CompiledExperiment:
         seed: int = 0,
         strict: bool = False,
         expose_provenance: bool = False,
+        validate_records: bool = False,
     ) -> "SimulationResult":
         """Run the compiled simulator ``n`` times and return the batch as
         a :class:`SimulationResult` ready for ``.to_csv`` /
@@ -171,13 +172,26 @@ class CompiledExperiment:
         Same arguments as :meth:`run`. ``expose_provenance=True``
         appends `truth_v_call/d_call/j_call` columns reflecting the
         originally-sampled allele names.
+
+        ``validate_records=True`` runs
+        :meth:`SimulationResult.validate_records` on the freshly
+        built batch and raises
+        :class:`GenAIRR._validation.RecordValidationFailedError`
+        (a :class:`RuntimeError` subclass) when any record fails the
+        postcondition validator. Default ``False`` keeps this method
+        zero-overhead.
         """
         from .result import SimulationResult
 
         outcomes = self.run(n=n, seed=seed, strict=strict)
-        return SimulationResult.from_outcomes(
+        result = SimulationResult.from_outcomes(
             outcomes, self._refdata, expose_provenance=expose_provenance
         )
+        if validate_records:
+            from ._validation import _raise_on_validation_failure
+
+            _raise_on_validation_failure(result.validate_records(self._refdata))
+        return result
 
     def stream(
         self,
@@ -383,12 +397,38 @@ class CompiledClonalExperiment:
         seed: int = 0,
         strict: bool = False,
         expose_provenance: bool = False,
+        validate_records: bool = False,
     ) -> "SimulationResult":
         """Same as :meth:`run` but returns a :class:`SimulationResult`
         with each record dict carrying an integer ``clone_id`` field
-        in ``[0, n_clones)``. ``expose_provenance=True`` also
-        appends `truth_v_call` / `truth_d_call` / `truth_j_call`
+        in ``[0, n_clones)`` plus a ``parent_id`` integer indexing
+        into :attr:`SimulationResult.parents`. ``expose_provenance=True``
+        also appends `truth_v_call` / `truth_d_call` / `truth_j_call`
         columns from the originally-sampled allele names.
+
+        The returned :class:`SimulationResult` carries the per-clone
+        parent ``Outcome`` objects on its ``.parents`` attribute.
+        Each parent holds the pre-fork addressed-choice trace, the
+        pre-fork event ledger, and the post-recombination IR — useful
+        for replay, lineage analysis, and the upcoming parent-aware
+        family validator. The flat ``.outcomes`` list continues to
+        carry only the descendant outcomes (one per record);
+        parents are exposed separately so the per-record list stays
+        the same shape clonal consumers already know.
+
+        ``validate_records=True`` runs
+        :meth:`SimulationResult.validate_records` on the freshly
+        built batch and raises
+        :class:`GenAIRR._validation.RecordValidationFailedError`
+        on any postcondition failure. After the per-record gate
+        passes, this also runs
+        :meth:`SimulationResult.validate_families` and raises the
+        sibling
+        :class:`GenAIRR._validation.FamilyValidationFailedError`
+        if any clonal-family invariant is violated. The two
+        gates report separately so users can tell projection bugs
+        from family-consistency bugs. Default ``False`` keeps this
+        method zero-overhead.
         """
         from ._airr_record import outcome_to_airr_record
         from .result import SimulationResult, _inject_truth_columns
@@ -404,9 +444,18 @@ class CompiledClonalExperiment:
 
         records: List[Dict[str, Any]] = []
         outcomes: List["_engine.Outcome"] = []
+        # Slice 2: retain parent outcomes — one per clone. The
+        # orchestration loop used to drop them after extracting
+        # ``final_simulation()``. We now keep them so the returned
+        # :class:`SimulationResult` can expose ``.parents`` for
+        # replay / lineage tooling. The parent ``Outcome`` itself
+        # is not copied onto each descendant; we hold a single
+        # reference per clone in the ``parents`` list.
+        parents: List["_engine.Outcome"] = []
         for clone_idx in range(self._fork.n_clones):
             clone_seed = int(seed) + clone_idx * 1_000_000
             parent = self._pre.run(seed=clone_seed, strict=strict)
+            parents.append(parent)
             parent_sim = parent.final_simulation()
             for desc_idx in range(self._fork.size):
                 desc_seed = clone_seed + 1 + desc_idx
@@ -420,10 +469,31 @@ class CompiledClonalExperiment:
                     sequence_id=f"clone{clone_idx}_desc{desc_idx}",
                 )
                 rec["clone_id"] = clone_idx
+                # ``parent_id`` is the descendant's index into
+                # ``result.parents``. Today clones are dense and
+                # zero-based, so ``parent_id == clone_id`` by
+                # construction — we stamp both because they carry
+                # distinct semantics: ``clone_id`` is the family
+                # identity (the existing Slice 0 contract);
+                # ``parent_id`` is the addressing scheme into the
+                # parent-outcome list (the new Slice 2 contract).
+                # Keeping them separate now means a future slice
+                # that introduces sparse / non-zero-based family
+                # ids doesn't have to retrofit both.
+                rec["parent_id"] = clone_idx
                 if expose_provenance:
                     _inject_truth_columns(desc, self._refdata, rec)
                 records.append(rec)
-        return SimulationResult(records, outcomes=outcomes)
+        result = SimulationResult(records, outcomes=outcomes, parents=parents)
+        if validate_records:
+            from ._validation import (
+                _raise_on_family_validation_failure,
+                _raise_on_validation_failure,
+            )
+
+            _raise_on_validation_failure(result.validate_records(self._refdata))
+            _raise_on_family_validation_failure(result.validate_families())
+        return result
 
     def __repr__(self) -> str:
         return (

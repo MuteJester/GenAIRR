@@ -40,7 +40,7 @@ def _vdj() -> "ge.RefDataConfig":
 
 def _baseline_vj():
     return (
-        ga.Experiment.on(_vj())
+        ga.Experiment.on(_vj()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
     )
@@ -81,7 +81,7 @@ def test_clean_records_pass_validator_across_seeds(label, configure):
     - the validator's re-derivation is wrong (false positive).
     Either way, the parameterised id surfaces which configuration."""
     exp = configure(_baseline_vj())
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     for seed in range(20):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
@@ -109,7 +109,7 @@ def test_validator_returns_dict_shape_with_expected_keys():
     # Run a clean simulation — confirms the return type is List[dict]
     # even when empty.
     exp = _baseline_vj()
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     outcome = compiled.simulator.run(seed=0)
     issues = outcome.validate_record(compiled.refdata)
     assert isinstance(issues, list)
@@ -132,14 +132,14 @@ def test_vdj_clean_records_pass_validator():
     """VDJ adds D + NP2; the validator must handle the wider
     structure without surfacing false positives."""
     exp = (
-        ga.Experiment.on(_vdj())
+        ga.Experiment.on(_vdj()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .mutate(rate=0.05)
         .polymerase_indels(count=2, insertion_prob=0.5)
         .productive_only()
     )
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     for seed in range(20):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
@@ -158,12 +158,12 @@ def test_rev_comp_records_validate_clean():
     making in-place re-derivation against the pool incorrect.
     The §5 audit covers rev-comp with dedicated tests."""
     exp = (
-        ga.Experiment.on(_vj())
+        ga.Experiment.on(_vj()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .random_strand_orientation(prob=1.0)
     )
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     for seed in range(10):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
@@ -185,10 +185,10 @@ def test_validator_pins_single_region_per_segment_invariant():
 
     Sweep many seeds × configs and confirm 0 violations."""
     for builder in (
-        lambda: ga.Experiment.on(_vj()).recombine(np1_lengths=[(3, 1.0)]).trim(enabled=False),
-        lambda: ga.Experiment.on(_vdj()).recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(3, 1.0)]).trim(enabled=False).polymerase_indels(count=3, insertion_prob=0.5),
+        lambda: ga.Experiment.on(_vj()).allow_curatable_refdata().recombine(np1_lengths=[(3, 1.0)]).trim(enabled=False),
+        lambda: ga.Experiment.on(_vdj()).allow_curatable_refdata().recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(3, 1.0)]).trim(enabled=False).polymerase_indels(count=3, insertion_prob=0.5),
     ):
-        compiled = builder().compile()
+        compiled = builder().compile(allow_curatable_refdata=True)
         for seed in range(20):
             outcome = compiled.simulator.run(seed=seed)
             issues = outcome.validate_record(compiled.refdata)
@@ -202,13 +202,13 @@ def test_validator_pins_single_hypothesis_in_live_call_invariant():
     hypotheses[0]. Today no production path generates more than
     one hypothesis. Validator pins that."""
     exp = (
-        ga.Experiment.on(_vdj())
+        ga.Experiment.on(_vdj()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .mutate(rate=0.1)
         .polymerase_indels(count=2, insertion_prob=0.5)
     )
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     for seed in range(20):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
@@ -248,7 +248,7 @@ def test_counter_provenance_holds_under_each_mechanism(mechanism):
         "NSegmentIndelsMismatch",
         "EndLossLengthMismatch",
     }
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     for seed in range(15):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
@@ -270,7 +270,7 @@ def test_productive_triad_recomputation_agrees_across_mutation_seeds():
     full set: productive=True, OOF, junction-stop, V-anchor break,
     J-anchor break."""
     exp = (
-        ga.Experiment.on(_vj())
+        ga.Experiment.on(_vj()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .mutate(rate=0.5)
@@ -279,7 +279,7 @@ def test_productive_triad_recomputation_agrees_across_mutation_seeds():
         "ProductiveMismatch", "VjInFrameMismatch", "StopCodonMismatch",
         "JunctionLengthMismatch", "JunctionContentMismatch", "JunctionAaMismatch",
     }
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     for seed in range(40):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)
@@ -298,13 +298,13 @@ def test_allele_oracle_agrees_with_reported_call_under_shm():
     agree with the projection's v_call/d_call/j_call CSV including
     the truth-first ordering convention."""
     exp = (
-        ga.Experiment.on(_vj())
+        ga.Experiment.on(_vj()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .mutate(rate=0.3)
     )
     oracle_kinds = {"AlleleCallTieSetMismatch", "AlleleCallOrderMismatch"}
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     for seed in range(40):
         outcome = compiled.simulator.run(seed=seed)
         issues = outcome.validate_record(compiled.refdata)

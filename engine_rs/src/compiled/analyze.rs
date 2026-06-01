@@ -95,6 +95,17 @@ impl CompileFactIndex {
                 validate_np_length_support(segment, &located, errors);
                 self.np_length_supports.insert(segment, located);
             }
+            PassCompileFact::PLengthSupport { end: _, support: _ } => {
+                // v1 records the fact for downstream introspection
+                // but doesn't run a dedicated `validate_p_length_support`
+                // — the per-end length is bounded by the source
+                // allele's post-trim coding flank (checked at
+                // execute time), and the cartridge's typed
+                // `EmpiricalDistributionSpec` is already validated
+                // at the Python boundary. Schedule analyser /
+                // feasibility consumers can walk the captured fact
+                // via `Compiled::pass_compile_facts()` if needed.
+            }
         }
     }
 }

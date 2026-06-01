@@ -19,6 +19,8 @@ fn make_pool(n: usize) -> AllelePool {
             seq: b"A".to_vec(),
             segment: Segment::V,
             anchor: None,
+            functional_status: None,
+            subregions: Vec::new(),
         });
     }
     p

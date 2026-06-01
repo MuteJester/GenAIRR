@@ -99,6 +99,8 @@ impl PCRErrorPass {
                 address::ChoiceAddress::CorruptPcrSite(i),
                 address::ChoiceAddress::CorruptPcrBase(i),
                 None,
+                None, // PCR is not biological SHM; no segment-rate weighting
+                None, // ... and no V-subregion-rate weighting either
             )?;
         }
 
@@ -109,6 +111,14 @@ impl PCRErrorPass {
 impl Pass for PCRErrorPass {
     fn name(&self) -> &str {
         address::CORRUPT_PCR
+    }
+
+    fn parameter_signature(&self) -> String {
+        use crate::passes::paramsig::{fmt_byte_dist, fmt_count_source, join_parts};
+        join_parts([
+            fmt_count_source(&self.count_source),
+            format!("base={}", fmt_byte_dist(self.base_dist.as_ref())),
+        ])
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {

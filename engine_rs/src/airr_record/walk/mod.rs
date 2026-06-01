@@ -1,29 +1,39 @@
-//! Single-pass alignment column walker for AIRR record building.
+//! Alignment-column renderer.
 //!
-//! `walk_alignment_columns` reads every region in the simulated
-//! sequence once and produces every per-segment alignment artefact
-//! the AIRR record needs: the sequence/germline/dmask alignment
-//! strings, per-segment CIGAR strings, alignment column spans, pool
-//! position spans, ref position spans, and per-segment identity
-//! ratios. The Python builder did four passes over the IR for these
-//! fields; this is one of the main reasons we expect a >5× speedup
-//! at scale.
+//! Builds the assembled `sequence_alignment`, `germline_alignment`,
+//! and `germline_alignment_d_mask` strings for an AIRR record by
+//! walking every region in the simulation once and emitting one
+//! column per assembled position.
+//!
+//! ## Ownership
+//!
+//! Segment-level truth (allele choice, sequence/ref ranges, CIGAR,
+//! identity, accepted NP claims) lives in
+//! [`super::segment_projection::compute_segment_projections`]. The
+//! renderer **consumes** that truth and uses it to decide which
+//! germline byte (or `-` gap, or `N`) each column emits. It owns no
+//! per-segment bookkeeping of its own — the only state it tracks is
+//! the three output strings and a pool-coverage bitmap used to
+//! locate tail-end indel insertions.
+//!
+//! This split was driven by historical drift: the previous walker
+//! interleaved segment truth and rendering in one 400-line function,
+//! so NP-claim bounds, segment range arithmetic, and CIGAR rules
+//! lived in two places (here and the validator) and could disagree.
+//! The kernel collapses them.
 
-mod helpers;
+pub(in crate::airr_record) mod helpers;
 mod types;
 
-pub(in crate::airr_record) use helpers::runlength_to_string;
+pub(in crate::airr_record) use types::AlignmentWalk;
 
-use helpers::{
-    bytes_uppercase_in_place, eq_ascii_case_insensitive, extend_ref_range, push_cigar_op,
-    push_dmask_for_seg, ref_pos_already_covered,
-};
-use types::AlignmentWalk;
+use helpers::{bytes_uppercase_in_place, push_dmask_for_seg};
 
-use super::projection::{np_claim_owner, projected_allele_id};
+use super::projection::projected_allele_id;
+use super::segment_projection::{compute_segment_projections, NpClaim};
 use super::sequence::{bytes_to_string, pool_bases};
 use super::AirrRecord;
-use crate::ir::{Nucleotide, Segment, Simulation};
+use crate::ir::{Nucleotide, PoolRange, RefRange, Segment, Simulation};
 use crate::refdata::RefDataConfig;
 
 pub(super) fn walk_alignment_columns(
@@ -31,323 +41,71 @@ pub(super) fn walk_alignment_columns(
     refdata: &RefDataConfig,
     rec: &AirrRecord,
 ) -> AlignmentWalk {
-    // We read germline bytes directly off each `Nucleotide` inside the
-    // walk loop rather than gathering the whole germline column up front
-    // — saves an extra Vec allocation per record.
+    // Phase 3: pre-compute segment truth. The renderer reads the
+    // kernel's decisions and never recomputes them.
+    let projections = compute_segment_projections(sim, refdata, rec);
+
     let bases = pool_bases(sim);
     let pool_len = bases.len();
 
-    // Grow incrementally to typical sequence size.
+    // NP-claim lookup keyed by pool position. Built from the
+    // kernel's accepted claims (positions blocked by the kernel's
+    // structural / past-allele / already-covered guards never make
+    // it into this list — those columns render as plain NP).
+    let np_claim_by_pool = build_np_claim_lookup(&projections.np_claims, pool_len);
+
     let mut sa: Vec<u8> = Vec::with_capacity(pool_len + 8);
     let mut galn: Vec<u8> = Vec::with_capacity(pool_len + 8);
     let mut dmask: Vec<u8> = Vec::with_capacity(pool_len + 8);
-
-    // Per-segment CIGAR run-length state.
-    // [V, D, J] — accumulated `(count, op)` pairs for the segment.
-    let mut cigar_runs: [Vec<(u32, u8)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-
-    // Per-segment alignment-string spans (column offsets).
-    let mut align_ranges: [Option<(i64, i64)>; 3] = [None, None, None];
-
-    // Per-segment pool-position spans. Mirrors `align_ranges`, but
-    // in pool coordinates so it's usable for AIRR `*_sequence_*`.
-    let mut seq_ranges: [Option<(i64, i64)>; 3] = [None, None, None];
-
-    // Per-segment ref-position spans. Mirrors `seq_ranges` but in
-    // allele coordinates — the union of ref positions consumed by
-    // `M` and `D` ops on the segment. Used for `*_germline_*`.
-    let mut ref_ranges: [Option<(i64, i64)>; 3] = [None, None, None];
-
-    // Per-segment identity counters [matches, total].
-    let mut id_counts: [[u64; 2]; 3] = [[0, 0], [0, 0], [0, 0]];
-
     let mut covered: Vec<bool> = vec![false; pool_len];
 
-    // Iterate regions in the order they appear in the sequence.
     for region in &sim.sequence.regions {
         let seg = region.segment;
         let r_start = region.start.index() as usize;
         let r_end = region.end.index() as usize;
-
-        // Mark every pool position in the region as covered.
         for idx in r_start..r_end {
             covered[idx] = true;
         }
 
         match seg {
             Segment::V | Segment::D | Segment::J => {
-                // pick the canonical allele from the live
-                // call (with a provenance fallback). All `germline_*`
-                // outputs in this branch read from this allele's
-                // bytes, so they match the `*_call` field the AIRR
-                // record reports — even when SHM narrowed the live
-                // call to a different allele than originally sampled.
-                let allele_id = projected_allele_id(sim, seg);
-                let allele_seq: Option<&[u8]> = allele_id
-                    .and_then(|aid| refdata.get(seg, aid))
-                    .map(|a| a.seq.as_slice());
-                let trim_5: i64 = match seg {
-                    Segment::V => rec.v_trim_5,
-                    Segment::D => rec.d_trim_5,
-                    Segment::J => rec.j_trim_5,
-                    _ => unreachable!(),
-                };
-                let trim_3: i64 = match seg {
-                    Segment::V => rec.v_trim_3,
-                    Segment::D => rec.d_trim_3,
-                    Segment::J => rec.j_trim_3,
-                    _ => unreachable!(),
-                };
-                let seg_idx = match seg {
-                    Segment::V => 0,
-                    Segment::D => 1,
-                    Segment::J => 2,
-                    _ => unreachable!(),
-                };
-
-                // The column-span start for this segment.
-                let span_start = sa.len() as i64;
-
-                if let Some(allele_seq) = allele_seq {
-                    // NP1 left-extension might have already
-                    // claimed ref positions up to (or past) `trim_5`.
-                    // Start `expected_pos` past whatever NP claims
-                    // covered, so a structural-indel deletion at the
-                    // leftmost germline_pos doesn't trigger a D-fill
-                    // at a ref position the NP claim already counted.
-                    let np_covered_end = ref_ranges[seg_idx].map(|(_, e)| e as usize).unwrap_or(0);
-                    let mut expected_pos: usize = (trim_5.max(0) as usize).max(np_covered_end);
-                    let end_germ: usize = (allele_seq.len() as i64 - trim_3).max(0) as usize;
-                    for i in r_start..r_end {
-                        let nuc: &Nucleotide = &sim.pool.as_slice()[i];
-                        let base_char = bases[i];
-                        let Some(germ_pos) = nuc.germline_pos.get() else {
-                            // Indel insertion: gap in germline. No match
-                            // credit. The `let-Some-else` shape lets the
-                            // typed `GermlinePos::get()` accessor drive
-                            // the absence-handling structurally — the
-                            // post-`else` body sees a real `u16`, the
-                            // compiler enforces the gate.
-                            sa.push(base_char);
-                            galn.push(b'-');
-                            push_dmask_for_seg(&mut dmask, seg, b'-');
-                            push_cigar_op(&mut cigar_runs[seg_idx], b'I');
-                            id_counts[seg_idx][1] += 1;
-                            continue;
-                        };
-                        let germ_pos = germ_pos as usize;
-                        // Fill any preceding deletion gap.
-                        while expected_pos < germ_pos && expected_pos < allele_seq.len() {
-                            sa.push(b'-');
-                            let g = allele_seq[expected_pos];
-                            galn.push(g);
-                            push_dmask_for_seg(&mut dmask, seg, g);
-                            push_cigar_op(&mut cigar_runs[seg_idx], b'D');
-                            id_counts[seg_idx][1] += 1;
-                            extend_ref_range(&mut ref_ranges, seg_idx, expected_pos as i64);
-                            expected_pos += 1;
-                        }
-                        // Emit the matched/mismatched column. Phase
-                        // 12.C: read the germline byte from the
-                        // projected allele's sequence (matching
-                        // `*_call`), not from `nuc.germline` which
-                        // captures the originally-sampled byte and
-                        // can diverge when the live-call narrowed
-                        // to a different allele. Bounds-fall-back
-                        // to `nuc.germline` if `germ_pos` exceeds
-                        // the projected allele length (defensive,
-                        // shouldn't happen in well-formed data).
-                        sa.push(base_char);
-                        let g = if germ_pos < allele_seq.len() {
-                            allele_seq[germ_pos]
-                        } else {
-                            nuc.germline
-                        };
-                        galn.push(g);
-                        push_dmask_for_seg(&mut dmask, seg, g);
-                        push_cigar_op(&mut cigar_runs[seg_idx], b'M');
-                        id_counts[seg_idx][1] += 1;
-                        if eq_ascii_case_insensitive(base_char, g) {
-                            id_counts[seg_idx][0] += 1;
-                        }
-                        extend_ref_range(&mut ref_ranges, seg_idx, germ_pos as i64);
-                        expected_pos = germ_pos + 1;
-                    }
-                    // Trailing deletion gaps: positions in
-                    // `[expected_pos, end_germ)` were trimmed off by
-                    // an indel pass, not by recombination.
-                    while expected_pos < end_germ && expected_pos < allele_seq.len() {
-                        sa.push(b'-');
-                        let g = allele_seq[expected_pos];
-                        galn.push(g);
-                        push_dmask_for_seg(&mut dmask, seg, g);
-                        push_cigar_op(&mut cigar_runs[seg_idx], b'D');
-                        id_counts[seg_idx][1] += 1;
-                        extend_ref_range(&mut ref_ranges, seg_idx, expected_pos as i64);
-                        expected_pos += 1;
-                    }
-                } else {
-                    // No source allele assigned; emit raw bases with
-                    // 'N' germline so lengths stay consistent.
-                    for i in r_start..r_end {
-                        sa.push(bases[i]);
-                        galn.push(b'N');
-                        push_dmask_for_seg(&mut dmask, seg, b'N');
-                        // No CIGAR / identity entries — unaligned.
-                    }
-                }
-
-                let span_end = sa.len() as i64;
-                if span_end > span_start {
-                    // a prior NP-side claim (e.g. J's
-                    // left-extension into NP2) may have already set
-                    // `align_ranges[seg_idx]` to a span that begins
-                    // *before* this structural region. Preserve that
-                    // earlier start instead of overwriting.
-                    let new_start = match align_ranges[seg_idx] {
-                        Some((s, _)) => s.min(span_start),
-                        None => span_start,
-                    };
-                    align_ranges[seg_idx] = Some((new_start, span_end));
-                    // Mirror in pool space.
-                    let pool_start = r_start as i64;
-                    let pool_end = r_end as i64;
-                    let new_pool_start = match seq_ranges[seg_idx] {
-                        Some((s, _)) => s.min(pool_start),
-                        None => pool_start,
-                    };
-                    seq_ranges[seg_idx] = Some((new_pool_start, pool_end));
-                }
+                // `np_covered_end` for this segment must reflect ONLY
+                // the NP claims processed BEFORE this structural region
+                // — i.e. claims whose pool position is strictly less
+                // than `r_start`. The kernel's running `ref_ranges[seg]`
+                // at the moment this region begins iteration carries
+                // exactly that value; here we recover it by filtering
+                // the flat claim list on pool position.
+                //
+                // Without this filter, V-right-extension claims (which
+                // sit in NP1, *after* V's structural region) would
+                // bleed back into V's `expected_pos`, shifting V's
+                // D-fill column count by one and corrupting the
+                // assembled `germline_alignment`.
+                let np_covered_end = projections
+                    .np_claims
+                    .iter()
+                    .filter(|c| c.owner == seg && (c.pool_pos as usize) < r_start)
+                    .map(|c| c.ref_pos as usize + 1)
+                    .max()
+                    .unwrap_or(0);
+                render_structural_region(
+                    sim, refdata, rec, &bases, seg, r_start, r_end,
+                    np_covered_end, &mut sa, &mut galn, &mut dmask,
+                );
             }
             Segment::Np1 | Segment::Np2 => {
-                // NP positions claimed by an adjacent V/D/J live-call
-                // extension are relabelled. The claimed column emits
-                // the source allele's germline byte (instead of `N`),
-                // pushes an `M` op onto that segment's CIGAR,
-                // contributes to its identity counter, and extends its
-                // `align_ranges`. Unclaimed positions remain plain NP
-                // columns.
-                //
-                // a structural-indel deletion inside V/D/J
-                // breaks the hypothesis's `pool_pos → ref_pos` linear
-                // projection. When that projection points at a ref
-                // position the structural walker already counted, we
-                // drop the claim — and lock the segment out for the
-                // rest of this NP region, since later positions in
-                // the same projection would be similarly inconsistent.
-                let mut np_blocked: [bool; 3] = [false; 3];
-                for i in r_start..r_end {
-                    let base_char = bases[i];
-                    sa.push(base_char);
-                    if let Some((claim_seg, allele_byte_proj, ref_pos_proj)) =
-                        np_claim_owner(sim, refdata, i)
-                    {
-                        let claim_idx = match claim_seg {
-                            Segment::V => 0,
-                            Segment::D => 1,
-                            Segment::J => 2,
-                            _ => unreachable!(),
-                        };
-                        // pick the canonical ref_pos for
-                        // this claim. For an NP2-side extension (the
-                        // segment's structural region has already been
-                        // walked, so `ref_ranges[claim_idx]` is set),
-                        // use `ref_ranges.end` as the next ref slot —
-                        // this sidesteps the hypothesis's linear
-                        // pool→ref projection, which mis-shifts under
-                        // synthetic insertions in the structural
-                        // region. For NP1-side extensions
-                        // (`ref_ranges[claim_idx]` is still empty),
-                        // keep the hypothesis projection — NP regions
-                        // themselves don't carry indels, so the linear
-                        // formula is exact there.
-                        let (ref_pos, allele_byte) = match ref_ranges[claim_idx] {
-                            Some((_, e)) => {
-                                let alid = projected_allele_id(sim, claim_seg);
-                                let allele = alid.and_then(|aid| refdata.get(claim_seg, aid));
-                                let byte = allele
-                                    .and_then(|a| a.seq.get(e as usize).copied())
-                                    .unwrap_or(b'N');
-                                (e as u32, byte)
-                            }
-                            None => (ref_pos_proj, allele_byte_proj),
-                        };
-                        // Extension-territory bounds: NP claims must
-                        // project to ref positions OUTSIDE both ends
-                        // of the structural region [trim_5, allele_len
-                        // - trim_3) AND inside [0, allele_len). Two
-                        // boundary failures the refreshed live-call +
-                        // indel + end-loss combinations can produce:
-                        //
-                        //   1. claim_in_structural: projected ref_pos
-                        //      falls inside the structural range. The
-                        //      structural walk WILL push an M op at
-                        //      that ref_pos, so letting the NP claim
-                        //      count it now would double-count one ref
-                        //      position (two M ops, one extend_ref_range
-                        //      growth) and break
-                        //      `germline_span == M + D`.
-                        //
-                        //   2. claim_past_allele: the override path
-                        //      (when ref_ranges[claim_idx] is Some)
-                        //      uses `e` as the next ref_pos. `e` can
-                        //      step past the allele's last byte; the
-                        //      byte falls back to `b'N'` but the M op
-                        //      still fires, claiming a ref position
-                        //      the allele doesn't have and breaking
-                        //      `germline_alignment[a_s:a_e] ==
-                        //      ref[g_s:g_e]`.
-                        let (claim_in_structural, claim_past_allele) = {
-                            let claim_alid = projected_allele_id(sim, claim_seg);
-                            let claim_allele =
-                                claim_alid.and_then(|aid| refdata.get(claim_seg, aid));
-                            let claim_allele_len = claim_allele
-                                .map(|a| a.seq.len() as i64)
-                                .unwrap_or(0);
-                            let (claim_t5, claim_t3) = match claim_seg {
-                                Segment::V => (rec.v_trim_5, rec.v_trim_3),
-                                Segment::D => (rec.d_trim_5, rec.d_trim_3),
-                                Segment::J => (rec.j_trim_5, rec.j_trim_3),
-                                _ => (0, 0),
-                            };
-                            let structural_start = claim_t5;
-                            let structural_end = claim_allele_len - claim_t3;
-                            let rp = ref_pos as i64;
-                            let in_structural = rp >= structural_start && rp < structural_end;
-                            let past_allele = rp >= claim_allele_len;
-                            (in_structural, past_allele)
-                        };
-                        if np_blocked[claim_idx]
-                            || ref_pos_already_covered(&ref_ranges, claim_idx, ref_pos as i64)
-                            || claim_in_structural
-                            || claim_past_allele
-                        {
-                            np_blocked[claim_idx] = true;
+                for p in r_start..r_end {
+                    sa.push(bases[p]);
+                    match np_claim_by_pool[p] {
+                        Some((claim_seg, allele_byte)) => {
+                            galn.push(allele_byte);
+                            push_dmask_for_seg(&mut dmask, claim_seg, allele_byte);
+                        }
+                        None => {
                             galn.push(b'N');
                             dmask.push(b'N');
-                            continue;
                         }
-                        galn.push(allele_byte);
-                        push_dmask_for_seg(&mut dmask, claim_seg, allele_byte);
-                        push_cigar_op(&mut cigar_runs[claim_idx], b'M');
-                        id_counts[claim_idx][1] += 1;
-                        if eq_ascii_case_insensitive(base_char, allele_byte) {
-                            id_counts[claim_idx][0] += 1;
-                        }
-                        extend_ref_range(&mut ref_ranges, claim_idx, ref_pos as i64);
-                        let col = (sa.len() as i64) - 1;
-                        align_ranges[claim_idx] = Some(match align_ranges[claim_idx] {
-                            Some((s, _)) => (s, col + 1),
-                            None => (col, col + 1),
-                        });
-                        let pool_pos = i as i64;
-                        seq_ranges[claim_idx] = Some(match seq_ranges[claim_idx] {
-                            Some((s, e)) => (s.min(pool_pos), e.max(pool_pos + 1)),
-                            None => (pool_pos, pool_pos + 1),
-                        });
-                    } else {
-                        galn.push(b'N');
-                        dmask.push(b'N');
                     }
                 }
             }
@@ -363,43 +121,144 @@ pub(super) fn walk_alignment_columns(
         }
     }
 
-    // Uppercase strings for AIRR-tooling compatibility.
     bytes_uppercase_in_place(&mut sa);
     bytes_uppercase_in_place(&mut galn);
     bytes_uppercase_in_place(&mut dmask);
 
-    let cigars = [
-        runlength_to_string(&cigar_runs[0]),
-        runlength_to_string(&cigar_runs[1]),
-        runlength_to_string(&cigar_runs[2]),
-    ];
-
-    let identities = [
-        if id_counts[0][1] > 0 {
-            Some(id_counts[0][0] as f64 / id_counts[0][1] as f64)
-        } else {
-            None
-        },
-        if id_counts[1][1] > 0 {
-            Some(id_counts[1][0] as f64 / id_counts[1][1] as f64)
-        } else {
-            None
-        },
-        if id_counts[2][1] > 0 {
-            Some(id_counts[2][0] as f64 / id_counts[2][1] as f64)
-        } else {
-            None
-        },
-    ];
+    // Per-segment outputs all come from the kernel.
+    let seq_range_tuple = |r: Option<PoolRange>| r.map(|p| (p.start as i64, p.end as i64));
+    let ref_range_tuple = |r: Option<RefRange>| r.map(|p| (p.start, p.end));
 
     AlignmentWalk {
         sa: bytes_to_string(&sa),
         galn: bytes_to_string(&galn),
         dmask: bytes_to_string(&dmask),
-        cigars,
-        align_ranges,
-        seq_ranges,
-        ref_ranges,
-        identities,
+        cigars: [
+            projections.v.cigar.clone(),
+            projections.d.cigar.clone(),
+            projections.j.cigar.clone(),
+        ],
+        align_ranges: [
+            projections.v.alignment_range,
+            projections.d.alignment_range,
+            projections.j.alignment_range,
+        ],
+        seq_ranges: [
+            seq_range_tuple(projections.v.sequence_range),
+            seq_range_tuple(projections.d.sequence_range),
+            seq_range_tuple(projections.j.sequence_range),
+        ],
+        ref_ranges: [
+            ref_range_tuple(projections.v.ref_range),
+            ref_range_tuple(projections.d.ref_range),
+            ref_range_tuple(projections.j.ref_range),
+        ],
+        identities: [
+            projections.v.identity,
+            projections.d.identity,
+            projections.j.identity,
+        ],
+    }
+}
+
+fn build_np_claim_lookup(claims: &[NpClaim], pool_len: usize) -> Vec<Option<(Segment, u8)>> {
+    let mut lookup: Vec<Option<(Segment, u8)>> = vec![None; pool_len];
+    for c in claims {
+        let p = c.pool_pos as usize;
+        if p < pool_len {
+            lookup[p] = Some((c.owner, c.allele_byte));
+        }
+    }
+    lookup
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_structural_region(
+    sim: &Simulation,
+    refdata: &RefDataConfig,
+    rec: &AirrRecord,
+    bases: &[u8],
+    seg: Segment,
+    r_start: usize,
+    r_end: usize,
+    np_covered_end: usize,
+    sa: &mut Vec<u8>,
+    galn: &mut Vec<u8>,
+    dmask: &mut Vec<u8>,
+) {
+    let allele_id = projected_allele_id(sim, seg);
+    let allele_seq: Option<&[u8]> = allele_id
+        .and_then(|aid| refdata.get(seg, aid))
+        .map(|a| a.seq.as_slice());
+    let (trim_5, trim_3) = match seg {
+        Segment::V => (rec.v_trim_5, rec.v_trim_3),
+        Segment::D => (rec.d_trim_5, rec.d_trim_3),
+        Segment::J => (rec.j_trim_5, rec.j_trim_3),
+        _ => unreachable!(),
+    };
+
+    let Some(allele_seq) = allele_seq else {
+        // No source allele assigned; emit raw bases with 'N'
+        // germline so column lengths stay consistent.
+        for i in r_start..r_end {
+            sa.push(bases[i]);
+            galn.push(b'N');
+            push_dmask_for_seg(dmask, seg, b'N');
+        }
+        return;
+    };
+
+    // NP-region left-extension claims may have already covered some
+    // ref positions for this segment. Start `expected_pos` past
+    // them so a structural-indel deletion at the leftmost germline_pos
+    // doesn't trigger a D-fill at a ref position the NP claim
+    // already counted. `np_covered_end` is computed by the caller
+    // from the subset of claims processed before this region begins.
+    let mut expected_pos: usize = (trim_5.max(0) as usize).max(np_covered_end);
+    let end_germ: usize = (allele_seq.len() as i64 - trim_3).max(0) as usize;
+
+    for i in r_start..r_end {
+        let nuc: &Nucleotide = &sim.pool.as_slice()[i];
+        let base_char = bases[i];
+        let Some(germ_pos) = nuc.germline_pos.get() else {
+            // Indel insertion: gap in germline. The walker emits one
+            // I column. The kernel already counted the I op in the
+            // segment's CIGAR.
+            sa.push(base_char);
+            galn.push(b'-');
+            push_dmask_for_seg(dmask, seg, b'-');
+            continue;
+        };
+        let germ_pos = germ_pos as usize;
+        // Fill any preceding deletion gap.
+        while expected_pos < germ_pos && expected_pos < allele_seq.len() {
+            sa.push(b'-');
+            let g = allele_seq[expected_pos];
+            galn.push(g);
+            push_dmask_for_seg(dmask, seg, g);
+            expected_pos += 1;
+        }
+        // Match/mismatch column. The germline byte comes from the
+        // projected allele's sequence so it matches `*_call` (live-
+        // call narrowed to this allele) rather than the originally-
+        // sampled `nuc.germline`.
+        sa.push(base_char);
+        let g = if germ_pos < allele_seq.len() {
+            allele_seq[germ_pos]
+        } else {
+            nuc.germline
+        };
+        galn.push(g);
+        push_dmask_for_seg(dmask, seg, g);
+        expected_pos = germ_pos + 1;
+    }
+    // Trailing deletion gaps: positions in `[expected_pos, end_germ)`
+    // were trimmed off by an indel pass, not by recombination.
+    while expected_pos < end_germ && expected_pos < allele_seq.len() {
+        sa.push(b'-');
+        let g = allele_seq[expected_pos];
+        galn.push(g);
+        push_dmask_for_seg(dmask, seg, g);
+        expected_pos += 1;
     }
 }

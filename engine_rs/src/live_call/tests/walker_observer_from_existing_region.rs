@@ -30,7 +30,7 @@ fn assemble_via_observer(
     bases: &[u8],
 ) -> (Simulation, Region, SealedWalkerState) {
     let mut builder = SimulationBuilder::from_simulation(Simulation::new());
-    builder.attach_walker_observer(idx, 0);
+    builder.attach_walker_observer(idx, 0, crate::assignment::SegmentOrientation::Forward);
     for (i, &b) in bases.iter().enumerate() {
         builder.push_nucleotide(Nucleotide::germline(b, i as u16, Segment::V));
     }

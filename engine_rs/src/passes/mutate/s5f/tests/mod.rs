@@ -60,6 +60,8 @@ fn s5f_productive_vj_fixture() -> (RefDataConfig, Simulation) {
         seq: b"TACAAA".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_s5f*01".into(),
@@ -67,6 +69,8 @@ fn s5f_productive_vj_fixture() -> (RefDataConfig, Simulation) {
         seq: b"TGG".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();

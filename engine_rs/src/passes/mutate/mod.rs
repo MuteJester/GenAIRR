@@ -7,8 +7,12 @@
 //!   (Yaari et al. 2013).
 
 pub mod s5f;
+pub mod segment_rates;
 pub mod uniform;
+pub mod v_subregion_rates;
 
 pub use crate::passes::count_source::CountSource;
 pub use s5f::S5FMutationPass;
+pub use segment_rates::{segment_at_position, SegmentRateWeights};
 pub use uniform::UniformMutationPass;
+pub use v_subregion_rates::{v_subregion_at_position, VSubregionRateWeights};

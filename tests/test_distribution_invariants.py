@@ -428,3 +428,231 @@ def test_pcr_substitution_base_distribution_is_uniform() -> None:
             f"base {b}: observed Pr = {observed:.4f}, "
             f"expected 0.25 ± 5σ (N={total})"
         )
+
+
+# ──────────────────────────────────────────────────────────────────
+# D8: D inversion is a Bernoulli(prob) draw
+#
+# Slice C `InvertDPass` samples `inverted ~ Bernoulli(prob)`. Pin
+# the empirical rate at `prob=0.25` over N=4000 seeds so an
+# always-true or always-false regression in the RNG draw
+# (`ctx.rng.next_f64() < self.prob`) trips this test.
+#
+# The 5σ tolerance is the usual conservative gate (Bernoulli
+# σ = √(p(1-p)/N) ≈ 0.0068 at p=0.25, N=4000 → 5σ ≈ 0.034). A
+# regression that swaps `<` for `<=` or biases the comparison
+# would shift the rate by more than that. A "never invert"
+# regression would drop empirical to 0 — caught immediately.
+# ──────────────────────────────────────────────────────────────────
+
+
+def _vdj_basic() -> "ge.RefDataConfig":
+    """Tiny VDJ cartridge matching the inversion-friendly stress
+    fixtures elsewhere. Anchorless D so the assembly emits the
+    full retained slice without anchor-codon constraint."""
+    cfg = ge.RefDataConfig.vdj()
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
+    cfg.add_d_allele("d1*01", "d1", b"ACGTTA")
+    cfg.add_j_allele("j1*01", "j1", b"TGGAAA", anchor=0)
+    return cfg
+
+
+def test_invert_d_bernoulli_draw_matches_prob_within_5_sigma() -> None:
+    """Audit §5 D8 (Slice E consolidation): the
+    ``sample_allele.d.inverted`` Bool draws from Bernoulli(prob).
+    With ``prob=0.25`` and N=4000 seeds the empirical inversion
+    rate must land within 5σ of 0.25.
+
+    Regression behaviours this test catches in one shot:
+    - "always invert" (prob ignored, draws always True) → empirical
+      rate jumps to 1.0; caught by absolute gap.
+    - "never invert" (prob ignored, draws always False) → empirical
+      rate is 0.0; caught by absolute gap.
+    - "p / (1 - p)" or similar sign / inversion regression in the
+      `next_f64() < prob` comparison: rate shifts by ~0.5 or
+      similar — well outside 5σ.
+    - Off-by-one / `<=` vs `<` regressions: at p=0.25 these don't
+      visibly shift the rate, but the test still catches an
+      always-true / always-false fallback.
+
+    Note: the test counts trace records (one per simulation) rather
+    than reading the AIRR `d_inverted` field, so it remains valid
+    even if a future slice changes the projection rule (e.g. to
+    aggregate across multiple D segments).
+    """
+    exp = (
+        ga.Experiment.on(_vdj_basic())
+        .recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(3, 1.0)])
+        .trim(enabled=False)
+        .invert_d(prob=0.25)
+    )
+
+    inverted = 0
+    forward = 0
+    for choice in _collect_choices(
+        exp, N_SEEDS, lambda a: a == "sample_allele.d.inverted"
+    ):
+        if _bool_value(choice.value):
+            inverted += 1
+        else:
+            forward += 1
+
+    total = inverted + forward
+    assert total == N_SEEDS, (
+        f"expected exactly {N_SEEDS} inversion records (one per seed); got {total}"
+    )
+
+    p_inverted = inverted / total
+    expected = 0.25
+    assert _within_5sigma(p_inverted, expected, total), (
+        f"Pr[inverted] = {p_inverted:.4f}, expected {expected:.4f} ± 5σ "
+        f"(N={total}). A regression in the InvertDPass Bernoulli draw "
+        f"would shift this rate by more than the 5σ band."
+    )
+
+
+def test_receptor_revision_bernoulli_draw_matches_prob_within_5_sigma() -> None:
+    """Audit §13 D8 (Slice E consolidation): the
+    ``receptor_revision.applied`` Bool draws from Bernoulli(prob).
+    With ``prob=0.25`` and N=4000 seeds the empirical revision rate
+    must land within 5σ of 0.25.
+
+    Regression behaviours this test catches in one shot:
+    - "always revise" (prob ignored, draws always True) → rate
+      jumps to 1.0; caught by absolute gap.
+    - "never revise" (prob ignored, draws always False) → rate is
+      0.0; caught by absolute gap.
+    - "p / (1 - p)" or similar sign / inversion regression in the
+      `next_f64() < prob` comparison: rate shifts by ~0.5 or
+      similar — well outside 5σ.
+
+    Note: the test counts trace records (one per simulation) rather
+    than reading the AIRR `receptor_revision_applied` field, so it
+    remains valid even if a future slice changes the projection
+    rule (e.g. to aggregate across multiple revision events).
+
+    The Bernoulli draw lives entirely on the simulation-side RNG
+    (not on the per-base sampler), so a single-V fixture is enough
+    to isolate the rate. Using the bundled human_igh cartridge
+    would work equally well but adds catalogue noise; the synthetic
+    fixture keeps the failure attribution clean.
+    """
+    cfg = ge.RefDataConfig.vdj()
+    # Two same-length V candidates so the same-length retained
+    # constraint is trivially satisfied at trim_3=0 regardless of
+    # which one the pass picks — keeps the Bernoulli draw rate
+    # independent of the (V allele × trim) sub-sampler.
+    cfg.add_v_allele("v1*01", "v1", b"AAAAAAAAA", anchor=6)
+    cfg.add_v_allele("v2*01", "v2", b"CCCCCCCCC", anchor=6)
+    cfg.add_d_allele("d1*01", "d1", b"GGGGGG")
+    cfg.add_j_allele("j1*01", "j1", b"TGGAAA", anchor=0)
+
+    exp = (
+        ga.Experiment.on(cfg)
+        .allow_curatable_refdata()
+        .recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(3, 1.0)])
+        .trim(enabled=False)
+        .receptor_revision(prob=0.25)
+    )
+
+    applied_count = 0
+    not_applied_count = 0
+    for choice in _collect_choices(
+        exp, N_SEEDS, lambda a: a == "receptor_revision.applied"
+    ):
+        if _bool_value(choice.value):
+            applied_count += 1
+        else:
+            not_applied_count += 1
+
+    total = applied_count + not_applied_count
+    assert total == N_SEEDS, (
+        f"expected exactly {N_SEEDS} receptor_revision.applied records "
+        f"(one per seed); got {total}"
+    )
+
+    p_applied = applied_count / total
+    expected = 0.25
+    assert _within_5sigma(p_applied, expected, total), (
+        f"Pr[applied] = {p_applied:.4f}, expected {expected:.4f} ± 5σ "
+        f"(N={total}). A regression in the ReceptorRevisionPass "
+        f"Bernoulli draw would shift this rate by more than the 5σ band."
+    )
+
+
+def test_paired_end_insert_size_empirical_mean_matches_uniform_within_5_sigma() -> None:
+    """Audit §13 D8 (Slice E consolidation): the
+    ``paired_end.insert_size`` Int draws from a uniform integer
+    distribution over the closed interval the user supplied. With
+    ``insert_size=(200, 400)`` and N=4000 seeds the empirical mean
+    must land within 5σ of the expected mean 300.
+
+    Counted from trace records, not from the AIRR ``insert_size``
+    field, so the test remains valid even if a future slice
+    changes the projection rule (e.g. records insert size as a
+    fragment-end position rather than the R2-end position).
+
+    Discrete-uniform variance over ``[a, b]`` (inclusive) is
+    ``((b - a + 1)² - 1) / 12``; the standard error of the
+    sample mean over ``N`` independent draws is
+    ``sqrt(variance / N)``. The 5σ bound on the mean is then
+    ``±5 × sqrt(variance / N)``.
+
+    Regression behaviours this catches in one shot:
+    - "fixed value" (distribution collapsed to one sample) →
+      empirical mean equals the fixed value, jumps outside 5σ.
+    - "off-by-one on the interval bounds" → mean shifts by
+      ~0.5, plus the min/max bound assertions below catch the
+      endpoint case directly.
+    - "bias toward low / high values" → mean shifts unidirectionally,
+      caught for any shift > 5σ ≈ ±4.6.
+    """
+    cfg = _vdj_basic()
+    exp = (
+        ga.Experiment.on(cfg)
+        .recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(3, 1.0)])
+        .trim(enabled=False)
+        .paired_end(r1_length=80, insert_size=(200, 400))
+    )
+
+    insert_sizes: list[int] = []
+    for choice in _collect_choices(
+        exp, N_SEEDS, lambda a: a == "paired_end.insert_size"
+    ):
+        insert_sizes.append(_int_value(choice.value))
+
+    assert len(insert_sizes) == N_SEEDS, (
+        f"expected exactly {N_SEEDS} paired_end.insert_size records "
+        f"(one per seed); got {len(insert_sizes)}"
+    )
+
+    # Empirical mean within 5σ of the discrete-uniform mean.
+    low, high = 200, 400
+    expected_mean = (low + high) / 2.0  # 300.0
+    n_values = high - low + 1            # 201
+    variance = ((n_values * n_values) - 1) / 12.0
+    se_mean = math.sqrt(variance / N_SEEDS)
+    five_sigma = 5.0 * se_mean
+    observed_mean = sum(insert_sizes) / len(insert_sizes)
+    assert abs(observed_mean - expected_mean) <= five_sigma, (
+        f"empirical insert_size mean = {observed_mean:.4f}, expected "
+        f"{expected_mean:.4f} ± 5σ ({five_sigma:.4f}) (N={N_SEEDS}). "
+        f"A regression in the PairedEndSamplingPass uniform-int draw "
+        f"would shift this mean by more than the 5σ band."
+    )
+
+    # Hard endpoint bounds: every sample must lie inside the
+    # requested closed interval. A bias toward low / high values
+    # statistically shows up as a mean shift; a sampler that
+    # silently clamps off-distribution values would slip through
+    # the mean check but trip these.
+    observed_min = min(insert_sizes)
+    observed_max = max(insert_sizes)
+    assert low <= observed_min, (
+        f"paired_end.insert_size sampler emitted value {observed_min} "
+        f"below the requested lower bound {low}"
+    )
+    assert observed_max <= high, (
+        f"paired_end.insert_size sampler emitted value {observed_max} "
+        f"above the requested upper bound {high}"
+    )

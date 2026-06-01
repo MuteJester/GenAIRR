@@ -128,6 +128,8 @@ fn productive_vj_refdata() -> RefDataConfig {
         seq: b"AAACCCTGTAAA".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.v_pool.push(Allele {
         name: "Vp*02".into(),
@@ -135,6 +137,8 @@ fn productive_vj_refdata() -> RefDataConfig {
         seq: b"AAACCCTGTGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "Jp*01".into(),
@@ -142,6 +146,8 @@ fn productive_vj_refdata() -> RefDataConfig {
         seq: b"AAATGGACG".to_vec(),
         segment: Segment::J,
         anchor: Some(3),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }

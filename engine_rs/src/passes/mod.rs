@@ -22,8 +22,13 @@ pub mod corrupt;
 pub(crate) mod count_source;
 pub mod echo;
 pub mod generate_np;
+pub mod invert_d;
 pub mod mutate;
 pub(crate) mod mutation_transaction;
+pub mod p_addition;
+pub mod paired_end;
+pub(crate) mod paramsig;
+pub mod receptor_revision;
 pub mod sample_allele;
 pub mod sample_base;
 pub mod trim;
@@ -38,7 +43,11 @@ pub use corrupt::{
 };
 pub use echo::EchoPass;
 pub use generate_np::GenerateNPPass;
+pub use invert_d::InvertDPass;
 pub use mutate::{S5FMutationPass, UniformMutationPass};
+pub use p_addition::PAdditionPass;
+pub use paired_end::{PairedEndLayoutSpec, PairedEndSamplingPass};
+pub use receptor_revision::ReceptorRevisionPass;
 pub use sample_allele::SampleAllelePass;
 pub use sample_base::SampleBasePass;
 pub use trim::TrimPass;
@@ -167,6 +176,8 @@ mod tests {
             seq: b"AAACCCGGG".to_vec(),
             segment: Segment::V,
             anchor: Some(6),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = cfg.j_pool.push(crate::refdata::Allele {
             name: "j_test*01".into(),
@@ -174,6 +185,8 @@ mod tests {
             seq: b"TTTAAA".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         cfg
     }
@@ -1322,11 +1335,12 @@ mod tests {
             Box::new(UniformBase),
         )));
         replay_plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
-        let compiled = crate::compiled::OwnedCompiledSimulator::compile(
+        let compiled = crate::compiled::OwnedCompiledSimulator::compile_with_options(
             replay_plan,
             Some(cfg.clone()),
             None,
             ExecutionPolicy::Permissive,
+            crate::compiled::CompileOptions::skip_refdata_validation(),
         )
         .expect("audit plan should compile");
         let original_records: Vec<_> = outcome.trace.choices().to_vec();

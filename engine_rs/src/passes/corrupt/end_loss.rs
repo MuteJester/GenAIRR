@@ -231,6 +231,16 @@ impl Pass for EndLossPass {
         self.address()
     }
 
+    fn parameter_signature(&self) -> String {
+        // The end (5' vs 3') is encoded in `name()`
+        // (`corrupt.end_loss.5` / `.3`); pin only the length
+        // distribution.
+        format!(
+            "length={}",
+            crate::passes::paramsig::fmt_int_dist(self.length_dist.as_ref())
+        )
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_inner(sim, ctx, false)
             .expect("EndLossPass permissive execution must not return PassError")

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{NucHandle, Nucleotide};
+use super::{NucHandle, Nucleotide, PoolRange};
 
 /// Arena of all nucleotides in a `Simulation`. `NucHandle` indexes
 /// into this pool.
@@ -130,6 +130,34 @@ impl NucleotidePool {
         let mut next = self.clone();
         let inner = Arc::make_mut(&mut next.nucleotides);
         inner.insert(at as usize, n);
+        next
+    }
+
+    /// Return a new pool with the bytes in `range` excised and
+    /// `replacement` spliced in at `range.start`.
+    ///
+    /// The pool's length changes by
+    /// `replacement.len() as i64 - range.len() as i64`. Handles
+    /// `>= range.end` shift by that signed delta; handles inside
+    /// `range` become stale (the bytes they pointed at are gone).
+    /// Receptor revision uses this for V-segment bulk replacement;
+    /// the persistent caller (`Simulation::with_segment_replaced`)
+    /// is the one piece of code that knows the surrounding regions
+    /// don't overlap `range`, so the integrity gate stays in IR
+    /// rather than the byte-arena.
+    pub fn with_range_replaced(&self, range: PoolRange, replacement: &[Nucleotide]) -> Self {
+        assert!(
+            (range.end as usize) <= self.nucleotides.len(),
+            "NucleotidePool::with_range_replaced: range end ({}) > pool length ({})",
+            range.end,
+            self.nucleotides.len()
+        );
+        let mut next = self.clone();
+        let inner = Arc::make_mut(&mut next.nucleotides);
+        inner.splice(
+            range.start as usize..range.end as usize,
+            replacement.iter().copied(),
+        );
         next
     }
 

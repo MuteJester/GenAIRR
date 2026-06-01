@@ -29,6 +29,8 @@ fn j_extension_vj_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"AAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // J*01 has prefix "TTT" + shared "ACGTACGTA". J*02 has
     // prefix "GGG" + the same shared suffix. With J_5 trim = 3,
@@ -40,6 +42,8 @@ fn j_extension_vj_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"TTTACGTACGTA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j02 = cfg.j_pool.push(Allele {
         name: "J*02".into(),
@@ -47,6 +51,8 @@ fn j_extension_vj_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"GGGACGTACGTA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     (cfg, j01, j02)
 }
@@ -111,7 +117,7 @@ fn j_call_shrinks_when_np1_recreates_trimmed_prefix_vj() {
     let (cfg, j01, _j02) = j_extension_vj_refdata();
 
     let plan = j_extension_plan(&cfg, j01, 3, 3, b'T');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -146,7 +152,7 @@ fn j_call_stays_widened_when_np1_does_not_recreate_prefix_vj() {
     let (cfg, j01, j02) = j_extension_vj_refdata();
 
     let plan = j_extension_plan(&cfg, j01, 3, 3, b'C');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -182,7 +188,7 @@ fn j_call_partially_extends_when_np1_matches_only_a_suffix_of_prefix() {
     let (cfg, j01, _j02) = j_extension_vj_refdata();
 
     let plan = j_extension_plan(&cfg, j01, 3, 5, b'T');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -222,7 +228,7 @@ fn j_call_extension_no_op_when_no_trim() {
     let (cfg, j01, _j02) = j_extension_vj_refdata();
 
     let plan = j_extension_plan(&cfg, j01, 0, 3, b'T');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -255,6 +261,8 @@ fn j_left_extension_works_for_vdj_chain_via_np2() {
         seq: b"AAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d_id = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -262,6 +270,8 @@ fn j_left_extension_works_for_vdj_chain_via_np2() {
         seq: b"CCC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j01 = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -269,6 +279,8 @@ fn j_left_extension_works_for_vdj_chain_via_np2() {
         seq: b"TTTACGTACGTA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _j02 = cfg.j_pool.push(Allele {
         name: "J*02".into(),
@@ -276,6 +288,8 @@ fn j_left_extension_works_for_vdj_chain_via_np2() {
         seq: b"GGGACGTACGTA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut plan = PassPlan::new();
@@ -310,7 +324,7 @@ fn j_left_extension_works_for_vdj_chain_via_np2() {
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("VDJ plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
     let final_call = outcome

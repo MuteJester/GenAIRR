@@ -10,6 +10,8 @@ fn make_v(name: &str, gene: &str, seq: &[u8], anchor: Option<u16>) -> Allele {
         seq: seq.to_vec(),
         segment: Segment::V,
         anchor,
+        functional_status: None,
+        subregions: Vec::new(),
     }
 }
 
@@ -142,6 +144,8 @@ fn ref_data_config_pool_for_segment_routes_correctly() {
         seq: b"GG".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j*01".into(),
@@ -149,6 +153,8 @@ fn ref_data_config_pool_for_segment_routes_correctly() {
         seq: b"TT".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     assert_eq!(cfg.pool_for(Segment::V).unwrap().len(), 1);
@@ -186,6 +192,8 @@ fn ref_data_config_supports_vj_chain_with_empty_d_pool() {
         seq: b"TT".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     assert!(!cfg.chain_type.has_d());

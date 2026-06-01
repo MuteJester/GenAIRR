@@ -1,0 +1,224 @@
+# MkDocs Material site configuration for GenAIRR docs.
+#
+# Status: scaffold only. Phase 0 of the migration plan in
+# `docs/docs_mkdocs_migration_plan.md`. No content has been
+# migrated yet — most nav entries below point at placeholder
+# files or files that don't exist yet. The contract pins in
+# `tests/test_docs_mkdocs_migration_contract.py` verify
+# scaffold completeness, not buildability.
+#
+# To build (once Phase 1 installs deps):
+#   pip install -e ".[docs]"
+#   mkdocs build --strict
+#
+# Existing live URLs at `mutejester.github.io/GenAIRR/<page>.html`
+# are preserved via the `redirects` plugin block (commented out
+# below until mkdocs-redirects is installed in Phase 1).
+
+site_name: GenAIRR
+site_description: Synthetic immune-receptor-sequence simulator with absolute ground truth
+site_url: https://mutejester.github.io/GenAIRR/
+site_author: Thomas Konstantinovsky
+
+repo_name: MuteJester/GenAIRR
+repo_url: https://github.com/MuteJester/GenAIRR
+edit_uri: edit/master/site_docs/
+
+# Source directory deliberately separate from `docs/` so the
+# 39 contributor-only audit/design markdowns at `docs/*.md`
+# stay untouched and continue to render on GitHub. The
+# user-facing site lives at `site_docs/`.
+docs_dir: site_docs
+
+# Emit `<page>.html` URLs (NOT `<page>/` clean-URLs). This is
+# the URL contract Slice 1 committed to preserve via the
+# `redirects` plugin — every existing `mutejester.github.io/GenAIRR/<page>.html`
+# remains resolvable post-cutover. With `use_directory_urls: false`,
+# the `redirects` plugin's `'old.md': 'new.md'` entries emit a
+# redirect file at `<old>.html` pointing at `<new>.html`, which
+# is exactly what we need.
+use_directory_urls: false
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  # Light-mode only — matching the existing `website/` site which
+  # explicitly does NOT ship dark mode. The bench-science palette
+  # (paper-white ground, ink near-black) is the canonical look.
+  # Code windows are dark by composition, not by theme switch.
+  palette:
+    scheme: default
+    primary: white      # Material's "white" disables its primary tint
+                        # so our extra.css `--md-primary-fg-color` overrides
+                        # paint the chrome with our `--ink` token.
+    accent: green       # Closest Material accent to our --accent (#1f8a4c);
+                        # extra.css overrides paint actual interactive states.
+  font:
+    # IBM Plex stack is the institutional identity. Material loads these
+    # from Google Fonts automatically.
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  icon:
+    repo: fontawesome/brands/github
+
+# GenAIRR theme layer (Phase 1.5) — design tokens + component
+# overrides that prevent the site from looking like default MkDocs
+# Material. See site_docs/stylesheets/extra.css for the full
+# stylesheet (sourced from website/styles.css).
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+
+# Plugins — Phase 1 of the migration (deps installable via
+# `pip install -r docs/requirements-docs.txt`).
+#
+# - `search` is provided by mkdocs core and enabled by default.
+# - `redirects` carries the live-URL → MkDocs-route map per
+#   docs/docs_mkdocs_migration_plan.md §3.1. Every existing
+#   website/*.html path stays resolvable after the Phase 6
+#   cutover.
+# - `mkdocstrings` is enabled but currently unused; the
+#   auto-generated API reference page is Phase 5 work. The
+#   plugin sits idle until a `:::` directive is added to a
+#   markdown source.
+# - `mkdocs-jupyter` is intentionally NOT enabled here. It's
+#   listed in `docs/requirements-docs.txt` so Phase 4 (notebook
+#   tutorials) can flip it on without a separate dep install.
+plugins:
+  - search
+  - redirects:
+      redirect_maps:
+        # Live-URL preservation per docs/docs_mkdocs_migration_plan.md §3.1.
+        # `mkdocs-redirects` treats the LEFT key as a fake source path: it
+        # generates a redirect HTML file at the URL MkDocs would have
+        # produced for that path. With `use_directory_urls: false`, `foo.md`
+        # → `foo.html`. So `'learn.md': 'getting-started/index.md'` emits
+        # `<site>/learn.html` redirecting to `<site>/getting-started/index.html`
+        # — preserving every live `mutejester.github.io/GenAIRR/<page>.html`.
+        # 29 entries: one per existing website/*.html page, modulo
+        # `index.html` which is the homepage itself (`/` already serves it).
+        "learn.md": "getting-started/index.md"
+        "lesson-1.md": "getting-started/lesson-1-vdj-recombination-from-bases-up.md"
+        "lesson-2.md": "getting-started/lesson-2-the-pipeline-scrubber.md"
+        "lesson-3.md": "getting-started/lesson-3-s5f-mutation-isnt-uniform.md"
+        "lesson-4.md": "getting-started/lesson-4-sequencing-artifacts-dialed-in.md"
+        "lesson-5.md": "getting-started/lesson-5-the-ground-truth-payoff.md"
+        "concepts.md": "concepts/index.md"
+        "concept-pipeline.md": "concepts/pipeline.md"
+        "concept-persistent-ir.md": "concepts/persistent-ir.md"
+        "concept-contracts.md": "concepts/contracts.md"
+        "concept-airr-record.md": "concepts/airr-record.md"
+        "concept-live-call.md": "concepts/live-call.md"
+        "guides.md": "guides/index.md"
+        "guide-build-config.md": "guides/build-config.md"
+        "guide-productive.md": "guides/productive.md"
+        "guide-clonal-families.md": "guides/clonal-families.md"
+        "guide-v-usage.md": "guides/v-usage.md"
+        "guide-tune-corruption.md": "guides/tune-corruption.md"
+        "guide-export.md": "guides/export.md"
+        "guide-streaming.md": "guides/streaming.md"
+        "guide-with-metadata.md": "guides/with-metadata.md"
+        "guide-audit-realism.md": "validation/audit-realism.md"
+        "guide-benchmark-aligner.md": "validation/benchmark-aligner.md"
+        "guide-compare-shm.md": "validation/compare-shm.md"
+        "guide-replay.md": "validation/replay.md"
+        "guide-reproduce.md": "validation/reproduce.md"
+        "guide-smoke-test.md": "validation/smoke-test.md"
+        "guide-trace-introspection.md": "validation/trace-introspection.md"
+        "reference.md": "reference/index.md"
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+
+# Navigation — curated path from beginner to contributor.
+#
+# Placeholder pages are intentionally NOT in nav. They stay on disk
+# (the `redirects` plugin needs them as targets for live-URL
+# preservation, see §3.1 of docs/docs_mkdocs_migration_plan.md),
+# but the user-visible nav lists only real content. As each
+# placeholder is migrated to real content, add it back to nav here.
+nav:
+  - Home: index.md
+  - Choose your path: learn.md
+  - Getting Started:
+      - getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Quick start: getting-started/quick-start.md
+      - Your first AIRR record: getting-started/first-airr-record.md
+      - Export the results: getting-started/export-results.md
+  - Core Concepts:
+      - concepts/index.md
+      - AIRR Record: concepts/airr-record.md
+      - Reference Cartridge: concepts/reference-cartridge.md
+  - Simulation Guides:
+      - guides/index.md
+      - The Experiment builder: guides/experiment-builder.md
+      - Biology map: guides/biology-map.md
+      - Recombination + junction biology: guides/recombination-junction.md
+      - D inversion + receptor revision: guides/recombination-editing.md
+      - Clonal families: guides/clonal-families.md
+      - Junction N/P additions: guides/junction-additions.md
+      - Targeted SHM rates: guides/shm-targeting.md
+      - Corruption + sequencing artefacts: guides/corruption-sequencing.md
+      - Paired-end reads and FASTQ: guides/paired-end-fastq.md
+  - Reference Cartridge Authoring:
+      - cartridges/index.md
+      - Build a reference cartridge: guides/build-reference-cartridge.md
+      - Estimate models from data: guides/estimate-cartridge-models.md
+      - Inspect manifest + build report: guides/cartridge-manifest-report.md
+  - Validation & Debugging:
+      - validation/index.md
+      - validate_records: validation/validate-records.md
+      - Trace, replay, reproducibility: guides/trace-replay.md
+  - API Reference:
+      - Overview: reference/index.md
+      - Experiment: reference/experiment.md
+      - SimulationResult: reference/simulation-result.md
+      - ReferenceCartridgeBuilder: reference/reference-cartridge-builder.md
+      - Reference models and rules: reference/reference-models.md
+  - Architecture (Contributor):
+      - architecture/index.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/MuteJester/GenAIRR
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/GenAIRR/
+
+copyright: Copyright &copy; 2025 Thomas Konstantinovsky · GPL-3.0

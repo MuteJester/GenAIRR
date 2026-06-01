@@ -48,8 +48,8 @@ use super::reference_index::SegmentRefIndex;
 use super::walker::extensions::{walk_left_extension, walk_right_extension, ExtensionWalkState};
 use super::{AlleleBitSet, EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentLiveCall};
 use crate::ir::{
-    GermlinePos, NucFlags, NucHandle, Nucleotide, Region, Segment, Simulation, SimulationEvent,
-    SimulationEventSink,
+    GermlinePos, NucFlags, NucHandle, Nucleotide, PoolRange, Region, Segment, Simulation,
+    SimulationEvent, SimulationEventSink,
 };
 use crate::refdata::AlleleId;
 
@@ -104,6 +104,14 @@ pub(crate) struct WalkerObserverState<'idx> {
     /// lookup on each push reads exactly the same data structure
     /// the from-scratch walker uses, so scoring is bit-identical.
     segment_index: &'idx SegmentRefIndex,
+    /// Orientation of the segment being scored, copied from
+    /// `Simulation.assignments[segment].orientation` at attach time.
+    /// `Forward` is the no-op default; `ReverseComplement` (the
+    /// inverted-D case) routes per-byte lookups through
+    /// `compatible_alleles_at_oriented` so the observed pool byte
+    /// (which is `complement(allele[allele_pos])`) is
+    /// pre-complemented to recover the allele coordinate.
+    orientation: crate::assignment::SegmentOrientation,
     /// set when an `on_indel_*` event arrives that the
     /// observer cannot patch in place — currently any deletion
     /// inside the region (which may move `ref_start` /
@@ -151,6 +159,10 @@ pub(crate) struct ResolvedWalkerState {
     pub ref_end: u32,
     pub seq_start: u32,
     pub seq_end: u32,
+    /// Inherited from the observer at seal time. Routes the
+    /// extension walks through the orientation-aware lookup in
+    /// `SegmentRefIndex::compatible_alleles_at_oriented`.
+    pub orientation: crate::assignment::SegmentOrientation,
     pub flags: HypothesisFlags,
     pub segment: Segment,
     pub allele_universe_len: usize,
@@ -164,7 +176,11 @@ impl<'idx> WalkerObserverState<'idx> {
     /// The assembly pass anchors this once at attach time and the
     /// observer never inspects the pool again; everything it needs
     /// to know about positions arrives via `on_base_pushed`.
-    pub(crate) fn new(segment_index: &'idx SegmentRefIndex, seq_start: u32) -> Self {
+    pub(crate) fn new(
+        segment_index: &'idx SegmentRefIndex,
+        seq_start: u32,
+        orientation: crate::assignment::SegmentOrientation,
+    ) -> Self {
         let allele_universe_len = segment_index.allele_count();
         Self {
             scores: vec![0; allele_universe_len],
@@ -178,6 +194,7 @@ impl<'idx> WalkerObserverState<'idx> {
             seq_end_seen: seq_start,
             malformed: false,
             segment_index,
+            orientation,
             needs_rebuild: false,
         }
     }
@@ -205,7 +222,16 @@ impl<'idx> WalkerObserverState<'idx> {
         sim: &Simulation,
         region: &Region,
     ) -> Self {
-        let mut obs = Self::new(segment_index, region.start.index());
+        // Inherit orientation from the simulation's current
+        // assignment for `region.segment`. Matches the assemble-time
+        // path: both use the assignment's `orientation` field as the
+        // source of truth.
+        let orientation = sim
+            .assignments
+            .get(segment_index.segment)
+            .map(|a| a.orientation)
+            .unwrap_or(crate::assignment::SegmentOrientation::Forward);
+        let mut obs = Self::new(segment_index, region.start.index(), orientation);
         for seq_pos in region.start.index()..region.end.index() {
             let handle = NucHandle::new(seq_pos);
             // Safe: region range is by construction inside the pool.
@@ -292,25 +318,65 @@ impl<'idx> WalkerObserverState<'idx> {
             return;
         };
 
-        // ref_pos may *jump forward* if a base was deleted between
-        // this position and the previous one. We allow gap-up but
-        // still reject backwards motion, which would indicate a
-        // genuinely-broken IR. (walker.rs:70-80)
+        // Track ref_pos motion. Under `Forward` orientation the
+        // pool emits bytes with strictly-monotonic-increasing
+        // `germline_pos` (gap-up allowed under deletion); we
+        // reject backwards motion as a malformed IR.
+        //
+        // Under `ReverseComplement` (inverted-D path) the pool
+        // emits bytes with strictly-monotonic-DECREASING
+        // `germline_pos` — the assembly walks
+        // `slice_end-1 .. slice_start` in reverse. Reject forward
+        // motion in that case symmetrically. The orientation is
+        // the single bit that flips the expected direction; the
+        // rest of the malformed-IR semantics carries over.
+        let is_rc = matches!(
+            self.orientation,
+            crate::assignment::SegmentOrientation::ReverseComplement
+        );
         match self.next_ref_pos {
-            Some(expected) if ref_pos < expected => {
-                self.malformed = true;
-                return;
+            Some(expected) => {
+                let backwards = if is_rc {
+                    ref_pos > expected
+                } else {
+                    ref_pos < expected
+                };
+                if backwards {
+                    self.malformed = true;
+                    return;
+                }
             }
-            Some(_) => {}
             None => self.ref_start = Some(ref_pos),
         }
-        self.next_ref_pos = Some(ref_pos.saturating_add(1));
+        // The walker tracks ref_start = min(ref_pos seen),
+        // ref_end = max(ref_pos seen) + 1 regardless of
+        // orientation — both express the half-open allele-coord
+        // interval the structural walk covered. Under
+        // `Forward` the first seen IS the min and the last seen
+        // IS the max, so `ref_start` is set above and
+        // `next_ref_pos` tracks `last + 1`. Under RC we keep the
+        // same semantics by updating `ref_start` whenever we see
+        // a smaller value and `next_ref_pos` whenever we see a
+        // larger one.
+        if let Some(rs) = self.ref_start {
+            if ref_pos < rs {
+                self.ref_start = Some(ref_pos);
+            }
+        }
+        let new_end_candidate = ref_pos.saturating_add(1);
+        self.next_ref_pos = Some(match self.next_ref_pos {
+            Some(prev) => prev.max(new_end_candidate),
+            None => new_end_candidate,
+        });
 
         // Score increment: every allele whose germline at this ref_pos
         // matches the observed (current) base picks up +1. (walker.rs:83-101)
+        // `compatible_alleles_at_oriented` pre-complements the
+        // observed byte under `ReverseComplement` so inverted D bytes
+        // score against the original allele coordinates.
         let Some(evidence) = self
             .segment_index
-            .compatible_alleles_at(ref_pos as usize, nucleotide.base)
+            .compatible_alleles_at_oriented(ref_pos as usize, nucleotide.base, self.orientation)
         else {
             return;
         };
@@ -361,6 +427,7 @@ impl<'idx> WalkerObserverState<'idx> {
             ref_end,
             seq_start: self.seq_start,
             seq_end,
+            orientation: self.orientation,
             flags: HypothesisFlags::EMPTY,
             segment: self.segment,
             allele_universe_len: self.allele_universe_len,
@@ -412,7 +479,7 @@ impl<'idx> WalkerObserverState<'idx> {
         // at this ref_pos.
         if let Some(old_evidence) = self
             .segment_index
-            .compatible_alleles_at(ref_pos as usize, old_n.base)
+            .compatible_alleles_at_oriented(ref_pos as usize, old_n.base, self.orientation)
         {
             let scores = &mut self.scores;
             old_evidence.allele_ids.for_each_id(|id| {
@@ -430,7 +497,7 @@ impl<'idx> WalkerObserverState<'idx> {
         // this ref_pos.
         if let Some(new_evidence) = self
             .segment_index
-            .compatible_alleles_at(ref_pos as usize, new_base)
+            .compatible_alleles_at_oriented(ref_pos as usize, new_base, self.orientation)
         {
             let scores = &mut self.scores;
             new_evidence.allele_ids.for_each_id(|id| {
@@ -449,46 +516,42 @@ impl<'idx> WalkerObserverState<'idx> {
     ///
     /// Inserted nucleotides are synthetic (`germline_pos == NONE`)
     /// — they contribute zero to every allele's score. So the
-    /// walker can absorb internal insertions losslessly: bump
-    /// `seq_end_seen` by 1. External insertions (before our
-    /// region) shift both bounds.
+    /// walker can absorb internal insertions losslessly: stretch
+    /// the tracked range's upper bound. External insertions (before
+    /// our region) shift both bounds.
+    ///
+    /// Shift semantics live in [`PoolRange::after_insertion`]: the
+    /// strict-`<` inside-range check on the upper bound mirrors
+    /// `Sequence::with_indel_adjusted` exactly, closing the IGH J
+    /// cache-parity divergence under indel events.
     pub(crate) fn on_indel_inserted(&mut self, at: u32) {
         if self.malformed || self.needs_rebuild {
             return;
         }
-        if at < self.seq_start {
-            self.seq_start = self.seq_start.saturating_add(1);
-            self.seq_end_seen = self.seq_end_seen.saturating_add(1);
-        } else if at < self.seq_end_seen {
-            // Strict `<`: an insertion at `at == seq_end_seen` lands
-            // JUST PAST the walker's tracked range. `Sequence::with_indel_inserted`
-            // doesn't grow `region.end` in this case either (the
-            // `region.end > at` shift rule is strict), so the new
-            // byte stays outside the segment's region. Bumping
-            // `seq_end_seen` here would diverge the cached
-            // hypothesis from a from-scratch recompute by one
-            // position. (Caught by the live-call cache-parity
-            // harness on IGH J under indel events.)
-            self.seq_end_seen = self.seq_end_seen.saturating_add(1);
-        }
+        let shifted = PoolRange::new(self.seq_start, self.seq_end_seen).after_insertion(at);
+        self.seq_start = shifted.start;
+        self.seq_end_seen = shifted.end;
     }
 
     /// Handle an indel deletion event.
     ///
-    /// External deletions (before our region) shift both bounds.
-    /// Internal deletions invalidate observer state: removing a
-    /// boundary germline byte changes `ref_start` / `next_ref_pos`,
-    /// and the in-place score decrement is correct but doesn't fix
-    /// the boundary tracking. Mark `needs_rebuild` and defer to
-    /// the seal-time `from_existing_region` rebuild.
+    /// External deletions (before our region) shift both bounds via
+    /// [`PoolRange::after_deletion`]. Internal deletions invalidate
+    /// observer state: removing a boundary germline byte changes
+    /// `ref_start` / `next_ref_pos`, and the in-place score
+    /// decrement is correct but doesn't fix the boundary tracking.
+    /// Mark `needs_rebuild` and defer to the seal-time
+    /// `from_existing_region` rebuild.
     pub(crate) fn on_indel_deleted(&mut self, at: u32) {
         if self.malformed || self.needs_rebuild {
             return;
         }
-        if at < self.seq_start {
-            self.seq_start = self.seq_start.saturating_sub(1);
-            self.seq_end_seen = self.seq_end_seen.saturating_sub(1);
-        } else if at < self.seq_end_seen {
+        let tracked = PoolRange::new(self.seq_start, self.seq_end_seen);
+        if at < tracked.start {
+            let shifted = tracked.after_deletion(at);
+            self.seq_start = shifted.start;
+            self.seq_end_seen = shifted.end;
+        } else if tracked.contains(at) {
             self.needs_rebuild = true;
         }
     }
@@ -554,13 +617,20 @@ impl SimulationEventSink for WalkerObserverState<'_> {
             }
             // Reserved (non-pool) variants describe sidecar state
             // — they don't move the walker's score vector or
-            // boundary tracking.
+            // boundary tracking. `SegmentReplaced` is pool-mutating
+            // but Slice A of the receptor-revision roadmap holds it
+            // inert here: Slice B wires a fresh-rebuild path via a
+            // dedicated `LiveCallRefreshStep`, not an incremental
+            // walker update.
             SimulationEvent::BaseDeleted { .. }
             | SimulationEvent::AssignmentChanged { .. }
             | SimulationEvent::TrimChanged { .. }
             | SimulationEvent::RegionAdded { .. }
+            | SimulationEvent::PRegionAdded { .. }
             | SimulationEvent::RegionReplaced { .. }
+            | SimulationEvent::SegmentReplaced { .. }
             | SimulationEvent::ReverseComplementFlagRecorded { .. }
+            | SimulationEvent::OrientationChanged { .. }
             | SimulationEvent::MutationCountChanged { .. } => {}
         }
     }
@@ -581,6 +651,7 @@ impl ResolvedWalkerState {
             seq_start: &mut self.seq_start,
             seq_end: &mut self.seq_end,
             flags: &mut self.flags,
+            orientation: self.orientation,
         }
     }
 

@@ -100,16 +100,24 @@ use crate::trace::Trace;
 /// Current on-disk schema version the engine emits. Bumped when a
 /// new required field or wire-format change ships. See module docs
 /// for the bump policy.
-pub const TRACE_FILE_SCHEMA_VERSION: u32 = 2;
+pub const TRACE_FILE_SCHEMA_VERSION: u32 = 3;
 
 /// Schema versions this engine knows how to load. Loading a file
 /// whose `schema_version` is outside this set surfaces as
 /// [`TraceFileError::UnsupportedSchemaVersion`].
 ///
 /// v1 → structural-only refdata signature, no address schema
-/// version, no content hash.
+/// version, no content hash, pass-plan signature is pass-names
+/// joined by `|`.
 /// v2 → adds `address_schema_version` + `refdata_content_hash`.
-pub const KNOWN_TRACE_FILE_SCHEMA_VERSIONS: &[u32] = &[1, 2];
+///       Pass-plan signature is still pass-names only.
+/// v3 → pass-plan signature includes per-pass compile-time
+///       parameter digests. Replay against a plan with a different
+///       rate vector / kernel / distribution now fails the
+///       signature gate instead of silently sampling different
+///       output at the same addresses (Slice A — Pass Parameter
+///       Signature). The other v2 fields stay unchanged.
+pub const KNOWN_TRACE_FILE_SCHEMA_VERSIONS: &[u32] = &[1, 2, 3];
 
 /// Durable artifact bundling a simulation's [`Trace`] with the
 /// metadata needed to verify and rerun it. See the module docs.
@@ -222,9 +230,47 @@ impl From<serde_json::Error> for TraceFileError {
     }
 }
 
-/// Canonical signature of a [`PassPlan`]. Plan order matters; the
-/// signature is the pass names in insertion order joined by `|`.
+/// Canonical signature of a [`PassPlan`] in the **v3 wire format**.
+///
+/// Each pass contributes `name(params)` where `params` is the pass's
+/// own [`crate::pass::Pass::parameter_signature`] output —
+/// deterministic, behaviourally-canonical, and includes the
+/// compile-time parameters that affect proposal support or output.
+/// Per-pass envelopes are joined by `|` in insertion order. A pass
+/// with no parameters renders as `name()`. Plan order matters; the
+/// signature is order-sensitive.
+///
+/// Examples:
+///
+/// ```text
+/// sample_allele.v()|trim.v_3(length=[(0:5.0),(1:3.0)])|mutate.s5f(kernel=hh_s5f,count=rate:0.03)
+/// ```
+///
+/// **v3 vs v1/v2.** v1 and v2 trace files recorded only the pass
+/// names joined by `|`. The v3 format closes the replay-safety gap
+/// — a trace recorded under one set of pass parameters refuses to
+/// replay against a plan with different parameters
+/// (Slice A — Pass Parameter Signature). v1/v2 files continue to
+/// load and replay via the legacy comparator in
+/// [`TraceFile::validate_against`]; see also
+/// [`pass_plan_signature_names_only`].
 pub fn pass_plan_signature(plan: &PassPlan) -> String {
+    plan.passes()
+        .iter()
+        .map(|p| format!("{}({})", p.name(), p.parameter_signature()))
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+/// Legacy v1/v2 plan signature shape — pass names joined by `|`.
+/// Used by [`TraceFile::validate_against`] to compare against
+/// pre-v3 trace files: their recorded signature was produced by
+/// this function (before Slice A), so the live plan must be
+/// rendered the same way to compare like-for-like.
+///
+/// Should NOT be used for new traces — [`pass_plan_signature`] is
+/// the canonical writer.
+pub fn pass_plan_signature_names_only(plan: &PassPlan) -> String {
     plan.passes()
         .iter()
         .map(|p| p.name())
@@ -240,6 +286,10 @@ pub fn pass_plan_signature(plan: &PassPlan) -> String {
 /// structural signature); pair it with [`refdata_content_hash`]
 /// for content-level identity.
 pub fn refdata_signature(refdata: &RefDataConfig) -> String {
+    // Structural fingerprint only — identity lives in the content
+    // hash (which is the precise cartridge-identity field). Keeping
+    // the signature low-cardinality means v1 trace files written
+    // before identity existed continue to round-trip.
     format!(
         "chain={:?};v={};d={};j={};c={}",
         refdata.chain_type,
@@ -293,6 +343,54 @@ pub fn refdata_content_hash(refdata: &RefDataConfig) -> String {
 
     hasher.update(format!("chain={:?}\n", refdata.chain_type).as_bytes());
 
+    // Identity — species/locus/reference_set/name/source. Two
+    // cartridges with identical catalogues but different declared
+    // identity are different cartridges by design (trace files
+    // attribute outputs to the cartridge, not just to the
+    // catalogue). Empty fields are emitted as the literal "NA" so
+    // determinism is preserved even when identity is absent.
+    let id = &refdata.identity;
+    for (label, value) in [
+        ("identity.species", id.species.as_deref()),
+        ("identity.locus", id.locus.as_deref()),
+        ("identity.reference_set", id.reference_set.as_deref()),
+        ("identity.name", id.name.as_deref()),
+        ("identity.source", id.source.as_deref()),
+    ] {
+        hasher.update(format!("{label}={}\n", value.unwrap_or("NA")).as_bytes());
+    }
+
+    // Rules are part of the cartridge identity — two configs with
+    // identical catalogues but different anchor expectations validate
+    // differently and produce different downstream interpretations.
+    // Hash them in canonical order so determinism is preserved.
+    let rules = &refdata.rules;
+    let alphabet: String = rules
+        .alphabet
+        .allowed
+        .iter()
+        .map(|&b| b as char)
+        .collect();
+    hasher.update(format!("rules.alphabet={alphabet}\n").as_bytes());
+    for (label, rule) in [("rules.v_anchor", &rules.v_anchor), ("rules.j_anchor", &rules.j_anchor)] {
+        let expected: String = rule.expected_amino_acids.iter().collect();
+        let miss = match rule.missing_severity {
+            crate::refdata::RefDataIssueSeverity::Fatal => "fatal",
+            crate::refdata::RefDataIssueSeverity::Curatable => "curatable",
+        };
+        let mismatch = match rule.mismatch_severity {
+            crate::refdata::RefDataIssueSeverity::Fatal => "fatal",
+            crate::refdata::RefDataIssueSeverity::Curatable => "curatable",
+        };
+        hasher.update(
+            format!(
+                "{label}=required:{}|expected:{}|missing:{}|mismatch:{}\n",
+                rule.required, expected, miss, mismatch,
+            )
+            .as_bytes(),
+        );
+    }
+
     for (label, pool) in [
         ("v_pool", &refdata.v_pool),
         ("d_pool", &refdata.d_pool),
@@ -319,6 +417,26 @@ pub fn refdata_content_hash(refdata: &RefDataConfig) -> String {
                 .map(|a| a.to_string())
                 .unwrap_or_else(|| "NA".to_string());
             write_field(&mut hasher, "anchor", anchor_str.as_bytes());
+            hasher.update(b"|");
+            let status_str = allele
+                .functional_status
+                .map(|s| s.as_str())
+                .unwrap_or("NA");
+            write_field(&mut hasher, "functional_status", status_str.as_bytes());
+            // V-region substructure annotations participate in the
+            // content hash so cartridges with different region
+            // boundaries hash differently. Empty list (D/J alleles
+            // and legacy V alleles without IMGT metadata) hashes as
+            // `subregions=` with no payload — backwards-compatible
+            // for pools where no V allele has annotations.
+            hasher.update(b"|");
+            hasher.update(b"subregions=");
+            for sub in &allele.subregions {
+                hasher.update(
+                    format!("{}:{}-{},", sub.label.as_str(), sub.start, sub.end)
+                        .as_bytes(),
+                );
+            }
             hasher.update(b"\n");
         }
     }
@@ -399,7 +517,17 @@ impl TraceFile {
         plan: &PassPlan,
         refdata: &RefDataConfig,
     ) -> Result<(), TraceFileError> {
-        let live_plan_sig = pass_plan_signature(plan);
+        // v1/v2 traces recorded the legacy names-only plan
+        // signature; rebuild the comparator in the same format so
+        // existing fixtures replay byte-identically. v3+ writers
+        // emit `name(params)` per pass — recompute live plan in
+        // that shape. The schema_version field is the
+        // discriminator. (Slice A — Pass Parameter Signature.)
+        let live_plan_sig = if self.schema_version < 3 {
+            pass_plan_signature_names_only(plan)
+        } else {
+            pass_plan_signature(plan)
+        };
         if live_plan_sig != self.pass_plan_signature {
             return Err(TraceFileError::PassPlanSignatureMismatch {
                 expected: self.pass_plan_signature.clone(),
@@ -503,6 +631,8 @@ mod tests {
             seq: b"ACGT".to_vec(),
             segment: Segment::V,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = cfg.j_pool.push(Allele {
             name: "j_a*01".into(),
@@ -510,6 +640,8 @@ mod tests {
             seq: b"TGGA".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         cfg
     }
@@ -518,6 +650,10 @@ mod tests {
         let mut t = Trace::new();
         t.record("sample_allele.v", ChoiceValue::AlleleId(0));
         t.record("sample_allele.j", ChoiceValue::AlleleId(0));
+        // Slice C: cover the D-inversion address in the validator
+        // seed too, so `validate_addresses_accepts_every_built_in_address`
+        // includes it in the lockstep set.
+        t.record("sample_allele.d.inverted", ChoiceValue::Bool(false));
         t.record("np.np1.length", ChoiceValue::Int(3));
         t.record("np.np1.bases[0]", ChoiceValue::Base(b'A'));
         t.record("np.np1.bases[1]", ChoiceValue::Base(b'C'));
@@ -526,10 +662,19 @@ mod tests {
     }
 
     #[test]
-    fn pass_plan_signature_is_pipe_joined_names_in_plan_order() {
+    fn pass_plan_signature_is_pipe_joined_pass_envelopes_in_plan_order() {
         let plan = make_plan(&["sample_allele.v", "sample_allele.j", "generate_np.np1"]);
+        // v3 format: each pass renders as `name(params)`. `NamedPass`
+        // takes the default `parameter_signature()` returning `""`,
+        // so the params slot is empty.
         assert_eq!(
             pass_plan_signature(&plan),
+            "sample_allele.v()|sample_allele.j()|generate_np.np1()",
+        );
+        // The v1/v2 helper still produces the legacy names-only
+        // shape so old fixtures can be compared like-for-like.
+        assert_eq!(
+            pass_plan_signature_names_only(&plan),
             "sample_allele.v|sample_allele.j|generate_np.np1",
         );
     }
@@ -581,8 +726,10 @@ mod tests {
         let err = file.validate_against(&plan_b, &refdata).unwrap_err();
         match err {
             TraceFileError::PassPlanSignatureMismatch { expected, got } => {
-                assert_eq!(expected, "a|b");
-                assert_eq!(got, "a|c");
+                // v3 emits `name(params)` per pass; NamedPass has
+                // no params so the slots stay empty.
+                assert_eq!(expected, "a()|b()");
+                assert_eq!(got, "a()|c()");
             }
             other => panic!("expected PassPlanSignatureMismatch, got {other:?}"),
         }
@@ -601,6 +748,8 @@ mod tests {
             seq: b"AAAA".to_vec(),
             segment: Segment::V,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
 
         let err = file.validate_against(&plan, &refdata_b).unwrap_err();
@@ -702,30 +851,38 @@ mod tests {
     // ── Schema policy compatibility tests ─────────────────────────
 
     #[test]
-    fn schema_version_constant_is_2() {
+    fn schema_version_constant_is_3() {
         // Pinned so a downstream consumer adding a new optional
         // field can't accidentally bump the version. Bumping must
         // come with explicit documentation + KNOWN list update.
-        assert_eq!(TRACE_FILE_SCHEMA_VERSION, 2);
+        // (Slice A — Pass Parameter Signature — bumped to v3.)
+        assert_eq!(TRACE_FILE_SCHEMA_VERSION, 3);
         assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&1));
         assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&2));
+        assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&3));
     }
 
     #[test]
-    fn fresh_emit_carries_v2_metadata() {
+    fn fresh_emit_carries_v3_metadata() {
         let plan = make_plan(&["sample_allele.v"]);
         let refdata = make_refdata();
         let file = TraceFile::build(&plan, &refdata, 0, Trace::new());
 
-        assert_eq!(file.schema_version, 2);
+        assert_eq!(file.schema_version, 3);
         assert_eq!(
             file.address_schema_version,
             crate::address::ADDRESS_SCHEMA_VERSION
         );
-        let hash = file.refdata_content_hash.as_ref().expect("v2 emits hash");
+        let hash = file.refdata_content_hash.as_ref().expect("v3 emits hash");
         assert!(hash.starts_with("sha256:"));
         // Hash is 64 hex chars after the prefix.
         assert_eq!(hash.len(), "sha256:".len() + 64);
+        // v3 plan signature wraps each pass name in `name(params)`.
+        assert!(
+            file.pass_plan_signature.contains('('),
+            "v3 plan signature must use the name(params) envelope, got {}",
+            file.pass_plan_signature
+        );
     }
 
     #[test]
@@ -751,7 +908,9 @@ mod tests {
     fn v1_trace_validates_via_structural_signature_only() {
         // v1 file → validation falls back to structural signature.
         // The content-hash check is skipped because the file
-        // doesn't have one.
+        // doesn't have one. (Slice A — the live plan is rendered
+        // in the names-only shape to compare like-for-like against
+        // a v1 fixture's recorded signature.)
         let plan = make_plan(&["a"]);
         let refdata = make_refdata();
         // Manually construct a v1-shape file pointing at the same
@@ -760,7 +919,7 @@ mod tests {
             schema_version: 1,
             engine_version: "0.0.1".into(),
             seed: 0,
-            pass_plan_signature: pass_plan_signature(&plan),
+            pass_plan_signature: pass_plan_signature_names_only(&plan),
             refdata_signature: refdata_signature(&refdata),
             address_schema_version: 0,
             refdata_content_hash: None,
@@ -819,6 +978,8 @@ mod tests {
             seq: b"AAAA".to_vec(),
             segment: Segment::V,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = a.j_pool.push(Allele {
             name: "j*01".into(),
@@ -826,6 +987,8 @@ mod tests {
             seq: b"TTTT".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
 
         let mut b = RefDataConfig::empty(ChainType::Vj);
@@ -835,6 +998,8 @@ mod tests {
             seq: b"CCCC".to_vec(), // ← only difference
             segment: Segment::V,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = b.j_pool.push(Allele {
             name: "j*01".into(),
@@ -842,6 +1007,8 @@ mod tests {
             seq: b"TTTT".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
 
         // Structural signatures match → would pass v1 check.

@@ -21,17 +21,50 @@ impl S5FMutationPass {
     }
 
     /// Walk the pool and build the per-position mutability profile.
-    pub(super) fn build_profile(&self, pool: &NucleotidePool) -> Vec<(u32, f64)> {
+    ///
+    /// When the pass's `segment_rates` is non-default, the per-
+    /// position S5F mutability is multiplied by the segment rate at
+    /// that position before being added to the profile. Zero-rate
+    /// positions drop out of the profile entirely (audit §4
+    /// constrain-before-propose ordering: segment rates are part of
+    /// proposal support, not a post-sampling reject layer). Flat-
+    /// default rates take the existing fast path (no per-position
+    /// segment lookup).
+    pub(super) fn build_profile(
+        &self,
+        pool: &NucleotidePool,
+        sim: &crate::ir::Simulation,
+        refdata: Option<&crate::refdata::RefDataConfig>,
+    ) -> Vec<(u32, f64)> {
         let n = pool.len() as u32;
         if n < 5 {
             return Vec::new();
         }
         let mut profile = Vec::with_capacity((n - 4) as usize);
+        let segment_rates_active = !self.segment_rates.is_default();
+        let v_sub_rates_active = !self.v_subregion_rates.is_default();
+        let any_rate_weighting = segment_rates_active || v_sub_rates_active;
         for pos in 2..n - 2 {
             if let Some(ctx) = Self::context_at(pool, pos) {
                 let mu = self.kernel.mutability(ctx);
-                if mu > 0.0 {
-                    profile.push((pos, mu));
+                if mu <= 0.0 {
+                    continue;
+                }
+                let weighted = if any_rate_weighting {
+                    let factor =
+                        crate::passes::mutation_transaction::substitution::combined_site_factor(
+                            pos,
+                            sim,
+                            refdata,
+                            Some(&self.segment_rates),
+                            Some(&self.v_subregion_rates),
+                        );
+                    mu * factor
+                } else {
+                    mu
+                };
+                if weighted > 0.0 {
+                    profile.push((pos, weighted));
                 }
             }
         }

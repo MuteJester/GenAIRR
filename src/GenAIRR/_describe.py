@@ -145,7 +145,7 @@ def _describe_mutate_step(step: "_MutateStep") -> str:
 _CORRUPT_NARRATIVE_LABELS = {
     _CORRUPT_KIND_PCR: ("PCR substitution errors", "errors/record"),
     _CORRUPT_KIND_QUALITY: ("Sequencing quality errors", "errors/record"),
-    _CORRUPT_KIND_5PRIME_LOSS: ("5'-end loss (primer/adapter trim)", "bases trimmed"),
+    _CORRUPT_KIND_5PRIME_LOSS: ("5'-end loss", "bases trimmed"),
     _CORRUPT_KIND_3PRIME_LOSS: ("3'-end loss", "bases trimmed"),
     _CORRUPT_KIND_NS: ("Ambiguous base calls (low-Q positions)", "positions/record"),
 }

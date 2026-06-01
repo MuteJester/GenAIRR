@@ -106,6 +106,8 @@ fn v_refdata(seqs: &[(&str, &[u8])]) -> RefDataConfig {
             seq: seq.to_vec(),
             segment: Segment::V,
             anchor: None,
+            functional_status: None,
+            subregions: Vec::new(),
         });
     }
     cfg
@@ -130,7 +132,7 @@ fn run_indel_plan(
     for indel in indels {
         plan.push(indel);
     }
-    let compiled = CompiledSimulator::compile(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(cfg), None, ExecutionPolicy::Permissive)
         .expect("fixture plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
     let v_call = outcome

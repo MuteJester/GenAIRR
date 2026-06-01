@@ -115,6 +115,8 @@ impl QualityErrorPass {
                 address::ChoiceAddress::CorruptQualitySite(i),
                 address::ChoiceAddress::CorruptQualityBase(i),
                 Some(lowercase_base),
+                None, // quality corruption is not biological SHM
+                None, // ... and ignores V-subregion rates
             )?;
         }
 
@@ -125,6 +127,14 @@ impl QualityErrorPass {
 impl Pass for QualityErrorPass {
     fn name(&self) -> &str {
         address::CORRUPT_QUALITY
+    }
+
+    fn parameter_signature(&self) -> String {
+        use crate::passes::paramsig::{fmt_byte_dist, fmt_count_source, join_parts};
+        join_parts([
+            fmt_count_source(&self.count_source),
+            format!("base={}", fmt_byte_dist(self.base_dist.as_ref())),
+        ])
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {

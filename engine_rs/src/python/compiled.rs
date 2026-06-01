@@ -8,10 +8,12 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::compiled::{CompiledSimulator, ExecutionPolicy, OwnedCompiledSimulator};
+use crate::compiled::{CompileOptions, CompiledSimulator, ExecutionPolicy, OwnedCompiledSimulator};
 use crate::contract::ContractSet;
 use crate::refdata::RefDataConfig;
-use crate::trace_file::{pass_plan_signature, refdata_signature, TraceFile};
+use crate::trace_file::{
+    pass_plan_signature, pass_plan_signature_names_only, refdata_signature, TraceFile,
+};
 
 use super::contract::pass_error_to_pyerr;
 use super::outcome::PyOutcome;
@@ -30,12 +32,23 @@ impl PyCompiledSimulator {
         refdata: Option<RefDataConfig>,
         contracts: Option<ContractSet>,
         policy: ExecutionPolicy,
+        allow_curatable_refdata: bool,
     ) -> PyResult<Self> {
+        let options = if allow_curatable_refdata {
+            CompileOptions::allow_curatable_refdata()
+        } else {
+            CompileOptions::default()
+        };
         let (report, feasibility) = {
             let plan = plan_builder.inner()?;
-            let borrowed =
-                CompiledSimulator::compile(plan, refdata.as_ref(), contracts.as_ref(), policy)
-                    .map_err(|err| PyValueError::new_err(err.to_string()))?;
+            let borrowed = CompiledSimulator::compile_with_options(
+                plan,
+                refdata.as_ref(),
+                contracts.as_ref(),
+                policy,
+                options,
+            )
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
             (borrowed.report().clone(), borrowed.feasibility().cloned())
         };
 
@@ -247,7 +260,15 @@ impl PyCompiledSimulator {
         strict: Option<bool>,
     ) -> PyResult<PyOutcome> {
         // Signature checks reuse the same flow as rerun_from_trace_file.
-        let live_plan_sig = pass_plan_signature(self.inner.plan());
+        // v1/v2 fixtures recorded the legacy names-only signature; compare
+        // like-for-like by rebuilding the live plan in the matching shape.
+        // v3+ fixtures embed each pass's compile-time parameter digest, so
+        // the live plan is rendered through `pass_plan_signature`.
+        let live_plan_sig = if trace_file.inner.schema_version < 3 {
+            pass_plan_signature_names_only(self.inner.plan())
+        } else {
+            pass_plan_signature(self.inner.plan())
+        };
         if live_plan_sig != trace_file.inner.pass_plan_signature {
             return Err(PyValueError::new_err(format!(
                 "replay_from_trace_file: pass plan signature mismatch.\n  \
@@ -268,6 +289,24 @@ impl PyCompiledSimulator {
                  expected: {}\n  got:      {}",
                 trace_file.inner.refdata_signature, live_refdata_sig,
             )));
+        }
+        // Content-hash gate (v2+ traces). Catches cartridge differences
+        // the structural signature can't see — e.g. identical pool
+        // sizes but different rules, identity, or curation provenance.
+        // v1 traces (which lack the field) are accepted without this
+        // check; the signature alone is the contract there.
+        if let Some(recorded_hash) = trace_file.inner.refdata_content_hash.as_ref() {
+            let live_hash =
+                crate::trace_file::refdata_content_hash(refdata);
+            if live_hash != *recorded_hash {
+                return Err(PyValueError::new_err(format!(
+                    "replay_from_trace_file: refdata content hash mismatch.\n  \
+                     expected: {}\n  got:      {}\n  \
+                     hint: trace was produced against a different cartridge \
+                     (rules / identity / curation may differ).",
+                    recorded_hash, live_hash,
+                )));
+            }
         }
 
         let policy = policy_from_strict_override(self.inner.policy(), strict);
@@ -309,7 +348,14 @@ impl PyCompiledSimulator {
         strict: Option<bool>,
     ) -> PyResult<PyOutcome> {
         // Signature checks: plan always, refdata when present.
-        let live_plan_sig = pass_plan_signature(self.inner.plan());
+        // Same v1/v2 vs v3 comparator-shape discipline as
+        // `replay_from_trace_file` — see that method for the
+        // schema-version-aware rationale.
+        let live_plan_sig = if trace_file.inner.schema_version < 3 {
+            pass_plan_signature_names_only(self.inner.plan())
+        } else {
+            pass_plan_signature(self.inner.plan())
+        };
         if live_plan_sig != trace_file.inner.pass_plan_signature {
             return Err(PyValueError::new_err(format!(
                 "rerun_from_trace_file: pass plan signature mismatch.\n  \

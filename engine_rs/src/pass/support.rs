@@ -74,4 +74,13 @@ pub enum PassCompileFact {
         segment: Segment,
         support: IntegerSupport,
     },
+    /// Per-end P-nucleotide length integer support, declared
+    /// by `PAdditionPass`. Symmetric with `NpLengthSupport` for
+    /// downstream consumers (schedule analyser, feasibility
+    /// pre-flight, plan-signature folding) that want to
+    /// inspect the per-end length vocabulary.
+    PLengthSupport {
+        end: crate::address::PEnd,
+        support: IntegerSupport,
+    },
 }

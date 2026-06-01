@@ -37,6 +37,8 @@ fn d_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"AAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d01 = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -44,6 +46,8 @@ fn d_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"TTTCCCCCAAA".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d02 = cfg.d_pool.push(Allele {
         name: "D*02".into(),
@@ -51,6 +55,8 @@ fn d_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"GGGCCCCCTGT".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -58,6 +64,8 @@ fn d_extension_refdata() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     (cfg, d01, d02)
 }
@@ -144,7 +152,7 @@ fn d_call_shrinks_when_np1_recreates_trimmed_prefix() {
     // Trim both ends by 3 so the post-assemble tie set is genuinely
     // {D*01, D*02} (both match the CCCCC core).
     let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 0, b'A');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -192,6 +200,8 @@ fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
         seq: b"AAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d01 = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -199,6 +209,8 @@ fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
         seq: b"AAACCCCCTTT".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _d02 = cfg.d_pool.push(Allele {
         name: "D*02".into(),
@@ -206,6 +218,8 @@ fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
         seq: b"AAACCCCCGGG".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -213,6 +227,8 @@ fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // Sample D*01, trim D_3 by 3, D_5 by 0. Assembled D = AAACCCCC
     // (ref pos 0..8). Both alleles match → live call = {D*01, D*02}.
@@ -223,7 +239,7 @@ fn d_call_shrinks_when_np2_recreates_trimmed_suffix() {
     // narrow the singleton further so the walker stops. Final
     // d_call = {D*01}, ref_end = 9 (not 11).
     let plan = d_extension_plan(&cfg, d01, 0, 3, 0, b'A', 3, b'T');
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -269,7 +285,7 @@ fn d_call_shrinks_via_both_sides_simultaneously() {
     let (cfg, d01, _d02) = d_extension_refdata();
     let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 3, b'A');
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -301,7 +317,7 @@ fn d_call_stays_widened_when_neither_np_matches() {
     let (cfg, d01, d02) = d_extension_refdata();
     let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'C', 3, b'C');
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 
@@ -331,7 +347,7 @@ fn append_region_np2_bumps_d_live_call_version() {
     let (cfg, d01, _d02) = d_extension_refdata();
     let plan = d_extension_plan(&cfg, d01, 3, 3, 3, b'T', 3, b'A');
 
-    let compiled = CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
         .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("plan should run");
 

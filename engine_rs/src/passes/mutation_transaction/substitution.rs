@@ -187,6 +187,8 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         site_address: ChoiceAddress,
         base_address: ChoiceAddress,
         value_transform: Option<fn(u8) -> u8>,
+        segment_rates: Option<&crate::passes::mutate::SegmentRateWeights>,
+        v_subregion_rates: Option<&crate::passes::mutate::VSubregionRateWeights>,
     ) -> Result<bool, PassError> {
         let pool_len = self.builder.peek().pool.len() as u32;
         if pool_len == 0 {
@@ -234,6 +236,37 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                 ));
             }
             let site = site_idx as u32;
+            // Segment-rate replay validation. A site recorded under
+            // rates that excluded zero-rate sites from support must
+            // also be excluded here; otherwise replay could
+            // force-apply a substitution at a position the current
+            // rate vector would never sample. Mirrors the contract
+            // admissibility check below: both gates run before the
+            // write.
+            //
+            // V-subregion-rate replay validation (Slice B) folds in
+            // the same way: a V site recorded under a rate vector
+            // where that site's subregion has weight > 0 must still
+            // be reachable under the current vector. A vector that
+            // zeroed the subregion must reject the recorded site
+            // rather than force-apply.
+            {
+                let sim_ref = self.builder.peek();
+                let site_factor = combined_site_factor(
+                    site,
+                    sim_ref,
+                    self.ctx.refdata,
+                    segment_rates,
+                    v_subregion_rates,
+                );
+                if site_factor <= 0.0 {
+                    return Err(PassError::constraint_sampling(
+                        self.pass_name.clone(),
+                        site_address.to_string(),
+                        crate::dist::FilteredSampleError::EmptyAdmissibleSupport,
+                    ));
+                }
+            }
             // Admissibility check against the CURRENT contract bundle
             // at the CURRENT in-progress sim. A recorded base that
             // would have been rejected fresh-sampled must also be
@@ -270,8 +303,64 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         }
 
         // ── Fast path: no active contracts ───────────────────────
+        //
+        // When both rate vectors are None or flat-default the
+        // original uniform-site fast path runs — preserves the
+        // legacy RNG consumption shape and byte-identical output.
+        // A non-default rate vector (segment or V-subregion) takes
+        // a weighted-sample path that consults
+        // `combined_site_factor` once per pool index. Both
+        // branches record exactly one site choice + one base
+        // choice (so the trace contract is unchanged); the only
+        // difference is the site selection distribution.
+        let segment_rates_active = segment_rates
+            .map(|r| !r.is_default())
+            .unwrap_or(false);
+        let v_subregion_rates_active = v_subregion_rates
+            .map(|r| !r.is_default())
+            .unwrap_or(false);
+        let any_rate_weighting = segment_rates_active || v_subregion_rates_active;
         if self.ctx.contracts.is_none() {
-            let site = self.ctx.rng.range_u32(pool_len);
+            let site = if any_rate_weighting {
+                let sim_ref = self.builder.peek();
+                let refdata = self.ctx.refdata;
+                let mut site_weights: Vec<f64> = Vec::with_capacity(pool_len as usize);
+                let mut total = 0.0;
+                for s in 0..pool_len {
+                    let w = combined_site_factor(
+                        s,
+                        sim_ref,
+                        refdata,
+                        segment_rates,
+                        v_subregion_rates,
+                    );
+                    site_weights.push(w);
+                    total += w;
+                }
+                if !total.is_finite() || total <= 0.0 {
+                    if self.strict {
+                        return Err(PassError::constraint_sampling(
+                            self.pass_name.clone(),
+                            base_address.to_string(),
+                            crate::dist::FilteredSampleError::EmptyAdmissibleSupport,
+                        ));
+                    }
+                    return Ok(false);
+                }
+                let r = self.ctx.rng.next_f64() * total;
+                let mut cum = 0.0;
+                let mut chosen = pool_len - 1;
+                for (idx, w) in site_weights.iter().enumerate() {
+                    cum += *w;
+                    if r < cum {
+                        chosen = idx as u32;
+                        break;
+                    }
+                }
+                chosen
+            } else {
+                self.ctx.rng.range_u32(pool_len)
+            };
             self.ctx
                 .trace
                 .record_choice(site_address, ChoiceValue::Int(site as i64));
@@ -314,6 +403,13 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         };
 
         // ── Constrained path: per-site admissible-mass weighting ─
+        //
+        // Site weight = admissible-base mass at the site × segment
+        // rate at the site (the latter when segment_rates is
+        // non-default). Zero-rate sites drop out before the
+        // cumulative-weight sampling step — segment rates are part
+        // of proposal support, not a post-sampling rejection layer
+        // (audit §4 ordering).
         let mut site_weights: Vec<f64> = Vec::with_capacity(pool_len as usize);
         let mut total: f64 = 0.0;
         {
@@ -334,8 +430,16 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                     })
                     .map(|(_, w)| *w)
                     .sum();
-                site_weights.push(mass);
-                total += mass;
+                let rate_factor = combined_site_factor(
+                    site,
+                    sim,
+                    refdata,
+                    segment_rates,
+                    v_subregion_rates,
+                );
+                let weighted = mass * rate_factor;
+                site_weights.push(weighted);
+                total += weighted;
             }
         }
 
@@ -567,6 +671,72 @@ fn identity_base(base: u8) -> u8 {
     base
 }
 
+/// Combined per-position SHM weight factor: `segment_rate ×
+/// v_subregion_rate`. Returns `1.0` when both vectors are flat-
+/// default, so the existing fast paths inside
+/// `substitute_position_constrained` and S5F's `build_profile`
+/// short-circuit cleanly.
+///
+/// Discipline:
+/// - Segment lookup uses `segment_at_position`; sites without a
+///   segment (e.g. pre-assembly) receive segment factor `0.0`
+///   when `segment_rates` is non-default — drops them from
+///   support, same as the segment-rates slice (audit §4).
+/// - V-subregion lookup runs ONLY for V sites; non-V sites
+///   receive subregion factor `1.0`.
+/// - V sites on an allele without IMGT annotations
+///   (`v_subregion_at_position` returns `None`) receive factor
+///   `1.0` — the brief's mixed-cartridge fallback.
+/// - V sites in the V-side CDR3 contribution (between FWR3.end
+///   and `len(allele.seq)`) also receive factor `1.0`; that
+///   stretch is deliberately outside the five-label set.
+#[inline]
+pub(crate) fn combined_site_factor(
+    pos: u32,
+    sim: &crate::ir::Simulation,
+    refdata: Option<&crate::refdata::RefDataConfig>,
+    segment_rates: Option<&crate::passes::mutate::SegmentRateWeights>,
+    v_subregion_rates: Option<&crate::passes::mutate::VSubregionRateWeights>,
+) -> f64 {
+    let seg_active = segment_rates.map(|r| !r.is_default()).unwrap_or(false);
+    let v_sub_active = v_subregion_rates
+        .map(|r| !r.is_default())
+        .unwrap_or(false);
+    if !seg_active && !v_sub_active {
+        return 1.0;
+    }
+    let segment = crate::passes::mutate::segment_at_position(&sim.sequence, pos);
+    let segment_factor = if seg_active {
+        let rates = segment_rates.expect("active check");
+        segment.map(|s| rates.rate_for(s)).unwrap_or(0.0)
+    } else {
+        1.0
+    };
+    let v_sub_factor = if v_sub_active && segment == Some(crate::ir::Segment::V) {
+        let rates = v_subregion_rates.expect("active check");
+        if let Some(rd) = refdata {
+            crate::passes::mutate::v_subregion_at_position(
+                &sim.sequence,
+                &sim.assignments,
+                rd,
+                pos,
+            )
+            .map(|label| rates.rate_for(label))
+            // No annotation under this V allele OR position in the
+            // V-side CDR3 stretch → identity factor.
+            .unwrap_or(1.0)
+        } else {
+            // No refdata in scope → can't look up subregions; treat
+            // as if unannotated. (Should not happen under the DSL
+            // entry point; defensive for direct Rust callers.)
+            1.0
+        }
+    } else {
+        1.0
+    };
+    segment_factor * v_sub_factor
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Tests — trace-injected replay path in `substitute_position_constrained`
 // ──────────────────────────────────────────────────────────────────
@@ -636,6 +806,8 @@ mod replay_tests {
                 site_address,
                 base_address,
                 transform,
+                None, // test helper exercises the legacy paths
+                None,
             );
             let outcome = wrote.and_then(|w| tx.commit().map(|s| (w, s)));
             outcome
@@ -771,6 +943,8 @@ mod replay_tests {
             seq: b"TGG".to_vec(),
             segment: Segment::V,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = cfg.j_pool.push(Allele {
             name: "j_anchor*01".into(),
@@ -778,6 +952,8 @@ mod replay_tests {
             seq: b"TGG".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let mut sim = Simulation::new();
         for (i, b) in b"TGG".iter().enumerate() {

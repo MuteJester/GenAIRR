@@ -322,9 +322,9 @@ fn score_based_narrowing_when_np_recreates_unique_suffix() {
 #[test]
 fn v_sequence_end_reflects_live_hypothesis_after_trim() {
     // After V_3 trim 3 with no NP recovery, the V live hypothesis
-    // ends at seq pos 9 (the post-trim structural V end). AIRR
-    // `v_sequence_end` should reflect that, not the pre-trim
-    // value of 12.
+    // ends at seq pos 12 (the post-trim structural V end: V length
+    // 15 minus 3 = 12). AIRR `v_sequence_end` should reflect that,
+    // not the pre-trim value of 15.
     let cfg = common::vj_ambiguous_refdata();
     let v01 = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let j01 = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
@@ -338,7 +338,7 @@ fn v_sequence_end_reflects_live_hypothesis_after_trim() {
     assert_eq!(rec.v_trim_3, 3, "trim should record 3");
     assert_eq!(
         rec.v_sequence_end,
-        Some(9),
+        Some(12),
         "v_sequence_end should track post-trim live hypothesis",
     );
 }
@@ -346,8 +346,8 @@ fn v_sequence_end_reflects_live_hypothesis_after_trim() {
 #[test]
 fn v_germline_end_shifts_inward_with_trim() {
     // The germline range tracks the surviving allele bases. A
-    // 3-byte 3' trim with no NP recovery → v_germline_end is 9,
-    // not 12.
+    // 3-byte 3' trim with no NP recovery → v_germline_end is 12,
+    // not 15 (V length minus the 3-byte trim).
     let cfg = common::vj_ambiguous_refdata();
     let v01 = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let j01 = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
@@ -360,7 +360,7 @@ fn v_germline_end_shifts_inward_with_trim() {
     let rec = build_airr_record(&outcome, &cfg, "trim-test");
     assert_eq!(
         rec.v_germline_end,
-        Some(9),
+        Some(12),
         "trimmed V germline_end should shift inward to the surviving allele length",
     );
     assert_eq!(rec.v_germline_start, Some(0));

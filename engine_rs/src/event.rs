@@ -608,6 +608,31 @@ mod tests {
     }
 
     #[test]
+    fn policy_passes_for_segment_replaced_with_no_declared_effects() {
+        // Receptor-revision Slice B: `SegmentReplaced` events ride
+        // the runtime-consequence channel without yet having a
+        // matching `PassCompileEffect`. The declared/emitted policy
+        // is keyed off `compile_effects`, so an empty compile list
+        // means there's nothing to validate against — the runtime
+        // event is accepted regardless. Pins this for Slice C: the
+        // future `ReceptorRevisionPass` is free to declare no
+        // compile-effect, or to declare a new one whose policy arm
+        // we'd add then.
+        use crate::ir::{NucHandle, Region};
+        let r = record(
+            "receptor_revision.no_declared_effects",
+            vec![],
+            vec![SimulationEvent::SegmentReplaced {
+                segment: Segment::V,
+                old_region: Region::new(Segment::V, NucHandle::new(0), NucHandle::new(5)),
+                new_region: Region::new(Segment::V, NucHandle::new(0), NucHandle::new(8)),
+                bytes_delta: 3,
+            }],
+        );
+        assert!(check_event_emission_consistency(&r).is_ok());
+    }
+
+    #[test]
     fn policy_passes_for_no_declared_effects_regardless_of_events() {
         // RevCompPass declares no effects. Whatever it emits (or
         // doesn't), the policy has nothing to check against.

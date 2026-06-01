@@ -37,6 +37,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"AAACCCTGTAAA".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.v_pool.push(Allele {
         name: "V2*01".into(),
@@ -44,6 +46,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"AAACCCTGTCCC".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.v_pool.push(Allele {
         name: "V3*01".into(),
@@ -51,6 +55,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"AAACCCTGTGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // D pool — distinguishing 3bp prefix (always T-starting, so it
     // can never extend a V allele's distinguishing A/C/G suffix)
@@ -65,6 +71,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"TTCGGGCCCGAG".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "D2*01".into(),
@@ -72,6 +80,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"TATGGGCCCGCG".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "D3*01".into(),
@@ -79,6 +89,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"TCGGGGCCCGTG".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // J pool — anchor=3 marks the conserved W (TGG) codon.
     let _ = cfg.j_pool.push(Allele {
@@ -87,6 +99,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"AAATGGACG".to_vec(),
         segment: Segment::J,
         anchor: Some(3),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "J2*01".into(),
@@ -94,6 +108,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"CCCTGGACG".to_vec(),
         segment: Segment::J,
         anchor: Some(3),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "J3*01".into(),
@@ -101,6 +117,8 @@ fn curated_v_d_j_refdata() -> RefDataConfig {
         seq: b"TTTTGGACG".to_vec(),
         segment: Segment::J,
         anchor: Some(3),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }

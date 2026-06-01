@@ -259,7 +259,7 @@ fn insertion_inside_v_preserves_call() {
         v_calls,
     );
     // Sequence grew by 1 base.
-    assert_eq!(rec.sequence_length, 22, "V(12)+NP1(0)+J(9)+ins(1) = 22");
+    assert_eq!(rec.sequence_length, 25, "V(15)+NP1(0)+J(9)+ins(1) = 25");
     // V CIGAR contains an I op.
     assert!(
         rec.v_cigar.contains("1I"),
@@ -646,9 +646,9 @@ fn d_region_with_full_trim_collapses_cleanly_and_remains_self_consistent() {
     let plan = vdj_plan_with_trims(&cfg, v_id, d_id, j_id, 5, 4, 0, 0);
     let (sim, rec) = run_plan_with_record(&cfg, plan, 0);
 
-    // Pool length = V(12) + NP1(0) + D(0) + NP2(0) + J(9) = 21.
-    assert_eq!(sim.pool.len() as i64, 21);
-    assert_eq!(rec.sequence_length, 21);
+    // Pool length = V(15) + NP1(0) + D(0) + NP2(0) + J(9) = 24.
+    assert_eq!(sim.pool.len() as i64, 24);
+    assert_eq!(rec.sequence_length, 24);
 
     // d_sequence_start/end must describe an empty span (start == end)
     // OR be None. Either is a valid expression of "D effectively
@@ -731,7 +731,7 @@ fn two_consecutive_deletions_at_same_position_widen_call_correctly() {
     // length shrinks by 2. v_call must still contain v01*01 (truth).
     let cfg = common::vj_ambiguous_refdata();
     let mut plan = vj_truth_plan(&cfg, "v01*01", "j01*01");
-    let baseline_len = 12 + 0 + 9; // V(12) + NP1(0) + J(9) = 21
+    let baseline_len = 15 + 0 + 9; // V(15) + NP1(0) + J(9) = 24
     plan.push(Box::new(DeleteAtPass::new(9)));
     plan.push(Box::new(DeleteAtPass::new(9)));
     let (sim, rec) = run_plan_with_record(&cfg, plan, 0);
@@ -798,10 +798,10 @@ fn compound_insertion_then_deletion_recomputes_call_correctly() {
     // synthetic, deletion drops one position from inside V's pool).
     let cfg = common::vj_ambiguous_refdata();
     let mut plan = vj_truth_plan(&cfg, "v01*01", "j01*01");
-    let baseline_len: i64 = 12 + 0 + 9; // 21
+    let baseline_len: i64 = 15 + 0 + 9; // 24
     plan.push(Box::new(InsertAtPass::new(3, b'C', Segment::V)));
     plan.push(Box::new(InsertAtPass::new(3, b'C', Segment::V)));
-    // After 2 inserts at pos 3, pool grew by 2 (length 23). Delete at
+    // After 2 inserts at pos 3, pool grew by 2 (length 26). Delete at
     // pool index 6 (still inside V, after the insertions).
     plan.push(Box::new(DeleteAtPass::new(6)));
     let (sim, rec) = run_plan_with_record(&cfg, plan, 0);

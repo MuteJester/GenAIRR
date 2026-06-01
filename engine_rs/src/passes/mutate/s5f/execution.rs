@@ -153,6 +153,34 @@ impl S5FMutationPass {
                     ));
                 }
 
+                // Segment-rate + V-subregion-rate replay
+                // validation. A recorded site that falls in a
+                // now-zero-rate segment OR a now-zero-rate V
+                // subregion is unreachable under the current pass
+                // configuration; reject rather than force-apply.
+                // Mirrors the build_profile filter that zeroes
+                // those sites in fresh-RNG runs.
+                if !self.segment_rates.is_default()
+                    || !self.v_subregion_rates.is_default()
+                {
+                    let (sim_ref, ctx_ref) = tx.split_borrows();
+                    let site_rate =
+                        crate::passes::mutation_transaction::substitution::combined_site_factor(
+                            site,
+                            sim_ref,
+                            ctx_ref.refdata,
+                            Some(&self.segment_rates),
+                            Some(&self.v_subregion_rates),
+                        );
+                    if site_rate <= 0.0 {
+                        return Err(PassError::constraint_sampling(
+                            self.name(),
+                            site_choice_address.to_string(),
+                            FilteredSampleError::EmptyAdmissibleSupport,
+                        ));
+                    }
+                }
+
                 // Contract admissibility: same shape as
                 // `substitute_position_constrained`'s replay branch.
                 let (sim_ref, ctx_ref) = tx.split_borrows();
@@ -182,7 +210,10 @@ impl S5FMutationPass {
                 continue;
             }
 
-            let profile = self.build_profile(&tx.peek().pool);
+            let profile = {
+                let (sim_ref, ctx_ref) = tx.split_borrows();
+                self.build_profile(&sim_ref.pool, sim_ref, ctx_ref.refdata)
+            };
             if profile.is_empty() {
                 break;
             }

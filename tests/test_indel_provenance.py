@@ -56,7 +56,7 @@ BASELINE_LEN = 18  # V(9) + NP1(3) + J(6)
 
 def _baseline_experiment() -> "ga.Experiment":
     return (
-        ga.Experiment.on(_vj_refdata())
+        ga.Experiment.on(_vj_refdata()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
     )
@@ -72,7 +72,7 @@ def _record(exp: "ga.Experiment", seed: int = 0) -> dict:
 def _outcome(exp: "ga.Experiment", seed: int = 0):
     """Run `exp` once and return the raw Outcome (so callers can
     inspect trace + events)."""
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
     return compiled.simulator.run(seed=seed), compiled
 
@@ -300,7 +300,7 @@ def test_productive_only_count_1_lands_outside_junction_and_anchors() -> None:
         .polymerase_indels(count=1, insertion_prob=0.5)
         .productive_only()
     )
-    compiled = configured.compile()
+    compiled = configured.compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
 
     # Sweep multiple seeds — every observed site must satisfy the
@@ -343,13 +343,13 @@ def test_productive_only_count_1_delete_only_short_j_no_ops_permissive() -> None
     cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTT", anchor=0)
     exp = (
-        ga.Experiment.on(cfg)
+        ga.Experiment.on(cfg).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .polymerase_indels(count=1, insertion_prob=0.0)
         .productive_only()
     )
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
     outcome = compiled.simulator.run(seed=0)
 
@@ -380,7 +380,7 @@ def test_productive_only_count_1_delete_only_short_j_raises_strict() -> None:
     cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTT", anchor=0)
     exp = (
-        ga.Experiment.on(cfg)
+        ga.Experiment.on(cfg).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .polymerase_indels(count=1, insertion_prob=0.0)
@@ -408,13 +408,13 @@ def test_productive_only_count_1_insert_only_short_j_applies_at_end_of_pool() ->
     cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTT", anchor=0)
     exp = (
-        ga.Experiment.on(cfg)
+        ga.Experiment.on(cfg).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .polymerase_indels(count=1, insertion_prob=1.0)
         .productive_only()
     )
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
     outcome = compiled.simulator.run(seed=0)
     site_rec = next(
@@ -462,7 +462,7 @@ def test_indel_replay_reproduces_sequence_and_airr_fields(configure) -> None:
     Indels are the most structurally complex mechanism — if any
     pass leaks RNG state that the trace doesn't capture, replay
     diverges on the AIRR record."""
-    compiled = configure(_baseline_experiment()).compile()
+    compiled = configure(_baseline_experiment()).compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
 
     seed = 4242

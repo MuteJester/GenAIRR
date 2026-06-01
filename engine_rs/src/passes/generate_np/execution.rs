@@ -95,6 +95,12 @@ impl GenerateNPPass {
             builder.attach_event_log_observer();
         }
 
+        // Tracks the most recently emitted NP base across the
+        // per-position loop so a Markov generator can condition
+        // its `support()` on it. Uniform / categorical
+        // generators ignore this. `None` for position 0; the
+        // recorded base from the previous iteration otherwise.
+        let mut previous: Option<u8> = None;
         for i in 0..length {
             let base_choice_address = crate::address::ChoiceAddress::NpBase {
                 segment: self.typed_np_segment(),
@@ -115,10 +121,15 @@ impl GenerateNPPass {
                 strict,
                 junction_stop_state.as_ref(),
                 admit_mask,
+                previous,
             )?;
             ctx.trace
                 .record_choice(base_choice_address, ChoiceValue::Base(base));
             builder.push_nucleotide(Nucleotide::synthetic(base, self.np_segment, flag::N_NUC));
+            // Update only after the base is accepted/recorded
+            // so a mid-stream replay error doesn't leak a
+            // half-committed previous-base state.
+            previous = Some(base);
         }
 
         // Drain the per-push events into the caller-supplied sink

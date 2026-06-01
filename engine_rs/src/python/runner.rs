@@ -9,7 +9,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::address::{ChoiceAddress, NpSegment};
-use crate::compiled::{CompiledSimulator, ExecutionPolicy};
+use crate::compiled::{CompileOptions, CompiledSimulator, ExecutionPolicy};
 use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
 use crate::ir::{flag, Segment};
 use crate::pass::PassPlan;
@@ -29,8 +29,14 @@ fn run_compiled(
     refdata: Option<&RefDataConfig>,
     contracts: Option<&crate::contract::ContractSet>,
     policy: ExecutionPolicy,
+    allow_curatable_refdata: bool,
 ) -> PyResult<PyOutcome> {
-    let compiled = CompiledSimulator::compile(plan, refdata, contracts, policy)
+    let options = if allow_curatable_refdata {
+        CompileOptions::allow_curatable_refdata()
+    } else {
+        CompileOptions::default()
+    };
+    let compiled = CompiledSimulator::compile_with_options(plan, refdata, contracts, policy, options)
         .map_err(|err| PyValueError::new_err(err.to_string()))?;
     let outcome = compiled.run_one(seed).map_err(pass_error_to_pyerr)?;
     Ok(PyOutcome::new(outcome))
@@ -60,7 +66,7 @@ fn run_smoke_plan(seed: u64) -> PyOutcome {
         )));
     }
 
-    run_compiled(&plan, seed, None, None, ExecutionPolicy::Permissive)
+    run_compiled(&plan, seed, None, None, ExecutionPolicy::Permissive, false)
         .expect("smoke plan should compile and run")
 }
 
@@ -77,6 +83,8 @@ fn smoke_vj_refdata() -> RefDataConfig {
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_smoke*01".into(),
@@ -84,6 +92,8 @@ fn smoke_vj_refdata() -> RefDataConfig {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }
@@ -126,7 +136,7 @@ fn run_smoke_vj_recombination(seed: u64) -> PyOutcome {
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
 
-    run_compiled(&plan, seed, Some(&cfg), None, ExecutionPolicy::Permissive)
+    run_compiled(&plan, seed, Some(&cfg), None, ExecutionPolicy::Permissive, true)
         .expect("smoke VJ recombination plan should compile and run")
 }
 
@@ -194,7 +204,7 @@ fn run_vj_recombination(
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
 
-    run_compiled(&plan, seed, Some(cfg), None, ExecutionPolicy::Permissive)
+    run_compiled(&plan, seed, Some(cfg), None, ExecutionPolicy::Permissive, true)
 }
 
 /// Execute a Python-built [`PyPassPlan`] and return the resulting
@@ -217,13 +227,14 @@ fn run_vj_recombination(
 ///   ``StrictSamplingError`` carrying ``(pass_name, address, reason)``
 ///   so the caller can react to or surface the failure.
 #[pyfunction]
-#[pyo3(signature = (plan, seed, *, refdata=None, respect=None, strict=false))]
+#[pyo3(signature = (plan, seed, *, refdata=None, respect=None, strict=false, allow_curatable_refdata=false))]
 fn run(
     plan: &PyPassPlan,
     seed: u64,
     refdata: Option<&PyRefDataConfig>,
     respect: Option<&PyContractSet>,
     strict: bool,
+    allow_curatable_refdata: bool,
 ) -> PyResult<PyOutcome> {
     let policy = if strict {
         ExecutionPolicy::Strict
@@ -236,6 +247,7 @@ fn run(
         refdata.map(|r| r.inner()),
         respect.map(|c| c.inner()),
         policy,
+        allow_curatable_refdata,
     )
 }
 

@@ -1,6 +1,7 @@
 use super::*;
 use crate::airr_record::build_airr_record;
 use crate::assignment::TrimEnd;
+use crate::compiled::CompileOptions;
 use crate::contract::{Contract, ContractViolation};
 use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
 use crate::ir::{NucFlags, Nucleotide, Segment};
@@ -10,6 +11,46 @@ use crate::passes::{AssembleSegmentPass, GenerateNPPass, SampleAllelePass, TrimP
 use crate::refdata::{Allele, ChainType};
 use crate::trace::ChoiceValue;
 
+/// Compile a unit-test fixture with refdata validation deliberately
+/// skipped. Many internal fixtures use synthetic V/J alleles with
+/// non-biological anchor codons (e.g. `GGG` for V instead of `TGT`)
+/// or partial pools — these exercise specific engine paths without
+/// needing to satisfy the production-grade refdata contract.
+///
+/// Production callers (the Python `Experiment.compile()` path) go
+/// through `CompiledSimulator::compile`, which always validates.
+fn compile_test_fixture<'a>(
+    plan: &'a PassPlan,
+    refdata: Option<&'a RefDataConfig>,
+    contracts: Option<&'a ContractSet>,
+    policy: ExecutionPolicy,
+) -> Result<CompiledSimulator<'a>, CompileErrors> {
+    CompiledSimulator::compile_with_options(
+        plan,
+        refdata,
+        contracts,
+        policy,
+        CompileOptions::skip_refdata_validation(),
+    )
+}
+
+/// Owning analogue of [`compile_test_fixture`].
+#[allow(dead_code)]
+fn compile_test_fixture_owned(
+    plan: PassPlan,
+    refdata: Option<RefDataConfig>,
+    contracts: Option<ContractSet>,
+    policy: ExecutionPolicy,
+) -> Result<OwnedCompiledSimulator, CompileErrors> {
+    OwnedCompiledSimulator::compile_with_options(
+        plan,
+        refdata,
+        contracts,
+        policy,
+        CompileOptions::skip_refdata_validation(),
+    )
+}
+
 fn vj_refdata() -> RefDataConfig {
     let mut cfg = RefDataConfig::empty(ChainType::Vj);
     let _ = cfg.v_pool.push(Allele {
@@ -18,6 +59,8 @@ fn vj_refdata() -> RefDataConfig {
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j*01".into(),
@@ -25,6 +68,8 @@ fn vj_refdata() -> RefDataConfig {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }
@@ -61,6 +106,8 @@ fn vj_refdata_with_runtime_j_residue() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j_good = cfg.j_pool.push(Allele {
         name: "j_good*01".into(),
@@ -68,6 +115,8 @@ fn vj_refdata_with_runtime_j_residue() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j_bad = cfg.j_pool.push(Allele {
         name: "j_bad*01".into(),
@@ -75,6 +124,8 @@ fn vj_refdata_with_runtime_j_residue() -> (RefDataConfig, AlleleId, AlleleId) {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(1),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     (cfg, j_good, j_bad)
 }

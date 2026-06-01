@@ -16,6 +16,7 @@ mod junction;
 mod locus;
 mod projection;
 mod record;
+mod segment_projection;
 mod sequence;
 mod trace_fields;
 mod validate;
@@ -24,7 +25,8 @@ mod walk;
 pub use builder::build_airr_record;
 pub use record::AirrRecord;
 pub use validate::{
-    validate_airr_record, AlleleOrderReason, ProductiveDecidedBy, RecordValidationIssue,
+    validate_airr_record, AlleleOrderReason, PairedEndField, PairedEndRead,
+    ProductiveDecidedBy, RecordValidationIssue,
 };
 
 #[cfg(test)]

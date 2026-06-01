@@ -53,6 +53,30 @@ mod sampling;
 pub struct S5FMutationPass {
     kernel: S5FKernel,
     count_source: super::CountSource,
+    /// Per-biological-segment SHM rate scalars. Default is flat
+    /// (all 1.0) — produces byte-identical output to the pre-
+    /// slice engine. The profile-building loop in
+    /// `execution::execute_with_sampling_mode` multiplies the
+    /// per-position S5F mutability by the segment rate at that
+    /// position before normalising and sampling.
+    pub(crate) segment_rates: super::SegmentRateWeights,
+    /// Per-V-subregion SHM rate scalars (Slice B). Default is
+    /// flat (all 1.0) — byte-identical to the pre-slice engine.
+    /// Non-default vectors weight V-segment sites by the
+    /// IMGT-subregion the site falls into on the assigned V
+    /// allele. Non-V sites are unaffected. V sites on an allele
+    /// without subregion annotations receive factor `1.0`.
+    pub(crate) v_subregion_rates: super::VSubregionRateWeights,
+    /// Optional short name of the S5F kernel
+    /// (`"hh_s5f"` / `"hkl_s5f"` / `"hh_s5f_60"` /
+    /// `"hh_s5f_opposite"`, etc.). Threaded through from the
+    /// Python DSL `_MutateStep.s5f_model_name`; `None` only when
+    /// the pass was constructed from an unnamed kernel through a
+    /// non-DSL path (test code, custom Rust callers). Folded into
+    /// the plan signature so replays against a different kernel
+    /// fail at the signature gate rather than silently producing
+    /// different bases.
+    kernel_name: Option<String>,
 }
 
 impl S5FMutationPass {
@@ -62,6 +86,9 @@ impl S5FMutationPass {
         Self {
             kernel,
             count_source: super::CountSource::Distribution(count_dist),
+            segment_rates: super::SegmentRateWeights::default(),
+            v_subregion_rates: super::VSubregionRateWeights::default(),
+            kernel_name: None,
         }
     }
 
@@ -77,13 +104,64 @@ impl S5FMutationPass {
         Self {
             kernel,
             count_source: super::CountSource::Rate(rate),
+            segment_rates: super::SegmentRateWeights::default(),
+            v_subregion_rates: super::VSubregionRateWeights::default(),
+            kernel_name: None,
         }
+    }
+
+    /// Persistent setter for per-segment SHM rate scalars. Mirror
+    /// of [`super::UniformMutationPass::with_segment_rates`]; same
+    /// validation contract (caller has already checked the
+    /// values).
+    #[must_use]
+    pub fn with_segment_rates(mut self, rates: super::SegmentRateWeights) -> Self {
+        self.segment_rates = rates;
+        self
+    }
+
+    /// Persistent setter for per-V-subregion SHM rate scalars
+    /// (Slice B). Mirror of
+    /// [`super::UniformMutationPass::with_v_subregion_rates`];
+    /// validation discipline is the same — the Python DSL boundary
+    /// has already enforced finite, non-negative values and the
+    /// at-least-one-positive invariant.
+    #[must_use]
+    pub fn with_v_subregion_rates(mut self, rates: super::VSubregionRateWeights) -> Self {
+        self.v_subregion_rates = rates;
+        self
+    }
+
+    /// Persistent setter for the kernel's short name. Only the
+    /// PyO3 bridge calls this — internal Rust users that build an
+    /// `S5FMutationPass` from raw kernel tables (tests, custom
+    /// callers) leave it `None`.
+    #[must_use]
+    pub fn with_kernel_name(mut self, name: impl Into<String>) -> Self {
+        self.kernel_name = Some(name.into());
+        self
     }
 }
 
 impl Pass for S5FMutationPass {
     fn name(&self) -> &str {
         address::MUTATE_S5F
+    }
+
+    fn parameter_signature(&self) -> String {
+        use crate::passes::paramsig::{
+            fmt_count_source, fmt_segment_rates, fmt_v_subregion_rates, join_parts,
+        };
+        let kernel_part = match &self.kernel_name {
+            Some(n) => format!("kernel={}", n),
+            None => "kernel=unnamed".to_string(),
+        };
+        join_parts([
+            kernel_part,
+            fmt_count_source(&self.count_source),
+            fmt_segment_rates(&self.segment_rates),
+            fmt_v_subregion_rates(&self.v_subregion_rates),
+        ])
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {

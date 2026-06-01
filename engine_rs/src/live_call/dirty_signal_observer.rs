@@ -97,8 +97,11 @@ impl SimulationEventSink for DirtySignalObserver {
             | SimulationEvent::AssignmentChanged { .. }
             | SimulationEvent::TrimChanged { .. }
             | SimulationEvent::RegionAdded { .. }
+            | SimulationEvent::PRegionAdded { .. }
             | SimulationEvent::RegionReplaced { .. }
+            | SimulationEvent::SegmentReplaced { .. }
             | SimulationEvent::ReverseComplementFlagRecorded { .. }
+            | SimulationEvent::OrientationChanged { .. }
             | SimulationEvent::MutationCountChanged { .. } => {}
         }
     }

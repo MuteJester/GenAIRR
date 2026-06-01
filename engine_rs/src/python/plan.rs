@@ -23,12 +23,90 @@ use crate::compiled::ExecutionPolicy;
 use crate::dist::{AllelePoolDist, EmpiricalLengthDist, UniformBase};
 use crate::ir::Segment;
 use crate::pass::PassPlan;
+use crate::passes::mutate::{SegmentRateWeights, VSubregionRateWeights};
 use crate::passes::{
-    AssembleSegmentPass, ContaminantPass, EndLossPass, GenerateNPPass, IndelPass, LossEnd,
-    NCorruptionPass, PCRErrorPass, QualityErrorPass, RevCompPass, S5FMutationPass,
-    SampleAllelePass, TrimPass, UniformMutationPass,
+    AssembleSegmentPass, ContaminantPass, EndLossPass, GenerateNPPass, IndelPass, InvertDPass,
+    LossEnd, NCorruptionPass, PCRErrorPass, PairedEndLayoutSpec, PairedEndSamplingPass,
+    QualityErrorPass, ReceptorRevisionPass, RevCompPass, S5FMutationPass, SampleAllelePass,
+    TrimPass, UniformMutationPass,
 };
 use crate::s5f::{S5FKernel, S5F_NUM_CONTEXTS, S5F_SUBSTITUTION_LEN};
+
+/// Materialise the canonical Python ``[v, d, j, np]`` rate vector
+/// into a [`SegmentRateWeights`]. ``None`` → flat defaults (all
+/// 1.0); ``Some(vec)`` must be exactly four positive entries in
+/// (v, d, j, np) order. The DSL-boundary validator in
+/// ``experiment.py`` enforces these invariants before calling
+/// across the bridge; this helper re-validates defensively so a
+/// custom Python wrapper that bypasses the DSL still surfaces a
+/// clear ``ValueError`` rather than panicking inside the pass.
+fn build_segment_rate_weights(
+    rates: Option<Vec<f64>>,
+) -> PyResult<SegmentRateWeights> {
+    let Some(vec) = rates else {
+        return Ok(SegmentRateWeights::default());
+    };
+    if vec.len() != 4 {
+        return Err(PyValueError::new_err(format!(
+            "segment_rates must be a length-4 list [v, d, j, np], got {} entries",
+            vec.len()
+        )));
+    }
+    for (i, &r) in vec.iter().enumerate() {
+        if !r.is_finite() || r < 0.0 {
+            return Err(PyValueError::new_err(format!(
+                "segment_rates[{}] must be a finite non-negative number, got {}",
+                i, r
+            )));
+        }
+    }
+    if vec.iter().copied().sum::<f64>() <= 0.0 {
+        return Err(PyValueError::new_err(
+            "segment_rates: at least one bucket must have a positive rate",
+        ));
+    }
+    Ok(SegmentRateWeights::from_tuple(vec[0], vec[1], vec[2], vec[3]))
+}
+
+/// Materialise the canonical Python ``[fwr1, cdr1, fwr2, cdr2,
+/// fwr3]`` rate vector into a [`VSubregionRateWeights`].
+/// ``None`` → flat defaults (all 1.0); ``Some(vec)`` must be
+/// exactly five finite non-negative entries with at least one
+/// strictly positive in
+/// (FWR1, CDR1, FWR2, CDR2, FWR3) order. Same defence-in-depth
+/// re-validation as [`build_segment_rate_weights`] — the
+/// `_validate_v_subregion_rates` boundary in `experiment.py` is
+/// the canonical authoritative validator; this helper guards a
+/// custom Python wrapper that bypasses the DSL.
+fn build_v_subregion_rate_weights(
+    rates: Option<Vec<f64>>,
+) -> PyResult<VSubregionRateWeights> {
+    let Some(vec) = rates else {
+        return Ok(VSubregionRateWeights::default());
+    };
+    if vec.len() != 5 {
+        return Err(PyValueError::new_err(format!(
+            "v_subregion_rates must be a length-5 list [fwr1, cdr1, fwr2, cdr2, fwr3], got {} entries",
+            vec.len()
+        )));
+    }
+    for (i, &r) in vec.iter().enumerate() {
+        if !r.is_finite() || r < 0.0 {
+            return Err(PyValueError::new_err(format!(
+                "v_subregion_rates[{}] must be a finite non-negative number, got {}",
+                i, r
+            )));
+        }
+    }
+    if vec.iter().copied().sum::<f64>() <= 0.0 {
+        return Err(PyValueError::new_err(
+            "v_subregion_rates: at least one label must have a positive rate",
+        ));
+    }
+    Ok(VSubregionRateWeights::from_tuple(
+        vec[0], vec[1], vec[2], vec[3], vec[4],
+    ))
+}
 
 use super::compiled::PyCompiledSimulator;
 use super::contract::PyContractSet;
@@ -142,6 +220,28 @@ impl PyPassPlan {
     /// `self_idx` execute before `other_idx`.
     fn before(&mut self, self_idx: u32, other_idx: u32) -> PyResult<()> {
         self.add_edge(self_idx, other_idx)
+    }
+
+    /// Return the node index of the first pass whose `name()`
+    /// equals ``name``, or ``None`` if no such pass is in the plan.
+    ///
+    /// Used by lowering steps that need to attach an explicit
+    /// schedule edge against a pass pushed by an *earlier* step in
+    /// the pipeline IR — e.g. `_InvertDStep` finds the previously-
+    /// pushed `assemble.d` and adds a `before(invert_d, assemble.d)`
+    /// edge so InvertDPass commits its orientation decision before
+    /// AssembleSegmentPass reads it.
+    ///
+    /// Linear scan; pass plans are tens-of-passes deep, the cost is
+    /// negligible against pipeline-build time.
+    fn find_node_by_name(&self, name: &str) -> PyResult<Option<u32>> {
+        let plan = self.inner()?;
+        for (i, pass) in plan.passes().iter().enumerate() {
+            if pass.name() == name {
+                return Ok(Some(i as u32));
+            }
+        }
+        Ok(None)
     }
 
     /// Append a `SampleAllelePass` for `segment`. Requires the active
@@ -258,6 +358,35 @@ impl PyPassPlan {
         Ok(())
     }
 
+    /// Append a `PAdditionPass` for `end` (`"V_3"`, `"D_5"`,
+    /// `"D_3"`, or `"J_5"`). `length_pairs` is a list of
+    /// `(length, weight)` tuples that defines the empirical
+    /// per-end P-length distribution. Bases are deterministic
+    /// from the source allele's post-trim, post-orientation
+    /// coding flank (see
+    /// [`docs/p_nucleotide_design.md`](../../../../docs/p_nucleotide_design.md)).
+    ///
+    /// Errors:
+    /// - `ValueError` when `end` isn't one of the four canonical labels.
+    /// - `ValueError` when `length_pairs` is empty.
+    fn push_p_addition(
+        &mut self,
+        end: &str,
+        length_pairs: Vec<(i64, f64)>,
+    ) -> PyResult<()> {
+        let p_end = parse_p_end(end)?;
+        if length_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "length_pairs must contain at least one (length, weight) entry",
+            ));
+        }
+        let length_dist = Box::new(EmpiricalLengthDist::from_pairs(length_pairs));
+        self.inner_mut()?.push(Box::new(
+            crate::passes::PAdditionPass::new(p_end, length_dist),
+        ));
+        Ok(())
+    }
+
     /// Append a `GenerateNPPass` for `np_segment` (`"NP1"` or `"NP2"`).
     /// `length_pairs` is a list of `(length, weight)` tuples that
     /// defines the empirical NP-length distribution; bases are drawn
@@ -270,10 +399,13 @@ impl PyPassPlan {
     ///   plan is compiled.
     /// - non-finite / non-positive weights panic in
     ///   `EmpiricalLengthDist::from_pairs` at construction time.
+    #[pyo3(signature = (np_segment, length_pairs, *, base_pairs=None, markov_transitions=None))]
     fn push_generate_np(
         &mut self,
         np_segment: &str,
         length_pairs: Vec<(i64, f64)>,
+        base_pairs: Option<Vec<(u8, f64)>>,
+        markov_transitions: Option<Vec<Vec<(u8, f64)>>>,
     ) -> PyResult<()> {
         let seg = parse_np_segment(np_segment)?;
         if length_pairs.is_empty() {
@@ -284,10 +416,100 @@ impl PyPassPlan {
         // EmpiricalLengthDist::from_pairs panics on bad input — we
         // accept that for now; the Rust constructor's validation is
         // shared with all paths.
+        //
+        // Dispatch (Slice — Markov NP Base Generator):
+        //
+        //   * ``base_pairs=None`` and ``markov_transitions=None`` →
+        //     pre-slice ``UniformBase`` / ``UniformNpGenerator``
+        //     (byte-identical to legacy plan signatures).
+        //   * ``base_pairs=Some(...)`` and
+        //     ``markov_transitions=None`` → cartridge-owned
+        //     ``empirical_first_base`` (Slice — Typed NP base model)
+        //     via ``CategoricalNpGenerator``.
+        //   * ``markov_transitions=Some(rows)`` → full 1-step
+        //     ``MarkovBaseGenerator``. ``base_pairs`` is required
+        //     in this case (carries the first-base row); the four
+        //     rows are in canonical A/C/G/T from-base order; each
+        //     row is a ``(to_byte, weight)`` pair list covering
+        //     the full A/C/G/T to-alphabet. The Python spec layer
+        //     enforces row completeness — defence-in-depth checks
+        //     here re-validate the bridge surface.
+        let length_dist = Box::new(EmpiricalLengthDist::from_pairs(length_pairs));
+        if let Some(rows) = markov_transitions {
+            let first_pairs = base_pairs.ok_or_else(|| {
+                PyValueError::new_err(
+                    "markov_transitions requires base_pairs (the first-base row)",
+                )
+            })?;
+            let first_base = parse_canonical_base_weights(
+                &first_pairs,
+                "base_pairs",
+            )?;
+            if rows.len() != 4 {
+                return Err(PyValueError::new_err(format!(
+                    "markov_transitions must have 4 rows (A/C/G/T from-bases), got {}",
+                    rows.len()
+                )));
+            }
+            let mut transition_rows: Vec<Vec<f64>> = Vec::with_capacity(4);
+            for (from_idx, row) in rows.iter().enumerate() {
+                let label = format!("markov_transitions[{}]", "ACGT".chars().nth(from_idx).unwrap());
+                let row_weights = parse_canonical_base_weights(row, &label)?;
+                transition_rows.push(row_weights.to_vec());
+            }
+            let generator = crate::passes::generate_np::MarkovBaseGenerator::from_first_and_rows(
+                first_base.to_vec(),
+                transition_rows,
+            );
+            self.inner_mut()?.push(Box::new(
+                crate::passes::generate_np::GenerateNPPass::with_generator(
+                    seg,
+                    length_dist,
+                    Box::new(generator),
+                ),
+            ));
+            return Ok(());
+        }
+        let base_dist: Box<dyn crate::dist::Distribution<Output = u8>> =
+            match base_pairs {
+                None => Box::new(UniformBase),
+                Some(pairs) => {
+                    if pairs.is_empty() {
+                        return Err(PyValueError::new_err(
+                            "base_pairs must contain at least one (base, weight) entry",
+                        ));
+                    }
+                    // Defence-in-depth re-validation. The Python DSL
+                    // boundary (`NpBaseModelSpec`) is the authoritative
+                    // validator; this catch defends against callers
+                    // that bypass the DSL.
+                    for (base, weight) in &pairs {
+                        if !matches!(*base, b'A' | b'C' | b'G' | b'T') {
+                            return Err(PyValueError::new_err(format!(
+                                "base_pairs: only canonical A/C/G/T are allowed, got byte {} (0x{:02X})",
+                                base, base
+                            )));
+                        }
+                        if !weight.is_finite() || *weight < 0.0 {
+                            return Err(PyValueError::new_err(format!(
+                                "base_pairs: weights must be finite and non-negative, got {}",
+                                weight
+                            )));
+                        }
+                    }
+                    let total: f64 = pairs.iter().map(|(_, w)| w).sum();
+                    if total <= 0.0 {
+                        return Err(PyValueError::new_err(
+                            "base_pairs: at least one weight must be strictly positive",
+                        ));
+                    }
+                    Box::new(crate::dist::CategoricalBase::from_pairs(pairs))
+                }
+            };
         self.inner_mut()?.push(Box::new(GenerateNPPass::new(
             seg,
-            Box::new(EmpiricalLengthDist::from_pairs(length_pairs)),
-            Box::new(UniformBase),
+            length_dist,
+            base_dist,
         )));
         Ok(())
     }
@@ -299,16 +521,28 @@ impl PyPassPlan {
     /// drawn A/C/G/T.
     ///
     /// Errors: ``ValueError`` when ``count_pairs`` is empty.
-    fn push_mutate_uniform(&mut self, count_pairs: Vec<(i64, f64)>) -> PyResult<()> {
+    #[pyo3(signature = (count_pairs, *, segment_rates=None, v_subregion_rates=None))]
+    fn push_mutate_uniform(
+        &mut self,
+        count_pairs: Vec<(i64, f64)>,
+        segment_rates: Option<Vec<f64>>,
+        v_subregion_rates: Option<Vec<f64>>,
+    ) -> PyResult<()> {
         if count_pairs.is_empty() {
             return Err(PyValueError::new_err(
                 "count_pairs must contain at least one (count, weight) entry",
             ));
         }
-        self.inner_mut()?.push(Box::new(UniformMutationPass::new(
-            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
-            Box::new(UniformBase),
-        )));
+        let rates = build_segment_rate_weights(segment_rates)?;
+        let v_sub_rates = build_v_subregion_rate_weights(v_subregion_rates)?;
+        self.inner_mut()?.push(Box::new(
+            UniformMutationPass::new(
+                Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
+                Box::new(UniformBase),
+            )
+            .with_segment_rates(rates)
+            .with_v_subregion_rates(v_sub_rates),
+        ));
         Ok(())
     }
 
@@ -320,18 +554,26 @@ impl PyPassPlan {
     ///
     /// Errors: ``ValueError`` when ``rate`` is outside ``[0.0, 1.0]``
     /// or non-finite.
-    fn push_mutate_uniform_rate(&mut self, rate: f64) -> PyResult<()> {
+    #[pyo3(signature = (rate, *, segment_rates=None, v_subregion_rates=None))]
+    fn push_mutate_uniform_rate(
+        &mut self,
+        rate: f64,
+        segment_rates: Option<Vec<f64>>,
+        v_subregion_rates: Option<Vec<f64>>,
+    ) -> PyResult<()> {
         if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
             return Err(PyValueError::new_err(format!(
                 "rate must be a finite value in [0.0, 1.0], got {}",
                 rate
             )));
         }
-        self.inner_mut()?
-            .push(Box::new(UniformMutationPass::new_rate(
-                rate,
-                Box::new(UniformBase),
-            )));
+        let rates = build_segment_rate_weights(segment_rates)?;
+        let v_sub_rates = build_v_subregion_rate_weights(v_subregion_rates)?;
+        self.inner_mut()?.push(Box::new(
+            UniformMutationPass::new_rate(rate, Box::new(UniformBase))
+                .with_segment_rates(rates)
+                .with_v_subregion_rates(v_sub_rates),
+        ));
         Ok(())
     }
 
@@ -344,13 +586,25 @@ impl PyPassPlan {
     /// bases A/C/G/T). ``count_pairs`` follows the same shape as
     /// ``push_mutate_uniform``.
     ///
+    /// ``kernel_name`` is the short identifier of the S5F kernel
+    /// being installed (``"hh_s5f"`` / ``"hkl_s5f"`` / …). Threaded
+    /// through from the DSL's ``_MutateStep.s5f_model_name`` so the
+    /// plan signature can distinguish two passes that share rate +
+    /// count but disagree on which kernel's mutability table was
+    /// loaded. Optional for backwards compatibility; ``None`` is
+    /// recorded in the plan signature as ``kernel=unnamed``.
+    ///
     /// Errors: ``ValueError`` when ``count_pairs`` is empty or kernel
     /// dimensions are wrong.
+    #[pyo3(signature = (count_pairs, mutability, substitution, *, segment_rates=None, v_subregion_rates=None, kernel_name=None))]
     fn push_mutate_s5f(
         &mut self,
         count_pairs: Vec<(i64, f64)>,
         mutability: Vec<f64>,
         substitution: Vec<f64>,
+        segment_rates: Option<Vec<f64>>,
+        v_subregion_rates: Option<Vec<f64>>,
+        kernel_name: Option<String>,
     ) -> PyResult<()> {
         if count_pairs.is_empty() {
             return Err(PyValueError::new_err(
@@ -371,11 +625,19 @@ impl PyPassPlan {
                 substitution.len()
             )));
         }
+        let rates = build_segment_rate_weights(segment_rates)?;
+        let v_sub_rates = build_v_subregion_rate_weights(v_subregion_rates)?;
         let kernel = S5FKernel::new(mutability, substitution);
-        self.inner_mut()?.push(Box::new(S5FMutationPass::new(
+        let mut pass = S5FMutationPass::new(
             kernel,
             Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
-        )));
+        )
+        .with_segment_rates(rates)
+        .with_v_subregion_rates(v_sub_rates);
+        if let Some(name) = kernel_name {
+            pass = pass.with_kernel_name(name);
+        }
+        self.inner_mut()?.push(Box::new(pass));
         Ok(())
     }
 
@@ -388,11 +650,15 @@ impl PyPassPlan {
     ///
     /// Errors: ``ValueError`` when ``rate`` is outside ``[0.0, 1.0]``
     /// or kernel dimensions are wrong.
+    #[pyo3(signature = (rate, mutability, substitution, *, segment_rates=None, v_subregion_rates=None, kernel_name=None))]
     fn push_mutate_s5f_rate(
         &mut self,
         rate: f64,
         mutability: Vec<f64>,
         substitution: Vec<f64>,
+        segment_rates: Option<Vec<f64>>,
+        v_subregion_rates: Option<Vec<f64>>,
+        kernel_name: Option<String>,
     ) -> PyResult<()> {
         if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
             return Err(PyValueError::new_err(format!(
@@ -414,9 +680,16 @@ impl PyPassPlan {
                 substitution.len()
             )));
         }
+        let rates = build_segment_rate_weights(segment_rates)?;
+        let v_sub_rates = build_v_subregion_rate_weights(v_subregion_rates)?;
         let kernel = S5FKernel::new(mutability, substitution);
-        self.inner_mut()?
-            .push(Box::new(S5FMutationPass::new_rate(kernel, rate)));
+        let mut pass = S5FMutationPass::new_rate(kernel, rate)
+            .with_segment_rates(rates)
+            .with_v_subregion_rates(v_sub_rates);
+        if let Some(name) = kernel_name {
+            pass = pass.with_kernel_name(name);
+        }
+        self.inner_mut()?.push(Box::new(pass));
         Ok(())
     }
 
@@ -627,6 +900,137 @@ impl PyPassPlan {
         Ok(())
     }
 
+    /// Append an `InvertDPass`. Records a per-simulation Bool at
+    /// ``sample_allele.d.inverted`` and commits
+    /// ``SegmentOrientation::ReverseComplement`` on the D allele
+    /// when the draw is true. AssembleSegmentPass(D) then emits
+    /// the reverse-complemented D slice (Slice B).
+    ///
+    /// Must be inserted **after** the SampleAllele(D) push and
+    /// **before** the AssembleSegment(D) push. The schedule
+    /// analyser auto-derives the lower edge through
+    /// ``Pass::requirements()``; the upper edge against
+    /// AssembleSegment(D) is the caller's responsibility — the
+    /// Python lowering wires it via
+    /// :meth:`PassPlan.before` against the
+    /// :meth:`PassPlan.find_node_by_name` lookup.
+    ///
+    /// Errors: ``ValueError`` when ``prob`` is outside
+    /// ``[0.0, 1.0]`` or non-finite.
+    fn push_invert_d(&mut self, prob: f64) -> PyResult<()> {
+        if !prob.is_finite() || !(0.0..=1.0).contains(&prob) {
+            return Err(PyValueError::new_err(format!(
+                "prob must be a finite number in [0.0, 1.0], got {}",
+                prob
+            )));
+        }
+        self.inner_mut()?.push(Box::new(InvertDPass::new(prob)));
+        Ok(())
+    }
+
+    /// Append a `ReceptorRevisionPass`. Records a per-simulation Bool
+    /// at `receptor_revision.applied`; on `true`, additionally records
+    /// the replacement V allele at `receptor_revision.v_allele` and
+    /// the derived 3' trim at `receptor_revision.v_trim_3`, then
+    /// commits AssignmentChanged + TrimChanged + SegmentReplaced
+    /// against V.
+    ///
+    /// The replacement V allele distribution is uniform over the V
+    /// pool in `refdata`. Slice C's pass filters those candidates to
+    /// the same-retained-length subset (`allele.len() >= old_v_len`)
+    /// internally; this push site doesn't pre-narrow.
+    ///
+    /// Must be inserted **after** the AssembleSegment(V) push (and
+    /// in v1, after AssembleSegment(J) so receptor revision sees the
+    /// full V-NP1-D-NP2-J pool). The Python lowering wires this via
+    /// the canonical V-NP1-D-NP2-J recombine sequence and inserts
+    /// the call immediately after `push_assemble("J")`.
+    ///
+    /// Errors:
+    /// - `ValueError` when `prob` is non-finite or outside `[0.0, 1.0]`.
+    /// - `ValueError` when the V pool in `refdata` is empty.
+    /// Append a `PairedEndSamplingPass` configured with the three
+    /// integer distributions Slice D's `Experiment.paired_end(…)`
+    /// lowers to. The pass records three Int trace records
+    /// (`paired_end.r1_length`, `.r2_length`, `.insert_size`) per
+    /// simulation; the AIRR builder reads them back at projection
+    /// time and applies the
+    /// `crate::airr_record::sequence::project_paired_end_layout`
+    /// kernel that landed in Slice B.
+    ///
+    /// `*_pairs` are `(value, weight)` empirical distributions —
+    /// the same shape `push_mutate_uniform` / `push_corrupt_*`
+    /// already accept. Single-value distributions are passed as
+    /// one-element lists.
+    ///
+    /// Errors:
+    /// - `ValueError` when any of the three pair lists is empty.
+    ///
+    /// The pass itself runs additional per-sample
+    /// relationship checks (positive lengths, non-negative insert,
+    /// `r1/r2 <= insert`); those errors surface at execute time
+    /// as `PassError::InvalidDistributionOutput`. The DSL boundary
+    /// already pre-checks the fixed-value cases — see
+    /// `Experiment.paired_end`.
+    fn push_paired_end(
+        &mut self,
+        r1_length_pairs: Vec<(i64, f64)>,
+        r2_length_pairs: Vec<(i64, f64)>,
+        insert_size_pairs: Vec<(i64, f64)>,
+    ) -> PyResult<()> {
+        if r1_length_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "paired_end r1_length distribution must contain at least one entry",
+            ));
+        }
+        if r2_length_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "paired_end r2_length distribution must contain at least one entry",
+            ));
+        }
+        if insert_size_pairs.is_empty() {
+            return Err(PyValueError::new_err(
+                "paired_end insert_size distribution must contain at least one entry",
+            ));
+        }
+        let spec = PairedEndLayoutSpec::new(
+            Box::new(EmpiricalLengthDist::from_pairs(r1_length_pairs)),
+            Box::new(EmpiricalLengthDist::from_pairs(r2_length_pairs)),
+            Box::new(EmpiricalLengthDist::from_pairs(insert_size_pairs)),
+        );
+        self.inner_mut()?
+            .push(Box::new(PairedEndSamplingPass::new(spec)));
+        Ok(())
+    }
+
+    fn push_receptor_revision(
+        &mut self,
+        prob: f64,
+        refdata: &PyRefDataConfig,
+    ) -> PyResult<()> {
+        use crate::ir::Segment;
+        if !prob.is_finite() || !(0.0..=1.0).contains(&prob) {
+            return Err(PyValueError::new_err(format!(
+                "prob must be a finite number in [0.0, 1.0], got {}",
+                prob
+            )));
+        }
+        let cfg = refdata.inner();
+        let pool = cfg.pool_for(Segment::V).ok_or_else(|| {
+            PyValueError::new_err("receptor_revision requires a V pool in refdata")
+        })?;
+        if pool.is_empty() {
+            return Err(PyValueError::new_err(
+                "receptor_revision requires a non-empty V pool",
+            ));
+        }
+        self.inner_mut()?.push(Box::new(ReceptorRevisionPass::new(
+            prob,
+            Box::new(AllelePoolDist::uniform(pool)),
+        )));
+        Ok(())
+    }
+
     /// Append a `TrimPass` for `(segment, end)`. `end` is `"5"` or
     /// `"3"` (the prime end being trimmed). `length_pairs` defines
     /// the trim-amount distribution.
@@ -661,12 +1065,22 @@ impl PyPassPlan {
     /// Compilation consumes the plan on success. This is intentional:
     /// the compiled simulator owns the pass IR and can run repeatedly
     /// without re-validating or re-borrowing the builder.
-    #[pyo3(signature = (*, refdata=None, respect=None, strict=false))]
+    ///
+    /// ``allow_curatable_refdata=True`` runs the refdata gate under
+    /// the lenient `AllowCuratable` mode: Fatal issues (empty
+    /// required pool, duplicate names, invalid bytes, anchors out of
+    /// bounds) still reject, but Curatable issues (V anchor not Cys,
+    /// J anchor unexpected AA, missing V/J anchor) pass. Use when
+    /// sampling from a real catalogue (bundled mouse_igh,
+    /// human_tcrb) that includes pseudogene/ORF alleles. Default
+    /// ``False`` — strict validation, every issue gates compile.
+    #[pyo3(signature = (*, refdata=None, respect=None, strict=false, allow_curatable_refdata=false))]
     fn compile(
         &mut self,
         refdata: Option<&PyRefDataConfig>,
         respect: Option<&PyContractSet>,
         strict: bool,
+        allow_curatable_refdata: bool,
     ) -> PyResult<PyCompiledSimulator> {
         let policy = if strict {
             ExecutionPolicy::Strict
@@ -676,7 +1090,13 @@ impl PyPassPlan {
 
         let refdata = refdata.map(|r| r.inner().clone());
         let contracts = respect.map(|c| c.inner().clone());
-        PyCompiledSimulator::compile_from_plan(self, refdata, contracts, policy)
+        PyCompiledSimulator::compile_from_plan(
+            self,
+            refdata,
+            contracts,
+            policy,
+            allow_curatable_refdata,
+        )
     }
 
     fn __repr__(&self) -> String {
@@ -687,6 +1107,69 @@ impl PyPassPlan {
     }
 }
 
+/// Parse a `(base_byte, weight)` pair list covering the canonical
+/// A/C/G/T alphabet into a 4-element `[f64; 4]` indexed in A/C/G/T
+/// canonical order. The Python `NpBaseModelSpec` is the
+/// authoritative validator (per-base alphabet, weight finiteness,
+/// row positivity); this re-validation is defence-in-depth for
+/// callers that bypass the DSL boundary.
+///
+/// Requires every canonical base to be present at least once;
+/// duplicates accumulate (matches `CategoricalBase::from_pairs`).
+fn parse_canonical_base_weights(
+    pairs: &[(u8, f64)],
+    label: &str,
+) -> PyResult<[f64; 4]> {
+    let mut weights = [0.0f64; 4];
+    let mut seen = [false; 4];
+    for (base, weight) in pairs.iter() {
+        let idx = match base {
+            b'A' | b'a' => 0,
+            b'C' | b'c' => 1,
+            b'G' | b'g' => 2,
+            b'T' | b't' => 3,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "{label}: only canonical A/C/G/T are allowed, got byte {} (0x{:02X})",
+                    base, base
+                )));
+            }
+        };
+        if !weight.is_finite() || *weight < 0.0 {
+            return Err(PyValueError::new_err(format!(
+                "{label}: weights must be finite and non-negative, got {}",
+                weight
+            )));
+        }
+        weights[idx] += weight;
+        seen[idx] = true;
+    }
+    let total: f64 = weights.iter().sum();
+    if total <= 0.0 {
+        return Err(PyValueError::new_err(format!(
+            "{label}: at least one weight must be strictly positive",
+        )));
+    }
+    // Markov rows must cover every from→to entry (or the
+    // generator silently treats the missing entries as zero
+    // weight, which would mask an authoring bug). The
+    // Python spec layer already enforces this for the typed
+    // path; the defence-in-depth here is for callers that
+    // bypass the DSL.
+    if !seen.iter().all(|&b| b) {
+        let missing: Vec<&str> = ["A", "C", "G", "T"]
+            .iter()
+            .enumerate()
+            .filter_map(|(i, l)| if !seen[i] { Some(*l) } else { None })
+            .collect();
+        return Err(PyValueError::new_err(format!(
+            "{label}: missing canonical base(s) {:?} — the row must cover the full A/C/G/T alphabet",
+            missing
+        )));
+    }
+    Ok(weights)
+}
+
 fn parse_recombinable_segment(s: &str) -> PyResult<Segment> {
     match s.to_ascii_uppercase().as_str() {
         "V" => Ok(Segment::V),
@@ -694,6 +1177,23 @@ fn parse_recombinable_segment(s: &str) -> PyResult<Segment> {
         "J" => Ok(Segment::J),
         other => Err(PyValueError::new_err(format!(
             "segment must be 'V', 'D', or 'J' (got {:?})",
+            other
+        ))),
+    }
+}
+
+/// Parse a P-end label (`"V_3"`, `"D_5"`, `"D_3"`, `"J_5"`)
+/// into the typed [`crate::address::PEnd`]. Same on-disk
+/// spelling as the trace addresses, so the labels round-trip.
+fn parse_p_end(s: &str) -> PyResult<crate::address::PEnd> {
+    use crate::address::PEnd;
+    match s.to_ascii_uppercase().as_str() {
+        "V_3" => Ok(PEnd::V3),
+        "D_5" => Ok(PEnd::D5),
+        "D_3" => Ok(PEnd::D3),
+        "J_5" => Ok(PEnd::J5),
+        other => Err(PyValueError::new_err(format!(
+            "p_addition end must be 'V_3', 'D_5', 'D_3', or 'J_5' (got {:?})",
             other
         ))),
     }

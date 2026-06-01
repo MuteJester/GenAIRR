@@ -310,7 +310,7 @@ def _build_experiment_from_params(
             "n_clones and clone_size must be provided together (or both omitted).",
         )
 
-    exp = ga.Experiment.on(config).recombine()
+    exp = ga.Experiment.on(config).allow_curatable_refdata().recombine()
 
     # -- Allele lock (parent-level) -----------------------------------
     using_kwargs: Dict[str, Any] = {}
@@ -354,9 +354,9 @@ def _build_experiment_from_params(
 
     # -- Per-descendant sequencing artefacts --------------------------
     if five_prime_loss_max is not None:
-        exp = exp.primer_trim_5prime(length=(0, int(five_prime_loss_max)))
+        exp = exp.end_loss_5prime(length=(0, int(five_prime_loss_max)))
     if three_prime_loss_max is not None:
-        exp = exp.primer_trim_3prime(length=(0, int(three_prime_loss_max)))
+        exp = exp.end_loss_3prime(length=(0, int(three_prime_loss_max)))
     if indel_count_max is not None:
         exp = exp.polymerase_indels(
             count=(0, int(indel_count_max)),

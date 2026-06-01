@@ -53,14 +53,14 @@ def _vdj_refdata() -> ge.RefDataConfig:
 
 
 def test_experiment_on_returns_experiment_instance():
-    exp = Experiment.on(_vj_refdata())
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata()
     assert isinstance(exp, Experiment)
     assert exp.chain_type == "vj"
     assert exp.step_count == 0
 
 
 def test_experiment_on_passes_through_vdj_chain_type():
-    assert Experiment.on(_vdj_refdata()).chain_type == "vdj"
+    assert Experiment.on(_vdj_refdata()).allow_curatable_refdata().chain_type == "vdj"
 
 
 def test_experiment_on_rejects_unknown_config_name_string():
@@ -96,14 +96,14 @@ def test_experiment_on_accepts_dataconfig_object():
     import GenAIRR
 
     cfg = GenAIRR.HUMAN_IGK_OGRDB
-    exp = Experiment.on(cfg)
+    exp = Experiment.on(cfg).allow_curatable_refdata()
     assert exp.chain_type == "vj"
     assert exp.refdata.v_pool_size() > 0
     assert exp.refdata.j_pool_size() > 0
 
 
 def test_experiment_repr_includes_chain_type_and_step_count():
-    exp = Experiment.on(_vj_refdata()).recombine()
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine()
     r = repr(exp)
     assert "Experiment" in r
     assert "chain=vj" in r
@@ -116,7 +116,7 @@ def test_experiment_repr_includes_chain_type_and_step_count():
 
 
 def test_recombine_returns_same_experiment_for_chaining():
-    exp = Experiment.on(_vj_refdata())
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata()
     same = exp.recombine()
     assert same is exp
     assert exp.step_count == 1
@@ -125,7 +125,7 @@ def test_recombine_returns_same_experiment_for_chaining():
 def test_recombine_can_be_called_multiple_times():
     # Two recombine() calls = two recombination shapes in the plan.
     # Not biologically meaningful, but the builder permits it.
-    exp = Experiment.on(_vj_refdata()).recombine().recombine()
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().recombine()
     assert exp.step_count == 2
 
 
@@ -135,31 +135,31 @@ def test_recombine_can_be_called_multiple_times():
 
 
 def test_compile_produces_compiled_experiment():
-    compiled = Experiment.on(_vj_refdata()).recombine().compile()
+    compiled = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
 
 
 def test_compile_vj_recombine_produces_five_pass_plan():
-    compiled = Experiment.on(_vj_refdata()).recombine().compile()
+    compiled = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().compile(allow_curatable_refdata=True)
     assert len(compiled.pass_plan) == 5
 
 
 def test_compile_vdj_recombine_produces_eight_pass_plan():
-    compiled = Experiment.on(_vdj_refdata()).recombine().compile()
+    compiled = Experiment.on(_vdj_refdata()).allow_curatable_refdata().recombine().compile(allow_curatable_refdata=True)
     assert len(compiled.pass_plan) == 8
 
 
 def test_compile_is_idempotent_and_returns_distinct_instances():
-    exp = Experiment.on(_vj_refdata()).recombine()
-    a = exp.compile()
-    b = exp.compile()
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine()
+    a = exp.compile(allow_curatable_refdata=True)
+    b = exp.compile(allow_curatable_refdata=True)
     assert a is not b
     assert a.simulator is not b.simulator
     assert len(a.pass_plan) == len(b.pass_plan) == 5
 
 
 def test_compiled_experiment_repr_includes_plan_len_and_chain():
-    compiled = Experiment.on(_vj_refdata()).recombine().compile()
+    compiled = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().compile(allow_curatable_refdata=True)
     r = repr(compiled)
     assert "CompiledExperiment" in r
     assert "plan_len=5" in r
@@ -168,7 +168,7 @@ def test_compiled_experiment_repr_includes_plan_len_and_chain():
 
 def test_compiled_experiment_exposes_simulator_pass_summary_and_refdata():
     cfg = _vj_refdata()
-    compiled = Experiment.on(cfg).recombine().compile()
+    compiled = Experiment.on(cfg).allow_curatable_refdata().recombine().compile(allow_curatable_refdata=True)
     assert compiled.refdata is cfg
     assert isinstance(compiled.simulator, ge.CompiledSimulator)
     assert compiled.pass_plan == (
@@ -186,7 +186,7 @@ def test_compiled_experiment_exposes_simulator_pass_summary_and_refdata():
 
 
 def test_vj_recombine_emits_canonical_pass_names():
-    outcomes = Experiment.on(_vj_refdata()).recombine().run(n=1, seed=0)
+    outcomes = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().run(n=1, seed=0)
     assert outcomes[0].pass_names() == [
         "sample_allele.v",
         "sample_allele.j",
@@ -197,7 +197,7 @@ def test_vj_recombine_emits_canonical_pass_names():
 
 
 def test_vdj_recombine_emits_canonical_pass_names():
-    outcomes = Experiment.on(_vdj_refdata()).recombine().run(n=1, seed=0)
+    outcomes = Experiment.on(_vdj_refdata()).allow_curatable_refdata().recombine().run(n=1, seed=0)
     assert outcomes[0].pass_names() == [
         "sample_allele.v",
         "sample_allele.d",
@@ -219,7 +219,7 @@ def test_recombine_custom_np1_length_distribution_propagates():
     # Force NP1 = exactly 4 every time. The trace's NP1 length and
     # the assembled region's length must both be 4.
     cfg = _vj_refdata()
-    outcomes = Experiment.on(cfg).recombine(np1_lengths=[(4, 1.0)]).run(
+    outcomes = Experiment.on(cfg).allow_curatable_refdata().recombine(np1_lengths=[(4, 1.0)]).run(
         n=10, seed=0
     )
     for o in outcomes:
@@ -234,7 +234,7 @@ def test_recombine_custom_np2_length_rejected_on_vj():
     # NP2 region; the kwarg can only ever indicate a user mistake.
     cfg = _vj_refdata()
     with pytest.raises(ValueError, match="np2_lengths"):
-        Experiment.on(cfg).recombine(
+        Experiment.on(cfg).allow_curatable_refdata().recombine(
             np1_lengths=[(2, 1.0)],
             np2_lengths=[(7, 1.0)],
         )
@@ -245,7 +245,7 @@ def test_recombine_vj_without_np2_still_produces_single_np():
     # V / NP1 / J when np2_lengths is omitted (which is the only
     # supported VJ shape).
     cfg = _vj_refdata()
-    outcomes = Experiment.on(cfg).recombine(np1_lengths=[(2, 1.0)]).trim(enabled=False).run(n=1, seed=0)
+    outcomes = Experiment.on(cfg).allow_curatable_refdata().recombine(np1_lengths=[(2, 1.0)]).trim(enabled=False).run(n=1, seed=0)
     np1 = outcomes[0].final_simulation().regions()[1]
     assert len(np1) == 2
     # Only NP1 region — VJ has no NP2.
@@ -255,7 +255,7 @@ def test_recombine_vj_without_np2_still_produces_single_np():
 def test_recombine_custom_np2_length_used_on_vdj():
     # VDJ experiment: NP2 length pinned to 5.
     cfg = _vdj_refdata()
-    outcomes = Experiment.on(cfg).recombine(
+    outcomes = Experiment.on(cfg).allow_curatable_refdata().recombine(
         np1_lengths=[(2, 1.0)],
         np2_lengths=[(5, 1.0)],
     ).run(n=5, seed=0)
@@ -270,7 +270,7 @@ def test_recombine_custom_np2_length_used_on_vdj():
 def test_recombine_rejects_empty_length_distribution():
     cfg = _vj_refdata()
     with pytest.raises(ValueError, match="length distribution"):
-        Experiment.on(cfg).recombine(np1_lengths=[])
+        Experiment.on(cfg).allow_curatable_refdata().recombine(np1_lengths=[])
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -279,7 +279,7 @@ def test_recombine_rejects_empty_length_distribution():
 
 
 def test_run_with_n_one_returns_single_outcome():
-    outcomes = Experiment.on(_vj_refdata()).recombine().run(n=1, seed=42)
+    outcomes = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().run(n=1, seed=42)
     assert len(outcomes) == 1
     assert outcomes[0].pass_names()[0] == "sample_allele.v"
 
@@ -288,7 +288,7 @@ def test_run_returns_n_outcomes_with_offset_seeds():
     # Per-run seed is `seed + i`. Comparing to direct engine calls
     # at those exact seeds must produce byte-identical outcomes.
     cfg = _vj_refdata()
-    outcomes = Experiment.on(cfg).recombine().run(n=4, seed=100)
+    outcomes = Experiment.on(cfg).allow_curatable_refdata().recombine().run(n=4, seed=100)
     assert len(outcomes) == 4
 
     # Build the equivalent plan manually and compare.
@@ -300,7 +300,7 @@ def test_run_returns_n_outcomes_with_offset_seeds():
     plan.push_assemble("J")
 
     for i, dsl_outcome in enumerate(outcomes):
-        baseline = ge.run(plan, seed=100 + i, refdata=cfg)
+        baseline = ge.run(plan, seed=100 + i, refdata=cfg, allow_curatable_refdata=True)
         assert (
             dsl_outcome.final_simulation().bases()
             == baseline.final_simulation().bases()
@@ -308,19 +308,19 @@ def test_run_returns_n_outcomes_with_offset_seeds():
 
 
 def test_run_default_seed_is_zero():
-    a = Experiment.on(_vj_refdata()).recombine().run(n=1)
-    b = Experiment.on(_vj_refdata()).recombine().run(n=1, seed=0)
+    a = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().run(n=1)
+    b = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().run(n=1, seed=0)
     assert a[0].final_simulation().bases() == b[0].final_simulation().bases()
 
 
 def test_run_default_n_is_one():
-    outcomes = Experiment.on(_vj_refdata()).recombine().run()
+    outcomes = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().run()
     assert len(outcomes) == 1
 
 
 def test_run_rejects_n_below_one():
     cfg = _vj_refdata()
-    exp = Experiment.on(cfg).recombine()
+    exp = Experiment.on(cfg).allow_curatable_refdata().recombine()
     with pytest.raises(ValueError, match="n must be at least 1"):
         exp.run(n=0)
     with pytest.raises(ValueError, match="n must be at least 1"):
@@ -328,8 +328,8 @@ def test_run_rejects_n_below_one():
 
 
 def test_run_is_deterministic_under_same_seed():
-    a = Experiment.on(_vj_refdata()).recombine().run(n=10, seed=0xCAFE)
-    b = Experiment.on(_vj_refdata()).recombine().run(n=10, seed=0xCAFE)
+    a = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().run(n=10, seed=0xCAFE)
+    b = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().run(n=10, seed=0xCAFE)
     for x, y in zip(a, b):
         assert x.final_simulation().bases() == y.final_simulation().bases()
 
@@ -339,7 +339,7 @@ def test_run_produces_distinct_outcomes_across_iterations():
     # overwhelmingly likely that not all outcomes are byte-identical.
     cfg = _vj_refdata()
     cfg.add_v_allele("v2*01", "v2", b"GGGAAACCC", anchor=6)
-    outcomes = Experiment.on(cfg).recombine().run(n=50, seed=0)
+    outcomes = Experiment.on(cfg).allow_curatable_refdata().recombine().run(n=50, seed=0)
     base_strings = [o.final_simulation().bases() for o in outcomes]
     assert len(set(base_strings)) > 1
 
@@ -350,7 +350,7 @@ def test_run_produces_distinct_outcomes_across_iterations():
 
 
 def test_compiled_experiment_can_be_run_multiple_times():
-    compiled = Experiment.on(_vj_refdata()).recombine().compile()
+    compiled = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().compile(allow_curatable_refdata=True)
     a = compiled.run(n=2, seed=0)
     b = compiled.run(n=2, seed=10)
     # Different seeds → different outcomes. Same plan instance
@@ -404,7 +404,7 @@ def test_run_without_productive_only_matches_uncalled_chain():
     # verify the basic invariant: an experiment without productive_only
     # produces the same output across two runs at the same seed.
     cfg = _vj_refdata()
-    exp = Experiment.on(cfg).recombine()
+    exp = Experiment.on(cfg).allow_curatable_refdata().recombine()
     a = exp.run(n=3, seed=0)
     b = exp.run(n=3, seed=0)
     for x, y in zip(a, b):
@@ -418,7 +418,7 @@ def test_productive_only_constrains_np1_length_to_in_frame():
     # active every NP1 length must be in {0, 3, 6}.
     cfg = _vj_refdata()
     outcomes = (
-        Experiment.on(cfg).recombine().productive_only().run(n=20, seed=0)
+        Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only().run(n=20, seed=0)
     )
     for o in outcomes:
         np1 = o.final_simulation().regions()[1]
@@ -432,7 +432,7 @@ def test_run_unconstrained_produces_some_out_of_frame_np1():
     # the uniform NP1 distribution produces out-of-frame lengths
     # ~67% of the time. Across 20 seeds we should see at least one.
     cfg = _vj_refdata()
-    outcomes = Experiment.on(cfg).recombine().run(n=20, seed=0)
+    outcomes = Experiment.on(cfg).allow_curatable_refdata().recombine().run(n=20, seed=0)
     out_of_frame = [
         o for o in outcomes if len(o.final_simulation().regions()[1]) % 3 != 0
     ]
@@ -444,10 +444,10 @@ def test_productive_only_is_idempotent():
     # bundle is added at most once to the contract list.
     cfg = _vj_refdata()
     a = (
-        Experiment.on(cfg).recombine().productive_only().run(n=2, seed=0)
+        Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only().run(n=2, seed=0)
     )
     b = (
-        Experiment.on(cfg)
+        Experiment.on(cfg).allow_curatable_refdata()
         .recombine()
         .productive_only()
         .productive_only()
@@ -462,14 +462,14 @@ def test_productive_only_is_order_independent_in_the_chain():
     # / mutate(), the compiled simulator is structurally equal.
     cfg = _vj_refdata()
     a = (
-        Experiment.on(cfg)
+        Experiment.on(cfg).allow_curatable_refdata()
         .recombine()
         .mutate(count=3)
         .productive_only()
         .run(n=2, seed=0)
     )
     b = (
-        Experiment.on(cfg)
+        Experiment.on(cfg).allow_curatable_refdata()
         .productive_only()
         .recombine()
         .mutate(count=3)
@@ -482,7 +482,7 @@ def test_productive_only_is_order_independent_in_the_chain():
 def test_compiled_experiment_carries_productive_bundle():
     # Contracts are captured at compile time and reused by run().
     cfg = _vj_refdata()
-    compiled = Experiment.on(cfg).recombine().productive_only().compile()
+    compiled = Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only().compile(allow_curatable_refdata=True)
     assert compiled.active_contracts == (
         "productive_junction_frame",
         "no_stop_codon_in_junction",
@@ -496,7 +496,7 @@ def test_compiled_experiment_carries_productive_bundle():
 
 def test_run_with_productive_only_is_deterministic_under_same_seed():
     cfg = _vj_refdata()
-    exp = Experiment.on(cfg).recombine().productive_only()
+    exp = Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only()
     a = exp.run(n=5, seed=0xCAFE)
     b = exp.run(n=5, seed=0xCAFE)
     for x, y in zip(a, b):
@@ -575,7 +575,7 @@ def test_strict_sampling_error_is_exposed_at_top_level():
 def test_strict_with_satisfiable_contract_succeeds():
     cfg = _vj_refdata()
     out = (
-        Experiment.on(cfg)
+        Experiment.on(cfg).allow_curatable_refdata()
         .recombine()
         .productive_only()
         .run(n=3, seed=0, strict=True)
@@ -588,7 +588,7 @@ def test_productive_compile_rejects_unsatisfiable_length_distribution():
     # This is now a build-time D7 failure, independent of strict mode.
     cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0), (2, 1.0)])
     with pytest.raises(ValueError, match="NP1 length support has no in-frame mass"):
-        ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True)
+        ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True, allow_curatable_refdata=True)
 
 
 def test_compiled_feasibility_filters_runtime_frame_residue():
@@ -605,13 +605,14 @@ def test_compiled_feasibility_filters_runtime_frame_residue():
                 refdata=cfg,
                 respect=ge.productive(),
                 strict=strict,
+                allow_curatable_refdata=True,
             )
             assert out.final_simulation().j_allele_id() == 0
 
 
 def test_strict_mode_passes_through_compiled_experiment_run():
     cfg = _vj_refdata()
-    compiled = Experiment.on(cfg).recombine().productive_only().compile()
+    compiled = Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only().compile(allow_curatable_refdata=True)
     # Satisfiable: succeeds.
     out = compiled.run(n=2, seed=0, strict=True)
     assert len(out) == 2
@@ -619,7 +620,7 @@ def test_strict_mode_passes_through_compiled_experiment_run():
 
 def test_strict_mode_default_is_false():
     cfg, plan = _vj_refdata_with_runtime_frame_residue()
-    out = ge.run(plan, seed=0, refdata=cfg, respect=ge.productive())
+    out = ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), allow_curatable_refdata=True)
     assert out.final_simulation().j_allele_id() == 0
 
 
@@ -627,7 +628,7 @@ def test_strict_without_respect_runs_permissively():
     # strict=True with no contracts is a no-op for failure semantics
     # — there's nothing to fail against. The run proceeds normally.
     cfg = _vj_refdata()
-    out = Experiment.on(cfg).recombine().run(n=1, seed=0, strict=True)
+    out = Experiment.on(cfg).allow_curatable_refdata().recombine().run(n=1, seed=0, strict=True)
     assert len(out) == 1
 
 
@@ -636,7 +637,7 @@ def test_strict_sampling_error_args_form_three_tuple():
     # so callers can destructure deterministically.
     cfg, plan = _vj_refdata_with_stop_in_v_anchor()
     with pytest.raises(ge.StrictSamplingError) as err:
-        ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True)
+        ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True, allow_curatable_refdata=True)
     exc = err.value
     assert isinstance(exc.args, tuple)
     assert len(exc.args) == 3
@@ -649,8 +650,8 @@ def test_strict_mode_is_deterministic_under_same_seed():
     )
     # Both runs hit the satisfiable subset → both succeed and produce
     # identical outputs.
-    a = ge.run(plan, seed=0xC0FFEE, refdata=cfg, respect=ge.productive(), strict=True)
-    b = ge.run(plan, seed=0xC0FFEE, refdata=cfg, respect=ge.productive(), strict=True)
+    a = ge.run(plan, seed=0xC0FFEE, refdata=cfg, respect=ge.productive(), strict=True, allow_curatable_refdata=True)
+    b = ge.run(plan, seed=0xC0FFEE, refdata=cfg, respect=ge.productive(), strict=True, allow_curatable_refdata=True)
     assert a.final_simulation().bases() == b.final_simulation().bases()
 
 
@@ -1108,7 +1109,7 @@ def test_recombine_with_raw_refdata_falls_back_to_uniform_np_and_no_trim():
     cfg = ge.RefDataConfig.vj()
     cfg.add_v_allele("v*01", "v", b"AAACCCGGG", anchor=6)
     cfg.add_j_allele("j*01", "j", b"TTTAAA", anchor=0)
-    o = Experiment.on(cfg).recombine().run(n=1, seed=0)[0]
+    o = Experiment.on(cfg).allow_curatable_refdata().recombine().run(n=1, seed=0)[0]
     pn = o.pass_names()
     assert not any(n.startswith("trim.") for n in pn)
     # Pure 5-pass VJ shape, no trims.
@@ -1128,7 +1129,7 @@ def test_recombine_with_raw_refdata_trim_true_is_silent_no_op():
     cfg = ge.RefDataConfig.vj()
     cfg.add_v_allele("v*01", "v", b"AAACCCGGG", anchor=6)
     cfg.add_j_allele("j*01", "j", b"TTTAAA", anchor=0)
-    o = Experiment.on(cfg).recombine().trim(enabled=True).run(n=1, seed=0)[0]
+    o = Experiment.on(cfg).allow_curatable_refdata().recombine().trim(enabled=True).run(n=1, seed=0)[0]
     assert not any(n.startswith("trim.") for n in o.pass_names())
 
 
@@ -1401,7 +1402,7 @@ def test_compiled_run_records_matches_experiment_run_records():
     # should produce identical record sequences for the same seed.
     exp = _human_igh_exp().mutate(count=5)
     a = exp.run_records(n=3, seed=99)
-    b = exp.compile().run_records(n=3, seed=99)
+    b = exp.compile(allow_curatable_refdata=True).run_records(n=3, seed=99)
     assert len(a) == len(b)
     for x, y in zip(a, b):
         assert x["sequence"] == y["sequence"]
@@ -1894,13 +1895,13 @@ def test_g4_mutate_rejected_on_tcr_chain():
     # SHM is biologically B-cell only. The DSL must error rather
     # than silently producing biologically-false TCR records.
     with pytest.raises(ValueError, match="somatic hypermutation does not occur in TCR"):
-        ga.Experiment.on("human_tcrb").recombine().mutate(count=5)
+        ga.Experiment.on("human_tcrb").allow_curatable_refdata().recombine().mutate(count=5)
 
 
 def test_g4_mutate_allowed_on_bcr_chain():
     # Sanity: BCR loci accept mutate() unchanged.
     for cfg in ("human_igh", "human_igk", "human_igl"):
-        exp = ga.Experiment.on(cfg).recombine().mutate(count=3)
+        exp = ga.Experiment.on(cfg).allow_curatable_refdata().recombine().mutate(count=3)
         records = exp.run_records(n=2, seed=0)
         assert len(records) == 2
 
@@ -1909,7 +1910,7 @@ def test_g4_tcr_pipeline_with_corrupt_passes_works():
     # Confirms the recommended TCR pipeline (corrupt_pcr / corrupt_
     # quality / corrupt_indels) still works end-to-end.
     exp = (
-        ga.Experiment.on("human_tcrb")
+        ga.Experiment.on("human_tcrb").allow_curatable_refdata()
         .recombine()
         .pcr_amplify(count=3)
         .sequencing_errors(count=2)
@@ -2299,8 +2300,8 @@ def test_using_compile_is_idempotent_with_locks():
         .restrict_alleles(v="IGHVF1-G1*01")
         .recombine()
     )
-    plan_a = exp.compile()
-    plan_b = exp.compile()
+    plan_a = exp.compile(allow_curatable_refdata=True)
+    plan_b = exp.compile(allow_curatable_refdata=True)
     a = plan_a.run(n=3, seed=0)
     b = plan_b.run(n=3, seed=0)
     for x, y in zip(a, b):
@@ -2452,7 +2453,7 @@ def test_stream_records_lazy_iteration_writes_one_at_a_time(tmp_path):
 
 def test_stream_works_on_compiled_experiment():
     exp = _human_igh_exp().mutate(count=5)
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     out = list(compiled.stream(n=3, seed=0))
     via_run = compiled.run(n=3, seed=0)
     for a, b in zip(out, via_run):
@@ -2460,7 +2461,7 @@ def test_stream_works_on_compiled_experiment():
 
 
 def test_stream_records_works_on_compiled_experiment():
-    compiled = _human_igh_exp().compile()
+    compiled = _human_igh_exp().compile(allow_curatable_refdata=True)
     out = list(compiled.stream_records(n=2, seed=0))
     assert len(out) == 2
     assert all("v_call" in r for r in out)
@@ -2564,7 +2565,7 @@ def test_record_locus_is_igl_for_human_igl():
 
 def test_record_locus_for_tcr_chain():
     out = (
-        ga.Experiment.on("human_tcrb")
+        ga.Experiment.on("human_tcrb").allow_curatable_refdata()
         .recombine()
         .run_records(n=3, seed=0)
     )
@@ -2718,7 +2719,7 @@ def test_sequence_aa_empty_when_junction_uncomputable():
     cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG")  # no anchor
     cfg.add_d_allele("d1*01", "d1", b"TTTTTT")
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA")  # no anchor
-    out = ga.Experiment.on(cfg).recombine().run_records(n=2, seed=0)
+    out = ga.Experiment.on(cfg).allow_curatable_refdata().recombine().run_records(n=2, seed=0)
     for rec in out:
         assert rec["sequence_aa"] == ""
         assert rec["np1_aa"] == ""
@@ -3057,7 +3058,7 @@ def test_alignment_strings_empty_when_no_assembly():
     cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG")
     cfg.add_d_allele("d1*01", "d1", b"TTTTTT")
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA")
-    out = ga.Experiment.on(cfg).recombine().run_records(n=1, seed=0)
+    out = ga.Experiment.on(cfg).allow_curatable_refdata().recombine().run_records(n=1, seed=0)
     rec = out[0]
     # Even without anchors, alignment strings should be the assembled
     # sequence vs allele bases — non-empty here.
@@ -3151,7 +3152,7 @@ def test_alignment_invariants_across_loci():
     # strings under heavy corruption. SHM is BCR-only, so the
     # TCR pipeline drops the mutate step.
     for cfg in ("human_igh", "human_igk", "human_igl", "human_tcrb"):
-        exp = ga.Experiment.on(cfg).recombine()
+        exp = ga.Experiment.on(cfg).allow_curatable_refdata().recombine()
         if not cfg.startswith("human_tcr"):
             exp = exp.mutate(count=5)
         exp = exp.pcr_amplify(count=2).polymerase_indels(count=2)
@@ -3836,7 +3837,7 @@ def test_to_tsv_passes_airr_validation_for_tcrb(tmp_path):
     # TCR doesn't undergo SHM; use PCR errors for sequencing
     # realism instead.
     (
-        ga.Experiment.on("human_tcrb")
+        ga.Experiment.on("human_tcrb").allow_curatable_refdata()
         .recombine()
         .pcr_amplify(count=3)
         .run_records(n=5, seed=0)
@@ -4202,7 +4203,7 @@ def test_locus_falls_back_to_refdata_under_heavy_corruption():
     }
     for cfg, want in expected.items():
         # SHM is BCR-only; drop mutate for TCR.
-        exp = ga.Experiment.on(cfg).recombine()
+        exp = ga.Experiment.on(cfg).allow_curatable_refdata().recombine()
         if not cfg.startswith("human_tcr"):
             exp = exp.mutate(count=15)
         exp = (
@@ -4238,7 +4239,7 @@ def test_per_segment_ga_slice_matches_called_allele():
     failures = []
     for cfg, _kind in pipelines:
         # SHM is BCR-only; drop mutate for TCR.
-        exp = ga.Experiment.on(cfg).recombine()
+        exp = ga.Experiment.on(cfg).allow_curatable_refdata().recombine()
         if not cfg.startswith("human_tcr"):
             exp = exp.mutate(count=8)
         exp = (
@@ -4397,7 +4398,7 @@ def test_recombine_rejects_np2_lengths_on_vj_chain():
     silently ignored, which hid genuine user mistakes (binding the wrong
     refdata, copy-pasted VDJ snippet, etc.). Phase 1 of the v2.0 DSL
     cleanup turns this into an explicit ValueError."""
-    exp = Experiment.on(_vj_refdata())
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata()
     with pytest.raises(ValueError, match="np2_lengths.*VDJ"):
         exp.recombine(np2_lengths=[(0, 1.0), (3, 1.0)])
 
@@ -4405,9 +4406,9 @@ def test_recombine_rejects_np2_lengths_on_vj_chain():
 def test_recombine_accepts_np2_lengths_on_vdj_chain():
     """The np2_lengths kwarg is still valid for VDJ; the new check
     only fires on VJ."""
-    exp = Experiment.on(_vdj_refdata())
+    exp = Experiment.on(_vdj_refdata()).allow_curatable_refdata()
     # Should not raise.
-    compiled = exp.recombine(np2_lengths=[(0, 1.0), (3, 1.0)]).trim(enabled=False).compile()
+    compiled = exp.recombine(np2_lengths=[(0, 1.0), (3, 1.0)]).trim(enabled=False).compile(allow_curatable_refdata=True)
     assert compiled.refdata.chain_type == "vdj"
 
 
@@ -4415,7 +4416,7 @@ def test_recombine_accepts_no_np2_on_vj_silently():
     """Not passing np2_lengths on a VJ chain is fine — that's the
     normal case. We only complain when the user explicitly supplies a
     nonsensical kwarg."""
-    exp = Experiment.on(_vj_refdata())
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata()
     # Should not raise and should not warn about np2.
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -4423,7 +4424,7 @@ def test_recombine_accepts_no_np2_on_vj_silently():
         # specifically so we only catch unexpected ones.
         warnings.filterwarnings("ignore", message=".*trim.*", category=UserWarning)
         warnings.filterwarnings("ignore", message=".*NP-length.*", category=UserWarning)
-        exp.recombine().compile()
+        exp.recombine().compile(allow_curatable_refdata=True)
 
 
 def test_recombine_warns_on_raw_refdata_uniform_np_fallback():
@@ -4431,7 +4432,7 @@ def test_recombine_warns_on_raw_refdata_uniform_np_fallback():
     fall back to a uniform synthetic default. That used to be silent;
     now we surface it so users notice they're not getting empirical
     biology."""
-    exp = Experiment.on(_vj_refdata())
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata()
     with pytest.warns(UserWarning, match="uniform"):
         exp.recombine().trim(enabled=False)
 
@@ -4442,30 +4443,30 @@ def test_recombine_warns_on_raw_refdata_trim_noop():
     warning at compile() time when the user hasn't explicitly called
     :meth:`Experiment.trim`. Calling :meth:`trim` (with any setting)
     is the documented way to suppress the warning."""
-    exp = Experiment.on(_vj_refdata()).recombine(
+    exp = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine(
         np1_lengths=[(0, 1.0), (3, 1.0)]
     )
     with pytest.warns(UserWarning, match="trim"):
-        exp.compile()
+        exp.compile(allow_curatable_refdata=True)
 
 
 def test_recombine_warn_silenced_by_explicit_trim_disable():
     """Calling .trim(enabled=False) explicitly silences the raw-RefDataConfig
     trim-noop warning at compile() time."""
     exp = (
-        Experiment.on(_vj_refdata())
+        Experiment.on(_vj_refdata()).allow_curatable_refdata()
         .recombine(np1_lengths=[(0, 1.0), (3, 1.0)])
         .trim(enabled=False)
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         warnings.filterwarnings("ignore", message=".*NP-length.*", category=UserWarning)
-        exp.compile()
+        exp.compile(allow_curatable_refdata=True)
 
 
 def test_recombine_warning_silenced_when_caller_supplies_lengths_and_trim_false():
     """User passes everything explicitly → no warnings."""
-    exp = Experiment.on(_vdj_refdata())
+    exp = Experiment.on(_vdj_refdata()).allow_curatable_refdata()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         exp.recombine(
@@ -4488,14 +4489,14 @@ def test_recombine_no_warnings_on_dataconfig_path():
 
 
 def test_describe_empty_experiment_says_no_steps():
-    out = Experiment.on(_vj_refdata()).describe()
+    out = Experiment.on(_vj_refdata()).allow_curatable_refdata().describe()
     assert "Experiment on" in out
     assert "no steps" in out.lower()
 
 
 def test_describe_recombine_only_vj_lists_segments_and_np1():
     out = (
-        Experiment.on(_vj_refdata())
+        Experiment.on(_vj_refdata()).allow_curatable_refdata()
         .recombine(np1_lengths=[(0, 1.0), (3, 1.0)])
         .trim(enabled=False)
         .describe()
@@ -4509,7 +4510,7 @@ def test_describe_recombine_only_vj_lists_segments_and_np1():
 
 def test_describe_recombine_vdj_lists_both_np_regions():
     out = (
-        Experiment.on(_vdj_refdata())
+        Experiment.on(_vdj_refdata()).allow_curatable_refdata()
         .recombine(np1_lengths=[(0, 1.0), (3, 1.0)], np2_lengths=[(2, 1.0)])
         .trim(enabled=False)
         .describe()
@@ -4534,7 +4535,7 @@ def test_describe_mutate_s5f_names_kernel():
 
 def test_describe_corrupt_pcr_reads_as_pcr_errors():
     out = (
-        Experiment.on(_vj_refdata())
+        Experiment.on(_vj_refdata()).allow_curatable_refdata()
         .recombine(np1_lengths=[(2, 1.0)]).trim(enabled=False)
         .pcr_amplify(count=(0, 3))
         .describe()
@@ -4575,7 +4576,7 @@ def test_describe_compiled_experiment_renders_productive_constraint_in_biology_t
         ga.Experiment.on("human_igh")
         .recombine()
         .mutate(count=(5, 15))
-        .productive_only().compile()
+        .productive_only().compile(allow_curatable_refdata=True)
     )
     out = compiled.describe()
     # Internal contract names collapse to a single biology label.
@@ -4592,7 +4593,7 @@ def test_describe_compiled_clonal_experiment_shows_fork_and_numbers_continue():
         .expand_clones(n_clones=3, per_clone=4)
         .mutate(count=8)
         .pcr_amplify(count=(0, 2))
-        .compile()
+        .compile(allow_curatable_refdata=True)
     )
     out = compiled.describe()
     assert "Clonal expansion: 3 lineages × 4 reads/clone" in out
@@ -4837,5 +4838,5 @@ def test_describe_npa_source_tag_empirical_on_dataconfig():
 
 
 def test_describe_npa_source_tag_uniform_fallback_on_raw_refdata():
-    out = Experiment.on(_vj_refdata()).recombine().trim(enabled=False).describe()
+    out = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().trim(enabled=False).describe()
     assert "uniform fallback" in out

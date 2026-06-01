@@ -10,7 +10,13 @@ use crate::pass::{IntegerSupport, Pass, PassCompileFact, PassContext, PassEffect
 // wiring (/3) and the `sample_base_with_admit_mask` bypass
 // stay focused. Both submodules `impl GenerateNPPass` here.
 mod execution;
+mod np_base_generator;
 mod sampling;
+
+pub use np_base_generator::{
+    CategoricalNpGenerator, MarkovBaseGenerator, NpBaseGenerator, UniformNpGenerator,
+};
+use np_base_generator::DistributionNpGenerator;
 
 /// Generate one NP (non-template) region — a stretch of bases
 /// interpolated between adjacent V/D/J segments by the TdT enzyme
@@ -51,11 +57,19 @@ mod sampling;
 pub struct GenerateNPPass {
     np_segment: Segment,
     length_dist: Box<dyn Distribution<Output = i64>>,
-    base_dist: Box<dyn Distribution<Output = u8>>,
+    base_generator: Box<dyn NpBaseGenerator>,
 }
 
 impl GenerateNPPass {
-    /// Construct an NP-generation pass.
+    /// Construct an NP-generation pass with a legacy
+    /// `Distribution<Output = u8>` base distribution. The
+    /// distribution is wrapped in an internal `NpBaseGenerator`
+    /// adapter so the existing call-site convention
+    /// (`Box::new(UniformBase)`, `Box::new(CategoricalBase::…)`,
+    /// …) keeps working byte-identically — the adapter's
+    /// `signature()` delegates to `fmt_byte_dist` so plan
+    /// signatures stay byte-identical to the pre-slice
+    /// rendering.
     ///
     /// Panics if `np_segment` is not `Segment::Np1` or
     /// `Segment::Np2`.
@@ -63,6 +77,26 @@ impl GenerateNPPass {
         np_segment: Segment,
         length_dist: Box<dyn Distribution<Output = i64>>,
         base_dist: Box<dyn Distribution<Output = u8>>,
+    ) -> Self {
+        Self::with_generator(
+            np_segment,
+            length_dist,
+            Box::new(DistributionNpGenerator::new(base_dist)),
+        )
+    }
+
+    /// Construct an NP-generation pass with an explicit
+    /// `NpBaseGenerator`. The bridge layer uses this entry
+    /// when the cartridge's typed NP base spec is `"markov"`
+    /// (which needs per-position previous-base conditioning
+    /// that the legacy `Distribution` trait can't express).
+    ///
+    /// Panics if `np_segment` is not `Segment::Np1` or
+    /// `Segment::Np2`.
+    pub fn with_generator(
+        np_segment: Segment,
+        length_dist: Box<dyn Distribution<Output = i64>>,
+        base_generator: Box<dyn NpBaseGenerator>,
     ) -> Self {
         match np_segment {
             Segment::Np1 | Segment::Np2 => {}
@@ -74,7 +108,7 @@ impl GenerateNPPass {
         Self {
             np_segment,
             length_dist,
-            base_dist,
+            base_generator,
         }
     }
 
@@ -108,6 +142,23 @@ impl GenerateNPPass {
 impl Pass for GenerateNPPass {
     fn name(&self) -> &str {
         self.pass_name()
+    }
+
+    fn parameter_signature(&self) -> String {
+        // np_segment is encoded in name() (`generate_np.np1` /
+        // `.np2`). The length distribution is user-supplied;
+        // the base generator's signature folds the (possibly
+        // position-conditional) base sampling identity — for
+        // `UniformNpGenerator` / `CategoricalNpGenerator` the
+        // returned string is byte-identical to the pre-slice
+        // `fmt_byte_dist` rendering so legacy traces replay
+        // unchanged; for `MarkovBaseGenerator` the signature
+        // flattens all 5 rows.
+        use crate::passes::paramsig::{fmt_int_dist, join_parts};
+        join_parts([
+            format!("length={}", fmt_int_dist(self.length_dist.as_ref())),
+            format!("base={}", self.base_generator.signature()),
+        ])
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -541,6 +592,8 @@ mod tests {
             seq: b"TGT".to_vec(),
             segment: Segment::V,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
         // J anchor codon TGG (Trp). Anchor at pool offset 0.
         // With NP1 length = 1 inserted between V and J, framing
@@ -551,6 +604,8 @@ mod tests {
             seq: b"TGG".to_vec(),
             segment: Segment::J,
             anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
         });
 
         let mut sim = Simulation::new();

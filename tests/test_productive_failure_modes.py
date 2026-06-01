@@ -63,14 +63,14 @@ def _vj_stop_completing_v() -> "ge.RefDataConfig":
 def test_all_invalid_np_lengths_fails_at_compile_time() -> None:
     """Audit F1: when every NP1 length in the distribution
     violates the productive frame constraint (junction not
-    divisible by 3), `Experiment.compile()` raises `ValueError`
+    divisible by 3), `Experiment.compile(allow_curatable_refdata=True)` raises `ValueError`
     with a precondition-failure message. This is fail-fast — the
     error surfaces before any record runs, and is independent of
     `strict=True/False`."""
     # NP1 lengths 1, 2, 4, 5 all produce junction lengths
     # 7, 8, 10, 11 — none divisible by 3.
     exp = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(1, 1.0), (2, 1.0), (4, 1.0), (5, 1.0)])
         .trim(enabled=False)
         .productive_only()
@@ -88,7 +88,7 @@ def test_all_invalid_v_trim_3_fails_at_compile_time() -> None:
     `v_trim_3` must be < 3 to preserve the anchor codon. A
     distribution of {4, 5} eliminates every valid anchor."""
     exp = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(v_3=[(4, 1.0), (5, 1.0)])
         .productive_only()
@@ -105,7 +105,7 @@ def test_all_invalid_j_trim_5_fails_at_compile_time() -> None:
     J[0]. Any j_trim_5 > 0 removes part of the anchor codon. A
     distribution of {1, 2, 3} eliminates every valid anchor."""
     exp = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(j_5=[(1, 1.0), (2, 1.0), (3, 1.0)])
         .productive_only()
@@ -122,7 +122,7 @@ def test_compile_time_failure_raises_same_value_error_in_strict_mode() -> None:
     runtime `strict` flag is consulted. The flag doesn't change
     the exception type for these failures."""
     exp = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(1, 1.0)])  # always out-of-frame
         .trim(enabled=False)
         .productive_only()
@@ -145,7 +145,7 @@ def test_mixed_np_length_support_narrows_at_sample_time() -> None:
     narrows per-call. Across many seeds, only in-contract lengths
     appear in the trace."""
     exp = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(1, 1.0), (3, 1.0), (6, 1.0)])  # 1 invalid, 3 & 6 valid
         .trim(enabled=False)
         .productive_only()
@@ -166,7 +166,7 @@ def test_mixed_v_trim_support_narrows_at_sample_time() -> None:
     {3, 5} should produce only the valid values across many
     seeds."""
     exp = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(v_3=[(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0), (5, 1.0)])
         .productive_only()
@@ -207,7 +207,7 @@ def test_np_base_mask_excludes_stop_completing_bases() -> None:
     # the junction codons are: GTA | NP[0:3] | TTT.
     # For productivity, NP[0:3] must not be a stop.
     exp = (
-        ga.Experiment.on(_vj_stop_completing_v())
+        ga.Experiment.on(_vj_stop_completing_v()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .productive_only()
@@ -235,7 +235,7 @@ def test_indel_no_admissible_tuple_raises_strict_emits_no_op_permissive() -> Non
     NoOp (trace site = -1, no event fires). In strict mode a
     `StrictSamplingError` is raised at the indel pass."""
     exp = (
-        ga.Experiment.on(_vj_short_j())
+        ga.Experiment.on(_vj_short_j()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .polymerase_indels(count=1, insertion_prob=0.0)
@@ -243,7 +243,7 @@ def test_indel_no_admissible_tuple_raises_strict_emits_no_op_permissive() -> Non
     )
 
     # Permissive: NoOp sentinel, no event.
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     outcome = compiled.simulator.run(seed=0)
     site_rec = next(
         r for r in outcome.trace().choices()
@@ -279,7 +279,7 @@ def test_shm_high_rate_under_productive_never_fails_strict() -> None:
     the SHM `EmptySupport::Skip` codepath is unreachable through
     standard contracts."""
     exp = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .mutate(rate=0.99)
@@ -303,7 +303,7 @@ def test_strict_error_carries_pass_address_reason() -> None:
     `FilteredSampleError` variants: `support_unavailable`,
     `empty_admissible_support`, or `invalid_filtered_support`."""
     exp = (
-        ga.Experiment.on(_vj_short_j())
+        ga.Experiment.on(_vj_short_j()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .polymerase_indels(count=1, insertion_prob=0.0)
@@ -346,13 +346,13 @@ def test_replay_of_permissive_sentinel_trace_passes_under_strict() -> None:
 
     This test pins the documented contract end-to-end."""
     exp = (
-        ga.Experiment.on(_vj_short_j())
+        ga.Experiment.on(_vj_short_j()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .polymerase_indels(count=1, insertion_prob=0.0)
         .productive_only()
     )
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
 
     # 1. Permissive run produces a sentinel trace.
     seed = 0
@@ -411,11 +411,11 @@ def test_strict_docstring_documents_fresh_vs_replay_distinction() -> None:
     contract, and the docstring is the API surface for it."""
     # Compile a tiny experiment so we can introspect the bound methods.
     exp = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
     )
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     sim = compiled.simulator
 
     run_doc = sim.run.__doc__ or ""
@@ -462,7 +462,7 @@ def test_drift_pinned_compile_and_runtime_failures_use_different_exception_types
     # Compile-time path: NP length all-invalid → ValueError that
     # is NOT a StrictSamplingError.
     exp_compile = (
-        ga.Experiment.on(_vj_basic())
+        ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(1, 1.0)])
         .trim(enabled=False)
         .productive_only()
@@ -474,7 +474,7 @@ def test_drift_pinned_compile_and_runtime_failures_use_different_exception_types
     # Runtime path: indel no-admissible-tuple → StrictSamplingError
     # that is NOT a ValueError.
     exp_runtime = (
-        ga.Experiment.on(_vj_short_j())
+        ga.Experiment.on(_vj_short_j()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .polymerase_indels(count=1, insertion_prob=0.0)
@@ -496,12 +496,12 @@ def test_drift_pinned_np_base_sentinel_path_is_structurally_unreachable() -> Non
     fixtures, no `np1.base[i]` slot is ever sentinel-`N` in the
     trace."""
     exp = (
-        ga.Experiment.on(_vj_stop_completing_v())
+        ga.Experiment.on(_vj_stop_completing_v()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .productive_only()
     )
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     for seed in range(30):
         out = compiled.simulator.run(seed=seed)
         for rec in out.trace().choices():

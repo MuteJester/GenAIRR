@@ -71,6 +71,12 @@ impl PyTraceFile {
         &self.inner.refdata_signature
     }
 
+    /// Refdata content hash (sha256, v2+ only). `None` on v1 traces.
+    #[getter]
+    fn refdata_content_hash(&self) -> Option<String> {
+        self.inner.refdata_content_hash.clone()
+    }
+
     /// The recorded choice trace.
     #[getter]
     fn trace(&self) -> PyTrace {

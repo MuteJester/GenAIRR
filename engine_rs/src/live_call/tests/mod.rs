@@ -20,6 +20,8 @@ fn allele(segment: Segment, name: &str, seq: &[u8]) -> Allele {
         seq: seq.to_vec(),
         segment,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     }
 }
 

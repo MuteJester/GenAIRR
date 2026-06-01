@@ -67,12 +67,19 @@ impl Distribution for ConstBaseDist {
 /// D's region for an exact-equivalent overlap placement.
 fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId, AlleleId) {
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+    // Test uses intentionally anchorless V/J alleles; relax
+    // the default required-anchor rules so the catalogue
+    // passes strict validation.
+    cfg.rules.v_anchor.required = false;
+    cfg.rules.j_anchor.required = false;
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -80,6 +87,8 @@ fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId, Allele
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // D*01 starts with TTT — exactly V*01's distinguishing suffix.
     let d01 = cfg.d_pool.push(Allele {
@@ -88,6 +97,8 @@ fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId, Allele
         seq: b"TTTACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j01 = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -95,6 +106,8 @@ fn v_d_overlap_refdata() -> (RefDataConfig, AlleleId, AlleleId, AlleleId, Allele
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     (cfg, v01, v02, d01, j01)
 }
@@ -209,12 +222,19 @@ fn v_right_does_not_overlap_when_d_prefix_does_not_match() {
     // extension walker should halt immediately; v_call remains
     // the post-trim widened {V*01, V*02}.
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+    // Test uses intentionally anchorless V/J alleles; relax
+    // the default required-anchor rules so the catalogue
+    // passes strict validation.
+    cfg.rules.v_anchor.required = false;
+    cfg.rules.j_anchor.required = false;
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -222,6 +242,8 @@ fn v_right_does_not_overlap_when_d_prefix_does_not_match() {
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d01 = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -229,6 +251,8 @@ fn v_right_does_not_overlap_when_d_prefix_does_not_match() {
         seq: b"CCCACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j01 = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -236,6 +260,8 @@ fn v_right_does_not_overlap_when_d_prefix_does_not_match() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let plan = v_overlap_plan(&cfg, v01, d01, j01, 3, 0, b'A');
     let outcome = compile_and_run(&cfg, &plan);
@@ -265,12 +291,19 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
     // D*02 = TTTACGTAC (prefix TTT) → drops once the walker
     // encounters the first backward byte.
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+    // Test uses intentionally anchorless V/J alleles; relax
+    // the default required-anchor rules so the catalogue
+    // passes strict validation.
+    cfg.rules.v_anchor.required = false;
+    cfg.rules.j_anchor.required = false;
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d01 = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -278,6 +311,8 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         seq: b"GGGACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _d02 = cfg.d_pool.push(Allele {
         name: "D*02".into(),
@@ -285,6 +320,8 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         seq: b"TTTACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j01 = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -292,6 +329,8 @@ fn d_left_overlaps_v_when_v_ends_with_d_prefix() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut plan = PassPlan::new();
@@ -374,6 +413,11 @@ fn overlap_walker_halts_at_pool_end() {
     // further. seq_end is bounded by the resolution point, not
     // by pool_len.
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+    // Test uses intentionally anchorless V/J alleles; relax
+    // the default required-anchor rules so the catalogue
+    // passes strict validation.
+    cfg.rules.v_anchor.required = false;
+    cfg.rules.j_anchor.required = false;
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
@@ -384,6 +428,8 @@ fn overlap_walker_halts_at_pool_end() {
         },
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -391,6 +437,8 @@ fn overlap_walker_halts_at_pool_end() {
         seq: vec![b'A'; 12],
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d01 = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -398,6 +446,8 @@ fn overlap_walker_halts_at_pool_end() {
         seq: vec![b'T'; 5],
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j01 = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -405,6 +455,8 @@ fn overlap_walker_halts_at_pool_end() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // Trim V_3 by 7 → V structural region = first 5 'A's.
     // Post-assemble tie set = {V*01, V*02} (both match AAAAA).
@@ -491,12 +543,19 @@ fn no_overlap_when_ample_bytes_present_but_none_match() {
     // Confirms the walker doesn't extend on noise even when there's
     // a long sequence to read.
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+    // Test uses intentionally anchorless V/J alleles; relax
+    // the default required-anchor rules so the catalogue
+    // passes strict validation.
+    cfg.rules.v_anchor.required = false;
+    cfg.rules.j_anchor.required = false;
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -504,6 +563,8 @@ fn no_overlap_when_ample_bytes_present_but_none_match() {
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // D's first base is 'G' — matches neither V*01[9]=T nor
     // V*02[9]=A. Then has 9 more bases the walker would otherwise
@@ -514,6 +575,8 @@ fn no_overlap_when_ample_bytes_present_but_none_match() {
         seq: b"GACGTACGT".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j01 = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -521,6 +584,8 @@ fn no_overlap_when_ample_bytes_present_but_none_match() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let plan = v_overlap_plan(&cfg, v01, d01, j01, 3, 0, b'A');
     let outcome = compile_and_run(&cfg, &plan);
@@ -558,12 +623,19 @@ fn v_to_j_overlap_fires_when_v_suffix_matches_j_prefix_in_vj_chain() {
     // V*01's continuation). Result: v_call narrows back to {V*01},
     // V hypothesis carries OVERLAPS_OTHER_SEGMENT.
     let mut cfg = RefDataConfig::empty(ChainType::Vj);
+    // Test uses intentionally anchorless V/J alleles; relax
+    // the default required-anchor rules so the catalogue
+    // passes strict validation.
+    cfg.rules.v_anchor.required = false;
+    cfg.rules.j_anchor.required = false;
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -571,6 +643,8 @@ fn v_to_j_overlap_fires_when_v_suffix_matches_j_prefix_in_vj_chain() {
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     // J*01 starts with TTT — exactly V*01's distinguishing suffix.
     let j01 = cfg.j_pool.push(Allele {
@@ -579,6 +653,8 @@ fn v_to_j_overlap_fires_when_v_suffix_matches_j_prefix_in_vj_chain() {
         seq: b"TTTAAACCC".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut plan = PassPlan::new();
@@ -631,12 +707,19 @@ fn v_to_j_overlap_does_not_fire_when_np1_separates_them() {
     // match either: 'C' (V*01[9]='T', V*02[9]='A' — 'C' matches
     // neither). The walker halts immediately; no extension.
     let mut cfg = RefDataConfig::empty(ChainType::Vj);
+    // Test uses intentionally anchorless V/J alleles; relax
+    // the default required-anchor rules so the catalogue
+    // passes strict validation.
+    cfg.rules.v_anchor.required = false;
+    cfg.rules.j_anchor.required = false;
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -644,6 +727,8 @@ fn v_to_j_overlap_does_not_fire_when_np1_separates_them() {
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j01 = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -651,6 +736,8 @@ fn v_to_j_overlap_does_not_fire_when_np1_separates_them() {
         seq: b"TTTAAACCC".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut plan = PassPlan::new();
@@ -706,12 +793,19 @@ fn np1_bytes_take_precedence_over_overlap_when_both_could_extend() {
     // the first NP1 byte is claimed; the remaining 2 NP1 bytes
     // (and all of D) stay outside V's hypothesis.
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+    // Test uses intentionally anchorless V/J alleles; relax
+    // the default required-anchor rules so the catalogue
+    // passes strict validation.
+    cfg.rules.v_anchor.required = false;
+    cfg.rules.j_anchor.required = false;
     let v01 = cfg.v_pool.push(Allele {
         name: "V*01".into(),
         gene: "V".into(),
         seq: b"AAACCCGGGTTT".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _v02 = cfg.v_pool.push(Allele {
         name: "V*02".into(),
@@ -719,6 +813,8 @@ fn np1_bytes_take_precedence_over_overlap_when_both_could_extend() {
         seq: b"AAACCCGGGAAA".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let d01 = cfg.d_pool.push(Allele {
         name: "D*01".into(),
@@ -726,6 +822,8 @@ fn np1_bytes_take_precedence_over_overlap_when_both_could_extend() {
         seq: b"TTTACGTAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let j01 = cfg.j_pool.push(Allele {
         name: "J*01".into(),
@@ -733,6 +831,8 @@ fn np1_bytes_take_precedence_over_overlap_when_both_could_extend() {
         seq: b"AAA".to_vec(),
         segment: Segment::J,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let plan = v_overlap_plan(&cfg, v01, d01, j01, 3, 3, b'T');
     let outcome = compile_and_run(&cfg, &plan);

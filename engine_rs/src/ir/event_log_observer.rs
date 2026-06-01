@@ -169,8 +169,11 @@ fn replay_one(builder: &mut SimulationBuilder, event: &SimulationEvent) {
         | SimulationEvent::AssignmentChanged { .. }
         | SimulationEvent::TrimChanged { .. }
         | SimulationEvent::RegionAdded { .. }
+        | SimulationEvent::PRegionAdded { .. }
         | SimulationEvent::RegionReplaced { .. }
+        | SimulationEvent::SegmentReplaced { .. }
         | SimulationEvent::ReverseComplementFlagRecorded { .. }
+        | SimulationEvent::OrientationChanged { .. }
         | SimulationEvent::MutationCountChanged { .. } => {}
     }
 }

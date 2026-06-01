@@ -45,8 +45,21 @@ pub const ADDRESS_SCHEMA_VERSION: u32 = 1;
 const SAMPLE_ALLELE_V: &str = "sample_allele.v";
 const SAMPLE_ALLELE_D: &str = "sample_allele.d";
 const SAMPLE_ALLELE_J: &str = "sample_allele.j";
+/// Bool — `true` when the sampled D segment is to be assembled in
+/// reverse-complement (V(D)J inversion event). Recorded by the
+/// `InvertDPass` (see [`crate::passes::InvertDPass`]) so trace
+/// replay can re-fire the same orientation decision deterministically.
+/// Sub-namespace of `sample_allele.d` so an existing
+/// `sample_allele.*`-aware consumer keeps working.
+const SAMPLE_ALLELE_D_INVERTED: &str = "sample_allele.d.inverted";
 pub const SAMPLE_ALLELE_INVALID: &str = "sample_allele.<invalid>";
 pub const SAMPLE_ALLELE_UNSUPPORTED: &str = "sample_allele.<unsupported>";
+
+/// Pass name for `InvertDPass`. Used as the `name()` return value
+/// and as the pass-plan signature token, so external consumers
+/// (trace replay, MCP audits, schedule reports) keep a stable key
+/// once Slice C lands the pass.
+pub const INVERT_D: &str = "invert_d";
 
 const TRIM_V_5: &str = "trim.v_5";
 const TRIM_V_3: &str = "trim.v_3";
@@ -71,6 +84,24 @@ const NP1_BASES_INDEX_PREFIX: &str = "np.np1.bases[";
 const NP2_BASES_INDEX_PREFIX: &str = "np.np2.bases[";
 const NP1_BASES_PATTERN: &str = "np.np1.bases[0..n]";
 const NP2_BASES_PATTERN: &str = "np.np2.bases[0..n]";
+
+// P-nucleotide (palindromic addition) length addresses. Per-end:
+// each `PAdditionPass` records exactly one `Int(length)` choice
+// at the canonical spelling below. Bases derive deterministically
+// from `(assigned allele, trim, orientation, length)` via
+// `complement_base` — no per-base trace records exist.
+//
+// Pass-name spellings follow the per-end suffix convention used
+// by `trim.{v_3,d_5,d_3,j_5}` so a pass-name-aware consumer
+// keeps working.
+const P_V3_LENGTH: &str = "p.v_3.length";
+const P_D5_LENGTH: &str = "p.d_5.length";
+const P_D3_LENGTH: &str = "p.d_3.length";
+const P_J5_LENGTH: &str = "p.j_5.length";
+pub const P_ADDITION_V_3: &str = "p_addition.v_3";
+pub const P_ADDITION_D_5: &str = "p_addition.d_5";
+pub const P_ADDITION_D_3: &str = "p_addition.d_3";
+pub const P_ADDITION_J_5: &str = "p_addition.j_5";
 
 pub const MUTATE_UNIFORM: &str = "mutate.uniform";
 const MUTATE_UNIFORM_COUNT: &str = "mutate.uniform.count";
@@ -124,6 +155,35 @@ pub const CORRUPT_END_LOSS_3: &str = "corrupt.end_loss.3";
 
 pub const CORRUPT_REV_COMP: &str = "corrupt.rev_comp";
 const CORRUPT_REV_COMP_APPLIED: &str = "corrupt.rev_comp.applied";
+
+/// Pass name for `ReceptorRevisionPass`. Stable identifier referenced
+/// by `pass_plan_signature` and trace consumers.
+pub const RECEPTOR_REVISION: &str = "receptor_revision";
+
+/// Bool — `true` when the receptor-revision pass replaces the V
+/// segment for this simulation. One record per simulation, regardless
+/// of outcome.
+const RECEPTOR_REVISION_APPLIED: &str = "receptor_revision.applied";
+/// AlleleId — the replacement V allele chosen on `applied=true`.
+/// Absent on `applied=false`.
+const RECEPTOR_REVISION_V_ALLELE: &str = "receptor_revision.v_allele";
+/// Int — the 3' trim sampled for the replacement V allele on
+/// `applied=true`. Absent on `applied=false`. 5' trim stays at 0
+/// for receptor revision v1 (single-length-preserving constraint).
+const RECEPTOR_REVISION_V_TRIM_3: &str = "receptor_revision.v_trim_3";
+
+/// Pass name for `PairedEndSamplingPass`. Stable identifier
+/// referenced by `pass_plan_signature` and trace consumers.
+pub const PAIRED_END: &str = "paired_end";
+
+/// Int — the R1 read length sampled for this simulation. Recorded
+/// once per simulation by `PairedEndSamplingPass`; absent when no
+/// paired-end layout is in the plan.
+const PAIRED_END_R1_LENGTH: &str = "paired_end.r1_length";
+/// Int — the R2 read length sampled for this simulation.
+const PAIRED_END_R2_LENGTH: &str = "paired_end.r2_length";
+/// Int — the fragment insert size sampled for this simulation.
+const PAIRED_END_INSERT_SIZE: &str = "paired_end.insert_size";
 
 pub fn sample_allele_vdj(segment: Segment) -> &'static str {
     match segment {
@@ -277,6 +337,52 @@ pub enum PrimeEnd {
     Three,
 }
 
+/// The four V(D)J coding-end junction sides at which a
+/// `PAdditionPass` can extend the assembled sequence with
+/// templated palindromic (P-)nucleotides. Order in the enum
+/// matches biological position along the V→J axis so iteration
+/// produces the natural left-to-right surface for AIRR
+/// projection and lowering.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum PEnd {
+    /// V's 3' coding end — P bytes sit between V and NP1.
+    V3,
+    /// D's 5' coding end — P bytes sit between NP1 and D.
+    D5,
+    /// D's 3' coding end — P bytes sit between D and NP2.
+    D3,
+    /// J's 5' coding end — P bytes sit between NP2 and J.
+    J5,
+}
+
+impl PEnd {
+    /// On-disk suffix used in trace addresses and pass names.
+    /// Matches the existing `trim.{v_3,d_5,d_3,j_5}` convention.
+    pub const fn suffix(self) -> &'static str {
+        match self {
+            Self::V3 => "v_3",
+            Self::D5 => "d_5",
+            Self::D3 => "d_3",
+            Self::J5 => "j_5",
+        }
+    }
+
+    /// The V/D/J segment from whose coding flank the P-bytes
+    /// derive (palindrome source). V3 → V, D5/D3 → D, J5 → J.
+    pub const fn source_segment(self) -> Segment {
+        match self {
+            Self::V3 => Segment::V,
+            Self::D5 | Self::D3 => Segment::D,
+            Self::J5 => Segment::J,
+        }
+    }
+
+    /// All four ends in canonical V→J biological order.
+    pub const fn all() -> [PEnd; 4] {
+        [Self::V3, Self::D5, Self::D3, Self::J5]
+    }
+}
+
 impl From<TrimEnd> for PrimeEnd {
     fn from(value: TrimEnd) -> Self {
         match value {
@@ -322,6 +428,36 @@ pub enum ChoiceAddress {
     CorruptNsSite(u32),
     CorruptEndLoss(PrimeEnd),
     CorruptRevCompApplied,
+    /// Per-simulation Bool: `true` iff the D segment is to be
+    /// assembled in reverse-complement orientation. Singleton choice
+    /// (one record per simulation). See [`SAMPLE_ALLELE_D_INVERTED`]
+    /// for the on-disk spelling.
+    SampleAlleleDInverted,
+    /// Per-simulation Bool: `true` iff `ReceptorRevisionPass` replaces
+    /// the V segment for this simulation. Always recorded — even on
+    /// `false`, so the trace carries the outcome unambiguously.
+    /// See [`RECEPTOR_REVISION_APPLIED`].
+    ReceptorRevisionApplied,
+    /// AlleleId: the replacement V allele chosen on `applied=true`.
+    /// Recorded only on `applied=true`. See
+    /// [`RECEPTOR_REVISION_V_ALLELE`].
+    ReceptorRevisionVAllele,
+    /// Int: the 3' trim applied to the replacement V allele on
+    /// `applied=true`. Recorded only on `applied=true`. See
+    /// [`RECEPTOR_REVISION_V_TRIM_3`].
+    ReceptorRevisionVTrim3,
+    /// Int: the R1 read length for the paired-end projection.
+    /// Recorded once per simulation by `PairedEndSamplingPass`.
+    PairedEndR1Length,
+    /// Int: the R2 read length for the paired-end projection.
+    PairedEndR2Length,
+    /// Int: the fragment insert size for the paired-end projection.
+    PairedEndInsertSize,
+    /// Int: per-end P-nucleotide length sampled by a
+    /// `PAdditionPass`. P-bases themselves are deterministic
+    /// from `(allele, trim, orientation, length)` so only the
+    /// length needs a trace address.
+    PLength { end: PEnd },
 }
 
 impl ChoiceAddress {
@@ -390,6 +526,14 @@ impl fmt::Display for ChoiceAddress {
             Self::CorruptEndLoss(PrimeEnd::Five) => f.write_str(CORRUPT_END_LOSS_5),
             Self::CorruptEndLoss(PrimeEnd::Three) => f.write_str(CORRUPT_END_LOSS_3),
             Self::CorruptRevCompApplied => f.write_str(CORRUPT_REV_COMP_APPLIED),
+            Self::SampleAlleleDInverted => f.write_str(SAMPLE_ALLELE_D_INVERTED),
+            Self::ReceptorRevisionApplied => f.write_str(RECEPTOR_REVISION_APPLIED),
+            Self::ReceptorRevisionVAllele => f.write_str(RECEPTOR_REVISION_V_ALLELE),
+            Self::ReceptorRevisionVTrim3 => f.write_str(RECEPTOR_REVISION_V_TRIM_3),
+            Self::PairedEndR1Length => f.write_str(PAIRED_END_R1_LENGTH),
+            Self::PairedEndR2Length => f.write_str(PAIRED_END_R2_LENGTH),
+            Self::PairedEndInsertSize => f.write_str(PAIRED_END_INSERT_SIZE),
+            Self::PLength { end } => write!(f, "p.{}.length", end.suffix()),
         }
     }
 }
@@ -460,6 +604,17 @@ fn parse_choice_address(address: &str) -> Option<ChoiceAddress> {
         CORRUPT_END_LOSS_5 => Some(ChoiceAddress::CorruptEndLoss(PrimeEnd::Five)),
         CORRUPT_END_LOSS_3 => Some(ChoiceAddress::CorruptEndLoss(PrimeEnd::Three)),
         CORRUPT_REV_COMP_APPLIED => Some(ChoiceAddress::CorruptRevCompApplied),
+        SAMPLE_ALLELE_D_INVERTED => Some(ChoiceAddress::SampleAlleleDInverted),
+        RECEPTOR_REVISION_APPLIED => Some(ChoiceAddress::ReceptorRevisionApplied),
+        RECEPTOR_REVISION_V_ALLELE => Some(ChoiceAddress::ReceptorRevisionVAllele),
+        RECEPTOR_REVISION_V_TRIM_3 => Some(ChoiceAddress::ReceptorRevisionVTrim3),
+        PAIRED_END_R1_LENGTH => Some(ChoiceAddress::PairedEndR1Length),
+        PAIRED_END_R2_LENGTH => Some(ChoiceAddress::PairedEndR2Length),
+        PAIRED_END_INSERT_SIZE => Some(ChoiceAddress::PairedEndInsertSize),
+        P_V3_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::V3 }),
+        P_D5_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::D5 }),
+        P_D3_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::D3 }),
+        P_J5_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::J5 }),
         _ => None,
     };
     if exact.is_some() {
@@ -556,6 +711,42 @@ pub enum ChoiceAddressPattern {
     CorruptNsSite,
     CorruptEndLoss(PrimeEnd),
     CorruptRevCompApplied,
+    /// Singleton-family mirror of
+    /// [`ChoiceAddress::SampleAlleleDInverted`]. The
+    /// `InvertDPass` declares this pattern from
+    /// [`crate::pass::Pass::declared_choice_patterns`] so the
+    /// schedule analyser and trace-replay validator recognise the
+    /// address.
+    SampleAlleleDInverted,
+    /// Singleton-family mirror of
+    /// [`ChoiceAddress::ReceptorRevisionApplied`]. Declared by
+    /// `ReceptorRevisionPass` regardless of whether replacement
+    /// fires, since the Bool is always recorded.
+    ReceptorRevisionApplied,
+    /// Singleton-family mirror of
+    /// [`ChoiceAddress::ReceptorRevisionVAllele`]. Declared even
+    /// though the record is conditional on `applied=true`; the
+    /// schedule analyser treats it as a *potential* draw the pass
+    /// may make.
+    ReceptorRevisionVAllele,
+    /// Singleton-family mirror of
+    /// [`ChoiceAddress::ReceptorRevisionVTrim3`].
+    ReceptorRevisionVTrim3,
+    /// Singleton-family mirror of
+    /// [`ChoiceAddress::PairedEndR1Length`]. Declared by
+    /// `PairedEndSamplingPass` so the schedule analyser and
+    /// trace-replay validator recognise the address.
+    PairedEndR1Length,
+    /// Singleton-family mirror of
+    /// [`ChoiceAddress::PairedEndR2Length`].
+    PairedEndR2Length,
+    /// Singleton-family mirror of
+    /// [`ChoiceAddress::PairedEndInsertSize`].
+    PairedEndInsertSize,
+    /// Singleton-family mirror of
+    /// [`ChoiceAddress::PLength`]. One pattern instance per
+    /// `PEnd` — declared by `PAdditionPass`.
+    PLength { end: PEnd },
 }
 
 impl ChoiceAddressPattern {
@@ -594,6 +785,14 @@ impl fmt::Display for ChoiceAddressPattern {
             Self::CorruptNsSite => f.write_str(CORRUPT_NS_SITE_PATTERN),
             Self::CorruptEndLoss(end) => ChoiceAddress::CorruptEndLoss(end).fmt(f),
             Self::CorruptRevCompApplied => f.write_str(CORRUPT_REV_COMP_APPLIED),
+            Self::SampleAlleleDInverted => f.write_str(SAMPLE_ALLELE_D_INVERTED),
+            Self::ReceptorRevisionApplied => f.write_str(RECEPTOR_REVISION_APPLIED),
+            Self::ReceptorRevisionVAllele => f.write_str(RECEPTOR_REVISION_V_ALLELE),
+            Self::ReceptorRevisionVTrim3 => f.write_str(RECEPTOR_REVISION_V_TRIM_3),
+            Self::PairedEndR1Length => f.write_str(PAIRED_END_R1_LENGTH),
+            Self::PairedEndR2Length => f.write_str(PAIRED_END_R2_LENGTH),
+            Self::PairedEndInsertSize => f.write_str(PAIRED_END_INSERT_SIZE),
+            Self::PLength { end } => ChoiceAddress::PLength { end }.fmt(f),
         }
     }
 }
@@ -679,6 +878,17 @@ fn parse_choice_address_pattern(address: &str) -> Option<ChoiceAddressPattern> {
         CORRUPT_END_LOSS_5 => Some(ChoiceAddressPattern::CorruptEndLoss(PrimeEnd::Five)),
         CORRUPT_END_LOSS_3 => Some(ChoiceAddressPattern::CorruptEndLoss(PrimeEnd::Three)),
         CORRUPT_REV_COMP_APPLIED => Some(ChoiceAddressPattern::CorruptRevCompApplied),
+        SAMPLE_ALLELE_D_INVERTED => Some(ChoiceAddressPattern::SampleAlleleDInverted),
+        RECEPTOR_REVISION_APPLIED => Some(ChoiceAddressPattern::ReceptorRevisionApplied),
+        RECEPTOR_REVISION_V_ALLELE => Some(ChoiceAddressPattern::ReceptorRevisionVAllele),
+        RECEPTOR_REVISION_V_TRIM_3 => Some(ChoiceAddressPattern::ReceptorRevisionVTrim3),
+        PAIRED_END_R1_LENGTH => Some(ChoiceAddressPattern::PairedEndR1Length),
+        PAIRED_END_R2_LENGTH => Some(ChoiceAddressPattern::PairedEndR2Length),
+        PAIRED_END_INSERT_SIZE => Some(ChoiceAddressPattern::PairedEndInsertSize),
+        P_V3_LENGTH => Some(ChoiceAddressPattern::PLength { end: PEnd::V3 }),
+        P_D5_LENGTH => Some(ChoiceAddressPattern::PLength { end: PEnd::D5 }),
+        P_D3_LENGTH => Some(ChoiceAddressPattern::PLength { end: PEnd::D3 }),
+        P_J5_LENGTH => Some(ChoiceAddressPattern::PLength { end: PEnd::J5 }),
         _ => None,
     };
 
@@ -826,6 +1036,28 @@ mod tests {
             (
                 ChoiceAddress::CorruptRevCompApplied,
                 CORRUPT_REV_COMP_APPLIED,
+            ),
+            (
+                ChoiceAddress::SampleAlleleDInverted,
+                SAMPLE_ALLELE_D_INVERTED,
+            ),
+            (
+                ChoiceAddress::ReceptorRevisionApplied,
+                RECEPTOR_REVISION_APPLIED,
+            ),
+            (
+                ChoiceAddress::ReceptorRevisionVAllele,
+                RECEPTOR_REVISION_V_ALLELE,
+            ),
+            (
+                ChoiceAddress::ReceptorRevisionVTrim3,
+                RECEPTOR_REVISION_V_TRIM_3,
+            ),
+            (ChoiceAddress::PairedEndR1Length, PAIRED_END_R1_LENGTH),
+            (ChoiceAddress::PairedEndR2Length, PAIRED_END_R2_LENGTH),
+            (
+                ChoiceAddress::PairedEndInsertSize,
+                PAIRED_END_INSERT_SIZE,
             ),
         ];
 
@@ -976,6 +1208,34 @@ mod tests {
             (
                 ChoiceAddressPattern::CorruptRevCompApplied,
                 CORRUPT_REV_COMP_APPLIED,
+            ),
+            (
+                ChoiceAddressPattern::SampleAlleleDInverted,
+                SAMPLE_ALLELE_D_INVERTED,
+            ),
+            (
+                ChoiceAddressPattern::ReceptorRevisionApplied,
+                RECEPTOR_REVISION_APPLIED,
+            ),
+            (
+                ChoiceAddressPattern::ReceptorRevisionVAllele,
+                RECEPTOR_REVISION_V_ALLELE,
+            ),
+            (
+                ChoiceAddressPattern::ReceptorRevisionVTrim3,
+                RECEPTOR_REVISION_V_TRIM_3,
+            ),
+            (
+                ChoiceAddressPattern::PairedEndR1Length,
+                PAIRED_END_R1_LENGTH,
+            ),
+            (
+                ChoiceAddressPattern::PairedEndR2Length,
+                PAIRED_END_R2_LENGTH,
+            ),
+            (
+                ChoiceAddressPattern::PairedEndInsertSize,
+                PAIRED_END_INSERT_SIZE,
             ),
         ];
 
@@ -1186,5 +1446,60 @@ mod tests {
             ChoiceAddress::CorruptRevCompApplied,
             "corrupt.rev_comp.applied",
         );
+
+        // D inversion (Slice C). The on-disk spelling sits under the
+        // existing `sample_allele.d` namespace so the persisted
+        // address-schema-version stays at v1 — no migration burden
+        // for traces emitted by pre-Slice-C engines that simply
+        // never wrote this address.
+        assert_pinned(
+            ChoiceAddress::SampleAlleleDInverted,
+            "sample_allele.d.inverted",
+        );
+
+        // Receptor revision (Slice C of the receptor-revision roadmap).
+        // New top-level `receptor_revision.*` namespace; additive
+        // under the v1 vocabulary policy — old traces don't reference
+        // these strings, new traces parse on engines that postdate
+        // this slice. No ADDRESS_SCHEMA_VERSION bump required.
+        assert_pinned(
+            ChoiceAddress::ReceptorRevisionApplied,
+            "receptor_revision.applied",
+        );
+        assert_pinned(
+            ChoiceAddress::ReceptorRevisionVAllele,
+            "receptor_revision.v_allele",
+        );
+        assert_pinned(
+            ChoiceAddress::ReceptorRevisionVTrim3,
+            "receptor_revision.v_trim_3",
+        );
+
+        // Paired-end / read layout (Slice C of the paired-end
+        // roadmap). New top-level `paired_end.*` namespace; same
+        // additive policy as receptor revision — old traces don't
+        // reference these strings, no ADDRESS_SCHEMA_VERSION bump.
+        assert_pinned(
+            ChoiceAddress::PairedEndR1Length,
+            "paired_end.r1_length",
+        );
+        assert_pinned(
+            ChoiceAddress::PairedEndR2Length,
+            "paired_end.r2_length",
+        );
+        assert_pinned(
+            ChoiceAddress::PairedEndInsertSize,
+            "paired_end.insert_size",
+        );
+
+        // P-nucleotide length per end (palindromic addition
+        // slice). New top-level `p.*` namespace; same additive
+        // policy as receptor revision / paired-end — old traces
+        // don't reference these strings, no
+        // ADDRESS_SCHEMA_VERSION bump.
+        assert_pinned(ChoiceAddress::PLength { end: PEnd::V3 }, "p.v_3.length");
+        assert_pinned(ChoiceAddress::PLength { end: PEnd::D5 }, "p.d_5.length");
+        assert_pinned(ChoiceAddress::PLength { end: PEnd::D3 }, "p.d_3.length");
+        assert_pinned(ChoiceAddress::PLength { end: PEnd::J5 }, "p.j_5.length");
     }
 }

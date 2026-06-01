@@ -73,12 +73,14 @@ pub trait Distribution {
 // ──────────────────────────────────────────────────────────────────
 
 mod allele_pool;
+mod categorical_base;
 mod empirical;
 mod filtered;
 mod integer;
 mod uniform;
 
 pub use allele_pool::AllelePoolDist;
+pub use categorical_base::CategoricalBase;
 pub use empirical::EmpiricalLengthDist;
 pub use filtered::{
     sample_base_with_admit_mask, sample_filtered_result, sample_filtered_with_policy, EmptySupport,

@@ -239,6 +239,8 @@ fn anchor_preserved_works_for_j_segment_too() {
         seq: vec![b'A'; 12],
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let contract = AnchorPreserved::new(Segment::J);
 

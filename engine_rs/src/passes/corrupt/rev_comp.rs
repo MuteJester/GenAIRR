@@ -91,6 +91,10 @@ impl Pass for RevCompPass {
         address::CORRUPT_REV_COMP
     }
 
+    fn parameter_signature(&self) -> String {
+        crate::passes::paramsig::fmt_prob("apply_prob", self.apply_prob)
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx)
             .expect("RevCompPass permissive execution must not return PassError")

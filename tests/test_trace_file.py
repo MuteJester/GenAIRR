@@ -208,10 +208,22 @@ def test_rerun_from_trace_file_rejects_refdata_mismatch(vj_compiled):
     outcome = vj_compiled.simulator.run(seed=0)
     tf = vj_compiled.simulator.trace_file_from(outcome, seed=0)
 
-    # Compile the same plan against a *different* refdata (IGL vs IGK).
+    # Compile the same plan shape against a *different* refdata
+    # (IGL vs IGK). The two compiled plans differ in TWO ways:
+    # (a) cartridge identity (refdata content hash), and (b) the
+    # cartridge-derived empirical distributions baked into the
+    # trim / NP-length pass parameters. Either one is enough for
+    # `rerun_from_trace_file` to reject; under Slice A's
+    # parameterized plan signature, the plan-parameter mismatch
+    # now fires before the refdata gate. The point of this test
+    # is that the rerun is rejected — accept any of the relevant
+    # mismatch messages.
     different_refdata = ga.Experiment.on("human_igl").recombine().compile()
 
-    with pytest.raises(ValueError, match="refdata signature mismatch"):
+    with pytest.raises(
+        ValueError,
+        match="(refdata signature mismatch|pass plan signature mismatch)",
+    ):
         different_refdata.simulator.rerun_from_trace_file(tf)
 
 
@@ -262,6 +274,18 @@ def test_emit_golden_trace_file_for_future_b(vj_compiled):
     its trace byte-for-byte. If this test fails after an engine
     change, either the schema bumped (intentional) or determinism
     regressed (a bug); inspect the diff before regenerating.
+
+    **Cross-schema comparison.** The fixture is preserved as the
+    canonical v1 backwards-compat anchor (per
+    ``test_trace_file_compat.py::test_v1_fixtures_exist_in_committed_set``);
+    fresh emissions ship at the current ``TRACE_FILE_SCHEMA_VERSION``.
+    When the fixture's schema is older than the live one, the test
+    compares the determinism-preserving fields only (per-choice
+    address + value); the schema-version-bearing fields
+    (``pass_plan_signature``, ``schema_version``) are intentionally
+    skipped because they reflect the on-disk format change and not
+    a determinism regression. Equal schemas compare byte-for-byte
+    as before.
     """
     seed = 4242
     outcome = vj_compiled.simulator.run(seed=seed)
@@ -277,14 +301,19 @@ def test_emit_golden_trace_file_for_future_b(vj_compiled):
     # Compare engine output against the on-disk golden.
     loaded = genairr_engine.TraceFile.read_from(str(golden_path))
     assert loaded.seed == seed
-    assert loaded.pass_plan_signature == tf.pass_plan_signature
     assert loaded.refdata_signature == tf.refdata_signature
+    if loaded.schema_version == tf.schema_version:
+        # Same-schema fixture: the full byte-for-byte equality
+        # holds, including the plan signature.
+        assert loaded.pass_plan_signature == tf.pass_plan_signature
     assert len(loaded.trace) == len(tf.trace)
     for a, b in zip(loaded.trace.choices(), tf.trace.choices()):
         assert a.address == b.address
         assert a.value == b.value
 
     # And: re-running from the golden trace file matches both.
+    # The schema-version-aware comparator in `rerun_from_trace_file`
+    # handles legacy fixtures transparently.
     rerun = vj_compiled.simulator.rerun_from_trace_file(loaded)
     for a, b in zip(rerun.trace().choices(), tf.trace.choices()):
         assert a.address == b.address

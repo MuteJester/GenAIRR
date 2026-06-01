@@ -302,6 +302,21 @@ fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> PyResult<Bou
     dict.set_item("np2_aa", &rec.np2_aa)?;
     dict.set_item("np2_length", rec.np2_length)?;
 
+    // Per-end P-nucleotide length counters (Slice —
+    // P-nucleotide v1). Counts of templated palindromic
+    // P-bytes emitted by `PAdditionPass` at each V(D)J coding-
+    // end junction side. Aggregated by walking the event
+    // ledger filtered to `PRegionAdded` events and summing
+    // `region.len()` per `end`. Zero on records from
+    // cartridges with no typed P-plane authored — byte-
+    // identical to the pre-slice baseline. VJ chains carry
+    // zeros in the D-end fields by construction (no D
+    // segment). See `docs/p_nucleotide_design.md`.
+    dict.set_item("p_v_3_length", rec.p_v_3_length)?;
+    dict.set_item("p_d_5_length", rec.p_d_5_length)?;
+    dict.set_item("p_d_3_length", rec.p_d_3_length)?;
+    dict.set_item("p_j_5_length", rec.p_j_5_length)?;
+
     // Functionality
     set_opt_bool(&dict, "productive", rec.productive)?;
     set_opt_bool(&dict, "vj_in_frame", rec.vj_in_frame)?;
@@ -320,12 +335,62 @@ fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> PyResult<Bou
     dict.set_item("n_v_indels", rec.n_v_indels)?;
     dict.set_item("n_d_indels", rec.n_d_indels)?;
     dict.set_item("n_j_indels", rec.n_j_indels)?;
+    // Per-segment SHM mutation counters — aggregated by walking
+    // ``outcome.events()``, filtering to the mutate.{uniform,s5f}
+    // passes, and bucketing each ``BaseChanged`` by carried
+    // segment. NP1/NP2 roll into ``n_np_mutations``. Sum equals
+    // ``n_mutations`` by construction.
+    dict.set_item("n_v_mutations", rec.n_v_mutations)?;
+    dict.set_item("n_d_mutations", rec.n_d_mutations)?;
+    dict.set_item("n_j_mutations", rec.n_j_mutations)?;
+    dict.set_item("n_np_mutations", rec.n_np_mutations)?;
+    // V-subregion SHM partition (Slice — V-Subregion Mutation
+    // Counters). Six fields that partition ``n_v_mutations``:
+    // five canonical IMGT labels plus ``n_v_unannotated_mutations``
+    // for V events that can't be attributed (missing assignment,
+    // empty subregion annotations, V-side CDR3 stretch, or
+    // indel-inserted V bases — see audit §4).
+    dict.set_item("n_fwr1_mutations", rec.n_fwr1_mutations)?;
+    dict.set_item("n_cdr1_mutations", rec.n_cdr1_mutations)?;
+    dict.set_item("n_fwr2_mutations", rec.n_fwr2_mutations)?;
+    dict.set_item("n_cdr2_mutations", rec.n_cdr2_mutations)?;
+    dict.set_item("n_fwr3_mutations", rec.n_fwr3_mutations)?;
+    dict.set_item(
+        "n_v_unannotated_mutations",
+        rec.n_v_unannotated_mutations,
+    )?;
     // Observation-stage end-loss / primer-trim amounts (audit
     // §6.1 fix). Distinct from recombination-stage v_trim_*/
     // j_trim_*; defaults to 0 when no end-loss pass ran.
     dict.set_item("end_loss_5_length", rec.end_loss_5_length)?;
     dict.set_item("end_loss_3_length", rec.end_loss_3_length)?;
     dict.set_item("is_contaminant", rec.is_contaminant)?;
+    // D inversion provenance (Slice E). See `AirrRecord.d_inverted`
+    // for the rationale on sourcing from final IR rather than trace.
+    dict.set_item("d_inverted", rec.d_inverted)?;
+    // Receptor revision provenance (Slice E of the receptor-revision
+    // roadmap). See `AirrRecord.receptor_revision_applied` /
+    // `original_v_call` for the rationale (trace-sourced, empty
+    // sentinel on no-revision).
+    dict.set_item(
+        "receptor_revision_applied",
+        rec.receptor_revision_applied,
+    )?;
+    dict.set_item("original_v_call", rec.original_v_call.clone())?;
+
+    // Paired-end / read layout (Slice A of the paired-end roadmap).
+    // Defaults match `AirrRecord::default()` (`""` / `None` / 0);
+    // the projection layer (Slice B) populates them. See
+    // `docs/paired_end_design.md` §10 for the additive-field
+    // compatibility promise.
+    dict.set_item("read_layout", rec.read_layout.clone())?;
+    dict.set_item("r1_sequence", rec.r1_sequence.clone())?;
+    dict.set_item("r2_sequence", rec.r2_sequence.clone())?;
+    set_opt_i64(&dict, "r1_start", rec.r1_start)?;
+    set_opt_i64(&dict, "r1_end", rec.r1_end)?;
+    set_opt_i64(&dict, "r2_start", rec.r2_start)?;
+    set_opt_i64(&dict, "r2_end", rec.r2_end)?;
+    dict.set_item("insert_size", rec.insert_size)?;
 
     Ok(dict)
 }
@@ -379,6 +444,16 @@ fn prime_end_str(e: PrimeEnd) -> &'static str {
     match e {
         PrimeEnd::Five => "5'",
         PrimeEnd::Three => "3'",
+    }
+}
+
+fn p_end_str(e: crate::address::PEnd) -> &'static str {
+    use crate::address::PEnd;
+    match e {
+        PEnd::V3 => "V_3",
+        PEnd::D5 => "D_5",
+        PEnd::D3 => "D_3",
+        PEnd::J5 => "J_5",
     }
 }
 
@@ -499,6 +574,138 @@ fn issue_to_pydict<'py>(
             d.set_item("expected", event_count)?;
             details.set_item("source", "events:corrupt.indel")?;
         }
+        RecordValidationIssue::NVMutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NVMutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("source", "events:mutate.{uniform,s5f}:base_changed:V")?;
+        }
+        RecordValidationIssue::NDMutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NDMutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("source", "events:mutate.{uniform,s5f}:base_changed:D")?;
+        }
+        RecordValidationIssue::NJMutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NJMutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("source", "events:mutate.{uniform,s5f}:base_changed:J")?;
+        }
+        RecordValidationIssue::NNpMutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NNpMutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("source", "events:mutate.{uniform,s5f}:base_changed:NP")?;
+        }
+        RecordValidationIssue::MutationCountSumMismatch {
+            reported_total,
+            sum_of_buckets,
+        } => {
+            d.set_item("kind", "MutationCountSumMismatch")?;
+            d.set_item("reported", reported_total)?;
+            d.set_item("expected", sum_of_buckets)?;
+            details.set_item(
+                "source",
+                "derived:n_v_mutations+n_d_mutations+n_j_mutations+n_np_mutations",
+            )?;
+        }
+        RecordValidationIssue::NFwr1MutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NFwr1MutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item(
+                "source",
+                "events:mutate.{uniform,s5f}:base_changed:V:germline_pos:FWR1",
+            )?;
+        }
+        RecordValidationIssue::NCdr1MutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NCdr1MutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item(
+                "source",
+                "events:mutate.{uniform,s5f}:base_changed:V:germline_pos:CDR1",
+            )?;
+        }
+        RecordValidationIssue::NFwr2MutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NFwr2MutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item(
+                "source",
+                "events:mutate.{uniform,s5f}:base_changed:V:germline_pos:FWR2",
+            )?;
+        }
+        RecordValidationIssue::NCdr2MutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NCdr2MutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item(
+                "source",
+                "events:mutate.{uniform,s5f}:base_changed:V:germline_pos:CDR2",
+            )?;
+        }
+        RecordValidationIssue::NFwr3MutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NFwr3MutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item(
+                "source",
+                "events:mutate.{uniform,s5f}:base_changed:V:germline_pos:FWR3",
+            )?;
+        }
+        RecordValidationIssue::NVUnannotatedMutationsMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NVUnannotatedMutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item(
+                "source",
+                "events:mutate.{uniform,s5f}:base_changed:V:germline_pos:unannotated",
+            )?;
+        }
+        RecordValidationIssue::VSubregionMutationCountSumMismatch {
+            reported_v_total,
+            sum_of_subregion_buckets,
+        } => {
+            d.set_item("kind", "VSubregionMutationCountSumMismatch")?;
+            d.set_item("reported", reported_v_total)?;
+            d.set_item("expected", sum_of_subregion_buckets)?;
+            details.set_item(
+                "source",
+                "derived:n_fwr1_mutations+n_cdr1_mutations+n_fwr2_mutations+n_cdr2_mutations+n_fwr3_mutations+n_v_unannotated_mutations",
+            )?;
+        }
         RecordValidationIssue::EndLossLengthMismatch {
             side,
             reported,
@@ -508,6 +715,44 @@ fn issue_to_pydict<'py>(
             d.set_item("reported", reported)?;
             d.set_item("expected", trace_count)?;
             details.set_item("side", prime_end_str(side))?;
+        }
+        RecordValidationIssue::PLengthMismatch {
+            end,
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "PLengthMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("end", p_end_str(end))?;
+            details.set_item(
+                "source",
+                "event-ledger:PRegionAdded",
+            )?;
+        }
+        RecordValidationIssue::DInvertedMismatch { reported, expected } => {
+            d.set_item("kind", "DInvertedMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", expected)?;
+            details.set_item("source", "ir:assignments.d.orientation")?;
+        }
+        RecordValidationIssue::ReceptorRevisionAppliedMismatch { reported, expected } => {
+            d.set_item("kind", "ReceptorRevisionAppliedMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", expected)?;
+            details.set_item(
+                "source",
+                "ir:assignments.v.receptor_revision_original_id",
+            )?;
+        }
+        RecordValidationIssue::OriginalVCallMismatch { reported, expected } => {
+            d.set_item("kind", "OriginalVCallMismatch")?;
+            d.set_item("reported", reported.clone())?;
+            d.set_item("expected", expected.clone())?;
+            details.set_item(
+                "source",
+                "ir:assignments.v.receptor_revision_original_id",
+            )?;
         }
 
         // ── C3: Junction truth ──────────────────────────────────
@@ -596,6 +841,61 @@ fn issue_to_pydict<'py>(
             d.set_item("kind", "MultipleHypothesesInLiveCall")?;
             d.set_item("segment", segment_str(segment))?;
             details.set_item("count", count as i64)?;
+        }
+
+        // ── C6: Paired-end / read-layout ────────────────────────
+        RecordValidationIssue::PairedEndFieldWithoutLayout { field } => {
+            d.set_item("kind", "PairedEndFieldWithoutLayout")?;
+            // `reported` carries the offending field name as a
+            // string so the JSON shape stays scalar (mirrors
+            // `OriginalVCallMismatch`'s string payload). The
+            // explicit field name also lands under `details.field`
+            // for typed consumers.
+            d.set_item("reported", field.as_str())?;
+            d.set_item("expected", "<default>")?;
+            details.set_item("source", "schema:paired_end_layout_default")?;
+            details.set_item("field", field.as_str())?;
+        }
+        RecordValidationIssue::ReadWindowOutOfBounds {
+            side,
+            start,
+            end,
+            sequence_length,
+        } => {
+            d.set_item("kind", "ReadWindowOutOfBounds")?;
+            d.set_item("side", side.as_str())?;
+            d.set_item("reported", format!("[{start}, {end})"))?;
+            d.set_item(
+                "expected",
+                format!("[0, {sequence_length}]"),
+            )?;
+            details.set_item("source", "projection:read_window")?;
+            details.set_item("start", start)?;
+            details.set_item("end", end)?;
+            details.set_item("sequence_length", sequence_length)?;
+        }
+        RecordValidationIssue::ReadSequenceMismatch {
+            side,
+            reported,
+            expected,
+        } => {
+            d.set_item("kind", "ReadSequenceMismatch")?;
+            d.set_item("side", side.as_str())?;
+            d.set_item("reported", reported.clone())?;
+            d.set_item("expected", expected.clone())?;
+            details.set_item("source", "projection:read_window_bytes")?;
+        }
+        RecordValidationIssue::ReadInsertSizeMismatch { reported, expected } => {
+            d.set_item("kind", "ReadInsertSizeMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", expected)?;
+            details.set_item("source", "projection:insert_size")?;
+        }
+        RecordValidationIssue::ReadLayoutMismatch { reported, expected } => {
+            d.set_item("kind", "ReadLayoutMismatch")?;
+            d.set_item("reported", reported.clone())?;
+            d.set_item("expected", expected.clone())?;
+            details.set_item("source", "projection:read_layout")?;
         }
     }
     d.set_item("details", details)?;

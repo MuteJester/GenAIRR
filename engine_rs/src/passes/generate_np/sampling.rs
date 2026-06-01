@@ -1,13 +1,68 @@
 use crate::address::ChoiceAddress;
 use crate::contract::{ChoiceContext, JunctionStopState};
 use crate::dist::{
-    sample_base_with_admit_mask, sample_filtered_with_policy, EmptySupport, FilteredSampleError,
+    sample_base_with_admit_mask, sample_filtered_with_policy, Distribution, EmptySupport,
+    FilteredSampleError,
 };
 use crate::ir::Simulation;
 use crate::pass::{PassContext, PassError};
+use crate::rng::Rng;
 use crate::trace::ChoiceValue;
 
 use super::GenerateNPPass;
+
+/// Adapter that exposes a pre-materialised `(byte, weight)`
+/// support vector as a `Distribution<Output = u8>`. Used to
+/// feed a Markov / position-conditional generator's per-call
+/// support through the existing generic helpers
+/// ([`sample_base_with_admit_mask`] / [`sample_filtered_with_policy`])
+/// without duplicating the inverse-CDF logic.
+///
+/// Owns the pairs by reference so each per-position call avoids
+/// a second `Vec` clone — the lifetime is bounded by the
+/// caller's local pair-vector.
+struct SupportPairsDist<'a> {
+    pairs: &'a [(u8, f64)],
+}
+
+impl<'a> SupportPairsDist<'a> {
+    fn new(pairs: &'a [(u8, f64)]) -> Self {
+        Self { pairs }
+    }
+}
+
+impl Distribution for SupportPairsDist<'_> {
+    type Output = u8;
+
+    fn sample(&self, rng: &mut Rng) -> u8 {
+        // Inverse-CDF over the pair vector — same RNG shape
+        // (one `next_f64()`) as `UniformBase::sample` / the
+        // generic helpers, so the unconstrained Markov path
+        // consumes exactly one RNG word per base.
+        let total: f64 = self.pairs.iter().map(|(_, w)| w).sum();
+        // Spec-layer validation guarantees positive total; the
+        // defensive assert here surfaces a malformed generator
+        // before silently looping forever.
+        assert!(
+            total.is_finite() && total > 0.0,
+            "SupportPairsDist::sample: support has non-positive total weight {total}",
+        );
+        let r = rng.next_f64() * total;
+        let mut cum = 0.0;
+        for (b, w) in self.pairs.iter() {
+            cum += *w;
+            if r < cum {
+                return *b;
+            }
+        }
+        // ULP fallback.
+        self.pairs.last().unwrap().0
+    }
+
+    fn support(&self) -> Option<Vec<(u8, f64)>> {
+        Some(self.pairs.to_vec())
+    }
+}
 
 /// v3.0 empty-support policy for NP-length sampling. An NP region
 /// with length 0 is a valid no-op: skipping the region entirely.
@@ -104,9 +159,17 @@ impl GenerateNPPass {
         strict: bool,
         junction_stop_state: Option<&JunctionStopState>,
         admit_mask: Option<u8>,
+        previous: Option<u8>,
     ) -> Result<u8, PassError> {
         let refdata = ctx.refdata;
         let contracts = ctx.contracts;
+
+        // Materialise per-position support via the generator.
+        // Markov: row keyed by `previous`. Uniform / categorical
+        // wrappers ignore `previous` / `position` and return the
+        // pre-slice 4-way support.
+        let support_pairs = self.base_generator.support(index as usize, previous);
+        let base_dist = SupportPairsDist::new(&support_pairs);
 
         // ── Trace-injected replay (Tier 3 NP base) ───────────────
         //
@@ -120,10 +183,9 @@ impl GenerateNPPass {
         //   * Slow path (contracts active, no admit mask): canonical
         //     base must be admitted by `contracts.admits_typed`. `N`
         //     is accepted only when every canonical candidate in
-        //     `base_dist.support()` is rejected by the bundle.
-        //   * No-contracts path: byte must be in `base_dist.support()`
-        //     if enumerable; non-enumerable `support()` falls back to
-        //     best-effort accept.
+        //     the generator's per-position support is rejected.
+        //   * No-contracts path: byte must be in the generator's
+        //     per-position support if enumerable.
         //
         // Any other byte (including `N` outside the empty-support
         // emission path) surfaces as `ConstraintSampling`. We never
@@ -145,14 +207,16 @@ impl GenerateNPPass {
                 address,
                 junction_stop_state,
                 admit_mask,
+                &support_pairs,
             )?;
             return Ok(recorded);
         }
 
         // fast path: admit-mask observer hands us a 4-bit
         // mask, we sample inverse-CDF directly over the admitted
-        // subset of `base_dist`'s support. No per-candidate contract
-        // dispatch, no intermediate `filtered` Vec.
+        // subset of the generator's per-position support. No
+        // per-candidate contract dispatch, no intermediate
+        // `filtered` Vec.
         //
         // We still need the contract set to be present — if the user
         // didn't request `respect=productive()` the JunctionStopState
@@ -164,7 +228,7 @@ impl GenerateNPPass {
         // shape than `sample_filtered_result`) and via
         // `sample_filtered_with_policy` for the slow path.
         if let Some(mask) = admit_mask {
-            match sample_base_with_admit_mask(ctx.rng, self.base_dist.as_ref(), mask) {
+            match sample_base_with_admit_mask(ctx.rng, &base_dist, mask) {
                 Ok(value) => return Ok(value),
                 Err(reason) if strict => {
                     return Err(self.constraint_sampling_error(address, reason));
@@ -184,7 +248,7 @@ impl GenerateNPPass {
             let pass_name = self.pass_name().to_string();
             let outcome = sample_filtered_with_policy(
                 ctx.rng,
-                self.base_dist.as_ref(),
+                &base_dist,
                 |candidate: &u8| {
                     contracts
                         .admits_typed(sim, refdata, context, &ChoiceValue::Base(*candidate))
@@ -198,7 +262,7 @@ impl GenerateNPPass {
             return Ok(outcome.expect("NP_BASE_EMPTY_SUPPORT is Sentinel(b'N'), never Skip"));
         }
 
-        Ok(self.base_dist.sample(ctx.rng))
+        Ok(base_dist.sample(ctx.rng))
     }
 
     pub(super) fn constraint_sampling_error(
@@ -229,6 +293,7 @@ impl GenerateNPPass {
         address: &str,
         junction_stop_state: Option<&JunctionStopState>,
         admit_mask: Option<u8>,
+        support_pairs: &[(u8, f64)],
     ) -> Result<(), PassError> {
         let policy_sentinel = apply_base_empty_support_policy();
         let reject = || {
@@ -266,18 +331,15 @@ impl GenerateNPPass {
                 context = context.with_junction_stop_state(state);
             }
             if recorded == policy_sentinel {
-                // Valid only when every candidate in base_dist's
-                // support is rejected by contracts — same predicate
+                // Valid only when every candidate in the
+                // generator's per-position support is rejected
+                // by contracts — same predicate
                 // `sample_filtered_with_policy` uses to decide it
                 // exhausted the support and must emit the sentinel.
-                let support = match self.base_dist.support() {
-                    Some(s) => s,
-                    None => return reject(), // can't prove emptiness
-                };
-                if support.is_empty() {
+                if support_pairs.is_empty() {
                     return Ok(());
                 }
-                let any_admitted = support.iter().any(|(b, _)| {
+                let any_admitted = support_pairs.iter().any(|(b, _)| {
                     contracts
                         .admits_typed(sim, refdata, context, &ChoiceValue::Base(*b))
                         .is_ok()
@@ -294,20 +356,15 @@ impl GenerateNPPass {
                 reject()
             }
         } else {
-            // No-contracts path: byte must be in base_dist.support()
-            // if enumerable. Non-enumerable support is treated as
-            // "best effort accept" — there's no constraint surface
-            // to check against, and the strict-positional cursor +
-            // signature checks have already validated plan identity.
-            match self.base_dist.support() {
-                Some(support) => {
-                    if support.iter().any(|(b, _)| *b == recorded) {
-                        Ok(())
-                    } else {
-                        reject()
-                    }
-                }
-                None => Ok(()),
+            // No-contracts path: byte must be in the
+            // generator's per-position support. The generator
+            // always returns enumerable support (uniform /
+            // categorical / Markov all do), so there's no
+            // "best effort accept" fallback to consider.
+            if support_pairs.iter().any(|(b, _)| *b == recorded) {
+                Ok(())
+            } else {
+                reject()
             }
         }
     }

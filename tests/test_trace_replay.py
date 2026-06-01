@@ -151,8 +151,17 @@ def test_replay_rejects_plan_mismatch(vj_compiled):
 def test_replay_rejects_refdata_mismatch(vj_compiled):
     outcome = vj_compiled.simulator.run(seed=0)
     tf = vj_compiled.simulator.trace_file_from(outcome, seed=0)
+    # IGL vs IGK changes both the refdata identity and the
+    # cartridge-derived trim / NP distributions baked into the
+    # plan parameters. Under Slice A's parameterized plan
+    # signature, the plan-parameter gate fires before the refdata
+    # gate; accept either rejection — the point of the test is
+    # that the replay is refused.
     different_refdata = ga.Experiment.on("human_igl").recombine().compile()
-    with pytest.raises(ValueError, match="refdata signature mismatch"):
+    with pytest.raises(
+        ValueError,
+        match="(refdata signature mismatch|pass plan signature mismatch)",
+    ):
         different_refdata.simulator.replay_from_trace_file(tf)
 
 
@@ -473,8 +482,17 @@ def test_full_stack_replay_reproduces_committed_golden_trace(full_stack_compiled
         pytest.skip(f"Emitted fresh full-stack golden at {FULL_STACK_GOLDEN}")
 
     loaded = eng.TraceFile.read_from(str(FULL_STACK_GOLDEN))
-    assert loaded.pass_plan_signature == tf.pass_plan_signature
+    # The fixture is preserved as a v1 backwards-compat anchor
+    # (see test_trace_file_compat.py). When its schema is older
+    # than the live one, the plan-signature field cannot be equal
+    # by construction — the schema-version-aware comparator
+    # inside `replay_from_trace_file` handles cross-schema replay
+    # transparently. The determinism check is the per-choice
+    # address+value equality below, which is what this test is
+    # actually pinning.
     assert loaded.refdata_signature == tf.refdata_signature
+    if loaded.schema_version == tf.schema_version:
+        assert loaded.pass_plan_signature == tf.pass_plan_signature
 
     # Replay via the trace-injected path — RNG bypassed, every
     # value comes from the cursor, drained-cursor assertion runs

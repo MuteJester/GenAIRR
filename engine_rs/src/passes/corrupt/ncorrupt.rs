@@ -102,6 +102,10 @@ impl Pass for NCorruptionPass {
         address::CORRUPT_NS
     }
 
+    fn parameter_signature(&self) -> String {
+        crate::passes::paramsig::fmt_count_source(&self.count_source)
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("NCorruptionPass permissive execution must not return PassError")

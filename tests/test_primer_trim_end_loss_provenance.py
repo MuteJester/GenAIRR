@@ -61,7 +61,7 @@ def _baseline_experiment() -> "ga.Experiment":
     NP1 fixed at 3 bases. Every test reuses this as its starting
     point so length math is fully predictable."""
     return (
-        ga.Experiment.on(_vj_refdata())
+        ga.Experiment.on(_vj_refdata()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
     )
@@ -118,7 +118,7 @@ def test_5prime_loss_records_corrupt_end_loss_5_in_trace() -> None:
     # provenance signal at the trace layer — the audit notes it
     # never reaches the projected AIRR record (drift item §6.1).
     compiled = (
-        _baseline_experiment().primer_trim_5prime(length=2).compile()
+        _baseline_experiment().primer_trim_5prime(length=2).compile(allow_curatable_refdata=True)
     )
     assert isinstance(compiled, CompiledExperiment)
     outcome = compiled.simulator.run(seed=0)
@@ -154,7 +154,7 @@ def test_3prime_loss_does_not_update_j_trim_3() -> None:
 
 def test_3prime_loss_records_corrupt_end_loss_3_in_trace() -> None:
     compiled = (
-        _baseline_experiment().primer_trim_3prime(length=2).compile()
+        _baseline_experiment().primer_trim_3prime(length=2).compile(allow_curatable_refdata=True)
     )
     assert isinstance(compiled, CompiledExperiment)
     outcome = compiled.simulator.run(seed=0)
@@ -224,7 +224,7 @@ def test_primer_trim_replay_reproduces_sequence_and_coords(configure) -> None:
     every key AIRR coordinate for an end-loss experiment.
     Critical because end-loss is a structural mechanism that shifts
     every downstream region's pool coordinate."""
-    compiled = configure(_baseline_experiment()).compile()
+    compiled = configure(_baseline_experiment()).compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
 
     seed = 4242

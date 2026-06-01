@@ -91,6 +91,39 @@ def _to_immutable_pairs(
     return tuple((int(c), float(w)) for c, w in pairs)
 
 
+def _to_immutable_byte_pairs(
+    pairs: Optional[List[Tuple[int, float]]],
+) -> Optional[Tuple[Tuple[int, float], ...]]:
+    """Same shape as :func:`_to_immutable_pairs` but for the
+    NP-base ``(base_byte, weight)`` pairs lowered by
+    :func:`._dataconfig_extract._np_bases_from_models`. Kept as a
+    separate helper so the two callers' intent is unambiguous at
+    the call site — a future drift between base bytes and length
+    integers would surface here rather than as a silent type
+    mixup."""
+    if not pairs:
+        return None
+    return tuple((int(b), float(w)) for b, w in pairs)
+
+
+def _to_immutable_byte_pair_matrix(
+    rows: Optional[List[List[Tuple[int, float]]]],
+) -> Optional[Tuple[Tuple[Tuple[int, float], ...], ...]]:
+    """Freeze a Markov NP-base transition matrix into the hashable
+    tuple-of-tuples-of-tuples form ``_RecombineStep`` expects.
+    Each row is a list of ``(to_byte, weight)`` pairs in
+    canonical to-base order; the outer list is in canonical
+    A/C/G/T from-base order. Slice — Markov NP Base Generator.
+    ``None`` passes through unchanged so the step can omit the
+    Markov payload entirely when the cartridge's typed NP base
+    spec is uniform / empirical_first_base."""
+    if not rows:
+        return None
+    return tuple(
+        tuple((int(b), float(w)) for b, w in row) for row in rows
+    )
+
+
 def _normalize_lengths(
     lengths: Optional[Iterable[Tuple[int, float]]],
 ) -> Tuple[Tuple[int, float], ...]:

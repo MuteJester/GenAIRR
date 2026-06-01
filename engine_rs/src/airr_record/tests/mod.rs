@@ -16,6 +16,8 @@ fn anchor_record_fixture() -> (RefDataConfig, Simulation) {
         seq: b"TGT".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();
@@ -49,6 +51,8 @@ fn call_projection_fixture() -> (RefDataConfig, Simulation, AlleleId, AlleleId) 
         seq: b"AAACCC".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let v1 = cfg.v_pool.push(Allele {
         name: "IGHV1-1*02".into(),
@@ -56,6 +60,8 @@ fn call_projection_fixture() -> (RefDataConfig, Simulation, AlleleId, AlleleId) 
         seq: b"AAACCC".to_vec(),
         segment: Segment::V,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
 
     let mut sim = Simulation::new();

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{NucHandle, Nucleotide, NucleotidePool, Region, Segment, Sequence};
+use super::{NucHandle, Nucleotide, NucleotidePool, PoolRange, Region, Segment, Sequence};
 
 /// Default initial capacity for `Simulation::new()` pools.
 const DEFAULT_POOL_CAPACITY: usize = 500;
@@ -223,6 +223,29 @@ impl Simulation {
         }
     }
 
+    /// Return a new simulation with the orientation at `segment`
+    /// updated. Mirror of [`Self::with_trim`]; persistent IR contract.
+    ///
+    /// Slice A wiring — `AssembleSegmentPass` does not yet read the
+    /// orientation, so calling this setter is observationally a
+    /// no-op on the assembled output. The setter exists so future
+    /// slices (B onwards) have a stable surface to commit D
+    /// inversion decisions through.
+    pub fn with_allele_orientation(
+        &self,
+        segment: Segment,
+        orientation: crate::assignment::SegmentOrientation,
+    ) -> Self {
+        Self {
+            pool: self.pool.clone(),
+            sequence: self.sequence.clone(),
+            assignments: self.assignments.with_orientation(segment, orientation),
+            segment_calls: self.segment_calls.clone(),
+            dirty_log: self.dirty_log.clone(),
+            mutation_count: self.mutation_count,
+        }
+    }
+
     /// Return a new simulation with `n` inserted at pool position
     /// `at`. The persistent layer adjusts every region's `(start,
     /// end)` for the +1 shift; codon-rail metadata is no longer
@@ -239,6 +262,92 @@ impl Simulation {
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
         }
+    }
+
+    /// Return a new simulation with the **unique** region for
+    /// `segment` structurally replaced by `replacement` bytes.
+    ///
+    /// The pool span the old region occupied is excised; `replacement`
+    /// is spliced in at the same start position. Downstream regions
+    /// shift by `replacement.len() - old_region.len()` via the
+    /// [`PoolRange::after_segment_replacement`] kernel.
+    ///
+    /// Returns `(new_simulation, old_region, new_region)`. The
+    /// caller (`SimulationBuilder::replace_segment`) uses the
+    /// returned regions to compute `bytes_delta` and broadcast the
+    /// matching `SimulationEvent::SegmentReplaced`.
+    ///
+    /// **Pre-conditions:** the sequence holds **exactly one**
+    /// region for `segment`. Panics otherwise — receptor revision
+    /// Slice A is defined for the heavy-chain V-only case where
+    /// this invariant is structural; future slices (clonal
+    /// expansion, repeat alleles) will revisit the API rather than
+    /// loosen the gate here.
+    ///
+    /// The codon-rail recompute happens via
+    /// `Sequence::with_frame_phases_recomputed` inside
+    /// `with_segment_replaced`; consumers that need the translated
+    /// rail compute on demand via [`crate::ir::compute_codon_rail`].
+    #[must_use = "with_segment_replaced returns (Simulation, old Region, new Region); \
+                  all three must be used or destructured."]
+    pub fn with_segment_replaced(
+        &self,
+        segment: Segment,
+        replacement: Vec<Nucleotide>,
+    ) -> (Self, Region, Region) {
+        let mut matches = self
+            .sequence
+            .regions
+            .iter()
+            .filter(|r| r.segment == segment);
+        let old_region = matches
+            .next()
+            .cloned()
+            .unwrap_or_else(|| {
+                panic!(
+                    "Simulation::with_segment_replaced: no region for {segment:?} in sequence with {} region(s)",
+                    self.sequence.regions.len(),
+                )
+            });
+        assert!(
+            matches.next().is_none(),
+            "Simulation::with_segment_replaced: multiple regions for {segment:?}; receptor revision is defined for single-region segments",
+        );
+
+        let old_range = PoolRange::new(old_region.start.index(), old_region.end.index());
+        let new_len = replacement.len() as u32;
+        let new_pool = self.pool.with_range_replaced(old_range, &replacement);
+
+        let new_region = Region::new(
+            segment,
+            NucHandle::new(old_range.start),
+            NucHandle::new(old_range.start + new_len),
+        );
+
+        let new_sequence =
+            self.sequence
+                .with_segment_replaced(segment, old_range, new_region.clone());
+        // The new_region returned to the caller must reflect the
+        // frame-phase recompute that `with_segment_replaced` runs;
+        // fetch the post-recompute region back out so the event
+        // payload matches what's installed in the sequence.
+        let installed_new_region = new_sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == segment)
+            .cloned()
+            .expect("Sequence::with_segment_replaced preserves the segment's region");
+
+        let new_sim = Self {
+            pool: new_pool,
+            sequence: Arc::new(new_sequence),
+            assignments: self.assignments,
+            segment_calls: self.segment_calls.clone(),
+            dirty_log: self.dirty_log.clone(),
+            mutation_count: self.mutation_count,
+        };
+
+        (new_sim, old_region, installed_new_region)
     }
 
     /// Return a new simulation with the nucleotide at pool position

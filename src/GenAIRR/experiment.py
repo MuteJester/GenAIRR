@@ -37,9 +37,18 @@ from ._describe import (
 from ._normalize import (
     _normalize_count,
     _normalize_lengths,
+    _to_immutable_byte_pair_matrix,
+    _to_immutable_byte_pairs,
     _to_immutable_pairs,
 )
-from ._compile import lower_step
+from ._compile import (
+    _extract_invert_d_prob,
+    _extract_paired_end_step,
+    _extract_receptor_revision_prob,
+    _lower_paired_end,
+    _lower_recombine,
+    lower_step,
+)
 from ._compiled import CompiledClonalExperiment, CompiledExperiment
 from ._refdata_resolver import (
     _CONFIG_ALIASES,
@@ -59,7 +68,10 @@ from ._pipeline_ir import (
     _DEFAULT_NP_LENGTHS,
     _ClonalForkStep,
     _CorruptStep,
+    _InvertDStep,
     _MutateStep,
+    _PairedEndStep,
+    _ReceptorRevisionStep,
     _RecombineStep,
 )
 
@@ -75,6 +87,302 @@ class _Unset:
 
 
 _UNSET: _Unset = _Unset()
+
+
+# ──────────────────────────────────────────────────────────────────
+# Per-segment SHM rate validation (slice: segment_rates kwarg on
+# Experiment.mutate). See ``docs/shm_segment_rate_design.md``.
+# ──────────────────────────────────────────────────────────────────
+
+# Canonical bucket order — matches the Rust ``SegmentRateWeights``
+# struct field order so positional plumbing through PyO3 stays
+# straightforward.
+_SEGMENT_RATE_BUCKETS: Tuple[str, ...] = ("V", "D", "J", "NP")
+
+# Default flat-substrate rate vector (1.0 for every bucket). The
+# pipeline-IR ``_MutateStep`` carries this verbatim when the user
+# omits ``segment_rates``; the Rust passes detect the flat-default
+# case and take the existing (pre-slice) fast path so legacy
+# pipelines stay byte-identical.
+_DEFAULT_SEGMENT_RATES: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
+
+
+def _validate_segment_rates(
+    segment_rates: Optional[Dict[str, float]],
+) -> Tuple[float, float, float, float]:
+    """Validate the user's ``segment_rates`` dict and return the
+    normalised ``(v, d, j, np)`` tuple. Pure helper — no DSL state.
+
+    Validation:
+
+    - ``None`` (or omitted) → flat default ``(1.0, 1.0, 1.0, 1.0)``.
+    - Keys must be a subset of ``{"V", "D", "J", "NP"}`` (case-
+      sensitive — matches the DSL spec). Other keys raise
+      ``ValueError`` naming the offending key.
+    - Values must be ``int`` / ``float`` (not bool), finite, and
+      ``>= 0``. Negative / NaN / inf raise ``ValueError``.
+    - Sparse: omitted keys default to ``1.0``.
+    - At least one effective rate must be strictly positive — an
+      all-zero (or all-omitted-then-explicitly-zero) configuration
+      would make the SHM pass a deterministic no-op, which is
+      almost certainly a builder bug. Reject with ``ValueError``.
+    """
+    if segment_rates is None:
+        return _DEFAULT_SEGMENT_RATES
+
+    if not isinstance(segment_rates, dict):
+        raise TypeError(
+            f"segment_rates must be a dict or None, got "
+            f"{type(segment_rates).__name__}"
+        )
+
+    # Reject unknown keys first so a typo surfaces with a clear
+    # message instead of silently defaulting.
+    unknown = sorted(set(segment_rates.keys()) - set(_SEGMENT_RATE_BUCKETS))
+    if unknown:
+        raise ValueError(
+            f"segment_rates: unknown segment key(s) {unknown!r}. "
+            f"Allowed: {list(_SEGMENT_RATE_BUCKETS)!r}. "
+            "Keys are case-sensitive; 'V' / 'D' / 'J' for the V/D/J "
+            "segments and 'NP' for both Np1 and Np2."
+        )
+
+    out_list: List[float] = []
+    for bucket in _SEGMENT_RATE_BUCKETS:
+        if bucket not in segment_rates:
+            out_list.append(1.0)
+            continue
+        value = segment_rates[bucket]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(
+                f"segment_rates[{bucket!r}]: value must be a finite "
+                f"non-negative number, got {type(value).__name__}"
+            )
+        value_f = float(value)
+        # NaN check FIRST — every comparison with NaN is False, so
+        # a `value_f < 0` test wouldn't catch it; that's the same
+        # rationale as the ``invert_d`` / ``rate`` NaN handling.
+        if value_f != value_f:
+            raise ValueError(
+                f"segment_rates[{bucket!r}]: value must be a finite "
+                "number, got NaN"
+            )
+        if value_f < 0.0 or value_f == float("inf") or value_f == float("-inf"):
+            raise ValueError(
+                f"segment_rates[{bucket!r}]: value must be a finite "
+                f"non-negative number, got {value_f}"
+            )
+        out_list.append(value_f)
+
+    if sum(out_list) <= 0.0:
+        raise ValueError(
+            "segment_rates: at least one bucket must have a positive "
+            "rate. The supplied configuration zeroes out every "
+            "biological segment, which would make the SHM pass a "
+            "deterministic no-op."
+        )
+
+    return (out_list[0], out_list[1], out_list[2], out_list[3])
+
+
+# ──────────────────────────────────────────────────────────────────
+# Per-V-subregion SHM rate validation (Slice B —
+# `v_subregion_rates` kwarg on Experiment.mutate). See
+# ``docs/v_subregion_shm_rate_design.md``.
+# ──────────────────────────────────────────────────────────────────
+
+# Canonical label order — matches the Rust ``VSubregionRateWeights``
+# struct field order (FWR1 / CDR1 / FWR2 / CDR2 / FWR3) so
+# positional plumbing through PyO3 stays straightforward.
+_V_SUBREGION_RATE_LABELS: Tuple[str, ...] = ("FWR1", "CDR1", "FWR2", "CDR2", "FWR3")
+
+# Two-letter aliases that expand to a group of canonical labels.
+# Resolution rule (audit §3): aliases expand first, then explicit
+# labels override. So ``{"FWR": 0.5, "FWR2": 2.0}`` resolves to
+# ``{FWR1: 0.5, FWR2: 2.0, FWR3: 0.5, CDR1: 1.0, CDR2: 1.0}``.
+_V_SUBREGION_RATE_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "FWR": ("FWR1", "FWR2", "FWR3"),
+    "CDR": ("CDR1", "CDR2"),
+}
+
+# Default flat-substrate rate vector (1.0 for every label) — same
+# fast-path discipline as ``_DEFAULT_SEGMENT_RATES``.
+_DEFAULT_V_SUBREGION_RATES: Tuple[float, float, float, float, float] = (
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+)
+
+
+def _validate_v_subregion_rates(
+    v_subregion_rates: Optional[Dict[str, float]],
+) -> Tuple[float, float, float, float, float]:
+    """Validate the user's ``v_subregion_rates`` dict and return
+    the normalised ``(FWR1, CDR1, FWR2, CDR2, FWR3)`` tuple.
+    Pure helper — no DSL state.
+
+    Validation rules:
+
+    - ``None`` (or omitted) → flat default
+      ``(1.0, 1.0, 1.0, 1.0, 1.0)``.
+    - Empty dict ``{}`` is treated as ``None`` — same flat default.
+    - Keys must be a subset of the five canonical labels
+      (``FWR1`` / ``CDR1`` / ``FWR2`` / ``CDR2`` / ``FWR3``) plus
+      the two aliases ``FWR`` (expands to FWR1 / FWR2 / FWR3) and
+      ``CDR`` (expands to CDR1 / CDR2). Case-sensitive — matches
+      the V-subregion annotation surface (Slice 1).
+    - Values must be ``int`` / ``float`` (not bool), finite, and
+      ``>= 0``. NaN / inf / bool / negative raise ``ValueError``.
+    - Sparse: omitted labels default to ``1.0``.
+    - Alias expansion happens first, then explicit labels
+      override. So ``{"FWR": 0.5, "FWR2": 2.0}`` → ``FWR1=0.5,
+      FWR2=2.0, FWR3=0.5, CDR1=1.0, CDR2=1.0``.
+    - After expansion, at least one label must be strictly
+      positive — an all-zero vector would zero every V site and
+      is almost certainly a builder bug. Reject with
+      ``ValueError``.
+    """
+    if v_subregion_rates is None:
+        return _DEFAULT_V_SUBREGION_RATES
+
+    if not isinstance(v_subregion_rates, dict):
+        raise TypeError(
+            f"v_subregion_rates must be a dict or None, got "
+            f"{type(v_subregion_rates).__name__}"
+        )
+
+    if not v_subregion_rates:
+        # Empty dict is equivalent to omitting the kwarg.
+        return _DEFAULT_V_SUBREGION_RATES
+
+    accepted_keys = set(_V_SUBREGION_RATE_LABELS) | set(_V_SUBREGION_RATE_ALIASES)
+    unknown = sorted(set(v_subregion_rates.keys()) - accepted_keys)
+    if unknown:
+        raise ValueError(
+            f"v_subregion_rates: unknown label(s) {unknown!r}. "
+            f"Allowed: {list(_V_SUBREGION_RATE_LABELS)!r} plus the "
+            f"aliases {list(_V_SUBREGION_RATE_ALIASES.keys())!r}. "
+            "Labels are case-sensitive; CDR3 / FWR4 are out of "
+            "scope (CDR3 lives in the junction, FWR4 in the J "
+            "segment) — use ``segment_rates`` for those."
+        )
+
+    def _coerce(label_for_error: str, value: object) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(
+                f"v_subregion_rates[{label_for_error!r}]: value must be a "
+                f"finite non-negative number, got {type(value).__name__}"
+            )
+        v = float(value)
+        if v != v:  # NaN
+            raise ValueError(
+                f"v_subregion_rates[{label_for_error!r}]: value must be a "
+                "finite number, got NaN"
+            )
+        if v < 0.0 or v == float("inf") or v == float("-inf"):
+            raise ValueError(
+                f"v_subregion_rates[{label_for_error!r}]: value must be a "
+                f"finite non-negative number, got {v}"
+            )
+        return v
+
+    # Phase 1: alias expansion. Aliases populate their labels first;
+    # phase 2's explicit labels then override.
+    resolved: Dict[str, float] = {}
+    for alias, expanded_labels in _V_SUBREGION_RATE_ALIASES.items():
+        if alias in v_subregion_rates:
+            v = _coerce(alias, v_subregion_rates[alias])
+            for lbl in expanded_labels:
+                resolved[lbl] = v
+
+    # Phase 2: explicit labels override.
+    for lbl in _V_SUBREGION_RATE_LABELS:
+        if lbl in v_subregion_rates:
+            resolved[lbl] = _coerce(lbl, v_subregion_rates[lbl])
+
+    # Fill any remaining label with the flat default.
+    out_list: List[float] = []
+    for lbl in _V_SUBREGION_RATE_LABELS:
+        out_list.append(resolved.get(lbl, 1.0))
+
+    if sum(out_list) <= 0.0:
+        raise ValueError(
+            "v_subregion_rates: at least one label must have a "
+            "positive rate after alias expansion. The supplied "
+            "configuration zeroes every V subregion, which would "
+            "drop every V site out of SHM support."
+        )
+
+    return (out_list[0], out_list[1], out_list[2], out_list[3], out_list[4])
+
+
+# ──────────────────────────────────────────────────────────────────
+# Clonal ordering-guard table (Slice: descendant-phase guards)
+# ──────────────────────────────────────────────────────────────────
+#
+# Every DSL step in this table is **descendant-phase** — it models
+# observation / library-prep / sequencing biology that must be
+# sampled independently per clone member. Pre-fork placement either
+# silently misreports the AIRR field (Bugs C / E / F: trace-sourced
+# fields that don't survive the parent→descendant boundary) or
+# collapses descendant diversity (every clone member shares an
+# identical effect because the pass ran once on the parent IR).
+#
+# :meth:`Experiment.expand_clones` scans the already-appended step
+# list against this table; the first match is rejected with a
+# message naming the offending DSL method and the canonical fix.
+#
+# Each entry is ``(predicate, dsl_method_name)`` where the predicate
+# inspects one step and returns ``True`` if it came from
+# ``dsl_method_name``. Some DSL methods append :class:`_CorruptStep`
+# with different ``kind`` discriminators; others append distinct
+# step types.
+def _descendant_phase_step_classifier(step):
+    """Return the DSL method name a descendant-phase ``step`` came
+    from, or ``None`` if ``step`` is not a descendant-phase step.
+
+    Single source of truth for the unified guard in
+    :meth:`Experiment.expand_clones`. Adding a new descendant-phase
+    DSL method means appending a clause here (and adding the
+    companion spec test in
+    ``tests/test_clonal_descendant_phase_guards.py``).
+    """
+    from ._pipeline_ir import (
+        _CORRUPT_KIND_3PRIME_LOSS,
+        _CORRUPT_KIND_5PRIME_LOSS,
+        _CORRUPT_KIND_INDEL,
+        _CORRUPT_KIND_NS,
+        _CORRUPT_KIND_PCR,
+        _CORRUPT_KIND_QUALITY,
+        _CORRUPT_KIND_REV_COMP,
+        _CorruptStep,
+        _MutateStep,
+        _PairedEndStep,
+    )
+
+    if isinstance(step, _MutateStep):
+        return "mutate"
+    if isinstance(step, _PairedEndStep):
+        return "paired_end"
+    if isinstance(step, _CorruptStep):
+        # Per-kind classification — only the descendant-phase kinds
+        # appear in the table. ``contaminant`` is deliberately
+        # omitted: the DSL slice that added the descendant-phase
+        # ordering guards did not list it, so leave the placement
+        # unconstrained until a follow-up explicitly classifies it.
+        kind_to_method = {
+            _CORRUPT_KIND_PCR: "pcr_amplify",
+            _CORRUPT_KIND_QUALITY: "sequencing_errors",
+            _CORRUPT_KIND_INDEL: "polymerase_indels",
+            _CORRUPT_KIND_5PRIME_LOSS: "end_loss_5prime",
+            _CORRUPT_KIND_3PRIME_LOSS: "end_loss_3prime",
+            _CORRUPT_KIND_NS: "ambiguous_base_calls",
+            _CORRUPT_KIND_REV_COMP: "random_strand_orientation",
+        }
+        return kind_to_method.get(step.kind)
+    return None
 
 
 # Inputs accepted by :meth:`Experiment.restrict_alleles` per segment. ``None``
@@ -113,6 +421,7 @@ class Experiment:
         "_locks",
         "_metadata",
         "_contracts",
+        "_allow_curatable_refdata",
     )
 
     def __init__(
@@ -122,7 +431,16 @@ class Experiment:
     ) -> None:
         self._refdata = refdata
         self._dataconfig = dataconfig
-        self._steps: List[Union[_RecombineStep, _MutateStep, _CorruptStep]] = []
+        self._steps: List[
+            Union[
+                _RecombineStep,
+                _MutateStep,
+                _CorruptStep,
+                _InvertDStep,
+                _ReceptorRevisionStep,
+                _PairedEndStep,
+            ]
+        ] = []
         # Constraint bundles declared via `.productive_only()` etc.
         # Stored as a list so future bundles can compose. Today only
         # the productive bundle is recognized.
@@ -139,6 +457,16 @@ class Experiment:
         # AIRR record (e.g. ``sample_id``, ``donor``,
         # ``repertoire_id``, ``cell_id``). Empty by default.
         self._metadata: Dict[str, Any] = {}
+        # When True, ``compile()`` / ``run()`` / ``run_records()``
+        # runs the refdata gate under the lenient `AllowCuratable`
+        # mode. Fatal issues (empty pool, duplicates, invalid byte,
+        # anchor out of bounds) still reject; Curatable issues (V
+        # anchor not Cys, J anchor unexpected AA, missing anchor)
+        # pass. Production users opt in via
+        # ``.allow_curatable_refdata()`` when sampling from a real
+        # catalogue (bundled mouse_igh / human_tcrb) that includes
+        # pseudogene/ORF alleles.
+        self._allow_curatable_refdata: bool = False
 
     @classmethod
     def on(cls, source: ExperimentInput) -> "Experiment":
@@ -334,16 +662,23 @@ class Experiment:
         )
         return self
 
-    def primer_trim_5prime(
+    def end_loss_5prime(
         self,
         *,
         length: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
     ) -> "Experiment":
         """Append a 5'-end loss corruption step.
 
-        Drops bases from the start of the assembled sequence to model
-        primer-region trimming. ``length`` accepts the same shapes as
-        ``count`` on other corrupt ops:
+        Drops bases from the start of the assembled sequence. The
+        underlying engine pass is `EndLossPass` — this models
+        **observation-stage** read-end / primer-region loss (the
+        AIRR record exposes it as ``end_loss_5_length``, the trace
+        address is ``corrupt.end_loss.5``). It is distinct from
+        recombination-stage trimming (`v_trim_5` etc.), which writes
+        allele-instance metadata rather than deleting pool bytes.
+
+        ``length`` accepts the same shapes as ``count`` on other
+        corrupt ops:
 
         - ``length=10`` — strip exactly 10 bases.
         - ``length=(0, 20)`` — strip a uniform integer in ``[0, 20]``.
@@ -354,6 +689,8 @@ class Experiment:
         larger than the sequence drops the whole pool). The loss is
         permanent for downstream passes — subsequent corruption
         operates on the shorter pool.
+
+        :meth:`primer_trim_5prime` is a backwards-compatible alias.
         """
         pairs = _normalize_count(length)
         self._steps.append(
@@ -366,16 +703,19 @@ class Experiment:
         )
         return self
 
-    def primer_trim_3prime(
+    def end_loss_3prime(
         self,
         *,
         length: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
     ) -> "Experiment":
         """Append a 3'-end loss corruption step.
 
-        Drops bases from the end of the assembled sequence to model
-        read-end degradation. Same ``length`` shapes as
-        :meth:`primer_trim_5prime`.
+        Drops bases from the end of the assembled sequence. Same
+        observation-stage semantics as :meth:`end_loss_5prime`
+        (trace address ``corrupt.end_loss.3``, AIRR field
+        ``end_loss_3_length``). Same ``length`` shapes.
+
+        :meth:`primer_trim_3prime` is a backwards-compatible alias.
         """
         pairs = _normalize_count(length)
         self._steps.append(
@@ -387,6 +727,34 @@ class Experiment:
             )
         )
         return self
+
+    def primer_trim_5prime(
+        self,
+        *,
+        length: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+    ) -> "Experiment":
+        """Backwards-compatible alias for :meth:`end_loss_5prime`.
+
+        The DSL name `primer_trim_5prime` predates the engine's
+        cleaner vocabulary — the same step is now exposed as
+        :meth:`end_loss_5prime`. Behaviour is identical (same trace
+        address ``corrupt.end_loss.5``, same AIRR field
+        ``end_loss_5_length``, byte-identical records for the same
+        seed). New code should prefer the `end_loss_*` form; the
+        alias stays so existing scripts keep working.
+        """
+        return self.end_loss_5prime(length=length)
+
+    def primer_trim_3prime(
+        self,
+        *,
+        length: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
+    ) -> "Experiment":
+        """Backwards-compatible alias for :meth:`end_loss_3prime`.
+
+        See :meth:`primer_trim_5prime` for the rationale.
+        """
+        return self.end_loss_3prime(length=length)
 
     def ambiguous_base_calls(
         self,
@@ -622,6 +990,36 @@ class Experiment:
             raise ValueError(
                 "expand_clones() can only be called once per pipeline"
             )
+        # Unified descendant-phase ordering guard. Scan the appended
+        # step list for any step that came from a descendant-phase
+        # DSL method (see ``_descendant_phase_step_classifier``).
+        # Pre-fork placement of these steps either silently misreports
+        # the AIRR field (trace-sourced fields don't survive the
+        # parent→descendant boundary — Bugs C / E / F) or collapses
+        # descendant diversity (the pass runs once on the parent IR
+        # and every clone member inherits an identical effect).
+        # Either failure mode is a clonal-semantics violation, so
+        # reject at the DSL boundary with a uniform message that
+        # names the offending step and the fix.
+        for step in self._steps:
+            offending_method = _descendant_phase_step_classifier(step)
+            if offending_method is None:
+                continue
+            if offending_method == "mutate":
+                detail = (
+                    "SHM is descendant-specific in GenAIRR's current "
+                    "clonal model"
+                )
+            else:
+                detail = (
+                    "it is descendant-specific and must be sampled "
+                    "independently for each clone member"
+                )
+            raise ValueError(
+                f"{offending_method} must be called after "
+                f"expand_clones(); {detail}. Move "
+                f"{offending_method}(...) after expand_clones(...)."
+            )
         self._steps.append(_ClonalForkStep(n_clones=n_clones, size=per_clone))
         return self
 
@@ -632,6 +1030,8 @@ class Experiment:
         count: Optional[Union[int, Tuple[int, int], Iterable[Tuple[int, float]]]] = None,
         rate: Optional[float] = None,
         s5f_model: str = "hh_s5f",
+        segment_rates: Optional[Dict[str, float]] = None,
+        v_subregion_rates: Optional[Dict[str, float]] = None,
     ) -> "Experiment":
         """Append a somatic-hypermutation step.
 
@@ -709,23 +1109,89 @@ class Experiment:
                     f"rate must be in [0.0, 1.0] (got {rate!r}); rate is a "
                     f"per-base mutation probability, not an absolute count."
                 )
+            seg_rates_tuple = _validate_segment_rates(segment_rates)
+            v_sub_rates_tuple = _validate_v_subregion_rates(v_subregion_rates)
+            self._check_v_subregion_rates_satisfiable(
+                v_subregion_rates, v_sub_rates_tuple
+            )
             self._steps.append(
                 _MutateStep(
                     model=model_lc,
                     s5f_model_name=s5f_model,
                     rate=float(rate),
+                    segment_rates=seg_rates_tuple,
+                    v_subregion_rates=v_sub_rates_tuple,
                 )
             )
             return self
         pairs = _normalize_count(count)
+        seg_rates_tuple = _validate_segment_rates(segment_rates)
+        v_sub_rates_tuple = _validate_v_subregion_rates(v_subregion_rates)
+        self._check_v_subregion_rates_satisfiable(
+            v_subregion_rates, v_sub_rates_tuple
+        )
         self._steps.append(
             _MutateStep(
                 model=model_lc,
                 s5f_model_name=s5f_model,
                 count_pairs=pairs,
+                segment_rates=seg_rates_tuple,
+                v_subregion_rates=v_sub_rates_tuple,
             )
         )
         return self
+
+    def _check_v_subregion_rates_satisfiable(
+        self,
+        raw_rates: Optional[Dict[str, float]],
+        tuple_rates: Tuple[float, float, float, float, float],
+    ) -> None:
+        """Reject a non-default ``v_subregion_rates`` configuration
+        when the bound cartridge has zero annotated V alleles.
+        Audit §4: a non-default rate vector against a cartridge
+        without subregion annotations is unsatisfiable — no V site
+        would ever see a subregion factor, and the user is
+        almost certainly building against the wrong cartridge or
+        forgot to enable the annotation surface.
+
+        Default rates (omitted kwarg, empty dict, or explicit
+        all-ones expansion) skip the check — those are no-ops and
+        compose cleanly with any cartridge.
+        """
+        if raw_rates is None or tuple_rates == _DEFAULT_V_SUBREGION_RATES:
+            return
+        annotated = 0
+        v_total = self._refdata.v_pool_size()
+        for v_id in range(v_total):
+            if self._refdata.v_allele(v_id).subregions:
+                annotated += 1
+                # Early exit — we only need at least one annotated.
+                return
+        # Zero annotated V alleles: the user's rates can never bite.
+        raise ValueError(
+            "mutate(): v_subregion_rates was supplied but the bound "
+            "cartridge carries no V-subregion annotations on any V "
+            "allele (annotated_v_count=0 / "
+            f"total_v_count={v_total}). The rate vector would be a "
+            "deterministic no-op — almost certainly a builder bug. "
+            "Either drop v_subregion_rates or use a cartridge with "
+            "IMGT-gapped V sequences (the bundled human IGH / IGK / "
+            "IGL OGRDB cartridges derive subregions automatically; "
+            "see docs/v_region_substructure_audit.md)."
+        )
+
+    def _has_clonal_fork(self) -> bool:
+        """Whether :meth:`expand_clones` has already been appended.
+
+        Used by the DSL ordering guards on :meth:`invert_d`,
+        :meth:`receptor_revision`, and :meth:`expand_clones` itself.
+        Each step lowers into either the pre-fork (per-clone) or
+        the post-fork (per-descendant) plan; misordered calls used
+        to silently lower into the wrong half and produce records
+        with empty / default fields. The guards reject those
+        configurations at the DSL boundary.
+        """
+        return any(isinstance(s, _ClonalForkStep) for s in self._steps)
 
     def _is_tcr_refdata(self) -> bool:
         """Detect whether the bound refdata is a TCR locus.
@@ -960,6 +1426,60 @@ class Experiment:
         else:
             trim_v_3 = trim_d_5 = trim_d_3 = trim_j_5 = None
 
+        # Cartridge-owned NP base distributions (Slice — Typed NP
+        # base model). Resolution lives in
+        # ``_dataconfig_extract.extract_recombine_defaults``:
+        # ``typed reference_models.np_bases → uniform`` (the
+        # legacy auto-lift of ``NP_first_bases`` / ``NP_transitions``
+        # is deliberately deferred). ``None`` here means the
+        # pre-slice ``UniformBase`` applies.
+        if defaults is not None:
+            np1_base_pairs = _to_immutable_byte_pairs(defaults.get("np1_bases"))
+            np2_base_pairs = _to_immutable_byte_pairs(defaults.get("np2_bases"))
+            np1_markov_transitions = _to_immutable_byte_pair_matrix(
+                defaults.get("np1_markov_transitions")
+            )
+            np2_markov_transitions = _to_immutable_byte_pair_matrix(
+                defaults.get("np2_markov_transitions")
+            )
+            p_v_3_lengths = _to_immutable_pairs(
+                defaults.get("p_v_3_lengths")
+            )
+            p_d_5_lengths = _to_immutable_pairs(
+                defaults.get("p_d_5_lengths")
+            )
+            p_d_3_lengths = _to_immutable_pairs(
+                defaults.get("p_d_3_lengths")
+            )
+            p_j_5_lengths = _to_immutable_pairs(
+                defaults.get("p_j_5_lengths")
+            )
+        else:
+            np1_base_pairs = None
+            np2_base_pairs = None
+            np1_markov_transitions = None
+            np2_markov_transitions = None
+            p_v_3_lengths = None
+            p_d_5_lengths = None
+            p_d_3_lengths = None
+            p_j_5_lengths = None
+
+        # Precedence (Slice — Allele Usage Estimation v1):
+        #
+        #   1. explicit `*_allele_weights=` kwarg
+        #   2. cartridge `reference_models.allele_usage`
+        #   3. uniform (legacy default)
+        #
+        # The kwarg path stays load-bearing for ad-hoc bias —
+        # only when the kwarg is omitted do we fall through to
+        # the typed cartridge plane (or uniform). Legacy
+        # `gene_use_dict` is NOT consulted.
+        if v_allele_weights is None and defaults is not None:
+            v_allele_weights = defaults.get("allele_usage_v")
+        if d_allele_weights is None and defaults is not None:
+            d_allele_weights = defaults.get("allele_usage_d")
+        if j_allele_weights is None and defaults is not None:
+            j_allele_weights = defaults.get("allele_usage_j")
         weights_v = self._resolve_allele_weights("V", v_allele_weights)
         weights_d = self._resolve_allele_weights("D", d_allele_weights)
         weights_j = self._resolve_allele_weights("J", j_allele_weights)
@@ -974,6 +1494,14 @@ class Experiment:
             weights_v=weights_v,
             weights_d=weights_d,
             weights_j=weights_j,
+            np1_base_pairs=np1_base_pairs,
+            np2_base_pairs=np2_base_pairs,
+            np1_markov_transitions=np1_markov_transitions,
+            np2_markov_transitions=np2_markov_transitions,
+            p_v_3_lengths=p_v_3_lengths,
+            p_d_5_lengths=p_d_5_lengths,
+            p_d_3_lengths=p_d_3_lengths,
+            p_j_5_lengths=p_j_5_lengths,
         )
         self._steps.append(step)
         return self
@@ -1070,6 +1598,315 @@ class Experiment:
             trim_overridden=True,
         )
         self._steps[rec_idx] = new_step
+        return self
+
+    def invert_d(self, *, prob: float = 0.05) -> "Experiment":
+        """Append a D-segment inversion step.
+
+        Models V(D)J inversion: with probability ``prob`` the sampled
+        D allele is committed in reverse-complement orientation
+        instead of forward. Biologically, the RSS heptamers around D
+        can pair head-to-head and the D segment flips before joining;
+        prevalence is low (~1–5 %) but real.
+
+        Engine path: a Bool is recorded under
+        ``sample_allele.d.inverted`` and the
+        :class:`~GenAIRR._engine.InvertDPass` commits
+        ``ReverseComplement`` on the D :class:`AlleleInstance`
+        between sampling and assembly. The
+        :class:`~GenAIRR._engine.AssembleSegmentPass`(D) (Slice B)
+        consumes the orientation flag and emits the reverse-
+        complemented D slice into the pool. Trace replay re-fires
+        the same orientation decision deterministically.
+
+        **VDJ chains only.** VJ chains have no D pool; calling this
+        method on a VJ experiment raises ``ValueError``.
+
+        **At most once per experiment.** Calling :meth:`invert_d`
+        twice raises ``ValueError`` — v1 picks a single per-pipeline
+        inversion probability rather than supporting last-one-wins
+        semantics (which would be silent for an over-eager builder).
+
+        **Position in the chain.** Append after :meth:`recombine`
+        (and any :meth:`trim` override). Calling :meth:`invert_d`
+        before :meth:`recombine` raises ``ValueError`` at compile
+        time — the lowering needs the recombine sequence already
+        materialised in the engine plan so the explicit
+        ``before(invert_d, assemble.d)`` schedule edge can fire.
+
+        The DSL does **not** expose the per-record orientation in the
+        AIRR record yet — that's the Slice E follow-up. End-to-end
+        observability today is via the trace
+        (``sample_allele.d.inverted``) and the pool bytes.
+
+        Returns ``self`` so the call chains fluently.
+        """
+        if self.chain_type != "vdj":
+            raise ValueError(
+                f"invert_d is only valid for VDJ chains (current chain_type={self.chain_type!r})"
+            )
+        if any(isinstance(s, _InvertDStep) for s in self._steps):
+            raise ValueError(
+                "invert_d already configured on this experiment; v1 accepts at "
+                "most one inversion step per pipeline. Build a fresh Experiment "
+                "if you need a different probability."
+            )
+        # Ordering guard — D inversion is a recombination-time
+        # decision and must be inherited by every clone descendant.
+        # When placed post-fork, the lowering silently drops the
+        # inversion probability (no recombine step in the post-fork
+        # half to consume it), producing records with d_inverted=False
+        # even at prob=1.0. Reject at the DSL boundary instead.
+        if self._has_clonal_fork():
+            raise ValueError(
+                "invert_d must be called before expand_clones(); D "
+                "inversion is a recombination-time decision and must "
+                "be inherited by all clone descendants. Move the "
+                "invert_d(...) call before expand_clones(...)."
+            )
+        if not isinstance(prob, (int, float)):
+            raise ValueError(
+                f"invert_d prob must be a number in [0.0, 1.0], got {type(prob).__name__}"
+            )
+        prob_f = float(prob)
+        # NaN check FIRST — NaN fails every `<=` comparison silently
+        # (`(0.0 <= nan)` is False), which would otherwise surface as
+        # a misleading "out of [0.0, 1.0]" message. Explicit NaN
+        # rejection gives the user the specific reason.
+        if prob_f != prob_f:
+            raise ValueError("invert_d prob must be a number, got NaN")
+        if not (0.0 <= prob_f <= 1.0):
+            raise ValueError(
+                f"invert_d prob must be in [0.0, 1.0], got {prob_f}"
+            )
+        self._steps.append(_InvertDStep(prob=prob_f))
+        return self
+
+    def receptor_revision(self, *, prob: float = 0.05) -> "Experiment":
+        """Append a receptor-revision step.
+
+        Models post-recombination V-segment replacement: with
+        probability ``prob`` the V slot is reassigned to a different
+        germline V allele and the V slice in the pool is rewritten.
+        Biologically, receptor revision is a B-cell tolerance
+        mechanism that lets a B cell escape autoreactivity by
+        replacing its V segment via secondary VDJ-recombination-like
+        rearrangement on the already-assembled receptor.
+
+        Engine path: a Bool is recorded under
+        ``receptor_revision.applied`` for every simulation. On
+        ``true``, the
+        :class:`~GenAIRR._engine.ReceptorRevisionPass` additionally
+        records the replacement allele id at
+        ``receptor_revision.v_allele`` and the derived 3' trim at
+        ``receptor_revision.v_trim_3``, then commits
+        ``AssignmentChanged`` + ``TrimChanged`` + ``SegmentReplaced``
+        against V through a single
+        :class:`~GenAIRR._engine.SimulationBuilder`. Slice C's
+        same-length retained constraint
+        (``allele.len() - trim_3 == old_v_len``, 5' trim fixed at 0)
+        keeps downstream pool positions stable; the
+        :class:`~GenAIRR._engine.LiveCallRefreshHook` (Slice B)
+        reacts to ``SegmentReplaced`` with an AllStructural-
+        equivalent V/D/J re-walk.
+
+        **VDJ chains only.** Receptor revision is heavy-chain v1;
+        calling this method on a VJ experiment raises
+        ``ValueError``.
+
+        **At most once per experiment.** Calling
+        :meth:`receptor_revision` twice raises ``ValueError`` —
+        last-one-wins semantics would silently override an
+        over-eager builder.
+
+        **Position in the chain.** Appended after :meth:`recombine`;
+        the lowering inlines the engine ``push_receptor_revision``
+        call immediately after ``push_assemble("J")`` so the pass
+        sees the fully-assembled V/D/J/NP pool. Subsequent
+        :meth:`mutate` / corruption passes lower after this step in
+        the plan, giving the canonical "recombine → revise →
+        mutate/corrupt" order the design doc §2 requires.
+
+        The DSL does **not** expose ``receptor_revision_applied``
+        or ``original_v_call`` on the AIRR record yet — those are
+        the Slice E follow-up. End-to-end observability today is
+        via the trace (the three
+        ``receptor_revision.*`` records above) and the post-event
+        pool bytes.
+
+        Returns ``self`` so the call chains fluently.
+        """
+        if self.chain_type != "vdj":
+            raise ValueError(
+                "receptor_revision is only valid for VDJ chains "
+                f"(current chain_type={self.chain_type!r})"
+            )
+        if any(isinstance(s, _ReceptorRevisionStep) for s in self._steps):
+            raise ValueError(
+                "receptor_revision already configured on this experiment; "
+                "v1 accepts at most one revision step per pipeline. Build "
+                "a fresh Experiment if you need a different probability."
+            )
+        # Ordering guard — receptor revision is a recombination/
+        # ancestor-time decision and must be inherited by every clone
+        # descendant. When placed post-fork, the lowering silently
+        # drops the revision probability (no recombine step in the
+        # post-fork half to consume it), producing records with
+        # receptor_revision_applied=False and empty original_v_call
+        # even at prob=1.0. Reject at the DSL boundary instead.
+        if self._has_clonal_fork():
+            raise ValueError(
+                "receptor_revision must be called before "
+                "expand_clones(); receptor revision is a "
+                "recombination-time decision and must be inherited by "
+                "all clone descendants. Move the "
+                "receptor_revision(...) call before expand_clones(...)."
+            )
+        if not isinstance(prob, (int, float)):
+            raise ValueError(
+                "receptor_revision prob must be a number in [0.0, 1.0], "
+                f"got {type(prob).__name__}"
+            )
+        prob_f = float(prob)
+        # NaN first — see the matching `invert_d` rationale.
+        if prob_f != prob_f:
+            raise ValueError("receptor_revision prob must be a number, got NaN")
+        if not (0.0 <= prob_f <= 1.0):
+            raise ValueError(
+                f"receptor_revision prob must be in [0.0, 1.0], got {prob_f}"
+            )
+        self._steps.append(_ReceptorRevisionStep(prob=prob_f))
+        return self
+
+    def paired_end(
+        self,
+        *,
+        r1_length,
+        r2_length=None,
+        insert_size,
+    ) -> "Experiment":
+        """Append a paired-end / read-layout step.
+
+        Models the Illumina paired-end read layout: each fragment
+        produces R1 (forward from the 5' adapter) and R2
+        (reverse-complemented from the 3' adapter) windows over the
+        final projected molecule, plus an *insert size* that locates
+        R2's 3' end. The DSL exposes three integer distributions:
+
+        - ``r1_length`` — required.
+        - ``r2_length`` — defaults to ``r1_length`` when ``None``.
+          Many Illumina libraries do run asymmetric (R2 quality
+          drops faster); the explicit shape lets callers opt in.
+        - ``insert_size`` — required.
+
+        Each accepts the same three shapes the rest of the DSL
+        already uses for length-like distributions:
+
+        - ``int`` — fixed value.
+        - ``(low, high)`` — uniform integer in the closed
+          interval ``[low, high]``.
+        - ``[(value, weight), …]`` — explicit empirical
+          distribution.
+
+        Engine path: a trace-only
+        :class:`~GenAIRR._engine.PairedEndSamplingPass` records
+        three Ints at ``paired_end.r1_length`` /
+        ``paired_end.r2_length`` / ``paired_end.insert_size``;
+        the AIRR builder reads them back at projection time and
+        populates the eight ``read_layout`` / ``r1_sequence`` /
+        ``r2_sequence`` / ``r1_start`` / ``r1_end`` / ``r2_start`` /
+        ``r2_end`` / ``insert_size`` fields via the Slice B
+        projection kernel. ``rec.sequence`` is the only
+        coordinate space — end-loss and rev-comp projections have
+        already finalised the molecule by the time paired-end
+        windows are drawn (design doc §6 / §7).
+
+        **Both VDJ and VJ chains supported.** Paired-end is a
+        sequencing-stage observable, not a biology mechanism;
+        it makes sense on every chain.
+
+        **At most once per experiment.** Calling
+        :meth:`paired_end` twice raises ``ValueError`` —
+        last-one-wins semantics would silently override an
+        over-eager builder.
+
+        **Position in the chain.** The compile pre-pass extracts
+        the step and pushes the engine pass at the **end** of the
+        plan, after every IR-mutating / corruption / orientation
+        step. Even though the pass is trace-only, recording the
+        choices last keeps the trace order aligned with the
+        biological/readout order (recombine → mutation →
+        corruption → end-loss → paired-end).
+
+        Returns ``self`` so the call chains fluently.
+        """
+        if any(isinstance(s, _PairedEndStep) for s in self._steps):
+            raise ValueError(
+                "paired_end already configured on this experiment; "
+                "v1 accepts at most one paired-end step per pipeline. "
+                "Build a fresh Experiment if you need a different "
+                "layout."
+            )
+
+        # Resolve default r2 → r1 BEFORE normalization so the
+        # downstream check pins both at the same source shape.
+        if r2_length is None:
+            r2_length = r1_length
+
+        r1_pairs = _normalize_count(r1_length)
+        r2_pairs = _normalize_count(r2_length)
+        insert_pairs = _normalize_count(insert_size)
+
+        # r1 / r2 lengths must be strictly positive. `_normalize_count`
+        # already rejects negatives but allows 0; the projection
+        # kernel needs > 0, so surface the violation at the DSL
+        # boundary with a clearer message.
+        for value, _w in r1_pairs:
+            if value <= 0:
+                raise ValueError(
+                    f"paired_end r1_length must be positive, got {value}"
+                )
+        for value, _w in r2_pairs:
+            if value <= 0:
+                raise ValueError(
+                    f"paired_end r2_length must be positive, got {value}"
+                )
+        # `_normalize_count` already enforces insert_size >= 0;
+        # the projection kernel enforces the same.
+
+        # Fixed-value geometry checks. When r1/r2/insert are each
+        # single-value distributions we know the exact values the
+        # pass will emit, so reject `r1 > insert` / `r2 > insert`
+        # here rather than waiting for the engine's per-sample
+        # `InvalidDistributionOutput`. Distribution / range cases
+        # may sample valid combinations, so we defer those to the
+        # engine.
+        if len(r1_pairs) == 1 and len(insert_pairs) == 1:
+            r1_value = r1_pairs[0][0]
+            insert_value = insert_pairs[0][0]
+            if r1_value > insert_value:
+                raise ValueError(
+                    f"paired_end r1_length ({r1_value}) > insert_size "
+                    f"({insert_value}); the R1 window would run past "
+                    f"the fragment 3' end."
+                )
+        if len(r2_pairs) == 1 and len(insert_pairs) == 1:
+            r2_value = r2_pairs[0][0]
+            insert_value = insert_pairs[0][0]
+            if r2_value > insert_value:
+                raise ValueError(
+                    f"paired_end r2_length ({r2_value}) > insert_size "
+                    f"({insert_value}); the R2 window would run past "
+                    f"the fragment 3' end."
+                )
+
+        self._steps.append(
+            _PairedEndStep(
+                r1_length=r1_pairs,
+                r2_length=r2_pairs,
+                insert_size=insert_pairs,
+            )
+        )
         return self
 
     def _resolve_allele_weights(
@@ -1180,7 +2017,106 @@ class Experiment:
                 return tuple(empirical)
         return tuple(_DEFAULT_NP_LENGTHS)
 
-    def compile(self):
+    def curate_refdata(
+        self,
+        policy: str,
+        *,
+        allowed=None,
+        keep_unannotated: bool = True,
+    ) -> "Experiment":
+        """**Curation** — select which subset of the catalogue
+        participates in simulation. Replaces this experiment's
+        reference cartridge with a curated version.
+
+        In the cartridge model, curation is distinct from validation
+        and from the catalogue itself:
+
+        - **validation** describes what the catalogue contains;
+        - **curation** decides which alleles participate;
+        - **simulation** runs against the curated cartridge.
+
+        ``policy`` is one of:
+
+        - ``"raw"`` — identity policy; no-op (kept for symmetry).
+        - ``"functional_anchors_only"`` — drop V and J alleles whose
+          anchor doesn't satisfy the active anchor rule (missing
+          anchor, codon out of bounds, or codon AA outside the
+          rule's ``expected_amino_acids``). D and C pools pass
+          through unchanged.
+        - ``"functional_status"`` — filter V/D/J pools by IMGT
+          functional status. ``allowed`` is the list of statuses
+          to keep (default ``["functional"]``); accepted strings
+          are ``"functional"``, ``"orf"``, ``"pseudogene"``, and
+          ``"unknown"`` (case-insensitive, ``"F"`` / ``"P"``
+          aliases also work). ``keep_unannotated`` (default
+          ``True``) controls whether alleles with no annotation
+          survive — bundled ``.pkl`` cartridges currently leave
+          status unannotated, so the default preserves backward
+          compatibility. C pool passes through unchanged.
+
+        Use this when the catalogue (e.g. bundled ``mouse_igh`` or
+        ``human_tcrb``) includes pseudogene/ORF alleles you'd rather
+        exclude than permit at runtime via
+        :meth:`allow_curatable_refdata`. Curation is the
+        professional model; ``allow_curatable_refdata`` is the
+        broader runtime opt-in for sampling the raw catalogue
+        as-is.
+
+        Curation cannot fix structural problems — duplicate allele
+        names, invalid sequence bytes, and locus/chain-type
+        mismatches still surface from the compile-time validator
+        regardless of the curated cartridge state. If curation
+        empties a required pool, ``compile()`` fails with
+        ``EmptyRequiredPool``.
+
+        The curated cartridge's ``identity.source`` is tagged
+        ``|curated:<policy>`` so trace files and content hashes
+        distinguish raw from curated artefacts. Returns ``self`` so
+        the call chains fluently. See ``docs/reference_cartridge.md``.
+        """
+        kwargs = {}
+        if allowed is not None:
+            kwargs["allowed"] = list(allowed)
+        if policy == "functional_status":
+            kwargs["keep_unannotated"] = bool(keep_unannotated)
+        self._refdata = self._refdata.curated(policy, **kwargs)
+        return self
+
+    def allow_curatable_refdata(self, enabled: bool = True) -> "Experiment":
+        """Opt in to the lenient `AllowCuratable` refdata validation
+        mode for subsequent ``compile`` / ``run`` / ``run_records``
+        calls. Returns ``self`` so the call chains fluently.
+
+        Sits alongside :meth:`curate_refdata` as the cartridge's two
+        ways to handle pseudogene-bearing catalogues:
+
+        - ``curate_refdata("functional_anchors_only")`` **removes**
+          the non-canonical alleles. Strict validation then passes
+          because the curated catalogue is clean. This is the
+          professional model — the cartridge identifies which
+          alleles actually participate.
+        - ``allow_curatable_refdata()`` **keeps** the catalogue
+          as-is and relaxes the validator. Strict validation passes
+          Curatable issues (pseudogene-shape anchor anomalies) but
+          still rejects Fatal ones (empty pools, duplicates, invalid
+          bytes, anchor out of bounds, locus/chain mismatch).
+
+        Fatal issues are never opt-outable. Curatable issues — V
+        anchor codon not Cys, J anchor codon outside the locus's
+        expected set, missing V/J anchor — reflect pseudogene/ORF
+        entries in real reference catalogues (the bundled
+        ``mouse_igh`` and ``human_tcrb`` data both contain them).
+
+        Recommended progression: start strict; if your catalogue
+        contains pseudogenes you want to *exclude*, use
+        :meth:`curate_refdata`; if you want to *sample from* them
+        explicitly, use this method. See
+        ``docs/reference_cartridge.md``.
+        """
+        self._allow_curatable_refdata = bool(enabled)
+        return self
+
+    def compile(self, *, allow_curatable_refdata: Optional[bool] = None):
         """Compile the recorded steps into a reusable
         :class:`CompiledExperiment` (or :class:`CompiledClonalExperiment`
         when the pipeline contains a :meth:`expand_clones`
@@ -1193,7 +2129,19 @@ class Experiment:
         bundle methods) are baked into the compiled simulator at this
         step; they're not runtime knobs. To run without constraints,
         omit the constraint methods from the chain.
+
+        ``allow_curatable_refdata`` selects the refdata validation
+        mode. ``None`` (default) inherits the instance flag set by
+        :meth:`allow_curatable_refdata`; an explicit ``True`` /
+        ``False`` overrides per-call. ``False`` runs the gate in
+        strict mode — every issue rejects compile with a
+        :class:`ValueError`. ``True`` runs the lenient mode — Fatal
+        issues (empty pool, duplicates, invalid byte, anchor out of
+        bounds) still reject, but Curatable issues (pseudogene-shape
+        anchor anomalies) pass.
         """
+        if allow_curatable_refdata is None:
+            allow_curatable_refdata = self._allow_curatable_refdata
         from dataclasses import replace as _replace
 
         # On raw RefDataConfig with default-on trim, warn at compile
@@ -1238,7 +2186,11 @@ class Experiment:
             pre_steps = self._steps[:fork_idx]
             post_steps = self._steps[fork_idx + 1 :]
             pre_simulator = self._build_simulator(
-                pre_steps, contracts, any_lock, replace_fn=_replace
+                pre_steps,
+                contracts,
+                any_lock,
+                replace_fn=_replace,
+                allow_curatable_refdata=allow_curatable_refdata,
             )
             # The post-fork plan inherits the parent's V/D/J/NP
             # backbone (recombination already happened in the
@@ -1258,7 +2210,11 @@ class Experiment:
             # enforce no-stop-codon-in-junction and anchor-preserved
             # for every substitution and indel in the post-fork pipeline.
             post_simulator = self._build_simulator(
-                post_steps, contracts, any_lock=False, replace_fn=_replace
+                post_steps,
+                contracts,
+                any_lock=False,
+                replace_fn=_replace,
+                allow_curatable_refdata=allow_curatable_refdata,
             )
             return CompiledClonalExperiment(
                 pre_simulator,
@@ -1272,7 +2228,11 @@ class Experiment:
             )
 
         simulator = self._build_simulator(
-            self._steps, contracts, any_lock, replace_fn=_replace
+            self._steps,
+            contracts,
+            any_lock,
+            replace_fn=_replace,
+            allow_curatable_refdata=allow_curatable_refdata,
         )
         return CompiledExperiment(
             simulator,
@@ -1289,11 +2249,37 @@ class Experiment:
         any_lock: bool,
         *,
         replace_fn,
+        allow_curatable_refdata: bool = False,
     ):
         """Compile a list of steps into a `GenAIRR._engine.CompiledSimulator`.
         Lifted out of `compile()` so the clonal-fork branch can build
         two simulators from sub-step-lists with a shared body."""
         plan = _engine.PassPlan()
+        # Pull the (at-most-one) `_InvertDStep` out of the step
+        # sequence and thread its probability into the recombine
+        # lowering directly. Inlining the InvertDPass push between
+        # `push_generate_np("NP1", ...)` and `push_assemble("D")`
+        # (see `_lower_recombine`) keeps the canonical V-NP1-D-NP2-J
+        # pool layout intact; a separate `_InvertDStep` lowering
+        # combined with `Schedule::before(invert_d, assemble.d)`
+        # would re-promote the pass past `assemble.j`, swapping D
+        # and J in the pool. See `_extract_invert_d_prob` for the
+        # full rationale.
+        invert_d_prob, steps = _extract_invert_d_prob(steps)
+        # Same inline-into-recombine-lowering pattern as
+        # _extract_invert_d_prob: pulling the receptor-revision step
+        # out here lets the lowering push it at the exact slot
+        # between `assemble.j` and any subsequent mutate/corrupt
+        # passes. A standalone lower path would either need a new
+        # schedule edge or place the pass at the end of the plan
+        # (after corruption), both of which break the design doc §2
+        # ordering.
+        receptor_revision_prob, steps = _extract_receptor_revision_prob(steps)
+        # Pull out the (at-most-one) paired-end step too. It must
+        # land at the END of the plan, not inline with recombine —
+        # see `_extract_paired_end_step` for the rationale on
+        # placement vs. trace order.
+        paired_end_step, steps = _extract_paired_end_step(steps)
         for step in steps:
             # Inject any allele-locks set via ``.restrict_alleles(...)`` into the
             # recombine step at compile time. Other step types ignore
@@ -1305,8 +2291,27 @@ class Experiment:
                     locks_d=self._locks["D"],
                     locks_j=self._locks["J"],
                 )
-            lower_step(step, plan, self._refdata)
-        return plan.compile(refdata=self._refdata, respect=contracts)
+            if isinstance(step, _RecombineStep):
+                _lower_recombine(
+                    step,
+                    plan,
+                    self._refdata,
+                    invert_d_prob=invert_d_prob,
+                    receptor_revision_prob=receptor_revision_prob,
+                )
+            else:
+                lower_step(step, plan, self._refdata)
+        # Paired-end is sequencing-stage / readout-stage: lower
+        # it AFTER every biology + corruption pass so the trace
+        # records land last. See `_extract_paired_end_step` for
+        # the full rationale.
+        if paired_end_step is not None:
+            _lower_paired_end(paired_end_step, plan)
+        return plan.compile(
+            refdata=self._refdata,
+            respect=contracts,
+            allow_curatable_refdata=allow_curatable_refdata,
+        )
 
     def run_records(
         self,
@@ -1315,6 +2320,8 @@ class Experiment:
         seed: int = 0,
         strict: bool = False,
         expose_provenance: bool = False,
+        allow_curatable_refdata: Optional[bool] = None,
+        validate_records: bool = False,
     ) -> "SimulationResult":
         """Compile and run, then return the batch as a
         :class:`SimulationResult` ready for ``.to_csv`` / ``.to_fasta``
@@ -1340,16 +2347,32 @@ class Experiment:
         replays cleanly even with ``strict=True``. See
         ``docs/productive_failure_mode_audit.md`` §5.
 
+        ``validate_records=True`` runs
+        :meth:`SimulationResult.validate_records` on the freshly
+        built batch before returning. If any record fails the
+        postcondition validator the call raises
+        :class:`GenAIRR._validation.RecordValidationFailedError`
+        (a :class:`RuntimeError` subclass) carrying a
+        machine-greppable summary of the failures. The check costs
+        roughly one outcome-side re-derivation per record, so it
+        defaults to ``False``; flip it on in CI or when chasing a
+        suspected projection bug. The validator runs **before**
+        any ``with_metadata`` stamps are applied, matching the
+        order :meth:`SimulationResult.validate_records` would see
+        on a separate post-hoc call (metadata columns are
+        per-batch annotations, not engine-derived fields).
+
         Returns a :class:`SimulationResult`; clonal records carry
         an integer ``clone_id`` field per row.
         """
-        compiled = self.compile()
+        compiled = self.compile(allow_curatable_refdata=allow_curatable_refdata)
         if isinstance(compiled, CompiledClonalExperiment):
             result = compiled.run_records(
                 n=n,
                 seed=seed,
                 strict=strict,
                 expose_provenance=expose_provenance,
+                validate_records=validate_records,
             )
         else:
             result = compiled.run_records(
@@ -1357,6 +2380,7 @@ class Experiment:
                 seed=seed,
                 strict=strict,
                 expose_provenance=expose_provenance,
+                validate_records=validate_records,
             )
         if self._metadata:
             for rec in result.records:
@@ -1370,6 +2394,7 @@ class Experiment:
         n: Optional[int] = None,
         seed: int = 0,
         strict: bool = False,
+        allow_curatable_refdata: Optional[bool] = None,
     ) -> List["_engine.Outcome"]:
         """Compile and run this experiment ``n`` times.
 
@@ -1404,8 +2429,19 @@ class Experiment:
         trace replays cleanly even with ``strict=True``. To re-execute
         a trace under strict-fresh semantics, call
         ``simulator.run(seed=<original_seed>, strict=True)`` instead.
+
+        **Output-correctness validation is on** :meth:`run_records`
+        **only.** This method returns raw ``Outcome`` objects, which
+        have no projected AIRR record to validate; pass
+        ``validate_records=True`` to :meth:`run_records` to opt into
+        the post-build check (which raises
+        :class:`GenAIRR._validation.RecordValidationFailedError` on
+        any failure). For an outcome-by-outcome post-hoc check
+        without re-running, build a :class:`SimulationResult` via
+        :meth:`SimulationResult.from_outcomes` and call
+        :meth:`SimulationResult.validate_records` on it.
         """
-        compiled = self.compile()
+        compiled = self.compile(allow_curatable_refdata=allow_curatable_refdata)
         if isinstance(compiled, CompiledClonalExperiment):
             return compiled.run(n=n, seed=seed, strict=strict)
         return compiled.run(n=1 if n is None else n, seed=seed, strict=strict)

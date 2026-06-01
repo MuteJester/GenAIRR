@@ -35,7 +35,8 @@
 //!   on top of these primitives, not part of the scoring model.
 
 use super::bitset::AlleleBitSet;
-use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
+use crate::assignment::SegmentOrientation;
+use crate::ir::{complement_base, NucHandle, Nucleotide, Region, Segment, Simulation};
 use crate::refdata::{Allele, AlleleId, RefDataConfig};
 
 /// Classification of a single observed byte.
@@ -61,6 +62,55 @@ pub fn classify_base(b: u8) -> BaseKind {
         b'N' => BaseKind::Wildcard,
         _ => BaseKind::Invalid,
     }
+}
+
+/// Transform an observed pool byte into the byte the orientation-
+/// agnostic match rule should compare against the allele's germline.
+///
+/// For [`SegmentOrientation::Forward`]: identity — the observed byte
+/// is already in the same orientation as the allele's reference.
+///
+/// For [`SegmentOrientation::ReverseComplement`]: pre-complement.
+/// The assembly pass emits inverted-D bytes as
+/// `complement(allele[allele_pos])` while keeping the
+/// `germline_pos` pointing at the original allele coordinate.
+/// Complementing the observed byte once at the comparison boundary
+/// recovers the original allele byte, so the existing match rule
+/// (and the inverted index keyed on canonical germline bytes) works
+/// against inverted segments without any duplicate data structure.
+///
+/// `N` / `n` / invalid bytes pass through unchanged: complementing
+/// them does not produce a more informative value, and the
+/// downstream `classify_base` rule already handles wildcards.
+#[inline]
+pub fn observed_in_germline_orientation(observed: u8, orientation: SegmentOrientation) -> u8 {
+    match orientation {
+        SegmentOrientation::Forward => observed,
+        SegmentOrientation::ReverseComplement => complement_base(observed),
+    }
+}
+
+/// Orientation-aware variant of [`matches_observed`].
+///
+/// For [`SegmentOrientation::Forward`] the behaviour is identical
+/// to [`matches_observed`].
+///
+/// For [`SegmentOrientation::ReverseComplement`] the comparison is
+/// performed against `complement_base(observed)` so the rule
+/// matches inverted-D evidence: the assembled pool byte at
+/// `germline_pos = allele_pos` is the Watson-Crick complement of
+/// `allele[allele_pos]`, so complementing the observed byte once
+/// recovers the original allele coordinate.
+///
+/// Used by the walker observer and the AIRR validator's allele-call
+/// oracle so both surfaces score inverted D evidence consistently.
+#[inline]
+pub fn matches_observed_with_orientation(
+    observed: u8,
+    germline: u8,
+    orientation: SegmentOrientation,
+) -> bool {
+    matches_observed(observed_in_germline_orientation(observed, orientation), germline)
 }
 
 /// Does the observed pool byte match the allele's germline byte at
@@ -201,14 +251,26 @@ pub fn allele_pool_for_segment<'a>(
 /// Returns a boolean mask (one entry per allele in `alleles`)
 /// indicating which alleles' reference byte at `ref_pos` matches
 /// the `observed` pool byte under the shared
-/// [`matches_observed`] semantics.
-pub fn alleles_compatible_at(alleles: &[Allele], ref_pos: u32, observed: u8) -> Vec<bool> {
+/// [`matches_observed_with_orientation`] semantics.
+///
+/// `orientation` is `Forward` for ordinary scoring; inverted-D
+/// callers pass `ReverseComplement` so the observed byte is
+/// pre-complemented before the comparison (see
+/// [`matches_observed_with_orientation`] for the rationale).
+pub fn alleles_compatible_at(
+    alleles: &[Allele],
+    ref_pos: u32,
+    observed: u8,
+    orientation: SegmentOrientation,
+) -> Vec<bool> {
     alleles
         .iter()
         .map(|a| {
             a.seq
                 .get(ref_pos as usize)
-                .map(|&ref_byte| matches_observed(observed, ref_byte))
+                .map(|&ref_byte| {
+                    matches_observed_with_orientation(observed, ref_byte, orientation)
+                })
                 .unwrap_or(false)
         })
         .collect()
@@ -271,6 +333,7 @@ pub fn score_alleles_with_extensions(
     structural_region: &Region,
     trim_5_cap: u32,
     trim_3_cap: u32,
+    orientation: SegmentOrientation,
 ) -> Vec<u32> {
     let pool = sim.pool.as_slice();
     let mut scores = vec![0u32; alleles.len()];
@@ -295,20 +358,45 @@ pub fn score_alleles_with_extensions(
         let Some(ref_pos) = nuc.germline_pos.get().map(|p| p as u32) else {
             continue;
         };
-        // Backwards ref_pos motion is unsupported (walker.rs:81).
+        // Orientation-aware motion. Under `Forward` we require
+        // strictly-monotonic-increasing `germline_pos` (gap-up
+        // permitted for deletions). Under `ReverseComplement`
+        // the assembly emits bytes in reverse allele order so we
+        // mirror the malformed check: backwards = increasing.
+        // `ref_start` tracks the smallest seen position;
+        // `next_ref_pos` tracks `max_seen + 1`. Same `[start,
+        // end)` semantics as the walker; the iteration order is
+        // the only orientation-dependent piece.
+        let is_rc = matches!(
+            orientation,
+            SegmentOrientation::ReverseComplement
+        );
         if let Some(expected) = next_ref_pos {
-            if ref_pos < expected {
+            let backwards = if is_rc {
+                ref_pos > expected
+            } else {
+                ref_pos < expected
+            };
+            if backwards {
                 return scores;
             }
         }
-        next_ref_pos = Some(ref_pos.saturating_add(1));
-        if ref_start.is_none() {
-            ref_start = Some(ref_pos);
-        }
+        ref_start = Some(match ref_start {
+            Some(prev) => prev.min(ref_pos),
+            None => ref_pos,
+        });
+        let new_end_candidate = ref_pos.saturating_add(1);
+        next_ref_pos = Some(match next_ref_pos {
+            Some(prev) => prev.max(new_end_candidate),
+            None => new_end_candidate,
+        });
         // Per-position score increment via the shared kernel rules.
+        // Orientation pre-complements the observed byte when the
+        // segment is in `ReverseComplement` (inverted-D path), so
+        // the comparison sees the original allele coordinate.
         for (allele_idx, allele) in alleles.iter().enumerate() {
             if let Some(&ref_byte) = allele.seq.get(ref_pos as usize) {
-                if matches_observed(nuc.base, ref_byte) {
+                if matches_observed_with_orientation(nuc.base, ref_byte, orientation) {
                     scores[allele_idx] += 1;
                 }
             }
@@ -324,15 +412,26 @@ pub fn score_alleles_with_extensions(
     let mut current_seq_start = structural_region.start.index();
     let mut current_seq_end = structural_region.end.index();
 
+    // Trim caps swap by allele direction under RC (audit §3).
+    // The pool-direction iteration stays identical; what changes
+    // is which cap bounds which walk and which `ref_*` boundary
+    // moves on accept.
+    let is_rc = matches!(orientation, SegmentOrientation::ReverseComplement);
+    let (left_cap, right_cap) = if is_rc {
+        (trim_3_cap, trim_5_cap)
+    } else {
+        (trim_5_cap, trim_3_cap)
+    };
+
     // ── Left extension ──────────────────────────────────────────
     // Mirrors walker/extensions.rs::walk_left_extension. Look for an
     // NP region whose end == current_seq_start; walk backwards
-    // through it (and into the previous V/D/J region in the overlap
-    // case), capped by trim_5_cap, extending only when the byte
-    // strictly narrows the current max-score tie set.
+    // through it, capped by `left_cap`. Under Forward, the
+    // candidate allele position is `current_ref_start - 1` and an
+    // accepted step decreases `current_ref_start`. Under RC, the
+    // candidate is `current_ref_end` and an accepted step increases
+    // `current_ref_end`.
     if let Some(np_region) = find_left_extension(sim, current_seq_start) {
-        // Lower bound: the start of the V/D/J region whose end
-        // touches np_region.start (overlap-into-neighbor case), or 0.
         let lower_bound = sim
             .sequence
             .regions
@@ -346,17 +445,22 @@ pub fn score_alleles_with_extensions(
 
         let mut steps_taken: u32 = 0;
         for seq_pos in (lower_bound..np_region.end.index()).rev() {
-            if steps_taken >= trim_5_cap {
+            if steps_taken >= left_cap {
                 break;
             }
-            if current_ref_start == 0 {
-                break;
-            }
-            let candidate_ref_pos = current_ref_start - 1;
+            let candidate_ref_pos = if is_rc {
+                current_ref_end
+            } else {
+                if current_ref_start == 0 {
+                    break;
+                }
+                current_ref_start - 1
+            };
             let Some(nuc) = pool.get(seq_pos as usize) else {
                 break;
             };
-            let matched = alleles_compatible_at(alleles, candidate_ref_pos, nuc.base);
+            let matched =
+                alleles_compatible_at(alleles, candidate_ref_pos, nuc.base, orientation);
             if !matched.iter().any(|&m| m) {
                 break;
             }
@@ -369,13 +473,19 @@ pub fn score_alleles_with_extensions(
                 }
             }
             current_seq_start = seq_pos;
-            current_ref_start = candidate_ref_pos;
+            if is_rc {
+                current_ref_end = candidate_ref_pos.saturating_add(1);
+            } else {
+                current_ref_start = candidate_ref_pos;
+            }
             steps_taken = steps_taken.saturating_add(1);
         }
     }
 
     // ── Right extension ─────────────────────────────────────────
-    // Mirrors walker/extensions.rs::walk_right_extension.
+    // Mirrors walker/extensions.rs::walk_right_extension. Under
+    // Forward the candidate is `current_ref_end`; under RC it's
+    // `current_ref_start - 1`.
     if let Some(np_region) = find_right_extension(sim, current_seq_end) {
         let pool_len = pool.len() as u32;
         let upper_bound = sim
@@ -392,13 +502,22 @@ pub fn score_alleles_with_extensions(
 
         let mut steps_taken: u32 = 0;
         for seq_pos in np_region.start.index()..upper_bound {
-            if steps_taken >= trim_3_cap {
+            if steps_taken >= right_cap {
                 break;
             }
+            let candidate_ref_pos = if is_rc {
+                if current_ref_start == 0 {
+                    break;
+                }
+                current_ref_start - 1
+            } else {
+                current_ref_end
+            };
             let Some(nuc) = pool.get(seq_pos as usize) else {
                 break;
             };
-            let matched = alleles_compatible_at(alleles, current_ref_end, nuc.base);
+            let matched =
+                alleles_compatible_at(alleles, candidate_ref_pos, nuc.base, orientation);
             if !matched.iter().any(|&m| m) {
                 break;
             }
@@ -411,7 +530,11 @@ pub fn score_alleles_with_extensions(
                 }
             }
             current_seq_end = seq_pos.saturating_add(1);
-            current_ref_end = current_ref_end.saturating_add(1);
+            if is_rc {
+                current_ref_start = candidate_ref_pos;
+            } else {
+                current_ref_end = candidate_ref_pos.saturating_add(1);
+            }
             steps_taken = steps_taken.saturating_add(1);
         }
     }

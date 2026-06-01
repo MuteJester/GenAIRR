@@ -96,6 +96,7 @@
 use super::nucleotide::NucFlags;
 use super::region::Region;
 use super::{NucHandle, Segment};
+use crate::address::PEnd;
 use crate::assignment::{AlleleInstance, TrimEnd};
 
 /// One typed state-change event emitted by the simulation builder.
@@ -171,6 +172,18 @@ pub enum SimulationEvent {
     /// segment/start/end/frame_phase doesn't have to scan the
     /// regions list.
     RegionAdded { region: Region },
+    /// A templated palindromic (P-)nucleotide extension was
+    /// emitted at the named V(D)J coding-end junction side.
+    /// The `region` describes the pool span the P-bytes occupy
+    /// (`[start, end)`) but does NOT live in
+    /// `sim.sequence.regions` — P-bytes are flagged via
+    /// `Nucleotide::flags::P_NUC` and the region object exists
+    /// only in the event ledger so existing
+    /// `regions.iter().find(|r| r.segment == V/D/J/Np1/Np2)`
+    /// projection sites stay correct (one region per segment).
+    /// AIRR's per-end `p_*_length` fields project off this
+    /// event variant.
+    PRegionAdded { end: PEnd, region: Region },
     /// **Reserved for future emission.** An existing region was
     /// replaced in place (extended, frame-rotated, etc). Carries
     /// both the pre- and post-state regions so consumers can diff
@@ -188,6 +201,49 @@ pub enum SimulationEvent {
     /// pre-computed so a sink that only wants the increment
     /// doesn't have to widen the operands itself.
     MutationCountChanged { old: u32, new: u32, delta: i32 },
+    /// An allele instance's orientation was updated for the named
+    /// segment. Emitted by [`crate::ir::SimulationBuilder::update_allele_orientation`]
+    /// (Slice C of the D-inversion roadmap). Carries both the prior
+    /// and new orientations so downstream sinks can diff without
+    /// re-reading the simulation.
+    ///
+    /// **Generalised by design** — Slice C only fires this for
+    /// `segment == Segment::D` (the InvertDPass commit), but the
+    /// variant accepts any segment so future V/J inversion or
+    /// receptor-revision slices can reuse the same channel.
+    /// Pattern-match on `segment` when narrowing.
+    OrientationChanged {
+        segment: Segment,
+        old: crate::assignment::SegmentOrientation,
+        new: crate::assignment::SegmentOrientation,
+    },
+    /// **Reserved for future emission.** A segment region was
+    /// replaced **structurally** — the pool span the region
+    /// occupied was excised and a new byte span was installed at
+    /// the same start position. This is distinct from
+    /// [`Self::RegionReplaced`], which carries metadata-only edits
+    /// (e.g. reframing) where the underlying pool bytes did NOT
+    /// change.
+    ///
+    /// `bytes_delta = new_region.len() - old_region.len()` is
+    /// pre-computed so a downstream consumer that only wants the
+    /// shift magnitude doesn't have to subtract the regions
+    /// itself. Downstream regions' coordinates have already been
+    /// adjusted by the persistent IR revision before this event
+    /// fires; sinks that track pool-position state can apply
+    /// `bytes_delta` once at `old_region.end` rather than walking
+    /// every region.
+    ///
+    /// Slice A of the receptor-revision roadmap lands this variant
+    /// + the `SimulationBuilder::replace_segment` emitter that
+    /// fires it. No production pass calls it yet — the user-facing
+    /// `ReceptorRevisionPass` arrives in a later slice.
+    SegmentReplaced {
+        segment: Segment,
+        old_region: Region,
+        new_region: Region,
+        bytes_delta: i32,
+    },
 }
 
 /// Consumer of [`SimulationEvent`] notifications. Implementations

@@ -206,14 +206,14 @@ fn np1_string_is_the_unclaimed_span_after_segment_extension() {
 #[test]
 fn np1_string_drops_columns_claimed_by_v_extension() {
     // Trim V3=3 widens v_call to {v01*01, v01*02, v02*01, v03*01}.
-    // NP1 = 'T' x 3 — only v01 (alleles 0 and 1) has T at ref
-    // pos 9. The first NP1 byte narrows
-    // {v01,v01*02,v02,v03}→{v01,v01*02}; the remaining 'T' bytes
-    // match BOTH surviving aliases identically, so they cannot
-    // narrow the tie set further. Under conservative extension
-    // the walker stops after the single narrowing byte.
+    // NP1 = 'G' x 3 — only v01 (alleles 0 and 1) has G at ref
+    // pos 12 (the first distinguishing-tail byte). The first NP1
+    // byte narrows {v01,v01*02,v02,v03}→{v01,v01*02}; the remaining
+    // 'G' bytes match neither surviving alias (v01[13]=T) so they
+    // cannot extend further. Under conservative extension the
+    // walker stops after the single narrowing byte.
     //
-    // 1 of 3 NP1 columns claimed → np1 = "TT" (2 chars).
+    // 1 of 3 NP1 columns claimed → np1 = "GG" (2 chars).
     let cfg = common::vj_ambiguous_refdata();
     let v_id = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let j_id = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
@@ -237,14 +237,14 @@ fn np1_string_drops_columns_claimed_by_v_extension() {
     plan.push(Box::new(GenerateNPPass::new(
         Segment::Np1,
         Box::new(EmpiricalLengthDist::from_pairs(vec![(3, 1.0)])),
-        Box::new(ConstBaseDist(b'T')),
+        Box::new(ConstBaseDist(b'G')),
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
 
     let rec = run_compiled(&cfg, plan, 0);
 
     // V claimed the single narrowing NP1 column; 2 remain.
-    assert_eq!(rec.np1, "TT");
+    assert_eq!(rec.np1, "GG");
     assert_eq!(rec.np1_length, 2);
     // v_call narrowed to the v01 aliases.
     let mut v_calls: Vec<&str> = rec.v_call.split(',').collect();

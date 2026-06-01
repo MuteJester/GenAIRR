@@ -169,6 +169,8 @@ mod tests {
             seq: b"AAACCCGGG".to_vec(),
             segment: Segment::V,
             anchor: v_anchor,
+            functional_status: None,
+            subregions: Vec::new(),
         });
         let _ = cfg.j_pool.push(Allele {
             name: "j_test*01".into(),
@@ -176,6 +178,8 @@ mod tests {
             seq: b"TTTAAA".to_vec(),
             segment: Segment::J,
             anchor: j_anchor,
+            functional_status: None,
+            subregions: Vec::new(),
         });
         cfg
     }

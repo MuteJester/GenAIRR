@@ -68,7 +68,7 @@ def _vdj() -> "ge.RefDataConfig":
 
 def _vj_recombine() -> "ga.Experiment":
     return (
-        ga.Experiment.on(_vj())
+        ga.Experiment.on(_vj()).allow_curatable_refdata()
         .recombine(np1_lengths=[(L, 1.0) for L in range(20)])
         .trim(
             v_3=[(L, 1.0) for L in range(5)],
@@ -79,7 +79,7 @@ def _vj_recombine() -> "ga.Experiment":
 
 def _vdj_recombine() -> "ga.Experiment":
     return (
-        ga.Experiment.on(_vdj())
+        ga.Experiment.on(_vdj()).allow_curatable_refdata()
         .recombine(
             np1_lengths=[(L, 1.0) for L in range(20)],
             np2_lengths=[(L, 1.0) for L in range(20)],
@@ -121,7 +121,7 @@ def _time_simulation_loop(compiled, n: int, seed_offset: int = 0) -> float:
 
 def _measure(exp, n: int, label: str) -> float:
     """Compile, warm up, time `n` records. Returns wall seconds."""
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     assert hasattr(compiled, "simulator"), (
         f"{label}: clonal CompiledExperiment not expected here"
     )
@@ -259,7 +259,7 @@ def test_w7_replay_is_substantially_faster_than_fresh() -> None:
     Run on the W3 plan (productive full stack) because that's
     where replay's contract-skip win is largest."""
     exp = _vdj_full_stack().productive_only()
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
 
     N = 500  # smaller than W3 to keep total test time low
     # Warmup
@@ -305,7 +305,7 @@ def test_w8_airr_projection_is_negligible_vs_simulation() -> None:
     from GenAIRR._airr_record import outcome_to_airr_record
 
     exp = _vdj_full_stack().productive_only()
-    compiled = exp.compile()
+    compiled = exp.compile(allow_curatable_refdata=True)
     _time_simulation_loop(compiled, WARMUP)
 
     N = 500

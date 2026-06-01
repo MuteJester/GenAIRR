@@ -148,9 +148,10 @@ impl<'idx> SimulationBuilder<'idx> {
         &mut self,
         segment_index: &'idx SegmentRefIndex,
         seq_start: u32,
+        orientation: crate::assignment::SegmentOrientation,
     ) {
         self.walker_sinks
-            .push(WalkerObserverState::new(segment_index, seq_start));
+            .push(WalkerObserverState::new(segment_index, seq_start, orientation));
     }
 
     /// Attach a walker observer **rebuilt** from an already-assembled
@@ -323,6 +324,23 @@ impl<'idx> SimulationBuilder<'idx> {
         self.simulation = self.simulation.with_region_added(region);
     }
 
+    /// Emit a `PRegionAdded { end, region }` event describing
+    /// the P-nucleotide extension at `end`. **Does NOT mutate
+    /// `Simulation::sequence.regions`** — by design, P-bytes
+    /// sit between adjacent V/D/J/NP structural regions and
+    /// carry the `flag::P_NUC` bit so the existing per-segment
+    /// `regions.iter().find(|r| r.segment == ...)` projection
+    /// sites stay correct (one structural region per segment).
+    /// AIRR's per-end `p_*_length` fields project off this
+    /// event variant via the AIRR builder's event-ledger walk.
+    pub(crate) fn record_p_region(
+        &mut self,
+        end: crate::address::PEnd,
+        region: super::Region,
+    ) {
+        self.broadcast_event(SimulationEvent::PRegionAdded { end, region });
+    }
+
     /// Replace the existing region of `replacement.segment` with
     /// `replacement` and emit [`SimulationEvent::RegionReplaced`]
     /// carrying the prior region.
@@ -349,6 +367,54 @@ impl<'idx> SimulationBuilder<'idx> {
             .with_region_replaced_for_segment(replacement);
     }
 
+    /// **Structurally** replace the unique region for `segment`
+    /// with `replacement` bytes, broadcast
+    /// [`SimulationEvent::SegmentReplaced`], and install the
+    /// resulting `Simulation`.
+    ///
+    /// Returns `(old_region, new_region)` so callers (e.g. a
+    /// future `ReceptorRevisionPass`) can record what was swapped
+    /// without re-finding the region.
+    ///
+    /// Distinct from [`Self::replace_region`], which carries
+    /// **metadata-only** edits (frame phase, identity) on a region
+    /// whose pool bytes are unchanged. `replace_segment` excises
+    /// the pool span the old region occupied, splices `replacement`
+    /// in, and shifts downstream regions by
+    /// `new_region.len() - old_region.len()`. The
+    /// `SegmentReplaced` event carries the pre-computed
+    /// `bytes_delta` so a sink that tracks pool-position state can
+    /// apply one shift at `old_region.end` rather than walking
+    /// every region.
+    ///
+    /// Panics if `segment` has zero or multiple regions — receptor
+    /// revision Slice A is defined for single-region segments and
+    /// the underlying `Simulation::with_segment_replaced` asserts
+    /// this invariant.
+    #[allow(dead_code)]
+    pub(crate) fn replace_segment(
+        &mut self,
+        segment: Segment,
+        replacement: Vec<Nucleotide>,
+    ) -> (super::Region, super::Region) {
+        let (new_sim, old_region, new_region) =
+            self.simulation.with_segment_replaced(segment, replacement);
+        let bytes_delta = (new_region.len() as i32) - (old_region.len() as i32);
+        self.broadcast_event(SimulationEvent::SegmentReplaced {
+            segment,
+            old_region: old_region.clone(),
+            new_region: new_region.clone(),
+            bytes_delta,
+        });
+        self.simulation = new_sim;
+        // Pool was structurally rewritten; re-establish the unique
+        // ownership prepayment so subsequent push_nucleotide /
+        // change_base_in_place calls stay on the refcount==1 fast
+        // path that `from_simulation` originally set up.
+        self.simulation.pool.make_unique();
+        (old_region, new_region)
+    }
+
     /// Set the simulation's `n_mutations` sidecar to `new_count`
     /// and emit [`SimulationEvent::MutationCountChanged`] with the
     /// signed delta pre-computed.
@@ -373,6 +439,46 @@ impl<'idx> SimulationBuilder<'idx> {
     #[allow(dead_code)]
     pub(crate) fn record_reverse_complement_flag(&mut self, applied: bool) {
         self.broadcast_event(SimulationEvent::ReverseComplementFlagRecorded { applied });
+    }
+
+    /// Update the orientation of the assigned `segment` allele and
+    /// emit [`SimulationEvent::OrientationChanged`] carrying the
+    /// `(old, new)` pair so sinks can diff without re-reading the
+    /// simulation.
+    ///
+    /// **Pre-condition:** `segment` must already have an
+    /// `AlleleInstance` assigned. Panics otherwise (propagated from
+    /// `AlleleAssignments::with_orientation` via `with_updated`).
+    /// Callers (e.g. `InvertDPass`) guard this in their checked path
+    /// and return [`crate::pass::PassError::InvalidPlanState`]
+    /// before reaching the builder.
+    ///
+    /// Slice C wiring: `InvertDPass` calls this with
+    /// `segment = Segment::D`; the variant accepts any segment so
+    /// future V/J inversion slices can reuse the same channel.
+    #[allow(dead_code)]
+    pub(crate) fn update_allele_orientation(
+        &mut self,
+        segment: Segment,
+        orientation: crate::assignment::SegmentOrientation,
+    ) {
+        let old = self
+            .simulation
+            .assignments
+            .get(segment)
+            .map(|inst| inst.orientation)
+            .expect(
+                "update_allele_orientation: no instance assigned to segment — \
+                 caller must check assignment exists before invoking the builder",
+            );
+        self.broadcast_event(SimulationEvent::OrientationChanged {
+            segment,
+            old,
+            new: orientation,
+        });
+        self.simulation = self
+            .simulation
+            .with_allele_orientation(segment, orientation);
     }
 
     /// Attach a structured event-log observer that captures every
@@ -696,6 +802,10 @@ impl<'idx> SimulationBuilder<'idx> {
 /// Does the segment's assembled region (if any) overlap any of the
 /// given dirty windows? Used by `seal_with_committed_live_calls` to
 /// gate which walker observers stage their calls.
+///
+/// Boundary semantics live in [`PoolRange::overlaps_dirty`] — the
+/// upper bound is inclusive on `dirty.start == region.end` (post-3'-
+/// end-loss boundary case), lower bound stays strict.
 fn segment_region_overlaps_dirty(
     sim: &Simulation,
     segment: Segment,
@@ -704,24 +814,10 @@ fn segment_region_overlaps_dirty(
     let Some(region) = sim.sequence.regions.iter().find(|r| r.segment == segment) else {
         return false;
     };
-    let region_start = region.start.index();
-    let region_end = region.end.index();
-    // Upper bound is INCLUSIVE: a dirty window whose start == region.end
-    // represents an IndelDeleted at exactly the boundary byte the
-    // deletion just shrunk out of the region. The pre-deletion position
-    // was inside the region; the dirty signal must trigger a refresh
-    // even though post-deletion the region.end equals the dirty site.
-    // (Strict `<` here was the bug behind the IGK J residual: end-loss
-    // 3' deletions at the J boundary silently slipped past the overlap
-    // check, leaving the stale pre-deletion live call committed.)
-    //
-    // Lower bound stays strict (`>`): a dirty window at position
-    // region.start - 1 represents a byte JUST BEFORE the region whose
-    // deletion shifts the whole region down without changing its
-    // content, so no refresh is needed.
+    let region_range = crate::ir::PoolRange::new(region.start.index(), region.end.index());
     windows
         .iter()
-        .any(|w| w.start <= region_end && w.end > region_start)
+        .any(|w| region_range.overlaps_dirty(crate::ir::PoolRange::new(w.start, w.end)))
 }
 
 #[cfg(test)]
@@ -951,6 +1047,252 @@ mod tests {
         assert_eq!(sealed.pool.len(), base.pool.len());
         assert_eq!(sealed.sequence.regions.len(), base.sequence.regions.len());
         assert_eq!(sealed.mutation_count, base.mutation_count);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // replace_segment — receptor revision Slice A
+    //
+    // Coverage rationale (matches the audit's IR-primitive checklist):
+    // * same_length / longer / shorter splice cases — three flavours
+    //   of `bytes_delta` so the downstream-shift math is exercised
+    //   on each sign of `new_len - old_len`.
+    // * downstream regions keep germline_pos — splice must not
+    //   touch nucleotides outside `old_region`.
+    // * SegmentReplaced event capture — the payload must reflect
+    //   the OLD region, the POST-RECOMPUTE new region, and
+    //   `bytes_delta` pre-computed.
+    // * RegionReplaced metadata path stays inert — Slice A must not
+    //   subsume the existing metadata-only setter.
+    // * missing/multiple-region segments panic — IR enforces the
+    //   single-region-per-segment invariant the audit pinned.
+    // ──────────────────────────────────────────────────────────────
+
+    fn pushed_pool(sim: Simulation, bases: &[(u8, Segment, u16)]) -> (Simulation, Vec<NucHandle>) {
+        let mut cur = sim;
+        let mut handles = Vec::with_capacity(bases.len());
+        for &(b, seg, gp) in bases {
+            let (next, h) = cur.with_nucleotide_pushed(Nucleotide::germline(b, gp, seg));
+            cur = next;
+            handles.push(h);
+        }
+        (cur, handles)
+    }
+
+    fn make_sim_with_vdj_layout() -> Simulation {
+        // V[0..5) Np1[5..7) D[7..10) Np2[10..11) J[11..15)
+        let (sim, _h) = pushed_pool(
+            Simulation::new(),
+            &[
+                (b'A', Segment::V, 0),
+                (b'C', Segment::V, 1),
+                (b'G', Segment::V, 2),
+                (b'T', Segment::V, 3),
+                (b'A', Segment::V, 4),
+                (b'N', Segment::Np1, 0),
+                (b'N', Segment::Np1, 0),
+                (b'C', Segment::D, 0),
+                (b'A', Segment::D, 1),
+                (b'T', Segment::D, 2),
+                (b'N', Segment::Np2, 0),
+                (b'G', Segment::J, 0),
+                (b'G', Segment::J, 1),
+                (b'A', Segment::J, 2),
+                (b'C', Segment::J, 3),
+            ],
+        );
+        sim.with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(5)))
+            .with_region_added(Region::new(Segment::Np1, NucHandle::new(5), NucHandle::new(7)))
+            .with_region_added(Region::new(Segment::D, NucHandle::new(7), NucHandle::new(10)))
+            .with_region_added(Region::new(Segment::Np2, NucHandle::new(10), NucHandle::new(11)))
+            .with_region_added(Region::new(Segment::J, NucHandle::new(11), NucHandle::new(15)))
+    }
+
+    fn v_replacement(bases: &[u8]) -> Vec<Nucleotide> {
+        bases
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| Nucleotide::germline(b, i as u16, Segment::V))
+            .collect()
+    }
+
+    #[test]
+    fn replace_segment_same_length_keeps_downstream_regions_in_place() {
+        let base = make_sim_with_vdj_layout();
+        let mut b = SimulationBuilder::from_simulation(base);
+        b.attach_event_log_observer();
+        let (old_v, new_v) = b.replace_segment(Segment::V, v_replacement(b"GGGGG"));
+        let (events, sealed) = drain_log(b);
+
+        assert_eq!(old_v.len(), 5);
+        assert_eq!(new_v.len(), 5);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0],
+            SimulationEvent::SegmentReplaced {
+                segment: Segment::V,
+                old_region: old_v.clone(),
+                new_region: new_v.clone(),
+                bytes_delta: 0,
+            }
+        );
+        // Pool length unchanged; V bytes overwritten.
+        assert_eq!(sealed.pool.len(), 15);
+        let v_bases: Vec<u8> = sealed.pool.as_slice()[0..5].iter().map(|n| n.base).collect();
+        assert_eq!(&v_bases, b"GGGGG");
+        // Downstream regions byte-identical.
+        assert_eq!(
+            sealed.sequence.regions[1],
+            Region::new(Segment::Np1, NucHandle::new(5), NucHandle::new(7))
+                .with_frame_phase(2)
+        );
+        assert_eq!(
+            sealed.sequence.regions[4].start.index(),
+            11
+        );
+        assert_eq!(sealed.sequence.regions[4].end.index(), 15);
+    }
+
+    #[test]
+    fn replace_segment_longer_shifts_downstream_regions_right() {
+        let base = make_sim_with_vdj_layout();
+        let mut b = SimulationBuilder::from_simulation(base);
+        b.attach_event_log_observer();
+        // V grows from 5 → 8 bytes (+3).
+        let (old_v, new_v) = b.replace_segment(Segment::V, v_replacement(b"GGGGGGGG"));
+        let (events, sealed) = drain_log(b);
+
+        assert_eq!(old_v.len(), 5);
+        assert_eq!(new_v.len(), 8);
+        assert_eq!(
+            events[0],
+            SimulationEvent::SegmentReplaced {
+                segment: Segment::V,
+                old_region: old_v.clone(),
+                new_region: new_v.clone(),
+                bytes_delta: 3,
+            }
+        );
+        // Pool now 15 - 5 + 8 = 18 bytes.
+        assert_eq!(sealed.pool.len(), 18);
+        // New V spans [0..8), downstream all shifted +3.
+        assert_eq!(sealed.sequence.regions[0].start.index(), 0);
+        assert_eq!(sealed.sequence.regions[0].end.index(), 8);
+        assert_eq!(sealed.sequence.regions[1].start.index(), 8); // Np1
+        assert_eq!(sealed.sequence.regions[1].end.index(), 10);
+        assert_eq!(sealed.sequence.regions[2].start.index(), 10); // D
+        assert_eq!(sealed.sequence.regions[2].end.index(), 13);
+        assert_eq!(sealed.sequence.regions[3].start.index(), 13); // Np2
+        assert_eq!(sealed.sequence.regions[3].end.index(), 14);
+        assert_eq!(sealed.sequence.regions[4].start.index(), 14); // J
+        assert_eq!(sealed.sequence.regions[4].end.index(), 18);
+    }
+
+    #[test]
+    fn replace_segment_shorter_shifts_downstream_regions_left() {
+        let base = make_sim_with_vdj_layout();
+        let mut b = SimulationBuilder::from_simulation(base);
+        b.attach_event_log_observer();
+        // V shrinks from 5 → 2 bytes (-3).
+        let (old_v, new_v) = b.replace_segment(Segment::V, v_replacement(b"GG"));
+        let (events, sealed) = drain_log(b);
+
+        assert_eq!(old_v.len(), 5);
+        assert_eq!(new_v.len(), 2);
+        assert_eq!(
+            events[0],
+            SimulationEvent::SegmentReplaced {
+                segment: Segment::V,
+                old_region: old_v.clone(),
+                new_region: new_v.clone(),
+                bytes_delta: -3,
+            }
+        );
+        // Pool now 15 - 5 + 2 = 12 bytes.
+        assert_eq!(sealed.pool.len(), 12);
+        // New V spans [0..2), downstream all shifted -3.
+        assert_eq!(sealed.sequence.regions[0].start.index(), 0);
+        assert_eq!(sealed.sequence.regions[0].end.index(), 2);
+        assert_eq!(sealed.sequence.regions[1].start.index(), 2); // Np1
+        assert_eq!(sealed.sequence.regions[1].end.index(), 4);
+        assert_eq!(sealed.sequence.regions[2].start.index(), 4); // D
+        assert_eq!(sealed.sequence.regions[2].end.index(), 7);
+        assert_eq!(sealed.sequence.regions[3].start.index(), 7); // Np2
+        assert_eq!(sealed.sequence.regions[3].end.index(), 8);
+        assert_eq!(sealed.sequence.regions[4].start.index(), 8); // J
+        assert_eq!(sealed.sequence.regions[4].end.index(), 12);
+    }
+
+    #[test]
+    fn replace_segment_preserves_downstream_germline_pos() {
+        // The splice only excises V bytes; D / J nucleotides must
+        // keep their germline_pos values intact after the shift.
+        let base = make_sim_with_vdj_layout();
+        let mut b = SimulationBuilder::from_simulation(base);
+        b.replace_segment(Segment::V, v_replacement(b"TTTTTTTT"));
+        let sealed = b.seal();
+
+        // D region in the post-replace pool: now at [10..13).
+        let d = &sealed.sequence.regions[2];
+        assert_eq!(d.segment, Segment::D);
+        let d_germ_positions: Vec<Option<u16>> = (d.start.index()..d.end.index())
+            .map(|i| sealed.pool.get(NucHandle::new(i)).unwrap().germline_pos.get())
+            .collect();
+        // Same germline_pos values [0, 1, 2] we pushed into D.
+        assert_eq!(d_germ_positions, vec![Some(0), Some(1), Some(2)]);
+
+        // J region now at [14..18).
+        let j = &sealed.sequence.regions[4];
+        assert_eq!(j.segment, Segment::J);
+        let j_germ_positions: Vec<Option<u16>> = (j.start.index()..j.end.index())
+            .map(|i| sealed.pool.get(NucHandle::new(i)).unwrap().germline_pos.get())
+            .collect();
+        assert_eq!(j_germ_positions, vec![Some(0), Some(1), Some(2), Some(3)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "no region for V")]
+    fn replace_segment_panics_on_missing_segment() {
+        let sim = Simulation::new()
+            .with_region_added(Region::new(Segment::J, NucHandle::new(0), NucHandle::new(3)));
+        let mut b = SimulationBuilder::from_simulation(sim);
+        b.replace_segment(Segment::V, v_replacement(b"A"));
+    }
+
+    #[test]
+    #[should_panic(expected = "multiple regions for V")]
+    fn replace_segment_panics_on_multiple_regions_for_segment() {
+        let sim = Simulation::new()
+            .with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3)))
+            .with_region_added(Region::new(Segment::V, NucHandle::new(3), NucHandle::new(6)));
+        let mut b = SimulationBuilder::from_simulation(sim);
+        b.replace_segment(Segment::V, v_replacement(b"A"));
+    }
+
+    #[test]
+    fn replace_segment_does_not_subsume_replace_region_metadata_path() {
+        // `replace_region` (metadata-only) must still emit
+        // `RegionReplaced` and leave the pool untouched, even when
+        // the receptor-revision setter is on the same builder
+        // surface. Pins that Slice A doesn't collapse the two
+        // events into one.
+        let base = make_sim_with_vdj_layout();
+        let pool_len_before = base.pool.len();
+        let mut b = SimulationBuilder::from_simulation(base);
+        b.attach_event_log_observer();
+        let v_reframed = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(5))
+            .with_frame_phase(2);
+        b.replace_region(v_reframed.clone());
+        let (events, sealed) = drain_log(b);
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            SimulationEvent::RegionReplaced { new, .. } => {
+                assert_eq!(new, &v_reframed);
+            }
+            other => panic!("expected RegionReplaced, got {other:?}"),
+        }
+        // Pool unchanged.
+        assert_eq!(sealed.pool.len(), pool_len_before);
     }
 
     #[test]

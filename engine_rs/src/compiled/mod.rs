@@ -13,7 +13,7 @@ use crate::feasibility::FeasibilityContext;
 use crate::ir::{Segment, Simulation};
 use crate::live_call::{LiveCallRefreshHook, ReferenceMatchIndex};
 use crate::pass::{EffectHook, NodeId, Outcome, PassError, PassPlan};
-use crate::refdata::RefDataConfig;
+use crate::refdata::{RefDataConfig, RefDataValidationMode};
 
 // Test-only re-imports — the `compiled::tests` submodules pull these
 // names through `use super::*`. Gated under `cfg(test)` so non-test
@@ -24,6 +24,71 @@ use crate::event::TraceSpan;
 use crate::pass::{PassContext, PassEffect};
 #[cfg(test)]
 use crate::refdata::AlleleId;
+
+/// Compile-time options. `Default` is the production-safe set
+/// (strict refdata validation enforced).
+///
+/// Three knob settings, in order of strictness:
+///
+/// 1. `Default::default()` — strict refdata validation: every
+///    structural problem AND every pseudogene-shaped curatable
+///    issue blocks compile.
+/// 2. [`CompileOptions::allow_curatable_refdata`] — strict on
+///    Fatal issues, lenient on Curatable ones. Use when sampling
+///    from a real catalogue (bundled mouse_igh, human_tcrb) that
+///    includes pseudogene/ORF alleles you want to keep in the pool.
+/// 3. [`CompileOptions::skip_refdata_validation`] — test-only
+///    escape hatch; bypasses the validator entirely for synthetic
+///    fixtures that intentionally build partial refdata.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct CompileOptions {
+    /// Whether to run [`RefDataConfig::validate`] at the start of
+    /// compile. Always `true` in production paths; `false` only for
+    /// unit-test fixtures.
+    pub validate_refdata: bool,
+    /// Mode for refdata validation when it runs. See
+    /// [`RefDataValidationMode`]. Default `Strict`.
+    pub refdata_validation_mode: RefDataValidationMode,
+}
+
+impl Default for CompileOptions {
+    fn default() -> Self {
+        Self {
+            validate_refdata: true,
+            refdata_validation_mode: RefDataValidationMode::Strict,
+        }
+    }
+}
+
+impl CompileOptions {
+    /// Production opt-in for catalogues that include pseudogene/ORF
+    /// alleles. Curatable-severity issues pass; Fatal issues still
+    /// reject. Intended for users explicitly sampling from a raw
+    /// IMGT-style catalogue without first filtering it down to
+    /// functional alleles.
+    pub fn allow_curatable_refdata() -> Self {
+        Self {
+            validate_refdata: true,
+            refdata_validation_mode: RefDataValidationMode::AllowCuratable,
+        }
+    }
+
+    /// Test-only escape hatch: skip refdata structural validation
+    /// entirely. Use ONLY for unit-test fixtures that are
+    /// deliberately partial (anchorless synthetic V alleles,
+    /// single-segment pools, truncated bytes designed to exercise a
+    /// specific engine path). Production callers should never use
+    /// this — pseudogene-tolerant simulations should set
+    /// `refdata_validation_mode = AllowCuratable` instead, so Fatal
+    /// issues still gate.
+    #[allow(dead_code)]
+    pub(crate) fn skip_refdata_validation() -> Self {
+        Self {
+            validate_refdata: false,
+            refdata_validation_mode: RefDataValidationMode::Strict,
+        }
+    }
+}
 
 /// Runtime failure policy selected at compile time.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -108,6 +173,31 @@ impl<'a> CompiledSimulator<'a> {
         contracts: Option<&'a ContractSet>,
         policy: ExecutionPolicy,
     ) -> Result<Self, CompileErrors> {
+        Self::compile_with_options(plan, refdata, contracts, policy, CompileOptions::default())
+    }
+
+    /// Compile with explicit options. See [`CompileOptions`]. The
+    /// only production-relevant knob is whether refdata validation
+    /// runs; the bare [`Self::compile`] enforces it.
+    pub fn compile_with_options(
+        plan: &'a PassPlan,
+        refdata: Option<&'a RefDataConfig>,
+        contracts: Option<&'a ContractSet>,
+        policy: ExecutionPolicy,
+        options: CompileOptions,
+    ) -> Result<Self, CompileErrors> {
+        // Gate 0: structural refdata validation. Done BEFORE the
+        // schedule compile (and before pass precondition checks) so
+        // a malformed reference universe surfaces as one aggregated
+        // diagnostic, not as a cascade of downstream missing-allele
+        // or precondition errors masking the real problem.
+        if options.validate_refdata {
+            if let Some(rd) = refdata {
+                if let Err(errs) = rd.validate_with_mode(options.refdata_validation_mode) {
+                    return Err(CompileErrors::from_refdata_validation(errs));
+                }
+            }
+        }
         let sorted_order = match plan.compile(refdata.is_some()) {
             Ok(order) => order,
             Err(schedule_err) => {
@@ -262,6 +352,26 @@ impl OwnedCompiledSimulator {
         contracts: Option<ContractSet>,
         policy: ExecutionPolicy,
     ) -> Result<Self, CompileErrors> {
+        Self::compile_with_options(plan, refdata, contracts, policy, CompileOptions::default())
+    }
+
+    /// Owning compile with explicit options. See [`CompileOptions`].
+    pub fn compile_with_options(
+        plan: PassPlan,
+        refdata: Option<RefDataConfig>,
+        contracts: Option<ContractSet>,
+        policy: ExecutionPolicy,
+        options: CompileOptions,
+    ) -> Result<Self, CompileErrors> {
+        // Gate 0: structural refdata validation (see borrowed-form
+        // counterpart in `CompiledSimulator::compile_with_options`).
+        if options.validate_refdata {
+            if let Some(rd) = refdata.as_ref() {
+                if let Err(errs) = rd.validate_with_mode(options.refdata_validation_mode) {
+                    return Err(CompileErrors::from_refdata_validation(errs));
+                }
+            }
+        }
         let sorted_order = match plan.compile(refdata.is_some()) {
             Ok(order) => order,
             Err(schedule_err) => {

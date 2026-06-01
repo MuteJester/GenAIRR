@@ -38,6 +38,8 @@ fn make_synthetic_vdj_refdata() -> RefDataConfig {
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "d_test*01".to_string(),
@@ -45,6 +47,8 @@ fn make_synthetic_vdj_refdata() -> RefDataConfig {
         seq: b"TTTTTT".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".to_string(),
@@ -52,6 +56,8 @@ fn make_synthetic_vdj_refdata() -> RefDataConfig {
         seq: b"GGGCCC".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }

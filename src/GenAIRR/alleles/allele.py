@@ -69,6 +69,17 @@ class Allele(ABC):
     aliases = ()
     species = None
     source = None
+    # V-region substructure annotations (FWR1 / CDR1 / FWR2 / CDR2 /
+    # FWR3). ``None`` by default; populated either by the user
+    # explicitly setting the attribute OR derived at the
+    # ``dataconfig_to_refdata`` bridge from ``gapped_seq`` when
+    # present. Coordinates are ungapped, allele-relative, half-
+    # open. Only V alleles use the field today (D / J / C alleles
+    # have no IMGT substructure); the field stays on the base
+    # class so user-built D/J alleles can attach the field
+    # without subclassing, but the bridge ignores it for non-V
+    # segments. See ``docs/v_region_substructure_audit.md``.
+    subregions = None
 
     def __init__(self, name, gapped_sequence, length, *, anchor_override=None):
         """Initializes an Allele instance.

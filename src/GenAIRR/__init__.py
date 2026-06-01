@@ -27,7 +27,8 @@ except _PackageNotFoundError:
 
 # The simulation entry point.
 from .experiment import CompiledExperiment, Experiment, dataconfig_to_refdata
-from .result import SimulationResult, ValidationReport
+from .result import FamilyValidationReport, SimulationResult, ValidationReport
+from ._validation import FamilyValidationFailedError, RecordValidationFailedError
 
 # Engine types that users may need to construct or import directly.
 # Re-exported here so users don't have to reach into ``GenAIRR._engine``.
@@ -37,6 +38,17 @@ from GenAIRR._engine import RefDataConfig, StrictSamplingError, productive
 from .data import list_configs
 from .dataconfig import ChainType, ConfigInfo, DataConfig, DataConfigError, Species
 from .dataconfig.enums import Productivity
+
+# Reference cartridge authoring surface — typed specs for the rules
+# and empirical-models planes. See ``docs/reference_cartridge.md``.
+from .reference_models import (
+    AlleleUsageSpec,
+    EmpiricalDistributionSpec,
+    NpBaseModelSpec,
+    ReferenceEmpiricalModels,
+)
+from .reference_rules import AnchorRuleSpec, ReferenceRulesSpec
+from .cartridge_builder import CartridgeBuildReport, ReferenceCartridgeBuilder
 
 # Reproducibility helpers.
 from .seed import get_seed, reset_seed, set_seed
@@ -78,6 +90,9 @@ __all__ = [
     "CompiledExperiment",
     "SimulationResult",
     "ValidationReport",
+    "FamilyValidationReport",
+    "RecordValidationFailedError",
+    "FamilyValidationFailedError",
     "dataconfig_to_refdata",
     "productive",
     "StrictSamplingError",
@@ -90,6 +105,16 @@ __all__ = [
     "Species",
     "Productivity",
     "list_configs",
+    # Reference cartridge authoring (rules + empirical models)
+    "ReferenceRulesSpec",
+    "AnchorRuleSpec",
+    "ReferenceEmpiricalModels",
+    "EmpiricalDistributionSpec",
+    "NpBaseModelSpec",
+    "AlleleUsageSpec",
+    # Reference cartridge authoring (builder facade)
+    "ReferenceCartridgeBuilder",
+    "CartridgeBuildReport",
     "HUMAN_IGH_OGRDB",
     "HUMAN_IGH_EXTENDED",
     "HUMAN_IGK_OGRDB",

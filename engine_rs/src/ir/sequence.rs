@@ -1,4 +1,4 @@
-use super::{NucHandle, Region};
+use super::{NucHandle, PoolRange, Region, Segment};
 
 /// The assembled sequence — the root structural entity at the
 /// biological product level.
@@ -47,26 +47,76 @@ impl Sequence {
         Self { regions }
     }
 
-    /// Return a new sequence with every region's range adjusted for an indel.
+    /// Return a new sequence with every region's range adjusted for
+    /// a single-nucleotide indel at `pos`. `delta` must be `+1`
+    /// (insertion) or `-1` (deletion); the per-region shift rule
+    /// lives in [`PoolRange::after_insertion`] / [`PoolRange::after_deletion`].
     pub fn with_indel_adjusted(&self, pos: u32, delta: i32) -> Self {
+        debug_assert!(
+            delta == 1 || delta == -1,
+            "with_indel_adjusted only supports ±1 deltas, got {delta}"
+        );
         let new_regions: Vec<Region> = self
             .regions
             .iter()
             .map(|r| {
-                let r_start = r.start.index();
-                let r_end = r.end.index();
-
-                if r_end <= pos {
-                    r.clone()
-                } else if r_start > pos {
-                    Region {
-                        start: NucHandle::new(shift_pos(r_start, delta)),
-                        end: NucHandle::new(shift_pos(r_end, delta)),
-                        ..r.clone()
-                    }
+                let range = PoolRange::new(r.start.index(), r.end.index());
+                let shifted = if delta == 1 {
+                    range.after_insertion(pos)
                 } else {
+                    range.after_deletion(pos)
+                };
+                Region {
+                    start: NucHandle::new(shifted.start),
+                    end: NucHandle::new(shifted.end),
+                    ..r.clone()
+                }
+            })
+            .collect();
+        Sequence {
+            regions: new_regions,
+        }
+        .with_frame_phases_recomputed()
+    }
+
+    /// Return a new sequence with the single region for `segment`
+    /// replaced by `new_region`, and every other region's range
+    /// adjusted via [`PoolRange::after_segment_replacement`] for
+    /// the swap of `replaced` for the bytes now occupying
+    /// `[replaced.start, replaced.start + new_region.len())`.
+    ///
+    /// Panics if `segment` has zero or multiple regions; receptor
+    /// revision Slice A is defined for single-region segments and
+    /// the [`crate::ir::Simulation::with_segment_replaced`] gate
+    /// enforces this before dispatching here.
+    pub fn with_segment_replaced(
+        &self,
+        segment: Segment,
+        replaced: PoolRange,
+        new_region: Region,
+    ) -> Self {
+        let matches = self
+            .regions
+            .iter()
+            .filter(|r| r.segment == segment)
+            .count();
+        assert!(
+            matches == 1,
+            "Sequence::with_segment_replaced: expected exactly 1 region for {segment:?}, found {matches}",
+        );
+        let new_len = new_region.len();
+        let new_regions: Vec<Region> = self
+            .regions
+            .iter()
+            .map(|r| {
+                if r.segment == segment {
+                    new_region.clone()
+                } else {
+                    let range = PoolRange::new(r.start.index(), r.end.index());
+                    let shifted = range.after_segment_replacement(replaced, new_len);
                     Region {
-                        end: NucHandle::new(shift_pos(r_end, delta)),
+                        start: NucHandle::new(shifted.start),
+                        end: NucHandle::new(shifted.end),
                         ..r.clone()
                     }
                 }
@@ -76,13 +126,5 @@ impl Sequence {
             regions: new_regions,
         }
         .with_frame_phases_recomputed()
-    }
-}
-
-fn shift_pos(pos: u32, delta: i32) -> u32 {
-    if delta >= 0 {
-        pos.saturating_add(delta as u32)
-    } else {
-        pos.saturating_sub((-delta) as u32)
     }
 }

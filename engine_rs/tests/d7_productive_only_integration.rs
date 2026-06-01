@@ -44,6 +44,8 @@ fn make_vj_refdata() -> RefDataConfig {
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -51,6 +53,8 @@ fn make_vj_refdata() -> RefDataConfig {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }
@@ -70,6 +74,8 @@ fn make_vj_np_stop_filter_refdata() -> RefDataConfig {
         seq: b"GGGTA".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_stop_filter*01".into(),
@@ -77,6 +83,8 @@ fn make_vj_np_stop_filter_refdata() -> RefDataConfig {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }
@@ -97,6 +105,8 @@ fn make_vdj_np1_future_d_stop_refdata() -> RefDataConfig {
         seq: b"GGG".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "d_future_d_stop*01".into(),
@@ -104,6 +114,8 @@ fn make_vdj_np1_future_d_stop_refdata() -> RefDataConfig {
         seq: b"AAC".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_future_d_stop*01".into(),
@@ -111,6 +123,8 @@ fn make_vdj_np1_future_d_stop_refdata() -> RefDataConfig {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }
@@ -158,6 +172,8 @@ fn make_vdj_refdata() -> RefDataConfig {
         seq: b"AAACCCGGG".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.d_pool.push(Allele {
         name: "d_test*01".into(),
@@ -165,6 +181,8 @@ fn make_vdj_refdata() -> RefDataConfig {
         seq: b"TTTTTT".to_vec(),
         segment: Segment::D,
         anchor: None,
+        functional_status: None,
+        subregions: Vec::new(),
     });
     let _ = cfg.j_pool.push(Allele {
         name: "j_test*01".into(),
@@ -172,6 +190,8 @@ fn make_vdj_refdata() -> RefDataConfig {
         seq: b"TTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
     });
     cfg
 }

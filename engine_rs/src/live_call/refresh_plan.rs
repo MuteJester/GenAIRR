@@ -31,6 +31,7 @@
 //! | `RegionAdded { segment: Np2 }`             | `Segment(D)` (D's right extension reaches into NP2)         |
 //! | `BaseChanged { .. }` (any occurrence)      | `EditedSegments` (once per pass; subsequent are merged in) |
 //! | `IndelInserted` / `IndelDeleted` (any)     | `AllStructural` (once per pass; subsumes any EditedSegments)|
+//! | `SegmentReplaced { segment, .. }`          | `SegmentReplaced(segment)` (deduped per segment, first-encountered order) |
 //! | All other variants                         | no-op                                                       |
 //!
 //! `BasePushed` is intentionally a no-op even though it carries
@@ -78,6 +79,17 @@ pub enum LiveCallRefreshStep {
     /// structural indel. Subsumes [`Self::EditedSegments`] when
     /// both would otherwise apply.
     AllStructural,
+    /// A `segment`'s pool span was structurally replaced via
+    /// [`crate::ir::SimulationBuilder::replace_segment`]. The
+    /// `segment` field carries the replaced segment so future
+    /// receptor-revision slices can specialise the refresh.
+    ///
+    /// **Slice B execution semantics:** identical to
+    /// [`Self::AllStructural`] — receptor revision is rare, and an
+    /// unconditional V/D/J refresh + dirty-log drain is the safest
+    /// generic behaviour. Per-segment narrowing is a Slice C+
+    /// optimisation, not a Slice B correctness requirement.
+    SegmentReplaced(Segment),
 }
 
 /// Ordered list of refresh actions derived from one pass's
@@ -100,6 +112,12 @@ impl LiveCallRefreshPlan {
         let mut steps: Vec<LiveCallRefreshStep> = Vec::new();
         let mut edited_emitted = false;
         let mut structural_emitted = false;
+        // First-encountered-order, per-unique-segment dedup for
+        // `SegmentReplaced`. A pass that replaces V twice (e.g. an
+        // adventurous receptor-revision sampler) collapses to one
+        // refresh step; a pass that replaces V then D yields two
+        // steps in that order.
+        let mut segments_replaced: Vec<Segment> = Vec::new();
 
         for event in events {
             match event {
@@ -119,6 +137,12 @@ impl LiveCallRefreshPlan {
                         structural_emitted = true;
                     }
                 }
+                SimulationEvent::SegmentReplaced { segment, .. } => {
+                    if !segments_replaced.contains(segment) {
+                        segments_replaced.push(*segment);
+                        steps.push(LiveCallRefreshStep::SegmentReplaced(*segment));
+                    }
+                }
                 // BasePushed is a no-op: the equivalent refresh
                 // trigger is the RegionAdded that closes the
                 // assembly / NP push loop. Reacting on each pushed
@@ -135,7 +159,14 @@ impl LiveCallRefreshPlan {
                 | SimulationEvent::TrimChanged { .. }
                 | SimulationEvent::BaseDeleted { .. }
                 | SimulationEvent::RegionReplaced { .. }
+                // PRegionAdded sits between assembled segments,
+                // shifts pool positions of later regions but never
+                // overlaps an already-walked live-call span. The
+                // next assemble pass's walker reads the (now-
+                // P-extended) pool position implicitly via seq_start.
+                | SimulationEvent::PRegionAdded { .. }
                 | SimulationEvent::ReverseComplementFlagRecorded { .. }
+                | SimulationEvent::OrientationChanged { .. }
                 | SimulationEvent::MutationCountChanged { .. } => {}
             }
         }
@@ -220,6 +251,26 @@ mod tests {
             at,
             removed_base: b'A',
             segment: Segment::V,
+        }
+    }
+    fn segment_replaced(segment: Segment, old_len: u32, new_len: u32) -> SimulationEvent {
+        let old = Region::new(segment, NucHandle::new(0), NucHandle::new(old_len));
+        let new = Region::new(segment, NucHandle::new(0), NucHandle::new(new_len));
+        SimulationEvent::SegmentReplaced {
+            segment,
+            old_region: old,
+            new_region: new,
+            bytes_delta: (new_len as i32) - (old_len as i32),
+        }
+    }
+    fn region_replaced_metadata_only(segment: Segment, start: u32, end: u32) -> SimulationEvent {
+        // Identity-replacement is the closest the persistent layer
+        // gets to a metadata-only `RegionReplaced` payload — pool
+        // bytes unchanged, only the `Region` struct itself swapped.
+        let r = Region::new(segment, NucHandle::new(start), NucHandle::new(end));
+        SimulationEvent::RegionReplaced {
+            old: r.clone(),
+            new: r,
         }
     }
 
@@ -418,6 +469,88 @@ mod tests {
     }
 
     // ── Combined event streams (multi-effect passes) ──────────
+
+    // ── SimulationEvent::SegmentReplaced — receptor revision Slice B ──
+
+    #[test]
+    fn segment_replaced_v_emits_single_segment_replaced_step() {
+        let events = vec![segment_replaced(Segment::V, 5, 8)];
+        assert_eq!(
+            LiveCallRefreshPlan::from_events(&events).steps,
+            vec![LiveCallRefreshStep::SegmentReplaced(Segment::V)]
+        );
+    }
+
+    #[test]
+    fn multiple_segment_replaced_for_same_segment_dedup_to_one_step() {
+        // A pass that replaces V twice (e.g. an adventurous
+        // receptor-revision sampler probing two candidates before
+        // committing) must collapse to a single refresh step —
+        // same biology, same execution.
+        let events = vec![
+            segment_replaced(Segment::V, 5, 8),
+            segment_replaced(Segment::V, 8, 6),
+        ];
+        assert_eq!(
+            LiveCallRefreshPlan::from_events(&events).steps,
+            vec![LiveCallRefreshStep::SegmentReplaced(Segment::V)]
+        );
+    }
+
+    #[test]
+    fn segment_replaced_different_segments_yield_separate_steps_in_event_order() {
+        // First-encountered-order, per-unique-segment dedup. A
+        // (hypothetical Slice C+) pass that replaces V then D
+        // produces two steps in that order.
+        let events = vec![
+            segment_replaced(Segment::V, 5, 8),
+            segment_replaced(Segment::D, 3, 4),
+        ];
+        assert_eq!(
+            LiveCallRefreshPlan::from_events(&events).steps,
+            vec![
+                LiveCallRefreshStep::SegmentReplaced(Segment::V),
+                LiveCallRefreshStep::SegmentReplaced(Segment::D),
+            ]
+        );
+    }
+
+    #[test]
+    fn segment_replaced_is_distinguishable_from_region_replaced() {
+        // `RegionReplaced` is metadata-only and stays a no-op (no
+        // pool bytes changed). `SegmentReplaced` is structural and
+        // emits a refresh step. A single record carrying both must
+        // produce exactly one step — the SegmentReplaced one.
+        let events = vec![
+            region_replaced_metadata_only(Segment::V, 0, 5),
+            segment_replaced(Segment::V, 5, 8),
+        ];
+        assert_eq!(
+            LiveCallRefreshPlan::from_events(&events).steps,
+            vec![LiveCallRefreshStep::SegmentReplaced(Segment::V)]
+        );
+    }
+
+    #[test]
+    fn region_replaced_alone_remains_a_noop() {
+        // Pins that Slice B has not accidentally widened
+        // RegionReplaced's behaviour — only SegmentReplaced
+        // triggers a refresh.
+        let events = vec![region_replaced_metadata_only(Segment::V, 0, 5)];
+        assert!(LiveCallRefreshPlan::from_events(&events).is_empty());
+    }
+
+    #[test]
+    fn segment_replaced_step_distinguishable_from_all_structural() {
+        // The two variants share execution semantics under the
+        // Slice B hook, but the plan-layer step is distinct so a
+        // future slice can specialise the refresh without
+        // touching the IR event surface or the indel path.
+        assert_ne!(
+            LiveCallRefreshStep::AllStructural,
+            LiveCallRefreshStep::SegmentReplaced(Segment::V),
+        );
+    }
 
     #[test]
     fn assembly_event_stream_matches_assemble_segment_arm_byte_for_byte() {

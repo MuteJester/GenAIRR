@@ -1,4 +1,6 @@
-use crate::ir::{NucHandle, Nucleotide, Region, Simulation, SimulationBuilder};
+use crate::ir::{
+    complement_base, flag, NucHandle, Nucleotide, Region, Segment, Simulation, SimulationBuilder,
+};
 use crate::pass::{Pass, PassContext, PassError};
 
 use super::AssembleSegmentPass;
@@ -100,7 +102,12 @@ impl AssembleSegmentPass {
 
         let walker_attached = if let Some(reference_index) = ctx.reference_index {
             if let Some(segment_index) = reference_index.get(seg) {
-                builder.attach_walker_observer(segment_index, seq_start);
+                // Orientation drives the per-byte score comparison.
+                // Sourced from the assignment so the inverted-D path
+                // (Slice C-of-d-inversion / Slice E AIRR-field) scores
+                // observed RC'd bytes against the original allele
+                // coordinates without a parallel inverted index.
+                builder.attach_walker_observer(segment_index, seq_start, inst.orientation);
                 true
             } else {
                 false
@@ -117,9 +124,41 @@ impl AssembleSegmentPass {
             builder.attach_event_log_observer();
         }
 
-        for (i, &base) in slice.iter().enumerate() {
-            let allele_pos = slice_start + i as u32;
-            builder.push_nucleotide(Nucleotide::germline(base, allele_pos as u16, seg));
+        // Slice B (D inversion — IR-driven assembly emission).
+        //
+        // The forward path is the only one that has ever fired in
+        // production: every callable surface (DSL, trace, replay)
+        // commits orientation = Forward today. The reverse-complement
+        // branch fires only when an internal test (Slice B) or a
+        // future caller (Slice C onwards) manually flips the D
+        // assignment via `Simulation::with_allele_orientation`.
+        //
+        // Scope-narrowed to D by design: V/J inversion is documented
+        // but out-of-scope for v1 (see `docs/d_inversion_design.md`
+        // §12). Treating non-D ReverseComplement as Forward keeps the
+        // behavior intentionally restricted — a defence-in-depth
+        // guard against accidental broadening before a design pass.
+        let invert =
+            matches!(seg, Segment::D) && inst.orientation.is_reverse();
+        if invert {
+            // Emit retained slice in reverse, complementing each byte.
+            // i-th emitted base sources from allele position
+            // `slice_end - 1 - i` and carries that as `germline_pos`,
+            // preserving original-allele coordinates per design §5.
+            for i in 0..slice_len {
+                let allele_pos = slice_end - 1 - i;
+                let original = allele.seq[allele_pos as usize];
+                let emitted = complement_base(original);
+                builder.push_nucleotide(
+                    Nucleotide::germline(emitted, allele_pos as u16, seg)
+                        .with_flags(flag::INVERTED),
+                );
+            }
+        } else {
+            for (i, &base) in slice.iter().enumerate() {
+                let allele_pos = slice_start + i as u32;
+                builder.push_nucleotide(Nucleotide::germline(base, allele_pos as u16, seg));
+            }
         }
 
         let seq_end = builder.peek().pool.len() as u32;

@@ -8,6 +8,37 @@ pub trait Pass {
     /// Stable, human-readable identifier for this pass.
     fn name(&self) -> &str;
 
+    /// Deterministic, replay-safety-relevant compile-time parameter
+    /// digest for this pass.
+    ///
+    /// The string is folded into [`crate::trace_file::pass_plan_signature`]
+    /// (Slice A — "Pass Parameter Signature") so that a trace
+    /// recorded with one set of pass parameters (rates,
+    /// distributions, probabilities, kernel identity, …) refuses to
+    /// replay against a plan with mismatched parameters. Without
+    /// this hook the plan signature is name-only and a parameter
+    /// change silently produces different output at the same
+    /// recorded addresses.
+    ///
+    /// Implementation rules:
+    /// - Return value must be **deterministic** across runs (no
+    ///   addresses, no timestamps, no `HashMap` iteration order).
+    /// - Include **only compile-time parameters that affect
+    ///   proposal support or the per-address output distribution**.
+    ///   Names, plan position, and runtime state are NOT here.
+    /// - Behaviourally-equivalent inputs must produce equal
+    ///   strings — e.g. the default rate vector and an explicit
+    ///   all-ones rate vector both serialise to `""` for an
+    ///   `is_default()` short-circuit, OR to the same canonical
+    ///   string. See [`crate::passes::paramsig`] for shared
+    ///   formatting helpers.
+    /// - Default implementation returns `""` (the pass has no
+    ///   compile-time parameters or chooses not to participate in
+    ///   the signature). Passes with parameters MUST override.
+    fn parameter_signature(&self) -> String {
+        String::new()
+    }
+
     /// Apply this pass to `sim`, returning the next IR revision.
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation;
 

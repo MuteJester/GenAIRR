@@ -665,7 +665,7 @@ def test_pass_plan_run_matches_run_vj_recombination_under_same_seed():
 
     plan = _build_smoke_vj_plan(cfg)
 
-    o_built = genairr_engine.run(plan, seed=seed, refdata=cfg)
+    o_built = genairr_engine.run(plan, seed=seed, refdata=cfg, allow_curatable_refdata=True)
     o_recipe = genairr_engine.run_vj_recombination(cfg, seed)
     assert o_built.final_simulation().bases() == o_recipe.final_simulation().bases()
     assert [c.address for c in o_built.trace().choices()] == [
@@ -718,7 +718,7 @@ def test_pass_plan_explicit_edge_reorders_independent_passes():
     # Force J's allele draw to come before V's.
     plan.before(j_idx, v_idx)
 
-    compiled = plan.compile(refdata=cfg)
+    compiled = plan.compile(refdata=cfg, allow_curatable_refdata=True)
     names = compiled.pass_names()
     assert names.index("sample_allele.j") < names.index("sample_allele.v"), (
         f"explicit edge `j before v` must reorder allele draws: {names}"
@@ -729,7 +729,7 @@ def test_pass_plan_run_without_refdata_works_for_pure_np_plan():
     # NP-only plan: no allele sampling, no assembly. Doesn't need refdata.
     plan = genairr_engine.PassPlan()
     plan.push_generate_np("NP1", [(5, 1.0)])
-    o = genairr_engine.run(plan, seed=42)
+    o = genairr_engine.run(plan, seed=42, allow_curatable_refdata=True)
     assert o.revision_count() == 2
     assert o.pass_names() == ["generate_np.np1"]
     sim = o.final_simulation()
@@ -747,7 +747,7 @@ def test_pass_plan_push_trim_reduces_assembled_v_length():
     plan.push_trim("V", "3", [(3, 1.0)])
     plan.push_assemble("V")
 
-    o = genairr_engine.run(plan, seed=0, refdata=cfg)
+    o = genairr_engine.run(plan, seed=0, refdata=cfg, allow_curatable_refdata=True)
     sim = o.final_simulation()
     assert len(sim) == 4
     assert sim.bases() == b"ACCC"  # AAACCCGGG[2..6)
@@ -759,7 +759,7 @@ def test_pass_plan_push_trim_records_trim_address():
     plan.push_sample_allele("V", cfg)
     plan.push_trim("V", "3", [(2, 1.0)])
 
-    o = genairr_engine.run(plan, seed=0, refdata=cfg)
+    o = genairr_engine.run(plan, seed=0, refdata=cfg, allow_curatable_refdata=True)
     rec = o.trace().find("trim.v_3")
     assert rec is not None
     assert rec.value == 2
@@ -775,7 +775,7 @@ def test_pass_plan_push_sample_allele_supports_all_three_segments():
     plan.push_sample_allele("V", cfg)
     plan.push_sample_allele("D", cfg)
     plan.push_sample_allele("J", cfg)
-    o = genairr_engine.run(plan, seed=0, refdata=cfg)
+    o = genairr_engine.run(plan, seed=0, refdata=cfg, allow_curatable_refdata=True)
 
     assert o.pass_names() == [
         "sample_allele.v",
@@ -788,7 +788,7 @@ def test_pass_plan_push_generate_np_supports_np1_and_np2():
     plan = genairr_engine.PassPlan()
     plan.push_generate_np("NP1", [(2, 1.0)])
     plan.push_generate_np("NP2", [(3, 1.0)])
-    o = genairr_engine.run(plan, seed=0)
+    o = genairr_engine.run(plan, seed=0, allow_curatable_refdata=True)
     assert o.pass_names() == ["generate_np.np1", "generate_np.np2"]
 
 
@@ -861,8 +861,8 @@ def test_pass_plan_run_is_deterministic_under_same_seed():
     cfg = _build_smoke_vj_refdata()
     plan = _build_smoke_vj_plan(cfg)
 
-    o1 = genairr_engine.run(plan, seed=0xCAFE, refdata=cfg)
-    o2 = genairr_engine.run(plan, seed=0xCAFE, refdata=cfg)
+    o1 = genairr_engine.run(plan, seed=0xCAFE, refdata=cfg, allow_curatable_refdata=True)
+    o2 = genairr_engine.run(plan, seed=0xCAFE, refdata=cfg, allow_curatable_refdata=True)
     assert o1.final_simulation().bases() == o2.final_simulation().bases()
 
 
@@ -872,7 +872,7 @@ def test_pass_plan_can_be_re_run_with_different_seeds():
     cfg = _build_smoke_vj_refdata()
     plan = _build_smoke_vj_plan(cfg)
 
-    runs = [genairr_engine.run(plan, seed=s, refdata=cfg) for s in range(5)]
+    runs = [genairr_engine.run(plan, seed=s, refdata=cfg, allow_curatable_refdata=True) for s in range(5)]
     bases = [r.final_simulation().bases() for r in runs]
     # Not all 5 should be identical (NP1 varies with seed).
     assert len(set(bases)) > 1
@@ -887,7 +887,7 @@ def test_pass_plan_compile_returns_owning_compiled_simulator():
     cfg = _build_smoke_vj_refdata()
     plan = _build_smoke_vj_plan(cfg)
 
-    compiled = plan.compile(refdata=cfg)
+    compiled = plan.compile(refdata=cfg, allow_curatable_refdata=True)
 
     assert isinstance(compiled, genairr_engine.CompiledSimulator)
     assert compiled.policy() == "permissive"
@@ -907,7 +907,7 @@ def test_pass_plan_compile_returns_owning_compiled_simulator():
 
 def test_compiled_simulator_runs_repeatedly_without_recompiling():
     cfg = _build_smoke_vj_refdata()
-    compiled = _build_smoke_vj_plan(cfg).compile(refdata=cfg)
+    compiled = _build_smoke_vj_plan(cfg).compile(refdata=cfg, allow_curatable_refdata=True)
 
     a = compiled.run(0xCAFE)
     b = compiled.run(0xCAFE)
@@ -918,7 +918,7 @@ def test_compiled_simulator_runs_repeatedly_without_recompiling():
 
 def test_compiled_simulator_run_batch_uses_seed_stitching():
     cfg = _build_smoke_vj_refdata()
-    compiled = _build_smoke_vj_plan(cfg).compile(refdata=cfg)
+    compiled = _build_smoke_vj_plan(cfg).compile(refdata=cfg, allow_curatable_refdata=True)
 
     batch = compiled.run_batch(3, 100)
     expected = [compiled.run(seed) for seed in range(100, 103)]
@@ -934,7 +934,7 @@ def test_pass_plan_compile_failure_does_not_consume_builder():
     plan.push_assemble("V")
 
     with pytest.raises(ValueError, match="requires reference data"):
-        plan.compile()
+        plan.compile(allow_curatable_refdata=True)
 
     assert len(plan) == 1
     assert "len=1" in repr(plan)
@@ -947,7 +947,7 @@ def test_pass_plan_productive_compile_rejects_anchorless_v_support():
     plan = _build_smoke_vj_plan(cfg)
 
     with pytest.raises(ValueError, match="V sample support has no alleles"):
-        plan.compile(refdata=cfg, respect=genairr_engine.productive())
+        plan.compile(refdata=cfg, respect=genairr_engine.productive(), allow_curatable_refdata=True)
 
     assert len(plan) == 5
     assert "len=5" in repr(plan)
@@ -963,7 +963,7 @@ def test_pass_plan_productive_compile_rejects_no_in_frame_np_mass():
     plan.push_assemble("J")
 
     with pytest.raises(ValueError, match="NP1 length support has no in-frame mass"):
-        plan.compile(refdata=cfg, respect=genairr_engine.productive())
+        plan.compile(refdata=cfg, respect=genairr_engine.productive(), allow_curatable_refdata=True)
 
     assert len(plan) == 5
 
@@ -974,6 +974,7 @@ def test_compiled_simulator_captures_contracts_and_strict_policy():
         refdata=cfg,
         respect=genairr_engine.productive(),
         strict=True,
+        allow_curatable_refdata=True,
     )
 
     assert compiled.policy() == "strict"

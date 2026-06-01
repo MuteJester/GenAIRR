@@ -155,6 +155,29 @@ impl SegmentRefIndex {
             .and_then(|base_sets| base_sets.compatible_with_observed(observed_base))
     }
 
+    /// Orientation-aware variant of [`Self::compatible_alleles_at`].
+    ///
+    /// For [`crate::assignment::SegmentOrientation::Forward`] this
+    /// is a passthrough. For
+    /// [`crate::assignment::SegmentOrientation::ReverseComplement`]
+    /// the observed byte is pre-complemented before the lookup,
+    /// matching the assembly pass's emission convention for
+    /// inverted-D bytes (pool byte =
+    /// `complement(allele[allele_pos])` while
+    /// `germline_pos = allele_pos`). The single complement
+    /// recovers the allele coordinate; no parallel inverted
+    /// index is needed.
+    pub fn compatible_alleles_at_oriented(
+        &self,
+        ref_pos: usize,
+        observed_base: u8,
+        orientation: crate::assignment::SegmentOrientation,
+    ) -> Option<BaseEvidence<'_>> {
+        let query_byte =
+            super::scoring::observed_in_germline_orientation(observed_base, orientation);
+        self.compatible_alleles_at(ref_pos, query_byte)
+    }
+
     pub fn kmer_hits(&self, kmer: &[u8]) -> Option<&[KmerHit]> {
         self.kmer_index.hits(kmer)
     }
