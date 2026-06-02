@@ -37,6 +37,9 @@ import pytest
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+# The migration plan documents this session's docs-migration work and stays
+# in the private docs/ directory (gitignored). On CI checkouts it's absent;
+# the module-level skipif below short-circuits the whole file in that case.
 _MIGRATION_PLAN = _REPO_ROOT / "docs" / "docs_mkdocs_migration_plan.md"
 _MKDOCS_YML = _REPO_ROOT / "mkdocs.yml"
 _SITE_DOCS = _REPO_ROOT / "site_docs"
@@ -44,20 +47,18 @@ _WEBSITE = _REPO_ROOT / "website"
 _README = _REPO_ROOT / "README.md"
 _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy-docs.yml"
 
+# Tests in this file pin the migration plan's structure. The plan is a
+# private AI-session artifact (see docs/.gitignore); CI checkouts skip
+# the whole file rather than report dozens of irrelevant failures.
+pytestmark = pytest.mark.skipif(
+    not _MIGRATION_PLAN.is_file(),
+    reason="migration plan is contributor-only and not present in this checkout",
+)
+
 
 # ──────────────────────────────────────────────────────────────────
 # A. pin_scaffold_* — scaffold files exist
 # ──────────────────────────────────────────────────────────────────
-
-# --- skip whole module if docs/ tree is absent ---
-# The docs/ directory holds contributor-only audit + design markdowns
-# and is gitignored. CI without docs/ skips this entire test file rather
-# than report dozens of irrelevant failures.
-_DOCS_DIR = _REPO_ROOT / "docs"
-pytestmark = pytest.mark.skipif(
-    not _DOCS_DIR.is_dir(),
-    reason="docs/ is contributor-only and not present in this checkout",
-)
 
 
 def test_pin_scaffold_mkdocs_yml_exists_at_repo_root() -> None:

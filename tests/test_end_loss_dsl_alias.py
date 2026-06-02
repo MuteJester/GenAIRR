@@ -221,7 +221,7 @@ def test_audit_doc_lists_end_loss_as_canonical_dsl_surface() -> None:
 
     doc = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "primer_trim_end_loss_audit.md"
     )
     assert doc.is_file()

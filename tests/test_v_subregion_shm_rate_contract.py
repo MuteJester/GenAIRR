@@ -54,7 +54,7 @@ import GenAIRR as ga
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_AUDIT_DOC = _REPO_ROOT / "docs" / "v_subregion_shm_rate_design.md"
+_AUDIT_DOC = _REPO_ROOT / "audit-docs" / "v_subregion_shm_rate_design.md"
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -648,9 +648,6 @@ def test_pin_present_compile_time_rejection_for_unsatisfiable_rates() -> None:
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc must continue to exist and reference this
     contract file; 14-section structure stays intact."""
-    if not _AUDIT_DOC.exists():
-        import pytest
-        pytest.skip("docs/ is contributor-only; audit doc not present in this checkout")
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
     assert "test_v_subregion_shm_rate_contract.py" in doc, (
         "audit doc no longer references the contract file; lockstep "

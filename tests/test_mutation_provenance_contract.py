@@ -491,11 +491,7 @@ def test_pin_absence_python_eventrecord_lacks_typed_events() -> None:
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc must continue to exist and reference this
     contract file; the 14-section structure stays intact."""
-    docs_dir = Path(__file__).resolve().parent.parent / "docs"
-    if not docs_dir.is_dir():
-        import pytest
-        pytest.skip("docs/ is contributor-only; not present in this checkout")
-    doc_path = _REPO_ROOT / "docs" / "mutation_provenance_audit.md"
+    doc_path = _REPO_ROOT / "audit-docs" / "mutation_provenance_audit.md"
     assert doc_path.exists(), "mutation_provenance_audit.md missing"
     doc = doc_path.read_text(encoding="utf-8")
     assert "test_mutation_provenance_contract.py" in doc, (

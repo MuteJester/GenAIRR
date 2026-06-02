@@ -599,7 +599,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
 
     doc_path = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "reference_cartridge_completeness_audit.md"
     )
     assert doc_path.exists(), "reference_cartridge_completeness_audit.md missing"

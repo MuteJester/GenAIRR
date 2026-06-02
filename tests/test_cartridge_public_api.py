@@ -143,12 +143,8 @@ def test_cartridge_doc_exists() -> None:
     """The cartridge guide is the canonical reference for the
     authoring surface; a missing file means the API docstrings
     point at nothing."""
-    docs_dir = Path(__file__).resolve().parent.parent / "docs"
-    if not docs_dir.is_dir():
-        import pytest
-        pytest.skip("docs/ is contributor-only; not present in this checkout")
 
-    doc = Path(__file__).resolve().parent.parent / "docs" / "reference_cartridge.md"
+    doc = Path(__file__).resolve().parent.parent / "audit-docs" / "reference_cartridge.md"
     assert doc.is_file(), f"docs/reference_cartridge.md is missing at {doc}"
     text = doc.read_text(encoding="utf-8")
     # Sanity-check the four planes are all named in the doc.

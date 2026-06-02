@@ -39,7 +39,7 @@ from GenAIRR.reference_models import ReferenceEmpiricalModels
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_AUDIT_DOC = _REPO_ROOT / "docs" / "p_nucleotide_design.md"
+_AUDIT_DOC = _REPO_ROOT / "audit-docs" / "p_nucleotide_design.md"
 _SEGMENT_RS = _REPO_ROOT / "engine_rs" / "src" / "ir" / "segment.rs"
 _NUCLEOTIDE_RS = _REPO_ROOT / "engine_rs" / "src" / "ir" / "nucleotide.rs"
 _SIM_EVENT_RS = _REPO_ROOT / "engine_rs" / "src" / "ir" / "sim_event.rs"
@@ -585,9 +585,6 @@ def test_pin_present_p_length_mismatch_validator_issue_kind() -> None:
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc must continue to exist and reference this
     contract file; the 16-section structure stays intact."""
-    if not _AUDIT_DOC.exists():
-        import pytest
-        pytest.skip("docs/ is contributor-only; audit doc not present in this checkout")
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
     assert "test_p_nucleotide_contract.py" in doc, (
         "audit doc no longer references the contract file; lockstep "

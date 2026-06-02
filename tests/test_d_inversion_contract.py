@@ -275,7 +275,7 @@ def test_pin_design_doc_lists_all_eight_audit_questions() -> None:
     refactor that drops one surfaces here."""
     doc = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "d_inversion_design.md"
     )
     assert doc.is_file(), f"design doc is missing at {doc}"
@@ -303,7 +303,7 @@ def test_pin_design_doc_summary_table_carries_every_decision() -> None:
     implementation must match."""
     doc = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "d_inversion_design.md"
     )
     text = doc.read_text(encoding="utf-8")

@@ -59,7 +59,7 @@ from GenAIRR.reference_models import (
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_AUDIT_DOC = _REPO_ROOT / "docs" / "np_base_model_estimation_design.md"
+_AUDIT_DOC = _REPO_ROOT / "audit-docs" / "np_base_model_estimation_design.md"
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -612,9 +612,6 @@ def test_pin_absence_no_np_base_model_estimator_module_or_class() -> None:
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc exists and references the contract
     file by name; section structure intact."""
-    if not _AUDIT_DOC.exists():
-        import pytest
-        pytest.skip("docs/ is contributor-only; audit doc not present in this checkout")
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
     assert "test_np_base_model_estimation_contract.py" in doc, (
         "audit doc no longer references the contract file"

@@ -39,7 +39,7 @@ import pytest
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_AUDIT_DOC = _REPO_ROOT / "docs" / "docs_website_audit.md"
+_AUDIT_DOC = _REPO_ROOT / "audit-docs" / "docs_website_audit.md"
 _README = _REPO_ROOT / "README.md"
 _WEBSITE = _REPO_ROOT / "website"
 _DOCS = _REPO_ROOT / "docs"
@@ -50,16 +50,6 @@ _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy-docs.yml"
 # ──────────────────────────────────────────────────────────────────
 # A. pin_scaffold_* — current state inventory
 # ──────────────────────────────────────────────────────────────────
-
-# --- skip whole module if docs/ tree is absent ---
-# The docs/ directory holds contributor-only audit + design markdowns
-# and is gitignored. CI without docs/ skips this entire test file rather
-# than report dozens of irrelevant failures.
-_DOCS_DIR = _REPO_ROOT / "docs"
-pytestmark = pytest.mark.skipif(
-    not _DOCS_DIR.is_dir(),
-    reason="docs/ is contributor-only and not present in this checkout",
-)
 
 
 def test_pin_scaffold_website_dir_exists_with_handwritten_html() -> None:
@@ -112,14 +102,17 @@ def test_pin_post_cutover_deploy_docs_workflow_builds_mkdocs_and_uploads_site() 
 
 
 def test_pin_scaffold_docs_dir_carries_audit_design_md_files() -> None:
-    """`docs/` carries ≥ 35 markdown files (audits +
-    designs + hubs). The audit catalogued 38 at write
-    time; the pin is intentionally loose so adding new
-    audits doesn't fail this test."""
-    md_files = sorted(_DOCS.glob("*.md"))
+    """`audit-docs/` carries ≥ 35 markdown files (audits +
+    designs + hubs). Originally housed in `docs/` (which is now
+    private — Claude session artefacts + impl-time notes); moved
+    to `audit-docs/` so contract tests can reference them in CI.
+    The pin is intentionally loose so adding new audits doesn't
+    fail this test."""
+    audit_dir = _REPO_ROOT / "audit-docs"
+    md_files = sorted(audit_dir.glob("*.md"))
     assert len(md_files) >= 35, (
-        f"docs/ has only {len(md_files)} markdown files; audit §1.3 "
-        f"documented 38 — audits/designs were deleted?"
+        f"audit-docs/ has only {len(md_files)} markdown files; "
+        f"audit §1.3 documented 38 — audits/designs were deleted?"
     )
     # Spot-check canonical files that the validation matrix relies on.
     for name in (
@@ -129,8 +122,8 @@ def test_pin_scaffold_docs_dir_carries_audit_design_md_files() -> None:
         "reference_cartridge.md",
         "airr_record_validator.md",
     ):
-        assert (_DOCS / name).is_file(), (
-            f"docs/{name} missing — contributor entry point regressed"
+        assert (audit_dir / name).is_file(), (
+            f"audit-docs/{name} missing — contributor entry point regressed"
         )
 
 
@@ -518,9 +511,6 @@ def test_pin_absence_no_docusaurus_or_jekyll_config_today() -> None:
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc exists and references the contract
     file by name; section structure intact."""
-    if not _AUDIT_DOC.exists():
-        import pytest
-        pytest.skip("docs/ is contributor-only; audit doc not present in this checkout")
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
     assert "test_docs_website_contract.py" in doc, (
         "audit doc no longer references the contract file"

@@ -51,7 +51,7 @@ from GenAIRR.reference_models import (
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_AUDIT_DOC = _REPO_ROOT / "docs" / "plan_signature_completeness_audit.md"
+_AUDIT_DOC = _REPO_ROOT / "audit-docs" / "plan_signature_completeness_audit.md"
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -700,9 +700,6 @@ def test_pin_unfolded_production_passes_define_parameter_signature() -> None:
 
 
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
-    if not _AUDIT_DOC.exists():
-        import pytest
-        pytest.skip("docs/ is contributor-only; audit doc not present in this checkout")
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
     assert "test_plan_signature_completeness_contract.py" in doc, (
         "audit doc no longer references the contract file"

@@ -51,7 +51,7 @@ import GenAIRR as ga
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_AUDIT_DOC = _REPO_ROOT / "docs" / "v_subregion_mutation_counters_audit.md"
+_AUDIT_DOC = _REPO_ROOT / "audit-docs" / "v_subregion_mutation_counters_audit.md"
 
 # The six AIRR fields the implementation slice will add.
 _SUBREGION_COUNTER_FIELDS: tuple[str, ...] = (
@@ -523,9 +523,6 @@ def test_pin_absence_no_new_mutate_trace_addresses() -> None:
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc must continue to exist and reference this
     contract file; structure intact."""
-    if not _AUDIT_DOC.exists():
-        import pytest
-        pytest.skip("docs/ is contributor-only; audit doc not present in this checkout")
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
     assert "test_v_subregion_mutation_counters_contract.py" in doc, (
         "audit doc no longer references the contract file; lockstep "

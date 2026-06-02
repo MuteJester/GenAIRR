@@ -547,11 +547,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc must continue to exist and reference this
     contract file; the canonical 14-section structure is intact.
     A regression here means the change-control surface drifted."""
-    docs_dir = Path(__file__).resolve().parent.parent / "docs"
-    if not docs_dir.is_dir():
-        import pytest
-        pytest.skip("docs/ is contributor-only; not present in this checkout")
-    doc_path = _REPO_ROOT / "docs" / "clonal_plan_split_design.md"
+    doc_path = _REPO_ROOT / "audit-docs" / "clonal_plan_split_design.md"
     assert doc_path.exists(), "clonal_plan_split_design.md missing"
     doc = doc_path.read_text(encoding="utf-8")
     assert "test_clonal_plan_split_contract.py" in doc, (

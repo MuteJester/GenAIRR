@@ -520,7 +520,7 @@ def test_pin_design_doc_lists_all_fourteen_audit_sections() -> None:
     surfaces here."""
     doc = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "receptor_revision_design.md"
     )
     assert doc.is_file(), f"design doc is missing at {doc}"
@@ -555,7 +555,7 @@ def test_pin_design_doc_summary_table_carries_every_decision() -> None:
     test."""
     doc = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "receptor_revision_design.md"
     )
     text = doc.read_text(encoding="utf-8")

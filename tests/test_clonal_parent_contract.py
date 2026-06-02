@@ -686,11 +686,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     exist and reference this contract file. If the doc is deleted,
     the lockstep convention breaks before behaviour-level pins
     start drifting unexplained."""
-    docs_dir = Path(__file__).resolve().parent.parent / "docs"
-    if not docs_dir.is_dir():
-        import pytest
-        pytest.skip("docs/ is contributor-only; not present in this checkout")
-    doc_path = _REPO_ROOT / "docs" / "clonal_parent_outcome_design.md"
+    doc_path = _REPO_ROOT / "audit-docs" / "clonal_parent_outcome_design.md"
     assert doc_path.exists(), "clonal_parent_outcome_design.md missing"
     doc = doc_path.read_text(encoding="utf-8")
     assert "test_clonal_parent_contract.py" in doc, (

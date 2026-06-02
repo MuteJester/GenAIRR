@@ -598,7 +598,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     contract file; the 14-section structure stays intact. Audit
     convention: a regression here means the change-control
     surface drifted."""
-    doc_path = _REPO_ROOT / "docs" / "shm_model_audit.md"
+    doc_path = _REPO_ROOT / "audit-docs" / "shm_model_audit.md"
     assert doc_path.exists(), "shm_model_audit.md missing"
     doc = doc_path.read_text(encoding="utf-8")
     assert "test_shm_model_contract.py" in doc, (

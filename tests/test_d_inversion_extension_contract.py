@@ -386,7 +386,7 @@ def test_pin_design_doc_lists_fourteen_sections() -> None:
     count so a future contributor can't quietly drop one."""
     doc = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "d_inversion_extension_design.md"
     ).read_text(encoding="utf-8")
     headers = re.findall(r"^## (\d{1,2})\. ", doc, re.MULTILINE)
@@ -402,7 +402,7 @@ def test_pin_design_doc_summary_table_carries_every_decision() -> None:
     quietly drop a decision."""
     doc = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "d_inversion_extension_design.md"
     ).read_text(encoding="utf-8")
     summary_match = re.search(

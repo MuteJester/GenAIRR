@@ -12,8 +12,8 @@ authoritative source.</p>
     You're at the entry of the **"I'm contributing to GenAIRR"**
     path. After the engine mental model and the audit-first
     workflow on this page, the three anchor docs at
-    `docs/engine_architecture.md`, `docs/adding_a_pass.md`, and
-    `docs/validation_matrix.md` are the contributor-tone
+    `audit-docs/engine_architecture.md`, `audit-docs/adding_a_pass.md`, and
+    `audit-docs/validation_matrix.md` are the contributor-tone
     references for actually writing kernel code.
     [See all paths →](../learn.md)
 
@@ -74,11 +74,11 @@ the repository root rather than inside the docs site:
 
 | Document | Purpose |
 |---|---|
-| `docs/engine_architecture.md` | The seven engine invariants — contracts constrain support, trace = choices, events = consequences, live-call refresh follows events, plan signature gates replay, refdata content hash gates content drift, projection is pure. Required reading before any kernel work. |
-| `docs/adding_a_pass.md` | The pass-author playbook: minimal pass template, the three required test patterns (deterministic-by-trace, plan-signature-stable, event-ledger-complete), the live-call refresh hook contract. Copy-paste-ready. |
-| `docs/validation_matrix.md` | The navigable map: every guarantee → its audit doc → its test file → the Rust kernel invariant. Use it to find the load-bearing tests for any behaviour you're about to change. |
-| `docs/plan_signature_completeness_audit.md` | The replay-safety audit: every parameterised DSL surface + every cartridge-driven compile parameter mapped against plan-signature participation. The reference when you wire a new parameter. |
-| `docs/docs_website_audit.md` | The information architecture audit of the docs corpus itself, plus the migration roadmap to the MkDocs site you're reading now. |
+| `audit-docs/engine_architecture.md` | The seven engine invariants — contracts constrain support, trace = choices, events = consequences, live-call refresh follows events, plan signature gates replay, refdata content hash gates content drift, projection is pure. Required reading before any kernel work. |
+| `audit-docs/adding_a_pass.md` | The pass-author playbook: minimal pass template, the three required test patterns (deterministic-by-trace, plan-signature-stable, event-ledger-complete), the live-call refresh hook contract. Copy-paste-ready. |
+| `audit-docs/validation_matrix.md` | The navigable map: every guarantee → its audit doc → its test file → the Rust kernel invariant. Use it to find the load-bearing tests for any behaviour you're about to change. |
+| `audit-docs/plan_signature_completeness_audit.md` | The replay-safety audit: every parameterised DSL surface + every cartridge-driven compile parameter mapped against plan-signature participation. The reference when you wire a new parameter. |
+| `audit-docs/docs_website_audit.md` | The information architecture audit of the docs corpus itself, plus the migration roadmap to the MkDocs site you're reading now. |
 
 ## The audit-first workflow
 
@@ -87,7 +87,7 @@ specified, validated against the existing engine, and pinned by
 contract tests *before* implementation begins. The pattern, in
 order:
 
-1. **Audit doc.** Open `docs/<topic>_audit.md`. Define the
+1. **Audit doc.** Open `audit-docs/<topic>_audit.md`. Define the
    biology, name the v1 boundary (what's in / what's deferred),
    enumerate the invariants the implementation must preserve,
    and list the drift section's open questions.
@@ -102,9 +102,9 @@ order:
    contract pins from red to green. The audit doc's invariants
    guide what each slice must hold.
 4. **Release consolidation.** Once every slice has shipped, a
-   release commit renames `docs/<topic>_audit.md` →
-   `docs/<topic>_design.md` (audit → design transition), updates
-   `docs/validation_matrix.md` with the new row, and stamps the
+   release commit renames `audit-docs/<topic>_audit.md` →
+   `audit-docs/<topic>_design.md` (audit → design transition), updates
+   `audit-docs/validation_matrix.md` with the new row, and stamps the
    audit as resolved.
 
 **Why this matters for biological mechanisms.** Most simulators
@@ -145,7 +145,7 @@ The checklist new contributors run before opening a slice PR:
 - [ ] **Define the biology and provenance.** What does this
       mechanism model in vivo? What counters and provenance
       fields does it surface on the AIRR record? Write it in
-      `docs/<topic>_audit.md` §1-2 before writing code.
+      `audit-docs/<topic>_audit.md` §1-2 before writing code.
 - [ ] **Trace / replay choices.** Every sampling site this
       mechanism introduces needs a stable address (`engine_rs/src/address.rs`)
       and a deterministic projection from `ChoiceValue`. Write
@@ -175,7 +175,7 @@ The checklist new contributors run before opening a slice PR:
       new mechanism's output before release. Add a release-tier
       pin if the mechanism touches the live-call refresh hook.
 
-The `docs/adding_a_pass.md` companion turns this checklist into
+The `audit-docs/adding_a_pass.md` companion turns this checklist into
 copy-paste templates; use it for the actual implementation.
 
 ## Two-layer integrity model
@@ -191,7 +191,7 @@ Both layers run in release-tier CI. The AIRR validator catches
 projection / counter drift; cache parity catches live-call
 refresh-hook bugs that the AIRR validator can't see because
 they don't surface on the record. See
-`docs/validation_matrix.md`
+`audit-docs/validation_matrix.md`
 §1.0 for the rationale.
 
 ## Deep links
@@ -202,23 +202,23 @@ site source tree, so these are absolute URLs.)
 
 ### Anchor docs (linked above)
 
-- `docs/engine_architecture.md` 
-- `docs/adding_a_pass.md` 
-- `docs/validation_matrix.md` 
-- `docs/plan_signature_completeness_audit.md` 
+- `audit-docs/engine_architecture.md` 
+- `audit-docs/adding_a_pass.md` 
+- `audit-docs/validation_matrix.md` 
+- `audit-docs/plan_signature_completeness_audit.md` 
 
 ### Sample audits by mechanism area
 
 The full corpus carries 39 markdown files. A few representative
 audits to illustrate scope:
 
-- `docs/allele_call_audit.md` — recombination 
-- `docs/junction_n_addition_audit.md` — recombination 
-- `docs/mutation_provenance_audit.md` — mutation 
-- `docs/v_region_substructure_audit.md` — mutation 
-- `docs/indel_provenance_audit.md` — corruption 
-- `docs/airr_record_validator.md` — projection 
-- `docs/reference_cartridge_completeness_audit.md` — cartridge 
+- `audit-docs/allele_call_audit.md` — recombination 
+- `audit-docs/junction_n_addition_audit.md` — recombination 
+- `audit-docs/mutation_provenance_audit.md` — mutation 
+- `audit-docs/v_region_substructure_audit.md` — mutation 
+- `audit-docs/indel_provenance_audit.md` — corruption 
+- `audit-docs/airr_record_validator.md` — projection 
+- `audit-docs/reference_cartridge_completeness_audit.md` — cartridge 
 
 The full inventory is browsable at the repository root in
 `docs/`; a Phase 5 audit-index page will enumerate everything

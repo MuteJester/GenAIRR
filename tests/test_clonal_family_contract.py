@@ -665,7 +665,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     before behaviour-level pins start drifting unexplained."""
     doc_path = (
         Path(__file__).resolve().parent.parent
-        / "docs"
+        / "audit-docs"
         / "clonal_family_design.md"
     )
     assert doc_path.exists(), "clonal_family_design.md missing"

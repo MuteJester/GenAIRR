@@ -387,12 +387,8 @@ def test_audit_doc_exists_and_lists_every_pinned_topic() -> None:
     """The audit answers seven questions. If the doc loses any
     section header, the test surfaces it so the doc and the
     behaviour-pinning tests don't drift apart."""
-    docs_dir = Path(__file__).resolve().parent.parent / "docs"
-    if not docs_dir.is_dir():
-        import pytest
-        pytest.skip("docs/ is contributor-only; not present in this checkout")
 
-    doc = Path(__file__).resolve().parent.parent / "docs" / "allele_model_audit.md"
+    doc = Path(__file__).resolve().parent.parent / "audit-docs" / "allele_model_audit.md"
     assert doc.is_file(), f"docs/allele_model_audit.md is missing at {doc}"
     text = doc.read_text(encoding="utf-8")
     for header in (
