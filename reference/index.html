@@ -1,0 +1,2879 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Synthetic immune-receptor-sequence simulator with absolute ground truth">
+      
+      
+        <meta name="author" content="Thomas Konstantinovsky">
+      
+      
+        <link rel="canonical" href="https://mutejester.github.io/GenAIRR/reference/index.html">
+      
+      
+        <link rel="prev" href="../guides/trace-replay.html">
+      
+      
+        <link rel="next" href="experiment.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Overview - GenAIRR</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:300,300i,400,400i,700,700i%7CIBM+Plex+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"IBM Plex Sans";--md-code-font:"IBM Plex Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="green">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#api-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../index.html" title="GenAIRR" class="md-header__button md-logo" aria-label="GenAIRR" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            GenAIRR
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Overview
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/MuteJester/GenAIRR" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    MuteJester/GenAIRR
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../index.html" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../learn.html" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Choose your path
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../concepts/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Core Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../guides/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Simulation Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../cartridges/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference Cartridge Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../validation/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Validation & Debugging
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture (Contributor)
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../index.html" title="GenAIRR" class="md-nav__button md-logo" aria-label="GenAIRR" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    GenAIRR
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/MuteJester/GenAIRR" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    MuteJester/GenAIRR
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../learn.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choose your path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../getting-started/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/quick-start.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/first-airr-record.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first AIRR record
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/export-results.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export the results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../concepts/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/airr-record.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AIRR Record
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/reference-cartridge.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Cartridge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../guides/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Simulation Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/experiment-builder.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Experiment builder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/biology-map.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Biology map
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/recombination-junction.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recombination + junction biology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/recombination-editing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    D inversion + receptor revision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/clonal-families.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clonal families
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/junction-additions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junction N/P additions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/shm-targeting.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Targeted SHM rates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/corruption-sequencing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Corruption + sequencing artefacts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/paired-end-fastq.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Paired-end reads and FASTQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../cartridges/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Cartridge Authoring
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference Cartridge Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/build-reference-cartridge.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build a reference cartridge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/estimate-cartridge-models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Estimate models from data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/cartridge-manifest-report.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inspect manifest + build report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../validation/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Validation & Debugging
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Validation & Debugging
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../validation/validate-records.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    validate_records
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/trace-replay.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trace, replay, reproducibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="index.html" class="md-nav__link md-nav__link--active">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link md-nav__link--active" for="__nav_8" id="__nav_8_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="experiment.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="simulation-result.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SimulationResult
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference-cartridge-builder.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ReferenceCartridgeBuilder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference-models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference models and rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../architecture/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture (Contributor)
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture (Contributor)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-read-this-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to read this reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#top-level-imports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-level imports
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Top-level imports">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simulation-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation entry points
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reference-data-cartridges-and-bridges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reference data — cartridges and bridges
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bundled-cartridges-lazy-loaded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundled cartridges (lazy-loaded)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reference-cartridge-authoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reference cartridge authoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validation-reports-and-exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation reports and exceptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#experiment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experiment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simulationresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimulationResult
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reports-and-exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reports and exceptions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reports and exceptions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validationreport" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ValidationReport
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#familyvalidationreport" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FamilyValidationReport
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cartridgebuildreport" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CartridgeBuildReport
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generated-simulationresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generated SimulationResult
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Generated SimulationResult">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#GenAIRR.SimulationResult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimulationResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-not-documented-here-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's not documented here yet
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
+<p class="lead">A map of the public surface. The reference is
+organised by workflow — how you actually compose a simulation —
+rather than alphabetically. For each symbol, the user guide that
+explains <em>how to use it</em> is linked; the autogenerated
+per-symbol signatures are still being expanded.</p>
+
+<h2 id="how-to-read-this-reference">How to read this reference<a class="headerlink" href="#how-to-read-this-reference" title="Permanent link">&para;</a></h2>
+<p>The page below is <strong>workflow-first</strong>, not signature-first. Each
+section starts with the user-facing surface — what to call, in
+what order — and links to the dedicated guide for context. Use
+this page to find the right symbol; use the guides to learn
+when and why to use it.</p>
+<p>If you want the precise method signatures or the underlying
+docstrings, the <a href="#generated-simulationresult">generated SimulationResult section</a>
+below shows what auto-rendered API docs look like (one example
+class today; the rest land in a follow-up slice).</p>
+<h2 id="top-level-imports">Top-level imports<a class="headerlink" href="#top-level-imports" title="Permanent link">&para;</a></h2>
+<p>35 names ship in <code>GenAIRR.__all__</code>. Grouped by what they do:</p>
+<h3 id="simulation-entry-points">Simulation entry points<a class="headerlink" href="#simulation-entry-points" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Purpose</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Experiment</code></td>
+<td>Fluent pipeline builder</td>
+<td><a href="../guides/experiment-builder.html">The Experiment builder</a></td>
+</tr>
+<tr>
+<td><code>CompiledExperiment</code></td>
+<td>Compiled plan (compile once, run many)</td>
+<td><a href="../guides/experiment-builder.html">The Experiment builder</a></td>
+</tr>
+<tr>
+<td><code>SimulationResult</code></td>
+<td>Records + outcomes + parents wrapper</td>
+<td><a href="../getting-started/quick-start.html">Quick start</a></td>
+</tr>
+<tr>
+<td><code>set_seed</code>, <code>get_seed</code>, <code>reset_seed</code></td>
+<td>Thread-local seed management</td>
+<td><a href="../validation/index.html#trace-and-replay">Validation hub</a></td>
+</tr>
+<tr>
+<td><code>__version__</code></td>
+<td>Resolved via <code>importlib.metadata</code>; falls back to <code>"0.0.0"</code> for editable installs</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="reference-data-cartridges-and-bridges">Reference data — cartridges and bridges<a class="headerlink" href="#reference-data-cartridges-and-bridges" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Purpose</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DataConfig</code></td>
+<td>The Python-side cartridge dataclass</td>
+<td><a href="../concepts/reference-cartridge.html">Reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>RefDataConfig</code></td>
+<td>The engine-side refdata bridge object</td>
+<td><a href="../concepts/reference-cartridge.html">Reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>dataconfig_to_refdata</code></td>
+<td>Bridge function — <code>DataConfig → RefDataConfig</code></td>
+<td><a href="../validation/validate-records.html"><code>validate_records</code></a></td>
+</tr>
+<tr>
+<td><code>ConfigInfo</code></td>
+<td>Identity metadata</td>
+<td><a href="../concepts/reference-cartridge.html">Reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>ChainType</code></td>
+<td><code>BCR_HEAVY</code> / <code>BCR_LIGHT_KAPPA</code> / ...</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>Species</code></td>
+<td><code>HUMAN</code> / <code>MOUSE</code> / ...</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>Productivity</code></td>
+<td>Productive / NonProductive enumeration</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>list_configs</code></td>
+<td>Enumerate the 100+ bundled cartridges</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>DataConfigError</code></td>
+<td>DataConfig validation failure</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="bundled-cartridges-lazy-loaded">Bundled cartridges (lazy-loaded)<a class="headerlink" href="#bundled-cartridges-lazy-loaded" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">GenAIRR</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ga</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">cfg</span> <span class="o">=</span> <span class="n">ga</span><span class="o">.</span><span class="n">HUMAN_IGH_OGRDB</span>     <span class="c1"># pickled cartridge — loaded on first access</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Locus / chain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HUMAN_IGH_OGRDB</code></td>
+<td>Human IGH, OGRDB</td>
+</tr>
+<tr>
+<td><code>HUMAN_IGH_EXTENDED</code></td>
+<td>Human IGH, extended catalogue</td>
+</tr>
+<tr>
+<td><code>HUMAN_IGK_OGRDB</code></td>
+<td>Human IGK, OGRDB</td>
+</tr>
+<tr>
+<td><code>HUMAN_IGL_OGRDB</code></td>
+<td>Human IGL, OGRDB</td>
+</tr>
+<tr>
+<td><code>HUMAN_TCRB_IMGT</code></td>
+<td>Human TRB, IMGT</td>
+</tr>
+</tbody>
+</table>
+<p>The five top-level bundled cartridges above are the most commonly
+used. The full 100+-cartridge catalogue stays reachable via
+<code>ga.list_configs()</code> and <code>GenAIRR.data.&lt;NAME&gt;</code> (lazy attribute
+access).</p>
+<h3 id="reference-cartridge-authoring">Reference cartridge authoring<a class="headerlink" href="#reference-cartridge-authoring" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Purpose</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ReferenceCartridgeBuilder</code></td>
+<td>Fluent builder for custom cartridges from FASTA</td>
+<td><a href="../guides/build-reference-cartridge.html">Build a reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>CartridgeBuildReport</code></td>
+<td>Auditable build trail dataclass</td>
+<td><a href="../guides/build-reference-cartridge.html">Build a reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>ReferenceRulesSpec</code></td>
+<td>Anchor + alphabet + severity rules</td>
+<td><a href="../concepts/reference-cartridge.html">Reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>AnchorRuleSpec</code></td>
+<td>Per-anchor expected-AA + required flag</td>
+<td><a href="../concepts/reference-cartridge.html">Reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>ReferenceEmpiricalModels</code></td>
+<td>Typed empirical-model bundle</td>
+<td><a href="../concepts/reference-cartridge.html">Reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>EmpiricalDistributionSpec</code></td>
+<td><code>[(value, weight), ...]</code> shape</td>
+<td><a href="../concepts/reference-cartridge.html">Reference cartridge</a></td>
+</tr>
+<tr>
+<td><code>NpBaseModelSpec</code></td>
+<td>NP-base sampling model (uniform / empirical / Markov)</td>
+<td><a href="../guides/junction-additions.html">Junction N/P additions</a></td>
+</tr>
+<tr>
+<td><code>AlleleUsageSpec</code></td>
+<td>Per-segment allele-usage weights</td>
+<td><a href="../concepts/reference-cartridge.html">Reference cartridge</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="validation-reports-and-exceptions">Validation reports and exceptions<a class="headerlink" href="#validation-reports-and-exceptions" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Purpose</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ValidationReport</code></td>
+<td>Per-record AIRR-validator output</td>
+<td><a href="../validation/validate-records.html"><code>validate_records</code></a></td>
+</tr>
+<tr>
+<td><code>FamilyValidationReport</code></td>
+<td>Family-validator output</td>
+<td><a href="../guides/clonal-families.html">Clonal families</a></td>
+</tr>
+<tr>
+<td><code>RecordValidationFailedError</code></td>
+<td>Raised when strict record validation fails</td>
+<td><a href="../validation/validate-records.html"><code>validate_records</code></a></td>
+</tr>
+<tr>
+<td><code>FamilyValidationFailedError</code></td>
+<td>Raised when strict family validation fails</td>
+<td><a href="../guides/clonal-families.html">Clonal families</a></td>
+</tr>
+<tr>
+<td><code>StrictSamplingError</code></td>
+<td>Raised under <code>strict=True</code> on empty admissible support</td>
+<td><a href="../validation/index.html#strict-vs-permissive">Validation hub</a></td>
+</tr>
+<tr>
+<td><code>productive</code></td>
+<td>Convenience contract bundle for productive sampling</td>
+<td><a href="../guides/recombination-junction.html#productivity">Recombination biology</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="experiment">Experiment<a class="headerlink" href="#experiment" title="Permanent link">&para;</a></h2>
+<p>The fluent pipeline builder. Every chained method returns the
+same <code>Experiment</code> extended by one more pass; the pipeline runs
+when <code>.run_records(...)</code> / <code>.run(...)</code> / <code>.compile().run(...)</code>
+is called.</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Methods</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bind to a cartridge</strong></td>
+<td><code>Experiment.on(cfg_or_name)</code></td>
+<td>Accepts a string shortcut, a <code>DataConfig</code>, or a <code>RefDataConfig</code></td>
+</tr>
+<tr>
+<td><strong>Recombination</strong></td>
+<td><code>.recombine()</code>, <code>.invert_d(prob=...)</code>, <code>.receptor_revision(prob=...)</code></td>
+<td>Ancestor-phase mechanisms</td>
+</tr>
+<tr>
+<td><strong>Constraints</strong></td>
+<td><code>.productive_only()</code>, <code>.restrict_alleles(v=..., d=..., j=...)</code></td>
+<td>Constrain the sample space</td>
+</tr>
+<tr>
+<td><strong>Biological mutation</strong></td>
+<td><code>.mutate(model="s5f"\|"uniform", rate=..., count=..., segment_rates=..., v_subregion_rates=...)</code></td>
+<td>The only pass that increments <code>n_mutations</code></td>
+</tr>
+<tr>
+<td><strong>Clonal structure</strong></td>
+<td><code>.expand_clones(n_clones=..., per_clone=...)</code></td>
+<td>Marks the ancestor/descendant fork</td>
+</tr>
+<tr>
+<td><strong>Trims override</strong></td>
+<td><code>.trim(v_3=..., d_5=..., d_3=..., j_5=..., enabled=...)</code></td>
+<td>Per-experiment trim distribution overrides</td>
+</tr>
+<tr>
+<td><strong>Library / sequencer artefacts</strong></td>
+<td><code>.pcr_amplify(...)</code>, <code>.polymerase_indels(...)</code>, <code>.ambiguous_base_calls(...)</code>, <code>.sequencing_errors(...)</code>, <code>.end_loss_5prime(...)</code>, <code>.end_loss_3prime(...)</code></td>
+<td>All descendant-phase</td>
+</tr>
+<tr>
+<td><strong>Read layout</strong></td>
+<td><code>.paired_end(r1_length=..., r2_length=..., insert_size=...)</code>, <code>.random_strand_orientation(prob=...)</code></td>
+<td>Per-read projection</td>
+</tr>
+<tr>
+<td><strong>Bookkeeping</strong></td>
+<td><code>.with_metadata(...)</code>, <code>.contaminate(prob=...)</code></td>
+<td>Stamp metadata; inject background contaminants</td>
+</tr>
+<tr>
+<td><strong>Run</strong></td>
+<td><code>.run_records(n=..., seed=..., validate_records=..., strict=..., expose_provenance=...)</code>, <code>.run(...)</code>, <code>.stream(...)</code>, <code>.stream_records(...)</code></td>
+<td>Compile + run + project</td>
+</tr>
+<tr>
+<td><strong>Compile reuse</strong></td>
+<td><code>.compile()</code></td>
+<td>Compile once, reuse across many batches</td>
+</tr>
+<tr>
+<td><strong>Compile mode</strong></td>
+<td><code>.allow_curatable_refdata()</code>, <code>.curate_refdata(policy)</code></td>
+<td>Cartridge-validation mode at compile time</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../guides/experiment-builder.html">The Experiment builder</a> for
+the full pipeline-stage map and ordering rules.</p>
+<h2 id="simulationresult">SimulationResult<a class="headerlink" href="#simulationresult" title="Permanent link">&para;</a></h2>
+<p>The output of <code>run_records(...)</code> — a list-like wrapper around AIRR
+record dicts plus the underlying <code>Outcome</code> objects.</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Methods / properties</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>List-like access</strong></td>
+<td><code>len(result)</code>, <code>result[i]</code>, <code>result[a:b]</code>, <code>for rec in result:</code></td>
+<td>One AIRR dict per element</td>
+</tr>
+<tr>
+<td><strong>Underlying state</strong></td>
+<td><code>.records</code>, <code>.outcomes</code>, <code>.parents</code></td>
+<td><code>outcomes</code> is <code>None</code> when built from records only; <code>parents</code> is <code>None</code> on non-clonal results</td>
+</tr>
+<tr>
+<td><strong>Validation</strong></td>
+<td><code>.validate_records(refdata)</code>, <code>.validate_families()</code>, <code>.validate_families_with_parents(refdata)</code></td>
+<td>See <a href="../validation/index.html">Validation hub</a></td>
+</tr>
+<tr>
+<td><strong>Export</strong></td>
+<td><code>.to_tsv(path, *, airr_strict=False)</code>, <code>.to_csv(path, *, airr_strict=False)</code>, <code>.to_fasta(path, *, prefix="seq")</code>, <code>.to_fastq(path, *, quality="illumina", **kw)</code>, <code>.to_paired_fastq(r1, r2, *, quality="illumina", overwrite=False, **kw)</code>, <code>.to_dataframe(*, airr_strict=False)</code></td>
+<td>See <a href="../getting-started/export-results.html">Export the results</a></td>
+</tr>
+<tr>
+<td><strong>Construction</strong></td>
+<td><code>SimulationResult.from_outcomes(outcomes, refdata, *, id_prefix="seq", expose_provenance=False)</code></td>
+<td>Build a result from Rust <code>Outcome</code> objects + refdata; <code>expose_provenance=True</code> injects <code>truth_*_call</code> columns</td>
+</tr>
+</tbody>
+</table>
+<h2 id="reports-and-exceptions">Reports and exceptions<a class="headerlink" href="#reports-and-exceptions" title="Permanent link">&para;</a></h2>
+<h3 id="validationreport"><code>ValidationReport</code><a class="headerlink" href="#validationreport" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">report</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">validate_records</span><span class="p">(</span><span class="n">refdata</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">report</span><span class="o">.</span><span class="n">ok</span>        <span class="c1"># bool — every record passed</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">report</span><span class="o">.</span><span class="n">count</span>     <span class="c1"># int — total records validated</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">report</span><span class="o">.</span><span class="n">failures</span>  <span class="c1"># list[dict] — per-record failure entries with structured issues</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">report</span><span class="o">.</span><span class="n">summary</span><span class="p">()</span> <span class="c1"># str — histogram of issue kinds</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nb">bool</span><span class="p">(</span><span class="n">report</span><span class="p">)</span>     <span class="c1"># == report.ok</span>
+</code></pre></div>
+<h3 id="familyvalidationreport"><code>FamilyValidationReport</code><a class="headerlink" href="#familyvalidationreport" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">report</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">validate_families</span><span class="p">()</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">report</span><span class="o">.</span><span class="n">ok</span>                  <span class="c1"># bool</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">report</span><span class="o">.</span><span class="n">count</span>               <span class="c1"># total records inspected</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">report</span><span class="o">.</span><span class="n">family_count</span>        <span class="c1"># int — distinct clone_ids found</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">report</span><span class="o">.</span><span class="n">members_per_family</span>  <span class="c1"># dict[int, int] — descendant count per clone</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">report</span><span class="o">.</span><span class="n">failures</span>            <span class="c1"># list[dict] — per-family failure entries</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">report</span><span class="o">.</span><span class="n">summary</span><span class="p">()</span>           <span class="c1"># histogram of issue kinds</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nb">bool</span><span class="p">(</span><span class="n">report</span><span class="p">)</span>               <span class="c1"># == report.ok</span>
+</code></pre></div>
+<p>Same dataclass shape is returned by <code>validate_families_with_parents(refdata)</code>.</p>
+<h3 id="cartridgebuildreport"><code>CartridgeBuildReport</code><a class="headerlink" href="#cartridgebuildreport" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">report</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">report</span><span class="p">()</span>           <span class="c1"># or cfg.build_report</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">report</span><span class="o">.</span><span class="n">stages</span>                       <span class="c1"># list[dict] — one entry per builder call</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">report</span><span class="o">.</span><span class="n">warnings</span>                     <span class="c1"># list[str] — build-finalisation warnings</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">report</span><span class="o">.</span><span class="n">rejected</span>                     <span class="c1"># list[dict] — per-allele drops + per-row estimator rejections</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">report</span><span class="o">.</span><span class="n">manifest_snapshot</span>            <span class="c1"># dict | None — cartridge_manifest() at build time</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">report</span><span class="o">.</span><span class="n">checksum_at_build_time</span>       <span class="c1"># str | None — schema_sha256 stamped on cfg</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">report</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>                    <span class="c1"># JSON-clean dict for CI artifacts</span>
+</code></pre></div>
+<p>See <a href="../guides/build-reference-cartridge.html">Build a reference cartridge</a>
+for the full surface.</p>
+<h3 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Exception</th>
+<th>Raised by</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>StrictSamplingError</code></td>
+<td><code>run_records(..., strict=True)</code></td>
+<td>Empty admissible support at a sampling site</td>
+</tr>
+<tr>
+<td><code>RecordValidationFailedError</code></td>
+<td>Strict record-validation code paths</td>
+<td>A validator gate fired in strict mode</td>
+</tr>
+<tr>
+<td><code>FamilyValidationFailedError</code></td>
+<td>Strict family-validation code paths</td>
+<td>A family-validator gate fired in strict mode</td>
+</tr>
+<tr>
+<td><code>DataConfigError</code></td>
+<td><code>DataConfig</code> validation</td>
+<td>Cartridge spec rejected</td>
+</tr>
+</tbody>
+</table>
+<p><code>StrictSamplingError</code> is NOT a <code>ValueError</code> subclass — <code>except
+ValueError</code> will not catch it. Catch it explicitly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">exp</span><span class="o">.</span><span class="n">run_records</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">except</span> <span class="n">ga</span><span class="o">.</span><span class="n">StrictSamplingError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">pass_name</span><span class="p">,</span> <span class="n">address</span><span class="p">,</span> <span class="n">reason</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span>
+</code></pre></div>
+<h2 id="generated-simulationresult">Generated <code>SimulationResult</code><a class="headerlink" href="#generated-simulationresult" title="Permanent link">&para;</a></h2>
+<p>What an autogenerated section looks like (rendered via
+<code>mkdocstrings</code> from the docstrings in <code>src/GenAIRR/result.py</code>).
+One class today; the full reference fills in over follow-up
+slices.</p>
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h3 id="GenAIRR.SimulationResult" class="doc doc-heading">
+            <code>GenAIRR.SimulationResult</code>
+
+
+<a href="#GenAIRR.SimulationResult" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>List-like wrapper around a batch of AIRR records.</p>
+<p><code>result[i]</code> returns the i-th record dict; <code>len(result)</code> is
+the number of records; iteration yields records in order.</p>
+<p>The original <code>Outcome</code> objects (with their full trace +
+revision history) are kept on <code>.outcomes</code> for advanced
+inspection — most users won't need them.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="GenAIRR.SimulationResult.records" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">records</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#GenAIRR.SimulationResult.records" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The underlying list of record dicts. Mutation through this
+view propagates back into the result.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="GenAIRR.SimulationResult.outcomes" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">outcomes</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#GenAIRR.SimulationResult.outcomes" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The underlying list of <code>Outcome</code> objects, or <code>None</code>
+when this :class:<code>SimulationResult</code> was built from records
+directly (e.g. loaded from a TSV).</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="GenAIRR.SimulationResult.parents" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">parents</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#GenAIRR.SimulationResult.parents" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Per-clone parent <code>Outcome</code> objects for clonal results;
+<code>None</code> for non-clonal results and for results built from
+records directly.</p>
+<p><code>parents[c]</code> is the recombination ancestor of clone <code>c</code>:
+every descendant record with
+<code>record["clone_id"] == record["parent_id"] == c</code> was
+produced by running the post-fork plan from this parent's
+:meth:<code>final_simulation</code>.</p>
+<p>The parent <code>Outcome</code> carries the pre-fork addressed-choice
+<code>.trace()</code>, the pre-fork <code>.events()</code> ledger, the
+per-revision IR history (<code>.revision(i)</code>), and the final
+assembled IR (<code>.final_simulation()</code>). Use these for
+replay, lineage analysis, or building a parent-aware family
+validator (Slice 3+ scope).</p>
+<p>The flat <code>.outcomes</code> list continues to carry <strong>only the
+descendant outcomes</strong> (one entry per AIRR record); parents
+live exclusively here. <code>len(.parents)</code> equals the clonal
+pipeline's <code>n_clones</code>; <code>len(.outcomes)</code> equals
+<code>n_clones * per_clone</code>.</p>
+
+    </div>
+
+</div>
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="GenAIRR.SimulationResult.validate_records" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">validate_records</span><span class="p">(</span><span class="n">refdata</span><span class="p">)</span></code>
+
+<a href="#GenAIRR.SimulationResult.validate_records" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p><strong>Public AIRR output correctness check.</strong></p>
+<p>Run the postcondition validator over every record in this
+result and return a :class:<code>ValidationReport</code>. This is the
+gate a downstream consumer cares about: "is each projected
+AIRR record internally consistent with the engine state that
+produced it?"</p>
+<p>Each record is re-derived independently from its original
+<code>Outcome</code> (trace + event ledger + final <code>Simulation</code>)
+and compared against the projected dict. A record passes
+when <code>outcome.validate_record(refdata, sequence_id=...)</code>
+returns an empty issue list. Failures collect the
+<code>record_index</code>, <code>sequence_id</code>, and the issue dicts.</p>
+<p><strong>Companion check</strong> — for engine-side integrity, see
+:meth:<code>Outcome.check_live_call_cache_parity</code> (returns the
+cached-vs-fresh divergence on the live-call cache that
+<em>feeds</em> projection).</p>
+<p><strong>Troubleshooting rule</strong> — if a CI run has both this
+validator AND the parity harness failing on the same batch,
+fix the parity divergence FIRST: a stale cache can leak
+into projection and produce spurious validator failures.
+Once parity is green, rerun the validator; remaining
+failures point at a real projection-layer bug.</p>
+<p><code>refdata</code> must be the same :class:<code>RefDataConfig</code> the
+outcomes were produced against; passing a different refdata
+will misreport mismatches against an unrelated allele pool.</p>
+<p>Raises <code>RuntimeError</code> when this result was built without
+attached outcomes (e.g. loaded from a TSV); the validator
+needs the engine state, not just the projected record.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="GenAIRR.SimulationResult.validate_families" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">validate_families</span><span class="p">(</span><span class="n">refdata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#GenAIRR.SimulationResult.validate_families" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p><strong>Clonal-family consistency check</strong> — a strict subset of
+the audit's §6 family-layer invariants
+(<code>docs/clonal_family_design.md</code>).</p>
+<p>Groups records by <code>clone_id</code> and asserts the recombination-
+time truth fields agree across every descendant of a clone.
+<code>refdata</code> is reserved for forward compatibility with the
+deeper family-layer checks (pre-SHM junction, mutation-
+distance distribution) the audit's later slices add; this
+slice's invariants are all dict-only and ignore <code>refdata</code>.</p>
+<p><strong>Currently enforced invariants:</strong></p>
+<ul>
+<li><code>truth_v_call</code> constant within each <code>clone_id</code>, <strong>when
+  present</strong>. Skipped silently for clones whose records were
+  projected without <code>expose_provenance=True</code>.</li>
+<li><code>truth_d_call</code> same.</li>
+<li><code>truth_j_call</code> same.</li>
+<li><code>clone_id</code> is present on every record once any record
+  in the batch carries one (a batch that mixes clonal and
+  non-clonal records raises <code>CloneIdMissing</code>).</li>
+</ul>
+<p><strong>Non-clonal results return ok with <code>family_count == 0</code>.</strong>
+This makes <code>result.validate_families()</code> a safe no-op on a
+flat batch — the call site does not need to branch on the
+result's clonal-ness.</p>
+<p><strong>Records-only results work.</strong> Unlike
+:meth:<code>validate_records</code>, this validator does not require
+the underlying <code>Outcome</code> objects — every check is on
+record-dict fields — so a <code>SimulationResult</code> loaded from
+TSV can still be family-validated.</p>
+<p><strong>Not enforced yet</strong> (deferred per the audit's §14
+out-of-scope list): mutation-distance distribution, pre-SHM
+junction invariance, parent-trace reconstruction, lineage
+topology, <code>original_v_call</code> / <code>d_inverted</code> invariance.</p>
+<p>Returns a :class:<code>FamilyValidationReport</code> carrying
+<code>count</code>, <code>family_count</code>, <code>members_per_family</code>, and
+<code>failures</code>.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="GenAIRR.SimulationResult.to_dataframe" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">to_dataframe</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">airr_strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+<a href="#GenAIRR.SimulationResult.to_dataframe" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return a :class:<code>pandas.DataFrame</code> with one row per record.</p>
+<p><code>airr_strict=True</code> converts all 0-based half-open coord
+<code>*_start</code> fields to the AIRR-spec 1-based-inclusive form
+(<code>*_end</code> fields are unchanged). Useful when handing the
+DataFrame off to AIRR-strict downstream tooling.</p>
+<p>Raises <code>ImportError</code> if pandas isn't installed (pandas is
+an optional extra: <code>pip install GenAIRR[all]</code>).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="GenAIRR.SimulationResult.to_tsv" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">to_tsv</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">airr_strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+<a href="#GenAIRR.SimulationResult.to_tsv" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Write the records as AIRR-style TSV (tab-separated). The
+header row uses :data:<code>_DEFAULT_COLUMN_ORDER</code>.</p>
+<p><code>airr_strict=True</code> converts coord <code>*_start</code> fields to
+1-based-inclusive (AIRR spec).</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="whats-not-documented-here-yet">What's not documented here yet<a class="headerlink" href="#whats-not-documented-here-yet" title="Permanent link">&para;</a></h2>
+<p>A few surfaces deliberately don't appear on this page:</p>
+<ul>
+<li><strong>Deep Rust engine internals.</strong> <code>GenAIRR._engine</code> exposes the
+  PyO3 bindings (<code>Outcome</code>, <code>TraceFile</code>, <code>RefDataConfig</code>,
+  <code>Simulation</code>, etc.). These are reachable from Python but are
+  engine-developer surfaces; the user-facing surface above
+  (<code>SimulationResult.outcomes[i].trace()</code>,
+  <code>compiled.simulator.replay_from_trace_file(...)</code>) is what user
+  code should touch.</li>
+<li><strong>Experimental / private helpers.</strong> Anything under <code>GenAIRR._*</code>
+  is private; signatures and behaviour can change between
+  releases without notice.</li>
+<li><strong>Pre-engine documentation.</strong> The historical <code>_old_docs/</code>
+  directory in the repository carries an earlier docs system
+  that predates the Rust engine; it's preserved for reference
+  but not migrated into the current site.</li>
+</ul>
+<p>When you need the full per-symbol docstring inventory, the
+follow-up slice will land <code>mkdocstrings</code>-driven pages for
+<code>Experiment</code>, <code>SimulationResult</code>, <code>ReferenceCartridgeBuilder</code>,
+<code>DataConfig</code>, and the cartridge-spec dataclasses. Today, the
+<a href="#generated-simulationresult">generated <code>SimulationResult</code> section</a>
+above is the only one.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../guides/trace-replay.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Trace, replay, reproducibility">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Trace, replay, reproducibility
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="experiment.html" class="md-footer__link md-footer__link--next" aria-label="Next: Experiment">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Experiment
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 Thomas Konstantinovsky · GPL-3.0
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/MuteJester/GenAIRR" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://pypi.org/project/GenAIRR/" target="_blank" rel="noopener" title="pypi.org" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.indexes", "navigation.top", "navigation.footer", "search.highlight", "search.share", "search.suggest", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

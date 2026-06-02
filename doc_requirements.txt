@@ -1,6 +1,0 @@
-pandas~=1.5.3
-numpy~=1.24.3
-scipy~=1.11.1
-mkdocs-jupyter
-mkdocs-material
-tqdm~=4.67.1

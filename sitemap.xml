@@ -1,87 +1,287 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://genairr.readthedocs.io/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/api_reference/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/learn.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/best_practices/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/architecture/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/biological_context/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/architecture/adding-a-pass.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/custom_data_config/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/architecture/audit-index.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/faq/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/architecture/engine.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/genairr_flow/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/architecture/validation-matrix.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/getting_started/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/migration_guide/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/build-from-fasta.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/parameter_reference/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/empirical-models.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/step_by_step_tutorial/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/rules-and-identity.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/troubleshooting/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/v-subregion-annotations.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/concepts/dataconfig_deep_dive/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/estimators/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/concepts/pipeline_operations/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/estimators/allele-usage.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/concepts/productivity/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/estimators/np-base-model.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/concepts/step_deep_dives/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/estimators/np-length.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/tutorials/Advanced%20Custom%20Generation/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/estimators/p-nucleotide-length.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/tutorials/Creating%20Custom%20DataConfig%20from%20FASTA%20Files/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/cartridges/estimators/trim-distributions.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/tutorials/Generating_Uniform_Allele_Distribution_Dataset/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/concepts/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/tutorials/Introduction%20to%20the%20DataConfig%20Object/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/concepts/airr-record.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
     <url>
-         <loc>https://genairr.readthedocs.io/tutorials/Quick%20Start%20Guide/</loc>
-         <lastmod>2026-02-25</lastmod>
+         <loc>https://mutejester.github.io/GenAIRR/concepts/contracts.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/concepts/live-call.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/concepts/persistent-ir.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/concepts/pipeline.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/concepts/reference-cartridge.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/export-results.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/first-airr-record.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/installation.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/lesson-1-vdj-recombination-from-bases-up.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/lesson-2-the-pipeline-scrubber.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/lesson-3-s5f-mutation-isnt-uniform.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/lesson-4-sequencing-artifacts-dialed-in.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/lesson-5-the-ground-truth-payoff.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/getting-started/quick-start.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/biology-map.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/build-config.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/build-reference-cartridge.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/cartridge-manifest-report.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/clonal-families.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/corruption-sequencing.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/estimate-cartridge-models.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/experiment-builder.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/export.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/junction-additions.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/paired-end-fastq.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/productive.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/recombination-editing.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/recombination-junction.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/shm-targeting.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/streaming.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/trace-replay.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/tune-corruption.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/v-usage.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/guides/with-metadata.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/reference/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/reference/experiment.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/reference/reference-cartridge-builder.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/reference/reference-models.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/reference/simulation-result.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/index.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/audit-realism.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/benchmark-aligner.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/compare-shm.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/replay.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/reproduce.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/smoke-test.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/trace-introspection.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/two-layer-model.html</loc>
+         <lastmod>2026-06-02</lastmod>
+    </url>
+    <url>
+         <loc>https://mutejester.github.io/GenAIRR/validation/validate-records.html</loc>
+         <lastmod>2026-06-02</lastmod>
     </url>
 </urlset>

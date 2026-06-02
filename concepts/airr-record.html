@@ -1,0 +1,3120 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Synthetic immune-receptor-sequence simulator with absolute ground truth">
+      
+      
+        <meta name="author" content="Thomas Konstantinovsky">
+      
+      
+        <link rel="canonical" href="https://mutejester.github.io/GenAIRR/concepts/airr-record.html">
+      
+      
+        <link rel="prev" href="index.html">
+      
+      
+        <link rel="next" href="reference-cartridge.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>AIRR Record - GenAIRR</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:300,300i,400,400i,700,700i%7CIBM+Plex+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"IBM Plex Sans";--md-code-font:"IBM Plex Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="green">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#the-airr-record" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../index.html" title="GenAIRR" class="md-header__button md-logo" aria-label="GenAIRR" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            GenAIRR
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              AIRR Record
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/MuteJester/GenAIRR" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    MuteJester/GenAIRR
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../index.html" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../learn.html" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Choose your path
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Core Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../guides/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Simulation Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../cartridges/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference Cartridge Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../validation/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Validation & Debugging
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../reference/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/index.html" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture (Contributor)
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../index.html" title="GenAIRR" class="md-nav__button md-logo" aria-label="GenAIRR" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    GenAIRR
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/MuteJester/GenAIRR" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    MuteJester/GenAIRR
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../learn.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choose your path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../getting-started/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/quick-start.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/first-airr-record.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first AIRR record
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/export-results.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export the results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AIRR Record
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="airr-record.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AIRR Record
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#derived-not-accumulated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Derived, not accumulated
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-an-airr-record-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an AIRR record is
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-sequence-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core sequence fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#allele-calls-and-truth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Allele calls and truth
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Allele calls and truth">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#truth-columns-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Truth columns (opt-in)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#junction-and-productivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Junction and productivity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recombination-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recombination structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recombination structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-segment-alignment-coordinates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-segment alignment coordinates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trim-fields-recombination-stage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trim fields (recombination-stage)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#np-regions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NP regions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p-nucleotide-lengths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P-nucleotide lengths
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cigar-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CIGAR fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mutation-and-artefact-counters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mutation and artefact counters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Mutation and artefact counters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#biological-shm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Biological SHM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#v-subregion-mutation-partition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        V-subregion mutation partition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#library-sequencing-artefacts-non-biological" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Library + sequencing artefacts (non-biological)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-mechanism-provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced mechanism provenance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clonal-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clonal fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-mistakes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common mistakes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-to-go-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where to go next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference-cartridge.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Cartridge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../guides/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Simulation Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/experiment-builder.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Experiment builder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/biology-map.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Biology map
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/recombination-junction.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recombination + junction biology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/recombination-editing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    D inversion + receptor revision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/clonal-families.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clonal families
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/junction-additions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Junction N/P additions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/shm-targeting.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Targeted SHM rates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/corruption-sequencing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Corruption + sequencing artefacts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/paired-end-fastq.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Paired-end reads and FASTQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../cartridges/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Cartridge Authoring
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference Cartridge Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/build-reference-cartridge.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build a reference cartridge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/estimate-cartridge-models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Estimate models from data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/cartridge-manifest-report.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inspect manifest + build report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../validation/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Validation & Debugging
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Validation & Debugging
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../validation/validate-records.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    validate_records
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/trace-replay.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trace, replay, reproducibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/experiment.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/simulation-result.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SimulationResult
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/reference-cartridge-builder.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ReferenceCartridgeBuilder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/reference-models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference models and rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../architecture/index.html" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture (Contributor)
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture (Contributor)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#derived-not-accumulated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Derived, not accumulated
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-an-airr-record-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an AIRR record is
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-sequence-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core sequence fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#allele-calls-and-truth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Allele calls and truth
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Allele calls and truth">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#truth-columns-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Truth columns (opt-in)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#junction-and-productivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Junction and productivity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recombination-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recombination structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recombination structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-segment-alignment-coordinates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-segment alignment coordinates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trim-fields-recombination-stage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trim fields (recombination-stage)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#np-regions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NP regions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p-nucleotide-lengths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P-nucleotide lengths
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cigar-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CIGAR fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mutation-and-artefact-counters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mutation and artefact counters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Mutation and artefact counters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#biological-shm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Biological SHM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#v-subregion-mutation-partition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        V-subregion mutation partition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#library-sequencing-artefacts-non-biological" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Library + sequencing artefacts (non-biological)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-mechanism-provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced mechanism provenance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clonal-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clonal fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-mistakes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common mistakes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-to-go-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where to go next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="the-airr-record">The AIRR record<a class="headerlink" href="#the-airr-record" title="Permanent link">&para;</a></h1>
+<p class="lead">An AIRR record is one row of GenAIRR's output —
+one simulated molecule (or one paired-end read pair) with its
+ground truth, its observed sequence, and the counters that
+describe what happened on the way through the pipeline. This
+page is the field-by-field tour, organised by category, with the
+biology-vs-artefact distinctions made explicit so you can pick
+the right field for the question you're asking.</p>
+
+<h2 id="derived-not-accumulated">Derived, not accumulated<a class="headerlink" href="#derived-not-accumulated" title="Permanent link">&para;</a></h2>
+<p>A GenAIRR record is <strong>not</strong> an accumulator of fields filled in
+across the pipeline. It's computed once, at the end, by reading
+the final intermediate-representation pool. Coordinates, CIGARs,
+junction, productivity, calls — everything is derived from one
+source of truth, so nothing can drift out of sync.</p>
+<p>Most simulators carry an AIRR record alongside the sequence and
+update fields as the pipeline progresses. An indel happens, and
+they scramble to decrement coordinates downstream; a trim
+arrives, and they bookkeep the gene end. Every update is a
+chance to introduce a desynchronisation bug.</p>
+<p>GenAIRR keeps no such running record. Coordinates exist only on
+the final pool. CIGARs are walked once at the end. <code>productive</code>
+is decided by reading the junction codons from the final state.
+There is no parallel state to fall out of sync — there is
+nothing to fall out of sync <em>with</em>.</p>
+<p>That property is also why the <a href="../validation/validate-records.html"><code>validate_records</code></a>
+gate works: the validator re-runs the same projection and asserts
+agreement with the record. If projection is pure (and it is),
+the validator can independently re-derive every field and catch
+any drift introduced by a code-path change.</p>
+<h2 id="what-an-airr-record-is">What an AIRR record is<a class="headerlink" href="#what-an-airr-record-is" title="Permanent link">&para;</a></h2>
+<p>A record is a <code>dict</code> (or one row of <code>result.to_dataframe()</code>).
+Field names follow the AIRR-C v1 schema where one exists, with
+GenAIRR-specific additions for ground truth, mutation
+provenance, corruption counters, clonal structure, and
+paired-end layout. The same column order ships in
+<code>SimulationResult.to_tsv()</code> / <code>.to_csv()</code> and is reachable
+programmatically as <code>result.to_dataframe().columns</code>.</p>
+<p>The canonical groups, in the order they appear on the record:</p>
+<ol>
+<li>AIRR metadata (sequence + length + locus)</li>
+<li>V / D / J calls + alignment coordinates + trim</li>
+<li>Junction</li>
+<li>NP regions</li>
+<li>Productivity flags</li>
+<li>SHM and corruption counters</li>
+<li>Per-segment indel + mutation partitions</li>
+<li>V-subregion mutation partition</li>
+<li>End-loss artefacts</li>
+<li>Contamination flag</li>
+<li>D-inversion provenance</li>
+<li>Receptor-revision provenance</li>
+<li>Read layout (paired-end)</li>
+<li>Clonal stamping (when expand_clones runs)</li>
+<li>Truth columns (when <code>expose_provenance=True</code>)</li>
+</ol>
+<p>The remaining sections walk through each.</p>
+<h2 id="core-sequence-fields">Core sequence fields<a class="headerlink" href="#core-sequence-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sequence_id</code></td>
+<td>str</td>
+<td><code>"{prefix}{i}"</code> — defaults to <code>"seq0"</code>, <code>"seq1"</code>, …</td>
+</tr>
+<tr>
+<td><code>sequence</code></td>
+<td>str</td>
+<td>The observed nucleotide sequence; lower-case bases mark corrupted positions (low quality / PCR / sequencing error)</td>
+</tr>
+<tr>
+<td><code>sequence_aa</code></td>
+<td>str</td>
+<td>Amino-acid translation in the V reading frame</td>
+</tr>
+<tr>
+<td><code>sequence_alignment</code></td>
+<td>str</td>
+<td>Gapped sequence aligned to the germline (when present)</td>
+</tr>
+<tr>
+<td><code>germline_alignment</code></td>
+<td>str</td>
+<td>The germline alignment of <code>sequence_alignment</code></td>
+</tr>
+<tr>
+<td><code>germline_alignment_d_mask</code></td>
+<td>str</td>
+<td>Germline alignment with the D region masked</td>
+</tr>
+<tr>
+<td><code>sequence_length</code></td>
+<td>int</td>
+<td>Length of <code>sequence</code> in nucleotides</td>
+</tr>
+<tr>
+<td><code>rev_comp</code></td>
+<td>bool</td>
+<td><code>True</code> when the projection reverse-complemented the molecule (set by <code>random_strand_orientation</code>)</td>
+</tr>
+<tr>
+<td><code>locus</code></td>
+<td>str</td>
+<td>Cartridge identity (e.g. <code>"IGH"</code>, <code>"TRB"</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>The lower-case base convention on <code>sequence</code> is load-bearing —
+the FASTQ exporter (<code>to_fastq</code> / <code>to_paired_fastq</code>) routes those
+positions to the low-quality bucket. See the
+<a href="../guides/corruption-sequencing.html">Corruption + sequencing artefacts guide</a>
+for what each corruption pass writes into <code>sequence</code>.</p>
+<h2 id="allele-calls-and-truth">Allele calls and truth<a class="headerlink" href="#allele-calls-and-truth" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>v_call, d_call, j_call    ← the call surface
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>truth_v_call, truth_d_call, truth_j_call  ← provenance (opt-in)
+</code></pre></div>
+<p><code>v_call</code> (and <code>d_call</code>, <code>j_call</code>) carry the <strong>resolved allele
+name</strong> committed during recombination — or the post-revision
+identity after <code>receptor_revision()</code>. The call field is a
+comma-separated <strong>tie set</strong> when the engine sampled an
+indistinguishable group:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>v_call: &quot;IGHV3-23*01&quot;
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>v_call: &quot;IGHV3-23*01,IGHV3-23*04&quot;   ← tie set: two-way ambiguity
+</code></pre></div>
+<p>Downstream code that wants the single committed allele should
+split on <code>","</code> and pick the first entry; downstream code that
+wants to credit ambiguity fractionally should split and divide.
+Either policy is valid; just pick one.</p>
+<p><strong><code>d_call</code></strong> is empty (<code>""</code>) on VJ-chain records (kappa, lambda,
+TCR alpha). The empty string — not <code>None</code> — is the canonical
+absent value, mirroring how missing fields work in AIRR TSV.</p>
+<h3 id="truth-columns-opt-in">Truth columns (opt-in)<a class="headerlink" href="#truth-columns-opt-in" title="Permanent link">&para;</a></h3>
+<p>When the experiment runs with <code>expose_provenance=True</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">exp</span><span class="o">.</span><span class="n">run_records</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">expose_provenance</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p>the records also carry <code>truth_v_call</code>, <code>truth_d_call</code>, and
+<code>truth_j_call</code>. These are the <strong>same</strong> call values as
+<code>v_call</code> / <code>d_call</code> / <code>j_call</code> in the ordinary case (GenAIRR's
+records <em>are</em> truth by construction). The truth columns become
+load-bearing in two cases:</p>
+<ul>
+<li><strong>Family validation</strong> uses them to confirm every descendant of
+  a clonal family shares the recombination-time identity (see
+  <a href="../guides/clonal-families.html">Clonal families</a>).</li>
+<li><strong>Aligner benchmarking</strong> treats <code>v_call</code> as the aligner's
+  prediction and <code>truth_*_call</code> as the ground truth, even when
+  both came from the same simulator — the column split makes the
+  benchmark script's join symmetric.</li>
+</ul>
+<p>Without <code>expose_provenance=True</code>, the truth columns are absent
+entirely.</p>
+<h2 id="junction-and-productivity">Junction and productivity<a class="headerlink" href="#junction-and-productivity" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>junction</code></td>
+<td>str</td>
+<td>Junction sequence (V end + NP1 + D + NP2 + J start, conserved Cys to Trp/Phe)</td>
+</tr>
+<tr>
+<td><code>junction_aa</code></td>
+<td>str</td>
+<td>Amino-acid translation of <code>junction</code></td>
+</tr>
+<tr>
+<td><code>junction_start</code>, <code>junction_end</code></td>
+<td>int</td>
+<td>Junction coordinates within <code>sequence</code></td>
+</tr>
+<tr>
+<td><code>junction_length</code></td>
+<td>int</td>
+<td>Length of <code>junction</code> in nucleotides (always a multiple of 3 when <code>productive: True</code>)</td>
+</tr>
+<tr>
+<td><code>productive</code></td>
+<td>bool</td>
+<td><code>True</code> iff in-frame junction + no junction stop codon + V Cys preserved + J Trp / Phe preserved</td>
+</tr>
+<tr>
+<td><code>vj_in_frame</code></td>
+<td>bool</td>
+<td>V and J in the same reading frame</td>
+</tr>
+<tr>
+<td><code>stop_codon</code></td>
+<td>bool</td>
+<td><code>True</code> iff a stop codon exists in <code>sequence_aa</code></td>
+</tr>
+</tbody>
+</table>
+<p>When the pipeline includes <code>.productive_only()</code>, every record
+has <code>productive: True</code> by construction — the constraint masks
+the sampling support before the draw, so the engine never
+produces an unproductive record in the first place. See
+<a href="../guides/recombination-junction.html#productivity">Recombination and junction biology</a>
+for the four-clause definition.</p>
+<h2 id="recombination-structure">Recombination structure<a class="headerlink" href="#recombination-structure" title="Permanent link">&para;</a></h2>
+<h3 id="per-segment-alignment-coordinates">Per-segment alignment coordinates<a class="headerlink" href="#per-segment-alignment-coordinates" title="Permanent link">&para;</a></h3>
+<p>For each of V, D, J:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{v,d,j}_sequence_start</code></td>
+<td>Position in <code>sequence</code> where this segment begins (0-based by default; 1-based when <code>airr_strict=True</code>)</td>
+</tr>
+<tr>
+<td><code>{v,d,j}_sequence_end</code></td>
+<td>Exclusive end position in <code>sequence</code></td>
+</tr>
+<tr>
+<td><code>{v,d,j}_alignment_start</code></td>
+<td>Position in <code>sequence_alignment</code></td>
+</tr>
+<tr>
+<td><code>{v,d,j}_alignment_end</code></td>
+<td>Exclusive alignment end</td>
+</tr>
+<tr>
+<td><code>{v,d,j}_germline_start</code></td>
+<td>Position in the germline allele</td>
+</tr>
+<tr>
+<td><code>{v,d,j}_germline_end</code></td>
+<td>Exclusive germline end</td>
+</tr>
+</tbody>
+</table>
+<h3 id="trim-fields-recombination-stage">Trim fields (recombination-stage)<a class="headerlink" href="#trim-fields-recombination-stage" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>v_trim_3</code></td>
+<td>Bases removed from the V allele's 3′ end during recombination</td>
+</tr>
+<tr>
+<td><code>d_trim_5</code>, <code>d_trim_3</code></td>
+<td>Bases removed from the D allele's 5′ and 3′ ends</td>
+</tr>
+<tr>
+<td><code>j_trim_5</code></td>
+<td>Bases removed from the J allele's 5′ end</td>
+</tr>
+<tr>
+<td><code>v_trim_5</code>, <code>j_trim_3</code></td>
+<td>Always <code>0</code> — these positions aren't trimmed during recombination (the canonical biology)</td>
+</tr>
+</tbody>
+</table>
+<p>These four trim fields are the recombination-stage diet. They
+are <strong>not</strong> the observation-stage length loss — that's
+<code>end_loss_5_length</code> and <code>end_loss_3_length</code> (next section).
+Mixing them up is the most common confusion on the record
+surface; the trim fields describe biology (the recombinase
+chewed bases off allele ends before junction joining), while
+end-loss describes the sequencer (the read ran short).</p>
+<h3 id="np-regions">NP regions<a class="headerlink" href="#np-regions" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>np1</code></td>
+<td>Non-templated bases between V and D ends — <strong>P-clean</strong> (V–D junction in VDJ; V–J junction in VJ)</td>
+</tr>
+<tr>
+<td><code>np2</code></td>
+<td>Non-templated bases between D and J ends — <strong>P-clean</strong> (VDJ only; empty on VJ)</td>
+</tr>
+<tr>
+<td><code>np1_aa</code>, <code>np2_aa</code></td>
+<td>Amino-acid translations</td>
+</tr>
+<tr>
+<td><code>np1_length</code>, <code>np2_length</code></td>
+<td>Lengths in nucleotides</td>
+</tr>
+</tbody>
+</table>
+<p><code>np1</code> and <code>np2</code> are the <strong>non-templated</strong> strings only. When the
+engine claims a P-nucleotide span back as a templated extension
+of V, D, or J, those positions drop out of <code>np1</code> / <code>np2</code> — the
+NP strings are P-clean by construction.</p>
+<h3 id="p-nucleotide-lengths">P-nucleotide lengths<a class="headerlink" href="#p-nucleotide-lengths" title="Permanent link">&para;</a></h3>
+<p>Four per-record fields carry the palindromic-insertion lengths
+sampled during recombination:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>p_v_3_length</code></td>
+<td>Number of P bases off the V allele's 3′ end (V → NP1 side)</td>
+</tr>
+<tr>
+<td><code>p_d_5_length</code></td>
+<td>Number of P bases off the D allele's 5′ end (NP1 → D side) — VDJ only, <code>0</code> on VJ</td>
+</tr>
+<tr>
+<td><code>p_d_3_length</code></td>
+<td>Number of P bases off the D allele's 3′ end (D → NP2 side) — VDJ only, <code>0</code> on VJ</td>
+</tr>
+<tr>
+<td><code>p_j_5_length</code></td>
+<td>Number of P bases off the J allele's 5′ end (NP2 → J side on VDJ; NP1 → J side on VJ)</td>
+</tr>
+</tbody>
+</table>
+<p>P bases <strong>contribute to <code>sequence</code> and <code>junction</code></strong> (they are
+real palindromic nucleotides in the assembled molecule) but
+<code>np1</code> / <code>np2</code> remain N-only. <strong>GenAIRR exposes P lengths, not P
+strings</strong> — there is no per-base P field. If you need the actual
+P-nucleotide bases for a record, slice them from <code>sequence</code> using
+the per-segment coordinates plus the four length fields.</p>
+<p>The engine samples P-insertion lengths from
+<code>cfg.reference_models.p_nucleotide_lengths</code>. See
+<a href="../guides/junction-additions.html">Junction N/P additions</a> for the
+layout diagrams.</p>
+<h3 id="cigar-fields">CIGAR fields<a class="headerlink" href="#cigar-fields" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{v,d,j}_cigar</code></td>
+<td>Per-segment CIGAR string against the assigned allele</td>
+</tr>
+<tr>
+<td><code>{v,d,j}_score</code></td>
+<td>Per-segment alignment score (when reported by the projector)</td>
+</tr>
+<tr>
+<td><code>{v,d,j}_identity</code></td>
+<td>Per-segment percent identity</td>
+</tr>
+<tr>
+<td><code>{v,d,j}_support</code></td>
+<td>Per-segment support value (when reported)</td>
+</tr>
+<tr>
+<td><code>c_call</code></td>
+<td>Constant-region call (empty when no C-region biology is modeled)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="mutation-and-artefact-counters">Mutation and artefact counters<a class="headerlink" href="#mutation-and-artefact-counters" title="Permanent link">&para;</a></h2>
+<h3 id="biological-shm">Biological SHM<a class="headerlink" href="#biological-shm" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>n_mutations            ← total biological SHM events (canonical)
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>n_v_mutations          ← V-segment SHM
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>n_d_mutations          ← D-segment SHM
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>n_j_mutations          ← J-segment SHM
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>n_np_mutations         ← NP1 + NP2 combined SHM
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>mutation_rate          ← realised per-base rate for this record
+</code></pre></div>
+<p>These five sum cleanly:
+<code>n_v + n_d + n_j + n_np == n_mutations</code> on every record. The
+<a href="../validation/validate-records.html"><code>validate_records</code></a> gate
+checks this equality and fires <code>MutationCountSumMismatch</code> if
+it ever breaks.</p>
+<p><strong><code>n_mutations</code> is biology only.</strong> PCR errors, sequencing
+errors, indel-pass errors, and end-loss never increment these
+counters — they have their own.</p>
+<h3 id="v-subregion-mutation-partition">V-subregion mutation partition<a class="headerlink" href="#v-subregion-mutation-partition" title="Permanent link">&para;</a></h3>
+<p>Six fields that partition <code>n_v_mutations</code> by the assigned V
+allele's IMGT subregion intervals:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>n_fwr1_mutations
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>n_cdr1_mutations
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>n_fwr2_mutations
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>n_cdr2_mutations
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>n_fwr3_mutations
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>n_v_unannotated_mutations
+</code></pre></div>
+<p>Sum equals <code>n_v_mutations</code> by construction. The unannotated
+bucket catches three legitimate non-zero cases (the
+V-side CDR3 stretch is the most common); see
+<a href="../guides/shm-targeting.html#reading-mutation-counters">SHM and mutation targeting</a>
+for the full rules.</p>
+<h3 id="library-sequencing-artefacts-non-biological">Library + sequencing artefacts (non-biological)<a class="headerlink" href="#library-sequencing-artefacts-non-biological" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>n_pcr_errors           ← bases mutated by PcrAmplifyPass
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>n_quality_errors       ← bases corrupted by SequencingErrorsPass / AmbiguousBaseCallsPass
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>n_indels               ← total indels across all PolymeraseIndelsPass passes
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>n_v_indels             ← indels landing in the V segment
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>n_d_indels             ← indels landing in the D segment
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>n_j_indels             ← indels landing in the J segment
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>end_loss_5_length      ← bases lost from the 5′ end (EndLossPass / primer_trim_5prime)
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>end_loss_3_length      ← bases lost from the 3′ end (EndLossPass / primer_trim_3prime)
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>is_contaminant         ← True when this record is a contaminant (set by `contaminate`)
+</code></pre></div>
+<p><code>n_v_indels + n_d_indels + n_j_indels ≤ n_indels</code> — indels that
+land in NP1 or NP2 are counted in <code>n_indels</code> but not in any
+per-segment bucket (NP indels don't belong to a germline
+segment).</p>
+<p><code>primer_trim_*prime</code> is a backwards-compatibility alias for
+<code>end_loss_*prime</code> — both write the same <code>end_loss_*_length</code>
+field.</p>
+<h2 id="advanced-mechanism-provenance">Advanced mechanism provenance<a class="headerlink" href="#advanced-mechanism-provenance" title="Permanent link">&para;</a></h2>
+<p>Three fields surface the engine's recombination-stage editing
+decisions:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>d_inverted</code></td>
+<td>bool</td>
+<td><code>True</code> when <code>invert_d()</code> committed the D allele in reverse-complement orientation; <code>False</code> otherwise (VJ chains, VDJ without <code>invert_d</code>, inversion that landed on the forward branch)</td>
+</tr>
+<tr>
+<td><code>receptor_revision_applied</code></td>
+<td>bool</td>
+<td><code>True</code> when <code>receptor_revision()</code> fired and replaced the committed V; <code>False</code> otherwise</td>
+</tr>
+<tr>
+<td><code>original_v_call</code></td>
+<td>str</td>
+<td>When <code>receptor_revision_applied: True</code>, the V allele name the recombine pass originally committed (before revision). Empty string <code>""</code> otherwise — never <code>None</code></td>
+</tr>
+</tbody>
+</table>
+<p>When <code>receptor_revision_applied: True</code>, <code>v_call</code> reports the
+<strong>post-revision identity</strong> and <code>original_v_call</code> carries the
+pre-revision name. See
+<a href="../guides/recombination-editing.html">Recombination editing (D inversion + receptor revision)</a>
+for the biology and the rules.</p>
+<h2 id="read-layout">Read layout<a class="headerlink" href="#read-layout" title="Permanent link">&para;</a></h2>
+<p>Eight fields populated only when <code>.paired_end(...)</code> is in the
+pipeline:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default when absent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>read_layout</code></td>
+<td>str</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>r1_sequence</code></td>
+<td>str</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>r2_sequence</code></td>
+<td>str</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>r1_start</code>, <code>r1_end</code></td>
+<td>int</td>
+<td><code>0</code></td>
+</tr>
+<tr>
+<td><code>r2_start</code>, <code>r2_end</code></td>
+<td>int</td>
+<td><code>0</code></td>
+</tr>
+<tr>
+<td><code>insert_size</code></td>
+<td>int</td>
+<td><code>0</code></td>
+</tr>
+</tbody>
+</table>
+<p>On single-molecule pipelines (no <code>.paired_end(...)</code> call) all
+eight default to their sentinel values, but the columns are
+still present in the record. Treat a non-empty <code>r1_sequence</code> as
+the canonical "this is a paired-end record" check; <code>read_layout</code>
+also carries the layout label (<code>"paired_end"</code> when set).</p>
+<p>See <a href="../guides/paired-end-fastq.html">Paired-end reads and FASTQ</a>
+for the quality model and the layout coordinates.</p>
+<h2 id="clonal-fields">Clonal fields<a class="headerlink" href="#clonal-fields" title="Permanent link">&para;</a></h2>
+<p>Two fields stamped Python-side when <code>.expand_clones(n_clones=...,
+per_clone=...)</code> runs:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clone_id</code></td>
+<td>int</td>
+<td>Identifier of the clonal family this record belongs to (0-based)</td>
+</tr>
+<tr>
+<td><code>parent_id</code></td>
+<td>int</td>
+<td>Identifier of the ancestor outcome; equals <code>clone_id</code> for the records expanded from that ancestor</td>
+</tr>
+</tbody>
+</table>
+<p>On non-clonal runs (no <code>expand_clones</code>), both fields are
+<strong>absent</strong> from the record dict. Don't write code that assumes
+they're always present; the family validators (<code>validate_families</code>,
+<code>validate_families_with_parents</code>) are safe no-ops on non-clonal
+batches because they handle the absent case explicitly. See
+<a href="../guides/clonal-families.html">Clonal families</a>.</p>
+<h2 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">&para;</a></h2>
+<p>The records page composes cleanly with the validation surface:</p>
+<ul>
+<li><strong><a href="../validation/validate-records.html"><code>validate_records(refdata)</code></a></strong>
+  re-derives every counter, every coordinate, and every truth
+  field from the underlying engine <code>Outcome</code> and checks that
+  the record agrees. This is the load-bearing AIRR-output gate.</li>
+<li><strong><code>validate_families(refdata=None)</code></strong> groups records by
+  <code>clone_id</code> and asserts each family agrees on <code>truth_v_call</code>,
+  <code>truth_d_call</code>, <code>truth_j_call</code> (when present).</li>
+<li><strong><code>validate_families_with_parents(refdata)</code></strong> compares each
+  descendant against its actual parent <code>Outcome</code> — catches a
+  whole class of family-stamping bugs the cheaper validator
+  misses.</li>
+</ul>
+<p>The full validation picture lives at the
+<a href="../validation/index.html">Validation hub</a>.</p>
+<h2 id="common-mistakes">Common mistakes<a class="headerlink" href="#common-mistakes" title="Permanent link">&para;</a></h2>
+<p>A handful of issues that show up repeatedly with the record
+surface.</p>
+<p><strong>Treating all <code>n_*</code> counters as biological mutations.</strong> Only
+the SHM partition (<code>n_mutations</code>, <code>n_v_mutations</code>,
+<code>n_d_mutations</code>, <code>n_j_mutations</code>, <code>n_np_mutations</code>, the six
+V-subregion fields) describes biology. <code>n_pcr_errors</code>,
+<code>n_quality_errors</code>, <code>n_indels</code>, and the end-loss lengths
+describe library / sequencer artefacts. They live on the same
+record by design — they don't share a counter.</p>
+<p><strong>Assuming call fields are single alleles.</strong> <code>v_call</code>,
+<code>d_call</code>, and <code>j_call</code> can be comma-separated tie sets. Split on
+<code>","</code> before parsing; even a single-allele call can become
+ambiguous in a future cartridge revision.</p>
+<p><strong>Confusing trim with end-loss.</strong> <code>v_trim_3</code> is recombination
+biology (recombinase chewed bases off the V allele's 3′ end
+before junction joining). <code>end_loss_3_length</code> is sequencing
+artefact (the read ran short / was 3′ end-loss-clipped). The
+field names are similar; the biology is different.</p>
+<p><strong>Inferring P-nucleotides from <code>np1</code> / <code>np2</code>.</strong> Don't. The NP
+strings are P-clean — P bases that have been claimed back as
+templated extensions of V / D / J are deliberately excluded
+from <code>np1</code> / <code>np2</code>. Use the four <code>p_*_length</code> fields
+(<code>p_v_3_length</code>, <code>p_d_5_length</code>, <code>p_d_3_length</code>, <code>p_j_5_length</code>)
+to read palindromic-insertion lengths. GenAIRR exposes lengths,
+not P strings; slice <code>sequence</code> with the per-segment coordinates
+if you need the actual P bases.</p>
+<p><strong>Expecting paired-end fields without <code>.paired_end(...)</code>.</strong> The
+eight read-layout fields are present in every record but default
+to empty / zero on single-molecule pipelines. <code>r1_sequence ==
+""</code> is the canonical "no paired-end projection ran" check. Don't
+try to write FASTQ from a single-molecule pipeline — <code>to_fastq</code>
+emits the assembled sequence; <code>to_paired_fastq</code> raises if
+<code>read_layout != "paired_end"</code>.</p>
+<p><strong>Expecting <code>truth_*_call</code> columns to always be present.</strong> They
+appear only when <code>expose_provenance=True</code> is passed to
+<code>run_records(...)</code>. Without the flag, the columns are absent
+entirely — not <code>None</code>-valued, absent.</p>
+<p><strong>Expecting <code>clone_id</code> on non-clonal records.</strong> Without
+<code>.expand_clones(...)</code>, neither <code>clone_id</code> nor <code>parent_id</code> is
+stamped on the record dict at all. Check for presence with
+<code>"clone_id" in rec</code>, not <code>rec.get("clone_id") is not None</code>.</p>
+<h2 id="where-to-go-next">Where to go next<a class="headerlink" href="#where-to-go-next" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong><a href="../getting-started/first-airr-record.html">Your first AIRR record</a></strong>
+  — a worked walk-through of one record, field by field.</li>
+<li><strong><a href="../getting-started/export-results.html">Export the results</a></strong>
+  — how records become TSV / CSV / FASTA / FASTQ.</li>
+<li><strong><a href="../guides/shm-targeting.html">SHM and mutation targeting</a></strong>
+  — the SHM counters in depth.</li>
+<li><strong><a href="../guides/corruption-sequencing.html">Corruption and sequencing artefacts</a></strong>
+  — the artefact counters in depth.</li>
+<li><strong><a href="../guides/clonal-families.html">Clonal families</a></strong> — the
+  <code>clone_id</code> / <code>parent_id</code> surface and family validation.</li>
+<li><strong><a href="../validation/index.html">Validation hub</a></strong> — re-deriving every
+  field from the underlying <code>Outcome</code>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="index.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Core Concepts">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Core Concepts
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="reference-cartridge.html" class="md-footer__link md-footer__link--next" aria-label="Next: Reference Cartridge">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Reference Cartridge
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 Thomas Konstantinovsky · GPL-3.0
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/MuteJester/GenAIRR" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://pypi.org/project/GenAIRR/" target="_blank" rel="noopener" title="pypi.org" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.indexes", "navigation.top", "navigation.footer", "search.highlight", "search.share", "search.suggest", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
