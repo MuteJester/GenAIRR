@@ -1,0 +1,17 @@
+# Documentation-build dependencies for the MkDocs Material site.
+#
+# Phase 1 of the migration plan in `docs/docs_mkdocs_migration_plan.md`.
+# Install via:
+#
+#     pip install -r docs/requirements-docs.txt
+#
+# Or via `make docs-install`.
+#
+# Lower bounds match the repo's `pyproject.toml` style (>=X.Y); pin
+# tighter bounds only when a downstream version pinned-by-CI starts
+# breaking the build.
+
+mkdocs-material>=9.5
+mkdocs-redirects>=1.2
+mkdocstrings[python]>=0.24
+mkdocs-jupyter>=0.24

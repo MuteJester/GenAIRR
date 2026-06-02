@@ -70,7 +70,7 @@ standard library.
 To build this documentation site locally:
 
 ```bash
-pip install -r docs/requirements-docs.txt
+pip install -r requirements-docs.txt
 make docs-serve
 ```
 

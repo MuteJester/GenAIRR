@@ -608,6 +608,10 @@ def test_pin_design_doc_paired_end_lists_fourteen_sections() -> None:
     """The audit doc follows the same 14-section structure as
     `docs/receptor_revision_design.md`. Pin the section count so
     a future contributor can't quietly drop a section."""
+    docs_dir = Path(__file__).resolve().parent.parent / "docs"
+    if not docs_dir.is_dir():
+        import pytest
+        pytest.skip("docs/ is contributor-only; not present in this checkout")
     doc = (
         Path(__file__).resolve().parent.parent
         / "docs"
@@ -627,6 +631,10 @@ def test_pin_design_doc_summary_table_carries_every_decision() -> None:
     """The §Summary table is the canonical short-form of the
     audit decisions. Pin the row labels so a future contributor
     can't quietly drop a decision."""
+    docs_dir = Path(__file__).resolve().parent.parent / "docs"
+    if not docs_dir.is_dir():
+        import pytest
+        pytest.skip("docs/ is contributor-only; not present in this checkout")
     doc = (
         Path(__file__).resolve().parent.parent
         / "docs"

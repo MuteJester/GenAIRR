@@ -101,7 +101,7 @@ markdown_extensions:
   - pymdownx.inlinehilite
 
 # Plugins — Phase 1 of the migration (deps installable via
-# `pip install -r docs/requirements-docs.txt`).
+# `pip install -r requirements-docs.txt`).
 #
 # - `search` is provided by mkdocs core and enabled by default.
 # - `redirects` carries the live-URL → MkDocs-route map per
@@ -113,7 +113,7 @@ markdown_extensions:
 #   plugin sits idle until a `:::` directive is added to a
 #   markdown source.
 # - `mkdocs-jupyter` is intentionally NOT enabled here. It's
-#   listed in `docs/requirements-docs.txt` so Phase 4 (notebook
+#   listed in `requirements-docs.txt` so Phase 4 (notebook
 #   tutorials) can flip it on without a separate dep install.
 plugins:
   - search

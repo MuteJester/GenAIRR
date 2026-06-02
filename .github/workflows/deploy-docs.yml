@@ -16,7 +16,7 @@ on:
     paths:
       - 'site_docs/**'
       - 'mkdocs.yml'
-      - 'docs/requirements-docs.txt'
+      - 'requirements-docs.txt'
       - 'Makefile'
       - '.github/workflows/deploy-docs.yml'
 
@@ -39,10 +39,10 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: docs/requirements-docs.txt
+          cache-dependency-path: requirements-docs.txt
 
       - name: Install docs dependencies
-        run: pip install -r docs/requirements-docs.txt
+        run: pip install -r requirements-docs.txt
 
       - name: Build site with mkdocs build --strict
         run: make docs-build

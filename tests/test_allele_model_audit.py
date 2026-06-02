@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import inspect
 import pickle
+from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
@@ -386,7 +387,10 @@ def test_audit_doc_exists_and_lists_every_pinned_topic() -> None:
     """The audit answers seven questions. If the doc loses any
     section header, the test surfaces it so the doc and the
     behaviour-pinning tests don't drift apart."""
-    from pathlib import Path
+    docs_dir = Path(__file__).resolve().parent.parent / "docs"
+    if not docs_dir.is_dir():
+        import pytest
+        pytest.skip("docs/ is contributor-only; not present in this checkout")
 
     doc = Path(__file__).resolve().parent.parent / "docs" / "allele_model_audit.md"
     assert doc.is_file(), f"docs/allele_model_audit.md is missing at {doc}"

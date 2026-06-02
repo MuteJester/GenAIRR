@@ -28,7 +28,7 @@ help:
 	@echo "  make validate-release   Tier 3: full + wheel build + golden trace compat"
 	@echo ""
 	@echo "Documentation (MkDocs Material — see docs/docs_mkdocs_migration_plan.md):"
-	@echo "  make docs-install       Install docs-build deps from docs/requirements-docs.txt"
+	@echo "  make docs-install       Install docs-build deps from requirements-docs.txt"
 	@echo "  make docs-build         mkdocs build --strict (fails on broken links / nav drift)"
 	@echo "  make docs-serve         mkdocs serve (live-reload local preview on :8000)"
 	@echo "  make docs-clean         Remove the built site/ directory"
@@ -88,7 +88,7 @@ validate-release: validate-full
 # / dead anchors fail the build. Run this in CI once Phase 6
 # cutover lands.
 
-DOCS_REQ ?= docs/requirements-docs.txt
+DOCS_REQ ?= requirements-docs.txt
 
 docs-install:
 	$(PIP) install -r $(DOCS_REQ)

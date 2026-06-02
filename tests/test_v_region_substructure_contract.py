@@ -578,6 +578,10 @@ def test_pin_present_imgt_regions_consumed_by_bridge_and_mcp() -> None:
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc must continue to exist and reference this
     contract file; the 14-section structure stays intact."""
+    docs_dir = Path(__file__).resolve().parent.parent / "docs"
+    if not docs_dir.is_dir():
+        import pytest
+        pytest.skip("docs/ is contributor-only; not present in this checkout")
     doc_path = _REPO_ROOT / "docs" / "v_region_substructure_audit.md"
     assert doc_path.exists(), "v_region_substructure_audit.md missing"
     doc = doc_path.read_text(encoding="utf-8")

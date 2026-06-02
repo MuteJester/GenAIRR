@@ -74,11 +74,11 @@ the repository root rather than inside the docs site:
 
 | Document | Purpose |
 |---|---|
-| [`docs/engine_architecture.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/engine_architecture.md) | The seven engine invariants — contracts constrain support, trace = choices, events = consequences, live-call refresh follows events, plan signature gates replay, refdata content hash gates content drift, projection is pure. Required reading before any kernel work. |
-| [`docs/adding_a_pass.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/adding_a_pass.md) | The pass-author playbook: minimal pass template, the three required test patterns (deterministic-by-trace, plan-signature-stable, event-ledger-complete), the live-call refresh hook contract. Copy-paste-ready. |
-| [`docs/validation_matrix.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/validation_matrix.md) | The navigable map: every guarantee → its audit doc → its test file → the Rust kernel invariant. Use it to find the load-bearing tests for any behaviour you're about to change. |
-| [`docs/plan_signature_completeness_audit.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/plan_signature_completeness_audit.md) | The replay-safety audit: every parameterised DSL surface + every cartridge-driven compile parameter mapped against plan-signature participation. The reference when you wire a new parameter. |
-| [`docs/docs_website_audit.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/docs_website_audit.md) | The information architecture audit of the docs corpus itself, plus the migration roadmap to the MkDocs site you're reading now. |
+| `docs/engine_architecture.md` | The seven engine invariants — contracts constrain support, trace = choices, events = consequences, live-call refresh follows events, plan signature gates replay, refdata content hash gates content drift, projection is pure. Required reading before any kernel work. |
+| `docs/adding_a_pass.md` | The pass-author playbook: minimal pass template, the three required test patterns (deterministic-by-trace, plan-signature-stable, event-ledger-complete), the live-call refresh hook contract. Copy-paste-ready. |
+| `docs/validation_matrix.md` | The navigable map: every guarantee → its audit doc → its test file → the Rust kernel invariant. Use it to find the load-bearing tests for any behaviour you're about to change. |
+| `docs/plan_signature_completeness_audit.md` | The replay-safety audit: every parameterised DSL surface + every cartridge-driven compile parameter mapped against plan-signature participation. The reference when you wire a new parameter. |
+| `docs/docs_website_audit.md` | The information architecture audit of the docs corpus itself, plus the migration roadmap to the MkDocs site you're reading now. |
 
 ## The audit-first workflow
 
@@ -191,7 +191,7 @@ Both layers run in release-tier CI. The AIRR validator catches
 projection / counter drift; cache parity catches live-call
 refresh-hook bugs that the AIRR validator can't see because
 they don't surface on the record. See
-[`docs/validation_matrix.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/validation_matrix.md)
+`docs/validation_matrix.md`
 §1.0 for the rationale.
 
 ## Deep links
@@ -202,23 +202,23 @@ site source tree, so these are absolute URLs.)
 
 ### Anchor docs (linked above)
 
-- `docs/engine_architecture.md` — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/engine_architecture.md)
-- `docs/adding_a_pass.md` — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/adding_a_pass.md)
-- `docs/validation_matrix.md` — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/validation_matrix.md)
-- `docs/plan_signature_completeness_audit.md` — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/plan_signature_completeness_audit.md)
+- `docs/engine_architecture.md` 
+- `docs/adding_a_pass.md` 
+- `docs/validation_matrix.md` 
+- `docs/plan_signature_completeness_audit.md` 
 
 ### Sample audits by mechanism area
 
 The full corpus carries 39 markdown files. A few representative
 audits to illustrate scope:
 
-- `docs/allele_call_audit.md` — recombination — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/allele_call_audit.md)
-- `docs/junction_n_addition_audit.md` — recombination — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/junction_n_addition_audit.md)
-- `docs/mutation_provenance_audit.md` — mutation — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/mutation_provenance_audit.md)
-- `docs/v_region_substructure_audit.md` — mutation — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/v_region_substructure_audit.md)
-- `docs/indel_provenance_audit.md` — corruption — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/indel_provenance_audit.md)
-- `docs/airr_record_validator.md` — projection — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/airr_record_validator.md)
-- `docs/reference_cartridge_completeness_audit.md` — cartridge — [GitHub](https://github.com/MuteJester/GenAIRR/blob/master/docs/reference_cartridge_completeness_audit.md)
+- `docs/allele_call_audit.md` — recombination 
+- `docs/junction_n_addition_audit.md` — recombination 
+- `docs/mutation_provenance_audit.md` — mutation 
+- `docs/v_region_substructure_audit.md` — mutation 
+- `docs/indel_provenance_audit.md` — corruption 
+- `docs/airr_record_validator.md` — projection 
+- `docs/reference_cartridge_completeness_audit.md` — cartridge 
 
 The full inventory is browsable at the repository root in
 `docs/`; a Phase 5 audit-index page will enumerate everything
