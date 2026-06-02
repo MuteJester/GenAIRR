@@ -88,6 +88,7 @@ extra_css:
 # <pre class="mermaid"> elements; mermaid.run() picks them up.
 extra_javascript:
   - js/mermaid-init.js
+  - js/demo-presentation.js
 
 markdown_extensions:
   - admonition
@@ -185,6 +186,7 @@ plugins:
 # placeholder is migrated to real content, add it back to nav here.
 nav:
   - Home: index.md
+  - Demo: demo.md
   - Choose your path: learn.md
   - Getting Started:
       - getting-started/index.md

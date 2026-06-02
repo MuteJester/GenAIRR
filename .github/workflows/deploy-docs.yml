@@ -44,6 +44,16 @@ jobs:
       - name: Install docs dependencies
         run: pip install -r requirements-docs.txt
 
+      - name: Install GenAIRR from PyPI (mkdocstrings needs to import it)
+        # The reference pages use `:::` mkdocstrings directives to render
+        # signatures + docstrings from real classes (Experiment,
+        # SimulationResult, ReferenceCartridgeBuilder, etc.). For those
+        # to resolve, GenAIRR must be importable in the build environment.
+        # Installing from PyPI is fast (precompiled wheels) and means the
+        # rendered API reference matches the latest released version,
+        # which is what published docs should reflect.
+        run: pip install GenAIRR
+
       - name: Build site with mkdocs build --strict
         run: make docs-build
         env:
