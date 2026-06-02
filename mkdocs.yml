@@ -82,6 +82,13 @@ theme:
 extra_css:
   - stylesheets/extra.css
 
+# Mermaid for architecture flow diagrams. Loaded as an ES module from
+# CDN so we don't ship the (~1MB) library locally. The pymdownx
+# custom_fences config above turns ```mermaid blocks into
+# <pre class="mermaid"> elements; mermaid.run() picks them up.
+extra_javascript:
+  - js/mermaid-init.js
+
 markdown_extensions:
   - admonition
   - attr_list
@@ -92,7 +99,11 @@ markdown_extensions:
       permalink: true
       toc_depth: 3
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.snippets
   - pymdownx.tabbed:
       alternate_style: true
