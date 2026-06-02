@@ -2024,11 +2024,14 @@ the first one; the engine handles the rest.</p>
   C --&gt; D["Persistent IR&lt;br/&gt;+ event log + trace"]
   D --&gt; E["AIRR record&lt;br/&gt;pure projection"]
 
-  style A fill:#1f8a4c,stroke:#0e0e10,color:#fff
-  style B fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style C fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style D fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style E fill:#1d4ed8,stroke:#0e0e10,color:#fff</code></pre>
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class A accent;
+  class B,C,D neutral;
+  class E info;</code></pre>
 <p>The transitions matter as much as the boxes:</p>
 <table>
 <thead>
@@ -2154,8 +2157,13 @@ to reason about which draws are admissible.</p>
     G1["Filter support&lt;br/&gt;by contracts"] --&gt; G2["Draw from&lt;br/&gt;admissible subset"] --&gt; G3["Always valid"]
   end
 
-  style T2 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style G1 fill:#1f8a4c,stroke:#0e0e10,color:#fff</code></pre>
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class T2 warn;
+  class G1 accent;</code></pre>
 <p>At every contract-aware sampling site, the candidate distribution
 is filtered by the active contract set's <code>admits_typed</code> predicate
 before any draw happens. A draw that returns a value is admissible
@@ -2188,8 +2196,13 @@ user-facing surface.</p>
   Adm --&gt;|fail| Err[PassError::Replay]
   Apply --&gt; Out[Outcome]
 
-  style Adm fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style Err fill:#dc2626,stroke:#0e0e10,color:#fff</code></pre>
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class Adm neutral;
+  class Err warn;</code></pre>
 <p>Replay consumes recorded values through a <code>TraceCursor</code> at each
 sampling site. <strong>Every replayed value passes the same
 admissibility chain a fresh draw would</strong>: refdata lookup,
@@ -2276,9 +2289,14 @@ each exists makes the rest of the architecture click:</p>
   E -.-&gt;|powers cache refresh| LC[Live-call hook]
   S -.-&gt;|powers projection| AR[AIRR record]
 
-  style T fill:#6e3a8e,stroke:#0e0e10,color:#fff
-  style E fill:#1d4ed8,stroke:#0e0e10,color:#fff
-  style S fill:#1f8a4c,stroke:#0e0e10,color:#fff</code></pre>
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class T trace;
+  class E info;
+  class S accent;</code></pre>
 <p>This dual-stream model (trace as proposals, events as
 consequences) is what lets GenAIRR offer features other
 simulators can't:</p>
@@ -2304,10 +2322,13 @@ consumed:</p>
   G3 --&gt;|no| F3[ValueError:&lt;br/&gt;refdata_content_hash_mismatch]
   G3 --&gt;|yes| Replay[Consume trace]
 
-  style F1 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style F2 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style F3 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style Replay fill:#1f8a4c,stroke:#0e0e10,color:#fff</code></pre>
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class F1,F2,F3 warn;
+  class Replay accent;</code></pre>
 <ul>
 <li><strong><code>pass_plan_signature</code></strong> hashes the resolved pass plan: every
   pass, every kwarg that affects sampling, every cartridge-driven
@@ -2345,10 +2366,13 @@ for the user surface.</p>
     Cmp2 --&gt;|no| Bad2["ParityFailure"]
   end
 
-  style Ok1 fill:#1f8a4c,stroke:#0e0e10,color:#fff
-  style Ok2 fill:#1f8a4c,stroke:#0e0e10,color:#fff
-  style Bad1 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style Bad2 fill:#dc2626,stroke:#0e0e10,color:#fff</code></pre>
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class Ok1,Ok2 accent;
+  class Bad1,Bad2 warn;</code></pre>
 <table>
 <thead>
 <tr>
@@ -2392,11 +2416,15 @@ contract tests before implementation begins</strong>.</p>
   C --&gt; D["Implementation&lt;br/&gt;slice 2"]
   D --&gt; E["Release&lt;br/&gt;audit becomes design"]
 
-  style A fill:#1d4ed8,stroke:#0e0e10,color:#fff
-  style B fill:#dc2626,stroke:#0e0e10,color:#fff
-  style C fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style D fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style E fill:#1f8a4c,stroke:#0e0e10,color:#fff</code></pre>
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class A info;
+  class B warn;
+  class C,D neutral;
+  class E accent;</code></pre>
 <ol>
 <li><strong>Audit doc.</strong> Open <code>audit-docs/&lt;topic&gt;_audit.md</code>. Define the
    biology, name the v1 boundary (what's in / what's deferred),
