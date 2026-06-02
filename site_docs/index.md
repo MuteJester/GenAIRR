@@ -12,39 +12,15 @@ hide:
 <p class="lead">GenAIRR is a high-performance simulator for adaptive immune
 receptor repertoires (BCR + TCR). A Rust simulation kernel drives a fluent
 Python DSL; every record comes back annotated with by-construction truth
-— V/D/J calls, junction, productive flag, identity, mutation counts —
+(V/D/J calls, junction, productive flag, identity, mutation counts)
 derived from the persistent intermediate representation, not inferred by
 an aligner.</p>
 
-<div class="cta-row" markdown>
-
-<a class="cta" href="getting-started/quick-start.md">
-  <p class="cta-eyebrow">// 5 min</p>
-  <p class="cta-title">First simulation <span class="cta-arrow">→</span></p>
-  <p class="cta-sub">Install, simulate 1,000 productive heavy chains, inspect AIRR records.</p>
-</a>
-
-<a class="cta" href="concepts/reference-cartridge.md">
-  <p class="cta-eyebrow">// Build</p>
-  <p class="cta-title">Reference cartridges <span class="cta-arrow">→</span></p>
-  <p class="cta-sub">Four typed planes. Build from FASTA. Estimate biology from your own AIRR data.</p>
-</a>
-
-<a class="cta" href="validation/validate-records.md">
-  <p class="cta-eyebrow">// Verify</p>
-  <p class="cta-title">Validate AIRR records <span class="cta-arrow">→</span></p>
-  <p class="cta-sub">One call answers: is every reported field internally consistent with the outcome?</p>
-</a>
-
-<a class="cta" href="reference/index.md">
-  <p class="cta-eyebrow">// Lookup</p>
-  <p class="cta-title">API reference <span class="cta-arrow">→</span></p>
-  <p class="cta-sub">Every public symbol — Experiment, SimulationResult, builders, validators.</p>
-</a>
-
+<div class="cta-row">
+<a class="cta" href="getting-started/quick-start.html"><span class="cta-eyebrow">// 5 min</span><span class="cta-title">First simulation <span class="cta-arrow">&rarr;</span></span><span class="cta-sub">Install, simulate 1,000 productive heavy chains, inspect AIRR records.</span></a><a class="cta" href="concepts/reference-cartridge.html"><span class="cta-eyebrow">// Build</span><span class="cta-title">Reference cartridges <span class="cta-arrow">&rarr;</span></span><span class="cta-sub">Four typed planes. Build from FASTA. Estimate biology from your own AIRR data.</span></a><a class="cta" href="validation/validate-records.html"><span class="cta-eyebrow">// Verify</span><span class="cta-title">Validate AIRR records <span class="cta-arrow">&rarr;</span></span><span class="cta-sub">One call answers: is every reported field internally consistent with the outcome?</span></a><a class="cta" href="reference/index.html"><span class="cta-eyebrow">// Lookup</span><span class="cta-title">API reference <span class="cta-arrow">&rarr;</span></span><span class="cta-sub">Every public symbol: Experiment, SimulationResult, builders, validators.</span></a>
 </div>
 
-## What it's for — A DSL for AIRR. An engine that knows the answer.
+## What it's for. A DSL for AIRR. An engine that knows the answer.
 
 <div class="feat-grid" markdown>
 
@@ -52,7 +28,7 @@ an aligner.</p>
   <p class="num">// 01</p>
   <h3>Benchmark</h3>
   <p>Compare alignment, clustering, or annotation tools against a ground truth
-  the engine emitted by construction — not by an oracle aligner that can be
+  the engine emitted by construction, not by an oracle aligner that can be
   wrong.</p>
 </div>
 
@@ -67,8 +43,8 @@ an aligner.</p>
 <div class="feat" markdown>
   <p class="num">// 03</p>
   <h3>Phenomena lab</h3>
-  <p>Switch any biological mechanism on or off — P/N additions, D inversion,
-  receptor revision, targeted SHM — and observe the downstream effect on
+  <p>Switch any biological mechanism on or off (P/N additions, D inversion,
+  receptor revision, targeted SHM) and observe the downstream effect on
   what aligners report.</p>
 </div>
 
@@ -85,7 +61,7 @@ an aligner.</p>
   <span>Byte-stable replay</span>
 </div>
 
-## What GenAIRR does — Six capabilities. One composable engine.
+## What GenAIRR does. Six capabilities. One composable engine.
 
 <div class="cap-grid" markdown>
 
@@ -120,7 +96,7 @@ an aligner.</p>
 <div class="cap-card cap-constrain" markdown>
   <p class="cap-num">// Contracts · 05</p>
   <h3>Constrain</h3>
-  <p>Productive-only sampling at compile time — the engine never proposes
+  <p>Productive-only sampling at compile time. The engine never proposes
   out-of-frame or stop-bearing candidates.</p>
 </div>
 
@@ -149,7 +125,7 @@ result = (
 result.to_tsv("repertoire.tsv")
 ```
 
-## Install — one command, no compiler.
+## Install. One command. No compiler.
 
 <div class="install-band" markdown>
 `pip install GenAIRR`
@@ -164,7 +140,7 @@ result.to_tsv("repertoire.tsv")
 ## Choose your path
 
 Five paths through the docs, organised by what you came here to
-do. Each one is a short curriculum — pick the one that matches
+do. Each one is a short curriculum. Pick the one that matches
 your task.
 
 | If you want to ... | Start here |

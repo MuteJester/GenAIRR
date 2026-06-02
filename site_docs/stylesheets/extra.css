@@ -218,17 +218,56 @@ code, kbd, pre, samp,
   font-size: 13px;
 }
 
-/* Tabs (top-level nav) — mono labels, square underline accent */
+/* Tabs (top-level nav) — mono labels, square underline accent.
+ * The tab bar can hold many entries; on narrow viewports it
+ * needs to scroll horizontally. We make the affordance visible
+ * via a right-edge fade gradient so users see "there's more". */
 .md-tabs {
   background: var(--bg);
   color: var(--ink);
   border-bottom: 1px solid var(--rule);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Right-edge gradient hint that the bar is scrollable. Only shows
+ * when there's enough content to overflow the viewport. */
+.md-tabs::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 36px;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(250, 250, 247, 0) 0%,
+    var(--bg) 92%
+  );
+  opacity: 0.95;
 }
 
 .md-tabs__list {
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 28px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+/* On wide screens (≥ 1280px) the full tab set typically fits, so
+ * suppress the fade hint and let the bar sit flush. */
+@media (min-width: 1280px) {
+  .md-tabs::after {
+    display: none;
+  }
+}
+
+/* Mobile-friendly scroll-snap so tabs align as the user swipes. */
+.md-tabs__item {
+  scroll-snap-align: start;
 }
 
 .md-tabs__link {
@@ -686,6 +725,7 @@ code, kbd, pre, samp,
 }
 
 .md-typeset .cta-row .cta-eyebrow {
+  display: block;
   font-family: "IBM Plex Mono", monospace;
   font-size: 10.5px;
   font-weight: 500;
@@ -696,6 +736,7 @@ code, kbd, pre, samp,
 }
 
 .md-typeset .cta-row .cta-title {
+  display: block;
   font-family: "IBM Plex Serif", Georgia, serif;
   font-size: 1.18rem;
   font-weight: 500;
@@ -704,6 +745,7 @@ code, kbd, pre, samp,
 }
 
 .md-typeset .cta-row .cta-sub {
+  display: block;
   font-size: 13px;
   color: var(--ink-muted);
   margin: 0;
