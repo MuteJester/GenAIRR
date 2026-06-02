@@ -27,7 +27,7 @@
     
     
       
-        <title>Architecture (Contributor) - GenAIRR</title>
+        <title>Architecture - GenAIRR</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#architecture-contributor" class="md-skip">
+        <a href="#architecture" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Architecture (Contributor)
+              Architecture
             
           </span>
         </div>
@@ -1772,10 +1772,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#who-this-section-is-for" class="md-nav__link">
+  <a href="#the-mental-model-in-one-diagram" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Who this section is for
+        The mental model in one diagram
       
     </span>
   </a>
@@ -1783,10 +1783,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-engine-mental-model" class="md-nav__link">
+  <a href="#who-reads-this-section" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The engine mental model
+        Who reads this section
       
     </span>
   </a>
@@ -1794,10 +1794,137 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#core-architecture-documents" class="md-nav__link">
+  <a href="#how-the-dsl-becomes-a-simulation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Core architecture documents
+        How the DSL becomes a simulation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-seven-engine-invariants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The seven engine invariants
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The seven engine invariants">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-contracts-constrain-support-before-proposals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Contracts constrain support before proposals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-trace-choicesproposals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Trace = choices/proposals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-replay-validated-proposal-consumption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Replay = validated proposal consumption
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-simulation-events-consequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Simulation events = consequences
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-compile-effects-scheduling-facts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Compile effects = scheduling facts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-live-call-refresh-follows-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Live-call refresh follows events
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-built-in-mutating-passes-route-through-simulationbuilder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Built-in mutating passes route through SimulationBuilder
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#three-streams-per-pass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Three streams per pass
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plan-signature-the-replay-safety-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plan signature: the replay safety gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-two-layer-integrity-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The two-layer integrity model
       
     </span>
   </a>
@@ -1816,10 +1943,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#where-mechanisms-live" class="md-nav__link">
+  <a href="#where-the-code-lives" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Where mechanisms live
+        Where the code lives
       
     </span>
   </a>
@@ -1827,21 +1954,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#before-you-add-a-new-mechanism" class="md-nav__link">
+  <a href="#anti-patterns" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Before you add a new mechanism
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#two-layer-integrity-model" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Two-layer integrity model
+        Anti-patterns
       
     </span>
   </a>
@@ -1857,33 +1973,16 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Deep links">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#anchor-docs-linked-above" class="md-nav__link">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-add-a-new-mechanism" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anchor docs (linked above)
+        Before you add a new mechanism
       
     </span>
   </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sample-audits-by-mechanism-area" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Sample audits by mechanism area
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1907,237 +2006,349 @@
   
 
 
-<h1 id="architecture-contributor">Architecture (Contributor)<a class="headerlink" href="#architecture-contributor" title="Permanent link">&para;</a></h1>
-<p class="lead">A curated entrance to GenAIRR's engine
-architecture. The full corpus — 39 audit and design docs at
-<code>docs/*.md</code> — is contributor-facing and stays at the
-repository root. This page is the map: the mental model, the
-anchor documents, the audit-first workflow, and the checklist for
-adding a new mechanism. Deep-link out from here when you need the
-authoritative source.</p>
+<h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
+<p class="lead">A deep look at how the GenAIRR engine actually
+produces records. This page explains the lowering pipeline,
+the seven invariants the kernel guarantees, the novel
+constrain-before-propose sampling strategy, the dual stream
+(trace + events) per pass, and the two-layer integrity model.
+For the canonical contributor-facing reference, see the audit
+corpus at <code>audit-docs/</code>.</p>
 
-<div class="admonition tip">
-<p class="admonition-title">Your learning path</p>
-<p>You're at the entry of the <strong>"I'm contributing to GenAIRR"</strong>
-path. After the engine mental model and the audit-first
-workflow on this page, the three anchor docs at
-<code>audit-docs/engine_architecture.md</code>, <code>audit-docs/adding_a_pass.md</code>, and
-<code>audit-docs/validation_matrix.md</code> are the contributor-tone
-references for actually writing kernel code.
-<a href="../learn.html">See all paths →</a></p>
-</div>
-<h2 id="who-this-section-is-for">Who this section is for<a class="headerlink" href="#who-this-section-is-for" title="Permanent link">&para;</a></h2>
-<p>This section is <strong>not</strong> for new users. It assumes you're already
-running simulations and need to look under the hood:</p>
+<h2 id="the-mental-model-in-one-diagram">The mental model in one diagram<a class="headerlink" href="#the-mental-model-in-one-diagram" title="Permanent link">&para;</a></h2>
+<p>A simulation goes through four distinct stages. The user touches
+the first one; the engine handles the rest.</p>
+<pre class="mermaid"><code>flowchart LR
+  A["DSL&lt;br/&gt;Experiment.on().recombine()&lt;br/&gt;.mutate()..."] --&gt; B["Pass plan&lt;br/&gt;typed, ordered, signed"]
+  B --&gt; C["Compiled executor&lt;br/&gt;schedule + contract set"]
+  C --&gt; D["Persistent IR&lt;br/&gt;+ event log + trace"]
+  D --&gt; E["AIRR record&lt;br/&gt;pure projection"]
+
+  style A fill:#1f8a4c,stroke:#0e0e10,color:#fff
+  style B fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
+  style C fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
+  style D fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
+  style E fill:#1d4ed8,stroke:#0e0e10,color:#fff</code></pre>
+<p>The transitions matter as much as the boxes:</p>
+<table>
+<thead>
+<tr>
+<th>Transition</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>DSL → Pass plan</strong></td>
+<td><code>Experiment.compile()</code> lowers the chained method calls into a typed, ordered, signed pass plan. The plan is the engine's actual input; the <code>Experiment</code> object is just a builder.</td>
+</tr>
+<tr>
+<td><strong>Pass plan → Executor</strong></td>
+<td>Compile analyses the plan, resolves the contract set, schedules live-call refresh hooks, and stamps the plan signature.</td>
+</tr>
+<tr>
+<td><strong>Executor → IR</strong></td>
+<td>Each pass runs against the persistent IR. Every random draw lands at a typed address; every state change emits a typed event. The IR is <em>the</em> source of truth.</td>
+</tr>
+<tr>
+<td><strong>IR → AIRR record</strong></td>
+<td>A pure projection layer reads the final IR pool and produces the AIRR record. The projection has no state of its own. Re-running it on the same IR is byte-identical.</td>
+</tr>
+</tbody>
+</table>
+<p>The boundaries between stages are why GenAIRR can offer features
+other simulators can't: byte-stable replay, structured validation,
+post-hoc revision, audit-first development.</p>
+<h2 id="who-reads-this-section">Who reads this section<a class="headerlink" href="#who-reads-this-section" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Contributors</strong> adding new passes, contracts, AIRR fields, or
   cartridge planes.</li>
 <li><strong>Advanced users</strong> debugging an unexpected output or reviewing
   a published GenAIRR dataset against its source.</li>
-<li><strong>Maintainers</strong> auditing one mechanism's drift across a
-  release, or scoping a refactor's blast radius before touching
-  Rust kernel code.</li>
+<li><strong>Maintainers</strong> auditing one mechanism's drift across a release,
+  or scoping a refactor's blast radius before touching kernel code.</li>
 </ul>
 <p>If you're learning the simulator for the first time, the
 <a href="../getting-started/index.html">Getting Started</a> and
 <a href="../concepts/index.html">Core Concepts</a> tracks are the right
-entries; come back here when something below those tracks
+starting points. Come back here when something below those
 surprises you.</p>
-<h2 id="the-engine-mental-model">The engine mental model<a class="headerlink" href="#the-engine-mental-model" title="Permanent link">&para;</a></h2>
-<p>Three abstractions describe how the engine runs:</p>
-<ol>
-<li><strong><code>Experiment</code> lowers to a pass plan.</strong> Every method call on
-   the fluent <code>Experiment</code> builder appends one entry to a
-   typed pass plan. <code>Experiment.compile()</code> resolves cartridge
-   defaults, plan signatures, and contract sets into a frozen
-   <code>CompiledExperiment</code>. The plan is the engine's input — not
-   the <code>Experiment</code> itself.</li>
-<li><strong>Passes produce three streams.</strong> Each pass run by the
-   simulator emits:</li>
-<li><strong>Trace choices</strong> — <code>(address, value)</code> records of every
-     sampled draw, the substrate for replay.</li>
-<li><strong>Simulation events</strong> — typed records of <em>consequences</em>
-     (base changed, segment trimmed, indel inserted, etc.), the
-     substrate for derived counters and validators.</li>
-<li><strong>A final <code>Simulation</code></strong> — the assembled molecule plus
-     per-segment claim ledger plus <code>SegmentLiveCall</code> caches.</li>
-<li><strong>AIRR records are projections.</strong> The dict you get from
-   <code>result[i]</code> is <strong>derived</strong> from <code>Simulation</code> + refdata via a
-   pure projection layer (Rust: <code>airr_record::builder</code>). It
-   carries no state of its own; rerunning the projection on the
-   same <code>Simulation</code> produces a byte-identical record.</li>
-</ol>
-<p>Validators don't trust projection — they re-derive every field
-they cover from the underlying events and assert agreement. That
-independence is the reason the AIRR validator catches projection
-bugs the projector can't see.</p>
-<h2 id="core-architecture-documents">Core architecture documents<a class="headerlink" href="#core-architecture-documents" title="Permanent link">&para;</a></h2>
-<p>Three anchor documents at <code>docs/</code> are the canonical contributor
-reference. Each is contributor-tone, not user-tone, and lives at
-the repository root rather than inside the docs site:</p>
-<table>
-<thead>
-<tr>
-<th>Document</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>audit-docs/engine_architecture.md</code></td>
-<td>The seven engine invariants — contracts constrain support, trace = choices, events = consequences, live-call refresh follows events, plan signature gates replay, refdata content hash gates content drift, projection is pure. Required reading before any kernel work.</td>
-</tr>
-<tr>
-<td><code>audit-docs/adding_a_pass.md</code></td>
-<td>The pass-author playbook: minimal pass template, the three required test patterns (deterministic-by-trace, plan-signature-stable, event-ledger-complete), the live-call refresh hook contract. Copy-paste-ready.</td>
-</tr>
-<tr>
-<td><code>audit-docs/validation_matrix.md</code></td>
-<td>The navigable map: every guarantee → its audit doc → its test file → the Rust kernel invariant. Use it to find the load-bearing tests for any behaviour you're about to change.</td>
-</tr>
-<tr>
-<td><code>audit-docs/plan_signature_completeness_audit.md</code></td>
-<td>The replay-safety audit: every parameterised DSL surface + every cartridge-driven compile parameter mapped against plan-signature participation. The reference when you wire a new parameter.</td>
-</tr>
-<tr>
-<td><code>audit-docs/docs_website_audit.md</code></td>
-<td>The information architecture audit of the docs corpus itself, plus the migration roadmap to the MkDocs site you're reading now.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="the-audit-first-workflow">The audit-first workflow<a class="headerlink" href="#the-audit-first-workflow" title="Permanent link">&para;</a></h2>
-<p>GenAIRR's release process is <strong>audit-first</strong>: a mechanism gets
-specified, validated against the existing engine, and pinned by
-contract tests <em>before</em> implementation begins. The pattern, in
-order:</p>
-<ol>
-<li><strong>Audit doc.</strong> Open <code>audit-docs/&lt;topic&gt;_audit.md</code>. Define the
-   biology, name the v1 boundary (what's in / what's deferred),
-   enumerate the invariants the implementation must preserve,
-   and list the drift section's open questions.</li>
-<li><strong>Contract pins.</strong> Add or extend <code>tests/test_*_contract.py</code>
-   with the test patterns from <code>adding_a_pass.md</code> (
-   deterministic-by-trace, plan-signature-stable,
-   event-ledger-complete) and any audit-specific invariants. The
-   pins fail on <code>master</code> because the implementation isn't there
-   yet — that's the point.</li>
-<li><strong>Implementation slices.</strong> Land the mechanism in small,
-   independently-reviewable slices. Each slice flips one set of
-   contract pins from red to green. The audit doc's invariants
-   guide what each slice must hold.</li>
-<li><strong>Release consolidation.</strong> Once every slice has shipped, a
-   release commit renames <code>audit-docs/&lt;topic&gt;_audit.md</code> →
-   <code>audit-docs/&lt;topic&gt;_design.md</code> (audit → design transition), updates
-   <code>audit-docs/validation_matrix.md</code> with the new row, and stamps the
-   audit as resolved.</li>
-</ol>
-<p><strong>Why this matters for biological mechanisms.</strong> Most simulators
-treat invariants as informal — "the recombination should produce
-a valid junction." GenAIRR makes them executable: the validator
-re-derives the junction, the contract pins enforce
-counter-partition equalities, and the plan signature catches
-any kwarg that would silently shift output. The audit-first
-discipline keeps that invariant set explicit so a new mechanism
-can't quietly break an old one.</p>
-<h2 id="where-mechanisms-live">Where mechanisms live<a class="headerlink" href="#where-mechanisms-live" title="Permanent link">&para;</a></h2>
-<p>The Rust crate at <code>engine_rs/</code> carries the simulation kernel;
-the Python wrapper at <code>src/GenAIRR/</code> carries the DSL surface,
-cartridge handling, projection helpers, and validation. By
-mechanism area:</p>
-<table>
-<thead>
-<tr>
-<th>Mechanism area</th>
-<th>Rust kernel</th>
-<th>Python wrapper</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Recombination</strong></td>
-<td><code>engine_rs/src/compiled/recombine.rs</code>, <code>engine_rs/src/sample/allele.rs</code>, <code>engine_rs/src/junction.rs</code></td>
-<td><code>Experiment.recombine</code>, <code>restrict_alleles</code>, allele-usage estimator</td>
-</tr>
-<tr>
-<td><strong>Mutation (SHM)</strong></td>
-<td><code>engine_rs/src/compiled/mutate.rs</code>, <code>engine_rs/src/contract/productive_*.rs</code></td>
-<td><code>Experiment.mutate</code>, <code>productive_only</code>, <code>segment_rates</code>, <code>v_subregion_rates</code></td>
-</tr>
-<tr>
-<td><strong>Corruption</strong></td>
-<td><code>engine_rs/src/compiled/pcr_amplify.rs</code>, <code>polymerase_indels.rs</code>, <code>sequencing_errors.rs</code>, <code>ambiguous_base_calls.rs</code>, <code>end_loss.rs</code></td>
-<td><code>Experiment.pcr_amplify</code>, <code>polymerase_indels</code>, <code>sequencing_errors</code>, <code>ambiguous_base_calls</code>, <code>end_loss_*prime</code></td>
-</tr>
-<tr>
-<td><strong>Recombination editing</strong></td>
-<td><code>engine_rs/src/compiled/invert_d.rs</code>, <code>receptor_revision.rs</code></td>
-<td><code>Experiment.invert_d</code>, <code>receptor_revision</code></td>
-</tr>
-<tr>
-<td><strong>Projection (AIRR)</strong></td>
-<td><code>engine_rs/src/airr_record/builder.rs</code>, <code>record.rs</code></td>
-<td><code>SimulationResult</code>, <code>result.to_*</code> exporters, projection coordinate views</td>
-</tr>
-<tr>
-<td><strong>Reference cartridge</strong></td>
-<td><code>engine_rs/src/dataconfig/*</code> (bridged), <code>engine_rs/src/refdata.rs</code></td>
-<td><code>DataConfig</code>, <code>ReferenceCartridgeBuilder</code>, <code>cfg.cartridge_manifest()</code>, <code>cfg.compute_checksum()</code></td>
-</tr>
-<tr>
-<td><strong>Trace + replay</strong></td>
-<td><code>engine_rs/src/trace_file.rs</code>, <code>engine_rs/src/replay.rs</code></td>
-<td><code>compiled.simulator.trace_file_from / replay_from_trace_file / rerun_from_trace_file</code> (PyO3 surface)</td>
-</tr>
-<tr>
-<td><strong>Validation</strong></td>
-<td><code>engine_rs/src/contract/*</code>, <code>engine_rs/src/airr_record/validate.rs</code></td>
-<td><code>result.validate_records</code>, <code>validate_families</code>, <code>validate_families_with_parents</code></td>
-</tr>
-</tbody>
-</table>
-<p>When following an audit doc from the table above, the <code>docs/</code>
-audit will name the kernel files it touches in its §3 or §4 —
-use that as the authoritative source.</p>
-<h2 id="before-you-add-a-new-mechanism">Before you add a new mechanism<a class="headerlink" href="#before-you-add-a-new-mechanism" title="Permanent link">&para;</a></h2>
-<p>The checklist new contributors run before opening a slice PR:</p>
+<h2 id="how-the-dsl-becomes-a-simulation">How the DSL becomes a simulation<a class="headerlink" href="#how-the-dsl-becomes-a-simulation" title="Permanent link">&para;</a></h2>
+<p>The DSL is not the engine. It's a <em>builder</em> for a typed pass
+plan. The compilation step is where novel correctness guarantees
+are established.</p>
+<pre class="mermaid"><code>flowchart TB
+  subgraph one ["1. You write the DSL"]
+    DSL["exp = Experiment.on('human_igh')&lt;br/&gt;.recombine()&lt;br/&gt;.mutate(rate=0.05)&lt;br/&gt;.productive_only()"]
+  end
+
+  subgraph two ["2. compile() lowers"]
+    Plan["Pass plan&lt;br/&gt;SampleAllelePass&lt;br/&gt;TrimPass&lt;br/&gt;AssembleSegmentPass&lt;br/&gt;GenerateNPPass&lt;br/&gt;S5FMutationPass"]
+    PSig[("plan signature&lt;br/&gt;sha256")]
+    CSet["Contract set&lt;br/&gt;AnchorPreserved(V)&lt;br/&gt;AnchorPreserved(J)&lt;br/&gt;ProductiveJunctionFrame&lt;br/&gt;NoStopCodonInJunction"]
+    LiveCall["Live-call refresh&lt;br/&gt;hook schedule"]
+  end
+
+  subgraph three ["3. Per-record run"]
+    Exec["Executor walks the plan"]
+    IR[("Persistent IR&lt;br/&gt;nucleotide pool&lt;br/&gt;regions&lt;br/&gt;assignments")]
+    Tr[("Trace&lt;br/&gt;address,value")]
+    Ev[("Event log&lt;br/&gt;typed events")]
+  end
+
+  subgraph four ["4. Per-record project"]
+    Proj["AIRR projector"]
+    Rec["AIRR record"]
+  end
+
+  DSL --&gt; Plan
+  Plan --&gt; PSig
+  Plan --&gt; CSet
+  Plan --&gt; LiveCall
+  Plan --&gt; Exec
+  Exec --&gt; IR
+  Exec --&gt; Tr
+  Exec --&gt; Ev
+  IR --&gt; Proj
+  Proj --&gt; Rec</code></pre>
+<p>A few facts to call out:</p>
 <ul>
-<li>[ ] <strong>Define the biology and provenance.</strong> What does this
-      mechanism model in vivo? What counters and provenance
-      fields does it surface on the AIRR record? Write it in
-      <code>audit-docs/&lt;topic&gt;_audit.md</code> §1-2 before writing code.</li>
-<li>[ ] <strong>Trace / replay choices.</strong> Every sampling site this
-      mechanism introduces needs a stable address (<code>engine_rs/src/address.rs</code>)
-      and a deterministic projection from <code>ChoiceValue</code>. Write
-      the address schema in the audit before lowering it.</li>
-<li>[ ] <strong>Event consequences.</strong> Decide which event types this
-      mechanism emits, and ensure they're sufficient to
-      reconstruct every counter the projection will read.
-      Re-derivability from events is the validator's contract.</li>
-<li>[ ] <strong>Validators.</strong> Add the contract pin that re-derives the
-      mechanism's counters from events and asserts equality with
-      the projected record. Without this, the AIRR validator
-      can't see the new mechanism.</li>
-<li>[ ] <strong>Cartridge ownership</strong> (when applicable). If the
-      mechanism takes per-cartridge parameters, decide which
-      <code>reference_models</code> plane owns them, whether they
-      participate in the plan signature, and whether they fold
-      into <code>refdata_content_hash</code>. Document the decision in the
-      audit's "cartridge boundary" section.</li>
-<li>[ ] <strong>Docs / user guide.</strong> A new user-facing mechanism gets a
-      user-tone guide under <code>site_docs/guides/</code>. Use the existing
-      mechanism guides as templates (e.g. SHM targeting, junction
-      additions, corruption + sequencing artefacts). Reference
-      the audit doc only at the bottom under "Deep architecture
-      notes".</li>
-<li>[ ] <strong>Release-tier test.</strong> The two-layer integrity model
-      (AIRR validator + live-call cache parity) must pass on the
-      new mechanism's output before release. Add a release-tier
-      pin if the mechanism touches the live-call refresh hook.</li>
+<li><strong>The pass plan is signed before the first record runs.</strong> That
+  signature gets folded into every trace; replay is gated on it.
+  Two runs of the same DSL produce the same plan signature, no
+  matter the machine.</li>
+<li><strong>The contract set is resolved at compile time, not per draw.</strong>
+  <code>productive_only()</code> doesn't fire at every draw point and check
+  things; four predicates get registered, and the relevant
+  sampling sites consult them via a typed <code>admits_typed</code> trait.
+  This is <em>constrain before propose</em>, covered in detail below.</li>
+<li><strong>The IR is persistent.</strong> Each pass writes to it through an
+  event-emitting builder, never directly. The event stream
+  exists because validators and the live-call refresh hook need
+  to know what changed.</li>
+<li><strong>The AIRR record is a projection.</strong> It's derived from the
+  final IR pool by a pure function. The record has no state of
+  its own; the IR does.</li>
 </ul>
-<p>The <code>audit-docs/adding_a_pass.md</code> companion turns this checklist into
-copy-paste templates; use it for the actual implementation.</p>
-<h2 id="two-layer-integrity-model">Two-layer integrity model<a class="headerlink" href="#two-layer-integrity-model" title="Permanent link">&para;</a></h2>
-<p>GenAIRR's release-readiness rests on two independent layers:</p>
+<h2 id="the-seven-engine-invariants">The seven engine invariants<a class="headerlink" href="#the-seven-engine-invariants" title="Permanent link">&para;</a></h2>
+<p>The kernel's correctness rests on seven layered invariants. Each
+has a canonical Rust type and a contract test that proves it. The
+canonical write-up is at
+<a href="https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/engine_architecture.md"><code>audit-docs/engine_architecture.md</code></a>;
+the short version follows.</p>
+<h3 id="1-contracts-constrain-support-before-proposals">1. Contracts constrain <em>support</em> before proposals<a class="headerlink" href="#1-contracts-constrain-support-before-proposals" title="Permanent link">&para;</a></h3>
+<p>This is the most distinctive design choice. Most simulators
+build a sequence and check it afterwards; if broken, they
+discard and resample. That's slow, statistically biased toward
+weakly-constrained edges of the distribution, and offers no way
+to reason about which draws are admissible.</p>
+<p>GenAIRR inverts the order:</p>
+<pre class="mermaid"><code>flowchart LR
+  subgraph Trad ["Traditional: propose-and-retry"]
+    T1["Draw from&lt;br/&gt;full support"] --&gt; T2{Valid?}
+    T2 --&gt;|no| T1
+    T2 --&gt;|yes| T3[Accept]
+  end
+
+  subgraph Genairr ["GenAIRR: constrain-before-propose"]
+    G1["Filter support&lt;br/&gt;by contracts"] --&gt; G2["Draw from&lt;br/&gt;admissible subset"] --&gt; G3["Always valid"]
+  end
+
+  style T2 fill:#dc2626,stroke:#0e0e10,color:#fff
+  style G1 fill:#1f8a4c,stroke:#0e0e10,color:#fff</code></pre>
+<p>At every contract-aware sampling site, the candidate distribution
+is filtered by the active contract set's <code>admits_typed</code> predicate
+before any draw happens. A draw that returns a value is admissible
+by construction. There is no rejection loop.</p>
+<p>When the admissible set is <em>empty</em> (the constraint can't be
+satisfied at this site), behaviour depends on the mode:</p>
+<ul>
+<li><strong>Permissive</strong> (default): fall back to an explicit <em>sentinel</em>,
+  such as <code>0</code> for a trim length, <code>N</code> for a base, <code>-1</code> for indel
+  position. The record still gets produced; the sentinel marks
+  "the pass committed nothing meaningful here."</li>
+<li><strong>Strict</strong> (<code>run_records(..., strict=True)</code>): raise
+  <code>StrictSamplingError(pass_name, address, reason)</code>.</li>
+</ul>
+<h3 id="2-trace-choicesproposals">2. Trace = choices/proposals<a class="headerlink" href="#2-trace-choicesproposals" title="Permanent link">&para;</a></h3>
+<p>A trace records <strong>what was proposed or sampled</strong> at each addressed
+decision point. Every sampling site has a stable typed
+<code>ChoiceAddress</code>; every value drawn there is a typed <code>ChoiceValue</code>.</p>
+<p>Two traces are <em>value-equal</em> iff every recorded <code>(address, value)</code>
+pair matches in order. That's the substrate for replay.</p>
+<p>The on-disk <code>TraceFile</code> is schema-versioned, refdata-content-hashed,
+and address-schema-versioned. See
+<a href="../guides/trace-replay.html">Trace, replay, reproducibility</a> for the
+user-facing surface.</p>
+<h3 id="3-replay-validated-proposal-consumption">3. Replay = validated proposal consumption<a class="headerlink" href="#3-replay-validated-proposal-consumption" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>flowchart LR
+  Tr[(Trace file)] --&gt; Cur[TraceCursor]
+  Cur --&gt;|next address| Adm["admissibility chain:&lt;br/&gt;refdata lookup&lt;br/&gt;support membership&lt;br/&gt;contract acceptance&lt;br/&gt;feasibility check"]
+  Adm --&gt;|pass| Apply[Apply value]
+  Adm --&gt;|fail| Err[PassError::Replay]
+  Apply --&gt; Out[Outcome]
+
+  style Adm fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
+  style Err fill:#dc2626,stroke:#0e0e10,color:#fff</code></pre>
+<p>Replay consumes recorded values through a <code>TraceCursor</code> at each
+sampling site. <strong>Every replayed value passes the same
+admissibility chain a fresh draw would</strong>: refdata lookup,
+distribution-support membership, contract acceptance,
+feasibility acceptance. The trace supplies <em>proposals</em>; the engine
+decides whether they apply.</p>
+<p>That's why a trace produced against one cartridge can fail to
+replay against another: the proposal might no longer be in the
+support.</p>
+<h3 id="4-simulation-events-consequences">4. Simulation events = consequences<a class="headerlink" href="#4-simulation-events-consequences" title="Permanent link">&para;</a></h3>
+<p><code>SimulationEvent</code> is the typed runtime stream describing <strong>what
+actually happened</strong> to the IR. Variants include <code>BasePushed</code>,
+<code>BaseChanged</code>, <code>IndelInserted</code>, <code>IndelDeleted</code>, <code>AssignmentChanged</code>,
+<code>TrimChanged</code>, <code>RegionAdded</code>, <code>RegionReplaced</code>,
+<code>MutationCountChanged</code>, <code>ReverseComplementFlagRecorded</code>.</p>
+<p>Every event is emitted by the <code>SimulationBuilder</code> at a mutation
+site. The compiled executor captures the per-pass event stream
+into the outcome.</p>
+<p>The distinction matters:</p>
+<table>
+<thead>
+<tr>
+<th>Stream</th>
+<th>Question it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Trace</strong></td>
+<td>What did the engine <em>propose</em>?</td>
+</tr>
+<tr>
+<td><strong>Events</strong></td>
+<td>What did the engine <em>do</em>?</td>
+</tr>
+</tbody>
+</table>
+<p>Both are needed because contracts can reject proposals, distributions
+can fall back to sentinels, and replay needs to know what was
+asked for, while validators need to know what actually changed.</p>
+<h3 id="5-compile-effects-scheduling-facts">5. Compile effects = scheduling facts<a class="headerlink" href="#5-compile-effects-scheduling-facts" title="Permanent link">&para;</a></h3>
+<p><code>PassCompileEffect</code> is the <strong>static, declarative</strong> category of
+state change a pass produces. It's read at <em>compile time</em> by the
+schedule analyser for ordering and dependency reasoning. It is
+<strong>never</strong> consulted at runtime by derived-state refresh.</p>
+<p>The static-vs-runtime split is asymmetric on purpose: declarations
+are <em>intent</em>; events are <em>what happened</em>.</p>
+<h3 id="6-live-call-refresh-follows-events">6. Live-call refresh follows events<a class="headerlink" href="#6-live-call-refresh-follows-events" title="Permanent link">&para;</a></h3>
+<p>After every pass, the V/D/J live-call cache may need to be
+recomputed if the IR changed in a way that affects allele scores.
+The refresh hook reads the pass's <strong>event stream</strong>, not the
+declared compile effects, to decide whether to refresh and what
+to refresh:</p>
+<pre class="mermaid"><code>flowchart LR
+  Pass[Pass runs] --&gt; Events["events:&lt;br/&gt;BaseChanged&lt;br/&gt;TrimChanged"]
+  Events --&gt; Plan["LiveCallRefreshPlan&lt;br/&gt;.from_events()"]
+  Plan --&gt; Apply["refresh affected&lt;br/&gt;segments only"]
+  Apply --&gt; Cache[(Live-call cache)]</code></pre>
+<p>This is critical: a pass that <em>declares</em> an effect but emits no
+event triggers no refresh; a pass that <em>emits</em> an event without
+declaring the effect still triggers a refresh. The runtime cache
+follows what changed, not what was intended.</p>
+<p>Two divergence tests pin this invariant. See
+<a href="https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/engine_architecture.md"><code>audit-docs/engine_architecture.md</code></a>
+§1.6 for the test names.</p>
+<h3 id="7-built-in-mutating-passes-route-through-simulationbuilder">7. Built-in mutating passes route through <code>SimulationBuilder</code><a class="headerlink" href="#7-built-in-mutating-passes-route-through-simulationbuilder" title="Permanent link">&para;</a></h3>
+<p>The only sanctioned mutation path for production pass code is the
+event-emitting <code>SimulationBuilder</code> API. Calling <code>Simulation::with_*</code>
+directly bypasses event emission, leaving the live-call cache
+stale.</p>
+<p>Two CI lockdowns make this unrepresentable: production pass code
+cannot reach the low-level builder mutators or the persistent
+<code>with_*</code> mutators. Test code is free; production code is fenced.</p>
+<h2 id="three-streams-per-pass">Three streams per pass<a class="headerlink" href="#three-streams-per-pass" title="Permanent link">&para;</a></h2>
+<p>Every pass produces three independent outputs. Understanding why
+each exists makes the rest of the architecture click:</p>
+<pre class="mermaid"><code>flowchart LR
+  Pass[Pass executes] --&gt; T[(Trace&lt;br/&gt;address, value)]
+  Pass --&gt; E[(Event log&lt;br/&gt;typed events)]
+  Pass --&gt; S[(Simulation IR&lt;br/&gt;updated state)]
+
+  T -.-&gt;|powers replay| TR[Replay]
+  E -.-&gt;|powers validation| V[Validator]
+  E -.-&gt;|powers cache refresh| LC[Live-call hook]
+  S -.-&gt;|powers projection| AR[AIRR record]
+
+  style T fill:#6e3a8e,stroke:#0e0e10,color:#fff
+  style E fill:#1d4ed8,stroke:#0e0e10,color:#fff
+  style S fill:#1f8a4c,stroke:#0e0e10,color:#fff</code></pre>
+<p>This dual-stream model (trace as proposals, events as
+consequences) is what lets GenAIRR offer features other
+simulators can't:</p>
+<ul>
+<li>The trace alone is enough to <strong>replay</strong> a run, without needing
+  the original RNG seed in scope.</li>
+<li>The event log alone is enough to <strong>validate</strong> a record. The
+  validator re-derives every counter from events and asserts
+  equality with the projected record.</li>
+<li>The events drive the <strong>live-call refresh hook</strong>, so the cached
+  V/D/J calls stay in sync with the IR even when intermediate
+  passes mutate things.</li>
+</ul>
+<h2 id="plan-signature-the-replay-safety-gate">Plan signature: the replay safety gate<a class="headerlink" href="#plan-signature-the-replay-safety-gate" title="Permanent link">&para;</a></h2>
+<p>When you replay a trace, three checks fire before any choice is
+consumed:</p>
+<pre class="mermaid"><code>flowchart LR
+  Trace[(Trace file)] --&gt; G1{plan signature&lt;br/&gt;matches?}
+  G1 --&gt;|no| F1[ValueError:&lt;br/&gt;plan_signature_mismatch]
+  G1 --&gt;|yes| G2{refdata signature&lt;br/&gt;matches?}
+  G2 --&gt;|no| F2[ValueError:&lt;br/&gt;refdata_signature_mismatch]
+  G2 --&gt;|yes| G3{refdata content&lt;br/&gt;hash matches?}
+  G3 --&gt;|no| F3[ValueError:&lt;br/&gt;refdata_content_hash_mismatch]
+  G3 --&gt;|yes| Replay[Consume trace]
+
+  style F1 fill:#dc2626,stroke:#0e0e10,color:#fff
+  style F2 fill:#dc2626,stroke:#0e0e10,color:#fff
+  style F3 fill:#dc2626,stroke:#0e0e10,color:#fff
+  style Replay fill:#1f8a4c,stroke:#0e0e10,color:#fff</code></pre>
+<ul>
+<li><strong><code>pass_plan_signature</code></strong> hashes the resolved pass plan: every
+  pass, every kwarg that affects sampling, every cartridge-driven
+  compile parameter. Any DSL change flips this signature.</li>
+<li><strong><code>refdata_signature</code></strong> hashes the cartridge identity: which
+  cartridge produced the trace.</li>
+<li><strong><code>refdata_content_hash</code></strong> hashes the cartridge content: even
+  if the cartridge name is the same, if a plane changed bytes,
+  this differs.</li>
+</ul>
+<p>The three together mean: a trace replays iff the experiment, the
+cartridge identity, and the cartridge content all match. Tighter
+than re-using a seed; verifiable post hoc.</p>
+<p>See <a href="../guides/trace-replay.html">Trace, replay, reproducibility</a>
+for the user surface.</p>
+<h2 id="the-two-layer-integrity-model">The two-layer integrity model<a class="headerlink" href="#the-two-layer-integrity-model" title="Permanent link">&para;</a></h2>
+<p>GenAIRR's release-readiness gate runs two independent layers:</p>
+<pre class="mermaid"><code>flowchart TB
+  subgraph Output ["Run-time output"]
+    Sim[Simulation IR] --&gt; Proj[Projector]
+    Proj --&gt; Rec[AIRR record]
+  end
+
+  subgraph Layer1 ["Layer 1: AIRR validator"]
+    Rec --&gt; V1["Re-derive every field&lt;br/&gt;from Outcome events"]
+    V1 --&gt; Cmp1{Match?}
+    Cmp1 --&gt;|yes| Ok1["Pass"]
+    Cmp1 --&gt;|no| Bad1["ValidationReport&lt;br/&gt;structured issue"]
+  end
+
+  subgraph Layer2 ["Layer 2: Cache parity"]
+    Sim --&gt; V2["Recompute SegmentLiveCall&lt;br/&gt;from scratch"]
+    V2 --&gt; Cmp2{Equals cached?}
+    Cmp2 --&gt;|yes| Ok2["Pass"]
+    Cmp2 --&gt;|no| Bad2["ParityFailure"]
+  end
+
+  style Ok1 fill:#1f8a4c,stroke:#0e0e10,color:#fff
+  style Ok2 fill:#1f8a4c,stroke:#0e0e10,color:#fff
+  style Bad1 fill:#dc2626,stroke:#0e0e10,color:#fff
+  style Bad2 fill:#dc2626,stroke:#0e0e10,color:#fff</code></pre>
 <table>
 <thead>
 <tr>
@@ -2155,42 +2366,204 @@ copy-paste templates; use it for the actual implementation.</p>
 <tr>
 <td><strong>Cache parity</strong></td>
 <td>Does the cached <code>SegmentLiveCall</code> on the final <code>Simulation</code> equal a from-scratch recompute?</td>
-<td><code>outcome.check_live_call_cache_parity(refdata)</code> → <code>List[dict]</code></td>
+<td><code>outcome.check_live_call_cache_parity(refdata)</code> → <code>list[dict]</code></td>
 </tr>
 </tbody>
 </table>
-<p>Both layers run in release-tier CI. The AIRR validator catches
-projection / counter drift; cache parity catches live-call
-refresh-hook bugs that the AIRR validator can't see because
-they don't surface on the record. See
-<code>audit-docs/validation_matrix.md</code>
-§1.0 for the rationale.</p>
+<p>The two layers catch <em>different</em> classes of bug:</p>
+<ul>
+<li>The <strong>AIRR validator</strong> catches projection / counter drift. A
+  bug in how the record is derived from the outcome.</li>
+<li>The <strong>cache parity check</strong> catches live-call refresh-hook bugs
+  that the AIRR validator can't see, because they don't surface
+  on the record (they corrupt the <em>cache</em>, which downstream code
+  reads).</li>
+</ul>
+<p>Both run in release-tier CI. See the validation matrix at
+<a href="https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/validation_matrix.md"><code>audit-docs/validation_matrix.md</code></a>
+for the row-by-row guarantee → audit doc → test mapping.</p>
+<h2 id="the-audit-first-workflow">The audit-first workflow<a class="headerlink" href="#the-audit-first-workflow" title="Permanent link">&para;</a></h2>
+<p>GenAIRR's release process is unusual: a mechanism gets
+<strong>specified, validated against the existing engine, and pinned by
+contract tests before implementation begins</strong>.</p>
+<pre class="mermaid"><code>flowchart LR
+  A[Audit doc] --&gt; B["Contract pins&lt;br/&gt;tests fail on master"]
+  B --&gt; C["Implementation&lt;br/&gt;slice 1"]
+  C --&gt; D["Implementation&lt;br/&gt;slice 2"]
+  D --&gt; E["Release&lt;br/&gt;audit becomes design"]
+
+  style A fill:#1d4ed8,stroke:#0e0e10,color:#fff
+  style B fill:#dc2626,stroke:#0e0e10,color:#fff
+  style C fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
+  style D fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
+  style E fill:#1f8a4c,stroke:#0e0e10,color:#fff</code></pre>
+<ol>
+<li><strong>Audit doc.</strong> Open <code>audit-docs/&lt;topic&gt;_audit.md</code>. Define the
+   biology, name the v1 boundary (what's in / what's deferred),
+   enumerate the invariants the implementation must preserve.</li>
+<li><strong>Contract pins.</strong> Add <code>tests/test_&lt;topic&gt;_contract.py</code> with
+   the three required test patterns: deterministic-by-trace,
+   plan-signature-stable, event-ledger-complete. The pins fail
+   on master because the implementation isn't there yet; that's
+   the point.</li>
+<li><strong>Implementation slices.</strong> Land the mechanism in small,
+   independently-reviewable slices. Each slice flips one set of
+   contract pins from red to green.</li>
+<li><strong>Release consolidation.</strong> Rename <code>audit-docs/&lt;topic&gt;_audit.md</code>
+   to <code>audit-docs/&lt;topic&gt;_design.md</code>, update
+   <code>audit-docs/validation_matrix.md</code> with the new row, stamp
+   the audit as resolved.</li>
+</ol>
+<p>Why this discipline matters for biological mechanisms: most
+simulators treat invariants as informal ("the recombination
+should produce a valid junction"). GenAIRR makes them executable.
+The validator re-derives the junction; the contract pins enforce
+counter-partition equalities; the plan signature catches any
+kwarg that would silently shift output. Audit-first keeps the
+invariant set explicit so a new mechanism can't quietly break an
+old one.</p>
+<h2 id="where-the-code-lives">Where the code lives<a class="headerlink" href="#where-the-code-lives" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Mechanism area</th>
+<th>Rust kernel</th>
+<th>Python wrapper</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Recombination</strong></td>
+<td><code>engine_rs/src/passes/sample_allele.rs</code>, <code>trim.rs</code>, <code>generate_np.rs</code>, <code>assemble_segment.rs</code>, <code>p_addition.rs</code>, <code>junction.rs</code></td>
+<td><code>Experiment.recombine</code>, <code>restrict_alleles</code>, allele-usage estimator</td>
+</tr>
+<tr>
+<td><strong>Mutation (SHM)</strong></td>
+<td><code>engine_rs/src/passes/mutate/{s5f,uniform,segment_rates,v_subregion_rates}.rs</code></td>
+<td><code>Experiment.mutate</code>, <code>segment_rates</code>, <code>v_subregion_rates</code></td>
+</tr>
+<tr>
+<td><strong>Constraints</strong></td>
+<td><code>engine_rs/src/contract/{anchor_preserved,junction_stop_state,no_stop_codon_in_junction,productive_junction_frame}.rs</code></td>
+<td><code>Experiment.productive_only</code>, <code>restrict_alleles</code></td>
+</tr>
+<tr>
+<td><strong>Recombination editing</strong></td>
+<td><code>engine_rs/src/passes/{invert_d,receptor_revision}.rs</code></td>
+<td><code>Experiment.invert_d</code>, <code>receptor_revision</code></td>
+</tr>
+<tr>
+<td><strong>Corruption + library</strong></td>
+<td><code>engine_rs/src/passes/corrupt/{pcr,quality,indel,ncorrupt,end_loss,contaminant,rev_comp}.rs</code></td>
+<td><code>Experiment.pcr_amplify</code>, <code>polymerase_indels</code>, <code>sequencing_errors</code>, <code>ambiguous_base_calls</code>, <code>end_loss_*prime</code></td>
+</tr>
+<tr>
+<td><strong>Read layout</strong></td>
+<td><code>engine_rs/src/passes/paired_end.rs</code>, <code>airr_record/segment_projection.rs</code></td>
+<td><code>Experiment.paired_end</code>, <code>random_strand_orientation</code></td>
+</tr>
+<tr>
+<td><strong>Projection (AIRR)</strong></td>
+<td><code>engine_rs/src/airr_record/builder.rs</code>, <code>record.rs</code>, <code>validate.rs</code></td>
+<td><code>SimulationResult</code>, exporters</td>
+</tr>
+<tr>
+<td><strong>Reference cartridge</strong></td>
+<td><code>engine_rs/src/refdata.rs</code>, <code>engine_rs/src/refdata/validation.rs</code></td>
+<td><code>DataConfig</code>, <code>ReferenceCartridgeBuilder</code>, <code>cfg.cartridge_manifest()</code></td>
+</tr>
+<tr>
+<td><strong>Trace + replay</strong></td>
+<td><code>engine_rs/src/trace.rs</code>, <code>engine_rs/src/replay.rs</code>, <code>engine_rs/src/trace_file.rs</code></td>
+<td><code>compiled.simulator.trace_file_from / replay_from_trace_file / rerun_from_trace_file</code></td>
+</tr>
+<tr>
+<td><strong>Validation</strong></td>
+<td><code>engine_rs/src/contract/*</code>, <code>engine_rs/src/airr_record/validate.rs</code></td>
+<td><code>result.validate_records</code>, <code>validate_families</code>, <code>validate_families_with_parents</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="anti-patterns">Anti-patterns<a class="headerlink" href="#anti-patterns" title="Permanent link">&para;</a></h2>
+<p>A few patterns the CI lockdowns specifically prevent:</p>
+<ul>
+<li><strong>Direct <code>sim.with_*</code> in production passes.</strong> Bypasses event
+  emission; live-call cache goes stale. CI guard:
+  <code>no_pass_calls_persistent_with_star_mutators_in_production_code</code>.</li>
+<li><strong>Replay force-apply.</strong> Pushing a recorded value through
+  without re-validating its admissibility chain. The cursor's
+  positional contract means trailing records are themselves a
+  structured error.</li>
+<li><strong>Contract-violating permissive fallback.</strong> A pass that drops
+  to a non-sentinel value when the contract rejects all candidates.
+  The only sanctioned outputs from a permissive draw are: a
+  contract-admissible value, or the documented sentinel.</li>
+<li><strong>Declaring a compile effect without emitting matching events.</strong>
+  Schedule analyser sees the effect; refresh hook sees no event;
+  derived state goes stale.</li>
+</ul>
 <h2 id="deep-links">Deep links<a class="headerlink" href="#deep-links" title="Permanent link">&para;</a></h2>
-<p>For convenience, the full set of GitHub-tree links to the
-audit corpus. (MkDocs strict can't validate links outside the
-site source tree, so these are absolute URLs.)</p>
-<h3 id="anchor-docs-linked-above">Anchor docs (linked above)<a class="headerlink" href="#anchor-docs-linked-above" title="Permanent link">&para;</a></h3>
+<p>The audit corpus at <code>audit-docs/</code> is the contributor-facing
+source of truth. The anchor documents:</p>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/engine_architecture.md"><code>audit-docs/engine_architecture.md</code></a></td>
+<td>The seven invariants in their canonical form, with Rust file pointers and CI lockdown names.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/adding_a_pass.md"><code>audit-docs/adding_a_pass.md</code></a></td>
+<td>Copy-pasteable pass template, the three required test patterns, the live-call refresh hook contract.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/validation_matrix.md"><code>audit-docs/validation_matrix.md</code></a></td>
+<td>Every guarantee mapped to its audit doc, test file, and Rust kernel invariant.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/plan_signature_completeness_audit.md"><code>audit-docs/plan_signature_completeness_audit.md</code></a></td>
+<td>Every parameterised DSL surface and every cartridge-driven compile parameter mapped against plan-signature participation.</td>
+</tr>
+</tbody>
+</table>
+<p>The full audit corpus is browsable in the repository under
+<code>audit-docs/</code>. About 40 audit and design docs covering every
+mechanism.</p>
+<h2 id="before-you-add-a-new-mechanism">Before you add a new mechanism<a class="headerlink" href="#before-you-add-a-new-mechanism" title="Permanent link">&para;</a></h2>
+<p>The checklist new contributors run before opening a slice PR:</p>
 <ul>
-<li><code>audit-docs/engine_architecture.md</code> </li>
-<li><code>audit-docs/adding_a_pass.md</code> </li>
-<li><code>audit-docs/validation_matrix.md</code> </li>
-<li><code>audit-docs/plan_signature_completeness_audit.md</code> </li>
+<li>[ ] <strong>Define the biology and provenance.</strong> What does this model
+      in vivo? What counters and provenance fields does it
+      surface on the AIRR record? Write it in
+      <code>audit-docs/&lt;topic&gt;_audit.md</code> §1 and §2 before writing code.</li>
+<li>[ ] <strong>Trace and replay choices.</strong> Every sampling site needs a
+      stable typed <code>ChoiceAddress</code> and a deterministic projection
+      from <code>ChoiceValue</code>. Write the address schema in the audit
+      before lowering it.</li>
+<li>[ ] <strong>Event consequences.</strong> Decide which event types the pass
+      emits. They must be sufficient to reconstruct every counter
+      the projection will read.</li>
+<li>[ ] <strong>Validators.</strong> Add the contract pin that re-derives the
+      mechanism's counters from events and asserts equality with
+      the projected record.</li>
+<li>[ ] <strong>Cartridge ownership.</strong> If the mechanism takes per-cartridge
+      parameters, decide which <code>reference_models</code> plane owns them,
+      whether they participate in the plan signature, and whether
+      they fold into <code>refdata_content_hash</code>.</li>
+<li>[ ] <strong>Docs.</strong> New user-facing mechanism gets a user-tone guide
+      under <code>site_docs/guides/</code>. Reference the audit doc only at
+      the bottom under "Deep architecture notes."</li>
+<li>[ ] <strong>Release-tier test.</strong> The two-layer integrity model (AIRR
+      validator plus live-call cache parity) must pass before
+      release.</li>
 </ul>
-<h3 id="sample-audits-by-mechanism-area">Sample audits by mechanism area<a class="headerlink" href="#sample-audits-by-mechanism-area" title="Permanent link">&para;</a></h3>
-<p>The full corpus carries 39 markdown files. A few representative
-audits to illustrate scope:</p>
-<ul>
-<li><code>audit-docs/allele_call_audit.md</code> — recombination </li>
-<li><code>audit-docs/junction_n_addition_audit.md</code> — recombination </li>
-<li><code>audit-docs/mutation_provenance_audit.md</code> — mutation </li>
-<li><code>audit-docs/v_region_substructure_audit.md</code> — mutation </li>
-<li><code>audit-docs/indel_provenance_audit.md</code> — corruption </li>
-<li><code>audit-docs/airr_record_validator.md</code> — projection </li>
-<li><code>audit-docs/reference_cartridge_completeness_audit.md</code> — cartridge </li>
-</ul>
-<p>The full inventory is browsable at the repository root in
-<code>docs/</code>; a Phase 5 audit-index page will enumerate everything
-with one-line summaries.</p>
+<p>The <code>audit-docs/adding_a_pass.md</code> companion turns this checklist
+into copy-paste templates.</p>
 
 
 
@@ -2307,6 +2680,8 @@ with one-line summaries.</p>
     
     
       <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../js/mermaid-init.js"></script>
       
     
   </body>
