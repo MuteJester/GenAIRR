@@ -20,11 +20,14 @@ flowchart LR
   C --> D["Persistent IR<br/>+ event log + trace"]
   D --> E["AIRR record<br/>pure projection"]
 
-  style A fill:#1f8a4c,stroke:#0e0e10,color:#fff
-  style B fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style C fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style D fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style E fill:#1d4ed8,stroke:#0e0e10,color:#fff
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class A accent;
+  class B,C,D neutral;
+  class E info;
 ```
 
 The transitions matter as much as the boxes:
@@ -147,8 +150,13 @@ flowchart LR
     G1["Filter support<br/>by contracts"] --> G2["Draw from<br/>admissible subset"] --> G3["Always valid"]
   end
 
-  style T2 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style G1 fill:#1f8a4c,stroke:#0e0e10,color:#fff
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class T2 warn;
+  class G1 accent;
 ```
 
 At every contract-aware sampling site, the candidate distribution
@@ -190,8 +198,13 @@ flowchart LR
   Adm -->|fail| Err[PassError::Replay]
   Apply --> Out[Outcome]
 
-  style Adm fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style Err fill:#dc2626,stroke:#0e0e10,color:#fff
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class Adm neutral;
+  class Err warn;
 ```
 
 Replay consumes recorded values through a `TraceCursor` at each
@@ -290,9 +303,14 @@ flowchart LR
   E -.->|powers cache refresh| LC[Live-call hook]
   S -.->|powers projection| AR[AIRR record]
 
-  style T fill:#6e3a8e,stroke:#0e0e10,color:#fff
-  style E fill:#1d4ed8,stroke:#0e0e10,color:#fff
-  style S fill:#1f8a4c,stroke:#0e0e10,color:#fff
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class T trace;
+  class E info;
+  class S accent;
 ```
 
 This dual-stream model (trace as proposals, events as
@@ -323,10 +341,13 @@ flowchart LR
   G3 -->|no| F3[ValueError:<br/>refdata_content_hash_mismatch]
   G3 -->|yes| Replay[Consume trace]
 
-  style F1 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style F2 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style F3 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style Replay fill:#1f8a4c,stroke:#0e0e10,color:#fff
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class F1,F2,F3 warn;
+  class Replay accent;
 ```
 
 - **`pass_plan_signature`** hashes the resolved pass plan: every
@@ -370,10 +391,13 @@ flowchart TB
     Cmp2 -->|no| Bad2["ParityFailure"]
   end
 
-  style Ok1 fill:#1f8a4c,stroke:#0e0e10,color:#fff
-  style Ok2 fill:#1f8a4c,stroke:#0e0e10,color:#fff
-  style Bad1 fill:#dc2626,stroke:#0e0e10,color:#fff
-  style Bad2 fill:#dc2626,stroke:#0e0e10,color:#fff
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class Ok1,Ok2 accent;
+  class Bad1,Bad2 warn;
 ```
 
 | Layer | Question | API |
@@ -407,11 +431,15 @@ flowchart LR
   C --> D["Implementation<br/>slice 2"]
   D --> E["Release<br/>audit becomes design"]
 
-  style A fill:#1d4ed8,stroke:#0e0e10,color:#fff
-  style B fill:#dc2626,stroke:#0e0e10,color:#fff
-  style C fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style D fill:#fafaf7,stroke:#0e0e10,color:#0e0e10
-  style E fill:#1f8a4c,stroke:#0e0e10,color:#fff
+  classDef accent fill:#1f8a4c,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef info fill:#1d4ed8,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef trace fill:#6e3a8e,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef warn fill:#dc2626,stroke:#0e0e10,color:#ffffff,font-weight:600;
+  classDef neutral fill:#fafaf7,stroke:#0e0e10,color:#0e0e10;
+  class A info;
+  class B warn;
+  class C,D neutral;
+  class E accent;
 ```
 
 1. **Audit doc.** Open `audit-docs/<topic>_audit.md`. Define the
