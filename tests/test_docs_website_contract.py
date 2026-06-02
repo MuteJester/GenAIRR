@@ -132,7 +132,10 @@ def test_pin_scaffold_old_docs_dir_exists_as_abandoned_earlier_attempt() -> None
     tree. Renamed with leading underscore signals
     deliberate abandonment. The audit recommends keeping
     it as a salvage source (tutorials + MkDocs
-    requirements file)."""
+    requirements file). Skip when absent (e.g. CI checkouts
+    where this gitignored salvage tree isn't present)."""
+    if not _OLD_DOCS.is_dir():
+        pytest.skip("_old_docs/ is a local-only salvage tree; not present in this checkout")
     assert _OLD_DOCS.is_dir(), (
         f"{_OLD_DOCS} missing — abandoned-docs evidence trail gone"
     )
@@ -186,6 +189,11 @@ def test_pin_scaffold_docs_superpowers_subdir_holds_session_artifacts() -> None:
 
 
 def test_pin_scaffold_docs_build_subdir_holds_wheel_artefacts_not_docs() -> None:
+    """`docs/build/` holds Python wheel build artefacts. Skip when
+    docs/ is absent (CI checkouts where docs/ is gitignored)."""
+    if not _DOCS.is_dir():
+        import pytest
+        pytest.skip("docs/ is contributor-only; not present in this checkout")
     """`docs/build/` holds Python wheel build artefacts
     (a side-effect of `python -m build` choosing
     `docs/build/` for its temp output). NOT documentation.
@@ -217,18 +225,19 @@ def test_pin_scaffold_docs_build_subdir_holds_wheel_artefacts_not_docs() -> None
 
 
 def test_pin_scaffold_readme_links_many_md_files_in_docs_dir() -> None:
-    """The README links to many `docs/*.md` files in
+    """The README links to many `audit-docs/*.md` files in
     normal prose. These render on GitHub (where the
     README is viewed pre-install) but are NOT part of
     the live `website/` site — the maintainer-leak
-    problem the audit §2.2 names. The audit time count
-    was 15 distinct `docs/*.md` markdown links."""
+    problem the audit §2.2 names. The audit-time count
+    was 15 distinct `docs/*.md` markdown links (now
+    `audit-docs/*.md` post-migration to a public folder)."""
     readme_text = _README.read_text(encoding="utf-8")
-    docs_links = re.findall(r"\(docs/[^)]+\.md[^)]*\)", readme_text)
+    docs_links = re.findall(r"\(audit-docs/[^)]+\.md[^)]*\)", readme_text)
     unique_links = sorted(set(docs_links))
     assert len(unique_links) >= 10, (
         f"README links to only {len(unique_links)} distinct "
-        f"docs/*.md files; audit §2.2 documented 15 — verify "
+        f"audit-docs/*.md files; audit §2.2 documented 15 — verify "
         f"the README was not silently stripped of internal "
         f"references"
     )
