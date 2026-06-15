@@ -55,6 +55,32 @@ pub fn sample_clone_size(rng: &mut Rng, dist: &CloneSizeDist) -> u32 {
     }
 }
 
+/// Draw `n_clones` clone sizes from `dist`. A fraction `unexpanded_fraction`
+/// (in [0,1]) of the clones are forced to be unexpanded singletons (size 1);
+/// the deterministic forced count is `round(n_clones * unexpanded_fraction)`,
+/// placed at the front of the returned vector. The remainder are drawn from
+/// `dist` (and may themselves be 1, so the realized singleton count can exceed
+/// the forced minimum — matching real repertoires). Deterministic for the `rng`
+/// state. `unexpanded_fraction` is clamped to [0,1].
+pub fn sample_repertoire_sizes(
+    rng: &mut Rng,
+    n_clones: u32,
+    dist: &CloneSizeDist,
+    unexpanded_fraction: f64,
+) -> Vec<u32> {
+    let frac = unexpanded_fraction.clamp(0.0, 1.0);
+    let n = n_clones as usize;
+    let forced_singletons = (((n as f64) * frac).round() as usize).min(n);
+    let mut sizes = Vec::with_capacity(n);
+    for _ in 0..forced_singletons {
+        sizes.push(1u32);
+    }
+    for _ in forced_singletons..n {
+        sizes.push(sample_clone_size(rng, dist));
+    }
+    sizes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,5 +131,40 @@ mod tests {
         for &s in &xs {
             assert!(s >= 1 && s <= 10_000);
         }
+    }
+
+    #[test]
+    fn repertoire_sizes_respects_count_and_min_one() {
+        let mut rng = Rng::new(3);
+        let d = CloneSizeDist::PowerLaw { exponent: 2.0, x_max: 1000 };
+        let sizes = sample_repertoire_sizes(&mut rng, 500, &d, 0.0);
+        assert_eq!(sizes.len(), 500);
+        assert!(sizes.iter().all(|&s| s >= 1));
+    }
+
+    #[test]
+    fn unexpanded_fraction_forces_singletons() {
+        let mut rng = Rng::new(5);
+        let d = CloneSizeDist::PowerLaw { exponent: 2.0, x_max: 1000 };
+        let sizes = sample_repertoire_sizes(&mut rng, 1000, &d, 0.4);
+        assert_eq!(sizes.len(), 1000);
+        let ones = sizes.iter().filter(|&&s| s == 1).count();
+        assert!(ones >= 400, "expected >=400 singletons, got {ones}");
+    }
+
+    #[test]
+    fn unexpanded_fraction_one_is_all_singletons() {
+        let mut rng = Rng::new(8);
+        let d = CloneSizeDist::default();
+        let sizes = sample_repertoire_sizes(&mut rng, 100, &d, 1.0);
+        assert!(sizes.iter().all(|&s| s == 1));
+    }
+
+    #[test]
+    fn repertoire_is_deterministic() {
+        let d = CloneSizeDist::PowerLaw { exponent: 2.0, x_max: 1000 };
+        let a = sample_repertoire_sizes(&mut Rng::new(11), 200, &d, 0.3);
+        let b = sample_repertoire_sizes(&mut Rng::new(11), 200, &d, 0.3);
+        assert_eq!(a, b);
     }
 }
