@@ -18,7 +18,7 @@ pub struct LineageNode {
     /// Nucleotide bases of this cell's `Simulation` pool at creation time.
     pub genotype: Vec<u8>,
     /// Mutations introduced on the edge from the parent to this node
-    /// (`child.mutation_count - parent.mutation_count`). 0 for the root.
+    /// (the number of substitutions on the parent→child edge; 0 for the root).
     pub mutations_from_parent: u32,
     /// Observation count after sampling + genotype-collapse. 0 until sampled.
     pub abundance: u32,
@@ -38,6 +38,7 @@ impl LineageTree {
         self.nodes.len()
     }
 
+    /// True when the tree has no nodes.
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
@@ -59,18 +60,22 @@ impl LineageTree {
 
     /// Direct children of `id`, in ascending id order.
     pub fn children_of(&self, id: u32) -> Vec<&LineageNode> {
-        self.nodes
+        let mut v: Vec<&LineageNode> = self.nodes
             .iter()
             .filter(|n| n.parent_id == Some(id))
-            .collect()
+            .collect();
+        v.sort_unstable_by_key(|n| n.id);
+        v
     }
 
     /// Nodes with no children (tips), in ascending id order.
     pub fn leaves(&self) -> Vec<&LineageNode> {
-        self.nodes
+        let mut v: Vec<&LineageNode> = self.nodes
             .iter()
             .filter(|n| self.children_of(n.id).is_empty())
-            .collect()
+            .collect();
+        v.sort_unstable_by_key(|n| n.id);
+        v
     }
 }
 
