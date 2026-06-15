@@ -76,3 +76,22 @@ def test_simulate_lineage_rejects_zero_n_sample():
     mut, sub = _kernel()
     with pytest.raises(ValueError):
         _engine.simulate_lineage(founder, mut, sub, 0.05, 1.5, 0.0, 8, 500, 0, 0)
+
+
+def test_simulate_lineage_rejects_nonfinite_lambda():
+    founder = _founder()
+    mut, sub = _kernel()
+    # NaN/inf/negative lambda_base must raise, not silently return a founder-only tree.
+    for bad in (float("nan"), float("inf"), -1.0):
+        with pytest.raises(ValueError):
+            _engine.simulate_lineage(founder, mut, sub, 0.05, bad, 0.0, 8, 500, 30, 0)
+    # lambda_mut is validated too.
+    with pytest.raises(ValueError):
+        _engine.simulate_lineage(founder, mut, sub, 0.05, 1.5, float("nan"), 8, 500, 30, 0)
+
+
+def test_simulate_lineage_rejects_excessive_max_generations():
+    founder = _founder()
+    mut, sub = _kernel()
+    with pytest.raises(ValueError):
+        _engine.simulate_lineage(founder, mut, sub, 0.05, 1.5, 0.0, 5000, 500, 30, 0)

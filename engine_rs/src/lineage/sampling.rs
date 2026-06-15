@@ -26,7 +26,9 @@ pub fn sample_and_collapse(tree: &mut LineageTree, n_sample: u32, rng: &mut Rng)
     let mut abundance: HashMap<u32, u32> = HashMap::new();
 
     for _ in 0..n_sample {
-        let idx = (rng.next_u64() % (leaf_ids.len() as u64)) as usize;
+        // Unbiased uniform index (Lemire), matching the engine's RNG convention;
+        // avoids the modulo bias of `next_u64() % len`.
+        let idx = rng.range_u32(leaf_ids.len() as u32) as usize;
         let leaf_id = leaf_ids[idx];
         let genotype = tree.get(leaf_id).unwrap().genotype.clone();
         let rep = *rep_by_genotype.entry(genotype).or_insert(leaf_id);

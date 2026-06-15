@@ -108,13 +108,24 @@ impl LineageTree {
     }
 
     /// Nodes with no children (tips), in ascending id order.
+    ///
+    /// O(n): a single pass marks which ids are parents (relying on the
+    /// `id == index` invariant, same as the rest of the module), then filters.
+    /// Avoids the previous O(n²) of calling `children_of` per node.
     pub fn leaves(&self) -> Vec<&LineageNode> {
-        let mut v: Vec<&LineageNode> = self.nodes
+        let mut has_child = vec![false; self.nodes.len()];
+        for n in &self.nodes {
+            if let Some(p) = n.parent_id {
+                if (p as usize) < has_child.len() {
+                    has_child[p as usize] = true;
+                }
+            }
+        }
+        // Arena order == ascending id under the id==index invariant.
+        self.nodes
             .iter()
-            .filter(|n| self.children_of(n.id).is_empty())
-            .collect();
-        v.sort_unstable_by_key(|n| n.id);
-        v
+            .filter(|n| !has_child.get(n.id as usize).copied().unwrap_or(false))
+            .collect()
     }
 }
 

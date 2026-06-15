@@ -173,6 +173,24 @@ pub(crate) fn simulate_lineage(
     if n_sample == 0 {
         return Err(PyValueError::new_err("simulate_lineage: n_sample must be > 0"));
     }
+    if !(lambda_base.is_finite() && lambda_base >= 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_lineage: lambda_base must be finite and >= 0, got {lambda_base}"
+        )));
+    }
+    if !(lambda_mut.is_finite() && lambda_mut >= 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_lineage: lambda_mut must be finite and >= 0, got {lambda_mut}"
+        )));
+    }
+    // Cap generations: `to_newick` recurses to a depth equal to the generation
+    // count, so an unbounded value could overflow the stack across the FFI
+    // boundary. 1000 is far beyond any biological germinal-center reaction.
+    if max_generations > 1000 {
+        return Err(PyValueError::new_err(format!(
+            "simulate_lineage: max_generations must be <= 1000, got {max_generations}"
+        )));
+    }
 
     // Lengths and value ranges are now guaranteed, so S5FKernel::new cannot panic.
     let kernel = S5FKernel::new(mutability, substitution);
