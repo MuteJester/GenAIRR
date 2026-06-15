@@ -139,15 +139,6 @@ pub fn grow_lineage(
     grow_core(founder, params, Some(mutator)).0
 }
 
-/// Like `grow_topology` but also returns the peak live-population size reached
-/// during growth. Internal helper for capacity tests and metric-aware callers.
-pub(crate) fn grow_topology_with_peak(
-    founder: &Simulation,
-    params: &BranchingParams,
-) -> (LineageTree, usize) {
-    grow_core(founder, params, None)
-}
-
 /// Grow the lineage TOPOLOGY only (children are exact clones of their parent
 /// `Simulation`; no mutation — a later task layers mutation on top).
 pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageTree {
@@ -222,7 +213,7 @@ mod tests {
             n_sample: 10,
             seed: 7,
         };
-        let (_tree, peak_live) = grow_topology_with_peak(&founder(), &params);
+        let (_tree, peak_live) = grow_core(&founder(), &params, None);
         // hard cap: live population never exceeds n_max
         assert!(peak_live <= params.n_max as usize,
             "peak live {peak_live} exceeded n_max {}", params.n_max);
@@ -254,6 +245,8 @@ mod tests {
         let mut saw_mutated_child = false;
         for n in &tree.nodes {
             if n.parent_id.is_some() {
+                // <= 2 (not == 2): on the 4-base "AAAA" founder the two uniform
+                // substitutions can draw the same position, yielding 1 net change.
                 assert!(n.mutations_from_parent <= 2);
                 if n.mutations_from_parent > 0 {
                     saw_mutated_child = true;
