@@ -69,6 +69,33 @@ impl LineageTree {
         v
     }
 
+    /// Check structural invariants: exactly one root; every non-root parent
+    /// exists; child generation == parent generation + 1 (acyclicity follows
+    /// from the strictly-increasing generation along any parent chain).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.nodes.is_empty() {
+            return Err("empty lineage tree".to_string());
+        }
+        let roots = self.nodes.iter().filter(|n| n.parent_id.is_none()).count();
+        if roots != 1 {
+            return Err(format!("expected exactly 1 root, found {roots}"));
+        }
+        for n in &self.nodes {
+            if let Some(pid) = n.parent_id {
+                let parent = self
+                    .get(pid)
+                    .ok_or_else(|| format!("node {} references missing parent {pid}", n.id))?;
+                if n.generation != parent.generation + 1 {
+                    return Err(format!(
+                        "node {} generation {} != parent {} generation {} + 1",
+                        n.id, n.generation, parent.id, parent.generation
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Nodes with no children (tips), in ascending id order.
     pub fn leaves(&self) -> Vec<&LineageNode> {
         let mut v: Vec<&LineageNode> = self.nodes
@@ -94,6 +121,25 @@ mod tests {
                 LineageNode { id: 3, parent_id: Some(1), generation: 2, genotype: b"AATC".to_vec(), mutations_from_parent: 1, abundance: 0, observed: false },
             ],
         }
+    }
+
+    #[test]
+    fn validate_accepts_well_formed_tree() {
+        assert!(hand_tree().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_two_roots() {
+        let mut t = hand_tree();
+        t.nodes[1].parent_id = None; // second root
+        assert!(t.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_nonmonotonic_generation() {
+        let mut t = hand_tree();
+        t.nodes[3].generation = 1; // child not parent.gen + 1
+        assert!(t.validate().is_err());
     }
 
     #[test]
