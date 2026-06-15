@@ -2437,12 +2437,32 @@ class Experiment:
             lineage_step: _LineageForkStep = self._steps[lineage_idx]
             pre_steps = self._steps[:lineage_idx]
             post_steps = self._steps[lineage_idx + 1:]
-            if post_steps:
-                raise ValueError(
-                    "No steps may follow clonal_lineage() — the lineage engine "
-                    "handles mutation internally. Remove the following step(s): "
-                    + ", ".join(type(s).__name__ for s in post_steps)
-                )
+            # Steps after clonal_lineage() are per-observed-cell
+            # library-prep / sequencing artefact passes (the same
+            # post-fork set expand_clones() allows). SHM is internal
+            # to the lineage engine, so .mutate() is rejected; the
+            # paired-end read layout is not yet wired through the
+            # per-cell corruption merge, so reject it for now too.
+            for s in post_steps:
+                if isinstance(s, _MutateStep):
+                    raise ValueError(
+                        "SHM is internal to clonal_lineage; do not add "
+                        ".mutate() after it. Set the within-lineage SHM rate "
+                        "via clonal_lineage(rate=...)."
+                    )
+                if isinstance(s, _PairedEndStep):
+                    raise ValueError(
+                        "paired_end not yet supported with clonal_lineage; "
+                        "apply per-read library-prep passes (sequencing_errors, "
+                        "pcr_amplify, polymerase_indels, end_loss_*, "
+                        "ambiguous_base_calls, random_strand_orientation) instead."
+                    )
+                if not isinstance(s, _CorruptStep):
+                    raise ValueError(
+                        "Only per-read library-prep / sequencing artefact passes "
+                        "may follow clonal_lineage(); got "
+                        f"{type(s).__name__}."
+                    )
             pre_simulator = self._build_simulator(
                 pre_steps,
                 contracts,
@@ -2450,10 +2470,26 @@ class Experiment:
                 replace_fn=_replace,
                 allow_curatable_refdata=allow_curatable_refdata,
             )
+            # Build the per-cell corruption simulator from the
+            # post-fork steps, mirroring the clonal branch's
+            # post_simulator (no recombination facts on this side, so
+            # any_lock=False and the analyzer skips the productive
+            # precondition check).
+            post_simulator = None
+            if post_steps:
+                post_simulator = self._build_simulator(
+                    post_steps,
+                    contracts,
+                    any_lock=False,
+                    replace_fn=_replace,
+                    allow_curatable_refdata=allow_curatable_refdata,
+                )
             return CompiledLineageExperiment(
                 pre_simulator,
                 lineage_step,
                 self._refdata,
+                post_simulator=post_simulator,
+                post_steps=tuple(post_steps),
                 dataconfig=self._dataconfig,
                 metadata=self._metadata,
             )

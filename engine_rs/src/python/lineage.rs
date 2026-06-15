@@ -364,6 +364,40 @@ fn synthesize_shm_event_record(sim: &Simulation) -> (EventRecord, u32) {
 }
 
 
+/// Merge a per-node lineage `Outcome` with a corruption `Outcome` that was
+/// run *from* the lineage node's final simulation.
+///
+/// `base` is a lineage node `Outcome`: its `trace` is the founder
+/// recombination trace, its `events` is the synthesized SHM `EventRecord`,
+/// and its final simulation is post-SHM (`mutation_count` = net SHM).
+///
+/// `corruption` is the corruption plan run from `base`'s final simulation:
+/// its `trace` holds the corruption choices, its `events` holds the
+/// corruption `EventRecord`s, and its final simulation is the corrupted
+/// molecule (SHM `mutation_count` is preserved by the corruption passes).
+///
+/// The merged `Outcome` carries the corrupted final simulation (so sequence
+/// + quality bytes reflect the artefacts) but the *concatenation* of both
+/// traces and both event ledgers, so the AIRR builder derives BOTH the SHM
+/// per-segment counts (from the synthesized SHM event) AND the corruption
+/// counters (`n_quality_errors`, `n_pcr_errors`, `n_indels`, …) from the
+/// corruption events / trace.
+#[pyfunction]
+pub(crate) fn merge_lineage_corruption(base: &PyOutcome, corruption: &PyOutcome) -> PyOutcome {
+    let mut trace = base.inner.trace.clone();
+    trace.append_delta(corruption.inner.trace.clone());
+
+    let mut events = base.inner.events.clone();
+    events.extend(corruption.inner.events.iter().cloned());
+
+    PyOutcome::new(Outcome {
+        revisions: corruption.inner.revisions.clone(),
+        pass_names: corruption.inner.pass_names.clone(),
+        trace,
+        events,
+    })
+}
+
 /// Grow + sample a clonal lineage family from `founder` (a full `Outcome`) using
 /// an S5F mutator, returning a `FamilyOutcome` with per-node AIRR-projectable
 /// `Outcome`s for every observed (sampled) node.

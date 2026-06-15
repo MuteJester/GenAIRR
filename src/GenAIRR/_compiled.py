@@ -513,19 +513,33 @@ class CompiledLineageExperiment:
     per-observed-node AIRR dicts with lineage metadata.
     """
 
-    __slots__ = ("_pre", "_step", "_refdata", "_dataconfig", "_metadata")
+    __slots__ = (
+        "_pre",
+        "_step",
+        "_refdata",
+        "_post",
+        "_post_steps",
+        "_dataconfig",
+        "_metadata",
+    )
 
     def __init__(
         self,
         pre_simulator: "_engine.CompiledSimulator",
         step: "_LineageForkStep",
         refdata: "_engine.RefDataConfig",
+        post_simulator: Optional["_engine.CompiledSimulator"] = None,
+        post_steps: Sequence[Any] = (),
         dataconfig: Optional["DataConfig"] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._pre = pre_simulator
         self._step = step
         self._refdata = refdata
+        # Per-observed-cell library-prep / sequencing corruption plan.
+        # ``None`` keeps the pristine-read path (no artefacts applied).
+        self._post = post_simulator
+        self._post_steps: Tuple[Any, ...] = tuple(post_steps)
         self._dataconfig = dataconfig
         self._metadata = dict(metadata) if metadata else {}
 
@@ -545,6 +559,7 @@ class CompiledLineageExperiment:
         independent clones are reproducible and non-overlapping.
         """
         from GenAIRR import _engine as _eng
+        from ._airr_record import outcome_to_airr_record
         from ._s5f_loader import load_builtin_s5f_kernel
         from .result import SimulationResultWithLineages
 
@@ -579,23 +594,55 @@ class CompiledLineageExperiment:
             tree = fam.tree()
             lineage_trees.append(tree)
 
-            # Collect observed nodes in id order (same order as airr_records).
-            observed_nodes = [n for n in tree.nodes() if n.observed]
-            recs = fam.airr_records(self._refdata)
+            if self._post is None:
+                # Pristine-read path: project each observed node's
+                # synthesized SHM Outcome straight to an AIRR record.
+                observed_nodes = [n for n in tree.nodes() if n.observed]
+                recs = fam.airr_records(self._refdata)
+                for node, rec in zip(observed_nodes, recs):
+                    self._stamp_lineage_metadata(rec, clone_idx, node)
+                    records.append(rec)
+                continue
 
-            for node, rec in zip(observed_nodes, recs):
-                rec["clone_id"] = clone_idx
-                rec["lineage_node_id"] = node.id
-                rec["lineage_parent_id"] = (
-                    node.parent_id if node.parent_id is not None else -1
+            # Corruption path: per observed node, run the library-prep /
+            # sequencing corruption plan FROM the node's post-SHM
+            # simulation, then merge the founder-recombination + SHM
+            # provenance with the corruption trace / events so the AIRR
+            # record reports trims, v/d/j, SHM counts AND artefact
+            # counters (n_quality_errors, n_pcr_errors, n_indels, …).
+            node_outcomes = fam.node_outcomes()
+            for node, base_outcome in zip(tree.nodes(), node_outcomes):
+                if base_outcome is None:
+                    continue
+                node_seed = clone_seed + 1 + node.id
+                corruption_outcome = self._post.run_from(
+                    base_outcome.final_simulation(), node_seed, strict=strict
                 )
-                rec["lineage_generation"] = node.generation
-                rec["lineage_abundance"] = node.abundance
-                rec["lineage_affinity"] = node.affinity
-                rec["sequence_id"] = f"clone{clone_idx}_node{node.id}"
+                merged = _eng.merge_lineage_corruption(
+                    base_outcome, corruption_outcome
+                )
+                rec = outcome_to_airr_record(
+                    merged,
+                    self._refdata,
+                    sequence_id=f"clone{clone_idx}_node{node.id}",
+                )
+                self._stamp_lineage_metadata(rec, clone_idx, node)
                 records.append(rec)
 
         return SimulationResultWithLineages(records, lineage_trees=lineage_trees)
+
+    @staticmethod
+    def _stamp_lineage_metadata(rec: Dict[str, Any], clone_idx: int, node) -> None:
+        """Stamp clone + lineage-node provenance onto an AIRR record."""
+        rec["clone_id"] = clone_idx
+        rec["lineage_node_id"] = node.id
+        rec["lineage_parent_id"] = (
+            node.parent_id if node.parent_id is not None else -1
+        )
+        rec["lineage_generation"] = node.generation
+        rec["lineage_abundance"] = node.abundance
+        rec["lineage_affinity"] = node.affinity
+        rec["sequence_id"] = f"clone{clone_idx}_node{node.id}"
 
     def __repr__(self) -> str:
         return (
