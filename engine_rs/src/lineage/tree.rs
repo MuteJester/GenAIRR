@@ -69,12 +69,23 @@ impl LineageTree {
         v
     }
 
-    /// Check structural invariants: exactly one root; every non-root parent
-    /// exists; child generation == parent generation + 1 (acyclicity follows
-    /// from the strictly-increasing generation along any parent chain).
+    /// Check structural invariants: `node.id == index` for every node; exactly
+    /// one root; every non-root parent exists; child generation == parent
+    /// generation + 1 (acyclicity then follows from the strictly-increasing
+    /// generation along any parent chain, since `get(pid)` resolves ids as
+    /// arena indices).
     pub fn validate(&self) -> Result<(), String> {
         if self.nodes.is_empty() {
             return Err("empty lineage tree".to_string());
+        }
+        // id == index invariant: relied upon by id-based lookups/write-backs.
+        for (idx, n) in self.nodes.iter().enumerate() {
+            if n.id as usize != idx {
+                return Err(format!(
+                    "node at index {idx} has id {} (id-index mismatch)",
+                    n.id
+                ));
+            }
         }
         let roots = self.nodes.iter().filter(|n| n.parent_id.is_none()).count();
         if roots != 1 {
@@ -139,6 +150,13 @@ mod tests {
     fn validate_rejects_nonmonotonic_generation() {
         let mut t = hand_tree();
         t.nodes[3].generation = 1; // child not parent.gen + 1
+        assert!(t.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_id_index_mismatch() {
+        let mut t = hand_tree();
+        t.nodes[2].id = 99; // id no longer equals its arena index
         assert!(t.validate().is_err());
     }
 
