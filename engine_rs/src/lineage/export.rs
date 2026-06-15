@@ -90,7 +90,48 @@ pub fn to_newick(tree: &LineageTree) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dist::{EmpiricalLengthDist, UniformBase};
+    use crate::ir::{Nucleotide, NucHandle, Region, Segment, Simulation};
+    use crate::lineage::{simulate_family, BranchingParams};
     use crate::lineage::tree::{LineageNode, LineageTree};
+    use crate::passes::UniformMutationPass;
+
+    fn grown_founder() -> Simulation {
+        let mut sim = Simulation::new();
+        for (i, b) in b"AAAAAAAA".iter().enumerate() {
+            let (next, _) = sim.with_nucleotide_pushed(
+                Nucleotide::germline(*b, i as u16, Segment::V));
+            sim = next;
+        }
+        sim.with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(8)))
+    }
+
+    #[test]
+    fn exports_a_grown_family_consistently() {
+        let params = BranchingParams {
+            lambda_base: 1.5, lambda_mut: 0.0, max_generations: 6,
+            n_max: 300, n_sample: 20, seed: 2024,
+        };
+        let mutator = UniformMutationPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
+            Box::new(UniformBase),
+        );
+        let tree = simulate_family(&grown_founder(), &params, &mutator);
+        assert!(tree.validate().is_ok());
+
+        let tsv = to_node_table_tsv(&tree);
+        let fasta = to_fasta(&tree);
+        let nwk = to_newick(&tree);
+
+        assert_eq!(tsv.lines().count(), tree.len() + 1);
+        assert_eq!(fasta.lines().count(), tree.len() * 2);
+        assert!(nwk.ends_with(';'));
+        assert_eq!(nwk.matches('(').count(), nwk.matches(')').count());
+        for n in &tree.nodes {
+            assert!(nwk.contains(&format!("node{}", n.id)),
+                "newick missing node{}", n.id);
+        }
+    }
 
     // root(0,"AAAA") -> 1("AAAC", abundance 2, observed), 2("AAAG"); 1 -> 3("ATAC", abundance 1, observed)
     fn sample_tree() -> LineageTree {

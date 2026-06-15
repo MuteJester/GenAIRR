@@ -16,6 +16,8 @@
 //! Neutral mode only (no affinity selection — a later plan). The mutator is any
 //! `Pass`; production wires the S5F pass, tests use `UniformMutationPass` (no
 //! reference cartridge required).
+//!
+//! Ground-truth export (Newick / FASTA / node-table TSV) lives in [`export`].
 
 pub mod tree;
 pub mod poisson;
