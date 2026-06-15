@@ -137,10 +137,15 @@ impl AffinityModel {
         (-self.beta * weighted_aa_distance(aa, &self.target_aa, &self.aa_weights)).exp()
     }
 
+    /// Fitness from an already-computed affinity value (avoids re-translation).
+    pub fn fitness_from_affinity(&self, affinity_value: f64) -> f64 {
+        (1.0 + self.selection_strength * (affinity_value - self.founder_affinity)).max(0.0)
+    }
+
     /// Fitness multiplier for offspring rate: `1 + strength * (affinity - founder_affinity)`,
     /// clamped at 0. `selection_strength == 0` ⇒ always 1 (neutral).
     pub fn fitness(&self, aa: &[u8]) -> f64 {
-        (1.0 + self.selection_strength * (self.affinity_value(aa) - self.founder_affinity)).max(0.0)
+        self.fitness_from_affinity(self.affinity_value(aa))
     }
 }
 

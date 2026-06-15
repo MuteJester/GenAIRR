@@ -27,8 +27,9 @@ pub mod family;
 pub mod export;
 pub mod affinity;
 
+pub use affinity::{sim_to_aa, AffinityModel};
 pub use tree::{LineageNode, LineageTree};
-pub use branching::{grow_lineage, grow_topology, BranchingParams};
+pub use branching::{grow_lineage, grow_lineage_with_affinity, grow_topology, BranchingParams};
 pub use sampling::sample_and_collapse;
-pub use family::simulate_family;
+pub use family::{simulate_family, simulate_family_with_affinity};
 pub use export::{to_fasta, to_newick, to_node_table_tsv};

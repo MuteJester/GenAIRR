@@ -4,7 +4,8 @@ use crate::ir::Simulation;
 use crate::pass::Pass;
 use crate::rng::Rng;
 
-use super::branching::{grow_lineage, BranchingParams};
+use super::affinity::AffinityModel;
+use super::branching::{grow_lineage, grow_lineage_with_affinity, BranchingParams};
 use super::sampling::sample_and_collapse;
 use super::tree::LineageTree;
 
@@ -23,6 +24,19 @@ pub fn simulate_family(
     mutator: &dyn Pass,
 ) -> LineageTree {
     let mut tree = grow_lineage(founder, params, mutator);
+    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    sample_and_collapse(&mut tree, params.n_sample, &mut sample_rng);
+    tree
+}
+
+/// Grow + sample a clonal family with affinity selection.
+pub fn simulate_family_with_affinity(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    model: &AffinityModel,
+) -> LineageTree {
+    let mut tree = grow_lineage_with_affinity(founder, params, mutator, model);
     let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
     sample_and_collapse(&mut tree, params.n_sample, &mut sample_rng);
     tree

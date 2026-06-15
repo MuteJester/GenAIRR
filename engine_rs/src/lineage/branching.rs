@@ -5,6 +5,7 @@ use crate::pass::{Pass, PassContext};
 use crate::rng::Rng;
 use crate::trace::Trace;
 
+use super::affinity::{sim_to_aa, AffinityModel};
 use super::poisson::poisson_sample;
 use super::tree::{LineageNode, LineageTree};
 
@@ -55,15 +56,23 @@ fn mutate_child(parent: &Simulation, mutator: &dyn Pass, child_seed: u64) -> Sim
 
 /// Core generation-synchronous growth. With `mutator = None`, children are exact
 /// clones (and NO extra RNG is consumed). With `Some(m)`, each division draws a
-/// deterministic sub-seed and applies `m`. Returns (tree, peak_live_population).
+/// deterministic sub-seed and applies `m`. With `affinity = Some(model)`, each
+/// cell's offspring rate is modulated by the model's fitness; `None` leaves the
+/// rate unchanged (byte-identical to the pre-affinity path). Returns
+/// (tree, peak_live_population).
 fn grow_core(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: Option<&dyn Pass>,
+    affinity: Option<&AffinityModel>,
 ) -> (LineageTree, usize) {
     let mut nodes: Vec<LineageNode> = Vec::new();
     let mut sims: Vec<Simulation> = Vec::new();
     let mut rng = Rng::new(params.seed);
+
+    let root_affinity = affinity
+        .map(|m| m.affinity_value(&sim_to_aa(founder)))
+        .unwrap_or(0.0);
 
     nodes.push(LineageNode {
         id: 0,
@@ -71,7 +80,7 @@ fn grow_core(
         generation: 0,
         genotype: genotype_of(founder),
         mutations_from_parent: 0,
-        affinity: 0.0,
+        affinity: root_affinity,
         abundance: 0,
         observed: false,
     });
@@ -92,7 +101,11 @@ fn grow_core(
 
         let mut next_live: Vec<u32> = Vec::new();
         'generation: for &parent_id in &live {
-            let k = poisson_sample(&mut rng, eff_lambda);
+            let cell_lambda = match affinity {
+                Some(m) => eff_lambda * m.fitness_from_affinity(nodes[parent_id as usize].affinity),
+                None => eff_lambda,
+            };
+            let k = poisson_sample(&mut rng, cell_lambda);
             for _ in 0..k {
                 // Hard cap: a Poisson draw can still overshoot near saturation.
                 if next_live.len() >= params.n_max as usize {
@@ -109,13 +122,16 @@ fn grow_core(
                 let muts = child_sim
                     .mutation_count
                     .saturating_sub(parent_mut_count);
+                let child_affinity = affinity
+                    .map(|m| m.affinity_value(&sim_to_aa(&child_sim)))
+                    .unwrap_or(0.0);
                 nodes.push(LineageNode {
                     id: next_id,
                     parent_id: Some(parent_id),
                     generation: gen,
                     genotype: genotype_of(&child_sim),
                     mutations_from_parent: muts,
-                    affinity: 0.0,
+                    affinity: child_affinity,
                     abundance: 0,
                     observed: false,
                 });
@@ -140,13 +156,24 @@ pub fn grow_lineage(
     params: &BranchingParams,
     mutator: &dyn Pass,
 ) -> LineageTree {
-    grow_core(founder, params, Some(mutator)).0
+    grow_core(founder, params, Some(mutator), None).0
 }
 
 /// Grow the lineage TOPOLOGY only (children are exact clones of their parent
 /// `Simulation`; no mutation — a later task layers mutation on top).
 pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageTree {
-    grow_core(founder, params, None).0
+    grow_core(founder, params, None, None).0
+}
+
+/// Grow a clonal lineage with per-division mutation AND affinity selection.
+/// Deterministic for `params.seed`.
+pub fn grow_lineage_with_affinity(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    model: &AffinityModel,
+) -> LineageTree {
+    grow_core(founder, params, Some(mutator), Some(model)).0
 }
 
 #[cfg(test)]
@@ -217,7 +244,7 @@ mod tests {
             n_sample: 10,
             seed: 7,
         };
-        let (_tree, peak_live) = grow_core(&founder(), &params, None);
+        let (_tree, peak_live) = grow_core(&founder(), &params, None, None);
         // hard cap: live population never exceeds n_max
         assert!(peak_live <= params.n_max as usize,
             "peak live {peak_live} exceeded n_max {}", params.n_max);
@@ -274,6 +301,57 @@ mod tests {
         for (x, y) in a.nodes.iter().zip(b.nodes.iter()) {
             assert_eq!(x.genotype, y.genotype);
             assert_eq!(x.mutations_from_parent, y.mutations_from_parent);
+        }
+    }
+
+    #[test]
+    fn affinity_run_populates_node_affinities_and_root_matches() {
+        use crate::lineage::affinity::{sim_to_aa, AffinityModel};
+        let f = founder();
+        let founder_aa = sim_to_aa(&f);
+        let w = vec![1.0; founder_aa.len().max(1)];
+        let model = AffinityModel::new(b"W".to_vec(), w, 1.0, 1.0, &founder_aa);
+        let params = BranchingParams { lambda_base:1.2, lambda_mut:0.0, max_generations:4, n_max:500, n_sample:10, seed:11 };
+        let tree = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &model);
+        assert!((tree.root().affinity - model.affinity_value(&founder_aa)).abs() < 1e-9);
+        for n in &tree.nodes {
+            assert!(n.affinity > 0.0 && n.affinity <= 1.0 + 1e-9, "affinity out of range: {}", n.affinity);
+        }
+    }
+
+    #[test]
+    fn affinity_strength_zero_matches_neutral_topology() {
+        use crate::lineage::affinity::{sim_to_aa, AffinityModel};
+        let f = founder();
+        let founder_aa = sim_to_aa(&f);
+        let w = vec![1.0; founder_aa.len().max(1)];
+        // selection_strength = 0 => fitness identically 1 => identical topology/genotypes to neutral
+        let model = AffinityModel::new(b"W".to_vec(), w, 1.0, 0.0, &founder_aa);
+        let params = BranchingParams { lambda_base:1.2, lambda_mut:0.0, max_generations:4, n_max:500, n_sample:10, seed:11 };
+        let with_aff = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &model);
+        let neutral = grow_lineage(&f, &params, &two_mut_mutator());
+        assert_eq!(with_aff.len(), neutral.len());
+        for (a, b) in with_aff.nodes.iter().zip(neutral.nodes.iter()) {
+            assert_eq!(a.genotype, b.genotype);
+            assert_eq!(a.parent_id, b.parent_id);
+            assert_eq!(a.generation, b.generation);
+            assert_eq!(a.mutations_from_parent, b.mutations_from_parent);
+        }
+    }
+
+    #[test]
+    fn affinity_growth_is_deterministic() {
+        use crate::lineage::affinity::{sim_to_aa, AffinityModel};
+        let f = founder();
+        let founder_aa = sim_to_aa(&f);
+        let mk = || AffinityModel::new(b"W".to_vec(), vec![1.0; founder_aa.len().max(1)], 1.0, 2.0, &founder_aa);
+        let params = BranchingParams { lambda_base:1.5, lambda_mut:0.0, max_generations:5, n_max:500, n_sample:10, seed:21 };
+        let a = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &mk());
+        let b = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &mk());
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.nodes.iter().zip(b.nodes.iter()) {
+            assert_eq!(x.genotype, y.genotype);
+            assert!((x.affinity - y.affinity).abs() < 1e-12);
         }
     }
 }
