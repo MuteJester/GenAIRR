@@ -1,7 +1,9 @@
 //! Generation-synchronous clonal branching loop.
 
 use crate::ir::Simulation;
+use crate::pass::{Pass, PassContext};
 use crate::rng::Rng;
+use crate::trace::Trace;
 
 use super::poisson::poisson_sample;
 use super::tree::{LineageNode, LineageTree};
@@ -30,11 +32,32 @@ fn genotype_of(sim: &Simulation) -> Vec<u8> {
     sim.pool.as_slice().iter().map(|n| n.base).collect()
 }
 
-/// Like `grow_topology` but also returns the peak live-population size reached
-/// during growth. Internal helper for capacity tests and metric-aware callers.
-pub(crate) fn grow_topology_with_peak(
+/// Apply one division's mutations: run `mutator` against `parent` with a fresh,
+/// deterministic per-division RNG seeded by `child_seed`. Returns the mutated child.
+fn mutate_child(parent: &Simulation, mutator: &dyn Pass, child_seed: u64) -> Simulation {
+    let mut trace = Trace::new();
+    let mut rng = Rng::new(child_seed);
+    let mut ctx = PassContext {
+        replay_cursor: None,
+        trace: &mut trace,
+        rng: &mut rng,
+        pass_index: 0,
+        refdata: None,
+        contracts: None,
+        feasibility: None,
+        reference_index: None,
+        event_log_sink: None,
+    };
+    mutator.execute(parent, &mut ctx)
+}
+
+/// Core generation-synchronous growth. With `mutator = None`, children are exact
+/// clones (and NO extra RNG is consumed). With `Some(m)`, each division draws a
+/// deterministic sub-seed and applies `m`. Returns (tree, peak_live_population).
+fn grow_core(
     founder: &Simulation,
     params: &BranchingParams,
+    mutator: Option<&dyn Pass>,
 ) -> (LineageTree, usize) {
     let mut nodes: Vec<LineageNode> = Vec::new();
     let mut sims: Vec<Simulation> = Vec::new();
@@ -68,18 +91,27 @@ pub(crate) fn grow_topology_with_peak(
         'generation: for &parent_id in &live {
             let k = poisson_sample(&mut rng, eff_lambda);
             for _ in 0..k {
-                // Hard cap: a Poisson draw can still overshoot even when
-                // eff_lambda is small near saturation, so bound the live set.
+                // Hard cap: a Poisson draw can still overshoot near saturation.
                 if next_live.len() >= params.n_max as usize {
                     break 'generation;
                 }
-                let child_sim = sims[parent_id as usize].clone(); // mutated in a later task
+                let parent_mut_count = sims[parent_id as usize].mutation_count;
+                let child_sim = match mutator {
+                    Some(m) => {
+                        let child_seed = rng.next_u64();
+                        mutate_child(&sims[parent_id as usize], m, child_seed)
+                    }
+                    None => sims[parent_id as usize].clone(),
+                };
+                let muts = child_sim
+                    .mutation_count
+                    .saturating_sub(parent_mut_count);
                 nodes.push(LineageNode {
                     id: next_id,
                     parent_id: Some(parent_id),
                     generation: gen,
                     genotype: genotype_of(&child_sim),
-                    mutations_from_parent: 0,
+                    mutations_from_parent: muts,
                     abundance: 0,
                     observed: false,
                 });
@@ -97,17 +129,37 @@ pub(crate) fn grow_topology_with_peak(
     (LineageTree { nodes }, peak_live)
 }
 
+/// Grow a full clonal lineage with per-division mutation via `mutator`.
+/// Deterministic for `params.seed`.
+pub fn grow_lineage(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+) -> LineageTree {
+    grow_core(founder, params, Some(mutator)).0
+}
+
+/// Like `grow_topology` but also returns the peak live-population size reached
+/// during growth. Internal helper for capacity tests and metric-aware callers.
+pub(crate) fn grow_topology_with_peak(
+    founder: &Simulation,
+    params: &BranchingParams,
+) -> (LineageTree, usize) {
+    grow_core(founder, params, None)
+}
+
 /// Grow the lineage TOPOLOGY only (children are exact clones of their parent
 /// `Simulation`; no mutation — a later task layers mutation on top).
 pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageTree {
-    grow_topology_with_peak(founder, params).0
+    grow_core(founder, params, None).0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Nucleotide, Region, Segment, NucHandle};
-    use crate::ir::Simulation;
+    use crate::dist::{EmpiricalLengthDist, UniformBase};
+    use crate::ir::{Nucleotide, NucHandle, Region, Segment, Simulation};
+    use crate::passes::UniformMutationPass;
 
     /// Minimal founder: a 4-base V region "AAAA".
     fn founder() -> Simulation {
@@ -178,5 +230,53 @@ mod tests {
         // comfortably above half capacity — confirms it grew, not died early
         assert!(peak_live > (params.n_max as usize) / 2,
             "peak live {peak_live} did not approach capacity");
+    }
+
+    /// A mutator that applies exactly 2 substitutions per division.
+    fn two_mut_mutator() -> UniformMutationPass {
+        UniformMutationPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(2, 1.0)])),
+            Box::new(UniformBase),
+        )
+    }
+
+    #[test]
+    fn children_accumulate_mutations_and_branch_lengths() {
+        let params = BranchingParams {
+            lambda_base: 1.2, lambda_mut: 0.0, max_generations: 4,
+            n_max: 500, n_sample: 10, seed: 11,
+        };
+        let mutator = two_mut_mutator();
+        let tree = grow_lineage(&founder(), &params, &mutator);
+
+        assert_eq!(tree.root().mutations_from_parent, 0);
+
+        let mut saw_mutated_child = false;
+        for n in &tree.nodes {
+            if n.parent_id.is_some() {
+                assert!(n.mutations_from_parent <= 2);
+                if n.mutations_from_parent > 0 {
+                    saw_mutated_child = true;
+                    let parent = tree.get(n.parent_id.unwrap()).unwrap();
+                    assert_ne!(n.genotype, parent.genotype);
+                }
+            }
+        }
+        assert!(saw_mutated_child, "no child accumulated any mutation");
+    }
+
+    #[test]
+    fn mutated_growth_is_deterministic() {
+        let params = BranchingParams {
+            lambda_base: 1.2, lambda_mut: 0.0, max_generations: 4,
+            n_max: 500, n_sample: 10, seed: 11,
+        };
+        let a = grow_lineage(&founder(), &params, &two_mut_mutator());
+        let b = grow_lineage(&founder(), &params, &two_mut_mutator());
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.nodes.iter().zip(b.nodes.iter()) {
+            assert_eq!(x.genotype, y.genotype);
+            assert_eq!(x.mutations_from_parent, y.mutations_from_parent);
+        }
     }
 }
