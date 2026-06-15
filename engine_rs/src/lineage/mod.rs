@@ -22,8 +22,10 @@ pub mod poisson;
 pub mod branching;
 pub mod sampling;
 pub mod family;
+pub mod export;
 
 pub use tree::{LineageNode, LineageTree};
 pub use branching::{grow_lineage, grow_topology, BranchingParams};
 pub use sampling::sample_and_collapse;
 pub use family::simulate_family;
+pub use export::to_node_table_tsv;
