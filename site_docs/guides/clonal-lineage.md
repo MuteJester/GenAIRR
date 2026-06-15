@@ -251,14 +251,66 @@ byte-for-byte.
 
 ## Validated against community tools
 
-The simulated repertoires are detectable by established AIRR clone-callers out of
-the box. On a realistic-SHM run, Immcantation's **Change-O** `DefineClones` at its
-**default** junction-distance threshold recovers the planted clones exactly
-(adjusted Rand index = 1.0; precision = recall = 1.0). Across mutation regimes the
-clonal signal is clean — standard callers never merge two distinct planted clones
-(precision = 1.0), and recovery reaches 1.0 once the caller's distance threshold
-matches the simulated SHM level. In other words, the trees GenAIRR plants are the
-trees these tools find.
+The point of planting ground-truth clones is that **other people's tools can find
+them**. They can. On a realistic-SHM run, Immcantation's **Change-O**
+`DefineClones` at its **default** junction-distance threshold (0.16) recovers the
+planted clones exactly.
+
+![GenAIRR clonal_lineage clones are recovered by Change-O at default settings](../assets/clonal-lineage-detection.png)
+
+*30 clones simulated with `clonal_lineage` (human IGH, realistic SHM). **(A)** the
+repertoire has a realistic spread of clone sizes. **(B)** within-clone junction
+distances sit far below Change-O's default 0.16 threshold while between-clone
+distances are ~1.0 — the planted clones are cleanly separable. **(C)** Change-O at
+its default threshold recovers all 30 planted clones (adjusted Rand index = 1.0,
+precision = recall = 1.0).*
+
+### Reproduce it: run Change-O on a simulated repertoire
+
+```python
+import GenAIRR as ga
+import pandas as pd
+
+result = (ga.Experiment.on("human_igh").recombine()
+          .clonal_lineage(n_clones=30, max_generations=3, n_max=300,
+                          n_sample=20, rate=0.008, lambda_base=1.6,
+                          selection_strength=0.3)
+          .run_records(seed=42))
+
+# Write an AIRR-format TSV. Keep the ground-truth clone label under a NON-AIRR
+# name so it doesn't collide with the tool's inferred `clone_id` column.
+df = pd.DataFrame(result.records)
+df = df.rename(columns={"clone_id": "true_clone_id"})
+df.to_csv("repertoire.tsv", sep="\t", index=False)
+```
+
+```bash
+# Immcantation Change-O (pip install changeo) infers clones from junctions:
+DefineClones.py -d repertoire.tsv --format airr \
+    --act set --model ham --norm len --dist 0.16 -o clones.tsv
+```
+
+Comparing Change-O's inferred `clone_id` against the planted `true_clone_id`
+(e.g. with `sklearn.metrics.adjusted_rand_score`) gives **ARI = 1.0** — a perfect
+match.
+
+### What the validation shows across SHM regimes
+
+- **Perfect precision, always.** Across every tool and threshold tested, two
+  *different* planted clones are never merged. The per-clone founding
+  rearrangements are distinct, so the planted signal is unambiguous.
+- **Full recovery at a matched threshold.** Detection is a function of how mutated
+  the lineage is versus the caller's distance cutoff. At realistic SHM, the default
+  0.16 cutoff recovers everything; for deeply matured lineages (e.g. `rate=0.05`,
+  6 generations → ~21 % SHM) you raise the cutoff (a threshold sweep climbs from
+  ARI 0.26 at 0.16 → 0.91 at 0.30 → 1.0 at 0.45). This mirrors how these tools
+  behave on real data and is **not** a property of the simulator.
+- **Independent of any one tool.** The same recovery holds for an
+  implementation-independent V/J + junction-length + single-linkage clusterer, and
+  the exported Newick/FASTA feed tree-based methods (GCtree, IgPhyML, dowser)
+  directly.
+
+In short: the clones GenAIRR plants are the clones the ecosystem detects.
 
 ## Relationship to `expand_clones`
 
