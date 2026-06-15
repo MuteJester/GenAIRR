@@ -565,7 +565,7 @@ class CompiledLineageExperiment:
                 substitution,
                 step.rate,
                 step.lambda_base,
-                step.lambda_mut,
+                0.0,          # lambda_mut: positional slot 6 (inert; hardcoded)
                 step.max_generations,
                 step.n_max,
                 step.n_sample,

@@ -1047,23 +1047,26 @@ class Experiment:
         n_sample: int = 50,
         rate: float = 0.05,
         lambda_base: float = 1.5,
-        lambda_mut: float = 0.0,
         selection_strength: float = 0.0,
         beta: float = 1.0,
         target_aa: Optional[str] = None,
         mature_substitutions: int = 5,
         s5f_model: str = "hh_s5f",
     ) -> "Experiment":
-        """Grow BCR affinity-maturation lineage trees and return per-node AIRR records.
+        """Grow BCR lineage trees (neutral by default; set ``selection_strength > 0``
+        and optionally ``target_aa`` to enable affinity maturation).
 
         Each clone gets its own lineage tree produced by the Rust
         ``simulate_family_outcomes`` kernel. The returned
         :class:`~GenAIRR.result.SimulationResultWithLineages` carries:
 
-        - ``.records`` — one AIRR dict per *observed* cell, tagged with
-          ``clone_id``, ``lineage_node_id``, ``lineage_parent_id``,
+        - ``.records`` — one AIRR dict per *observed* (genotype-collapsed) cell,
+          tagged with ``clone_id``, ``lineage_node_id``, ``lineage_parent_id``,
           ``lineage_generation``, ``lineage_abundance``, and
-          ``lineage_affinity``. Mutation counts (``n_mutations``,
+          ``lineage_affinity``. Because identical genotypes are collapsed before
+          sampling, the number of records per clone is ≤ ``n_sample``; the
+          ``lineage_abundance`` field accounts for how many sampled cells were
+          represented by each observed record. Mutation counts (``n_mutations``,
           ``n_v_mutations``, …) are pool-derived and self-consistent.
         - ``.lineage_trees`` — one :class:`~GenAIRR._engine.LineageTree`
           per clone for ground-truth export (Newick, FASTA, node table TSV).
@@ -1077,28 +1080,38 @@ class Experiment:
         n_max:
             Hard cap on total cells per clone (carrying capacity).
         n_sample:
-            Number of cells to sample as observed leaves.
+            Number of cells to sample as observed leaves. Records returned
+            per clone are ≤ ``n_sample`` because identical genotypes are
+            collapsed (duplicates are counted in ``lineage_abundance``).
         rate:
             Per-base SHM rate for within-lineage mutations.
         lambda_base:
             Poisson mean for offspring count at affinity 0.
-        lambda_mut:
-            Additional Poisson mean increase per affinity unit.
         selection_strength:
-            Sigmoid selection pressure; 0.0 = neutral drift.
+            Selection pressure; ``0.0`` = neutral drift (``lineage_affinity``
+            will be 0.0 for every cell). Set ``> 0`` to enable affinity
+            maturation; combine with ``target_aa`` for a fixed antigen target.
         beta:
-            Scaling factor for the affinity term in selection.
+            Scaling factor for the affinity term in ``exp(−beta·distance)``.
         target_aa:
-            Target amino-acid string used to compute affinity (Hamming).
-            When ``None`` all cells get affinity 0.0.
+            Amino-acid sequence of the full receptor used to compute
+            per-cell affinity via a BLOSUM62-weighted distance (compared
+            position-wise against the cell's translated receptor; only
+            the overlapping prefix is scored when lengths differ). Must be
+            a non-empty string of standard amino-acid letters
+            (``ACDEFGHIKLMNPQRSTVWY``). When ``None``, an auto target is
+            generated from the founder by applying ``mature_substitutions``
+            random residue changes. ``selection_strength=0`` makes
+            ``lineage_affinity ≡ 0`` regardless.
         mature_substitutions:
-            Minimum cumulative mutations a cell must accumulate before
-            it is considered a mature/observed cell.
+            Number of amino-acid substitutions used to build the auto
+            target (when ``target_aa`` is ``None``).
         s5f_model:
             Bundled S5F kernel name for within-lineage mutation context
             (``"hh_s5f"``, ``"hkl_s5f"``, …).
         """
         import math
+        import warnings
 
         # --- n_clones ---
         if isinstance(n_clones, bool) or not isinstance(n_clones, int) or n_clones < 1:
@@ -1125,9 +1138,6 @@ class Experiment:
         # --- lambda_base ---
         if not isinstance(lambda_base, (int, float)) or not math.isfinite(lambda_base) or lambda_base < 0:
             raise ValueError(f"lambda_base must be a finite non-negative float, got {lambda_base!r}")
-        # --- lambda_mut ---
-        if not isinstance(lambda_mut, (int, float)) or not math.isfinite(lambda_mut) or lambda_mut < 0:
-            raise ValueError(f"lambda_mut must be a finite non-negative float, got {lambda_mut!r}")
         # --- beta ---
         if not isinstance(beta, (int, float)) or not math.isfinite(beta) or beta < 0:
             raise ValueError(f"beta must be a finite non-negative float, got {beta!r}")
@@ -1144,6 +1154,38 @@ class Experiment:
         ):
             raise ValueError(
                 f"mature_substitutions must be a non-negative int, got {mature_substitutions!r}"
+            )
+        # --- target_aa ---
+        _VALID_AA = set("ACDEFGHIKLMNPQRSTVWY")
+        if target_aa is not None:
+            if not isinstance(target_aa, str) or len(target_aa) == 0:
+                raise ValueError(
+                    "target_aa must be a non-empty amino-acid string "
+                    "(letters from ACDEFGHIKLMNPQRSTVWY)"
+                )
+            target_aa = target_aa.upper()
+            invalid = set(target_aa) - _VALID_AA
+            if invalid:
+                raise ValueError(
+                    f"target_aa contains invalid characters {sorted(invalid)!r}; "
+                    "only standard amino-acid letters (ACDEFGHIKLMNPQRSTVWY) are allowed"
+                )
+            if len(target_aa) < 30:
+                warnings.warn(
+                    f"target_aa has length {len(target_aa)}, which is shorter than a typical "
+                    "receptor sequence (~300+ aa). If this is an epitope sequence rather than "
+                    "the full receptor, affinity scoring will be based only on the overlapping "
+                    "prefix — consider supplying the full translated receptor instead.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        # --- s5f_model (validate at call time, not at run time) ---
+        from GenAIRR._s5f_loader import _BUILTIN_S5F_MODELS
+        _s5f_key = s5f_model.lower().strip()
+        if _s5f_key not in _BUILTIN_S5F_MODELS:
+            avail = ", ".join(f'"{k}"' for k in sorted(_BUILTIN_S5F_MODELS))
+            raise ValueError(
+                f"Unknown s5f_model {s5f_model!r}. Available: {avail}"
             )
         # --- reject duplicate fork steps ---
         for s in self._steps:
@@ -1170,7 +1212,6 @@ class Experiment:
                 n_sample=n_sample,
                 rate=rate,
                 lambda_base=lambda_base,
-                lambda_mut=lambda_mut,
                 selection_strength=selection_strength,
                 beta=beta,
                 target_aa=target_aa,
@@ -2565,6 +2606,19 @@ class Experiment:
                 validate_records=validate_records,
             )
         elif isinstance(compiled, CompiledLineageExperiment):
+            if n is not None:
+                raise ValueError(
+                    "The 'n' parameter is not supported for clonal_lineage experiments. "
+                    "The number of records is determined by n_clones and n_sample."
+                )
+            if validate_records:
+                raise NotImplementedError(
+                    "validate_records=True is not yet supported for clonal_lineage experiments."
+                )
+            if expose_provenance:
+                raise NotImplementedError(
+                    "expose_provenance=True is not yet supported for clonal_lineage experiments."
+                )
             result = compiled.run_records(
                 seed=seed,
                 strict=strict,

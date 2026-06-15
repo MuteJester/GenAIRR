@@ -204,7 +204,6 @@ class _LineageForkStep:
     n_sample: int
     rate: float
     lambda_base: float
-    lambda_mut: float
     selection_strength: float
     beta: float
     target_aa: Optional[str]

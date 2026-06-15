@@ -179,14 +179,27 @@ and "sampled ancestor" nodes, exactly the structure abundance-aware tree methods
 
 ### Per-cell AIRR records
 
-`result.records` is a list of full AIRR Rearrangement dicts, one per observed
-cell. Each carries the founder's recombination provenance (`v_call`, `d_call`,
-`j_call`, junction, …) — correct because the node's `Outcome` reuses the founder's
-recombination trace — plus its own mutated `sequence`. Mutation counts
-(`n_mutations`, `n_v_mutations`, …, and the IMGT-subregion counters) are recomputed
-**from the cell's sequence vs. germline** (net mutations from germline — the
-branch-length quantity lineage tools use), so they are internally consistent
-(`n_v + n_d + n_j + n_np == n_mutations`).
+`result.records` is a list of full AIRR Rearrangement dicts, one per *observed*
+(genotype-collapsed) cell. Each carries the founder's recombination provenance
+(`v_call`, `d_call`, `j_call`, junction, …) — correct because the node's `Outcome`
+reuses the founder's recombination trace — plus its own mutated `sequence`. Mutation
+counts (`n_mutations`, `n_v_mutations`, …, and the IMGT-subregion counters) are
+recomputed **from the cell's sequence vs. germline** — these are **net differences
+from germline** (accumulated across all divisions from founder to leaf). Because
+identical genotypes are collapsed before sampling, the number of records per clone
+is ≤ `n_sample`; the `lineage_abundance` field accounts for the collapsed copies.
+
+> **Branch lengths vs. record `n_mutations`.** Newick branch lengths
+> (as returned by `to_newick()`) count the **per-division substitution events**
+> along each edge — re-mutations of a site that was already mutated count again.
+> The record field `n_mutations` is the **net difference from germline** at the
+> leaf (a site mutated and then back-mutated is not counted). As a result,
+> summing branch lengths root→leaf will generally exceed a leaf's `n_mutations`.
+> Both quantities are standard and correct: branch lengths track evolutionary
+> distance along an edge (as tools like GCtree and IgPhyML expect), while
+> `n_mutations` tracks the observable deviation from germline (as AIRR requires).
+
+Consistency check: `n_v + n_d + n_j + n_np == n_mutations` holds for every record.
 
 Lineage metadata stamped on every record:
 
@@ -239,13 +252,12 @@ byte-for-byte.
 | `n_clones` | — | Number of independent families to grow |
 | `max_generations` | 10 | Germinal-center rounds (≤ 1000) |
 | `n_max` | 1000 | Carrying capacity (live cells per family) |
-| `n_sample` | 50 | Cells sampled per family at the end |
+| `n_sample` | 50 | Cells sampled per family at the end; records per clone ≤ this (genotype-collapsed) |
 | `rate` | 0.05 | Per-base S5F SHM rate, per division |
 | `lambda_base` | 1.5 | Mean offspring per cell per generation |
-| `lambda_mut` | 0.0 | Reserved; currently inert (SHM is driven by `rate`) |
-| `selection_strength` | 0.0 | 0 = neutral; >0 = affinity selection |
+| `selection_strength` | 0.0 | Neutral drift by default (`lineage_affinity ≡ 0`); set `> 0` for affinity selection |
 | `beta` | 1.0 | Affinity steepness in `exp(−beta·distance)` |
-| `target_aa` | `None` | Antigen target; `None` ⇒ auto "mature" target |
+| `target_aa` | `None` | Amino-acid sequence of the full receptor used as the antigen target (BLOSUM62-weighted distance, position-wise; only the overlapping prefix is scored when lengths differ). `None` ⇒ auto "mature" target |
 | `mature_substitutions` | 5 | aa substitutions for the auto target |
 | `s5f_model` | `"hh_s5f"` | Bundled S5F kernel |
 
