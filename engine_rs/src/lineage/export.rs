@@ -29,6 +29,23 @@ pub fn to_node_table_tsv(tree: &LineageTree) -> String {
     out
 }
 
+/// FASTA of every node (ancestral + observed). Header carries node id,
+/// generation, abundance, and observed flag so downstream tools can map a
+/// record back to its ground-truth node.
+pub fn to_fasta(tree: &LineageTree) -> String {
+    let mut out = String::new();
+    for n in &tree.nodes {
+        let seq = String::from_utf8_lossy(&n.genotype);
+        let _ = writeln!(
+            out,
+            ">node{}|gen={}|abundance={}|observed={}",
+            n.id, n.generation, n.abundance, n.observed
+        );
+        let _ = writeln!(out, "{}", seq);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,6 +61,18 @@ mod tests {
                 LineageNode { id: 3, parent_id: Some(1), generation: 2, genotype: b"ATAC".to_vec(), mutations_from_parent: 1, abundance: 1, observed: true },
             ],
         }
+    }
+
+    #[test]
+    fn fasta_emits_every_node_with_metadata_header() {
+        let fasta = to_fasta(&sample_tree());
+        let lines: Vec<&str> = fasta.lines().collect();
+        assert_eq!(lines.len(), 8); // 4 nodes => header+seq each
+        assert_eq!(lines[0], ">node0|gen=0|abundance=0|observed=false");
+        assert_eq!(lines[1], "AAAA");
+        assert_eq!(lines[2], ">node1|gen=1|abundance=2|observed=true");
+        assert_eq!(lines[3], "AAAC");
+        assert!(fasta.contains(">node3|gen=2|abundance=1|observed=true"));
     }
 
     #[test]

@@ -28,4 +28,4 @@ pub use tree::{LineageNode, LineageTree};
 pub use branching::{grow_lineage, grow_topology, BranchingParams};
 pub use sampling::sample_and_collapse;
 pub use family::simulate_family;
-pub use export::to_node_table_tsv;
+pub use export::{to_fasta, to_node_table_tsv};
