@@ -116,8 +116,10 @@ impl PyLineageTree {
 /// built from the supplied kernel tables. Returns the ground-truth tree.
 ///
 /// `mutability` must have 1024 entries and `substitution` 4096 (the S5F 5-mer
-/// kernel). `rate` is the per-base SHM rate in [0, 1]. Determinism is keyed on
-/// `seed`.
+/// kernel); all values must be finite and non-negative. `rate` is the per-base
+/// SHM rate in [0, 1]. Determinism is keyed on `seed`. `lambda_mut` is reserved
+/// for a future plan and currently has no effect (mutations are driven by the
+/// S5F `rate`).
 #[pyfunction]
 #[pyo3(signature = (
     founder, mutability, substitution, rate,
@@ -155,10 +157,24 @@ pub(crate) fn simulate_lineage(
             "simulate_lineage: rate must be in [0.0, 1.0], got {rate}"
         )));
     }
+    if mutability.iter().any(|&m| !m.is_finite() || m < 0.0) {
+        return Err(PyValueError::new_err(
+            "simulate_lineage: mutability values must be finite and non-negative",
+        ));
+    }
+    if substitution.iter().any(|&s| !s.is_finite() || s < 0.0) {
+        return Err(PyValueError::new_err(
+            "simulate_lineage: substitution values must be finite and non-negative",
+        ));
+    }
     if n_max == 0 {
         return Err(PyValueError::new_err("simulate_lineage: n_max must be > 0"));
     }
+    if n_sample == 0 {
+        return Err(PyValueError::new_err("simulate_lineage: n_sample must be > 0"));
+    }
 
+    // Lengths and value ranges are now guaranteed, so S5FKernel::new cannot panic.
     let kernel = S5FKernel::new(mutability, substitution);
     let mutator = S5FMutationPass::new_rate(kernel, rate);
     let params = BranchingParams {

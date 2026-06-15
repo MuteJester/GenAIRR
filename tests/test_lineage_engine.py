@@ -54,3 +54,25 @@ def test_simulate_lineage_rejects_bad_kernel():
     founder = _founder()
     with pytest.raises(ValueError):
         _engine.simulate_lineage(founder, [0.1] * 10, [0.1] * 10, 0.05, 1.5, 0.0, 8, 500, 30, 0)
+
+
+def test_simulate_lineage_rejects_nonfinite_or_negative_kernel():
+    founder = _founder()
+    _mut, sub = _kernel()
+    # NaN in the mutability table must raise (not panic across the FFI boundary).
+    with pytest.raises(ValueError):
+        _engine.simulate_lineage(
+            founder, [float("nan")] * 1024, sub, 0.05, 1.5, 0.0, 8, 500, 30, 0
+        )
+    # Negative value in the mutability table must raise too.
+    with pytest.raises(ValueError):
+        _engine.simulate_lineage(
+            founder, [-1.0] + [0.0] * 1023, sub, 0.05, 1.5, 0.0, 8, 500, 30, 0
+        )
+
+
+def test_simulate_lineage_rejects_zero_n_sample():
+    founder = _founder()
+    mut, sub = _kernel()
+    with pytest.raises(ValueError):
+        _engine.simulate_lineage(founder, mut, sub, 0.05, 1.5, 0.0, 8, 500, 0, 0)
