@@ -5,6 +5,11 @@ use pyo3::prelude::*;
 
 use crate::lineage::export::{to_fasta, to_newick, to_node_table_tsv};
 use crate::lineage::tree::{LineageNode, LineageTree};
+use crate::lineage::{simulate_family, BranchingParams};
+use crate::passes::S5FMutationPass;
+use crate::s5f::S5FKernel;
+
+use super::simulation::PySimulation;
 
 /// One node of a clonal lineage tree (read-only view).
 #[pyclass(name = "LineageNode", module = "GenAIRR._engine", frozen)]
@@ -105,4 +110,65 @@ impl PyLineageTree {
     fn to_node_table_tsv(&self) -> String {
         to_node_table_tsv(&self.inner)
     }
+}
+
+/// Grow + sample a clonal lineage family from `founder` using an S5F mutator
+/// built from the supplied kernel tables. Returns the ground-truth tree.
+///
+/// `mutability` must have 1024 entries and `substitution` 4096 (the S5F 5-mer
+/// kernel). `rate` is the per-base SHM rate in [0, 1]. Determinism is keyed on
+/// `seed`.
+#[pyfunction]
+#[pyo3(signature = (
+    founder, mutability, substitution, rate,
+    lambda_base, lambda_mut, max_generations, n_max, n_sample, seed
+))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn simulate_lineage(
+    founder: &PySimulation,
+    mutability: Vec<f64>,
+    substitution: Vec<f64>,
+    rate: f64,
+    lambda_base: f64,
+    lambda_mut: f64,
+    max_generations: u32,
+    n_max: u32,
+    n_sample: u32,
+    seed: u64,
+) -> PyResult<PyLineageTree> {
+    use pyo3::exceptions::PyValueError;
+
+    if mutability.len() != 1024 {
+        return Err(PyValueError::new_err(format!(
+            "simulate_lineage: mutability must have 1024 entries, got {}",
+            mutability.len()
+        )));
+    }
+    if substitution.len() != 4096 {
+        return Err(PyValueError::new_err(format!(
+            "simulate_lineage: substitution must have 4096 entries, got {}",
+            substitution.len()
+        )));
+    }
+    if !(rate.is_finite() && (0.0..=1.0).contains(&rate)) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_lineage: rate must be in [0.0, 1.0], got {rate}"
+        )));
+    }
+    if n_max == 0 {
+        return Err(PyValueError::new_err("simulate_lineage: n_max must be > 0"));
+    }
+
+    let kernel = S5FKernel::new(mutability, substitution);
+    let mutator = S5FMutationPass::new_rate(kernel, rate);
+    let params = BranchingParams {
+        lambda_base,
+        lambda_mut,
+        max_generations,
+        n_max,
+        n_sample,
+        seed,
+    };
+    let tree = simulate_family(&founder.inner, &params, &mutator);
+    Ok(PyLineageTree::new(tree))
 }
