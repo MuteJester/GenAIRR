@@ -26,6 +26,9 @@ pub mod sampling;
 pub mod family;
 pub mod export;
 pub mod affinity;
+pub mod clone_size;
+
+pub use clone_size::{sample_clone_size, CloneSizeDist};
 
 pub use affinity::{sim_to_aa, AffinityModel};
 pub use tree::{LineageNode, LineageTree};
