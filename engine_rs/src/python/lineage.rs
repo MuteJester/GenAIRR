@@ -5,7 +5,9 @@ use pyo3::prelude::*;
 
 use crate::lineage::export::{to_fasta, to_newick, to_node_table_tsv};
 use crate::lineage::tree::{LineageNode, LineageTree};
-use crate::lineage::{simulate_family, BranchingParams};
+use crate::lineage::{simulate_family, simulate_family_with_affinity, sim_to_aa, AffinityModel, BranchingParams};
+use crate::lineage::affinity::make_mature_target;
+use crate::rng::Rng;
 use crate::passes::S5FMutationPass;
 use crate::s5f::S5FKernel;
 
@@ -42,6 +44,10 @@ impl PyLineageNode {
     #[getter]
     fn observed(&self) -> bool {
         self.inner.observed
+    }
+    #[getter]
+    fn affinity(&self) -> f64 {
+        self.inner.affinity
     }
     /// Nucleotide sequence (pool bases) as a string.
     #[getter]
@@ -123,7 +129,8 @@ impl PyLineageTree {
 #[pyfunction]
 #[pyo3(signature = (
     founder, mutability, substitution, rate,
-    lambda_base, lambda_mut, max_generations, n_max, n_sample, seed
+    lambda_base, lambda_mut, max_generations, n_max, n_sample, seed,
+    selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5
 ))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn simulate_lineage(
@@ -137,6 +144,10 @@ pub(crate) fn simulate_lineage(
     n_max: u32,
     n_sample: u32,
     seed: u64,
+    selection_strength: f64,
+    beta: f64,
+    target_aa: Option<String>,
+    mature_substitutions: u32,
 ) -> PyResult<PyLineageTree> {
     use pyo3::exceptions::PyValueError;
 
@@ -203,6 +214,39 @@ pub(crate) fn simulate_lineage(
         n_sample,
         seed,
     };
-    let tree = simulate_family(&founder.inner, &params, &mutator);
+
+    // Validate affinity params.
+    if !(beta.is_finite() && beta >= 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_lineage: beta must be finite and >= 0, got {beta}"
+        )));
+    }
+    if !(selection_strength.is_finite() && selection_strength >= 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_lineage: selection_strength must be finite and >= 0, got {selection_strength}"
+        )));
+    }
+
+    // Neutral fast path: no selection and no explicit target → byte-identical to
+    // the pre-affinity behavior.
+    if selection_strength == 0.0 && target_aa.is_none() {
+        let tree = simulate_family(&founder.inner, &params, &mutator);
+        return Ok(PyLineageTree::new(tree));
+    }
+
+    // Build the affinity model. Uniform per-position weights for v1 (the model
+    // accepts arbitrary weights; CDR3 region-weighting is a follow-up).
+    let founder_aa = sim_to_aa(&founder.inner);
+    let target = match target_aa {
+        Some(s) => s.into_bytes(),
+        None => {
+            // Deterministic auto "mature" target derived from the seed.
+            let mut trng = Rng::new(seed ^ 0x7461_7267_6574_0001); // "target\0\1"
+            make_mature_target(&founder_aa, mature_substitutions, &mut trng)
+        }
+    };
+    let weights = vec![1.0; founder_aa.len()];
+    let model = AffinityModel::new(target, weights, beta, selection_strength, &founder_aa);
+    let tree = simulate_family_with_affinity(&founder.inner, &params, &mutator, &model);
     Ok(PyLineageTree::new(tree))
 }
