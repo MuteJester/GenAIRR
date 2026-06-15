@@ -52,17 +52,16 @@ pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageT
 
     for gen in 1..=params.max_generations {
         if live.is_empty() {
-            break;
+            break; // lineage went extinct (every cell drew 0 offspring)
         }
         let mut next_live: Vec<u32> = Vec::new();
-        for &parent_id in &live {
+        'generation: for &parent_id in &live {
             let k = poisson_sample(&mut rng, params.lambda_base);
             for _ in 0..k {
                 if next_id >= params.n_max {
-                    break;
+                    break 'generation;
                 }
-                let parent_sim = sims[parent_id as usize].clone();
-                let child_sim = parent_sim; // exact clone for now; mutated in a later task
+                let child_sim = sims[parent_id as usize].clone(); // mutated in a later task
                 nodes.push(LineageNode {
                     id: next_id,
                     parent_id: Some(parent_id),
