@@ -5,14 +5,14 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::airr_record::build_airr_record;
-use crate::ir::Segment;
+use crate::event::{EventRecord, StateSummary, TraceSpan};
+use crate::ir::{NucHandle, SimulationEvent};
 use crate::ir::Simulation;
 use crate::lineage::export::{to_fasta, to_newick, to_node_table_tsv};
 use crate::lineage::tree::{LineageNode, LineageTree};
 use crate::lineage::{simulate_family, simulate_family_sims, simulate_family_with_affinity, sim_to_aa, AffinityModel, BranchingParams};
 use crate::lineage::affinity::make_mature_target;
-use crate::pass::Outcome;
-use crate::refdata::RefDataConfig;
+use crate::pass::{Outcome, PassCompileEffect};
 use crate::rng::Rng;
 use crate::passes::S5FMutationPass;
 use crate::s5f::S5FKernel;
@@ -296,11 +296,13 @@ impl PyFamilyOutcome {
     /// Build AIRR Rearrangement record dicts for every observed node,
     /// in node-id order (aligned with `observed_outcomes()`).
     ///
-    /// Per-segment and V-subregion mutation counts are recomputed from
-    /// the node's final simulation pool (net mutations from germline:
-    /// positions where `base != germline`), overwriting the zero
-    /// counts that `build_airr_record` would produce from the empty
-    /// event ledger carried by lineage node `Outcome`s.
+    /// Each node `Outcome` now carries a synthesized `MUTATE_S5F`
+    /// `EventRecord` encoding every pool position where
+    /// `base != germline` as a `BaseChanged` event, and
+    /// `mutation_count` is set to the number of such events.
+    /// `build_airr_record` therefore produces correct per-segment
+    /// and V-subregion mutation counts natively, without any manual
+    /// field overwrite.
     fn airr_records<'py>(
         &self,
         py: Python<'py>,
@@ -312,33 +314,6 @@ impl PyFamilyOutcome {
             let sequence_id = format!("node{}", node_id);
             let rec = build_airr_record(outcome, refdata.inner(), &sequence_id);
             let dict = airr_record_to_pydict(py, &rec)?;
-
-            // Recompute mutation counts from the pool (net mutations
-            // from germline) to fix the empty-event-ledger bug.
-            let sim = outcome.final_simulation();
-            let counts = pool_mutation_counts(sim, refdata.inner());
-
-            dict.set_item("n_mutations", counts.n_mutations)?;
-            dict.set_item("n_v_mutations", counts.n_v_mutations)?;
-            dict.set_item("n_d_mutations", counts.n_d_mutations)?;
-            dict.set_item("n_j_mutations", counts.n_j_mutations)?;
-            dict.set_item("n_np_mutations", counts.n_np_mutations)?;
-            dict.set_item("n_fwr1_mutations", counts.n_fwr1_mutations)?;
-            dict.set_item("n_cdr1_mutations", counts.n_cdr1_mutations)?;
-            dict.set_item("n_fwr2_mutations", counts.n_fwr2_mutations)?;
-            dict.set_item("n_cdr2_mutations", counts.n_cdr2_mutations)?;
-            dict.set_item("n_fwr3_mutations", counts.n_fwr3_mutations)?;
-            dict.set_item("n_v_unannotated_mutations", counts.n_v_unannotated_mutations)?;
-
-            // Recompute mutation_rate = n_mutations / sequence_length.
-            let seq_len = rec.sequence_length;
-            let mutation_rate = if seq_len > 0 {
-                counts.n_mutations as f64 / seq_len as f64
-            } else {
-                0.0
-            };
-            dict.set_item("mutation_rate", mutation_rate)?;
-
             results.push(dict);
         }
         Ok(results)
@@ -346,104 +321,47 @@ impl PyFamilyOutcome {
 }
 
 // ──────────────────────────────────────────────────────────────────
-// Pool-derived mutation counter helper
+// SHM event synthesis helper
 // ──────────────────────────────────────────────────────────────────
 
-/// Per-segment and V-subregion mutation counts derived by scanning
-/// the simulation pool for positions where `base != germline`.
-/// This is the "net mutations from germline" quantity that lineage
-/// tools use, computed without relying on the event ledger.
-struct PoolMutCounts {
-    n_mutations: i64,
-    n_v_mutations: i64,
-    n_d_mutations: i64,
-    n_j_mutations: i64,
-    n_np_mutations: i64,
-    n_fwr1_mutations: i64,
-    n_cdr1_mutations: i64,
-    n_fwr2_mutations: i64,
-    n_cdr2_mutations: i64,
-    n_fwr3_mutations: i64,
-    n_v_unannotated_mutations: i64,
-}
-
-/// Scan `sim.pool` and count positions where `base != germline`,
-/// bucketing by segment and (for V) by V-subregion. Mirrors the
-/// event-loop logic in `airr_record/builder.rs` exactly: same
-/// `v_subregions` table lookup, same `germline_pos.get()` → Option<u16>
-/// coordinate, same fallthrough to `n_v_unannotated_mutations`.
-fn pool_mutation_counts(sim: &Simulation, refdata: &RefDataConfig) -> PoolMutCounts {
-    // Hoist the V-allele subregion table out of the per-nucleotide
-    // loop (invariant within a record) — same pattern as builder.rs.
-    let v_subregions: Option<&[crate::refdata::VSubregion]> = sim
-        .assignments
-        .get(Segment::V)
-        .and_then(|inst| refdata.v_pool.get(inst.allele_id))
-        .map(|allele| allele.subregions.as_slice());
-
-    let mut n_v_mutations = 0i64;
-    let mut n_d_mutations = 0i64;
-    let mut n_j_mutations = 0i64;
-    let mut n_np_mutations = 0i64;
-    let mut n_fwr1_mutations = 0i64;
-    let mut n_cdr1_mutations = 0i64;
-    let mut n_fwr2_mutations = 0i64;
-    let mut n_cdr2_mutations = 0i64;
-    let mut n_fwr3_mutations = 0i64;
-    let mut n_v_unannotated_mutations = 0i64;
-
-    for nuc in sim.pool.as_slice() {
-        // A position is mutated iff its current base differs from germline.
-        // No case folding — the engine stores mutations as lowercase bytes
-        // (SHM traces lowercase), so a raw byte comparison is correct and
-        // mirrors `base != germline` in the event-loop path.
+/// Synthesize a single `EventRecord` that encodes all net SHM
+/// mutations visible in `sim.pool` (positions where `base !=
+/// germline`) as `SimulationEvent::BaseChanged` events.
+///
+/// The record is tagged with `address::MUTATE_S5F` as its pass
+/// name so the AIRR builder's event-loop filter picks it up and
+/// the per-segment / per-subregion mutation counts it produces are
+/// identical to the pool-scan. The returned count equals the number
+/// of synthesized events; callers should set `sim.mutation_count`
+/// to this value before wrapping `sim` in an `Outcome`.
+fn synthesize_shm_event_record(sim: &Simulation) -> (EventRecord, u32) {
+    let mut events: Vec<SimulationEvent> = Vec::new();
+    for (i, nuc) in sim.pool.as_slice().iter().enumerate() {
         if nuc.base == nuc.germline {
             continue;
         }
-        match nuc.segment {
-            Segment::V => {
-                n_v_mutations += 1;
-                // Dispatch into the V-subregion partition using the same
-                // logic as builder.rs:321-347. `germline_pos.get()` yields
-                // the allele-relative Option<u16> coordinate that the
-                // VSubregion [start, end) intervals are keyed on.
-                let label = v_subregions.and_then(|subs| {
-                    nuc.germline_pos.get().and_then(|pos| {
-                        subs.iter()
-                            .find(|s| s.start <= pos && pos < s.end)
-                            .map(|s| s.label)
-                    })
-                });
-                match label {
-                    Some(crate::refdata::VSubregionLabel::Fwr1) => n_fwr1_mutations += 1,
-                    Some(crate::refdata::VSubregionLabel::Cdr1) => n_cdr1_mutations += 1,
-                    Some(crate::refdata::VSubregionLabel::Fwr2) => n_fwr2_mutations += 1,
-                    Some(crate::refdata::VSubregionLabel::Cdr2) => n_cdr2_mutations += 1,
-                    Some(crate::refdata::VSubregionLabel::Fwr3) => n_fwr3_mutations += 1,
-                    None => n_v_unannotated_mutations += 1,
-                }
-            }
-            Segment::D => n_d_mutations += 1,
-            Segment::J => n_j_mutations += 1,
-            Segment::Np1 | Segment::Np2 => n_np_mutations += 1,
-        }
+        events.push(SimulationEvent::BaseChanged {
+            handle: NucHandle::new(i as u32),
+            old_base: nuc.germline,
+            new_base: nuc.base,
+            segment: nuc.segment,
+            germline_pos: nuc.germline_pos.get(),
+        });
     }
-
-    let n_mutations = n_v_mutations + n_d_mutations + n_j_mutations + n_np_mutations;
-    PoolMutCounts {
-        n_mutations,
-        n_v_mutations,
-        n_d_mutations,
-        n_j_mutations,
-        n_np_mutations,
-        n_fwr1_mutations,
-        n_cdr1_mutations,
-        n_fwr2_mutations,
-        n_cdr2_mutations,
-        n_fwr3_mutations,
-        n_v_unannotated_mutations,
-    }
+    let net = events.len() as u32;
+    let summary = StateSummary::from_simulation(sim);
+    let record = EventRecord::pass_committed(
+        0,
+        crate::address::MUTATE_S5F,
+        vec![PassCompileEffect::EditBases],
+        TraceSpan::new(0, 0),
+        summary,
+        summary,
+        events,
+    );
+    (record, net)
 }
+
 
 /// Grow + sample a clonal lineage family from `founder` (a full `Outcome`) using
 /// an S5F mutator, returning a `FamilyOutcome` with per-node AIRR-projectable
@@ -569,11 +487,22 @@ pub(crate) fn simulate_family_outcomes(
         .iter()
         .map(|n| {
             if n.observed {
+                let s = &sims[n.id as usize];
+                // Synthesize a MUTATE_S5F EventRecord encoding every
+                // pool position where base != germline as a
+                // BaseChanged event.  This makes the Outcome
+                // self-consistent: build_airr_record reads these
+                // events to derive per-segment / per-subregion
+                // mutation counts, and the net count is stored in
+                // mutation_count so the NMutationsMismatch validator
+                // check passes.
+                let (event_record, net) = synthesize_shm_event_record(s);
+                let s2 = s.with_mutation_count(net);
                 Some(Outcome {
-                    revisions: vec![sims[n.id as usize].clone()],
+                    revisions: vec![s2],
                     pass_names: Vec::new(),
                     trace: founder_trace.clone(),
-                    events: Vec::new(),
+                    events: vec![event_record],
                 })
             } else {
                 None
