@@ -71,6 +71,7 @@ fn grow_core(
         generation: 0,
         genotype: genotype_of(founder),
         mutations_from_parent: 0,
+        affinity: 0.0,
         abundance: 0,
         observed: false,
     });
@@ -114,6 +115,7 @@ fn grow_core(
                     generation: gen,
                     genotype: genotype_of(&child_sim),
                     mutations_from_parent: muts,
+                    affinity: 0.0,
                     abundance: 0,
                     observed: false,
                 });

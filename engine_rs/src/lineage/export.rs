@@ -8,11 +8,11 @@ use super::tree::LineageTree;
 
 /// Tab-separated node table, one row per node plus a header. `parent_id` is
 /// `NA` for the root. Columns:
-/// `node_id, parent_id, generation, mutations_from_parent, abundance, observed, sequence`.
+/// `node_id, parent_id, generation, mutations_from_parent, abundance, observed, affinity, sequence`.
 pub fn to_node_table_tsv(tree: &LineageTree) -> String {
     let mut out = String::new();
     out.push_str(
-        "node_id\tparent_id\tgeneration\tmutations_from_parent\tabundance\tobserved\tsequence\n",
+        "node_id\tparent_id\tgeneration\tmutations_from_parent\tabundance\tobserved\taffinity\tsequence\n",
     );
     for n in &tree.nodes {
         let parent = match n.parent_id {
@@ -22,8 +22,8 @@ pub fn to_node_table_tsv(tree: &LineageTree) -> String {
         let seq = String::from_utf8_lossy(&n.genotype);
         let _ = writeln!(
             out,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            n.id, parent, n.generation, n.mutations_from_parent, n.abundance, n.observed, seq
+            "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
+            n.id, parent, n.generation, n.mutations_from_parent, n.abundance, n.observed, n.affinity, seq
         );
     }
     out
@@ -140,10 +140,10 @@ mod tests {
     fn sample_tree() -> LineageTree {
         LineageTree {
             nodes: vec![
-                LineageNode { id: 0, parent_id: None,    generation: 0, genotype: b"AAAA".to_vec(), mutations_from_parent: 0, abundance: 0, observed: false },
-                LineageNode { id: 1, parent_id: Some(0), generation: 1, genotype: b"AAAC".to_vec(), mutations_from_parent: 1, abundance: 2, observed: true },
-                LineageNode { id: 2, parent_id: Some(0), generation: 1, genotype: b"AAAG".to_vec(), mutations_from_parent: 1, abundance: 0, observed: false },
-                LineageNode { id: 3, parent_id: Some(1), generation: 2, genotype: b"ATAC".to_vec(), mutations_from_parent: 1, abundance: 1, observed: true },
+                LineageNode { id: 0, parent_id: None,    generation: 0, genotype: b"AAAA".to_vec(), mutations_from_parent: 0, affinity: 0.0, abundance: 0, observed: false },
+                LineageNode { id: 1, parent_id: Some(0), generation: 1, genotype: b"AAAC".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 2, observed: true },
+                LineageNode { id: 2, parent_id: Some(0), generation: 1, genotype: b"AAAG".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 0, observed: false },
+                LineageNode { id: 3, parent_id: Some(1), generation: 2, genotype: b"ATAC".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 1, observed: true },
             ],
         }
     }
@@ -167,12 +167,12 @@ mod tests {
         assert_eq!(lines.len(), 5); // 1 header + 4 nodes
         assert_eq!(
             lines[0],
-            "node_id\tparent_id\tgeneration\tmutations_from_parent\tabundance\tobserved\tsequence"
+            "node_id\tparent_id\tgeneration\tmutations_from_parent\tabundance\tobserved\taffinity\tsequence"
         );
-        assert_eq!(lines[1], "0\tNA\t0\t0\t0\tfalse\tAAAA");
-        assert_eq!(lines[2], "1\t0\t1\t1\t2\ttrue\tAAAC");
-        assert_eq!(lines[3], "2\t0\t1\t1\t0\tfalse\tAAAG");
-        assert_eq!(lines[4], "3\t1\t2\t1\t1\ttrue\tATAC");
+        assert_eq!(lines[1], "0\tNA\t0\t0\t0\tfalse\t0.0000\tAAAA");
+        assert_eq!(lines[2], "1\t0\t1\t1\t2\ttrue\t0.0000\tAAAC");
+        assert_eq!(lines[3], "2\t0\t1\t1\t0\tfalse\t0.0000\tAAAG");
+        assert_eq!(lines[4], "3\t1\t2\t1\t1\ttrue\t0.0000\tATAC");
     }
 
     #[test]
@@ -195,7 +195,7 @@ mod tests {
         let tree = LineageTree {
             nodes: vec![LineageNode {
                 id: 0, parent_id: None, generation: 0, genotype: b"AAAA".to_vec(),
-                mutations_from_parent: 0, abundance: 1, observed: true,
+                mutations_from_parent: 0, affinity: 0.0, abundance: 1, observed: true,
             }],
         };
         assert_eq!(to_newick(&tree), "node0;");

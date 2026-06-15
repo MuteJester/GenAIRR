@@ -58,10 +58,10 @@ mod tests {
     fn tree_with_dupes() -> LineageTree {
         LineageTree {
             nodes: vec![
-                LineageNode { id: 0, parent_id: None,    generation: 0, genotype: b"AAAA".to_vec(), mutations_from_parent: 0, abundance: 0, observed: false },
-                LineageNode { id: 1, parent_id: Some(0), generation: 1, genotype: b"AAAC".to_vec(), mutations_from_parent: 1, abundance: 0, observed: false },
-                LineageNode { id: 2, parent_id: Some(0), generation: 1, genotype: b"AAAC".to_vec(), mutations_from_parent: 1, abundance: 0, observed: false },
-                LineageNode { id: 3, parent_id: Some(1), generation: 2, genotype: b"AAGC".to_vec(), mutations_from_parent: 1, abundance: 0, observed: false },
+                LineageNode { id: 0, parent_id: None,    generation: 0, genotype: b"AAAA".to_vec(), mutations_from_parent: 0, affinity: 0.0, abundance: 0, observed: false },
+                LineageNode { id: 1, parent_id: Some(0), generation: 1, genotype: b"AAAC".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 0, observed: false },
+                LineageNode { id: 2, parent_id: Some(0), generation: 1, genotype: b"AAAC".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 0, observed: false },
+                LineageNode { id: 3, parent_id: Some(1), generation: 2, genotype: b"AAGC".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 0, observed: false },
             ],
         }
     }

@@ -7,7 +7,7 @@
 //! genotype-collapse and downstream export.
 
 /// One cell in a clonal lineage.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineageNode {
     /// Stable index of this node within `LineageTree::nodes` (also its arena position).
     pub id: u32,
@@ -20,6 +20,8 @@ pub struct LineageNode {
     /// Mutations introduced on the edge from the parent to this node
     /// (the number of substitutions on the parent→child edge; 0 for the root).
     pub mutations_from_parent: u32,
+    /// Affinity of this cell to the target antigen (0.0 = neutral / not computed).
+    pub affinity: f64,
     /// Observation count after sampling + genotype-collapse. 0 until sampled.
     pub abundance: u32,
     /// Whether this node was observed: the representative node a sampled
@@ -137,10 +139,10 @@ mod tests {
     fn hand_tree() -> LineageTree {
         LineageTree {
             nodes: vec![
-                LineageNode { id: 0, parent_id: None,    generation: 0, genotype: b"AAAA".to_vec(), mutations_from_parent: 0, abundance: 0, observed: false },
-                LineageNode { id: 1, parent_id: Some(0), generation: 1, genotype: b"AAAC".to_vec(), mutations_from_parent: 1, abundance: 0, observed: false },
-                LineageNode { id: 2, parent_id: Some(0), generation: 1, genotype: b"AAAG".to_vec(), mutations_from_parent: 1, abundance: 0, observed: false },
-                LineageNode { id: 3, parent_id: Some(1), generation: 2, genotype: b"AATC".to_vec(), mutations_from_parent: 1, abundance: 0, observed: false },
+                LineageNode { id: 0, parent_id: None,    generation: 0, genotype: b"AAAA".to_vec(), mutations_from_parent: 0, affinity: 0.0, abundance: 0, observed: false },
+                LineageNode { id: 1, parent_id: Some(0), generation: 1, genotype: b"AAAC".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 0, observed: false },
+                LineageNode { id: 2, parent_id: Some(0), generation: 1, genotype: b"AAAG".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 0, observed: false },
+                LineageNode { id: 3, parent_id: Some(1), generation: 2, genotype: b"AATC".to_vec(), mutations_from_parent: 1, affinity: 0.0, abundance: 0, observed: false },
             ],
         }
     }
