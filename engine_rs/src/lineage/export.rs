@@ -71,6 +71,9 @@ fn newick_subtree(tree: &LineageTree, id: u32) -> String {
 /// the origin. Always terminated with `;`. This is standard rooted Newick
 /// (e.g. `((node3:1)node1:1,node2:1)node0;`) — no phantom outer node — so
 /// ete3 / dendropy / Bio.Phylo parse `node0` as the actual root.
+///
+/// Precondition: the tree has exactly one root (one node with `parent_id ==
+/// None`); call [`LineageTree::validate`] first if the tree was hand-built.
 pub fn to_newick(tree: &LineageTree) -> String {
     let root = tree.root();
     let children = tree.children_of(root.id);
@@ -168,6 +171,7 @@ mod tests {
         );
         assert_eq!(lines[1], "0\tNA\t0\t0\t0\tfalse\tAAAA");
         assert_eq!(lines[2], "1\t0\t1\t1\t2\ttrue\tAAAC");
+        assert_eq!(lines[3], "2\t0\t1\t1\t0\tfalse\tAAAG");
         assert_eq!(lines[4], "3\t1\t2\t1\t1\ttrue\tATAC");
     }
 
