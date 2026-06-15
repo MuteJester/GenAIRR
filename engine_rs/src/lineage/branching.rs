@@ -28,10 +28,12 @@ fn genotype_of(sim: &Simulation) -> Vec<u8> {
     sim.pool.as_slice().iter().map(|n| n.base).collect()
 }
 
-/// Grow the lineage TOPOLOGY only: children are exact clones of their parent
-/// `Simulation` (no mutation). Returns the tree; live cells are whatever
-/// remained at the final generation. A later task layers mutation on top.
-pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageTree {
+/// Like `grow_topology` but also returns the peak live-population size reached
+/// during growth. Internal helper for capacity tests and metric-aware callers.
+pub(crate) fn grow_topology_with_peak(
+    founder: &Simulation,
+    params: &BranchingParams,
+) -> (LineageTree, usize) {
     let mut nodes: Vec<LineageNode> = Vec::new();
     let mut sims: Vec<Simulation> = Vec::new();
     let mut rng = Rng::new(params.seed);
@@ -49,17 +51,23 @@ pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageT
 
     let mut live: Vec<u32> = vec![0];
     let mut next_id: u32 = 1;
+    let mut peak_live: usize = live.len();
 
     for gen in 1..=params.max_generations {
         if live.is_empty() {
             break; // lineage went extinct (every cell drew 0 offspring)
         }
+        // Logistic carrying-capacity damping: as the live population approaches
+        // n_max, the effective offspring rate falls toward zero (plateau).
+        let live_frac = (live.len() as f64) / (params.n_max as f64);
+        let eff_lambda = params.lambda_base * (1.0 - live_frac).max(0.0);
+
         let mut next_live: Vec<u32> = Vec::new();
         'generation: for &parent_id in &live {
-            let k = poisson_sample(&mut rng, params.lambda_base);
+            let k = poisson_sample(&mut rng, eff_lambda);
             for _ in 0..k {
-                if next_id >= params.n_max {
-                    break 'generation;
+                if next_live.len() as u32 >= params.n_max {
+                    break 'generation; // keep the live set within capacity
                 }
                 let child_sim = sims[parent_id as usize].clone(); // mutated in a later task
                 nodes.push(LineageNode {
@@ -77,9 +85,18 @@ pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageT
             }
         }
         live = next_live;
+        if live.len() > peak_live {
+            peak_live = live.len();
+        }
     }
 
-    LineageTree { nodes }
+    (LineageTree { nodes }, peak_live)
+}
+
+/// Grow the lineage TOPOLOGY only (children are exact clones of their parent
+/// `Simulation`; no mutation — a later task layers mutation on top).
+pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageTree {
+    grow_topology_with_peak(founder, params).0
 }
 
 #[cfg(test)]
@@ -137,5 +154,25 @@ mod tests {
             assert_eq!(x.parent_id, y.parent_id);
             assert_eq!(x.generation, y.generation);
         }
+    }
+
+    #[test]
+    fn carrying_capacity_bounds_live_population() {
+        let params = BranchingParams {
+            lambda_base: 4.0,      // would explode unbounded
+            lambda_mut: 0.0,
+            max_generations: 40,
+            n_max: 200,
+            n_sample: 10,
+            seed: 7,
+        };
+        let (_tree, peak_live) = grow_topology_with_peak(&founder(), &params);
+        // hard cap: live population never exceeds n_max
+        assert!(peak_live <= params.n_max as usize,
+            "peak live {peak_live} exceeded n_max {}", params.n_max);
+        // damping plateau (equilibrium ~ (1 - 1/lambda_base) * n_max = 150) is
+        // comfortably above half capacity — confirms it grew, not died early
+        assert!(peak_live > (params.n_max as usize) / 2,
+            "peak live {peak_live} did not approach capacity");
     }
 }
