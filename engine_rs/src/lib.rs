@@ -46,6 +46,7 @@ pub mod event;
 pub mod feasibility;
 pub mod ir;
 pub mod junction;
+pub mod lineage;
 pub mod live_call;
 pub mod pass;
 pub mod passes;
