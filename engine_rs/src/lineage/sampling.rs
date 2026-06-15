@@ -8,7 +8,7 @@ use crate::rng::Rng;
 use super::tree::LineageTree;
 
 /// Sample `n_sample` cells uniformly (with replacement) from the tree's leaves
-/// and collapse identical genotypes: the first leaf id seen carrying a given
+/// and collapse identical genotypes: the first leaf *drawn* carrying a given
 /// genotype becomes the observed representative and accumulates the abundance;
 /// later draws of the same genotype fold into it. Mutates `tree` in place.
 pub fn sample_and_collapse(tree: &mut LineageTree, n_sample: u32, rng: &mut Rng) {
@@ -20,7 +20,7 @@ pub fn sample_and_collapse(tree: &mut LineageTree, n_sample: u32, rng: &mut Rng)
         return;
     }
 
-    // genotype -> representative node id (first id seen with that genotype)
+    // genotype -> representative node id (first leaf drawn with that genotype)
     let mut rep_by_genotype: HashMap<Vec<u8>, u32> = HashMap::new();
     // representative node id -> accumulated abundance
     let mut abundance: HashMap<u32, u32> = HashMap::new();

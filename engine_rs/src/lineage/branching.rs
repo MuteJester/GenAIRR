@@ -13,7 +13,9 @@ use super::tree::{LineageNode, LineageTree};
 pub struct BranchingParams {
     /// Base expected offspring per cell per generation (neutral λ).
     pub lambda_base: f64,
-    /// Expected mutations introduced per cell division (used in a later task).
+    /// Expected mutations per cell division. NOTE: currently inert — per-division
+    /// mutation count is driven by the injected `Pass` mutator; this field is
+    /// reserved for a later task and is not read yet.
     pub lambda_mut: f64,
     /// Maximum number of generations to grow.
     pub max_generations: u32,
