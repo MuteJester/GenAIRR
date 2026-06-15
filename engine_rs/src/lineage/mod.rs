@@ -25,6 +25,7 @@ pub mod branching;
 pub mod sampling;
 pub mod family;
 pub mod export;
+pub mod affinity;
 
 pub use tree::{LineageNode, LineageTree};
 pub use branching::{grow_lineage, grow_topology, BranchingParams};
