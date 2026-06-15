@@ -1,6 +1,7 @@
 //! Affinity model for clonal selection: BLOSUM62-weighted, region-weighted
 //! amino-acid distance to a target antigen, and target generation.
 
+use crate::ir::{compute_codon_rail, Simulation};
 use crate::rng::Rng;
 
 /// 20 standard amino acids in the BLOSUM62 matrix's row/column order.
@@ -84,10 +85,123 @@ pub fn make_mature_target(naive_aa: &[u8], m: u32, rng: &mut Rng) -> Vec<u8> {
     target
 }
 
+/// Translate a `Simulation` to its amino-acid sequence by concatenating the
+/// in-frame translation of each region (respecting each region's frame phase),
+/// in biological order. Used to score a cell's affinity to a target antigen.
+pub fn sim_to_aa(sim: &Simulation) -> Vec<u8> {
+    let mut aa = Vec::new();
+    for region in sim.sequence.regions.iter() {
+        let rail = compute_codon_rail(region, &sim.pool);
+        aa.extend_from_slice(&rail.amino_acids);
+    }
+    aa
+}
+
+/// Affinity-selection model: maps a cell's amino-acid sequence to an affinity in
+/// (0, 1] (1 = identical to target) and to a fitness multiplier for its offspring
+/// rate. `selection_strength == 0` makes fitness identically 1 (neutral).
+#[derive(Clone, Debug)]
+pub struct AffinityModel {
+    target_aa: Vec<u8>,
+    aa_weights: Vec<f64>,
+    beta: f64,
+    selection_strength: f64,
+    /// Affinity of the founder; fitness is measured relative to this baseline so
+    /// the founder has fitness ~1 and cells that improve on it exceed 1.
+    founder_affinity: f64,
+}
+
+impl AffinityModel {
+    /// Build a model. `founder_aa` is the naive founder's aa sequence; its
+    /// affinity becomes the fitness baseline.
+    pub fn new(
+        target_aa: Vec<u8>,
+        aa_weights: Vec<f64>,
+        beta: f64,
+        selection_strength: f64,
+        founder_aa: &[u8],
+    ) -> Self {
+        let founder_affinity =
+            (-beta * weighted_aa_distance(founder_aa, &target_aa, &aa_weights)).exp();
+        Self {
+            target_aa,
+            aa_weights,
+            beta,
+            selection_strength,
+            founder_affinity,
+        }
+    }
+
+    /// Affinity in (0, 1]: `exp(-beta * region-weighted BLOSUM distance to target)`.
+    pub fn affinity_value(&self, aa: &[u8]) -> f64 {
+        (-self.beta * weighted_aa_distance(aa, &self.target_aa, &self.aa_weights)).exp()
+    }
+
+    /// Fitness multiplier for offspring rate: `1 + strength * (affinity - founder_affinity)`,
+    /// clamped at 0. `selection_strength == 0` ⇒ always 1 (neutral).
+    pub fn fitness(&self, aa: &[u8]) -> f64 {
+        (1.0 + self.selection_strength * (self.affinity_value(aa) - self.founder_affinity)).max(0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::{Nucleotide, NucHandle, Region, Segment, Simulation};
     use crate::rng::Rng;
+
+    fn aa_founder(seq: &[u8]) -> Simulation {
+        let mut sim = Simulation::new();
+        for (i, b) in seq.iter().enumerate() {
+            let (next, _) = sim.with_nucleotide_pushed(
+                Nucleotide::germline(*b, i as u16, Segment::V));
+            sim = next;
+        }
+        sim.with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(seq.len() as u32)))
+    }
+
+    #[test]
+    fn sim_to_aa_translates_in_frame() {
+        // 8 'A' bases -> codons AAA, AAA (last 2 ignored) -> "KK" (Lys, Lys)
+        let sim = aa_founder(b"AAAAAAAA");
+        assert_eq!(sim_to_aa(&sim), b"KK".to_vec());
+    }
+
+    #[test]
+    fn affinity_value_is_one_at_target() {
+        let m = AffinityModel::new(b"KK".to_vec(), vec![1.0; 2], 1.0, 1.0, b"KK");
+        assert!((m.affinity_value(b"KK") - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn affinity_value_decreases_with_distance() {
+        let m = AffinityModel::new(b"KK".to_vec(), vec![1.0; 2], 1.0, 1.0, b"KK");
+        let near = m.affinity_value(b"KK");
+        let far = m.affinity_value(b"WW");
+        assert!(far < near, "far {far} should be < near {near}");
+        assert!(far > 0.0);
+    }
+
+    #[test]
+    fn fitness_is_neutral_when_strength_zero() {
+        // selection_strength = 0 => fitness == 1.0 for ANY sequence
+        let m = AffinityModel::new(b"KK".to_vec(), vec![1.0; 2], 1.0, 0.0, b"NN");
+        assert!((m.fitness(b"KK") - 1.0).abs() < 1e-9);
+        assert!((m.fitness(b"WW") - 1.0).abs() < 1e-9);
+        assert!((m.fitness(b"NN") - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fitness_rewards_closer_than_founder_penalizes_farther() {
+        // founder = "NN" (far from target "KK"); strength 1.
+        let m = AffinityModel::new(b"KK".to_vec(), vec![1.0; 2], 1.0, 1.0, b"NN");
+        // a cell AT the target is fitter than the founder baseline (fitness > 1)
+        assert!(m.fitness(b"KK") > 1.0);
+        // a cell equal to the founder has fitness exactly 1 (baseline)
+        assert!((m.fitness(b"NN") - 1.0).abs() < 1e-9);
+        // fitness never goes negative
+        assert!(m.fitness(b"WWWWWWWW") >= 0.0);
+    }
 
     #[test]
     fn blosum62_known_entries() {
