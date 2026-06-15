@@ -12,6 +12,7 @@ use crate::lineage::export::{to_fasta, to_newick, to_node_table_tsv};
 use crate::lineage::tree::{LineageNode, LineageTree};
 use crate::lineage::{simulate_family, simulate_family_sims, simulate_family_with_affinity, sim_to_aa, AffinityModel, BranchingParams};
 use crate::lineage::affinity::make_mature_target;
+use crate::live_call::{refresh_live_calls, ReferenceMatchIndex};
 use crate::pass::{Outcome, PassCompileEffect};
 use crate::rng::Rng;
 use crate::passes::S5FMutationPass;
@@ -368,13 +369,14 @@ fn synthesize_shm_event_record(sim: &Simulation) -> (EventRecord, u32) {
 /// `Outcome`s for every observed (sampled) node.
 #[pyfunction]
 #[pyo3(signature = (
-    founder, mutability, substitution, rate,
+    founder, refdata, mutability, substitution, rate,
     lambda_base, lambda_mut, max_generations, n_max, n_sample, seed,
     selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5
 ))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn simulate_family_outcomes(
     founder: &PyOutcome,
+    refdata: &PyRefDataConfig,
     mutability: Vec<f64>,
     substitution: Vec<f64>,
     rate: f64,
@@ -482,12 +484,22 @@ pub(crate) fn simulate_family_outcomes(
 
     let (tree, sims) = simulate_family_sims(&founder_sim, &params, &mutator, model.as_ref());
 
+    // The branching loop mutates child sims with a bare `Pass::execute`
+    // (no `LiveCallRefreshHook`), so each node sim's `segment_calls`
+    // sidecar still reflects the FOUNDER's alignment, not its own
+    // mutated pool. Recompute the V/D/J live calls from each observed
+    // node's pool before building its Outcome; otherwise the
+    // synthesized record carries stale v/d/j calls and validate_record
+    // false-fails with AlleleCallTieSetMismatch under heavy SHM.
+    let reference_index = ReferenceMatchIndex::build(refdata.inner());
+
     let node_outcomes: Vec<Option<Outcome>> = tree
         .nodes
         .iter()
         .map(|n| {
             if n.observed {
-                let s = &sims[n.id as usize];
+                let refreshed = refresh_live_calls(sims[n.id as usize].clone(), &reference_index);
+                let s = &refreshed;
                 // Synthesize a MUTATE_S5F EventRecord encoding every
                 // pool position where base != germline as a
                 // BaseChanged event.  This makes the Outcome

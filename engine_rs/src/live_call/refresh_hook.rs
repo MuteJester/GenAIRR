@@ -98,6 +98,26 @@ impl EffectHook for LiveCallRefreshHook {
     }
 }
 
+/// Public, unconditional V/D/J live-call refresh for a simulation
+/// whose pool was edited outside the compiled runtime (e.g. the
+/// clonal-lineage branching loop, which mutates child sims with a
+/// bare `Pass::execute` and so never runs `LiveCallRefreshHook`).
+///
+/// Unlike [`refresh_segments_for_edit`], this recomputes the call
+/// for *every* assignable segment from scratch against the current
+/// pool, regardless of the dirty log — the caller may have applied
+/// many independent edits whose dirty windows were never threaded.
+/// The dirty log is drained so the returned sim is in a clean state.
+pub fn refresh_live_calls(
+    mut sim: Simulation,
+    reference_index: &ReferenceMatchIndex,
+) -> Simulation {
+    for &segment in Segment::assignable() {
+        sim = with_assembled_segment_live_call(&sim, reference_index, segment);
+    }
+    drain_dirty_windows(sim)
+}
+
 /// Refresh V/D/J live calls after a base-edit pass, using dirty
 /// windows stamped by the pass's `DirtySignalObserver` to skip
 /// segments whose region doesn't overlap any dirty position.

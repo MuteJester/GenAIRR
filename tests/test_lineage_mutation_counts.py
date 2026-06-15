@@ -11,7 +11,7 @@ def _founder_and_refdata():
 def test_lineage_record_mutation_counts_are_consistent():
     founder, refdata = _founder_and_refdata()
     mut, sub = load_builtin_s5f_kernel("hh_s5f")
-    fam = _engine.simulate_family_outcomes(founder, mut, sub, 0.1, 1.6, 0.0, 8, 300, 30, 7)
+    fam = _engine.simulate_family_outcomes(founder, refdata, mut, sub, 0.1, 1.6, 0.0, 8, 300, 30, 7)
     recs = fam.airr_records(refdata)   # NEW method (Task 1b)
     assert len(recs) >= 1
     saw_mutated = False

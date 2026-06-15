@@ -561,6 +561,7 @@ class CompiledLineageExperiment:
             founder = self._pre.run(seed=clone_seed, strict=strict)
             fam = _eng.simulate_family_outcomes(
                 founder,
+                self._refdata,
                 mutability,
                 substitution,
                 step.rate,

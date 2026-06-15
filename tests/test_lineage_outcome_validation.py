@@ -43,7 +43,7 @@ def test_node_outcomes_no_mutation_count_issues():
     """After the fix, no mutation-count validation issues on any lineage node."""
     founder, refdata = _founder_refdata()
     mut, sub = load_builtin_s5f_kernel("hh_s5f")
-    fam = _engine.simulate_family_outcomes(founder, mut, sub, 0.05, 1.6, 0.0, 6, 300, 30, 7)
+    fam = _engine.simulate_family_outcomes(founder, refdata, mut, sub, 0.05, 1.6, 0.0, 6, 300, 30, 7)
     saw_mut = False
     for o in fam.observed_outcomes():
         issues = o.validate_record(refdata)
@@ -66,11 +66,28 @@ def test_node_outcomes_no_mutation_count_issues():
     assert saw_mut, "expected at least one mutated observed node"
 
 
+def test_node_outcomes_validate_clean_under_heavy_shm():
+    """Heavy SHM lineage: every observed node Outcome must validate cleanly.
+
+    Regression for the stale live-call cache bug: node sims carried the
+    founder's allele calls instead of the mutated sequence's, so under heavy
+    SHM validate_record reported AlleleCallTieSetMismatch. After refreshing
+    the live-call cache on each observed node sim, this must be clean.
+    """
+    founder, refdata = _founder_refdata()
+    mut, sub = load_builtin_s5f_kernel("hh_s5f")
+    fam = _engine.simulate_family_outcomes(founder, refdata, mut, sub, 0.05, 1.6, 0.0, 6, 300, 30, 7)
+    issues_total = 0
+    for o in fam.observed_outcomes():
+        issues_total += len(o.validate_record(refdata))
+    assert issues_total == 0, f"validate_record reported {issues_total} issues under heavy SHM"
+
+
 def test_airr_records_mutation_counts_consistent():
     """PyFamilyOutcome.airr_records() produces consistent mutation counts."""
     founder, refdata = _founder_refdata()
     mut, sub = load_builtin_s5f_kernel("hh_s5f")
-    fam = _engine.simulate_family_outcomes(founder, mut, sub, 0.05, 1.6, 0.0, 6, 300, 30, 7)
+    fam = _engine.simulate_family_outcomes(founder, refdata, mut, sub, 0.05, 1.6, 0.0, 6, 300, 30, 7)
     recs = fam.airr_records(refdata)
     assert len(recs) >= 1
     saw_mut = False
