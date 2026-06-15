@@ -2,5 +2,6 @@
 //! `Simulation` via a generation-synchronous birth–death process.
 
 pub mod tree;
+pub mod poisson;
 
 pub use tree::{LineageNode, LineageTree};
