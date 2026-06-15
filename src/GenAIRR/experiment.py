@@ -969,6 +969,12 @@ class Experiment:
         records automatically. Passing ``n`` is allowed only when
         ``n == n_clones * per_clone``.
 
+        .. deprecated::
+            Use :meth:`clonal_lineage` instead, which grows real
+            affinity-maturation lineage trees rather than a flat star
+            topology. ``expand_clones`` remains supported for flat
+            clonal expansion.
+
         Constraints:
         - Both ``n_clones`` and ``per_clone`` must be positive ints.
         - At most one expansion per pipeline; calling this method
@@ -981,6 +987,14 @@ class Experiment:
         shares the same recombination provenance (V allele, trim,
         NP bases) and only diverges through the post-fork passes.
         """
+        warnings.warn(
+            "Experiment.expand_clones() is deprecated in favor of "
+            "Experiment.clonal_lineage(), which grows real clonal lineage "
+            "trees (affinity maturation) instead of a star topology. "
+            "expand_clones() remains supported for flat clonal expansion.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not isinstance(n_clones, int) or isinstance(n_clones, bool) or n_clones < 1:
             raise ValueError(
                 f"n_clones must be a positive int, got {n_clones!r}"
