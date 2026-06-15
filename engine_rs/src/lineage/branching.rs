@@ -59,13 +59,14 @@ fn mutate_child(parent: &Simulation, mutator: &dyn Pass, child_seed: u64) -> Sim
 /// deterministic sub-seed and applies `m`. With `affinity = Some(model)`, each
 /// cell's offspring rate is modulated by the model's fitness; `None` leaves the
 /// rate unchanged (byte-identical to the pre-affinity path). Returns
-/// (tree, peak_live_population).
+/// (tree, peak_live_population, sims_arena) where sims_arena[node.id] is the
+/// Simulation for that node.
 fn grow_core(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: Option<&dyn Pass>,
     affinity: Option<&AffinityModel>,
-) -> (LineageTree, usize) {
+) -> (LineageTree, usize, Vec<Simulation>) {
     let mut nodes: Vec<LineageNode> = Vec::new();
     let mut sims: Vec<Simulation> = Vec::new();
     let mut rng = Rng::new(params.seed);
@@ -146,7 +147,7 @@ fn grow_core(
         }
     }
 
-    (LineageTree { nodes }, peak_live)
+    (LineageTree { nodes }, peak_live, sims)
 }
 
 /// Grow a full clonal lineage with per-division mutation via `mutator`.
@@ -174,6 +175,18 @@ pub fn grow_lineage_with_affinity(
     model: &AffinityModel,
 ) -> LineageTree {
     grow_core(founder, params, Some(mutator), Some(model)).0
+}
+
+/// Grow + mutate a lineage and ALSO return the per-node `Simulation` arena
+/// (index == node id), for building per-node AIRR `Outcome`s.
+pub fn grow_lineage_retaining_sims(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    affinity: Option<&AffinityModel>,
+) -> (LineageTree, Vec<Simulation>) {
+    let (tree, _peak, sims) = grow_core(founder, params, Some(mutator), affinity);
+    (tree, sims)
 }
 
 #[cfg(test)]
@@ -244,7 +257,7 @@ mod tests {
             n_sample: 10,
             seed: 7,
         };
-        let (_tree, peak_live) = grow_core(&founder(), &params, None, None);
+        let (_tree, peak_live, _sims) = grow_core(&founder(), &params, None, None);
         // hard cap: live population never exceeds n_max
         assert!(peak_live <= params.n_max as usize,
             "peak live {peak_live} exceeded n_max {}", params.n_max);

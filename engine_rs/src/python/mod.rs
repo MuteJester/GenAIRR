@@ -50,7 +50,9 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<outcome::PyOutcome>()?;
     m.add_class::<lineage::PyLineageNode>()?;
     m.add_class::<lineage::PyLineageTree>()?;
+    m.add_class::<lineage::PyFamilyOutcome>()?;
     m.add_function(pyo3::wrap_pyfunction!(lineage::simulate_lineage, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(lineage::simulate_family_outcomes, m)?)?;
     m.add_class::<refdata::PyAllele>()?;
     m.add_class::<refdata::PyRefDataConfig>()?;
     m.add_class::<plan::PyPassPlan>()?;

@@ -5,7 +5,7 @@ use crate::pass::Pass;
 use crate::rng::Rng;
 
 use super::affinity::AffinityModel;
-use super::branching::{grow_lineage, grow_lineage_with_affinity, BranchingParams};
+use super::branching::{grow_lineage, grow_lineage_retaining_sims, grow_lineage_with_affinity, BranchingParams};
 use super::sampling::sample_and_collapse;
 use super::tree::LineageTree;
 
@@ -40,6 +40,22 @@ pub fn simulate_family_with_affinity(
     let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
     sample_and_collapse(&mut tree, params.n_sample, &mut sample_rng);
     tree
+}
+
+/// Grow + sample a family, returning the tree AND the per-node Simulation arena.
+/// Index in the arena equals the node id (arena[node.id] is the Simulation for
+/// that node). Only observed (sampled) nodes are useful for AIRR projection; the
+/// arena is full-tree and never trimmed.
+pub fn simulate_family_sims(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    affinity: Option<&AffinityModel>,
+) -> (LineageTree, Vec<Simulation>) {
+    let (mut tree, sims) = grow_lineage_retaining_sims(founder, params, mutator, affinity);
+    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    sample_and_collapse(&mut tree, params.n_sample, &mut sample_rng);
+    (tree, sims)
 }
 
 #[cfg(test)]
@@ -82,5 +98,29 @@ mod tests {
                 Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
                 Box::new(UniformBase)));
         assert_eq!(tree.len(), tree2.len());
+    }
+
+    #[test]
+    fn simulate_family_sims_arena_length_matches_tree_and_observed_nodes_have_nonempty_pool() {
+        let params = BranchingParams {
+            lambda_base: 1.5, lambda_mut: 0.0, max_generations: 6,
+            n_max: 300, n_sample: 20, seed: 9999,
+        };
+        let mutator = UniformMutationPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
+            Box::new(UniformBase),
+        );
+        let (tree, sims) = simulate_family_sims(&founder(), &params, &mutator, None);
+
+        // Arena length must equal tree length (one entry per node).
+        assert_eq!(sims.len(), tree.len(),
+            "arena len {} != tree len {}", sims.len(), tree.len());
+
+        // Every observed node's sim must have a non-empty pool.
+        for node in tree.nodes.iter().filter(|n| n.observed) {
+            let sim = &sims[node.id as usize];
+            assert!(!sim.pool.is_empty(),
+                "observed node {} has empty pool", node.id);
+        }
     }
 }

@@ -35,7 +35,7 @@ pub use clone_size::{sample_clone_size, sample_repertoire_sizes, CloneSizeDist};
 
 pub use affinity::{sim_to_aa, AffinityModel};
 pub use tree::{LineageNode, LineageTree};
-pub use branching::{grow_lineage, grow_lineage_with_affinity, grow_topology, BranchingParams};
+pub use branching::{grow_lineage, grow_lineage_retaining_sims, grow_lineage_with_affinity, grow_topology, BranchingParams};
 pub use sampling::sample_and_collapse;
-pub use family::{simulate_family, simulate_family_with_affinity};
+pub use family::{simulate_family, simulate_family_sims, simulate_family_with_affinity};
 pub use export::{to_fasta, to_newick, to_node_table_tsv};

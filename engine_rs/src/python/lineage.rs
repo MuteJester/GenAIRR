@@ -5,12 +5,14 @@ use pyo3::prelude::*;
 
 use crate::lineage::export::{to_fasta, to_newick, to_node_table_tsv};
 use crate::lineage::tree::{LineageNode, LineageTree};
-use crate::lineage::{simulate_family, simulate_family_with_affinity, sim_to_aa, AffinityModel, BranchingParams};
+use crate::lineage::{simulate_family, simulate_family_sims, simulate_family_with_affinity, sim_to_aa, AffinityModel, BranchingParams};
 use crate::lineage::affinity::make_mature_target;
+use crate::pass::Outcome;
 use crate::rng::Rng;
 use crate::passes::S5FMutationPass;
 use crate::s5f::S5FKernel;
 
+use super::outcome::PyOutcome;
 use super::simulation::PySimulation;
 
 /// One node of a clonal lineage tree (read-only view).
@@ -249,4 +251,178 @@ pub(crate) fn simulate_lineage(
     let model = AffinityModel::new(target, weights, beta, selection_strength, &founder_aa);
     let tree = simulate_family_with_affinity(&founder.inner, &params, &mutator, &model);
     Ok(PyLineageTree::new(tree))
+}
+
+/// A grown clonal family: the lineage tree plus per-node AIRR-projectable
+/// `Outcome`s (only observed nodes carry one).
+#[pyclass(name = "FamilyOutcome", module = "GenAIRR._engine")]
+pub struct PyFamilyOutcome {
+    tree: LineageTree,
+    node_outcomes: Vec<Option<Outcome>>, // index == node id
+}
+
+#[pymethods]
+impl PyFamilyOutcome {
+    /// The ground-truth lineage tree.
+    fn tree(&self) -> PyLineageTree {
+        PyLineageTree::new(self.tree.clone())
+    }
+
+    /// Per-node Outcomes aligned with `tree().nodes()`; None for unsampled nodes.
+    fn node_outcomes(&self) -> Vec<Option<PyOutcome>> {
+        self.node_outcomes
+            .iter()
+            .cloned()
+            .map(|o: Option<Outcome>| o.map(PyOutcome::new))
+            .collect()
+    }
+
+    /// Observed nodes' Outcomes only (abundance > 0), in node-id order.
+    fn observed_outcomes(&self) -> Vec<PyOutcome> {
+        self.node_outcomes
+            .iter()
+            .cloned()
+            .flatten()
+            .map(PyOutcome::new)
+            .collect()
+    }
+}
+
+/// Grow + sample a clonal lineage family from `founder` (a full `Outcome`) using
+/// an S5F mutator, returning a `FamilyOutcome` with per-node AIRR-projectable
+/// `Outcome`s for every observed (sampled) node.
+#[pyfunction]
+#[pyo3(signature = (
+    founder, mutability, substitution, rate,
+    lambda_base, lambda_mut, max_generations, n_max, n_sample, seed,
+    selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5
+))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn simulate_family_outcomes(
+    founder: &PyOutcome,
+    mutability: Vec<f64>,
+    substitution: Vec<f64>,
+    rate: f64,
+    lambda_base: f64,
+    lambda_mut: f64,
+    max_generations: u32,
+    n_max: u32,
+    n_sample: u32,
+    seed: u64,
+    selection_strength: f64,
+    beta: f64,
+    target_aa: Option<String>,
+    mature_substitutions: u32,
+) -> PyResult<PyFamilyOutcome> {
+    use pyo3::exceptions::PyValueError;
+
+    if mutability.len() != 1024 {
+        return Err(PyValueError::new_err(format!(
+            "simulate_family_outcomes: mutability must have 1024 entries, got {}",
+            mutability.len()
+        )));
+    }
+    if substitution.len() != 4096 {
+        return Err(PyValueError::new_err(format!(
+            "simulate_family_outcomes: substitution must have 4096 entries, got {}",
+            substitution.len()
+        )));
+    }
+    if !(rate.is_finite() && (0.0..=1.0).contains(&rate)) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_family_outcomes: rate must be in [0.0, 1.0], got {rate}"
+        )));
+    }
+    if mutability.iter().any(|&m| !m.is_finite() || m < 0.0) {
+        return Err(PyValueError::new_err(
+            "simulate_family_outcomes: mutability values must be finite and non-negative",
+        ));
+    }
+    if substitution.iter().any(|&s| !s.is_finite() || s < 0.0) {
+        return Err(PyValueError::new_err(
+            "simulate_family_outcomes: substitution values must be finite and non-negative",
+        ));
+    }
+    if n_max == 0 {
+        return Err(PyValueError::new_err("simulate_family_outcomes: n_max must be > 0"));
+    }
+    if n_sample == 0 {
+        return Err(PyValueError::new_err("simulate_family_outcomes: n_sample must be > 0"));
+    }
+    if !(lambda_base.is_finite() && lambda_base >= 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_family_outcomes: lambda_base must be finite and >= 0, got {lambda_base}"
+        )));
+    }
+    if !(lambda_mut.is_finite() && lambda_mut >= 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_family_outcomes: lambda_mut must be finite and >= 0, got {lambda_mut}"
+        )));
+    }
+    if max_generations > 1000 {
+        return Err(PyValueError::new_err(format!(
+            "simulate_family_outcomes: max_generations must be <= 1000, got {max_generations}"
+        )));
+    }
+    if !(beta.is_finite() && beta >= 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_family_outcomes: beta must be finite and >= 0, got {beta}"
+        )));
+    }
+    if !(selection_strength.is_finite() && selection_strength >= 0.0) {
+        return Err(PyValueError::new_err(format!(
+            "simulate_family_outcomes: selection_strength must be finite and >= 0, got {selection_strength}"
+        )));
+    }
+
+    let founder_sim = founder.inner.final_simulation().clone();
+    let founder_trace = founder.inner.trace.clone();
+
+    let kernel = S5FKernel::new(mutability, substitution);
+    let mutator = S5FMutationPass::new_rate(kernel, rate);
+    let params = BranchingParams {
+        lambda_base,
+        lambda_mut,
+        max_generations,
+        n_max,
+        n_sample,
+        seed,
+    };
+
+    // Optional affinity model (same logic as simulate_lineage's non-neutral path).
+    let model: Option<AffinityModel> = if selection_strength == 0.0 && target_aa.is_none() {
+        None
+    } else {
+        let founder_aa = sim_to_aa(&founder_sim);
+        let target = match target_aa {
+            Some(s) => s.into_bytes(),
+            None => {
+                let mut trng = Rng::new(seed ^ 0x7461_7267_6574_0001);
+                make_mature_target(&founder_aa, mature_substitutions, &mut trng)
+            }
+        };
+        let weights = vec![1.0; founder_aa.len()];
+        Some(AffinityModel::new(target, weights, beta, selection_strength, &founder_aa))
+    };
+
+    let (tree, sims) = simulate_family_sims(&founder_sim, &params, &mutator, model.as_ref());
+
+    let node_outcomes: Vec<Option<Outcome>> = tree
+        .nodes
+        .iter()
+        .map(|n| {
+            if n.observed {
+                Some(Outcome {
+                    revisions: vec![sims[n.id as usize].clone()],
+                    pass_names: Vec::new(),
+                    trace: founder_trace.clone(),
+                    events: Vec::new(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(PyFamilyOutcome { tree, node_outcomes })
 }
