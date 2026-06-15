@@ -3,5 +3,7 @@
 
 pub mod tree;
 pub mod poisson;
+pub mod branching;
 
 pub use tree::{LineageNode, LineageTree};
+pub use branching::{grow_topology, BranchingParams};
