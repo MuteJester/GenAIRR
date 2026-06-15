@@ -15,7 +15,9 @@ pub struct BranchingParams {
     pub lambda_mut: f64,
     /// Maximum number of generations to grow.
     pub max_generations: u32,
-    /// Population cap; growth stops adding once the live set reaches this.
+    /// Carrying capacity: the live population per generation is capped at this,
+    /// and it is the pivot for logistic offspring-rate damping (the effective
+    /// rate falls to zero as the live set approaches `n_max`).
     pub n_max: u32,
     /// Number of cells to sample at the end (used in a later task).
     pub n_sample: u32,
@@ -66,8 +68,10 @@ pub(crate) fn grow_topology_with_peak(
         'generation: for &parent_id in &live {
             let k = poisson_sample(&mut rng, eff_lambda);
             for _ in 0..k {
-                if next_live.len() as u32 >= params.n_max {
-                    break 'generation; // keep the live set within capacity
+                // Hard cap: a Poisson draw can still overshoot even when
+                // eff_lambda is small near saturation, so bound the live set.
+                if next_live.len() >= params.n_max as usize {
+                    break 'generation;
                 }
                 let child_sim = sims[parent_id as usize].clone(); // mutated in a later task
                 nodes.push(LineageNode {
