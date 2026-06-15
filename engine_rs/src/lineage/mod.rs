@@ -13,11 +13,14 @@
 //! assert!(tree.validate().is_ok());
 //! ```
 //!
-//! Neutral mode only (no affinity selection — a later plan). The mutator is any
-//! `Pass`; production wires the S5F pass, tests use `UniformMutationPass` (no
-//! reference cartridge required).
+//! The mutator is any `Pass`; production wires the S5F pass, tests use
+//! `UniformMutationPass` (no reference cartridge required). Affinity-driven
+//! selection (BLOSUM-weighted distance to a target antigen → fitness-modulated
+//! offspring) lives in [`affinity`] and is used via [`simulate_family_with_affinity`].
 //!
 //! Ground-truth export (Newick / FASTA / node-table TSV) lives in [`export`].
+//! Heavy-tailed clone-size distributions + repertoire composition (the TCR core
+//! and the singleton tail of BCR repertoires) live in [`clone_size`].
 
 pub mod tree;
 pub mod poisson;
