@@ -46,6 +46,45 @@ pub fn to_fasta(tree: &LineageTree) -> String {
     out
 }
 
+/// Recursively render the subtree rooted at `id` in Newick form, with the edge
+/// to this node labelled by its `mutations_from_parent` count as branch length.
+/// Recursion depth is bounded by the number of generations (small), not node
+/// count, so this is safe from stack overflow at realistic family sizes.
+fn newick_subtree(tree: &LineageTree, id: u32) -> String {
+    let node = tree.get(id).expect("newick: node id out of range");
+    let children = tree.children_of(id);
+    let label = format!("node{id}");
+    if children.is_empty() {
+        format!("{label}:{}", node.mutations_from_parent)
+    } else {
+        let inner: Vec<String> = children
+            .iter()
+            .map(|c| newick_subtree(tree, c.id))
+            .collect();
+        format!("({}){label}:{}", inner.join(","), node.mutations_from_parent)
+    }
+}
+
+/// Newick string for the whole tree. Branch lengths are per-edge mutation
+/// counts. The root carries a label but no branch length (it is the origin).
+/// The entire tree body is wrapped in parentheses per the Newick convention
+/// that the outermost node is a virtual root. Always terminated with `;`.
+pub fn to_newick(tree: &LineageTree) -> String {
+    let root = tree.root();
+    let children = tree.children_of(root.id);
+    let root_label = format!("node{}", root.id);
+    let inner_body = if children.is_empty() {
+        root_label
+    } else {
+        let inner: Vec<String> = children
+            .iter()
+            .map(|c| newick_subtree(tree, c.id))
+            .collect();
+        format!("({}){root_label}", inner.join(","))
+    };
+    format!("({inner_body});")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +126,31 @@ mod tests {
         assert_eq!(lines[1], "0\tNA\t0\t0\t0\tfalse\tAAAA");
         assert_eq!(lines[2], "1\t0\t1\t1\t2\ttrue\tAAAC");
         assert_eq!(lines[4], "3\t1\t2\t1\t1\ttrue\tATAC");
+    }
+
+    #[test]
+    fn newick_encodes_topology_and_branch_lengths() {
+        let nwk = to_newick(&sample_tree());
+        assert!(nwk.ends_with(';'), "newick must end with ';': {nwk}");
+        let opens = nwk.matches('(').count();
+        let closes = nwk.matches(')').count();
+        assert_eq!(opens, closes, "unbalanced parens: {nwk}");
+        assert!(nwk.contains("node1:1"));
+        assert!(nwk.contains("node2:1"));
+        assert!(nwk.contains("node3:1"));
+        assert!(nwk.contains("node0"));
+        assert!(!nwk.contains("node0:"), "root must not have a branch length: {nwk}");
+        assert_eq!(nwk, "(((node3:1)node1:1,node2:1)node0);");
+    }
+
+    #[test]
+    fn newick_single_node_tree() {
+        let tree = LineageTree {
+            nodes: vec![LineageNode {
+                id: 0, parent_id: None, generation: 0, genotype: b"AAAA".to_vec(),
+                mutations_from_parent: 0, abundance: 1, observed: true,
+            }],
+        };
+        assert_eq!(to_newick(&tree), "(node0);");
     }
 }
