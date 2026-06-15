@@ -34,6 +34,12 @@ pub fn sample_and_collapse(tree: &mut LineageTree, n_sample: u32, rng: &mut Rng)
     }
 
     for (id, count) in abundance {
+        // Write-back relies on the `node.id == index into nodes` invariant
+        // (held by construction in the branching loop); guard it in debug builds.
+        debug_assert_eq!(
+            tree.nodes[id as usize].id, id,
+            "id-index invariant violated during sample write-back"
+        );
         let node = &mut tree.nodes[id as usize];
         node.abundance = count;
         node.observed = true;

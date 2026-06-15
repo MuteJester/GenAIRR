@@ -22,7 +22,8 @@ pub struct LineageNode {
     pub mutations_from_parent: u32,
     /// Observation count after sampling + genotype-collapse. 0 until sampled.
     pub abundance: u32,
-    /// Whether this node was observed (sampled, or a collapsed-into ancestor).
+    /// Whether this node was observed: the representative node a sampled
+    /// genotype collapses onto. (Internal-ancestor observation is a later concern.)
     pub observed: bool,
 }
 
