@@ -189,6 +189,30 @@ class _ClonalForkStep:
 
 
 @dataclass(frozen=True)
+class _LineageForkStep:
+    """Marks an affinity-maturation lineage fork.
+
+    Causes :meth:`Experiment.compile` to return a
+    :class:`~GenAIRR._compiled.CompiledLineageExperiment` that grows BCR
+    clonal lineage trees via the Rust ``simulate_family_outcomes`` kernel
+    and returns per-observed-node AIRR records with lineage metadata.
+    """
+
+    n_clones: int
+    max_generations: int
+    n_max: int
+    n_sample: int
+    rate: float
+    lambda_base: float
+    lambda_mut: float
+    selection_strength: float
+    beta: float
+    target_aa: Optional[str]
+    mature_substitutions: int
+    s5f_model: str
+
+
+@dataclass(frozen=True)
 class _PairedEndStep:
     """One ``paired_end(r1_length=…, r2_length=…, insert_size=…)``
     invocation, captured for later compilation.

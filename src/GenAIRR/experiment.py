@@ -49,7 +49,7 @@ from ._compile import (
     _lower_recombine,
     lower_step,
 )
-from ._compiled import CompiledClonalExperiment, CompiledExperiment
+from ._compiled import CompiledClonalExperiment, CompiledExperiment, CompiledLineageExperiment
 from ._refdata_resolver import (
     _CONFIG_ALIASES,
     ExperimentInput,
@@ -69,6 +69,7 @@ from ._pipeline_ir import (
     _ClonalForkStep,
     _CorruptStep,
     _InvertDStep,
+    _LineageForkStep,
     _MutateStep,
     _PairedEndStep,
     _ReceptorRevisionStep,
@@ -1021,6 +1022,148 @@ class Experiment:
                 f"{offending_method}(...) after expand_clones(...)."
             )
         self._steps.append(_ClonalForkStep(n_clones=n_clones, size=per_clone))
+        return self
+
+    def clonal_lineage(
+        self,
+        *,
+        n_clones: int,
+        max_generations: int = 10,
+        n_max: int = 1000,
+        n_sample: int = 50,
+        rate: float = 0.05,
+        lambda_base: float = 1.5,
+        lambda_mut: float = 0.0,
+        selection_strength: float = 0.0,
+        beta: float = 1.0,
+        target_aa: Optional[str] = None,
+        mature_substitutions: int = 5,
+        s5f_model: str = "hh_s5f",
+    ) -> "Experiment":
+        """Grow BCR affinity-maturation lineage trees and return per-node AIRR records.
+
+        Each clone gets its own lineage tree produced by the Rust
+        ``simulate_family_outcomes`` kernel. The returned
+        :class:`~GenAIRR.result.SimulationResultWithLineages` carries:
+
+        - ``.records`` — one AIRR dict per *observed* cell, tagged with
+          ``clone_id``, ``lineage_node_id``, ``lineage_parent_id``,
+          ``lineage_generation``, ``lineage_abundance``, and
+          ``lineage_affinity``. Mutation counts (``n_mutations``,
+          ``n_v_mutations``, …) are pool-derived and self-consistent.
+        - ``.lineage_trees`` — one :class:`~GenAIRR._engine.LineageTree`
+          per clone for ground-truth export (Newick, FASTA, node table TSV).
+
+        Parameters
+        ----------
+        n_clones:
+            Number of independent clonal lineages to grow.
+        max_generations:
+            Maximum depth of the lineage tree (≤ 1000).
+        n_max:
+            Hard cap on total cells per clone (carrying capacity).
+        n_sample:
+            Number of cells to sample as observed leaves.
+        rate:
+            Per-base SHM rate for within-lineage mutations.
+        lambda_base:
+            Poisson mean for offspring count at affinity 0.
+        lambda_mut:
+            Additional Poisson mean increase per affinity unit.
+        selection_strength:
+            Sigmoid selection pressure; 0.0 = neutral drift.
+        beta:
+            Scaling factor for the affinity term in selection.
+        target_aa:
+            Target amino-acid string used to compute affinity (Hamming).
+            When ``None`` all cells get affinity 0.0.
+        mature_substitutions:
+            Minimum cumulative mutations a cell must accumulate before
+            it is considered a mature/observed cell.
+        s5f_model:
+            Bundled S5F kernel name for within-lineage mutation context
+            (``"hh_s5f"``, ``"hkl_s5f"``, …).
+        """
+        import math
+
+        # --- n_clones ---
+        if isinstance(n_clones, bool) or not isinstance(n_clones, int) or n_clones < 1:
+            raise ValueError(f"n_clones must be a positive int, got {n_clones!r}")
+        # --- max_generations ---
+        if (
+            isinstance(max_generations, bool)
+            or not isinstance(max_generations, int)
+            or max_generations < 1
+            or max_generations > 1000
+        ):
+            raise ValueError(
+                f"max_generations must be a positive int <= 1000, got {max_generations!r}"
+            )
+        # --- n_max ---
+        if isinstance(n_max, bool) or not isinstance(n_max, int) or n_max < 1:
+            raise ValueError(f"n_max must be a positive int, got {n_max!r}")
+        # --- n_sample ---
+        if isinstance(n_sample, bool) or not isinstance(n_sample, int) or n_sample < 1:
+            raise ValueError(f"n_sample must be a positive int, got {n_sample!r}")
+        # --- rate ---
+        if not isinstance(rate, (int, float)) or not math.isfinite(rate) or rate < 0 or rate > 1:
+            raise ValueError(f"rate must be a float in [0, 1], got {rate!r}")
+        # --- lambda_base ---
+        if not isinstance(lambda_base, (int, float)) or not math.isfinite(lambda_base) or lambda_base < 0:
+            raise ValueError(f"lambda_base must be a finite non-negative float, got {lambda_base!r}")
+        # --- lambda_mut ---
+        if not isinstance(lambda_mut, (int, float)) or not math.isfinite(lambda_mut) or lambda_mut < 0:
+            raise ValueError(f"lambda_mut must be a finite non-negative float, got {lambda_mut!r}")
+        # --- beta ---
+        if not isinstance(beta, (int, float)) or not math.isfinite(beta) or beta < 0:
+            raise ValueError(f"beta must be a finite non-negative float, got {beta!r}")
+        # --- selection_strength ---
+        if not isinstance(selection_strength, (int, float)) or not math.isfinite(selection_strength) or selection_strength < 0:
+            raise ValueError(
+                f"selection_strength must be a finite non-negative float, got {selection_strength!r}"
+            )
+        # --- mature_substitutions ---
+        if (
+            isinstance(mature_substitutions, bool)
+            or not isinstance(mature_substitutions, int)
+            or mature_substitutions < 0
+        ):
+            raise ValueError(
+                f"mature_substitutions must be a non-negative int, got {mature_substitutions!r}"
+            )
+        # --- reject duplicate fork steps ---
+        for s in self._steps:
+            if isinstance(s, (_ClonalForkStep, _LineageForkStep)):
+                raise ValueError(
+                    "clonal_lineage() / expand_clones() can only be called once per pipeline"
+                )
+        # --- descendant-phase guard (same as expand_clones) ---
+        for step in self._steps:
+            offending_method = _descendant_phase_step_classifier(step)
+            if offending_method is None:
+                continue
+            raise ValueError(
+                f"{offending_method} must be called after "
+                f"clonal_lineage(); it is descendant-specific and must be sampled "
+                f"independently for each clone member. Move "
+                f"{offending_method}(...) after clonal_lineage(...)."
+            )
+        self._steps.append(
+            _LineageForkStep(
+                n_clones=n_clones,
+                max_generations=max_generations,
+                n_max=n_max,
+                n_sample=n_sample,
+                rate=rate,
+                lambda_base=lambda_base,
+                lambda_mut=lambda_mut,
+                selection_strength=selection_strength,
+                beta=beta,
+                target_aa=target_aa,
+                mature_substitutions=mature_substitutions,
+                s5f_model=s5f_model,
+            )
+        )
         return self
 
     def mutate(
@@ -2227,6 +2370,39 @@ class Experiment:
                 metadata=self._metadata,
             )
 
+        # if a `_LineageForkStep` is present, compile a
+        # CompiledLineageExperiment: pre-fork steps (recombine) become
+        # the founder simulator; post-fork steps must be empty (the
+        # lineage engine handles mutation internally).
+        lineage_idx = next(
+            (i for i, s in enumerate(self._steps) if isinstance(s, _LineageForkStep)),
+            None,
+        )
+        if lineage_idx is not None:
+            lineage_step: _LineageForkStep = self._steps[lineage_idx]
+            pre_steps = self._steps[:lineage_idx]
+            post_steps = self._steps[lineage_idx + 1:]
+            if post_steps:
+                raise ValueError(
+                    "No steps may follow clonal_lineage() — the lineage engine "
+                    "handles mutation internally. Remove the following step(s): "
+                    + ", ".join(type(s).__name__ for s in post_steps)
+                )
+            pre_simulator = self._build_simulator(
+                pre_steps,
+                contracts,
+                any_lock,
+                replace_fn=_replace,
+                allow_curatable_refdata=allow_curatable_refdata,
+            )
+            return CompiledLineageExperiment(
+                pre_simulator,
+                lineage_step,
+                self._refdata,
+                dataconfig=self._dataconfig,
+                metadata=self._metadata,
+            )
+
         simulator = self._build_simulator(
             self._steps,
             contracts,
@@ -2373,6 +2549,11 @@ class Experiment:
                 strict=strict,
                 expose_provenance=expose_provenance,
                 validate_records=validate_records,
+            )
+        elif isinstance(compiled, CompiledLineageExperiment):
+            result = compiled.run_records(
+                seed=seed,
+                strict=strict,
             )
         else:
             result = compiled.run_records(

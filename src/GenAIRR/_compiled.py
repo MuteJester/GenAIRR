@@ -24,7 +24,7 @@ from ._describe import (
     _describe_step_sequence,
     _format_active_contracts,
 )
-from ._pipeline_ir import _ClonalForkStep
+from ._pipeline_ir import _ClonalForkStep, _LineageForkStep
 
 if TYPE_CHECKING:
     from .dataconfig import DataConfig
@@ -499,4 +499,105 @@ class CompiledClonalExperiment:
         return (
             f"<CompiledClonalExperiment n_clones={self._fork.n_clones} "
             f"size={self._fork.size} chain={self._refdata.chain_type}>"
+        )
+
+
+class CompiledLineageExperiment:
+    """A compiled experiment that grows BCR affinity-maturation lineage trees.
+
+    Wraps a pre-fork :class:`GenAIRR._engine.CompiledSimulator` (founder
+    recombination) and a :class:`~GenAIRR._pipeline_ir._LineageForkStep`
+    (lineage parameters). :meth:`run_records` grows one lineage tree per
+    clone via the Rust ``simulate_family_outcomes`` kernel and returns a
+    :class:`~GenAIRR.result.SimulationResultWithLineages` whose records are
+    per-observed-node AIRR dicts with lineage metadata.
+    """
+
+    __slots__ = ("_pre", "_step", "_refdata", "_dataconfig", "_metadata")
+
+    def __init__(
+        self,
+        pre_simulator: "_engine.CompiledSimulator",
+        step: "_LineageForkStep",
+        refdata: "_engine.RefDataConfig",
+        dataconfig: Optional["DataConfig"] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self._pre = pre_simulator
+        self._step = step
+        self._refdata = refdata
+        self._dataconfig = dataconfig
+        self._metadata = dict(metadata) if metadata else {}
+
+    @property
+    def refdata(self) -> "_engine.RefDataConfig":
+        return self._refdata
+
+    def run_records(
+        self,
+        *,
+        seed: int = 0,
+        strict: bool = False,
+    ) -> "SimulationResultWithLineages":
+        """Grow lineage trees and return per-observed-node AIRR records.
+
+        Each clone is seeded at ``seed + clone_idx * 1_000_000`` so
+        independent clones are reproducible and non-overlapping.
+        """
+        from GenAIRR import _engine as _eng
+        from ._s5f_loader import load_builtin_s5f_kernel
+        from .result import SimulationResultWithLineages
+
+        step = self._step
+        mutability, substitution = load_builtin_s5f_kernel(step.s5f_model)
+
+        records: List[Dict[str, Any]] = []
+        lineage_trees = []
+
+        for clone_idx in range(step.n_clones):
+            clone_seed = int(seed) + clone_idx * 1_000_000
+            # _pre.run() returns a single Outcome (not a list) — mirror
+            # CompiledClonalExperiment which calls self._pre.run(seed=...).
+            founder = self._pre.run(seed=clone_seed, strict=strict)
+            fam = _eng.simulate_family_outcomes(
+                founder,
+                mutability,
+                substitution,
+                step.rate,
+                step.lambda_base,
+                step.lambda_mut,
+                step.max_generations,
+                step.n_max,
+                step.n_sample,
+                clone_seed,
+                selection_strength=step.selection_strength,
+                beta=step.beta,
+                target_aa=step.target_aa,
+                mature_substitutions=step.mature_substitutions,
+            )
+            tree = fam.tree()
+            lineage_trees.append(tree)
+
+            # Collect observed nodes in id order (same order as airr_records).
+            observed_nodes = [n for n in tree.nodes() if n.observed]
+            recs = fam.airr_records(self._refdata)
+
+            for node, rec in zip(observed_nodes, recs):
+                rec["clone_id"] = clone_idx
+                rec["lineage_node_id"] = node.id
+                rec["lineage_parent_id"] = (
+                    node.parent_id if node.parent_id is not None else -1
+                )
+                rec["lineage_generation"] = node.generation
+                rec["lineage_abundance"] = node.abundance
+                rec["lineage_affinity"] = node.affinity
+                rec["sequence_id"] = f"clone{clone_idx}_node{node.id}"
+                records.append(rec)
+
+        return SimulationResultWithLineages(records, lineage_trees=lineage_trees)
+
+    def __repr__(self) -> str:
+        return (
+            f"<CompiledLineageExperiment n_clones={self._step.n_clones} "
+            f"max_gen={self._step.max_generations} chain={self._refdata.chain_type}>"
         )
