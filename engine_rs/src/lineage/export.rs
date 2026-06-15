@@ -66,14 +66,16 @@ fn newick_subtree(tree: &LineageTree, id: u32) -> String {
 }
 
 /// Newick string for the whole tree. Branch lengths are per-edge mutation
-/// counts. The root carries a label but no branch length (it is the origin).
-/// The entire tree body is wrapped in parentheses per the Newick convention
-/// that the outermost node is a virtual root. Always terminated with `;`.
+/// counts. The founder is the named Newick root (its children are wrapped in
+/// parentheses, its label follows) and carries no branch length, since it is
+/// the origin. Always terminated with `;`. This is standard rooted Newick
+/// (e.g. `((node3:1)node1:1,node2:1)node0;`) — no phantom outer node — so
+/// ete3 / dendropy / Bio.Phylo parse `node0` as the actual root.
 pub fn to_newick(tree: &LineageTree) -> String {
     let root = tree.root();
     let children = tree.children_of(root.id);
     let root_label = format!("node{}", root.id);
-    let inner_body = if children.is_empty() {
+    let body = if children.is_empty() {
         root_label
     } else {
         let inner: Vec<String> = children
@@ -82,7 +84,7 @@ pub fn to_newick(tree: &LineageTree) -> String {
             .collect();
         format!("({}){root_label}", inner.join(","))
     };
-    format!("({inner_body});")
+    format!("{body};")
 }
 
 #[cfg(test)]
@@ -140,7 +142,7 @@ mod tests {
         assert!(nwk.contains("node3:1"));
         assert!(nwk.contains("node0"));
         assert!(!nwk.contains("node0:"), "root must not have a branch length: {nwk}");
-        assert_eq!(nwk, "(((node3:1)node1:1,node2:1)node0);");
+        assert_eq!(nwk, "((node3:1)node1:1,node2:1)node0;");
     }
 
     #[test]
@@ -151,6 +153,6 @@ mod tests {
                 mutations_from_parent: 0, abundance: 1, observed: true,
             }],
         };
-        assert_eq!(to_newick(&tree), "(node0);");
+        assert_eq!(to_newick(&tree), "node0;");
     }
 }
