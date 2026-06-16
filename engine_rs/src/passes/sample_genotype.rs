@@ -119,31 +119,37 @@ impl SampleGenotypePass {
         contract_ok && feasible_ok
     }
 
-    /// Carried alleles on chromosome `c` for `seg` that pass contracts +
-    /// feasibility.
-    fn feasible_alleles(
+    /// Carried alleles on chromosome `c` for `seg`. In `strict` mode they
+    /// are filtered by the active contracts + feasibility; in permissive
+    /// mode all carried alleles are admissible (mirrors the documented
+    /// permissive exception of `SampleAllelePass` — a permissive run must
+    /// not error, so feasibility is advisory only).
+    fn admissible_alleles(
         &self,
         c: usize,
         seg: Segment,
         sim: &Simulation,
         ctx: &PassContext,
+        strict: bool,
     ) -> Vec<AlleleId> {
-        self.genotype
-            .haplotype(c)
-            .carried_alleles(seg)
+        let carried = self.genotype.haplotype(c).carried_alleles(seg);
+        if !strict {
+            return carried;
+        }
+        carried
             .into_iter()
             .filter(|id| self.allele_feasible(seg, *id, sim, ctx))
             .collect()
     }
 
-    fn is_viable(&self, c: usize, sim: &Simulation, ctx: &PassContext) -> bool {
+    fn is_viable(&self, c: usize, sim: &Simulation, ctx: &PassContext, strict: bool) -> bool {
         self.segments()
             .iter()
-            .all(|seg| !self.feasible_alleles(c, *seg, sim, ctx).is_empty())
+            .all(|seg| !self.admissible_alleles(c, *seg, sim, ctx, strict).is_empty())
     }
 
-    fn viable_set(&self, sim: &Simulation, ctx: &PassContext) -> Vec<usize> {
-        (0..2).filter(|&c| self.is_viable(c, sim, ctx)).collect()
+    fn viable_set(&self, sim: &Simulation, ctx: &PassContext, strict: bool) -> Vec<usize> {
+        (0..2).filter(|&c| self.is_viable(c, sim, ctx, strict)).collect()
     }
 
     fn draw_haplotype(&self, viable: &[usize], rng: &mut Rng) -> usize {
@@ -211,24 +217,53 @@ impl SampleGenotypePass {
         ids.into_iter().map(|id| (id, 1.0)).collect()
     }
 
+    /// Candidate `(allele, mass)` copies in a gene slot on chromosome
+    /// `c`. `mass = weight * copies` (copy-number dosage). In `strict`
+    /// mode copies are filtered by contracts + feasibility; in permissive
+    /// mode all copies are admissible.
+    fn slot_candidates(
+        &self,
+        seg: Segment,
+        gene: GeneId,
+        c: usize,
+        sim: &Simulation,
+        ctx: &PassContext,
+        strict: bool,
+    ) -> Vec<(AlleleId, f64)> {
+        self.genotype
+            .haplotype(c)
+            .slot(seg, gene)
+            .iter()
+            .filter(|cp| !strict || self.allele_feasible(seg, cp.allele, sim, ctx))
+            .map(|cp| (cp.allele, cp.weight as f64 * cp.copies as f64))
+            .collect()
+    }
+
     /// Live (fresh-RNG) sampling of one segment within chromosome `c`.
+    /// Records in canonical order: `sample_gene` → `sample_allele_in_slot`
+    /// (only when the gene slot has >1 raw copy) → `sample_allele`.
     fn sample_segment_live(
         &self,
         seg: Segment,
         c: usize,
         sim: Simulation,
         ctx: &mut PassContext,
+        strict: bool,
     ) -> Result<Simulation, PassError> {
         let hap = self.genotype.haplotype(c);
-        let genes: Vec<(GeneId, f64)> = hap
-            .present_genes(seg)
-            .filter(|g| {
-                hap.slot(seg, *g)
-                    .iter()
-                    .any(|cp| self.allele_feasible(seg, cp.allele, &sim, ctx))
-            })
-            .map(|g| (g, self.usage_of(seg, g)))
-            .collect();
+        let vseg = Self::vseg(seg);
+        // Genes present on this chromosome that have >=1 admissible copy,
+        // weighted by gene usage * total copy dosage (so a duplicated
+        // gene recombines more often).
+        let mut genes: Vec<(GeneId, f64)> = Vec::new();
+        for g in hap.present_genes(seg) {
+            let cands = self.slot_candidates(seg, g, c, &sim, ctx, strict);
+            if cands.is_empty() {
+                continue;
+            }
+            let dosage: f64 = cands.iter().map(|(_, m)| *m).sum();
+            genes.push((g, self.usage_of(seg, g) * dosage));
+        }
         if genes.is_empty() {
             return Err(PassError::constraint_sampling(
                 self.name(),
@@ -237,32 +272,31 @@ impl SampleGenotypePass {
             ));
         }
         let gene = Self::weighted_pick(&genes, ctx.rng);
+        let cands = self.slot_candidates(seg, gene, c, &sim, ctx, strict);
+        let id = Self::weighted_pick(&cands, ctx.rng);
 
-        let slot: Vec<(AlleleId, f64)> = hap
-            .slot(seg, gene)
-            .iter()
-            .filter(|cp| self.allele_feasible(seg, cp.allele, &sim, ctx))
-            .map(|cp| (cp.allele, cp.weight as f64 * cp.copies as f64))
-            .collect();
-        let vseg = Self::vseg(seg);
-        let id = if slot.len() == 1 {
-            slot[0].0
-        } else {
-            let chosen = Self::weighted_pick(&slot, ctx.rng);
-            ctx.trace.record_choice(
-                ChoiceAddress::SampleAlleleInSlot(vseg),
-                ChoiceValue::AlleleId(chosen.index()),
-            );
-            chosen
-        };
+        // "Multi-copy slot" is decided by the RAW slot length (genotype
+        // structure), independent of feasibility filtering, so replay can
+        // reconstruct whether a within-slot record exists from the
+        // genotype alone.
+        let multi = hap.slot(seg, gene).len() > 1;
         ctx.trace
             .record_choice(ChoiceAddress::SampleGene(vseg), ChoiceValue::GeneId(gene.index()));
+        if multi {
+            ctx.trace.record_choice(
+                ChoiceAddress::SampleAlleleInSlot(vseg),
+                ChoiceValue::AlleleId(id.index()),
+            );
+        }
         ctx.trace
             .record_choice(ChoiceAddress::SampleAllele(vseg), ChoiceValue::AlleleId(id.index()));
         Ok(self.commit(seg, sim, id, ctx))
     }
 
     /// Replay (trace-injected) sampling of one segment within `c`.
+    /// Consumes records in the same order live emits them — `sample_gene`,
+    /// then `sample_allele_in_slot` (iff the raw slot has >1 copy), then
+    /// the canonical `sample_allele` (the assigned id, source of truth).
     fn sample_segment_replay(
         &self,
         seg: Segment,
@@ -278,25 +312,82 @@ impl SampleGenotypePass {
             .expect_gene_id(ChoiceAddress::SampleGene(vseg))
             .map_err(|r| PassError::replay(self.name(), r))?;
         let gene = GeneId::new(gene_idx);
-        let slot = self.genotype.haplotype(c).slot(seg, gene);
-        let id = if slot.len() == 1 {
-            slot[0].allele
+        let multi = self.genotype.haplotype(c).slot(seg, gene).len() > 1;
+        let slot_recorded = if multi {
+            Some(
+                ctx.replay_cursor
+                    .as_deref_mut()
+                    .expect("replay cursor present")
+                    .expect_allele_id(ChoiceAddress::SampleAlleleInSlot(vseg))
+                    .map_err(|r| PassError::replay(self.name(), r))?,
+            )
         } else {
-            let a = ctx
-                .replay_cursor
-                .as_deref_mut()
-                .expect("replay cursor present")
-                .expect_allele_id(ChoiceAddress::SampleAlleleInSlot(vseg))
-                .map_err(|r| PassError::replay(self.name(), r))?;
-            ctx.trace
-                .record_choice(ChoiceAddress::SampleAlleleInSlot(vseg), ChoiceValue::AlleleId(a));
-            AlleleId::new(a)
+            None
         };
+        let allele = ctx
+            .replay_cursor
+            .as_deref_mut()
+            .expect("replay cursor present")
+            .expect_allele_id(ChoiceAddress::SampleAllele(vseg))
+            .map_err(|r| PassError::replay(self.name(), r))?;
+        let id = AlleleId::new(allele);
+
         ctx.trace
             .record_choice(ChoiceAddress::SampleGene(vseg), ChoiceValue::GeneId(gene_idx));
+        if let Some(slot_id) = slot_recorded {
+            ctx.trace
+                .record_choice(ChoiceAddress::SampleAlleleInSlot(vseg), ChoiceValue::AlleleId(slot_id));
+        }
         ctx.trace
             .record_choice(ChoiceAddress::SampleAllele(vseg), ChoiceValue::AlleleId(id.index()));
         Ok(self.commit(seg, sim, id, ctx))
+    }
+
+    /// Shared execute body. `strict` selects feasibility-filtered
+    /// viability/sampling (and structured errors) vs presence-based
+    /// permissive sampling (feasibility advisory, never errors given a
+    /// complete haplotype).
+    fn run(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        let replaying = ctx.replay_cursor.is_some();
+        let c = if replaying {
+            let recorded = ctx
+                .replay_cursor
+                .as_deref_mut()
+                .expect("replay cursor present")
+                .expect_haplotype(ChoiceAddress::SampleHaplotype)
+                .map_err(|r| PassError::replay(self.name(), r))?;
+            let viable = self.viable_set(sim, ctx, strict);
+            if !viable.contains(&(recorded as usize)) {
+                return Err(self.infeasible_error());
+            }
+            ctx.trace
+                .record_choice(ChoiceAddress::SampleHaplotype, ChoiceValue::Haplotype(recorded));
+            recorded as usize
+        } else {
+            let viable = self.viable_set(sim, ctx, strict);
+            if viable.is_empty() {
+                return Err(self.infeasible_error());
+            }
+            let c = self.draw_haplotype(&viable, ctx.rng);
+            ctx.trace
+                .record_choice(ChoiceAddress::SampleHaplotype, ChoiceValue::Haplotype(c as u8));
+            c
+        };
+
+        let mut current = sim.clone();
+        for seg in self.segments() {
+            current = if replaying {
+                self.sample_segment_replay(seg, c, current, ctx)?
+            } else {
+                self.sample_segment_live(seg, c, current, ctx, strict)?
+            };
+        }
+        Ok(current)
     }
 }
 
@@ -340,7 +431,10 @@ impl Pass for SampleGenotypePass {
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
-        self.execute_checked(sim, ctx)
+        // Permissive: viability is presence-based (feasibility advisory),
+        // so a genotype with >=1 complete haplotype (guaranteed by the
+        // compile-time presence check) never errors here.
+        self.run(sim, ctx, false)
             .expect("SampleGenotypePass permissive execution must not error")
     }
 
@@ -349,42 +443,7 @@ impl Pass for SampleGenotypePass {
         sim: &Simulation,
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
-        // Decide the chromosome (replay consumes; live draws among viable).
-        let c = if ctx.replay_cursor.is_some() {
-            let recorded = ctx
-                .replay_cursor
-                .as_deref_mut()
-                .expect("replay cursor present")
-                .expect_haplotype(ChoiceAddress::SampleHaplotype)
-                .map_err(|r| PassError::replay(self.name(), r))?;
-            let viable = self.viable_set(sim, ctx);
-            if !viable.contains(&(recorded as usize)) {
-                return Err(self.infeasible_error());
-            }
-            ctx.trace
-                .record_choice(ChoiceAddress::SampleHaplotype, ChoiceValue::Haplotype(recorded));
-            recorded as usize
-        } else {
-            let viable = self.viable_set(sim, ctx);
-            if viable.is_empty() {
-                return Err(self.infeasible_error());
-            }
-            let c = self.draw_haplotype(&viable, ctx.rng);
-            ctx.trace
-                .record_choice(ChoiceAddress::SampleHaplotype, ChoiceValue::Haplotype(c as u8));
-            c
-        };
-
-        let mut current = sim.clone();
-        let replaying = ctx.replay_cursor.is_some();
-        for seg in self.segments() {
-            current = if replaying {
-                self.sample_segment_replay(seg, c, current, ctx)?
-            } else {
-                self.sample_segment_live(seg, c, current, ctx)?
-            };
-        }
-        Ok(current)
+        self.run(sim, ctx, true)
     }
 
     fn declared_choice_patterns(&self) -> Vec<ChoiceAddressPattern> {
@@ -508,5 +567,60 @@ mod tests {
         let result =
             PassRuntime::execute_strict_with_context(&plan, Simulation::new(), 0, None, None);
         assert!(result.is_err(), "expected genotype-infeasibility error");
+    }
+
+    #[test]
+    fn replay_reproduces_live_phased_choices() {
+        use crate::pass::PassContext;
+        use crate::replay::TraceCursor;
+        use crate::rng::Rng;
+        use crate::trace::Trace;
+
+        let g = Arc::new(test_support::geno_chrom1_deletes_j());
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(SampleGenotypePass::new(
+            g.clone(),
+            false,
+            vec![],
+            vec![],
+            vec![],
+        )));
+        // Live run — capture the full trace (haplotype + gene + allele).
+        let live = PassRuntime::execute(&plan, Simulation::new(), 13);
+        let records: Vec<_> = live.trace.choices().to_vec();
+        let live_sim = live.final_simulation();
+        let live_v = live_sim.assignments.get(Segment::V).unwrap().allele_id;
+        let live_j = live_sim.assignments.get(Segment::J).unwrap().allele_id;
+
+        // Replay the captured trace through a fresh pass instance.
+        let replay_pass = SampleGenotypePass::new(g, false, vec![], vec![], vec![]);
+        let mut cursor = TraceCursor::from_owned(records);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(999);
+        let sim = Simulation::new();
+        let result;
+        {
+            let mut ctx = PassContext {
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: None,
+                contracts: None,
+                feasibility: None,
+                reference_index: None,
+                replay_cursor: Some(&mut cursor),
+                event_log_sink: None,
+            };
+            result = replay_pass.run(&sim, &mut ctx, true);
+        }
+        let replayed = result.expect("genotype replay must succeed");
+        assert_eq!(
+            replayed.assignments.get(Segment::V).unwrap().allele_id,
+            live_v
+        );
+        assert_eq!(
+            replayed.assignments.get(Segment::J).unwrap().allele_id,
+            live_j
+        );
     }
 }
