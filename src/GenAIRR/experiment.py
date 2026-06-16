@@ -429,6 +429,8 @@ class Experiment:
         "_metadata",
         "_contracts",
         "_allow_curatable_refdata",
+        "_genotype",
+        "_user_allele_weights_set",
     )
 
     def __init__(
@@ -474,6 +476,15 @@ class Experiment:
         # catalogue (bundled mouse_igh / human_tcrb) that includes
         # pseudogene/ORF alleles.
         self._allow_curatable_refdata: bool = False
+        # Single-subject diploid genotype attached via ``with_genotype``.
+        # ``None`` => the flat (uniform/usage-weighted) allele path runs
+        # unchanged. When set, recombination lowers to the phased
+        # genotype path (one ``SampleGenotypePass``).
+        self._genotype = None
+        # True once the user passed an explicit ``*_allele_weights`` to
+        # ``recombine`` — distinct from cartridge-usage defaults. Used to
+        # enforce mutual exclusion with ``with_genotype``.
+        self._user_allele_weights_set: bool = False
 
     @classmethod
     def on(cls, source: ExperimentInput) -> "Experiment":
@@ -1604,6 +1615,41 @@ class Experiment:
         first_v_name = self._refdata.v_allele(0).name
         return first_v_name.upper().startswith("TR")
 
+    def with_genotype(self, genotype) -> "Experiment":
+        """Attach a single-subject diploid genotype.
+
+        With a genotype attached, V(D)J recombination becomes
+        haplotype-phased: V, D and J of each rearrangement are drawn from
+        a single chromosome, honouring the genotype's allele
+        presence/absence, zygosity, and copy-number/deletion. With no
+        genotype, the flat (uniform / usage-weighted) path runs unchanged.
+
+        Mutually exclusive with :meth:`restrict_alleles` and the
+        ``recombine(*_allele_weights=...)`` kwargs — the genotype owns
+        allele presence and within-gene expression.
+
+        Raises ``ValueError`` if the genotype was built against a
+        different cartridge (content-hash mismatch), or if allele locks /
+        explicit allele weights are already set.
+        """
+        live_hash = self._refdata.content_hash()
+        if genotype._source_hash != live_hash:
+            raise ValueError(
+                "genotype was built against a different cartridge (content hash "
+                f"{genotype._source_hash!r} != experiment {live_hash!r})"
+            )
+        if any(v is not None for v in self._locks.values()):
+            raise ValueError(
+                "with_genotype() and restrict_alleles() are mutually exclusive"
+            )
+        if self._user_allele_weights_set:
+            raise ValueError(
+                "with_genotype() and recombine(*_allele_weights=...) are mutually "
+                "exclusive: the genotype owns allele expression"
+            )
+        self._genotype = genotype
+        return self
+
     def restrict_alleles(
         self,
         *,
@@ -1640,6 +1686,11 @@ class Experiment:
           a VJ chain.
         - ``TypeError`` if an unexpected input shape is passed.
         """
+        if self._genotype is not None:
+            raise ValueError(
+                "restrict_alleles() and with_genotype() are mutually exclusive: "
+                "a genotype already owns allele presence and within-gene expression"
+            )
         for segment, value in (("V", v), ("D", d), ("J", j)):
             if value is _UNSET:
                 continue
@@ -1770,6 +1821,21 @@ class Experiment:
         ``ValueError`` for unknown allele names or non-positive
         weights.
         """
+        # Explicit allele weights conflict with an attached genotype:
+        # the genotype owns allele presence + within-gene expression, and
+        # the phased lowering ignores recombine-step weights. Reject the
+        # combination instead of silently dropping the weights.
+        if any(
+            w is not None
+            for w in (v_allele_weights, d_allele_weights, j_allele_weights)
+        ):
+            self._user_allele_weights_set = True
+            if self._genotype is not None:
+                raise ValueError(
+                    "recombine(*_allele_weights=...) and with_genotype() are "
+                    "mutually exclusive: the genotype owns allele expression"
+                )
+
         # VJ chains have no NP2 region — surface user mistakes loudly
         # instead of silently dropping the argument.
         if np2_lengths is not None and self._refdata.chain_type != "vdj":
@@ -2541,6 +2607,19 @@ class Experiment:
         """
         if allow_curatable_refdata is None:
             allow_curatable_refdata = self._allow_curatable_refdata
+
+        # Receptor revision is not supported alongside a phased genotype
+        # in this release: the revision pass samples a replacement V from
+        # its own distribution with no chromosome/carried-allele
+        # awareness. Reject the combination (same-haplotype revision is a
+        # planned follow-on).
+        if self._genotype is not None and any(
+            isinstance(s, _ReceptorRevisionStep) for s in self._steps
+        ):
+            raise ValueError(
+                "receptor_revision() is not supported with with_genotype() in this "
+                "release (the revision pass is not haplotype-aware)"
+            )
         from dataclasses import replace as _replace
 
         # On raw RefDataConfig with default-on trim, warn at compile
