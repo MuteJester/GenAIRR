@@ -127,8 +127,9 @@ g = Genotype.from_dataconfig(cfg)                       # strict (recommended)
 g.homozygous("IGHVF2-G4", "IGHVF2-G4*01")               # 1 allele on both chromosomes
 g.heterozygous("IGHVF1-G1", "IGHVF1-G1*01", "IGHVF1-G1*02")  # different allele per chromosome
 g.delete_gene("IGHVF3-G7", haplotype="both")            # gene absent entirely (homozygous deletion)
-g.delete_gene("IGHVF3-G8", haplotype=1)                 # absent on chromosome 1 only (hemizygous)
-g.duplicate_gene("IGHVF1-G2", ["IGHVF1-G2*01", "IGHVF1-G2*03"], haplotype=0)  # >1 copy on one chromosome
+g.homozygous("IGHVF3-G8", "IGHVF3-G8*01")               # carried on both chromosomes...
+g.delete_gene("IGHVF3-G8", haplotype=1)                 # ...then removed on chromosome 1 (hemizygous)
+g.duplicate_gene("IGHVF1-G2", ["IGHVF1-G2*01", "IGHVF1-G2*02"], haplotype=0)  # >1 copy on one chromosome
 g.chromosome_weights(0.6, 0.4)                          # allelic-expression imbalance
 g.with_subject("DONOR01")                               # provenance label
 
