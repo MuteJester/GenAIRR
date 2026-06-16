@@ -1099,9 +1099,11 @@ class Experiment:
         lambda_base:
             Poisson mean for offspring count at affinity 0.
         selection_strength:
-            Selection pressure; ``0.0`` = neutral drift (``lineage_affinity``
-            will be 0.0 for every cell). Set ``> 0`` to enable affinity
-            maturation; combine with ``target_aa`` for a fixed antigen target.
+            Selection pressure; ``0.0`` = neutral drift (fitness is 1.0 for
+            every cell). This disables selection but does not force
+            ``lineage_affinity`` to 0 when a target sequence is supplied.
+            Set ``> 0`` to enable affinity maturation; combine with
+            ``target_aa`` for a fixed sequence target.
         beta:
             Scaling factor for the affinity term in ``exp(−beta·distance)``.
         target_aa:
@@ -1112,8 +1114,9 @@ class Experiment:
             a non-empty string of standard amino-acid letters
             (``ACDEFGHIKLMNPQRSTVWY``). When ``None``, an auto target is
             generated from the founder by applying ``mature_substitutions``
-            random residue changes. ``selection_strength=0`` makes
-            ``lineage_affinity ≡ 0`` regardless.
+            random residue changes whenever selection is enabled. In fully
+            neutral mode (``selection_strength=0`` and ``target_aa=None``),
+            no affinity model is built and ``lineage_affinity`` is 0.
         mature_substitutions:
             Number of amino-acid substitutions used to build the auto
             target (when ``target_aa`` is ``None``).
@@ -2867,4 +2870,3 @@ class Experiment:
 
     def __repr__(self) -> str:
         return f"<Experiment chain={self.chain_type} steps={self.step_count}>"
-
