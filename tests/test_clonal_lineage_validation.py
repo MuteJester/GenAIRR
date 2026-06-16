@@ -89,32 +89,93 @@ def test_s5f_model_valid_accepted():
 
 
 # ---------------------------------------------------------------------------
-# Fix 4: unsupported run_records kwargs raise on lineage path
+# Fix 4: run_records kwargs on the lineage path
 # ---------------------------------------------------------------------------
 
 def _compiled_lineage():
     return _base_exp()
 
 
-def test_validate_records_true_raises_for_lineage():
-    with pytest.raises((NotImplementedError, ValueError)):
-        _compiled_lineage().run_records(validate_records=True)
-
-
-def test_expose_provenance_true_raises_for_lineage():
-    with pytest.raises((NotImplementedError, ValueError)):
-        _compiled_lineage().run_records(expose_provenance=True)
-
-
 def test_n_not_none_raises_for_lineage():
-    with pytest.raises((NotImplementedError, ValueError)):
+    """Record count is not a fixed product for lineage; passing n is rejected."""
+    with pytest.raises(ValueError):
         _compiled_lineage().run_records(n=5)
 
 
 def test_seed_and_strict_still_work_for_lineage():
-    """seed and strict must work — they are the only supported kwargs."""
+    """seed and strict must work."""
     result = _compiled_lineage().run_records(seed=42, strict=False)
     assert len(result.records) > 0
+
+
+# ---------------------------------------------------------------------------
+# validate_records / expose_provenance now SUPPORTED on the lineage path
+# ---------------------------------------------------------------------------
+
+def _lineage_exp(**kw):
+    """A clonal_lineage experiment that reliably yields observed records."""
+    defaults = dict(
+        n_clones=2, max_generations=6, n_max=300, n_sample=15,
+        rate=0.05, lambda_base=1.5, selection_strength=0.0, target_aa=None,
+    )
+    defaults.update(kw)
+    return ga.Experiment.on("human_igh").recombine().clonal_lineage(**defaults)
+
+
+def test_validate_records_true_no_corruption_does_not_raise():
+    result = _lineage_exp().run_records(seed=0, validate_records=True)
+    assert len(result.records) > 0
+
+
+def test_validate_records_true_with_corruption_does_not_raise():
+    exp = _lineage_exp().sequencing_errors(rate=0.02)
+    result = exp.run_records(seed=0, validate_records=True)
+    assert len(result.records) > 0
+
+
+def test_outcomes_are_retained_and_index_aligned():
+    result = _lineage_exp().run_records(seed=0)
+    assert result.outcomes is not None
+    assert len(result.outcomes) == len(result.records)
+
+
+def test_outcomes_retained_with_corruption():
+    result = _lineage_exp().sequencing_errors(rate=0.02).run_records(seed=0)
+    assert result.outcomes is not None
+    assert len(result.outcomes) == len(result.records)
+
+
+def test_validate_records_called_directly_is_clean_no_corruption():
+    exp = _lineage_exp()
+    refdata = exp.compile().refdata
+    result = exp.run_records(seed=0)
+    report = result.validate_records(refdata)
+    assert report.ok, report.summary()
+
+
+def test_validate_records_called_directly_is_clean_with_corruption():
+    exp = _lineage_exp().sequencing_errors(rate=0.02)
+    refdata = exp.compile().refdata
+    result = exp.run_records(seed=0)
+    report = result.validate_records(refdata)
+    assert report.ok, report.summary()
+
+
+def test_expose_provenance_adds_truth_v_call_no_corruption():
+    result = _lineage_exp().run_records(seed=0, expose_provenance=True)
+    assert len(result.records) > 0
+    for rec in result.records:
+        assert "truth_v_call" in rec
+        assert rec["truth_v_call"]
+
+
+def test_expose_provenance_adds_truth_v_call_with_corruption():
+    exp = _lineage_exp().sequencing_errors(rate=0.02)
+    result = exp.run_records(seed=0, expose_provenance=True)
+    assert len(result.records) > 0
+    for rec in result.records:
+        assert "truth_v_call" in rec
+        assert rec["truth_v_call"]
 
 
 # ---------------------------------------------------------------------------

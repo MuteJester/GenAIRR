@@ -552,21 +552,48 @@ class CompiledLineageExperiment:
         *,
         seed: int = 0,
         strict: bool = False,
+        expose_provenance: bool = False,
+        validate_records: bool = False,
     ) -> "SimulationResultWithLineages":
         """Grow lineage trees and return per-observed-node AIRR records.
 
         Each clone is seeded at ``seed + clone_idx * 1_000_000`` so
         independent clones are reproducible and non-overlapping.
+
+        The returned :class:`SimulationResultWithLineages` carries the
+        per-record ``Outcome`` that produced each AIRR record on its
+        ``.outcomes`` attribute (index-aligned with ``.records``). On the
+        pristine-read path these are the per-observed-node SHM
+        ``Outcome`` objects (``fam.observed_outcomes()``); on the
+        corruption path they are the per-node merged
+        recombination+SHM+artefact ``Outcome`` objects. Since each node
+        ``Outcome`` is self-consistent, ``result.validate_records(refdata)``
+        passes.
+
+        ``expose_provenance=True`` appends ``truth_v_call`` /
+        ``truth_d_call`` / ``truth_j_call`` columns to each record from
+        the founder allele assignments carried on the per-record
+        ``Outcome``.
+
+        ``validate_records=True`` runs
+        :meth:`SimulationResult.validate_records` (per-record
+        postcondition) and :meth:`SimulationResult.validate_families`
+        (clonal-family consistency by ``clone_id``) on the freshly built
+        batch, raising the matching validation error on any failure.
         """
         from GenAIRR import _engine as _eng
         from ._airr_record import outcome_to_airr_record
         from ._s5f_loader import load_builtin_s5f_kernel
-        from .result import SimulationResultWithLineages
+        from .result import SimulationResultWithLineages, _inject_truth_columns
 
         step = self._step
         mutability, substitution = load_builtin_s5f_kernel(step.s5f_model)
 
         records: List[Dict[str, Any]] = []
+        # Per-record source ``Outcome`` objects, index-aligned with
+        # ``records`` so ``result.validate_records`` can re-derive each
+        # record from the engine state that produced it.
+        outcomes: List["_engine.Outcome"] = []
         lineage_trees = []
 
         for clone_idx in range(step.n_clones):
@@ -597,11 +624,19 @@ class CompiledLineageExperiment:
             if self._post is None:
                 # Pristine-read path: project each observed node's
                 # synthesized SHM Outcome straight to an AIRR record.
+                # ``observed_outcomes()`` is index-aligned with both the
+                # observed-node list and ``airr_records()``.
                 observed_nodes = [n for n in tree.nodes() if n.observed]
                 recs = fam.airr_records(self._refdata)
-                for node, rec in zip(observed_nodes, recs):
+                observed_outcomes = fam.observed_outcomes()
+                for node, rec, node_outcome in zip(
+                    observed_nodes, recs, observed_outcomes
+                ):
                     self._stamp_lineage_metadata(rec, clone_idx, node)
+                    if expose_provenance and node_outcome is not None:
+                        _inject_truth_columns(node_outcome, self._refdata, rec)
                     records.append(rec)
+                    outcomes.append(node_outcome)
                 continue
 
             # Corruption path: per observed node, run the library-prep /
@@ -627,9 +662,23 @@ class CompiledLineageExperiment:
                     sequence_id=f"clone{clone_idx}_node{node.id}",
                 )
                 self._stamp_lineage_metadata(rec, clone_idx, node)
+                if expose_provenance:
+                    _inject_truth_columns(merged, self._refdata, rec)
                 records.append(rec)
+                outcomes.append(merged)
 
-        return SimulationResultWithLineages(records, lineage_trees=lineage_trees)
+        result = SimulationResultWithLineages(
+            records, outcomes=outcomes, lineage_trees=lineage_trees
+        )
+        if validate_records:
+            from ._validation import (
+                _raise_on_family_validation_failure,
+                _raise_on_validation_failure,
+            )
+
+            _raise_on_validation_failure(result.validate_records(self._refdata))
+            _raise_on_family_validation_failure(result.validate_families())
+        return result
 
     @staticmethod
     def _stamp_lineage_metadata(rec: Dict[str, Any], clone_idx: int, node) -> None:

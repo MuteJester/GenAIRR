@@ -989,9 +989,16 @@ class Experiment:
         """
         warnings.warn(
             "Experiment.expand_clones() is deprecated in favor of "
-            "Experiment.clonal_lineage(), which grows real clonal lineage "
-            "trees (affinity maturation) instead of a star topology. "
-            "expand_clones() remains supported for flat clonal expansion.",
+            "Experiment.clonal_lineage(). Note this is NOT a drop-in "
+            "replacement: clonal_lineage() grows real affinity-maturation "
+            "lineage trees (internal SHM, no per_clone — the observed count "
+            "depends on n_sample / selection), returns a "
+            "SimulationResultWithLineages with per-clone .lineage_trees, and "
+            "takes different parameters. Library-prep / sequencing passes "
+            "(sequencing_errors, pcr_amplify, …) can now follow "
+            "clonal_lineage() too, applied independently per observed cell. "
+            "expand_clones() remains supported for flat star-topology "
+            "expansion.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -2645,19 +2652,14 @@ class Experiment:
             if n is not None:
                 raise ValueError(
                     "The 'n' parameter is not supported for clonal_lineage experiments. "
-                    "The number of records is determined by n_clones and n_sample."
-                )
-            if validate_records:
-                raise NotImplementedError(
-                    "validate_records=True is not yet supported for clonal_lineage experiments."
-                )
-            if expose_provenance:
-                raise NotImplementedError(
-                    "expose_provenance=True is not yet supported for clonal_lineage experiments."
+                    "The number of observed records depends on the lineage trees "
+                    "grown from n_clones / n_sample / selection, not a fixed product."
                 )
             result = compiled.run_records(
                 seed=seed,
                 strict=strict,
+                expose_provenance=expose_provenance,
+                validate_records=validate_records,
             )
         else:
             result = compiled.run_records(

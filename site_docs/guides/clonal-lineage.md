@@ -226,6 +226,40 @@ inference tools:
   abundance, observed, affinity, sequence`.
 - `nodes()` / `validate()` — node access and a structural-invariant check.
 
+## Library-prep & sequencing artefacts
+
+Library-prep and sequencing passes can follow `clonal_lineage` — they run
+**independently on each observed cell**, so every read picks up its own noise:
+
+```python
+result = (ga.Experiment.on("human_igh").recombine()
+          .clonal_lineage(n_clones=10, n_sample=30, rate=0.01, selection_strength=10)
+          .sequencing_errors(rate=0.005)
+          .pcr_amplify(rate=0.002)
+          .run_records(seed=0))
+```
+
+Each observed cell's post-SHM sequence is passed through the corruption plan with
+its own seed, and the resulting artefacts are merged back onto the cell's record.
+The founder's recombination provenance (`v_call`, `d_call`, `j_call`, trims,
+junction) **and** the per-segment SHM counts are preserved; the record additionally
+reports the artefact counters (`n_quality_errors`, `n_pcr_errors`, `n_indels`, …).
+Supported passes are the same per-read library-prep set `expand_clones` allows:
+`sequencing_errors`, `pcr_amplify`, `polymerase_indels`, `end_loss_*`,
+`ambiguous_base_calls`, `random_strand_orientation`.
+
+`mutate` is **not** allowed after `clonal_lineage` — SHM is internal to the lineage
+engine (set it via `clonal_lineage(rate=...)`). `paired_end` is **not** allowed yet
+either (the read layout is not wired through the per-cell corruption merge — a future
+addition).
+
+Validation works on lineage results too: `run_records(..., validate_records=True)`
+runs the per-record postcondition check and the clonal-family consistency check
+(by `clone_id`), with or without a corruption pass. `run_records(...,
+expose_provenance=True)` adds `truth_v_call` / `truth_d_call` / `truth_j_call`
+columns from the founder assignments, and `result.outcomes` carries the per-record
+`Outcome` objects index-aligned with `result.records`.
+
 ## Clone-size distributions (TCR and repertoire mix)
 
 Real repertoires are not uniform: a few clones are huge, most are singletons. The
@@ -327,6 +361,21 @@ In short: the clones GenAIRR plants are the clones the ecosystem detects.
 ## Relationship to `expand_clones`
 
 `expand_clones` (the star model) is **deprecated** but still works — it remains
-useful for "many reads sharing one V(D)J truth" without a genealogy. For real
-clonal trees, ground-truth lineages, and affinity maturation, use
-`clonal_lineage`.
+useful for "many reads sharing one V(D)J truth" without a genealogy.
+
+`clonal_lineage` is **not a drop-in replacement.** It grows real
+affinity-maturation trees rather than a flat star, so the surface differs:
+
+- **Different parameters.** There is no `per_clone`; the number of observed records
+  depends on `n_sample`, genotype collapse, and selection (not a fixed
+  `n_clones × per_clone` product). SHM is internal (`rate=...`), not a separate
+  `mutate` step.
+- **Different return shape.** `clonal_lineage` returns a
+  `SimulationResultWithLineages` with per-clone `.lineage_trees` (Newick / FASTA /
+  node-table exporters) alongside the per-cell records.
+
+What *does* carry over: the same per-read library-prep / sequencing passes
+(`sequencing_errors`, `pcr_amplify`, …) can follow `clonal_lineage` exactly as they
+follow `expand_clones`, applied independently per observed cell (see
+[Library-prep & sequencing artefacts](#library-prep-sequencing-artefacts)). And
+`run_records(..., validate_records=True)` is supported on lineage results too.
