@@ -72,14 +72,18 @@ pub fn make_mature_target(naive_aa: &[u8], m: u32, rng: &mut Rng) -> Vec<u8> {
         return target;
     }
     for _ in 0..m {
-        let pos = (rng.next_u64() % target.len() as u64) as usize;
+        // Unbiased uniform draws (Lemire `range_u32`), matching the engine's
+        // RNG convention rather than `% len` modulo bias.
+        let pos = rng.range_u32(target.len() as u32) as usize;
         let cur = target[pos];
-        // pick a standard amino acid different from the current residue
-        let start = (rng.next_u64() % 20) as usize;
-        let mut pick = AA_ORDER[start];
-        if pick == cur {
-            pick = AA_ORDER[(start + 1) % 20];
-        }
+        // Pick a standard amino acid uniformly among the 19 != cur (no skew).
+        let pick = match AA_ORDER.iter().position(|&x| x == cur) {
+            Some(ci) => {
+                let r = rng.range_u32(19) as usize;
+                AA_ORDER[if r >= ci { r + 1 } else { r }]
+            }
+            None => AA_ORDER[rng.range_u32(20) as usize],
+        };
         target[pos] = pick;
     }
     target

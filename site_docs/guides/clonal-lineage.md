@@ -168,12 +168,15 @@ i.e. a neutral tree** (byte-identical to growing with no selection at all).
 ### 6. Sampling and genotype collapse
 
 When growth stops (at `max_generations`, extinction, or capacity), `n_sample`
-cells are sampled uniformly from the final population. Cells with **identical
-genotypes** are then collapsed: the first cell seen for a genotype becomes the
-**observed** representative and accumulates an **abundance** count. This is the
-standard germinal-center convention — it produces observed tips with multiplicities
-and "sampled ancestor" nodes, exactly the structure abundance-aware tree methods
-(e.g. GCtree) expect. Observed nodes are the ones that become AIRR records.
+cells are sampled uniformly from the tree's **tips** (cells that left no progeny).
+Cells with **identical genotypes** are then collapsed: the first cell seen for a
+genotype becomes the **observed** representative and accumulates an **abundance**
+count — so abundance-aware tree methods (e.g. GCtree) get observed tips with
+multiplicities. The observed cells are the ones that become AIRR records. The full
+genealogy — including every unobserved **internal ancestor** — is still emitted in
+the `LineageTree` (and its Newick/FASTA), so ancestral-sequence reconstruction can
+be scored against truth; note, however, that observed/sampled nodes are always tips,
+not internal ancestors (direct sampling of internal ancestors is a future addition).
 
 ## What you get back
 
