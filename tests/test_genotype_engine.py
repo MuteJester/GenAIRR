@@ -20,9 +20,13 @@ def test_phased_recombine_only_emits_carried_allele_for_overridden_gene():
         .homozygous(v_gene, carried)
         .with_subject("S1")
     )
-    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(n=300, seed=1)
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=300, seed=1, expose_provenance=True
+    )
+    # Use the ground-truth call (truth_v_call) — the evidence-based v_call
+    # can be ambiguous (comma-joined) between similar alleles.
     seen_for_gene = {
-        r["v_call"] for r in res if r["v_call"].startswith(v_gene + "*")
+        r["truth_v_call"] for r in res if r["truth_v_call"].startswith(v_gene + "*")
     }
     # Only the carried allele of that gene may appear (never names[0]).
     assert seen_for_gene <= {carried}, seen_for_gene
@@ -65,8 +69,10 @@ def test_deleted_gene_is_never_sampled():
         .delete_gene(drop, haplotype="both", segment="V")
         .with_subject("S1")
     )
-    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(n=300, seed=5)
-    assert all(not r["v_call"].startswith(drop + "*") for r in res)
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=300, seed=5, expose_provenance=True
+    )
+    assert all(not r["truth_v_call"].startswith(drop + "*") for r in res)
 
 
 def test_heterozygous_expression_is_roughly_balanced():
@@ -79,8 +85,10 @@ def test_heterozygous_expression_is_roughly_balanced():
         if other != v_gene:
             g.delete_gene(other, haplotype="both", segment="V")
     g.heterozygous(v_gene, a0, a1).with_subject("S1")
-    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(n=400, seed=9)
-    calls = [r["v_call"] for r in res]
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=400, seed=9, expose_provenance=True
+    )
+    calls = [r["truth_v_call"] for r in res]
     assert set(calls) <= {a0, a1}, set(calls)
     frac0 = calls.count(a0) / len(calls)
     assert 0.35 < frac0 < 0.65, frac0

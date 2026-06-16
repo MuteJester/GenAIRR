@@ -353,7 +353,12 @@ impl PyPassPlan {
     /// `v`/`d`/`j` are flat rows `(haplotype, allele_id, copies, weight)`
     /// already resolved to this refdata's allele ids; rows are grouped by
     /// the gene the allele belongs to (via the segment's `GeneIndex`).
-    #[pyo3(signature = (refdata, chromosome_weights, subject_id, source_hash, v, d, j, d_required))]
+    ///
+    /// `*_weights` are optional pool-aligned allele-usage weight vectors
+    /// (from the cartridge's allele-usage model). They are aggregated to
+    /// gene-level usage (sum of an allele's weights per gene) so gene
+    /// choice reflects empirical usage instead of being uniform.
+    #[pyo3(signature = (refdata, chromosome_weights, subject_id, source_hash, v, d, j, d_required, v_weights=None, d_weights=None, j_weights=None))]
     #[allow(clippy::too_many_arguments)]
     fn push_genotype_recombine(
         &mut self,
@@ -365,6 +370,9 @@ impl PyPassPlan {
         d: Vec<(u8, u32, u8, f32)>,
         j: Vec<(u8, u32, u8, f32)>,
         d_required: bool,
+        v_weights: Option<Vec<f64>>,
+        d_weights: Option<Vec<f64>>,
+        j_weights: Option<Vec<f64>>,
     ) -> PyResult<()> {
         use crate::genotype::{GeneCopy, Genotype, Haplotype};
         use crate::ir::Segment;
@@ -385,6 +393,30 @@ impl PyPassPlan {
             Some(build_index(Segment::D)?)
         } else {
             None
+        };
+
+        // Aggregate pool-aligned allele weights to gene-level usage.
+        let gene_usage = |idx: &GeneIndex, weights: &Option<Vec<f64>>| -> Vec<(GeneId, f64)> {
+            match weights {
+                None => Vec::new(),
+                Some(w) => idx
+                    .genes()
+                    .map(|(g, _)| {
+                        let mass: f64 = idx
+                            .alleles_of(g)
+                            .iter()
+                            .map(|a| w.get(a.as_usize()).copied().unwrap_or(0.0))
+                            .sum();
+                        (g, mass)
+                    })
+                    .collect(),
+            }
+        };
+        let usage_v = gene_usage(&v_index, &v_weights);
+        let usage_j = gene_usage(&j_index, &j_weights);
+        let usage_d = match &d_index {
+            Some(di) => gene_usage(di, &d_weights),
+            None => Vec::new(),
         };
 
         let mut haps = [Haplotype::new(), Haplotype::new()];
@@ -437,9 +469,9 @@ impl PyPassPlan {
             .push(Box::new(crate::passes::sample_genotype::SampleGenotypePass::new(
                 genotype,
                 d_required,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
+                usage_v,
+                usage_d,
+                usage_j,
             )));
         Ok(())
     }

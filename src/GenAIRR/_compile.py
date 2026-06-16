@@ -222,12 +222,37 @@ def _genotype_segment_rows(genotype, refdata, segment):
     return rows
 
 
-def _push_genotype_recombine(genotype, plan, refdata, *, d_required):
+def _genotype_presence_ok(v_rows, d_rows, j_rows, d_required):
+    """True iff at least one chromosome carries every required segment —
+    i.e. a phased rearrangement is possible. A genotype where (say) hap0
+    has V-only and hap1 has J-only has non-empty union support but no
+    viable haplotype, which would otherwise panic at runtime."""
+    def has(rows, h):
+        return any(r[0] == h for r in rows)
+    for h in (0, 1):
+        if has(v_rows, h) and has(j_rows, h) and (not d_required or has(d_rows, h)):
+            return True
+    return False
+
+
+def _push_genotype_recombine(genotype, step, plan, refdata, *, d_required):
     """Push the single phased ``SampleGenotypePass`` for an attached
-    genotype, replacing the flat per-segment allele sampling."""
+    genotype, replacing the flat per-segment allele sampling. Cartridge
+    allele-usage weights (resolved onto ``step``) are passed through and
+    aggregated to gene-level usage by the engine."""
     v_rows = _genotype_segment_rows(genotype, refdata, "V")
     j_rows = _genotype_segment_rows(genotype, refdata, "J")
     d_rows = _genotype_segment_rows(genotype, refdata, "D") if d_required else []
+    if not _genotype_presence_ok(v_rows, d_rows, j_rows, d_required):
+        raise ValueError(
+            "genotype has no complete haplotype: every chromosome is missing at "
+            "least one of the required segments (V/"
+            + ("D/" if d_required else "")
+            + "J), so no phased rearrangement is possible"
+        )
+    v_weights = list(step.weights_v) if step.weights_v is not None else None
+    d_weights = list(step.weights_d) if step.weights_d is not None else None
+    j_weights = list(step.weights_j) if step.weights_j is not None else None
     plan.push_genotype_recombine(
         refdata,
         (
@@ -240,6 +265,9 @@ def _push_genotype_recombine(genotype, plan, refdata, *, d_required):
         d_rows,
         j_rows,
         d_required,
+        v_weights,
+        d_weights,
+        j_weights,
     )
 
 
@@ -310,7 +338,7 @@ def _lower_recombine(
                 "DSL boundary should have rejected this earlier."
             )
         if genotype is not None:
-            _push_genotype_recombine(genotype, plan, refdata, d_required=False)
+            _push_genotype_recombine(genotype, step, plan, refdata, d_required=False)
         else:
             plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
             plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
@@ -332,7 +360,7 @@ def _lower_recombine(
         plan.push_assemble("J")
     elif chain == "vdj":
         if genotype is not None:
-            _push_genotype_recombine(genotype, plan, refdata, d_required=True)
+            _push_genotype_recombine(genotype, step, plan, refdata, d_required=True)
         else:
             plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
             plan.push_sample_allele("D", refdata, allowed_ids=d_ids, weights=d_weights)
