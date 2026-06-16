@@ -2837,16 +2837,33 @@ class Experiment:
                 metadata=self._metadata,
             )
 
+        # When the attached genotype defines novel/private alleles, compile
+        # against an *effective* reference = base catalogue + injected novel
+        # alleles, so they become real pool entries the engine samples,
+        # assembles, and reports like any allele. No genotype, or a genotype
+        # without novel alleles, uses the base refdata unchanged.
+        effective_refdata = self._refdata
+        if self._genotype is not None and self._genotype.has_novel():
+            if self._dataconfig is None:
+                raise ValueError(
+                    "genotype with novel alleles requires a DataConfig-backed "
+                    "experiment (Experiment.on(dataconfig), not a raw RefDataConfig)"
+                )
+            effective_refdata = dataconfig_to_refdata(
+                self._genotype.effective_dataconfig()
+            )
+
         simulator = self._build_simulator(
             self._steps,
             contracts,
             any_lock,
             replace_fn=_replace,
             allow_curatable_refdata=allow_curatable_refdata,
+            refdata=effective_refdata,
         )
         return CompiledExperiment(
             simulator,
-            self._refdata,
+            effective_refdata,
             steps=tuple(self._steps),
             dataconfig=self._dataconfig,
             metadata=self._metadata,
@@ -2861,10 +2878,16 @@ class Experiment:
         *,
         replace_fn,
         allow_curatable_refdata: bool = False,
+        refdata=None,
     ):
         """Compile a list of steps into a `GenAIRR._engine.CompiledSimulator`.
         Lifted out of `compile()` so the clonal-fork branch can build
-        two simulators from sub-step-lists with a shared body."""
+        two simulators from sub-step-lists with a shared body.
+
+        ``refdata`` overrides ``self._refdata`` — used when a genotype with
+        novel alleles compiles against an *effective* reference (base +
+        injected private alleles)."""
+        refdata = refdata if refdata is not None else self._refdata
         plan = _engine.PassPlan()
         # Pull the (at-most-one) `_InvertDStep` out of the step
         # sequence and thread its probability into the recombine
@@ -2906,13 +2929,13 @@ class Experiment:
                 _lower_recombine(
                     step,
                     plan,
-                    self._refdata,
+                    refdata,
                     invert_d_prob=invert_d_prob,
                     receptor_revision_prob=receptor_revision_prob,
                     genotype=self._genotype,
                 )
             else:
-                lower_step(step, plan, self._refdata)
+                lower_step(step, plan, refdata)
         # Paired-end is sequencing-stage / readout-stage: lower
         # it AFTER every biology + corruption pass so the trace
         # records land last. See `_extract_paired_end_step` for
@@ -2920,7 +2943,7 @@ class Experiment:
         if paired_end_step is not None:
             _lower_paired_end(paired_end_step, plan)
         return plan.compile(
-            refdata=self._refdata,
+            refdata=refdata,
             respect=contracts,
             allow_curatable_refdata=allow_curatable_refdata,
         )

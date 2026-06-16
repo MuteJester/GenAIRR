@@ -233,6 +233,46 @@ for row in g.to_table():
         print(row["gene"], row["zygosity"], row["haplotype_0"], row["haplotype_1"])
 ```
 
+## Novel / private alleles
+
+Individuals carry germline alleles that aren't in any reference — *private* or
+*novel* alleles. Discovering them is a central task for IgDiscover, partis, and
+TIgGER's `findNovelAlleles`. GenAIRR can plant them as ground truth.
+
+`add_novel_allele` derives a private allele from a reference **base** allele by
+applying point `mutations` (or supplying an explicit `sequence` of the same
+length), inheriting the base's gene, anchor, functional status and V sub-regions.
+The novel allele is then placed like any allele, and at `compile()` time it is
+injected into an **effective reference** (base catalogue + your private alleles)
+so it flows through alignment and AIRR output as a genuine allele:
+
+```python
+g = (
+    Genotype.from_dataconfig(cfg)
+      .add_novel_allele("IGHVF1-G1*i01", base="IGHVF1-G1*01",
+                        mutations=[(120, "T"), (250, "G")])   # two point variants
+      .complete_from_reference()
+      .heterozygous("IGHVF1-G1", "IGHVF1-G1*01", "IGHVF1-G1*i01")  # one reference + one private
+      .with_subject("DONOR_N")
+)
+
+result = (
+    ga.Experiment.on(cfg).with_genotype(g).recombine()
+      .run_records(n=500, seed=3, expose_provenance=True)
+)
+# The private allele is sampled, assembled and reported like any allele —
+# its name appears in v_call / truth_v_call and the reads carry its variants.
+```
+
+Novel alleles are flagged in the ground truth: each `to_table()` row carries a
+`novel` list of the private alleles carried at that gene.
+
+**Benchmarking novel-allele discovery.** Plant a novel allele, simulate, then run
+the discovery tool against the **base** germline (the cartridge *without* your
+private alleles) so the tool must rediscover it from the reads — and score its
+output against the planted novel sequence. (Write the base germline FASTA from
+`cfg.v_alleles`; write the truth from `genotype.to_table()`.)
+
 ## Ground truth and provenance
 
 A genotype experiment emits, by construction, everything an evaluation needs:
@@ -373,9 +413,6 @@ deletion calls.
 
 The genotype foundation is deliberately scoped. Deferred to later work:
 
-- **Novel / private alleles** — per-individual germline variants not in the
-  reference (synthesis + provenance). Today a genotype draws from reference
-  alleles only.
 - **Cohorts** — many subjects, each with their own genotype, in one run
   (`with_genotype` is single-subject; `result.genotypes` is a one-element list).
 - **Population priors** — sampling a plausible diploid genotype from

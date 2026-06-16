@@ -39,6 +39,10 @@ class Genotype:
         self._slots: Dict[str, Dict[str, List[List[Tuple[str, int, float]]]]] = {
             s: {} for s in _SEGMENTS
         }
+        # Private/novel alleles defined on this individual:
+        # name -> {"allele": <Allele obj>, "gene": str, "segment": str,
+        #          "base": str, "mutations": list}
+        self._novel: Dict[str, Dict] = {}
         self._source_hash: str = cfg.cartridge_manifest()["hashes"]["refdata_content_hash"]
 
     # ── constructors ──────────────────────────────────────────────
@@ -79,8 +83,17 @@ class Genotype:
         if gene not in by_gene:
             raise ValueError(f"{gene!r} is not a known {segment} gene in this cartridge")
         names = {a.name for a in by_gene[gene]}
+        # also accept novel alleles defined on this genotype for this gene
+        names |= {
+            n
+            for n, info in self._novel.items()
+            if info["gene"] == gene and info["segment"] == segment
+        }
         if allele not in names:
-            raise ValueError(f"{allele!r} is not a known allele of {gene!r}")
+            raise ValueError(
+                f"{allele!r} is not a known allele of {gene!r} "
+                f"(define novel alleles with add_novel_allele first)"
+            )
 
     def homozygous(self, gene: str, allele: str, segment: str = "V") -> "Genotype":
         self._check_allele(segment, gene, allele)
@@ -128,6 +141,111 @@ class Genotype:
         self._slots[segment][gene] = cur
         return self
 
+    # ── novel / private alleles ───────────────────────────────────
+    def _find_ref_allele(self, segment: str, name: str):
+        for alleles in _alleles_by_gene(self._cfg, segment).values():
+            for a in alleles:
+                if a.name == name:
+                    return a
+        return None
+
+    def add_novel_allele(
+        self,
+        name: str,
+        *,
+        base: str,
+        mutations: Optional[List[Tuple[int, str]]] = None,
+        sequence: Optional[str] = None,
+        segment: str = "V",
+        gene: Optional[str] = None,
+    ) -> "Genotype":
+        """Define a private/novel allele not present in the reference.
+
+        Derive it from a reference ``base`` allele by either applying
+        point ``mutations`` (a list of ``(0-based position, base)``) or by
+        supplying an explicit ``sequence`` (same length as the base, so the
+        inherited anchor/sub-regions stay valid). Gene, anchor, functional
+        status and V sub-regions are inherited from the base allele.
+
+        Registers the novel allele under ``name`` so it can then be placed
+        with :meth:`homozygous` / :meth:`heterozygous` / :meth:`duplicate_gene`
+        like any allele. At compile time it is injected as a real entry in
+        an *effective* reference, so it flows through alignment and AIRR
+        output exactly like a catalogue allele.
+        """
+        import copy as _copy
+
+        base_allele = self._find_ref_allele(segment, base)
+        if base_allele is None:
+            raise ValueError(f"base allele {base!r} not found in {segment} reference")
+        gene = gene or base_allele.gene
+        if gene not in _alleles_by_gene(self._cfg, segment):
+            raise ValueError(f"{gene!r} is not a known {segment} gene in this cartridge")
+        # name must not collide with a catalogue allele or another novel.
+        if self._find_ref_allele(segment, name) is not None or name in self._novel:
+            raise ValueError(f"novel allele name {name!r} collides with an existing allele")
+        if (mutations is None) == (sequence is None):
+            raise ValueError("provide exactly one of `mutations` or `sequence`")
+
+        seq = list(base_allele.ungapped_seq.upper())
+        if sequence is not None:
+            sequence = sequence.upper()
+            if len(sequence) != len(seq):
+                raise ValueError(
+                    f"explicit sequence length {len(sequence)} != base length {len(seq)}; "
+                    "use `mutations` for indels-free variants or match the base length"
+                )
+            if any(b not in "ACGT" for b in sequence):
+                raise ValueError("sequence must contain only A/C/G/T")
+            new_seq = sequence
+        else:
+            if not mutations:
+                raise ValueError("`mutations` must be a non-empty list of (position, base)")
+            for pos, b in mutations:
+                if not (0 <= pos < len(seq)):
+                    raise ValueError(f"mutation position {pos} out of range [0,{len(seq)})")
+                if b.upper() not in "ACGT":
+                    raise ValueError(f"mutation base {b!r} must be A/C/G/T")
+                seq[pos] = b.upper()
+            new_seq = "".join(seq)
+        if new_seq == base_allele.ungapped_seq.upper():
+            raise ValueError("novel allele is identical to its base allele")
+
+        novel = _copy.deepcopy(base_allele)
+        novel.name = name
+        novel.ungapped_seq = new_seq
+        if hasattr(novel, "ungapped_len"):
+            novel.ungapped_len = len(new_seq)
+        self._novel[name] = {
+            "allele": novel,
+            "gene": gene,
+            "segment": segment,
+            "base": base,
+            "mutations": list(mutations) if mutations else None,
+        }
+        return self
+
+    def has_novel(self) -> bool:
+        return bool(self._novel)
+
+    def novel_allele_names(self) -> Set[str]:
+        return set(self._novel)
+
+    def effective_dataconfig(self):
+        """Return a copy of the source ``DataConfig`` with this genotype's
+        novel alleles appended to their genes' allele lists — the reference
+        the engine actually runs against when novel alleles are present."""
+        import copy as _copy
+
+        cfg = _copy.deepcopy(self._cfg)
+        by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
+        for info in self._novel.values():
+            d = by_seg[info["segment"]]
+            existing = list(d.get(info["gene"], []))
+            existing.append(_copy.deepcopy(info["allele"]))
+            d[info["gene"]] = existing
+        return cfg
+
     def complete_from_reference(
         self, policy: str = "homozygous_first_reference"
     ) -> "Genotype":
@@ -172,6 +290,7 @@ class Genotype:
         g.subject_id = self.subject_id
         g._chromosome_weights = self._chromosome_weights
         g._slots = _copy.deepcopy(self._slots)
+        g._novel = _copy.deepcopy(self._novel)
         g._source_hash = self._source_hash
         return g
 
@@ -210,6 +329,8 @@ class Genotype:
         for seg in _SEGMENTS:
             for gene, haps in self._slots[seg].items():
                 h0, h1 = haps[0], haps[1]
+                carried = {a for (a, _, _) in h0} | {a for (a, _, _) in h1}
+                novel_here = sorted(carried & set(self._novel))
                 rows.append(
                     {
                         "subject_id": self.subject_id,
@@ -221,6 +342,7 @@ class Genotype:
                         # per-haplotype (allele, copies, weight) detail
                         "haplotype_0_detail": sorted(h0),
                         "haplotype_1_detail": sorted(h1),
+                        "novel": novel_here,  # carried alleles that are private/novel
                         "permissive": self._permissive,
                     }
                 )
