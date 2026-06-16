@@ -7,20 +7,26 @@ use crate::rng::Rng;
 
 use super::tree::LineageTree;
 
-/// Sample `n_sample` cells uniformly (with replacement) from the tree's leaves
-/// and collapse identical genotypes: the first leaf *drawn* carrying a given
-/// genotype becomes the observed representative and accumulates the abundance;
-/// later draws of the same genotype fold into it. Mutates `tree` in place.
-pub fn sample_and_collapse(tree: &mut LineageTree, n_sample: u32, rng: &mut Rng) {
-    let leaf_ids: Vec<u32> = {
-        let leaves = tree.leaves();
-        leaves.iter().map(|n| n.id).collect()
-    };
-    if leaf_ids.is_empty() || n_sample == 0 {
+/// Sample `n_sample` cells uniformly (with replacement) from `sampleable_ids`
+/// (the LIVING population at sampling time — the final-generation cells, NOT all
+/// tree leaves) and collapse identical genotypes: the first cell *drawn* carrying
+/// a given genotype becomes the observed representative and accumulates the
+/// abundance; later draws of the same genotype fold into it. Mutates `tree` in
+/// place.
+///
+/// If `sampleable_ids` is empty (an extinct family — no living cells), nothing is
+/// marked observed: an unobserved extinct clone yields zero records.
+pub fn sample_and_collapse(
+    tree: &mut LineageTree,
+    sampleable_ids: &[u32],
+    n_sample: u32,
+    rng: &mut Rng,
+) {
+    if sampleable_ids.is_empty() || n_sample == 0 {
         return;
     }
 
-    // genotype -> representative node id (first leaf drawn with that genotype)
+    // genotype -> representative node id (first cell drawn with that genotype)
     let mut rep_by_genotype: HashMap<Vec<u8>, u32> = HashMap::new();
     // representative node id -> accumulated abundance
     let mut abundance: HashMap<u32, u32> = HashMap::new();
@@ -28,10 +34,10 @@ pub fn sample_and_collapse(tree: &mut LineageTree, n_sample: u32, rng: &mut Rng)
     for _ in 0..n_sample {
         // Unbiased uniform index (Lemire), matching the engine's RNG convention;
         // avoids the modulo bias of `next_u64() % len`.
-        let idx = rng.range_u32(leaf_ids.len() as u32) as usize;
-        let leaf_id = leaf_ids[idx];
-        let genotype = tree.get(leaf_id).unwrap().genotype.clone();
-        let rep = *rep_by_genotype.entry(genotype).or_insert(leaf_id);
+        let idx = rng.range_u32(sampleable_ids.len() as u32) as usize;
+        let cell_id = sampleable_ids[idx];
+        let genotype = tree.get(cell_id).unwrap().genotype.clone();
+        let rep = *rep_by_genotype.entry(genotype).or_insert(cell_id);
         *abundance.entry(rep).or_insert(0) += 1;
     }
 
@@ -66,12 +72,18 @@ mod tests {
         }
     }
 
+    // Sampleable set with duplicate genotypes among the living cells (nodes 1 & 2
+    // share "AAAC") to exercise genotype-collapse.
+    fn sampleable() -> Vec<u32> {
+        vec![1, 2, 3]
+    }
+
     #[test]
     fn sampling_sets_abundances_summing_to_n_sample() {
         let mut tree = tree_with_dupes();
         let mut rng = Rng::new(5);
         let n_sample = 3;
-        sample_and_collapse(&mut tree, n_sample, &mut rng);
+        sample_and_collapse(&mut tree, &sampleable(), n_sample, &mut rng);
 
         let total: u32 = tree.nodes.iter().map(|n| n.abundance).sum();
         assert_eq!(total, n_sample);
@@ -86,12 +98,21 @@ mod tests {
     fn identical_genotypes_collapse_into_one_observed_node() {
         let mut tree = tree_with_dupes();
         let mut rng = Rng::new(1);
-        sample_and_collapse(&mut tree, 3, &mut rng);
+        sample_and_collapse(&mut tree, &sampleable(), 3, &mut rng);
         use std::collections::HashSet;
         let mut seen: HashSet<Vec<u8>> = HashSet::new();
         for n in tree.nodes.iter().filter(|n| n.observed) {
             assert!(seen.insert(n.genotype.clone()),
                 "genotype observed in more than one node (collapse failed)");
         }
+    }
+
+    #[test]
+    fn empty_sampleable_set_marks_nothing_observed() {
+        // An extinct family (no living cells) yields zero observed cells.
+        let mut tree = tree_with_dupes();
+        let mut rng = Rng::new(3);
+        sample_and_collapse(&mut tree, &[], 5, &mut rng);
+        assert!(tree.nodes.iter().all(|n| !n.observed && n.abundance == 0));
     }
 }

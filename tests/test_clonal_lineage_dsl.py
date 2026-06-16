@@ -11,9 +11,14 @@ def _exp(**kw):
 
 def test_clonal_lineage_runs_and_tags_records():
     result = _exp().run_records(seed=0)
+    # Sampling now draws from the LIVING final-generation population, so an
+    # extinct clone (founder drew 0 offspring) contributes no records. We still
+    # expect at least one clone to survive and produce records, and every
+    # clone_id present must be within the requested range.
     assert len(result.records) > 0
     cids = {r["clone_id"] for r in result.records}
-    assert cids == {0, 1, 2}
+    assert cids, "no clone produced any record"
+    assert cids <= {0, 1, 2}
     for r in result.records:
         assert r["v_call"]            # real recombination provenance
         assert r["sequence"]

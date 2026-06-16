@@ -59,14 +59,18 @@ fn mutate_child(parent: &Simulation, mutator: &dyn Pass, child_seed: u64) -> Sim
 /// deterministic sub-seed and applies `m`. With `affinity = Some(model)`, each
 /// cell's offspring rate is modulated by the model's fitness; `None` leaves the
 /// rate unchanged (byte-identical to the pre-affinity path). Returns
-/// (tree, peak_live_population, sims_arena) where sims_arena[node.id] is the
-/// Simulation for that node.
+/// (tree, peak_live_population, sims_arena, final_live) where sims_arena[node.id]
+/// is the Simulation for that node, and `final_live` is the set of node ids that
+/// are ALIVE when growth stopped — the cells produced in the final completed
+/// generation (every cell is replaced by its offspring each generation, so the
+/// living population at sampling time is exactly this set). It is empty when the
+/// family went extinct (a cell drew 0 offspring and left no progeny).
 fn grow_core(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: Option<&dyn Pass>,
     affinity: Option<&AffinityModel>,
-) -> (LineageTree, usize, Vec<Simulation>) {
+) -> (LineageTree, usize, Vec<Simulation>, Vec<u32>) {
     let mut nodes: Vec<LineageNode> = Vec::new();
     let mut sims: Vec<Simulation> = Vec::new();
     let mut rng = Rng::new(params.seed);
@@ -147,7 +151,11 @@ fn grow_core(
         }
     }
 
-    (LineageTree { nodes }, peak_live, sims)
+    // `live` now holds the cells alive when growth stopped: either the last
+    // completed generation's offspring (ran to max_generations) or empty (the
+    // population went extinct — every live cell drew 0 offspring). This is the
+    // living population sampling must draw from.
+    (LineageTree { nodes }, peak_live, sims, live)
 }
 
 /// Grow a full clonal lineage with per-division mutation via `mutator`.
@@ -166,6 +174,17 @@ pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageT
     grow_core(founder, params, None, None).0
 }
 
+/// Like `grow_topology`, but also returns the final living node ids (cells alive
+/// when growth stopped). Empty when the family went extinct.
+#[cfg(test)]
+pub fn grow_topology_with_live(
+    founder: &Simulation,
+    params: &BranchingParams,
+) -> (LineageTree, Vec<u32>) {
+    let (tree, _peak, _sims, live) = grow_core(founder, params, None, None);
+    (tree, live)
+}
+
 /// Grow a clonal lineage with per-division mutation AND affinity selection.
 /// Deterministic for `params.seed`.
 pub fn grow_lineage_with_affinity(
@@ -178,15 +197,17 @@ pub fn grow_lineage_with_affinity(
 }
 
 /// Grow + mutate a lineage and ALSO return the per-node `Simulation` arena
-/// (index == node id), for building per-node AIRR `Outcome`s.
+/// (index == node id) and the final living node ids (cells alive when growth
+/// stopped; empty when the family went extinct), for building per-node AIRR
+/// `Outcome`s and sampling the living population.
 pub fn grow_lineage_retaining_sims(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
     affinity: Option<&AffinityModel>,
-) -> (LineageTree, Vec<Simulation>) {
-    let (tree, _peak, sims) = grow_core(founder, params, Some(mutator), affinity);
-    (tree, sims)
+) -> (LineageTree, Vec<Simulation>, Vec<u32>) {
+    let (tree, _peak, sims, live) = grow_core(founder, params, Some(mutator), affinity);
+    (tree, sims, live)
 }
 
 #[cfg(test)]
@@ -257,7 +278,7 @@ mod tests {
             n_sample: 10,
             seed: 7,
         };
-        let (_tree, peak_live, _sims) = grow_core(&founder(), &params, None, None);
+        let (_tree, peak_live, _sims, _live) = grow_core(&founder(), &params, None, None);
         // hard cap: live population never exceeds n_max
         assert!(peak_live <= params.n_max as usize,
             "peak live {peak_live} exceeded n_max {}", params.n_max);
@@ -265,6 +286,39 @@ mod tests {
         // comfortably above half capacity — confirms it grew, not died early
         assert!(peak_live > (params.n_max as usize) / 2,
             "peak live {peak_live} did not approach capacity");
+    }
+
+    #[test]
+    fn final_live_is_empty_when_founder_never_divides() {
+        // lambda_base = 0 => the founder draws 0 offspring => after generation 1
+        // the live set is empty and the loop breaks. The final living population
+        // is empty (the clone went extinct).
+        let params = BranchingParams { lambda_base: 0.0, ..neutral_params() };
+        let (_tree, live) = grow_topology_with_live(&founder(), &params);
+        assert!(live.is_empty(), "expected extinct (empty) final-live set, got {:?}", live);
+    }
+
+    #[test]
+    fn final_live_is_the_max_generation_set() {
+        // In a grown family, every node in the final-live set is at the maximum
+        // generation reached, and the set is non-empty. A single founder has a
+        // real chance of immediate extinction at lambda_base ~1.5, so scan seeds
+        // for one that grows (the invariant under test is about non-extinct runs).
+        let mut grew = false;
+        for seed in 0..50u64 {
+            let params = BranchingParams { seed, ..neutral_params() };
+            let (tree, live) = grow_topology_with_live(&founder(), &params);
+            if live.is_empty() {
+                continue; // extinct for this seed; try another
+            }
+            grew = true;
+            let max_gen = tree.nodes.iter().map(|n| n.generation).max().unwrap();
+            for &id in &live {
+                assert_eq!(tree.get(id).unwrap().generation, max_gen,
+                    "final-live node {id} not at max generation {max_gen} (seed {seed})");
+            }
+        }
+        assert!(grew, "no seed in 0..50 produced a surviving family");
     }
 
     /// A mutator that applies exactly 2 substitutions per division.

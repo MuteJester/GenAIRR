@@ -151,6 +151,51 @@ def test_affinity_auto_target_is_deterministic():
     assert [n.affinity for n in a.nodes()] == [n.affinity for n in b.nodes()]
 
 
+def test_simulate_family_outcomes_extinct_founder_yields_no_observed():
+    """lambda_base=0 => founder never divides => extinct => zero observed cells.
+
+    Sampling must draw from the LIVING final-generation population, not all tree
+    leaves. An extinct clone (no living cells) is not observed, so it contributes
+    no node/observed Outcomes.
+    """
+    c = ga.Experiment.on("human_igh").recombine().compile()
+    founder = c.run(n=1, seed=0)[0]  # full Outcome (not just the Simulation)
+    refdata = c.refdata
+    mut, sub = _kernel()
+    fam = _engine.simulate_family_outcomes(
+        founder, refdata, mut, sub, 0.05, 0.0, 0.0, 6, 300, 30, 2024
+    )
+    assert len(fam.observed_outcomes()) == 0
+    assert all(o is None for o in fam.node_outcomes())
+    assert all(not n.observed and n.abundance == 0 for n in fam.tree().nodes())
+
+
+def test_simulate_family_outcomes_healthy_lambda_produces_observed():
+    """A healthy lambda_base produces observed cells whose abundances sum to n_sample.
+
+    Scans seeds because a single founder can go extinct even at a healthy rate.
+    """
+    c = ga.Experiment.on("human_igh").recombine().compile()
+    founder = c.run(n=1, seed=0)[0]  # full Outcome (not just the Simulation)
+    refdata = c.refdata
+    mut, sub = _kernel()
+    n_sample = 30
+    for seed in range(20):
+        fam = _engine.simulate_family_outcomes(
+            founder, refdata, mut, sub, 0.05, 1.6, 0.0, 6, 300, n_sample, seed
+        )
+        observed = [n for n in fam.tree().nodes() if n.observed]
+        if not observed:
+            continue  # extinct for this seed
+        assert len(fam.observed_outcomes()) == len(observed)
+        assert sum(n.abundance for n in observed) == n_sample
+        max_gen = max(n.generation for n in fam.tree().nodes())
+        assert all(n.generation == max_gen for n in observed)
+        break
+    else:
+        raise AssertionError("no seed in 0..20 produced a surviving family")
+
+
 def test_affinity_rejects_bad_params():
     founder = _founder()
     mut, sub = _kernel()

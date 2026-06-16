@@ -67,7 +67,9 @@ def test_clonal_lineage_without_corruption_still_works():
         ga.Experiment.on("human_igh")
         .recombine()
         .clonal_lineage(n_clones=2, n_sample=10, rate=0.02)
-        .run_records(seed=0)
+        # seed chosen so the families survive: sampling draws from the living
+        # final generation, so an all-extinct seed (e.g. 0) yields zero records.
+        .run_records(seed=1)
     )
     assert len(result.records) > 0
     # No corruption pass → no quality errors stamped.

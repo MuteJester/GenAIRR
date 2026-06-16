@@ -122,14 +122,19 @@ def _lineage_exp(**kw):
     return ga.Experiment.on("human_igh").recombine().clonal_lineage(**defaults)
 
 
+# seed chosen so the (single-founder) families survive: sampling now draws from
+# the living final generation, so an all-extinct seed yields zero records.
+_SURVIVING_SEED = 1
+
+
 def test_validate_records_true_no_corruption_does_not_raise():
-    result = _lineage_exp().run_records(seed=0, validate_records=True)
+    result = _lineage_exp().run_records(seed=_SURVIVING_SEED, validate_records=True)
     assert len(result.records) > 0
 
 
 def test_validate_records_true_with_corruption_does_not_raise():
     exp = _lineage_exp().sequencing_errors(rate=0.02)
-    result = exp.run_records(seed=0, validate_records=True)
+    result = exp.run_records(seed=_SURVIVING_SEED, validate_records=True)
     assert len(result.records) > 0
 
 
@@ -162,7 +167,7 @@ def test_validate_records_called_directly_is_clean_with_corruption():
 
 
 def test_expose_provenance_adds_truth_v_call_no_corruption():
-    result = _lineage_exp().run_records(seed=0, expose_provenance=True)
+    result = _lineage_exp().run_records(seed=_SURVIVING_SEED, expose_provenance=True)
     assert len(result.records) > 0
     for rec in result.records:
         assert "truth_v_call" in rec
@@ -171,7 +176,7 @@ def test_expose_provenance_adds_truth_v_call_no_corruption():
 
 def test_expose_provenance_adds_truth_v_call_with_corruption():
     exp = _lineage_exp().sequencing_errors(rate=0.02)
-    result = exp.run_records(seed=0, expose_provenance=True)
+    result = exp.run_records(seed=_SURVIVING_SEED, expose_provenance=True)
     assert len(result.records) > 0
     for rec in result.records:
         assert "truth_v_call" in rec
