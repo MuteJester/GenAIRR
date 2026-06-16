@@ -209,6 +209,7 @@ class _LineageForkStep:
     target_aa: Optional[str]
     mature_substitutions: int
     s5f_model: str
+    allow_extinction: bool = False
 
 
 @dataclass(frozen=True)

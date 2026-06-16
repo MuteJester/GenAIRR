@@ -184,6 +184,101 @@ def test_expose_provenance_adds_truth_v_call_with_corruption():
 
 
 # ---------------------------------------------------------------------------
+# TCR guard: clonal_lineage models B-cell SHM => BCR/Ig only
+# ---------------------------------------------------------------------------
+
+def test_clonal_lineage_rejects_tcr_locus():
+    """clonal_lineage applies S5F SHM (a B-cell process) so it must reject
+    TCR loci with a clear BCR-only message — mirroring mutate()'s TCR guard.
+    The guard must fire at clonal_lineage() call time (before compile) so the
+    error is the BCR-only message, not a cartridge/compile error.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        (
+            ga.Experiment.on("human_tcrb")
+            .allow_curatable_refdata()
+            .recombine()
+            .clonal_lineage(n_clones=2, n_sample=10)
+        )
+    msg = str(excinfo.value)
+    assert "BCR" in msg
+    assert "TCR" in msg
+
+
+def test_clonal_lineage_allows_bcr_locus():
+    """Sanity: the BCR-only guard does not fire on an Ig locus."""
+    exp = ga.Experiment.on("human_igh").recombine().clonal_lineage(
+        n_clones=1, n_sample=5
+    )
+    assert exp is not None
+
+
+# ---------------------------------------------------------------------------
+# Founder-survival guard: every requested clone yields a surviving family
+# ---------------------------------------------------------------------------
+
+def test_survival_guard_yields_all_clones_by_default():
+    """By default (allow_extinction=False) every requested clone survives via
+    deterministic retry, so clone_ids == {0..n_clones-1} — even at a
+    lambda_base where a single founder goes extinct ~25% of the time.
+    """
+    result = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .clonal_lineage(n_clones=5, max_generations=6, n_max=200,
+                        n_sample=15, rate=0.05, lambda_base=1.5)
+        .run_records(seed=0)
+    )
+    cids = {r["clone_id"] for r in result.records}
+    assert cids == {0, 1, 2, 3, 4}
+
+
+def test_survival_guard_is_deterministic():
+    """Same top-level seed => same result, even with retries."""
+    def run():
+        return (
+            ga.Experiment.on("human_igh")
+            .recombine()
+            .clonal_lineage(n_clones=5, max_generations=6, n_max=200,
+                            n_sample=15, rate=0.05, lambda_base=1.5)
+            .run_records(seed=0)
+        )
+    a = run().records
+    b = run().records
+    assert len(a) == len(b)
+    assert [r["sequence"] for r in a] == [r["sequence"] for r in b]
+    assert [r["clone_id"] for r in a] == [r["clone_id"] for r in b]
+
+
+def test_allow_extinction_true_allows_missing_clones():
+    """allow_extinction=True accepts extinction and skips extinct clones, so
+    clone_ids is a (possibly proper) subset of the requested range.
+    """
+    result = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .clonal_lineage(n_clones=5, max_generations=6, n_max=200,
+                        n_sample=15, rate=0.05, lambda_base=1.5,
+                        allow_extinction=True)
+        .run_records(seed=0)
+    )
+    cids = {r["clone_id"] for r in result.records}
+    assert cids <= {0, 1, 2, 3, 4}
+
+
+# ---------------------------------------------------------------------------
+# AIRR-standard duplicate_count mirrors lineage_abundance
+# ---------------------------------------------------------------------------
+
+def test_records_emit_duplicate_count_equal_to_abundance():
+    result = _base_exp(n_clones=3, lambda_base=1.6).run_records(seed=0)
+    assert len(result.records) > 0
+    for rec in result.records:
+        assert "duplicate_count" in rec
+        assert rec["duplicate_count"] == rec["lineage_abundance"]
+
+
+# ---------------------------------------------------------------------------
 # Smoke test: a valid call still works end-to-end
 # ---------------------------------------------------------------------------
 

@@ -596,30 +596,70 @@ class CompiledLineageExperiment:
         outcomes: List["_engine.Outcome"] = []
         lineage_trees = []
 
+        # Bound on founder-survival retries. Sampling draws from the LIVING
+        # final-generation population, so an extinct founder (drew 0 offspring)
+        # yields zero observed cells. With ``allow_extinction=False`` (default)
+        # we condition each clone on survival by re-growing the family with a
+        # fresh deterministic sub-seed until it survives or we exhaust the
+        # bound. The sub-seed offset (a prime times the attempt index) keeps the
+        # retries deterministic — same top-level seed => same result.
+        _MAX_SURVIVAL_ATTEMPTS = 50
+        _SUBSEED_STRIDE = 7_919  # prime; keeps retry sub-seeds well-separated
+        allow_extinction = getattr(step, "allow_extinction", False)
+
         for clone_idx in range(step.n_clones):
             clone_seed = int(seed) + clone_idx * 1_000_000
-            # _pre.run() returns a single Outcome (not a list) — mirror
-            # CompiledClonalExperiment which calls self._pre.run(seed=...).
-            founder = self._pre.run(seed=clone_seed, strict=strict)
-            fam = _eng.simulate_family_outcomes(
-                founder,
-                self._refdata,
-                mutability,
-                substitution,
-                step.rate,
-                step.lambda_base,
-                0.0,          # lambda_mut: positional slot 6 (inert; hardcoded)
-                step.max_generations,
-                step.n_max,
-                step.n_sample,
-                clone_seed,
-                selection_strength=step.selection_strength,
-                beta=step.beta,
-                target_aa=step.target_aa,
-                mature_substitutions=step.mature_substitutions,
-            )
-            tree = fam.tree()
+            fam = None
+            tree = None
+            for attempt in range(_MAX_SURVIVAL_ATTEMPTS):
+                family_seed = clone_seed + attempt * _SUBSEED_STRIDE
+                # _pre.run() returns a single Outcome (not a list) — mirror
+                # CompiledClonalExperiment which calls self._pre.run(seed=...).
+                founder = self._pre.run(seed=family_seed, strict=strict)
+                candidate = _eng.simulate_family_outcomes(
+                    founder,
+                    self._refdata,
+                    mutability,
+                    substitution,
+                    step.rate,
+                    step.lambda_base,
+                    0.0,      # lambda_mut: positional slot 6 (inert; hardcoded)
+                    step.max_generations,
+                    step.n_max,
+                    step.n_sample,
+                    family_seed,
+                    selection_strength=step.selection_strength,
+                    beta=step.beta,
+                    target_aa=step.target_aa,
+                    mature_substitutions=step.mature_substitutions,
+                )
+                survived = len(candidate.observed_outcomes()) > 0
+                if survived or allow_extinction:
+                    fam = candidate
+                    tree = candidate.tree()
+                    break
+                # extinct + survival required => retry with next sub-seed
+            else:
+                # Exhausted the retry bound without a surviving family.
+                raise ValueError(
+                    f"clonal_lineage: clone {clone_idx} went extinct on every "
+                    f"one of {_MAX_SURVIVAL_ATTEMPTS} survival attempts (each "
+                    "founder drew 0 offspring). Increase lambda_base (offspring "
+                    "Poisson mean) and/or max_generations so families reliably "
+                    "survive, or pass allow_extinction=True to accept extinct "
+                    "clones (producing fewer than n_clones families)."
+                )
+
+            if fam is None:
+                # allow_extinction=True and the final attempt was extinct:
+                # skip this clone (it contributes no observed cells/records).
+                continue
+
             lineage_trees.append(tree)
+            if len(fam.observed_outcomes()) == 0:
+                # allow_extinction=True and this family is extinct: keep its
+                # (empty) tree for export parity but emit no records.
+                continue
 
             if self._post is None:
                 # Pristine-read path: project each observed node's
@@ -690,6 +730,10 @@ class CompiledLineageExperiment:
         )
         rec["lineage_generation"] = node.generation
         rec["lineage_abundance"] = node.abundance
+        # AIRR-standard abundance field that abundance-aware tools (Change-O /
+        # SCOPer / dowser) read. Mirror lineage_abundance so the genotype-
+        # collapsed observed cell carries its represented count both ways.
+        rec["duplicate_count"] = node.abundance
         rec["lineage_affinity"] = node.affinity
         rec["sequence_id"] = f"clone{clone_idx}_node{node.id}"
 

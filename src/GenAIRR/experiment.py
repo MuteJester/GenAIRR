@@ -1059,6 +1059,7 @@ class Experiment:
         target_aa: Optional[str] = None,
         mature_substitutions: int = 5,
         s5f_model: str = "hh_s5f",
+        allow_extinction: bool = False,
     ) -> "Experiment":
         """Grow BCR lineage trees (neutral by default; set ``selection_strength > 0``
         and optionally ``target_aa`` to enable affinity maturation).
@@ -1085,7 +1086,10 @@ class Experiment:
         max_generations:
             Maximum depth of the lineage tree (≤ 1000).
         n_max:
-            Hard cap on total cells per clone (carrying capacity).
+            Per-generation LIVING-population carrying capacity: the live
+            population per generation is capped at this (the tree can contain
+            more total nodes across generations). It is NOT a hard cap on the
+            total number of cells per clone.
         n_sample:
             Number of cells to sample as observed leaves. Records returned
             per clone are ≤ ``n_sample`` because identical genotypes are
@@ -1116,9 +1120,45 @@ class Experiment:
         s5f_model:
             Bundled S5F kernel name for within-lineage mutation context
             (``"hh_s5f"``, ``"hkl_s5f"``, …).
+        allow_extinction:
+            Sampling draws from the LIVING final-generation population, so a
+            founder that draws 0 offspring goes extinct and yields zero
+            observed cells/records. With ``allow_extinction=False`` (default)
+            each requested clone is conditioned on survival: an extinct family
+            is retried with a fresh deterministic sub-seed (up to a bounded
+            number of attempts) so you reliably get ``n_clones`` families. With
+            ``allow_extinction=True`` extinction is accepted and the extinct
+            clone is skipped, producing fewer families than ``n_clones``.
+
+        **BCR-only guard:** ``clonal_lineage`` applies S5F somatic
+        hypermutation, which is a B-cell process. Calling it on a TCR-configured
+        experiment raises ``ValueError`` (immunoglobulin / BCR loci only). TCR
+        clone-size primitives exist in the engine but are not yet exposed as a
+        DSL workflow.
         """
         import math
         import warnings
+
+        # --- BCR-only guard (mirror mutate()'s TCR rejection) ---
+        # clonal_lineage applies S5F somatic hypermutation, a B-cell process,
+        # so it must reject TCR loci. ``_is_tcr_refdata`` inspects the first V
+        # allele name prefix (TR* => TCR, IG* => BCR) on the already-bound
+        # refdata, exactly as mutate() does. Firing here, at call time and
+        # before compile(), guarantees the clear BCR-only message instead of a
+        # downstream cartridge / compile error.
+        if self._is_tcr_refdata():
+            locus = self._refdata.v_allele(0).name if self._refdata.v_pool_size() else "?"
+            raise ValueError(
+                "clonal_lineage models B-cell somatic hypermutation and "
+                "supports immunoglobulin (BCR) loci only; the locus "
+                f"'{locus}' is a TCR locus. (TCR clone-size simulation is not "
+                "yet exposed in the DSL.)"
+            )
+        # --- allow_extinction ---
+        if not isinstance(allow_extinction, bool):
+            raise ValueError(
+                f"allow_extinction must be a bool, got {allow_extinction!r}"
+            )
 
         # --- n_clones ---
         if isinstance(n_clones, bool) or not isinstance(n_clones, int) or n_clones < 1:
@@ -1224,6 +1264,7 @@ class Experiment:
                 target_aa=target_aa,
                 mature_substitutions=mature_substitutions,
                 s5f_model=s5f_model,
+                allow_extinction=allow_extinction,
             )
         )
         return self

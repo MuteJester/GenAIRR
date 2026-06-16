@@ -25,10 +25,13 @@ is fine for "many reads that share a V(D)J truth", but it has no genealogy, no
 generations, no selection, and no ancestral nodes — so it cannot serve as ground
 truth for lineage reconstruction. `clonal_lineage` adds the missing biology.
 
-> T cells do **not** somatically hypermutate. A TCR "clone" is one rearrangement
-> proliferated to many identical copies; the meaningful quantity is the
-> **clone-size distribution**, not a mutation tree. GenAIRR models that with a
-> separate heavy-tailed clone-size sampler (see
+> **`clonal_lineage` is BCR-only.** T cells do **not** somatically hypermutate, and
+> `clonal_lineage` applies S5F SHM, so calling it on a TCR locus raises a clear
+> `ValueError`. A TCR "clone" is one rearrangement proliferated to many identical
+> copies; the meaningful quantity is the **clone-size distribution**, not a mutation
+> tree. GenAIRR has the heavy-tailed clone-size **primitives** in the engine, but
+> they are **not yet exposed as a DSL workflow** — there is no `clonal_lineage` TCR
+> path today (see
 > [Clone-size distributions](#clone-size-distributions-tcr-and-repertoire-mix)).
 
 ## Quick start
@@ -42,7 +45,7 @@ result = (
       .clonal_lineage(
           n_clones=20,                   # grow 20 independent families
           max_generations=6,             # germinal-center rounds
-          n_max=300,                     # carrying capacity (cells per family)
+          n_max=300,                     # per-generation living-population carrying capacity
           n_sample=30,                   # cells sampled per family at the end
           rate=0.01,                     # per-base S5F SHM rate, per division
           lambda_base=1.6,               # mean offspring per cell per generation
@@ -133,18 +136,27 @@ introduced on that division.
 ### 5. Affinity selection
 
 This is what turns a neutral tree into affinity maturation. Each cell has an
-**affinity** to a target antigen:
+**affinity** to a target *sequence*:
 
 ```
 affinity = exp(−beta · weighted_aa_distance(cell, target))
 ```
 
+> **What "affinity" means here — read this.** This is a **sequence-distance
+> proxy**, not a physically modeled antigen-binding affinity. It is a BLOSUM62
+> substitution-aware amino-acid distance from the cell's translated receptor to a
+> **target amino-acid sequence**, mapped through `exp(−β · distance)`. There is
+> **no Kd, no antigen concentration, no biophysical binding model** anywhere in
+> the computation. Treat it as a tunable **selection pressure that pulls the
+> lineage toward a target sequence** — the closer a cell's receptor gets to the
+> target, the higher its "affinity" and the faster it divides.
+
 `weighted_aa_distance` is a **BLOSUM62 substitution-aware** amino-acid distance
 between the cell's translated receptor and the target (region weights let CDRs be
 emphasized; v1 uses uniform weights, with CDR3-weighting as a planned refinement).
-`affinity` is 1.0 at the target and decays toward 0 as the cell diverges.
+`affinity` is 1.0 at the target sequence and decays toward 0 as the cell diverges.
 
-The target is either supplied by you (`target_aa=...`, an antigen amino-acid
+The target is either supplied by you (`target_aa=...`, a target amino-acid
 sequence) or auto-generated as a "mature" target — the founder's amino-acid
 sequence with `mature_substitutions` random residue changes (the standard
 benchmark convention).
@@ -167,16 +179,31 @@ i.e. a neutral tree** (byte-identical to growing with no selection at all).
 
 ### 6. Sampling and genotype collapse
 
-When growth stops (at `max_generations`, extinction, or capacity), `n_sample`
-cells are sampled uniformly from the tree's **tips** (cells that left no progeny).
-Cells with **identical genotypes** are then collapsed: the first cell seen for a
-genotype becomes the **observed** representative and accumulates an **abundance**
-count — so abundance-aware tree methods (e.g. GCtree) get observed tips with
-multiplicities. The observed cells are the ones that become AIRR records. The full
-genealogy — including every unobserved **internal ancestor** — is still emitted in
-the `LineageTree` (and its Newick/FASTA), so ancestral-sequence reconstruction can
-be scored against truth; note, however, that observed/sampled nodes are always tips,
-not internal ancestors (direct sampling of internal ancestors is a future addition).
+When growth stops (at `max_generations` or capacity), `n_sample` cells are sampled
+from the **LIVING final-generation population** — the cells that are alive when
+growth stops. Cells with **identical genotypes** are then **collapsed** into
+**observed cells**: the first cell seen for a genotype becomes the observed
+representative and accumulates an **abundance** count (surfaced as both
+`lineage_abundance` and the AIRR-standard `duplicate_count`) — so abundance-aware
+tools (GCtree, Change-O, SCOPer, dowser) get observed cells with multiplicities.
+The observed cells are the ones that become AIRR records.
+
+Because sampling draws from the **living** population, an **extinct clone** — one
+whose founder draws 0 offspring — has no living cells and therefore yields **zero
+observed cells and zero records**. A single founder at `lambda_base ≈ 1.5` goes
+extinct roughly 25 % of the time. By default (`allow_extinction=False`) each
+requested clone is **conditioned on survival**: an extinct family is re-grown with
+a fresh deterministic sub-seed (up to a bounded number of attempts) so you reliably
+get all `n_clones` families back. Determinism is preserved — the same top-level
+`seed` always reproduces the same result. Set `allow_extinction=True` to accept
+extinction instead: extinct clones are skipped and you get **fewer** than `n_clones`
+families.
+
+The full genealogy — including every unobserved **internal ancestor** — is still
+emitted in the `LineageTree` (and its Newick/FASTA), so ancestral-sequence
+reconstruction can be scored against truth; note, however, that observed/sampled
+nodes are always tips, not internal ancestors (direct sampling of internal
+ancestors is a future addition).
 
 ## What you get back
 
@@ -190,7 +217,8 @@ counts (`n_mutations`, `n_v_mutations`, …, and the IMGT-subregion counters) ar
 recomputed **from the cell's sequence vs. germline** — these are **net differences
 from germline** (accumulated across all divisions from founder to leaf). Because
 identical genotypes are collapsed before sampling, the number of records per clone
-is ≤ `n_sample`; the `lineage_abundance` field accounts for the collapsed copies.
+is ≤ `n_sample`; the `lineage_abundance` field (mirrored by the AIRR-standard
+`duplicate_count`) accounts for the collapsed copies.
 
 > **Branch lengths vs. record `n_mutations`.** Newick branch lengths
 > (as returned by `to_newick()`) count the **per-division substitution events**
@@ -213,7 +241,8 @@ Lineage metadata stamped on every record:
 | `lineage_parent_id` | Parent node id (−1 for the founder) |
 | `lineage_generation` | Generation depth (founder = 0) |
 | `lineage_abundance` | Observation count after genotype collapse |
-| `lineage_affinity` | Affinity to the target (0 in neutral mode) |
+| `duplicate_count` | AIRR-standard alias of `lineage_abundance` (read by Change-O / SCOPer / dowser) |
+| `lineage_affinity` | Sequence-distance proxy to the target (see [§5](#5-affinity-selection)). `0` **only** when no target is in play — fully neutral mode (`target_aa=None` **and** `selection_strength=0`). If a `target_aa` is supplied (or selection is on), affinities are computed and reported even when `selection_strength=0` |
 
 ### Ground-truth lineage trees
 
@@ -265,6 +294,12 @@ columns from the founder assignments, and `result.outcomes` carries the per-reco
 
 ## Clone-size distributions (TCR and repertoire mix)
 
+> **Engine primitives, not yet a DSL workflow.** `clonal_lineage` itself is
+> **BCR-only** — there is **no `clonal_lineage` TCR path today**. The clone-size
+> machinery below lives in the engine but is **not yet wired into a fluent DSL
+> workflow**; it is documented here as a forward-looking capability, not as
+> something you can drive from `clonal_lineage(...)`.
+
 Real repertoires are not uniform: a few clones are huge, most are singletons. The
 engine includes heavy-tailed **clone-size distributions** (`CloneSizeDist`:
 power-law/Zipf by default, log-normal optional) and a repertoire-composition
@@ -272,7 +307,8 @@ sampler that draws a set of clone sizes with a controllable **unexpanded fractio
 (size-1, never-expanded clones). For TCR — which has no SHM — a clone is simply one
 rearrangement at copy-number `size`, with within-clone variation coming only from
 the existing sequencing/PCR-error passes. These primitives are the basis for
-mixing large expanded families with a realistic singleton tail.
+mixing large expanded families with a realistic singleton tail, but exposing them
+as a TCR clone-size DSL workflow is still future work.
 
 ## Determinism
 
@@ -288,22 +324,34 @@ byte-for-byte.
 |---|---|---|
 | `n_clones` | — | Number of independent families to grow |
 | `max_generations` | 10 | Germinal-center rounds (≤ 1000) |
-| `n_max` | 1000 | Carrying capacity (live cells per family) |
+| `n_max` | 1000 | **Per-generation LIVING-population carrying capacity** — the live population each generation is capped at this. It is **not** a hard cap on total cells per clone; the tree can contain more total nodes across generations |
 | `n_sample` | 50 | Cells sampled per family at the end; records per clone ≤ this (genotype-collapsed) |
 | `rate` | 0.05 | Per-base S5F SHM rate, per division |
 | `lambda_base` | 1.5 | Mean offspring per cell per generation |
-| `selection_strength` | 0.0 | Neutral drift by default (`lineage_affinity ≡ 0`); set `> 0` for affinity selection |
+| `selection_strength` | 0.0 | `0` = neutral drift (`fitness ≡ 1`); set `> 0` for affinity selection. Note `0` makes selection neutral but does **not** force `lineage_affinity` to 0 — affinities are still computed/reported whenever a `target_aa` is supplied |
 | `beta` | 1.0 | Affinity steepness in `exp(−beta·distance)` |
-| `target_aa` | `None` | Amino-acid sequence of the full receptor used as the antigen target (BLOSUM62-weighted distance, position-wise; only the overlapping prefix is scored when lengths differ). `None` ⇒ auto "mature" target |
+| `target_aa` | `None` | Target amino-acid sequence (a full translated receptor) used as the selection target (BLOSUM62-weighted distance, position-wise; only the overlapping prefix is scored when lengths differ). A **sequence-distance proxy**, not a biophysical antigen. `None` ⇒ auto "mature" target |
 | `mature_substitutions` | 5 | aa substitutions for the auto target |
 | `s5f_model` | `"hh_s5f"` | Bundled S5F kernel |
+| `allow_extinction` | `False` | `False` ⇒ condition each clone on survival (retry extinct founders with fresh deterministic sub-seeds), so you reliably get `n_clones` families. `True` ⇒ accept extinction and skip extinct clones, producing fewer families |
 
-## Validated against community tools
+## Clone recovery: what we actually ran
 
 The point of planting ground-truth clones is that **other people's tools can find
-them**. They can. On a realistic-SHM run, Immcantation's **Change-O**
-`DefineClones` at its **default** junction-distance threshold (0.16) recovers the
-planted clones exactly.
+them**. Two clusterers were actually run against the planted labels and both
+recover them perfectly (adjusted Rand index = 1.0) at realistic SHM:
+
+1. **Immcantation Change-O `DefineClones`** at its **default** junction-distance
+   threshold (0.16) recovers the planted clones exactly.
+2. An **in-repo, implementation-independent standard-heuristic clusterer**
+   (V/J + junction-length + single-linkage) recovers them just as cleanly.
+
+The export formats are **designed to feed** the broader B-cell lineage ecosystem —
+tree-based tools like **GCtree, IgPhyML, and dowser** consume the
+Newick/FASTA/node-table exports, and abundance-aware clustering tools like
+**SCOPer** read the AIRR TSV with `duplicate_count`. Those tools were **not** run
+as part of this validation; the claim here is scoped to the two clusterers above
+and to format compatibility, not to having executed the full ecosystem.
 
 ![GenAIRR clonal_lineage clones are recovered by Change-O at default settings](../assets/clonal-lineage-detection.png)
 
@@ -354,12 +402,15 @@ match.
   6 generations → ~21 % SHM) you raise the cutoff (a threshold sweep climbs from
   ARI 0.26 at 0.16 → 0.91 at 0.30 → 1.0 at 0.45). This mirrors how these tools
   behave on real data and is **not** a property of the simulator.
-- **Independent of any one tool.** The same recovery holds for an
-  implementation-independent V/J + junction-length + single-linkage clusterer, and
-  the exported Newick/FASTA feed tree-based methods (GCtree, IgPhyML, dowser)
-  directly.
+- **Independent of any one tool.** The same recovery holds for the in-repo
+  implementation-independent V/J + junction-length + single-linkage clusterer — so
+  the signal is not an artefact of Change-O's specific model. The exported
+  Newick/FASTA/AIRR-TSV (with `duplicate_count`) are **designed to feed** tree-based
+  and abundance-aware methods (GCtree, IgPhyML, dowser, SCOPer) directly; those
+  downstream tools were not run here.
 
-In short: the clones GenAIRR plants are the clones the ecosystem detects.
+In short: the two clusterers we ran recover the planted clones exactly, and the
+export formats are built to hand the same ground truth to the wider ecosystem.
 
 ## Relationship to `expand_clones`
 
