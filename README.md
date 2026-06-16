@@ -180,8 +180,8 @@ tcr.records              # AIRR records: clone_id (membership) + duplicate_count
 ```
 
 `clonal_lineage` is BCR-only (it applies S5F SHM and rejects TCR loci); `clonal_repertoire` covers TCR and flat BCR. See the guides:
-[Clonal lineage trees](site_docs/guides/clonal-lineage.md) ·
-[Clonal repertoires (TCR & abundance)](site_docs/guides/clonal-repertoire.md).
+[Clonal lineage trees](https://mutejester.github.io/GenAIRR/guides/clonal-lineage.html) ·
+[Clonal repertoires (TCR & abundance)](https://mutejester.github.io/GenAIRR/guides/clonal-repertoire.html).
 
 Other feature flags worth knowing:
 
@@ -658,7 +658,7 @@ The full documentation site is at **[mutejester.github.io/GenAIRR](https://mutej
 
 - **Learn** — [Lesson 1: V(D)J recombination](https://mutejester.github.io/GenAIRR/lesson-1.html) · [Lesson 2: Pipeline scrubber](https://mutejester.github.io/GenAIRR/lesson-2.html) · [Lesson 3: S5F SHM](https://mutejester.github.io/GenAIRR/lesson-3.html) · [Lesson 4: Sequencing artifacts](https://mutejester.github.io/GenAIRR/lesson-4.html) · [Lesson 5: Ground-truth payoff](https://mutejester.github.io/GenAIRR/lesson-5.html)
 - **Concepts** — [Simulation Pipeline](https://mutejester.github.io/GenAIRR/concept-pipeline.html) · [Persistent IR](https://mutejester.github.io/GenAIRR/concept-persistent-ir.html) · [Contracts](https://mutejester.github.io/GenAIRR/concept-contracts.html) · [AIRR Record](https://mutejester.github.io/GenAIRR/concept-airr-record.html) · [Live Calls](https://mutejester.github.io/GenAIRR/concept-live-call.html)
-- **Guides** — [Build a config](https://mutejester.github.io/GenAIRR/guide-build-config.html) · [Productive sampling](https://mutejester.github.io/GenAIRR/guide-productive.html) · [Clonal families](https://mutejester.github.io/GenAIRR/guide-clonal-families.html) · [Export](https://mutejester.github.io/GenAIRR/guide-export.html) · [Replay](https://mutejester.github.io/GenAIRR/guide-replay.html) · [Reproduce a dataset](https://mutejester.github.io/GenAIRR/guide-reproduce.html) · [Compare SHM models](https://mutejester.github.io/GenAIRR/guide-compare-shm.html) · [Tune corruption](https://mutejester.github.io/GenAIRR/guide-tune-corruption.html)
+- **Guides** — [Build a config](https://mutejester.github.io/GenAIRR/guide-build-config.html) · [Productive sampling](https://mutejester.github.io/GenAIRR/guide-productive.html) · [Clonal lineage trees](https://mutejester.github.io/GenAIRR/guides/clonal-lineage.html) · [Clonal repertoires](https://mutejester.github.io/GenAIRR/guides/clonal-repertoire.html) · [Export](https://mutejester.github.io/GenAIRR/guide-export.html) · [Replay](https://mutejester.github.io/GenAIRR/guide-replay.html) · [Reproduce a dataset](https://mutejester.github.io/GenAIRR/guide-reproduce.html) · [Compare SHM models](https://mutejester.github.io/GenAIRR/guide-compare-shm.html) · [Tune corruption](https://mutejester.github.io/GenAIRR/guide-tune-corruption.html)
 - **Reference** — [API + Configs + AIRR fields](https://mutejester.github.io/GenAIRR/reference.html)
 
 ---
