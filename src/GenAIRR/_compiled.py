@@ -39,7 +39,14 @@ class CompiledExperiment:
     time; ``run()`` only accepts execution parameters.
     """
 
-    __slots__ = ("_simulator", "_refdata", "_steps", "_dataconfig", "_metadata")
+    __slots__ = (
+        "_simulator",
+        "_refdata",
+        "_steps",
+        "_dataconfig",
+        "_metadata",
+        "_genotype",
+    )
 
     def __init__(
         self,
@@ -48,6 +55,7 @@ class CompiledExperiment:
         steps: Sequence[Any] = (),
         dataconfig: Optional["DataConfig"] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        genotype: Optional[Any] = None,
     ) -> None:
         self._simulator = simulator
         self._refdata = refdata
@@ -58,6 +66,9 @@ class CompiledExperiment:
         self._steps: Tuple[Any, ...] = tuple(steps)
         self._dataconfig = dataconfig
         self._metadata = dict(metadata) if metadata else {}
+        # Attached single-subject genotype (or None). When set,
+        # run_records stamps subject_id + haplotype provenance.
+        self._genotype = genotype
 
     @property
     def simulator(self) -> "_engine.CompiledSimulator":
@@ -187,11 +198,24 @@ class CompiledExperiment:
         result = SimulationResult.from_outcomes(
             outcomes, self._refdata, expose_provenance=expose_provenance
         )
+        if self._genotype is not None:
+            self._stamp_genotype_provenance(outcomes, result)
         if validate_records:
             from ._validation import _raise_on_validation_failure
 
             _raise_on_validation_failure(result.validate_records(self._refdata))
         return result
+
+    def _stamp_genotype_provenance(self, outcomes, result) -> None:
+        """Stamp per-record ``subject_id`` + ``haplotype`` (the chromosome
+        the rearrangement drew from) and expose the genotype on the
+        result. Used only when a genotype is attached."""
+        subject = self._genotype.subject_id
+        for outcome, rec in zip(outcomes, result._records):
+            rec["subject_id"] = subject
+            hap = outcome.trace().find("sample_haplotype")
+            rec["haplotype"] = hap.value if hap is not None else None
+        result._genotypes = [self._genotype]
 
     def stream(
         self,

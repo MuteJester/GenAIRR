@@ -2836,6 +2836,7 @@ class Experiment:
             steps=tuple(self._steps),
             dataconfig=self._dataconfig,
             metadata=self._metadata,
+            genotype=self._genotype,
         )
 
     def _build_simulator(

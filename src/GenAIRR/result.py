@@ -419,7 +419,7 @@ class SimulationResult:
     inspection — most users won't need them.
     """
 
-    __slots__ = ("_records", "_outcomes", "_parents")
+    __slots__ = ("_records", "_outcomes", "_parents", "_genotypes")
 
     def __init__(
         self,
@@ -428,6 +428,10 @@ class SimulationResult:
         parents: Optional[Sequence] = None,
     ) -> None:
         self._records: List[Dict[str, Any]] = list(records)
+        # Per-subject ground-truth ``Genotype`` objects, populated by
+        # ``CompiledExperiment.run_records`` when a genotype is attached.
+        # ``None`` for non-genotype results.
+        self._genotypes: Optional[List] = None
         # ``outcomes`` is optional: callers that built records by
         # other means (e.g. round-tripping a TSV) don't have the
         # underlying Outcome objects available.
@@ -494,6 +498,12 @@ class SimulationResult:
         when this :class:`SimulationResult` was built from records
         directly (e.g. loaded from a TSV)."""
         return self._outcomes
+
+    @property
+    def genotypes(self) -> Optional[List]:
+        """Per-subject ground-truth ``Genotype`` objects when the
+        experiment had a genotype attached, else ``None``."""
+        return self._genotypes
 
     @property
     def parents(self) -> Optional[List]:

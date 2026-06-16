@@ -28,6 +28,24 @@ def test_phased_recombine_only_emits_carried_allele_for_overridden_gene():
     assert seen_for_gene <= {carried}, seen_for_gene
 
 
+def test_records_carry_subject_and_haplotype_and_result_exposes_genotype():
+    cfg = _cfg()
+    g = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("S1")
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(n=20, seed=3)
+    assert all(r["subject_id"] == "S1" for r in res)
+    assert all(r["haplotype"] in (0, 1) for r in res)
+    assert res.genotypes is not None
+    assert res.genotypes[0].subject_id == "S1"
+
+
+def test_no_genotype_result_has_no_genotypes_and_no_haplotype_field():
+    cfg = _cfg()
+    res = ga.Experiment.on(cfg).recombine().run_records(n=10, seed=3)
+    assert res.genotypes is None
+    assert "subject_id" not in res[0]
+    assert "haplotype" not in res[0]
+
+
 def test_phased_run_is_deterministic_under_same_seed():
     cfg = _cfg()
     g = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("S1")
