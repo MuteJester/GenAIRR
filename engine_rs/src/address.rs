@@ -54,6 +54,8 @@ const SAMPLE_ALLELE_J: &str = "sample_allele.j";
 const SAMPLE_ALLELE_D_INVERTED: &str = "sample_allele.d.inverted";
 pub const SAMPLE_ALLELE_INVALID: &str = "sample_allele.<invalid>";
 pub const SAMPLE_ALLELE_UNSUPPORTED: &str = "sample_allele.<unsupported>";
+/// Per-rearrangement chromosome choice for a phased genotype.
+const SAMPLE_HAPLOTYPE: &str = "sample_haplotype";
 
 /// Pass name for `InvertDPass`. Used as the `name()` return value
 /// and as the pass-plan signature token, so external consumers
@@ -458,6 +460,16 @@ pub enum ChoiceAddress {
     /// from `(allele, trim, orientation, length)` so only the
     /// length needs a trace address.
     PLength { end: PEnd },
+    /// Haplotype (0/1): the chromosome drawn once per rearrangement by
+    /// `SampleHaplotypePass` for a phased genotype. V/D/J read it back.
+    SampleHaplotype,
+    /// GeneId: the gene chosen within the drawn chromosome for a segment
+    /// by `SampleGeneAllelePass`.
+    SampleGene(VdjSegment),
+    /// AlleleId: the within-slot allele draw, recorded only when a gene
+    /// slot carries more than one copy (single-copy slots are
+    /// deterministic and record nothing here).
+    SampleAlleleInSlot(VdjSegment),
 }
 
 impl ChoiceAddress {
@@ -534,6 +546,11 @@ impl fmt::Display for ChoiceAddress {
             Self::PairedEndR2Length => f.write_str(PAIRED_END_R2_LENGTH),
             Self::PairedEndInsertSize => f.write_str(PAIRED_END_INSERT_SIZE),
             Self::PLength { end } => write!(f, "p.{}.length", end.suffix()),
+            Self::SampleHaplotype => f.write_str(SAMPLE_HAPLOTYPE),
+            Self::SampleGene(segment) => write!(f, "sample_gene.{}", segment.suffix()),
+            Self::SampleAlleleInSlot(segment) => {
+                write!(f, "sample_allele_in_slot.{}", segment.suffix())
+            }
         }
     }
 }
@@ -615,6 +632,13 @@ fn parse_choice_address(address: &str) -> Option<ChoiceAddress> {
         P_D5_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::D5 }),
         P_D3_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::D3 }),
         P_J5_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::J5 }),
+        SAMPLE_HAPLOTYPE => Some(ChoiceAddress::SampleHaplotype),
+        "sample_gene.v" => Some(ChoiceAddress::SampleGene(VdjSegment::V)),
+        "sample_gene.d" => Some(ChoiceAddress::SampleGene(VdjSegment::D)),
+        "sample_gene.j" => Some(ChoiceAddress::SampleGene(VdjSegment::J)),
+        "sample_allele_in_slot.v" => Some(ChoiceAddress::SampleAlleleInSlot(VdjSegment::V)),
+        "sample_allele_in_slot.d" => Some(ChoiceAddress::SampleAlleleInSlot(VdjSegment::D)),
+        "sample_allele_in_slot.j" => Some(ChoiceAddress::SampleAlleleInSlot(VdjSegment::J)),
         _ => None,
     };
     if exact.is_some() {
@@ -747,6 +771,15 @@ pub enum ChoiceAddressPattern {
     /// [`ChoiceAddress::PLength`]. One pattern instance per
     /// `PEnd` — declared by `PAdditionPass`.
     PLength { end: PEnd },
+    /// Singleton-family mirror of [`ChoiceAddress::SampleHaplotype`].
+    /// Declared by `SampleHaplotypePass`.
+    SampleHaplotype,
+    /// Family mirror of [`ChoiceAddress::SampleGene`]. Declared by
+    /// `SampleGeneAllelePass`.
+    SampleGene(VdjSegment),
+    /// Family mirror of [`ChoiceAddress::SampleAlleleInSlot`]. Declared
+    /// by `SampleGeneAllelePass` (a potential draw on multi-copy slots).
+    SampleAlleleInSlot(VdjSegment),
 }
 
 impl ChoiceAddressPattern {
@@ -793,6 +826,11 @@ impl fmt::Display for ChoiceAddressPattern {
             Self::PairedEndR2Length => f.write_str(PAIRED_END_R2_LENGTH),
             Self::PairedEndInsertSize => f.write_str(PAIRED_END_INSERT_SIZE),
             Self::PLength { end } => ChoiceAddress::PLength { end }.fmt(f),
+            Self::SampleHaplotype => f.write_str(SAMPLE_HAPLOTYPE),
+            Self::SampleGene(segment) => ChoiceAddress::SampleGene(segment).fmt(f),
+            Self::SampleAlleleInSlot(segment) => {
+                ChoiceAddress::SampleAlleleInSlot(segment).fmt(f)
+            }
         }
     }
 }
@@ -889,6 +927,13 @@ fn parse_choice_address_pattern(address: &str) -> Option<ChoiceAddressPattern> {
         P_D5_LENGTH => Some(ChoiceAddressPattern::PLength { end: PEnd::D5 }),
         P_D3_LENGTH => Some(ChoiceAddressPattern::PLength { end: PEnd::D3 }),
         P_J5_LENGTH => Some(ChoiceAddressPattern::PLength { end: PEnd::J5 }),
+        SAMPLE_HAPLOTYPE => Some(ChoiceAddressPattern::SampleHaplotype),
+        "sample_gene.v" => Some(ChoiceAddressPattern::SampleGene(VdjSegment::V)),
+        "sample_gene.d" => Some(ChoiceAddressPattern::SampleGene(VdjSegment::D)),
+        "sample_gene.j" => Some(ChoiceAddressPattern::SampleGene(VdjSegment::J)),
+        "sample_allele_in_slot.v" => Some(ChoiceAddressPattern::SampleAlleleInSlot(VdjSegment::V)),
+        "sample_allele_in_slot.d" => Some(ChoiceAddressPattern::SampleAlleleInSlot(VdjSegment::D)),
+        "sample_allele_in_slot.j" => Some(ChoiceAddressPattern::SampleAlleleInSlot(VdjSegment::J)),
         _ => None,
     };
 
@@ -1501,5 +1546,27 @@ mod tests {
         assert_pinned(ChoiceAddress::PLength { end: PEnd::D5 }, "p.d_5.length");
         assert_pinned(ChoiceAddress::PLength { end: PEnd::D3 }, "p.d_3.length");
         assert_pinned(ChoiceAddress::PLength { end: PEnd::J5 }, "p.j_5.length");
+
+        // Phased genotype (genotype-modeling PR1). New top-level
+        // `sample_haplotype` + `sample_gene.*` + `sample_allele_in_slot.*`
+        // namespaces; same additive policy as receptor revision /
+        // paired-end — old traces don't reference these strings, no
+        // ADDRESS_SCHEMA_VERSION bump.
+        assert_pinned(ChoiceAddress::SampleHaplotype, "sample_haplotype");
+        assert_pinned(ChoiceAddress::SampleGene(VdjSegment::V), "sample_gene.v");
+        assert_pinned(ChoiceAddress::SampleGene(VdjSegment::D), "sample_gene.d");
+        assert_pinned(ChoiceAddress::SampleGene(VdjSegment::J), "sample_gene.j");
+        assert_pinned(
+            ChoiceAddress::SampleAlleleInSlot(VdjSegment::V),
+            "sample_allele_in_slot.v",
+        );
+        assert_pinned(
+            ChoiceAddress::SampleAlleleInSlot(VdjSegment::D),
+            "sample_allele_in_slot.d",
+        );
+        assert_pinned(
+            ChoiceAddress::SampleAlleleInSlot(VdjSegment::J),
+            "sample_allele_in_slot.j",
+        );
     }
 }
