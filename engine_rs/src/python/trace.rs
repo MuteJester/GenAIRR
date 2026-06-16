@@ -17,6 +17,8 @@ fn choice_value_to_py(py: Python<'_>, v: &ChoiceValue) -> PyObject {
         ChoiceValue::Bases(bs) => PyBytes::new_bound(py, bs).into_py(py),
         ChoiceValue::AlleleId(id) => id.into_py(py),
         ChoiceValue::Bool(b) => b.into_py(py),
+        ChoiceValue::Haplotype(h) => h.into_py(py),
+        ChoiceValue::GeneId(g) => g.into_py(py),
     }
 }
 
