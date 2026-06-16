@@ -250,7 +250,7 @@ so it flows through alignment and AIRR output as a genuine allele:
 g = (
     Genotype.from_dataconfig(cfg)
       .add_novel_allele("IGHVF1-G1*i01", base="IGHVF1-G1*01",
-                        mutations=[(120, "T"), (250, "G")])   # two point variants
+                        mutations=[(38, "C"), (41, "A")])   # two point variants
       .complete_from_reference()
       .heterozygous("IGHVF1-G1", "IGHVF1-G1*01", "IGHVF1-G1*i01")  # one reference + one private
       .with_subject("DONOR_N")
@@ -264,8 +264,14 @@ result = (
 # its name appears in v_call / truth_v_call and the reads carry its variants.
 ```
 
-Novel alleles are flagged in the ground truth: each `to_table()` row carries a
-`novel` list of the private alleles carried at that gene.
+The novel allele's **gene is taken from its name** and must match the base
+allele's gene; it must be a same-length (substitution-only) variant. The
+synthesized coding sequence is **validated** — for V/J the conserved anchor codon
+must still encode the conserved residue (Cys for V, Trp/Phe for J) and the coding
+frame must be stop-free. A variant that breaks either is rejected unless you pass
+`allow_nonfunctional=True` (then it is kept and marked non-functional). Novel
+alleles are flagged in the ground truth: each `to_table()`/`to_tsv()` row carries
+a `novel` list of the private alleles carried at that gene.
 
 **Benchmarking novel-allele discovery.** Plant a novel allele, simulate, then run
 the discovery tool against the **base** germline (the cartridge *without* your
