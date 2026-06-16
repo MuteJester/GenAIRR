@@ -44,6 +44,7 @@ pub mod contract;
 pub mod dist;
 pub mod event;
 pub mod feasibility;
+pub mod genotype;
 pub mod ir;
 pub mod junction;
 pub mod lineage;
