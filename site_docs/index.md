@@ -81,9 +81,9 @@ an aligner.</p>
 
 <div class="cap-card cap-clone" markdown>
   <p class="cap-num">// Lineage · 03</p>
-  <h3>Expand clones</h3>
-  <p>Parent rearrangement forks N descendants. SHM accumulates
-  per-descendant after the fork.</p>
+  <h3>Simulate clones</h3>
+  <p>BCR lineage trees, TCR clone-size repertoires, and flat
+  abundance benchmarks with planted clone IDs.</p>
 </div>
 
 <div class="cap-card cap-corrupt" markdown>
@@ -112,17 +112,18 @@ an aligner.</p>
 ```python
 import GenAIRR as ga
 
+# Grow real BCR clonal lineage trees — affinity maturation, with ground truth
 result = (
     ga.Experiment.on("human_igh")
       .recombine()
-      .expand_clones(n_clones=50, per_clone=20)
-      .mutate(rate=0.05)
-      .pcr_amplify(count=(0, 3))
-      .ambiguous_base_calls(count=(0, 2))
-      .productive_only().run_records(seed=42)
+      .clonal_lineage(n_clones=50, max_generations=6, n_sample=30,
+                      rate=0.01, selection_strength=10.0)
+      .sequencing_errors(rate=0.001)
+      .run_records(seed=42)
 )
 
-result.to_tsv("repertoire.tsv")
+result.to_tsv("repertoire.tsv")                 # per-cell AIRR records (clone_id, lineage_*)
+newick = result.lineage_trees[0].to_newick()    # ground-truth lineage tree per clone
 ```
 
 ## Install. One command. No compiler.
@@ -145,10 +146,10 @@ your task.
 
 | If you want to ... | Start here |
 |---|---|
-| **Simulate sequences** | [Quick start](getting-started/quick-start.md) → [The Experiment builder](guides/experiment-builder.md) |
+| **Simulate sequences** | [Quick start](getting-started/quick-start.md) → [The Experiment builder](guides/experiment-builder.md) → [API reference](reference/index.md) |
 | **Build a reference cartridge** | [Reference cartridge concept](concepts/reference-cartridge.md) → [Build a reference cartridge](guides/build-reference-cartridge.md) |
-| **Get reproducible / validated output** | [Validation hub](validation/index.md) → [Trace, replay, reproducibility](guides/trace-replay.md) |
-| **Understand the biological mechanisms** | [Recombination + junction biology](guides/recombination-junction.md), [SHM and mutation targeting](guides/shm-targeting.md), [Corruption + sequencing artefacts](guides/corruption-sequencing.md), [Clonal families](guides/clonal-families.md) |
+| **Get reproducible / validated output** | [Validation hub](validation/index.md) → [Validate AIRR records](validation/validate-records.md) → [Trace, replay, reproducibility](guides/trace-replay.md) |
+| **Understand the biological mechanisms** | [Recombination + junction biology](guides/recombination-junction.md), [SHM and mutation targeting](guides/shm-targeting.md), [Corruption + sequencing artefacts](guides/corruption-sequencing.md), [Clonal simulation overview](guides/clonal-families.md) |
 | **Contribute to GenAIRR** | [Architecture (Contributor)](architecture/index.md) |
 
 The **[Choose your path](learn.md)** page expands each of these
