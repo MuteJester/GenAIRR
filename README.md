@@ -107,6 +107,9 @@ result = (
       #    Passes BEFORE this point apply to the parent rearrangement;
       #    passes AFTER apply per-descendant. So each clone shares the
       #    same V(D)J recombination but accumulates its own SHM + errors.
+      #    NOTE: expand_clones is the legacy fixed-size *star* model. For
+      #    real clonal trees and repertoires, see "Clonal lineages &
+      #    repertoires" below (clonal_lineage / clonal_repertoire).
       .expand_clones(n_clones=50, per_clone=20)
       # 3. Somatic hypermutation per descendant — S5F context-dependent
       #    model at 5% per-base rate (matches memory-B-cell SHM).
@@ -144,6 +147,41 @@ result[0]["experiment_id"], result[0]["tissue"]           # ('exp001', 'peripher
 
 result.to_tsv("repertoire.tsv")
 ```
+
+## Clonal lineages & repertoires
+
+GenAIRR models clonal structure three ways. Pick by what you need:
+
+| Method | Model | Use for |
+|---|---|---|
+| **`clonal_lineage`** | BCR affinity-maturation **trees** — generation-synchronous birth–death, per-division S5F SHM, optional affinity selection, sample + genotype-collapse | B-cell lineage trees with **ground truth** (Newick/FASTA per clone), benchmarking lineage/clone inference, ML training data |
+| **`clonal_repertoire`** | Non-tree **abundance** repertoires — heavy-tailed clone sizes (power-law/lognormal) + unexpanded-singleton fraction, reads through library-prep, collapsed to `duplicate_count` | **TCR** repertoires (no SHM) and flat-BCR abundance; clone-calling benchmarks |
+| `expand_clones` *(deprecated)* | Fixed-size **star**: one founder + `per_clone` independent descendants | legacy; kept working, but prefer the two above |
+
+```python
+import GenAIRR as ga
+
+# BCR clonal lineage trees — affinity maturation, with ground truth
+bcr = (ga.Experiment.on("human_igh").recombine()
+       .clonal_lineage(n_clones=50, max_generations=6, n_sample=30,
+                       rate=0.01, selection_strength=10.0)   # 0 = neutral
+       .sequencing_errors(rate=0.001)
+       .run_records(seed=0))
+bcr.records              # per-cell AIRR records: clone_id, lineage_node_id, lineage_affinity, ...
+bcr.lineage_trees[0].to_newick()   # ground-truth tree (branch length = per-edge mutations)
+
+# TCR clone-size repertoire — proliferated rearrangements, no SHM, abundance
+tcr = (ga.Experiment.on("human_tcrb").allow_curatable_refdata().recombine()
+       .clonal_repertoire(n_clones=200, size_distribution="power_law",
+                          exponent=2.0, max_size=500, unexpanded_fraction=0.5)
+       .sequencing_errors(rate=0.005)
+       .run_records(seed=0))
+tcr.records              # AIRR records: clone_id (membership) + duplicate_count (abundance)
+```
+
+`clonal_lineage` is BCR-only (it applies S5F SHM and rejects TCR loci); `clonal_repertoire` covers TCR and flat BCR. See the guides:
+[Clonal lineage trees](site_docs/guides/clonal-lineage.md) ·
+[Clonal repertoires (TCR & abundance)](site_docs/guides/clonal-repertoire.md).
 
 Other feature flags worth knowing:
 
