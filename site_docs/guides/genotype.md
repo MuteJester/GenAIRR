@@ -166,6 +166,73 @@ fall back to uniform-over-present-genes (× dosage). See
 [Allele usage](v-usage.md) and [Estimate models from data](estimate-cartridge-models.md)
 for authoring usage.
 
+### More genotype recipes
+
+**A richer diploid genotype** — several heterozygous genes, a homozygous gene,
+a whole-gene (homozygous) deletion, a hemizygous deletion, and allelic-expression
+imbalance, with everything else filled from the reference:
+
+```python
+g = (
+    Genotype.from_dataconfig(cfg)
+      .heterozygous("IGHVF1-G1", "IGHVF1-G1*01", "IGHVF1-G1*02")
+      .heterozygous("IGHVF1-G2", "IGHVF1-G2*01", "IGHVF1-G2*02")
+      .homozygous("IGHVF2-G4", "IGHVF2-G4*01")
+      .delete_gene("IGHVF3-G7", haplotype="both")     # absent on both chromosomes
+      .homozygous("IGHVF3-G8", "IGHVF3-G8*01")        # carried on both...
+      .delete_gene("IGHVF3-G8", haplotype=1)          # ...then removed on chr 1 (hemizygous)
+      .chromosome_weights(0.65, 0.35)                 # chromosome 0 expressed more
+      .complete_from_reference()                      # the remaining genes
+      .with_subject("DONOR_A")
+)
+```
+
+**Gene duplication** — one chromosome carries two alleles of the same gene
+(specify the gene on both chromosomes first, then add the extra copy to one):
+
+```python
+g = (
+    Genotype.from_dataconfig(cfg)
+      .homozygous("IGHVF1-G3", "IGHVF1-G3*01")                          # both chromosomes carry *01
+      .duplicate_gene("IGHVF1-G3", ["IGHVF1-G3*01", "IGHVF1-G3*02"], haplotype=0)  # chr 0 now carries two copies
+      .complete_from_reference()
+      .with_subject("DONOR_DUP")
+)
+# chromosome 0 carries {*01, *02}, chromosome 1 carries {*01};
+# the extra copy raises this gene's recombination share (copy-number dosage).
+```
+
+**Build a fully-specified strict genotype programmatically** — drive the builder
+from a per-gene plan (the natural shape if you load a genotype from a table or
+generate many subjects):
+
+```python
+plan = {
+    "IGHVF1-G1": ("IGHVF1-G1*01", "IGHVF1-G1*02"),  # 2 alleles  -> heterozygous
+    "IGHVF1-G2": ("IGHVF1-G2*01",),                 # 1 allele   -> homozygous
+    "IGHVF3-G7": (),                                 # 0 alleles  -> deleted
+    # ... one entry per gene you want to pin
+}
+
+g = Genotype.from_dataconfig(cfg)
+for gene, alleles in plan.items():
+    if not alleles:
+        g.delete_gene(gene, haplotype="both")
+    elif len(alleles) == 1:
+        g.homozygous(gene, alleles[0])
+    else:
+        g.heterozygous(gene, alleles[0], alleles[1])
+g.complete_from_reference().with_subject("DONOR_B")
+```
+
+**Inspect the non-trivial genes** of any genotype:
+
+```python
+for row in g.to_table():
+    if row["zygosity"] != "homozygous":
+        print(row["gene"], row["zygosity"], row["haplotype_0"], row["haplotype_1"])
+```
+
 ## Ground truth and provenance
 
 A genotype experiment emits, by construction, everything an evaluation needs:
