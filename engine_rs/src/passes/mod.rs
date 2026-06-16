@@ -31,6 +31,7 @@ pub(crate) mod paramsig;
 pub mod receptor_revision;
 pub mod sample_allele;
 pub mod sample_base;
+pub mod sample_haplotype;
 pub mod trim;
 
 #[cfg(test)]
