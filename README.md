@@ -94,7 +94,7 @@ Headers use the AIRR record's `sequence_id` with the universally-portable `/1` a
 
 ## A realistic pipeline — everything in one place
 
-The Experiment DSL is a fluent builder. Each step appends to the pipeline; the same `Experiment` is returned so calls chain. The example below uses every major feature GenAIRR offers — recombination, clonal expansion, per-descendant somatic hypermutation, primer-trimming, structural indels, PCR errors, N-base injection, custom metadata, and the productive constraint:
+The Experiment DSL is a fluent builder. Each step appends to the pipeline; the same `Experiment` is returned so calls chain. The example below uses every major feature GenAIRR offers — recombination, BCR clonal lineage trees with affinity maturation, per-division somatic hypermutation, primer-trimming, structural indels, PCR errors, N-base injection, custom metadata, and the productive constraint:
 
 ```python
 import GenAIRR as ga
@@ -103,49 +103,49 @@ result = (
     ga.Experiment.on("human_igh")
       # 1. V(D)J recombination — sample alleles, trim, fill NP1/NP2, assemble.
       .recombine()
-      # 2. Clonal structure — 50 lineages × 20 sister sequences each.
-      #    Passes BEFORE this point apply to the parent rearrangement;
-      #    passes AFTER apply per-descendant. So each clone shares the
-      #    same V(D)J recombination but accumulates its own SHM + errors.
-      #    NOTE: expand_clones is the legacy fixed-size *star* model. For
-      #    real clonal trees and repertoires, see "Clonal lineages &
-      #    repertoires" below (clonal_lineage / clonal_repertoire).
-      .expand_clones(n_clones=50, per_clone=20)
-      # 3. Somatic hypermutation per descendant — S5F context-dependent
-      #    model at 5% per-base rate (matches memory-B-cell SHM).
-      .mutate(rate=0.05)
-      # 4. Sequencing artefacts per descendant: primer trimming, structural
+      # 2. Clonal lineage trees — grow 50 real B-cell lineages from the
+      #    recombined founder: generation-synchronous birth–death over
+      #    5 generations, per-division S5F somatic hypermutation at 0.75%
+      #    per base, affinity selection, then sample 20 cells per clone.
+      #    Passes BEFORE this point shape the founder rearrangement;
+      #    passes AFTER apply per sampled cell (library prep). Every clone
+      #    shares the founder's V(D)J but carries its own SHM + errors,
+      #    and you get a ground-truth tree per clone (see lineage_trees).
+      .clonal_lineage(n_clones=50, max_generations=5, n_sample=20,
+                      rate=0.0075, selection_strength=10.0)
+      # 3. Sequencing artefacts per sampled cell: primer trimming, structural
       #    indels, PCR substitution errors, quality-driven N injection.
       .primer_trim_5prime(length=(0, 8))
       .primer_trim_3prime(length=(0, 4))
       .polymerase_indels(count=(0, 2), insertion_prob=0.5)
       .pcr_amplify(count=(0, 3))
       .ambiguous_base_calls(count=(0, 2))
-      # 5. Stamp arbitrary metadata onto every record.
+      # 4. Stamp arbitrary metadata onto every record.
       .with_metadata(experiment_id="exp001", tissue="peripheral_blood")
-      # Constraint-aware sampling: the productive() bundle is enforced at
-      # rearrangement + SHM time. Corruption passes can still introduce
-      # stop codons / frameshifts post-hoc, so expect ~70% productive
-      # when aggressive corruption is in the chain — that mirrors real
-      # wet-lab data, where a productive B-cell can sequence as a
-      # non-productive read because of an indel during library prep.
+      # The founder is drawn under the productive() constraint. Accumulated
+      # SHM and corruption passes can still introduce stop codons /
+      # frameshifts in individual cells, so expect ~75% productive under
+      # this SHM + corruption load — that mirrors real wet-lab data, where a
+      # productive B-cell can sequence as a non-productive read.
       .productive_only().run_records(seed=42)
 )
 
-len(result)                                  # 1000  (= n_clones × size)
-sum(1 for r in result if r["productive"])    # 697   (~70% under this corruption load)
+len(result)                                  # 415   (sampled live cells across 50 trees)
+sum(1 for r in result if r["productive"])    # 316   (~76% under this SHM + corruption load)
+len(result.lineage_trees)                    # 50    (one ground-truth tree per clone)
 
-# Same clone, different descendants — same V(D)J recombination,
+# Same clone, different cells — shared founder V(D)J,
 # independent SHM + errors:
 result[0]["clone_id"], result[1]["clone_id"]              # (0, 0)
-result[0]["v_call"],   result[1]["v_call"]                # both 'IGHVF10-G38*04'
-result[0]["n_mutations"], result[1]["n_mutations"]        # (13, 15) — independent SHM
-result[0]["n_pcr_errors"], result[1]["n_pcr_errors"]      # (1, 1)   — independent errors
+result[0]["v_call"],   result[1]["v_call"]                # both 'IGHVF10-G51*05'
+result[0]["n_mutations"], result[1]["n_mutations"]        # (14, 11) — independent SHM
+result[0]["n_pcr_errors"], result[1]["n_pcr_errors"]      # (3, 0)   — independent errors
 
 # Custom metadata propagated:
 result[0]["experiment_id"], result[0]["tissue"]           # ('exp001', 'peripheral_blood')
 
 result.to_tsv("repertoire.tsv")
+newick = result.lineage_trees[0].to_newick()  # ground-truth lineage for clone 0
 ```
 
 ## Clonal lineages & repertoires
