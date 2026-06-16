@@ -119,21 +119,18 @@ impl SampleGenotypePass {
         contract_ok && feasible_ok
     }
 
-    /// Carried alleles on chromosome `c` for `seg`. In `strict` mode they
-    /// are filtered by the active contracts + feasibility; in permissive
-    /// mode all carried alleles are admissible (mirrors the documented
-    /// permissive exception of `SampleAllelePass` — a permissive run must
-    /// not error, so feasibility is advisory only).
+    /// Carried alleles on chromosome `c` for `seg`, optionally filtered
+    /// by the active contracts + feasibility.
     fn admissible_alleles(
         &self,
         c: usize,
         seg: Segment,
         sim: &Simulation,
         ctx: &PassContext,
-        strict: bool,
+        filter: bool,
     ) -> Vec<AlleleId> {
         let carried = self.genotype.haplotype(c).carried_alleles(seg);
-        if !strict {
+        if !filter {
             return carried;
         }
         carried
@@ -142,14 +139,29 @@ impl SampleGenotypePass {
             .collect()
     }
 
-    fn is_viable(&self, c: usize, sim: &Simulation, ctx: &PassContext, strict: bool) -> bool {
+    fn is_viable(&self, c: usize, sim: &Simulation, ctx: &PassContext, filter: bool) -> bool {
         self.segments()
             .iter()
-            .all(|seg| !self.admissible_alleles(c, *seg, sim, ctx, strict).is_empty())
+            .all(|seg| !self.admissible_alleles(c, *seg, sim, ctx, filter).is_empty())
     }
 
+    /// Viable chromosomes. The feasibility-filtered viable set is
+    /// preferred; in permissive mode, only if NO chromosome is
+    /// feasibility-viable do we fall back to presence-viability — exactly
+    /// mirroring `SampleAllelePass` (filter first, fall back to the
+    /// unconstrained draw only on empty admissible support). In strict
+    /// mode the feasibility-viable set is authoritative (empty → the
+    /// caller raises).
     fn viable_set(&self, sim: &Simulation, ctx: &PassContext, strict: bool) -> Vec<usize> {
-        (0..2).filter(|&c| self.is_viable(c, sim, ctx, strict)).collect()
+        let feasible: Vec<usize> = (0..2)
+            .filter(|&c| self.is_viable(c, sim, ctx, true))
+            .collect();
+        if strict || !feasible.is_empty() {
+            return feasible;
+        }
+        (0..2)
+            .filter(|&c| self.is_viable(c, sim, ctx, false))
+            .collect()
     }
 
     fn draw_haplotype(&self, viable: &[usize], rng: &mut Rng) -> usize {
@@ -218,9 +230,9 @@ impl SampleGenotypePass {
     }
 
     /// Candidate `(allele, mass)` copies in a gene slot on chromosome
-    /// `c`. `mass = weight * copies` (copy-number dosage). In `strict`
-    /// mode copies are filtered by contracts + feasibility; in permissive
-    /// mode all copies are admissible.
+    /// `c`. `mass = weight * copies` (copy-number dosage). When `filter`
+    /// is set, copies are restricted to those admissible under the active
+    /// contracts + feasibility.
     fn slot_candidates(
         &self,
         seg: Segment,
@@ -228,13 +240,13 @@ impl SampleGenotypePass {
         c: usize,
         sim: &Simulation,
         ctx: &PassContext,
-        strict: bool,
+        filter: bool,
     ) -> Vec<(AlleleId, f64)> {
         self.genotype
             .haplotype(c)
             .slot(seg, gene)
             .iter()
-            .filter(|cp| !strict || self.allele_feasible(seg, cp.allele, sim, ctx))
+            .filter(|cp| !filter || self.allele_feasible(seg, cp.allele, sim, ctx))
             .map(|cp| (cp.allele, cp.weight as f64 * cp.copies as f64))
             .collect()
     }
@@ -252,12 +264,30 @@ impl SampleGenotypePass {
     ) -> Result<Simulation, PassError> {
         let hap = self.genotype.haplotype(c);
         let vseg = Self::vseg(seg);
-        // Genes present on this chromosome that have >=1 admissible copy,
+        // Filter-then-fallback, mirroring SampleAllelePass: prefer
+        // feasibility-admissible candidates; only when NONE are admissible
+        // do we fall back to the unfiltered carried set (permissive), or
+        // raise (strict). `filter` is true whenever feasible candidates
+        // exist on this chromosome+segment.
+        let feasible_exists = hap.present_genes(seg).any(|g| {
+            !self
+                .slot_candidates(seg, g, c, &sim, ctx, true)
+                .is_empty()
+        });
+        if strict && !feasible_exists {
+            return Err(PassError::constraint_sampling(
+                self.name(),
+                address::sample_allele_vdj(seg),
+                FilteredSampleError::EmptyAdmissibleSupport,
+            ));
+        }
+        let filter = strict || feasible_exists;
+        // Genes present on this chromosome that have >=1 candidate copy,
         // weighted by gene usage * total copy dosage (so a duplicated
         // gene recombines more often).
         let mut genes: Vec<(GeneId, f64)> = Vec::new();
         for g in hap.present_genes(seg) {
-            let cands = self.slot_candidates(seg, g, c, &sim, ctx, strict);
+            let cands = self.slot_candidates(seg, g, c, &sim, ctx, filter);
             if cands.is_empty() {
                 continue;
             }
@@ -272,7 +302,7 @@ impl SampleGenotypePass {
             ));
         }
         let gene = Self::weighted_pick(&genes, ctx.rng);
-        let cands = self.slot_candidates(seg, gene, c, &sim, ctx, strict);
+        let cands = self.slot_candidates(seg, gene, c, &sim, ctx, filter);
         let id = Self::weighted_pick(&cands, ctx.rng);
 
         // "Multi-copy slot" is decided by the RAW slot length (genotype
@@ -312,7 +342,20 @@ impl SampleGenotypePass {
             .expect_gene_id(ChoiceAddress::SampleGene(vseg))
             .map_err(|r| PassError::replay(self.name(), r))?;
         let gene = GeneId::new(gene_idx);
-        let multi = self.genotype.haplotype(c).slot(seg, gene).len() > 1;
+        let slot = self.genotype.haplotype(c).slot(seg, gene);
+        // Replay validation: a recorded trace must be admissible against
+        // this genotype — the recorded gene must be carried on the drawn
+        // chromosome (non-empty slot). Mirrors SampleAllelePass's
+        // "trace proposes, engine validates" contract.
+        if slot.is_empty() {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                address::sample_allele_vdj(seg),
+                gene_idx as i64,
+                "genotype_gene_not_carried_on_haplotype",
+            ));
+        }
+        let multi = slot.len() > 1;
         let slot_recorded = if multi {
             Some(
                 ctx.replay_cursor
@@ -330,6 +373,27 @@ impl SampleGenotypePass {
             .expect("replay cursor present")
             .expect_allele_id(ChoiceAddress::SampleAllele(vseg))
             .map_err(|r| PassError::replay(self.name(), r))?;
+        // The canonical allele must be one the gene slot actually carries.
+        if !slot.iter().any(|cp| cp.allele.index() == allele) {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                address::sample_allele_vdj(seg),
+                allele as i64,
+                "genotype_allele_not_in_gene_slot",
+            ));
+        }
+        // When a within-slot record exists it must agree with the
+        // canonical allele (live writes the same id to both).
+        if let Some(slot_id) = slot_recorded {
+            if slot_id != allele {
+                return Err(PassError::invalid_distribution_output(
+                    self.name(),
+                    address::sample_allele_vdj(seg),
+                    slot_id as i64,
+                    "genotype_slot_record_disagrees_with_canonical_allele",
+                ));
+            }
+        }
         let id = AlleleId::new(allele);
 
         ctx.trace
@@ -621,6 +685,56 @@ mod tests {
         assert_eq!(
             replayed.assignments.get(Segment::J).unwrap().allele_id,
             live_j
+        );
+    }
+
+    #[test]
+    fn replay_rejects_allele_not_carried_in_genotype_slot() {
+        use crate::pass::PassContext;
+        use crate::replay::TraceCursor;
+        use crate::rng::Rng;
+        use crate::trace::Trace;
+
+        let g = Arc::new(test_support::geno_chrom1_deletes_j());
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(SampleGenotypePass::new(
+            g.clone(),
+            false,
+            vec![],
+            vec![],
+            vec![],
+        )));
+        let live = PassRuntime::execute(&plan, Simulation::new(), 13);
+        // Tamper: rewrite the canonical V allele to one not in the slot.
+        let mut records: Vec<_> = live.trace.choices().to_vec();
+        for r in records.iter_mut() {
+            if r.address == "sample_allele.v" {
+                r.value = ChoiceValue::AlleleId(999);
+            }
+        }
+        let replay_pass = SampleGenotypePass::new(g, false, vec![], vec![], vec![]);
+        let mut cursor = TraceCursor::from_owned(records);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(1);
+        let sim = Simulation::new();
+        let result;
+        {
+            let mut ctx = PassContext {
+                trace: &mut trace,
+                rng: &mut rng,
+                pass_index: 0,
+                refdata: None,
+                contracts: None,
+                feasibility: None,
+                reference_index: None,
+                replay_cursor: Some(&mut cursor),
+                event_log_sink: None,
+            };
+            result = replay_pass.run(&sim, &mut ctx, true);
+        }
+        assert!(
+            result.is_err(),
+            "replay must reject an allele not carried in the genotype slot"
         );
     }
 }
