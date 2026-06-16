@@ -23,10 +23,11 @@ analysis would call "the receptor":
 | **Assembled regions** | The final structural regions (`V`, `NP1`, `D`, `NP2`, `J`) carrying their coordinates on the record |
 | **Junction** | The canonical V Cys → J W/F + 3 window exposed on `junction` / `junction_aa` / `junction_length` |
 
-Everything before `.mutate()`, `.expand_clones()`, or any
-corruption pass is recombination's responsibility. After the
-pass, the molecule is "finished" in the recombination-biology
-sense — SHM and library prep happen on top of it.
+Everything before `.mutate()`, a clonal fork (`clonal_lineage`,
+`clonal_repertoire`, legacy `expand_clones`), or any corruption pass is
+recombination's responsibility. After the pass, the molecule is "finished" in
+the recombination-biology sense — SHM, clonal expansion, and library prep happen
+on top of it.
 
 ## A minimal recombination
 

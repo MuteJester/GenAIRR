@@ -49,7 +49,12 @@ from ._compile import (
     _lower_recombine,
     lower_step,
 )
-from ._compiled import CompiledClonalExperiment, CompiledExperiment
+from ._compiled import (
+    CompiledClonalExperiment,
+    CompiledExperiment,
+    CompiledLineageExperiment,
+    CompiledRepertoireExperiment,
+)
 from ._refdata_resolver import (
     _CONFIG_ALIASES,
     ExperimentInput,
@@ -69,10 +74,12 @@ from ._pipeline_ir import (
     _ClonalForkStep,
     _CorruptStep,
     _InvertDStep,
+    _LineageForkStep,
     _MutateStep,
     _PairedEndStep,
-    _ReceptorRevisionStep,
     _RecombineStep,
+    _ReceptorRevisionStep,
+    _RepertoireForkStep,
 )
 
 
@@ -330,8 +337,8 @@ def _validate_v_subregion_rates(
 # collapses descendant diversity (every clone member shares an
 # identical effect because the pass ran once on the parent IR).
 #
-# :meth:`Experiment.expand_clones` scans the already-appended step
-# list against this table; the first match is rejected with a
+# The clonal fork methods scan the already-appended step list against
+# this table; the first match is rejected with a
 # message naming the offending DSL method and the canonical fix.
 #
 # Each entry is ``(predicate, dsl_method_name)`` where the predicate
@@ -343,9 +350,9 @@ def _descendant_phase_step_classifier(step):
     """Return the DSL method name a descendant-phase ``step`` came
     from, or ``None`` if ``step`` is not a descendant-phase step.
 
-    Single source of truth for the unified guard in
-    :meth:`Experiment.expand_clones`. Adding a new descendant-phase
-    DSL method means appending a clause here (and adding the
+    Single source of truth for the unified guard in the flat clonal
+    fork methods. Adding a new descendant-phase DSL method means
+    appending a clause here (and adding the
     companion spec test in
     ``tests/test_clonal_descendant_phase_guards.py``).
     """
@@ -968,6 +975,13 @@ class Experiment:
         records automatically. Passing ``n`` is allowed only when
         ``n == n_clones * per_clone``.
 
+        .. deprecated::
+            Use :meth:`clonal_lineage` for BCR affinity-maturation
+            trees, or :meth:`clonal_repertoire` for TCR / flat-BCR
+            abundance repertoires with clone-size distributions.
+            ``expand_clones`` remains supported for fixed-size flat
+            star expansion.
+
         Constraints:
         - Both ``n_clones`` and ``per_clone`` must be positive ints.
         - At most one expansion per pipeline; calling this method
@@ -980,15 +994,28 @@ class Experiment:
         shares the same recombination provenance (V allele, trim,
         NP bases) and only diverges through the post-fork passes.
         """
+        warnings.warn(
+            "Experiment.expand_clones() is deprecated. Use "
+            "Experiment.clonal_lineage() for BCR affinity-maturation trees "
+            "(internal SHM, lineage_trees, no per_clone) or "
+            "Experiment.clonal_repertoire() for TCR / flat-BCR abundance "
+            "repertoires with clone-size distributions and duplicate_count. "
+            "Neither is a drop-in replacement for fixed per_clone output; "
+            "expand_clones() remains supported for legacy fixed-size flat "
+            "star expansion.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not isinstance(n_clones, int) or isinstance(n_clones, bool) or n_clones < 1:
             raise ValueError(
                 f"n_clones must be a positive int, got {n_clones!r}"
             )
         if not isinstance(per_clone, int) or isinstance(per_clone, bool) or per_clone < 1:
             raise ValueError(f"per_clone must be a positive int, got {per_clone!r}")
-        if any(isinstance(s, _ClonalForkStep) for s in self._steps):
+        if self._has_clonal_fork():
             raise ValueError(
-                "expand_clones() can only be called once per pipeline"
+                "expand_clones() / clonal_lineage() / clonal_repertoire() "
+                "can only be called once per pipeline"
             )
         # Unified descendant-phase ordering guard. Scan the appended
         # step list for any step that came from a descendant-phase
@@ -1021,6 +1048,373 @@ class Experiment:
                 f"{offending_method}(...) after expand_clones(...)."
             )
         self._steps.append(_ClonalForkStep(n_clones=n_clones, size=per_clone))
+        return self
+
+    def clonal_repertoire(
+        self,
+        *,
+        n_clones: int,
+        size_distribution: str = "power_law",
+        exponent: float = 2.0,
+        mu: float = 1.0,
+        sigma: float = 1.0,
+        max_size: int = 1000,
+        unexpanded_fraction: float = 0.0,
+    ) -> "Experiment":
+        """Expand the pipeline into a non-tree clonal **repertoire**.
+
+        This is the non-tree clonal model (contrast with
+        :meth:`clonal_lineage`, which grows real affinity-maturation
+        lineage *trees*). It generalizes the deprecated
+        :meth:`expand_clones`: instead of a fixed ``per_clone`` size,
+        each clone draws a size from a heavy-tailed distribution (with
+        an unexpanded-singleton fraction). That many reads pass through
+        the post-fork library-prep / sequencing passes, and identical
+        reads are genotype-collapsed into AIRR records carrying a
+        standard ``duplicate_count`` that records abundance.
+
+        Like :meth:`expand_clones`, this call marks the per-clone /
+        per-read boundary: steps appended *before* it run **once per
+        clone** (typically just :meth:`recombine`, establishing the
+        clonal V/D/J + trim + NP backbone); steps appended *after* it
+        run **once per read** (the library-prep / sequencing passes
+        that introduce per-read divergence).
+
+        Concrete shape::
+
+            exp = (Experiment.on("human_igh")
+                   .recombine()
+                   .clonal_repertoire(n_clones=200, max_size=500,
+                                      unexpanded_fraction=0.3)
+                   .sequencing_errors(rate=0.005))
+            result = exp.run_records(seed=0)
+            # Each record carries a `clone_id` and a `duplicate_count`.
+
+        Parameters:
+        - ``n_clones`` — number of clones (positive int).
+        - ``size_distribution`` — ``"power_law"`` or ``"lognormal"``.
+        - ``exponent`` — power-law exponent (``> 0``; used when
+          ``size_distribution="power_law"``).
+        - ``mu`` / ``sigma`` — lognormal parameters (``sigma >= 0``;
+          used when ``size_distribution="lognormal"``).
+        - ``max_size`` — clamps the largest clone. Because the total
+          number of reads simulated is roughly the **sum** of the drawn
+          sizes when post-fork passes are present, keep ``max_size``
+          modest to bound runtime.
+        - ``unexpanded_fraction`` — fraction of clones forced to size 1
+          (unexpanded singletons), in ``[0, 1]``.
+
+        TCR works out of the box (no SHM): the reads diverge only
+        through the post-fork sequencing passes. Note that ``mutate``
+        after this call is rejected on TCR by :meth:`mutate`'s own TCR
+        guard; on BCR an optional post-fork ``mutate`` adds flat SHM.
+
+        **No-corruption shortcut:** a clone with no post-fork passes
+        emits identical copies, so it collapses to a single record whose
+        ``duplicate_count`` equals the drawn size.
+
+        Constraints:
+        - At most one fork per pipeline — calling this when an
+          :meth:`expand_clones`, :meth:`clonal_lineage`, or
+          :meth:`clonal_repertoire` fork is already present raises
+          ``ValueError``.
+        - The same descendant-phase ordering guard as
+          :meth:`expand_clones` applies: a descendant-phase step (e.g.
+          ``.mutate()``) appended *before* this call is rejected;
+          :meth:`recombine` is fine.
+        """
+        if not isinstance(n_clones, int) or isinstance(n_clones, bool) or n_clones < 1:
+            raise ValueError(
+                f"n_clones must be a positive int, got {n_clones!r}"
+            )
+        if size_distribution not in ("power_law", "lognormal"):
+            raise ValueError(
+                "size_distribution must be 'power_law' or 'lognormal', got "
+                f"{size_distribution!r}"
+            )
+        if not (isinstance(exponent, (int, float)) and exponent > 0):
+            raise ValueError(f"exponent must be > 0, got {exponent!r}")
+        if not (isinstance(sigma, (int, float)) and sigma >= 0):
+            raise ValueError(f"sigma must be >= 0, got {sigma!r}")
+        if not isinstance(max_size, int) or isinstance(max_size, bool) or max_size < 1:
+            raise ValueError(f"max_size must be a positive int, got {max_size!r}")
+        if not (
+            isinstance(unexpanded_fraction, (int, float))
+            and 0.0 <= unexpanded_fraction <= 1.0
+        ):
+            raise ValueError(
+                "unexpanded_fraction must be in [0, 1], got "
+                f"{unexpanded_fraction!r}"
+            )
+        if any(
+            isinstance(s, (_ClonalForkStep, _RepertoireForkStep, _LineageForkStep))
+            for s in self._steps
+        ):
+            raise ValueError(
+                "clonal_repertoire() / expand_clones() / clonal_lineage() "
+                "can only be called once per pipeline"
+            )
+        # Same descendant-phase ordering guard as expand_clones: a
+        # descendant-phase step (mutate / corruption / paired_end)
+        # appended before the fork is rejected.
+        for step in self._steps:
+            offending_method = _descendant_phase_step_classifier(step)
+            if offending_method is None:
+                continue
+            if offending_method == "mutate":
+                detail = (
+                    "SHM is descendant-specific in GenAIRR's current "
+                    "clonal model"
+                )
+            else:
+                detail = (
+                    "it is descendant-specific and must be sampled "
+                    "independently for each read"
+                )
+            raise ValueError(
+                f"{offending_method} must be called after "
+                f"clonal_repertoire(); {detail}. Move "
+                f"{offending_method}(...) after clonal_repertoire(...)."
+            )
+        self._steps.append(
+            _RepertoireForkStep(
+                n_clones=n_clones,
+                size_distribution=size_distribution,
+                exponent=float(exponent),
+                mu=float(mu),
+                sigma=float(sigma),
+                max_size=max_size,
+                unexpanded_fraction=float(unexpanded_fraction),
+            )
+        )
+        return self
+
+    def clonal_lineage(
+        self,
+        *,
+        n_clones: int,
+        max_generations: int = 10,
+        n_max: int = 1000,
+        n_sample: int = 50,
+        rate: float = 0.05,
+        lambda_base: float = 1.5,
+        selection_strength: float = 0.0,
+        beta: float = 1.0,
+        target_aa: Optional[str] = None,
+        mature_substitutions: int = 5,
+        s5f_model: str = "hh_s5f",
+        allow_extinction: bool = False,
+    ) -> "Experiment":
+        """Grow BCR lineage trees (neutral by default; set ``selection_strength > 0``
+        and optionally ``target_aa`` to enable affinity maturation).
+
+        Each clone gets its own lineage tree produced by the Rust
+        ``simulate_family_outcomes`` kernel. The returned
+        :class:`~GenAIRR.result.SimulationResultWithLineages` carries:
+
+        - ``.records`` — one AIRR dict per *observed* (genotype-collapsed) cell,
+          tagged with ``clone_id``, ``lineage_node_id``, ``lineage_parent_id``,
+          ``lineage_generation``, ``lineage_abundance``, and
+          ``lineage_affinity``. Because identical genotypes are collapsed before
+          sampling, the number of records per clone is ≤ ``n_sample``; the
+          ``lineage_abundance`` field accounts for how many sampled cells were
+          represented by each observed record. Mutation counts (``n_mutations``,
+          ``n_v_mutations``, …) are pool-derived and self-consistent.
+        - ``.lineage_trees`` — one :class:`~GenAIRR._engine.LineageTree`
+          per clone for ground-truth export (Newick, FASTA, node table TSV).
+
+        Parameters
+        ----------
+        n_clones:
+            Number of independent clonal lineages to grow.
+        max_generations:
+            Maximum depth of the lineage tree (≤ 1000).
+        n_max:
+            Per-generation LIVING-population carrying capacity: the live
+            population per generation is capped at this (the tree can contain
+            more total nodes across generations). It is NOT a hard cap on the
+            total number of cells per clone.
+        n_sample:
+            Number of cells to sample as observed leaves. Records returned
+            per clone are ≤ ``n_sample`` because identical genotypes are
+            collapsed (duplicates are counted in ``lineage_abundance``).
+        rate:
+            Per-base SHM rate for within-lineage mutations.
+        lambda_base:
+            Poisson mean for offspring count at affinity 0.
+        selection_strength:
+            Selection pressure; ``0.0`` = neutral drift (fitness is 1.0 for
+            every cell). This disables selection but does not force
+            ``lineage_affinity`` to 0 when a target sequence is supplied.
+            Set ``> 0`` to enable affinity maturation; combine with
+            ``target_aa`` for a fixed sequence target.
+        beta:
+            Scaling factor for the affinity term in ``exp(−beta·distance)``.
+        target_aa:
+            Amino-acid sequence of the full receptor used to compute
+            per-cell affinity via a BLOSUM62-weighted distance (compared
+            position-wise against the cell's translated receptor; only
+            the overlapping prefix is scored when lengths differ). Must be
+            a non-empty string of standard amino-acid letters
+            (``ACDEFGHIKLMNPQRSTVWY``). When ``None``, an auto target is
+            generated from the founder by applying ``mature_substitutions``
+            random residue changes whenever selection is enabled. In fully
+            neutral mode (``selection_strength=0`` and ``target_aa=None``),
+            no affinity model is built and ``lineage_affinity`` is 0.
+        mature_substitutions:
+            Number of amino-acid substitutions used to build the auto
+            target (when ``target_aa`` is ``None``).
+        s5f_model:
+            Bundled S5F kernel name for within-lineage mutation context
+            (``"hh_s5f"``, ``"hkl_s5f"``, …).
+        allow_extinction:
+            Sampling draws from the LIVING final-generation population, so a
+            founder that draws 0 offspring goes extinct and yields zero
+            observed cells/records. With ``allow_extinction=False`` (default)
+            each requested clone is conditioned on survival: an extinct family
+            is retried with a fresh deterministic sub-seed (up to a bounded
+            number of attempts) so you reliably get ``n_clones`` families. With
+            ``allow_extinction=True`` extinction is accepted and the extinct
+            clone is skipped, producing fewer families than ``n_clones``.
+
+        **BCR-only guard:** ``clonal_lineage`` applies S5F somatic
+        hypermutation, which is a B-cell process. Calling it on a TCR-configured
+        experiment raises ``ValueError`` (immunoglobulin / BCR loci only). TCR
+        clone-size primitives exist in the engine but are not yet exposed as a
+        DSL workflow.
+        """
+        import math
+        import warnings
+
+        # --- BCR-only guard (mirror mutate()'s TCR rejection) ---
+        # clonal_lineage applies S5F somatic hypermutation, a B-cell process,
+        # so it must reject TCR loci. ``_is_tcr_refdata`` inspects the first V
+        # allele name prefix (TR* => TCR, IG* => BCR) on the already-bound
+        # refdata, exactly as mutate() does. Firing here, at call time and
+        # before compile(), guarantees the clear BCR-only message instead of a
+        # downstream cartridge / compile error.
+        if self._is_tcr_refdata():
+            locus = self._refdata.v_allele(0).name if self._refdata.v_pool_size() else "?"
+            raise ValueError(
+                "clonal_lineage models B-cell somatic hypermutation and "
+                "supports immunoglobulin (BCR) loci only; the locus "
+                f"'{locus}' is a TCR locus. (TCR clone-size simulation is not "
+                "yet exposed in the DSL.)"
+            )
+        # --- allow_extinction ---
+        if not isinstance(allow_extinction, bool):
+            raise ValueError(
+                f"allow_extinction must be a bool, got {allow_extinction!r}"
+            )
+
+        # --- n_clones ---
+        if isinstance(n_clones, bool) or not isinstance(n_clones, int) or n_clones < 1:
+            raise ValueError(f"n_clones must be a positive int, got {n_clones!r}")
+        # --- max_generations ---
+        if (
+            isinstance(max_generations, bool)
+            or not isinstance(max_generations, int)
+            or max_generations < 1
+            or max_generations > 1000
+        ):
+            raise ValueError(
+                f"max_generations must be a positive int <= 1000, got {max_generations!r}"
+            )
+        # --- n_max ---
+        if isinstance(n_max, bool) or not isinstance(n_max, int) or n_max < 1:
+            raise ValueError(f"n_max must be a positive int, got {n_max!r}")
+        # --- n_sample ---
+        if isinstance(n_sample, bool) or not isinstance(n_sample, int) or n_sample < 1:
+            raise ValueError(f"n_sample must be a positive int, got {n_sample!r}")
+        # --- rate ---
+        if not isinstance(rate, (int, float)) or not math.isfinite(rate) or rate < 0 or rate > 1:
+            raise ValueError(f"rate must be a float in [0, 1], got {rate!r}")
+        # --- lambda_base ---
+        if not isinstance(lambda_base, (int, float)) or not math.isfinite(lambda_base) or lambda_base < 0:
+            raise ValueError(f"lambda_base must be a finite non-negative float, got {lambda_base!r}")
+        # --- beta ---
+        if not isinstance(beta, (int, float)) or not math.isfinite(beta) or beta < 0:
+            raise ValueError(f"beta must be a finite non-negative float, got {beta!r}")
+        # --- selection_strength ---
+        if not isinstance(selection_strength, (int, float)) or not math.isfinite(selection_strength) or selection_strength < 0:
+            raise ValueError(
+                f"selection_strength must be a finite non-negative float, got {selection_strength!r}"
+            )
+        # --- mature_substitutions ---
+        if (
+            isinstance(mature_substitutions, bool)
+            or not isinstance(mature_substitutions, int)
+            or mature_substitutions < 0
+        ):
+            raise ValueError(
+                f"mature_substitutions must be a non-negative int, got {mature_substitutions!r}"
+            )
+        # --- target_aa ---
+        _VALID_AA = set("ACDEFGHIKLMNPQRSTVWY")
+        if target_aa is not None:
+            if not isinstance(target_aa, str) or len(target_aa) == 0:
+                raise ValueError(
+                    "target_aa must be a non-empty amino-acid string "
+                    "(letters from ACDEFGHIKLMNPQRSTVWY)"
+                )
+            target_aa = target_aa.upper()
+            invalid = set(target_aa) - _VALID_AA
+            if invalid:
+                raise ValueError(
+                    f"target_aa contains invalid characters {sorted(invalid)!r}; "
+                    "only standard amino-acid letters (ACDEFGHIKLMNPQRSTVWY) are allowed"
+                )
+            if len(target_aa) < 30:
+                warnings.warn(
+                    f"target_aa has length {len(target_aa)}, which is shorter than a typical "
+                    "receptor sequence (~300+ aa). If this is an epitope sequence rather than "
+                    "the full receptor, affinity scoring will be based only on the overlapping "
+                    "prefix — consider supplying the full translated receptor instead.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        # --- s5f_model (validate at call time, not at run time) ---
+        from GenAIRR._s5f_loader import _BUILTIN_S5F_MODELS
+        _s5f_key = s5f_model.lower().strip()
+        if _s5f_key not in _BUILTIN_S5F_MODELS:
+            avail = ", ".join(f'"{k}"' for k in sorted(_BUILTIN_S5F_MODELS))
+            raise ValueError(
+                f"Unknown s5f_model {s5f_model!r}. Available: {avail}"
+            )
+        # --- reject duplicate fork steps ---
+        for s in self._steps:
+            if isinstance(s, (_ClonalForkStep, _RepertoireForkStep, _LineageForkStep)):
+                raise ValueError(
+                    "clonal_lineage() / expand_clones() / clonal_repertoire() "
+                    "can only be called once per pipeline"
+                )
+        # --- descendant-phase guard (same as expand_clones) ---
+        for step in self._steps:
+            offending_method = _descendant_phase_step_classifier(step)
+            if offending_method is None:
+                continue
+            raise ValueError(
+                f"{offending_method} must be called after "
+                f"clonal_lineage(); it is descendant-specific and must be sampled "
+                f"independently for each clone member. Move "
+                f"{offending_method}(...) after clonal_lineage(...)."
+            )
+        self._steps.append(
+            _LineageForkStep(
+                n_clones=n_clones,
+                max_generations=max_generations,
+                n_max=n_max,
+                n_sample=n_sample,
+                rate=rate,
+                lambda_base=lambda_base,
+                selection_strength=selection_strength,
+                beta=beta,
+                target_aa=target_aa,
+                mature_substitutions=mature_substitutions,
+                s5f_model=s5f_model,
+                allow_extinction=allow_extinction,
+            )
+        )
         return self
 
     def mutate(
@@ -1181,17 +1575,20 @@ class Experiment:
         )
 
     def _has_clonal_fork(self) -> bool:
-        """Whether :meth:`expand_clones` has already been appended.
+        """Whether any clonal fork has already been appended.
 
         Used by the DSL ordering guards on :meth:`invert_d`,
-        :meth:`receptor_revision`, and :meth:`expand_clones` itself.
-        Each step lowers into either the pre-fork (per-clone) or
-        the post-fork (per-descendant) plan; misordered calls used
-        to silently lower into the wrong half and produce records
-        with empty / default fields. The guards reject those
-        configurations at the DSL boundary.
+        :meth:`receptor_revision`, and the clonal fork methods.
+        Each fork has a pre-fork parent/founder phase; recombination-time
+        mechanisms must be inherited by every descendant, emitted copy,
+        or lineage node. Misordered calls used to lower into the wrong
+        half and produce records with empty / default fields. The guards
+        reject those configurations at the DSL boundary.
         """
-        return any(isinstance(s, _ClonalForkStep) for s in self._steps)
+        return any(
+            isinstance(s, (_ClonalForkStep, _RepertoireForkStep, _LineageForkStep))
+            for s in self._steps
+        )
 
     def _is_tcr_refdata(self) -> bool:
         """Detect whether the bound refdata is a TCR locus.
@@ -1659,10 +2056,11 @@ class Experiment:
         # even at prob=1.0. Reject at the DSL boundary instead.
         if self._has_clonal_fork():
             raise ValueError(
-                "invert_d must be called before expand_clones(); D "
+                "invert_d must be called before the clonal fork; D "
                 "inversion is a recombination-time decision and must "
                 "be inherited by all clone descendants. Move the "
-                "invert_d(...) call before expand_clones(...)."
+                "invert_d(...) call before clonal_lineage(...), "
+                "clonal_repertoire(...), or expand_clones(...)."
             )
         if not isinstance(prob, (int, float)):
             raise ValueError(
@@ -1757,10 +2155,11 @@ class Experiment:
         if self._has_clonal_fork():
             raise ValueError(
                 "receptor_revision must be called before "
-                "expand_clones(); receptor revision is a "
+                "the clonal fork; receptor revision is a "
                 "recombination-time decision and must be inherited by "
                 "all clone descendants. Move the "
-                "receptor_revision(...) call before expand_clones(...)."
+                "receptor_revision(...) call before clonal_lineage(...), "
+                "clonal_repertoire(...), or expand_clones(...)."
             )
         if not isinstance(prob, (int, float)):
             raise ValueError(
@@ -2227,6 +2626,124 @@ class Experiment:
                 metadata=self._metadata,
             )
 
+        # if a `_RepertoireForkStep` is present, split the step list
+        # at it and compile the pre-fork (per-clone) simulator plus an
+        # optional post-fork (per-read) simulator, mirroring the
+        # `_ClonalForkStep` branch. Per-clone sizes are drawn at run
+        # time from the heavy-tailed distribution; identical reads are
+        # collapsed into `duplicate_count`-carrying records.
+        repertoire_idx = next(
+            (
+                i
+                for i, s in enumerate(self._steps)
+                if isinstance(s, _RepertoireForkStep)
+            ),
+            None,
+        )
+        if repertoire_idx is not None:
+            repertoire_step: _RepertoireForkStep = self._steps[repertoire_idx]
+            pre_steps = self._steps[:repertoire_idx]
+            post_steps = self._steps[repertoire_idx + 1 :]
+            pre_simulator = self._build_simulator(
+                pre_steps,
+                contracts,
+                any_lock,
+                replace_fn=_replace,
+                allow_curatable_refdata=allow_curatable_refdata,
+            )
+            # post_steps may be empty — that's the pure-copy case
+            # (each clone collapses to one record with
+            # duplicate_count = size). When present, the post-fork
+            # plan inherits the parent's V/D/J/NP backbone, so
+            # any_lock=False and no recombination facts on this side
+            # (same as the clonal branch).
+            post_simulator = None
+            if post_steps:
+                post_simulator = self._build_simulator(
+                    post_steps,
+                    contracts,
+                    any_lock=False,
+                    replace_fn=_replace,
+                    allow_curatable_refdata=allow_curatable_refdata,
+                )
+            return CompiledRepertoireExperiment(
+                pre_simulator,
+                post_simulator,
+                repertoire_step,
+                self._refdata,
+                dataconfig=self._dataconfig,
+                metadata=self._metadata,
+            )
+
+        # if a `_LineageForkStep` is present, compile a
+        # CompiledLineageExperiment: pre-fork steps (recombine) become
+        # the founder simulator; post-fork steps must be empty (the
+        # lineage engine handles mutation internally).
+        lineage_idx = next(
+            (i for i, s in enumerate(self._steps) if isinstance(s, _LineageForkStep)),
+            None,
+        )
+        if lineage_idx is not None:
+            lineage_step: _LineageForkStep = self._steps[lineage_idx]
+            pre_steps = self._steps[:lineage_idx]
+            post_steps = self._steps[lineage_idx + 1:]
+            # Steps after clonal_lineage() are per-observed-cell
+            # library-prep / sequencing artefact passes (the same
+            # post-fork set expand_clones() allows). SHM is internal
+            # to the lineage engine, so .mutate() is rejected; the
+            # paired-end read layout is not yet wired through the
+            # per-cell corruption merge, so reject it for now too.
+            for s in post_steps:
+                if isinstance(s, _MutateStep):
+                    raise ValueError(
+                        "SHM is internal to clonal_lineage; do not add "
+                        ".mutate() after it. Set the within-lineage SHM rate "
+                        "via clonal_lineage(rate=...)."
+                    )
+                if isinstance(s, _PairedEndStep):
+                    raise ValueError(
+                        "paired_end not yet supported with clonal_lineage; "
+                        "apply per-read library-prep passes (sequencing_errors, "
+                        "pcr_amplify, polymerase_indels, end_loss_*, "
+                        "ambiguous_base_calls, random_strand_orientation) instead."
+                    )
+                if not isinstance(s, _CorruptStep):
+                    raise ValueError(
+                        "Only per-read library-prep / sequencing artefact passes "
+                        "may follow clonal_lineage(); got "
+                        f"{type(s).__name__}."
+                    )
+            pre_simulator = self._build_simulator(
+                pre_steps,
+                contracts,
+                any_lock,
+                replace_fn=_replace,
+                allow_curatable_refdata=allow_curatable_refdata,
+            )
+            # Build the per-cell corruption simulator from the
+            # post-fork steps, mirroring the clonal branch's
+            # post_simulator (no recombination facts on this side, so
+            # any_lock=False and the analyzer skips the productive
+            # precondition check).
+            post_simulator = None
+            if post_steps:
+                post_simulator = self._build_simulator(
+                    post_steps,
+                    contracts,
+                    any_lock=False,
+                    replace_fn=_replace,
+                    allow_curatable_refdata=allow_curatable_refdata,
+                )
+            return CompiledLineageExperiment(
+                pre_simulator,
+                lineage_step,
+                self._refdata,
+                post_simulator=post_simulator,
+                post_steps=tuple(post_steps),
+                dataconfig=self._dataconfig,
+                metadata=self._metadata,
+            )
+
         simulator = self._build_simulator(
             self._steps,
             contracts,
@@ -2369,6 +2886,33 @@ class Experiment:
         if isinstance(compiled, CompiledClonalExperiment):
             result = compiled.run_records(
                 n=n,
+                seed=seed,
+                strict=strict,
+                expose_provenance=expose_provenance,
+                validate_records=validate_records,
+            )
+        elif isinstance(compiled, CompiledRepertoireExperiment):
+            if n is not None:
+                raise ValueError(
+                    "The 'n' parameter is not supported for clonal_repertoire "
+                    "experiments. The number of records depends on the per-clone "
+                    "sizes drawn from the heavy-tailed distribution and the "
+                    "read-collapse, not a fixed product."
+                )
+            result = compiled.run_records(
+                seed=seed,
+                strict=strict,
+                expose_provenance=expose_provenance,
+                validate_records=validate_records,
+            )
+        elif isinstance(compiled, CompiledLineageExperiment):
+            if n is not None:
+                raise ValueError(
+                    "The 'n' parameter is not supported for clonal_lineage experiments. "
+                    "The number of observed records depends on the lineage trees "
+                    "grown from n_clones / n_sample / selection, not a fixed product."
+                )
+            result = compiled.run_records(
                 seed=seed,
                 strict=strict,
                 expose_provenance=expose_provenance,
@@ -2539,4 +3083,3 @@ class Experiment:
 
     def __repr__(self) -> str:
         return f"<Experiment chain={self.chain_type} steps={self.step_count}>"
-

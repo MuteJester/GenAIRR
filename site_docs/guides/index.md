@@ -21,8 +21,14 @@ specific biological mechanisms or pipeline patterns.</p>
 - **[SHM and mutation targeting](shm-targeting.md)** — uniform
   vs S5F, per-segment and per-V-subregion rates, counter
   partitions.
-- **[Clonal families](clonal-families.md)** — `expand_clones`,
-  the ancestor / descendant phase split, family validation.
+- **[Clonal simulation overview](clonal-families.md)** — choose
+  between BCR lineage trees, TCR / flat-BCR clone-size repertoires,
+  and legacy fixed-size stars.
+- **[Clonal lineage trees](clonal-lineage.md)** — BCR
+  affinity-maturation trees with SHM, selection, sampling, and
+  ground-truth exports.
+- **[Clonal repertoires](clonal-repertoire.md)** — TCR and flat-BCR
+  abundance models with heavy-tailed clone sizes and `duplicate_count`.
 
 ## Library + sequencing
 

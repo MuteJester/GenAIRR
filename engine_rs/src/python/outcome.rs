@@ -225,7 +225,7 @@ impl PyOutcome {
 /// `Option<i64>` becomes `int | None`, `Option<f64>` becomes `float
 /// | None`, `Option<bool>` becomes `bool | None`. Strings and the
 /// few `bool`/`i64`/`f64` non-optional fields go through directly.
-fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> PyResult<Bound<'py, PyDict>> {
+pub(crate) fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new_bound(py);
 
     // AIRR metadata

@@ -3,8 +3,10 @@
 <p class="lead"><code>SimulationResult</code> is the output wrapper
 returned by <code>Experiment.run_records(...)</code>. It holds the
 list of AIRR record dicts, the underlying engine <code>Outcome</code>
-objects (for trace / replay / validation), and the parent
-<code>Outcome</code>s when the pipeline produced clonal families.
+objects (for trace / replay / validation), legacy parent
+<code>Outcome</code>s when <code>expand_clones</code> produced fixed-size
+families, and lineage trees when <code>clonal_lineage</code> produced BCR
+tree output.
 Treat it as a list-like view of records plus the typed validators
 and export helpers below.</p>
 
@@ -22,6 +24,11 @@ The eight methods you'll reach for in real pipelines:
 | `.to_csv(path, *, airr_strict=False)` | Write CSV (sibling of `to_tsv`) |
 | `.to_fasta(path, *, prefix="seq")` | Write assembled sequences as FASTA |
 | `.to_fastq(...)` / `.to_paired_fastq(...)` | Write FASTQ; paired-end requires `read_layout="paired_end"` |
+
+`clonal_repertoire` returns ordinary `SimulationResult` records with
+`clone_id` and `duplicate_count`. `clonal_lineage` returns
+`SimulationResultWithLineages`, a subclass that adds `.lineage_trees`.
+Legacy `expand_clones` returns `SimulationResult` with `.parents`.
 
 ### FASTQ exports (prose only)
 

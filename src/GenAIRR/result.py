@@ -1318,3 +1318,38 @@ class SimulationResult:
                 # don't carry literal ``"None"`` strings.
                 row = {k: ("" if v is None else v) for k, v in source.items()}
                 writer.writerow(row)
+
+
+class SimulationResultWithLineages(SimulationResult):
+    """A :class:`SimulationResult` that also carries per-clone lineage trees.
+
+    Produced by :meth:`CompiledLineageExperiment.run_records`. Adds a
+    ``.lineage_trees`` property that exposes the raw
+    :class:`~GenAIRR._engine.LineageTree` objects (one per clone) for
+    ground-truth export via ``.to_newick()``, ``.to_fasta()``, and
+    ``.to_node_table_tsv()``.
+    """
+
+    __slots__ = ("_lineage_trees",)
+
+    def __init__(
+        self,
+        records: "Sequence[Dict[str, Any]]",
+        outcomes: "Optional[Sequence]" = None,
+        parents: "Optional[Sequence]" = None,
+        lineage_trees: "Optional[Sequence]" = None,
+    ) -> None:
+        super().__init__(records, outcomes, parents)
+        self._lineage_trees: "Optional[List]" = (
+            list(lineage_trees) if lineage_trees is not None else None
+        )
+
+    @property
+    def lineage_trees(self) -> "Optional[List]":
+        """Per-clone :class:`~GenAIRR._engine.LineageTree` objects, or ``None``.
+
+        Each tree supports ``.validate()``, ``.to_newick()``,
+        ``.to_fasta()``, and ``.to_node_table_tsv()`` for ground-truth
+        export and downstream phylogenetic analysis.
+        """
+        return self._lineage_trees

@@ -70,7 +70,7 @@ def test_invert_d_after_expand_clones_raises() -> None:
         exp.invert_d(prob=1.0)
     msg = str(exc_info.value)
     # Must name BOTH the correct ordering and the biological reason.
-    assert "invert_d must be called before expand_clones" in msg, msg
+    assert "invert_d must be called before the clonal fork" in msg, msg
     assert "recombination" in msg.lower(), msg
     assert "inherited" in msg, msg
 
@@ -93,7 +93,7 @@ def test_receptor_revision_after_expand_clones_raises() -> None:
         exp.receptor_revision(prob=1.0)
     msg = str(exc_info.value)
     assert (
-        "receptor_revision must be called before expand_clones" in msg
+        "receptor_revision must be called before the clonal fork" in msg
     ), msg
     assert "recombination" in msg.lower(), msg
     assert "inherited" in msg, msg
@@ -225,7 +225,7 @@ def test_error_message_invert_d_names_recombination_time() -> None:
         exp.invert_d(prob=0.5)
     msg = str(exc_info.value)
     # The correct ordering.
-    assert "before expand_clones" in msg
+    assert "before the clonal fork" in msg
     # The biological reason — pin the phrase that names the
     # mechanism.
     assert re.search(r"recombination[- ]?time", msg.lower())
@@ -242,7 +242,7 @@ def test_error_message_receptor_revision_names_recombination_time() -> None:
     with pytest.raises(ValueError) as exc_info:
         exp.receptor_revision(prob=0.5)
     msg = str(exc_info.value)
-    assert "before expand_clones" in msg
+    assert "before the clonal fork" in msg
     assert re.search(r"recombination[- ]?time", msg.lower())
     assert "Move" in msg or "move" in msg
 
@@ -273,7 +273,7 @@ def test_pin_guarded_invert_d_post_fork_drop_cannot_reach_runtime() -> None:
     is rejected at the DSL boundary so the silent runtime
     behaviour is structurally unreachable. Pin the rejection
     rather than the broken runtime output."""
-    with pytest.raises(ValueError, match="before expand_clones"):
+    with pytest.raises(ValueError, match="before the clonal fork"):
         (
             ga.Experiment.on("human_igh")
             .recombine()
@@ -284,7 +284,7 @@ def test_pin_guarded_invert_d_post_fork_drop_cannot_reach_runtime() -> None:
 
 def test_pin_guarded_receptor_revision_post_fork_drop_cannot_reach_runtime() -> None:
     """Bug B's silent drop closed at the DSL boundary."""
-    with pytest.raises(ValueError, match="before expand_clones"):
+    with pytest.raises(ValueError, match="before the clonal fork"):
         (
             ga.Experiment.on("human_igh")
             .recombine()
@@ -349,3 +349,38 @@ def test_has_clonal_fork_helper_reflects_pipeline_state() -> None:
     assert base._has_clonal_fork() is False
     forked = base.expand_clones(n_clones=1, per_clone=1)
     assert forked._has_clonal_fork() is True
+
+
+# ──────────────────────────────────────────────────────────────────
+# A pipeline may contain at most one clonal fork — stacking any two
+# of expand_clones / clonal_lineage / clonal_repertoire raises a
+# clear "once per pipeline" error at DSL time (not a confusing
+# downstream TypeError at compile()).
+# ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        ("clonal_repertoire", "clonal_lineage"),
+        ("clonal_lineage", "clonal_repertoire"),
+        ("expand_clones", "clonal_lineage"),
+        ("expand_clones", "clonal_repertoire"),
+        ("clonal_lineage", "expand_clones"),
+        ("clonal_repertoire", "expand_clones"),
+    ],
+)
+def test_two_clonal_forks_rejected_once_per_pipeline(first: str, second: str) -> None:
+    """Any second clonal fork is rejected with the canonical
+    "once per pipeline" message, regardless of which fork came
+    first."""
+    kwargs = {
+        "expand_clones": dict(n_clones=1, per_clone=2),
+        "clonal_lineage": dict(n_clones=1),
+        "clonal_repertoire": dict(n_clones=1),
+    }
+    exp = getattr(
+        ga.Experiment.on("human_igh").recombine(), first
+    )(**kwargs[first])
+    with pytest.raises(ValueError, match="once per pipeline"):
+        getattr(exp, second)(**kwargs[second])

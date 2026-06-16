@@ -182,39 +182,40 @@ and the insert size matches.
 
 ## Family validation
 
-For workloads using `expand_clones(...)` to generate clonal
-families, two sibling validators check family-level consistency:
+For workloads that stamp `clone_id` (`clonal_lineage(...)`,
+`clonal_repertoire(...)`, or legacy `expand_clones(...)`), family
+validation checks clone-level consistency:
 
 ```python
 result = (
     ga.Experiment.on("human_igh")
       .recombine()
-      .expand_clones(n_clones=50, per_clone=20)
-      .mutate(rate=0.05)
-      .run_records(n=1000, seed=42)
+      .clonal_repertoire(n_clones=50, max_size=100)
+      .mutate(rate=0.01)
+      .run_records(seed=42, expose_provenance=True)
 )
 
-family_report = result.validate_families(refdata)
+family_report = result.validate_families()
 assert family_report, family_report.summary()
 ```
 
-`validate_families` checks within-family invariants: every
-descendant of a clone shares its V(D)J recombination, every
-descendant's `clone_id` matches the parent, no descendant has a
-SHM count below the parent's, and the per-clone size matches what
-`expand_clones` was asked for.
+`validate_families` is records-only. It checks that a clonal batch is
+not mixed with non-clonal records and, when `truth_v_call`,
+`truth_d_call`, and `truth_j_call` are present, that those
+recombination-time truth calls are invariant within each `clone_id`
+group.
 
-When you also want to check that each family's *parent* record
-itself validates against the cartridge (in addition to family
-invariants), use the parent-aware variant:
+For legacy `expand_clones(...)`, you can also compare each
+descendant against its actual parent `Outcome`:
 
 ```python
 report = result.validate_families_with_parents(refdata)
 ```
 
-This is the most expensive of the three — it runs the per-record
-validator on every parent before checking family invariants — but
-it's the strongest gate. Use it in release-tier CI.
+`clonal_repertoire` and `clonal_lineage` do not expose
+`result.parents`, so `validate_families_with_parents` is not their
+primary validator. For `clonal_lineage`, validate the tree objects
+directly with `tree.validate()` when topology matters.
 
 ## What `validate_records` does NOT do
 

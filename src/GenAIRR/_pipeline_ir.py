@@ -189,6 +189,54 @@ class _ClonalForkStep:
 
 
 @dataclass(frozen=True)
+class _RepertoireForkStep:
+    """Marks a non-tree clonal-repertoire fork.
+
+    Generalizes :class:`_ClonalForkStep`: instead of a fixed
+    ``per_clone`` size, each clone draws a size from a heavy-tailed
+    distribution (with an unexpanded-singleton fraction). That many
+    reads pass through the post-fork library-prep / sequencing passes
+    and identical reads collapse into AIRR records carrying a standard
+    ``duplicate_count``.
+
+    Causes :meth:`Experiment.compile` to return a
+    :class:`~GenAIRR._compiled.CompiledRepertoireExperiment`.
+    """
+
+    n_clones: int
+    size_distribution: str
+    exponent: float
+    mu: float
+    sigma: float
+    max_size: int
+    unexpanded_fraction: float
+
+
+@dataclass(frozen=True)
+class _LineageForkStep:
+    """Marks an affinity-maturation lineage fork.
+
+    Causes :meth:`Experiment.compile` to return a
+    :class:`~GenAIRR._compiled.CompiledLineageExperiment` that grows BCR
+    clonal lineage trees via the Rust ``simulate_family_outcomes`` kernel
+    and returns per-observed-node AIRR records with lineage metadata.
+    """
+
+    n_clones: int
+    max_generations: int
+    n_max: int
+    n_sample: int
+    rate: float
+    lambda_base: float
+    selection_strength: float
+    beta: float
+    target_aa: Optional[str]
+    mature_substitutions: int
+    s5f_model: str
+    allow_extinction: bool = False
+
+
+@dataclass(frozen=True)
 class _PairedEndStep:
     """One ``paired_end(r1_length=…, r2_length=…, insert_size=…)``
     invocation, captured for later compilation.

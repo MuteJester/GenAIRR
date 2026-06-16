@@ -42,6 +42,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "docs_website_audit.md"
 _README = _REPO_ROOT / "README.md"
 _WEBSITE = _REPO_ROOT / "website"
+_SITE_DOCS = _REPO_ROOT / "site_docs"
 _DOCS = _REPO_ROOT / "docs"
 _OLD_DOCS = _REPO_ROOT / "_old_docs"
 _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy-docs.yml"
@@ -302,9 +303,16 @@ def test_pin_present_readme_hosted_doc_urls_resolve_to_live_website_pages() -> N
             continue
         # Strip query string / fragment if present.
         path = path.split("?", 1)[0].split("#", 1)[0]
-        target = _WEBSITE / path
-        if not target.is_file():
-            missing.append((url, str(target)))
+        # The live site is the MkDocs build of `site_docs/` (deploy-docs.yml).
+        # A hosted `<p>.html` URL resolves if EITHER it exists as a flat page
+        # in the preserved `website/` rollback tree, OR it maps to a MkDocs
+        # source page `site_docs/<p>.md` (use_directory_urls: false ⇒
+        # `foo/bar.md` → `foo/bar.html`).
+        resolves = (_WEBSITE / path).is_file()
+        if not resolves and path.endswith(".html"):
+            resolves = (_SITE_DOCS / (path[:-len(".html")] + ".md")).is_file()
+        if not resolves:
+            missing.append((url, str(_WEBSITE / path)))
     assert not missing, (
         "README hosted-doc URLs do not resolve to live website "
         "pages:\n"

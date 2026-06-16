@@ -86,7 +86,7 @@ pass actually does:
 | **Recombination-stage mechanisms** | `.invert_d(prob=...)`, `.receptor_revision(prob=...)` | D in reverse-complement orientation; post-recombine V replacement |
 | **Constraints** | `.productive_only()`, `.restrict_alleles(v=[...], d=[...], j=[...])` | Constrain the sample space (productive triad; allele subsetting) |
 | **Biological mutation** | `.mutate(model="s5f"\|"uniform", rate=..., segment_rates={...}, v_subregion_rates={...})` | Somatic hypermutation per descendant |
-| **Clonal structure** | `.expand_clones(n_clones=..., per_clone=...)` | Fork: passes before run once per parent, passes after run per descendant |
+| **Clonal structure** | `.clonal_lineage(...)`, `.clonal_repertoire(...)`, legacy `.expand_clones(...)` | BCR trees, TCR / flat-BCR abundance repertoires, or fixed-size star families |
 | **Library / sequencing corruption** | `.pcr_amplify(count=...)`, `.polymerase_indels(count=...)`, `.ambiguous_base_calls(count=...)`, `.sequencing_errors(count=...)`, `.end_loss_5prime(length=...)`, `.end_loss_3prime(length=...)` | Library-prep + sequencer artefacts |
 | **Read layout** | `.paired_end(r1_length=..., r2_length=..., insert_size=...)`, `.random_strand_orientation(prob=...)` | R1/R2 windows; strand flips |
 | **Bookkeeping** | `.with_metadata(experiment_id=..., tissue=...)`, `.contaminate(prob=...)` | Stamp user fields onto every record; inject background contaminants |
@@ -101,9 +101,16 @@ controls how much N is added and what bases get drawn; the
 ## Order matters
 
 GenAIRR's API rejects pipelines whose steps biologically cannot
-compose. The single most important ordering rule is the **clonal
-fork**: `expand_clones(...)` partitions the pipeline into an
-ancestor phase and a descendant phase.
+compose. The clonal methods are the main ordering boundary:
+
+| Method | Use it for | Post-fork behavior |
+|---|---|---|
+| `clonal_lineage(...)` | BCR affinity-maturation trees | SHM is internal to the tree; optional library-prep / sequencing artefacts run once per observed cell |
+| `clonal_repertoire(...)` | TCR or flat-BCR abundance repertoires | Copies are emitted through post-fork per-read passes and collapsed into `duplicate_count` |
+| `expand_clones(...)` | Legacy fixed-size star families | Fixed `n_clones × per_clone` descendants |
+
+For flat clonal models (`clonal_repertoire` and `expand_clones`), steps before
+the fork run once per clone; steps after run once per emitted read/copy.
 
 ```python
 exp = (
@@ -113,7 +120,7 @@ exp = (
       .invert_d(prob=0.05)
       .receptor_revision(prob=0.05)
       # ──── fork ─────────────────────────────────────────────
-      .expand_clones(n_clones=50, per_clone=20)
+      .clonal_repertoire(n_clones=50, max_size=100, unexpanded_fraction=0.3)
       # ──── descendant phase (runs ONCE per descendant) ──────
       .mutate(model="s5f", rate=0.05)
       .pcr_amplify(count=(0, 3))
@@ -122,34 +129,30 @@ exp = (
 )
 
 result = exp.run_records(seed=42)
-# Output: n_clones × per_clone = 1000 records. Every clone shares
-# the same V(D)J recombination + D orientation + receptor revision;
-# every descendant within a clone has independent SHM, PCR errors,
-# end-loss, and R1/R2 windows.
+# Each clone shares the same V(D)J recombination + D orientation +
+# receptor revision; each emitted read has independent SHM, PCR errors,
+# end-loss, and R1/R2 windows. Identical reads collapse into duplicate_count.
 ```
 
-**Ancestor-phase passes** (anything before `expand_clones`) run once
-per clonal parent and propagate to every descendant. Use them for
-the V(D)J recombination event itself, the recombination-stage
-mechanisms (D inversion, receptor revision), and any constraint
-that pertains to the parent (`productive_only`, `restrict_alleles`).
+**Ancestor-phase passes** (anything before a flat clonal fork) run once per
+clonal parent and propagate to every emitted copy. Use them for the V(D)J
+recombination event itself, recombination-stage mechanisms (D inversion,
+receptor revision), and constraints on the founder draw (`productive_only`,
+`restrict_alleles`).
 
-**Descendant-phase passes** (anything after `expand_clones`) run
-independently per descendant. Use them for somatic hypermutation
-(every memory B cell mutates independently), all library /
-sequencer corruption (PCR errors don't share across descendants),
-and read layout (R1/R2 windows are per-read).
+**Descendant/read-phase passes** (anything after a flat clonal fork) run
+independently per emitted copy. Use them for BCR flat SHM, all library /
+sequencer corruption, and read layout. TCR rejects `.mutate(...)`; T cells do
+not SHM. If `paired_end` follows `clonal_repertoire`, remember the result is
+still abundance-collapsed by assembled sequence: `duplicate_count` carries copy
+number, and FASTQ export does not expand it into multiple read pairs.
 
-Putting an SHM pass *before* `expand_clones` would mean every
-descendant of every clone shares the same mutations — biologically
-wrong. Putting `invert_d` *after* `expand_clones` would mean
-descendants of the same parent see different D orientations —
-also wrong. The DSL raises `ValueError` at chain time when these
-orderings are violated; you don't have to remember the rules
-exhaustively, the API does.
+`clonal_lineage` handles its own tree-internal SHM through
+`clonal_lineage(rate=...)`; do not add `.mutate(...)` after it. Library-prep and
+sequencing artefacts may follow lineage output, but `paired_end` is not wired
+through `clonal_lineage` yet.
 
-If `expand_clones` is absent, every pass is "descendant phase" and
-runs per-record (since each record is its own one-off lineage).
+If no clonal method is present, every pass runs per record.
 
 ## Choosing counts vs rates
 
@@ -260,7 +263,9 @@ seed produces the same draws, which is how golden tests work.
 | Biology → API surface lookup | [Biology map](biology-map.md) |
 | Per-segment + per-V-subregion SHM targeting | [Targeted SHM rates](shm-targeting.md) |
 | R1/R2 windows + insert sizes + FASTQ output | [Paired-end reads and FASTQ](paired-end-fastq.md) |
-| Forking into clonal families | [Clonal families](clonal-families.md) |
+| Choosing a clonal model | [Clonal simulation overview](clonal-families.md) |
+| BCR lineage trees | [Clonal lineage trees](clonal-lineage.md) |
+| TCR / flat-BCR abundance repertoires | [Clonal repertoires](clonal-repertoire.md) |
 | Authoring or tuning a custom reference cartridge | [Reference cartridge](../concepts/reference-cartridge.md) |
 | Confirming output integrity post-run | [`validate_records`](../validation/validate-records.md) |
 | Per-record AIRR field catalogue | [Your first AIRR record](../getting-started/first-airr-record.md) |

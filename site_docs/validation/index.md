@@ -61,8 +61,9 @@ one-liner.
 
 ### Family validation
 
-For workloads using `expand_clones(...)`, two sibling validators
-check family-level invariants:
+For workloads that stamp `clone_id` (`clonal_lineage(...)`,
+`clonal_repertoire(...)`, or legacy `expand_clones(...)`), family
+validation checks clone-level record consistency:
 
 ```python
 family_report = result.validate_families()
@@ -73,16 +74,19 @@ full_report = result.validate_families_with_parents(refdata)
 assert full_report, full_report.summary()
 ```
 
-`validate_families` checks within-family invariants alone — every
-descendant of a clone shares its V(D)J recombination, every
-descendant's `clone_id` matches the parent's, no descendant has a
-SHM count below the parent's, and the per-clone size matches what
-`expand_clones` was asked for. No refdata required.
+`validate_families` is records-only. It checks that a clonal batch is
+not mixed with non-clonal records and, when `truth_v_call`,
+`truth_d_call`, and `truth_j_call` are present, that those
+recombination-time truth calls are invariant within each `clone_id`
+group. No refdata required.
 
-`validate_families_with_parents(refdata)` adds full per-record
-validation on every parent before checking family invariants —
-it's the strongest gate. Use it in release-tier CI when the
-pipeline ships clonal output.
+`validate_families_with_parents(refdata)` is the stronger
+legacy-star diagnostic for `expand_clones(...)` outputs, where
+`result.parents` exists. It compares descendant records against the
+actual parent `Outcome`. Modern `clonal_repertoire` and
+`clonal_lineage` do not expose `result.parents`; validate their
+records with `validate_records`, use `validate_families` for
+`clone_id` grouping, and validate lineage trees with `tree.validate()`.
 
 ### Runtime opt-in
 
@@ -108,8 +112,8 @@ hot loops.
 | Allele calls (`v_call` / `d_call` / `j_call` matches an independent walker) | `validate_records` |
 | Junction + productive triad (junction content, `vj_in_frame`, `stop_codon`, `productive` predicate identification) | `validate_records` |
 | Paired-end geometry (R1/R2 windows, R2 reverse-complement, `insert_size`) | `validate_records` (when `paired_end()` is in the pipeline) |
-| Family size, parent/descendant `clone_id` match, descendant `n_mutations ≥ parent's` | `validate_families` |
-| Each family's *parent* validates as a standalone record | `validate_families_with_parents` |
+| Clonal batch is consistently stamped with `clone_id`; truth V/D/J calls are invariant within clone when truth columns are present | `validate_families` |
+| Legacy `expand_clones` descendants agree with their parent `Outcome` | `validate_families_with_parents` |
 
 The three layers are independent — `validate_records` doesn't
 require a clonal structure; `validate_families` doesn't require
@@ -308,24 +312,25 @@ the `failures` list is JSON-serialisable for downstream tooling.
 
 ### Clonal output
 
-Stack record + family validation when the pipeline ships clonal
-families:
+Stack record + family validation when the pipeline ships clonal records:
 
 ```python
 result = (
     exp
     .recombine()
-    .expand_clones(n_clones=50, per_clone=20)
-    .mutate(model="s5f", rate=0.05)
-    .run_records(n=1000, seed=42)
+    .clonal_repertoire(n_clones=50, max_size=100)
+    .sequencing_errors(rate=0.001)
+    .run_records(seed=42, expose_provenance=True)
 )
 
 assert result.validate_records(refdata), "AIRR record divergence"
-assert result.validate_families_with_parents(refdata), "Family invariant divergence"
+assert result.validate_families(), "Family invariant divergence"
 ```
 
-The two layers catch different things and don't substitute for
-each other.
+For legacy `expand_clones(...)`, add
+`result.validate_families_with_parents(refdata)`. For
+`clonal_lineage(...)`, also call `tree.validate()` on each
+`result.lineage_trees` entry when you need topology checks.
 
 ## When validation is not enough
 

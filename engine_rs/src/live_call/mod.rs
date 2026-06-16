@@ -28,7 +28,7 @@ pub use reference_index::{
     BaseBitsets, BaseEvidence, BoundaryIndex, IndexedAllele, KmerHit, KmerIndex,
     ReferenceMatchIndex, SegmentRefIndex, DEFAULT_REFERENCE_KMER_LEN,
 };
-pub use refresh_hook::LiveCallRefreshHook;
+pub use refresh_hook::{refresh_live_calls, LiveCallRefreshHook};
 pub use refresh_plan::{LiveCallRefreshPlan, LiveCallRefreshStep};
 
 fn assert_live_segment(segment: Segment) {

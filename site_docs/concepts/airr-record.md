@@ -59,7 +59,7 @@ The canonical groups, in the order they appear on the record:
 11. D-inversion provenance
 12. Receptor-revision provenance
 13. Read layout (paired-end)
-14. Clonal stamping (when expand_clones runs)
+14. Clonal stamping (when a clonal workflow runs)
 15. Truth columns (when `expose_provenance=True`)
 
 The remaining sections walk through each.
@@ -127,7 +127,7 @@ load-bearing in two cases:
 
 - **Family validation** uses them to confirm every descendant of
   a clonal family shares the recombination-time identity (see
-  [Clonal families](../guides/clonal-families.md)).
+  [Clonal simulation overview](../guides/clonal-families.md)).
 - **Aligner benchmarking** treats `v_call` as the aligner's
   prediction and `truth_*_call` as the ground truth, even when
   both came from the same simulator — the column split makes the
@@ -343,20 +343,25 @@ for the quality model and the layout coordinates.
 
 ## Clonal fields
 
-Two fields stamped Python-side when `.expand_clones(n_clones=...,
-per_clone=...)` runs:
+All modern clonal workflows stamp `clone_id`, but the rest of the
+surface depends on which clonal model produced the record:
 
-| Field | Type | Meaning |
-|---|---|---|
-| `clone_id` | int | Identifier of the clonal family this record belongs to (0-based) |
-| `parent_id` | int | Identifier of the ancestor outcome; equals `clone_id` for the records expanded from that ancestor |
+| Field | Type | Produced by | Meaning |
+|---|---|---|---|
+| `clone_id` | int | `clonal_lineage`, `clonal_repertoire`, `expand_clones` | Planted clone / family label (0-based) |
+| `duplicate_count` | int | `clonal_lineage`, `clonal_repertoire` | AIRR-standard abundance after genotype collapse |
+| `parent_id` | int | legacy `expand_clones` | Identifier of the ancestor `Outcome`; equals `clone_id` for records expanded from that ancestor |
+| `lineage_node_id` | int | `clonal_lineage` | Node id of the observed cell in the ground-truth lineage tree |
+| `lineage_parent_id` | int | `clonal_lineage` | Parent node id in the lineage tree (`-1` for founder) |
+| `lineage_generation` | int | `clonal_lineage` | Generation depth of the observed cell |
+| `lineage_abundance` | int | `clonal_lineage` | Observation count after final-cell sampling and genotype collapse |
+| `lineage_affinity` | float | `clonal_lineage` | Sequence-distance proxy to the target; 0 only when no affinity model is active |
 
-On non-clonal runs (no `expand_clones`), both fields are
-**absent** from the record dict. Don't write code that assumes
-they're always present; the family validators (`validate_families`,
-`validate_families_with_parents`) are safe no-ops on non-clonal
-batches because they handle the absent case explicitly. See
-[Clonal families](../guides/clonal-families.md).
+On non-clonal runs, these fields are **absent** from the record dict. Don't write
+code that assumes they're always present; check with `"clone_id" in rec`.
+`validate_families()` is a safe no-op on non-clonal batches because it handles
+the absent case explicitly. See
+[Clonal simulation overview](../guides/clonal-families.md).
 
 ## Validation
 
@@ -369,10 +374,9 @@ The records page composes cleanly with the validation surface:
 - **`validate_families(refdata=None)`** groups records by
   `clone_id` and asserts each family agrees on `truth_v_call`,
   `truth_d_call`, `truth_j_call` (when present).
-- **`validate_families_with_parents(refdata)`** compares each
-  descendant against its actual parent `Outcome` — catches a
-  whole class of family-stamping bugs the cheaper validator
-  misses.
+- **`validate_families_with_parents(refdata)`** is for legacy
+  `expand_clones` results with `result.parents`; it compares each
+  descendant against its actual parent `Outcome`.
 
 The full validation picture lives at the
 [Validation hub](../validation/index.md).
@@ -423,10 +427,11 @@ appear only when `expose_provenance=True` is passed to
 `run_records(...)`. Without the flag, the columns are absent
 entirely — not `None`-valued, absent.
 
-**Expecting `clone_id` on non-clonal records.** Without
-`.expand_clones(...)`, neither `clone_id` nor `parent_id` is
-stamped on the record dict at all. Check for presence with
-`"clone_id" in rec`, not `rec.get("clone_id") is not None`.
+**Expecting `clone_id` on non-clonal records.** Without a clonal
+workflow (`clonal_lineage`, `clonal_repertoire`, or legacy
+`expand_clones`), clonal fields are not stamped on the record dict at
+all. Check for presence with `"clone_id" in rec`, not
+`rec.get("clone_id") is not None`.
 
 ## Where to go next
 
@@ -438,7 +443,7 @@ stamped on the record dict at all. Check for presence with
   — the SHM counters in depth.
 - **[Corruption and sequencing artefacts](../guides/corruption-sequencing.md)**
   — the artefact counters in depth.
-- **[Clonal families](../guides/clonal-families.md)** — the
-  `clone_id` / `parent_id` surface and family validation.
+- **[Clonal simulation overview](../guides/clonal-families.md)** —
+  `clone_id`, `duplicate_count`, lineage metadata, and family validation.
 - **[Validation hub](../validation/index.md)** — re-deriving every
   field from the underlying `Outcome`.

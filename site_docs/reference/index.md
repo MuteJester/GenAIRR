@@ -86,9 +86,9 @@ access).
 | Symbol | Purpose | Guide |
 |---|---|---|
 | `ValidationReport` | Per-record AIRR-validator output | [`validate_records`](../validation/validate-records.md) |
-| `FamilyValidationReport` | Family-validator output | [Clonal families](../guides/clonal-families.md) |
+| `FamilyValidationReport` | Family-validator output | [Clonal simulation overview](../guides/clonal-families.md) |
 | `RecordValidationFailedError` | Raised when strict record validation fails | [`validate_records`](../validation/validate-records.md) |
-| `FamilyValidationFailedError` | Raised when strict family validation fails | [Clonal families](../guides/clonal-families.md) |
+| `FamilyValidationFailedError` | Raised when strict family validation fails | [Clonal simulation overview](../guides/clonal-families.md) |
 | `StrictSamplingError` | Raised under `strict=True` on empty admissible support | [Validation hub](../validation/index.md#strict-vs-permissive) |
 | `productive` | Convenience contract bundle for productive sampling | [Recombination biology](../guides/recombination-junction.md#productivity) |
 
@@ -105,7 +105,7 @@ is called.
 | **Recombination** | `.recombine()`, `.invert_d(prob=...)`, `.receptor_revision(prob=...)` | Ancestor-phase mechanisms |
 | **Constraints** | `.productive_only()`, `.restrict_alleles(v=..., d=..., j=...)` | Constrain the sample space |
 | **Biological mutation** | `.mutate(model="s5f"\|"uniform", rate=..., count=..., segment_rates=..., v_subregion_rates=...)` | The only pass that increments `n_mutations` |
-| **Clonal structure** | `.expand_clones(n_clones=..., per_clone=...)` | Marks the ancestor/descendant fork |
+| **Clonal structure** | `.clonal_lineage(...)`, `.clonal_repertoire(...)`, legacy `.expand_clones(...)` | BCR trees, TCR / flat-BCR abundance repertoires, or fixed-size star families |
 | **Trims override** | `.trim(v_3=..., d_5=..., d_3=..., j_5=..., enabled=...)` | Per-experiment trim distribution overrides |
 | **Library / sequencer artefacts** | `.pcr_amplify(...)`, `.polymerase_indels(...)`, `.ambiguous_base_calls(...)`, `.sequencing_errors(...)`, `.end_loss_5prime(...)`, `.end_loss_3prime(...)` | All descendant-phase |
 | **Read layout** | `.paired_end(r1_length=..., r2_length=..., insert_size=...)`, `.random_strand_orientation(prob=...)` | Per-read projection |
@@ -125,7 +125,7 @@ record dicts plus the underlying `Outcome` objects.
 | Surface | Methods / properties | Notes |
 |---|---|---|
 | **List-like access** | `len(result)`, `result[i]`, `result[a:b]`, `for rec in result:` | One AIRR dict per element |
-| **Underlying state** | `.records`, `.outcomes`, `.parents` | `outcomes` is `None` when built from records only; `parents` is `None` on non-clonal results |
+| **Underlying state** | `.records`, `.outcomes`, `.parents`, `.lineage_trees` | `outcomes` is `None` when built from records only; `parents` exists only for legacy `expand_clones`; `lineage_trees` exists on lineage results |
 | **Validation** | `.validate_records(refdata)`, `.validate_families()`, `.validate_families_with_parents(refdata)` | See [Validation hub](../validation/index.md) |
 | **Export** | `.to_tsv(path, *, airr_strict=False)`, `.to_csv(path, *, airr_strict=False)`, `.to_fasta(path, *, prefix="seq")`, `.to_fastq(path, *, quality="illumina", **kw)`, `.to_paired_fastq(r1, r2, *, quality="illumina", overwrite=False, **kw)`, `.to_dataframe(*, airr_strict=False)` | See [Export the results](../getting-started/export-results.md) |
 | **Construction** | `SimulationResult.from_outcomes(outcomes, refdata, *, id_prefix="seq", expose_provenance=False)` | Build a result from Rust `Outcome` objects + refdata; `expose_provenance=True` injects `truth_*_call` columns |

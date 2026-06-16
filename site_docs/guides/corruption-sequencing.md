@@ -253,18 +253,18 @@ A few facts to know:
   reflect the strand decision automatically. Don't apply a
   second flip downstream.
 
-## Ordering with clonal families
+## Ordering with clonal workflows
 
 **All seven corruption passes are descendant-phase.** They model
-per-read artefacts — every descendant of a clone gets independent
-PCR errors, independent indel events, independent end-loss
-draws, etc.
+per-read artefacts — every emitted clone member or observed lineage
+cell gets independent PCR errors, independent indel events,
+independent end-loss draws, etc.
 
 ```python
 result = (
     ga.Experiment.on("human_igh")
       .recombine()
-      .expand_clones(n_clones=10, per_clone=20)
+      .clonal_repertoire(n_clones=10, max_size=50)
       .mutate(model="s5f", rate=0.03)        # biology — descendant-phase
       .pcr_amplify(count=(0, 3))             # corruption — descendant-phase
       .polymerase_indels(count=(0, 2))
@@ -278,9 +278,12 @@ result = (
 )
 ```
 
-Calling any of them *before* `.expand_clones(...)` raises
-`ValueError` at chain time. See [Clonal families](clonal-families.md)
-for the ancestor / descendant phase discipline in full.
+Calling corruption before a flat fork (`clonal_repertoire` or legacy
+`expand_clones`) raises `ValueError` at chain time because the artefact would be
+shared by the whole clone. Corruption may also follow `clonal_lineage`; in that
+case it is applied independently to each observed sampled cell. See
+[Clonal simulation overview](clonal-families.md) for the phase discipline in
+full.
 
 ## Per-platform calibrated profiles
 
@@ -402,12 +405,11 @@ separate passes, separate fields, separate biology stages. The
 [Recombination + junction biology](recombination-junction.md#trims-vs-end-loss)
 guide has the side-by-side comparison.
 
-**Putting corruption before `.expand_clones()`.** All seven
-corruption passes are descendant-phase — they're per-read
-artefacts that need to vary within a clonal family. The DSL
-rejects this at chain time with the uniform message: "<method>
-must be called after expand_clones(); it is descendant-specific
-and must be sampled independently for each clone member."
+**Putting corruption before a clonal fork.** All seven corruption
+passes are descendant-phase — they're per-read artefacts that need to
+vary within a clonal family. The DSL rejects this before
+`clonal_repertoire()` or `expand_clones()` with a message naming the
+offending method and telling you to move it after the fork.
 
 **Reverse-complementing R2 again after random strand orientation.**
 When `.random_strand_orientation(...)` is in the pipeline,
@@ -430,8 +432,8 @@ count them yourself with `rec["sequence"].count("N")`.
   partition.
 - **[Paired-end reads and FASTQ](paired-end-fastq.md)** — the
   read-layout projection that usually sits alongside corruption.
-- **[Clonal families](clonal-families.md)** — the
-  ancestor / descendant phase discipline that gates every
+- **[Clonal simulation overview](clonal-families.md)** — the
+  clonal model chooser and phase discipline that gates every
   corruption pass.
 - **[Recombination + junction biology](recombination-junction.md)**
   — the trim vs end-loss boundary in detail.
