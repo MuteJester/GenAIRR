@@ -54,6 +54,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(lineage::simulate_lineage, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(lineage::simulate_family_outcomes, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(lineage::merge_lineage_corruption, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(lineage::sample_clone_sizes, m)?)?;
     m.add_class::<refdata::PyAllele>()?;
     m.add_class::<refdata::PyRefDataConfig>()?;
     m.add_class::<plan::PyPassPlan>()?;

@@ -558,3 +558,55 @@ pub(crate) fn simulate_family_outcomes(
 
     Ok(PyFamilyOutcome { tree, node_outcomes })
 }
+
+/// Draw `n_clones` clone sizes (>=1) from a heavy-tailed distribution, with a
+/// fraction `unexpanded_fraction` forced to size 1. Deterministic for `seed`.
+/// `kind` is "power_law" or "lognormal".
+#[pyfunction]
+#[pyo3(signature = (n_clones, seed, kind="power_law", exponent=2.0, mu=1.0, sigma=1.0, max_size=100_000, unexpanded_fraction=0.0))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn sample_clone_sizes(
+    n_clones: u32,
+    seed: u64,
+    kind: &str,
+    exponent: f64,
+    mu: f64,
+    sigma: f64,
+    max_size: u32,
+    unexpanded_fraction: f64,
+) -> PyResult<Vec<u32>> {
+    use pyo3::exceptions::PyValueError;
+    if max_size == 0 {
+        return Err(PyValueError::new_err("sample_clone_sizes: max_size must be > 0"));
+    }
+    if !(unexpanded_fraction.is_finite() && (0.0..=1.0).contains(&unexpanded_fraction)) {
+        return Err(PyValueError::new_err(
+            "sample_clone_sizes: unexpanded_fraction must be in [0.0, 1.0]",
+        ));
+    }
+    let dist = match kind {
+        "power_law" => {
+            if !(exponent.is_finite() && exponent > 0.0) {
+                return Err(PyValueError::new_err(
+                    "sample_clone_sizes: power_law exponent must be finite and > 0",
+                ));
+            }
+            crate::lineage::CloneSizeDist::PowerLaw { exponent, x_max: max_size }
+        }
+        "lognormal" => {
+            if !(mu.is_finite() && sigma.is_finite() && sigma >= 0.0) {
+                return Err(PyValueError::new_err(
+                    "sample_clone_sizes: lognormal mu/sigma must be finite and sigma >= 0",
+                ));
+            }
+            crate::lineage::CloneSizeDist::LogNormal { mu, sigma, x_max: max_size }
+        }
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "sample_clone_sizes: unknown kind {other:?}; use \"power_law\" or \"lognormal\""
+            )));
+        }
+    };
+    let mut rng = crate::rng::Rng::new(seed);
+    Ok(crate::lineage::sample_repertoire_sizes(&mut rng, n_clones, &dist, unexpanded_fraction))
+}
