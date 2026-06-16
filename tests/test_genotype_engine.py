@@ -94,6 +94,38 @@ def test_heterozygous_expression_is_roughly_balanced():
     assert 0.35 < frac0 < 0.65, frac0
 
 
+def test_vdj_phasing_links_v_and_j_to_one_chromosome():
+    """The core phasing guarantee: with hap0 = {V:gv0, J:gj0} and
+    hap1 = {V:gv1, J:gj1}, every rearrangement's V and J must come from
+    the SAME chromosome — never a cross pairing."""
+    cfg = _cfg()
+    vgenes, jgenes = list(cfg.v_alleles), list(cfg.j_alleles)
+    gv0, gv1 = vgenes[0], vgenes[1]
+    gj0, gj1 = jgenes[0], jgenes[1]
+    g = Genotype.from_dataconfig(cfg).complete_from_reference()
+    # Keep only gv0/gv1 (V) and gj0/gj1 (J); delete everything else.
+    for gene in cfg.v_alleles:
+        if gene not in (gv0, gv1):
+            g.delete_gene(gene, "both", segment="V")
+    for gene in cfg.j_alleles:
+        if gene not in (gj0, gj1):
+            g.delete_gene(gene, "both", segment="J")
+    # Phase: hap0 carries gv0 + gj0; hap1 carries gv1 + gj1.
+    g.delete_gene(gv0, haplotype=1, segment="V")
+    g.delete_gene(gv1, haplotype=0, segment="V")
+    g.delete_gene(gj0, haplotype=1, segment="J")
+    g.delete_gene(gj1, haplotype=0, segment="J")
+    g.with_subject("S1")
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=200, seed=4, expose_provenance=True
+    )
+    for r in res:
+        v_is_0 = r["truth_v_call"].startswith(gv0 + "*")
+        j_is_0 = r["truth_j_call"].startswith(gj0 + "*")
+        assert v_is_0 == j_is_0, (r["truth_v_call"], r["truth_j_call"])
+        assert (r["haplotype"] == 0) == v_is_0
+
+
 def test_one_dead_haplotype_uses_the_live_one_under_productive_only():
     cfg = _cfg()
     g = Genotype.from_dataconfig(cfg).complete_from_reference()
