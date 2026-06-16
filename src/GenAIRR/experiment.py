@@ -2894,6 +2894,7 @@ class Experiment:
                     self._refdata,
                     invert_d_prob=invert_d_prob,
                     receptor_revision_prob=receptor_revision_prob,
+                    genotype=self._genotype,
                 )
             else:
                 lower_step(step, plan, self._refdata)

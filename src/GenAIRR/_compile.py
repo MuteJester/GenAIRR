@@ -173,6 +173,76 @@ def _extract_receptor_revision_prob(steps):
     return revision_prob, filtered
 
 
+def _name_to_id(refdata, segment):
+    """Map allele name -> pool id for a segment against this refdata."""
+    size = {
+        "V": refdata.v_pool_size,
+        "D": refdata.d_pool_size,
+        "J": refdata.j_pool_size,
+    }[segment]()
+    getter = {
+        "V": refdata.v_allele,
+        "D": refdata.d_allele,
+        "J": refdata.j_allele,
+    }[segment]
+    return {getter(i).name: i for i in range(size)}
+
+
+def _genotype_segment_rows(genotype, refdata, segment):
+    """Resolve a genotype's per-haplotype slots for a segment into flat
+    ``(haplotype, allele_id, copies, weight)`` rows for the engine.
+
+    Strict genotypes require every gene present in the cartridge to be
+    specified (call ``complete_from_reference()``); permissive genotypes
+    fill unspecified genes with all reference alleles single-copy on both
+    haplotypes (a NON-diploid fallback)."""
+    name_to_id = _name_to_id(refdata, segment)
+    cfg_by_gene = {
+        "V": genotype._cfg.v_alleles,
+        "D": genotype._cfg.d_alleles,
+        "J": genotype._cfg.j_alleles,
+    }[segment] or {}
+    rows = []
+    for gene, allele_objs in cfg_by_gene.items():
+        slot = genotype._slots[segment].get(gene)
+        if slot is None:
+            if genotype.is_permissive:
+                for h in (0, 1):
+                    for a in allele_objs:
+                        if a.name in name_to_id:
+                            rows.append((h, name_to_id[a.name], 1, 1.0))
+                continue
+            raise ValueError(
+                f"genotype is strict but {segment} gene {gene!r} is unspecified; "
+                f"call complete_from_reference() or specify it before with_genotype()"
+            )
+        for h, copies in enumerate(slot):
+            for (allele_name, copy_count, weight) in copies:
+                rows.append((h, name_to_id[allele_name], int(copy_count), float(weight)))
+    return rows
+
+
+def _push_genotype_recombine(genotype, plan, refdata, *, d_required):
+    """Push the single phased ``SampleGenotypePass`` for an attached
+    genotype, replacing the flat per-segment allele sampling."""
+    v_rows = _genotype_segment_rows(genotype, refdata, "V")
+    j_rows = _genotype_segment_rows(genotype, refdata, "J")
+    d_rows = _genotype_segment_rows(genotype, refdata, "D") if d_required else []
+    plan.push_genotype_recombine(
+        refdata,
+        (
+            float(genotype._chromosome_weights[0]),
+            float(genotype._chromosome_weights[1]),
+        ),
+        genotype.subject_id,
+        genotype._source_hash,
+        v_rows,
+        d_rows,
+        j_rows,
+        d_required,
+    )
+
+
 def _lower_recombine(
     step: _RecombineStep,
     plan: "_engine.PassPlan",
@@ -180,6 +250,7 @@ def _lower_recombine(
     *,
     invert_d_prob=None,
     receptor_revision_prob=None,
+    genotype=None,
 ) -> None:
     chain = refdata.chain_type
     np1 = list(step.np1_lengths)
@@ -238,8 +309,11 @@ def _lower_recombine(
                 "receptor_revision is only valid for VDJ chains; the "
                 "DSL boundary should have rejected this earlier."
             )
-        plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
-        plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
+        if genotype is not None:
+            _push_genotype_recombine(genotype, plan, refdata, d_required=False)
+        else:
+            plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
+            plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
         if step.trim_v_3:
             plan.push_trim("V", "3", list(step.trim_v_3))
         if step.trim_j_5:
@@ -257,9 +331,12 @@ def _lower_recombine(
             plan.push_p_addition("J_5", p_j_5)
         plan.push_assemble("J")
     elif chain == "vdj":
-        plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
-        plan.push_sample_allele("D", refdata, allowed_ids=d_ids, weights=d_weights)
-        plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
+        if genotype is not None:
+            _push_genotype_recombine(genotype, plan, refdata, d_required=True)
+        else:
+            plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
+            plan.push_sample_allele("D", refdata, allowed_ids=d_ids, weights=d_weights)
+            plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
         if step.trim_v_3:
             plan.push_trim("V", "3", list(step.trim_v_3))
         if step.trim_d_5:
