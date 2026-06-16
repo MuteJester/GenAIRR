@@ -1,12 +1,11 @@
 # Clonal lineage trees (affinity maturation)
 
-<p class="lead">Where <a href="clonal-families.html"><code>expand_clones</code></a>
-produces a <em>star</em> — one founder and many independent descendants —
+<p class="lead">Where <code>expand_clones</code> produces a <em>star</em> — one founder and many independent descendants —
 <code>clonal_lineage</code> grows a real <em>tree</em>: a generation-by-generation
 birth–death process in which cells divide, somatically hypermutate, are selected
 for antigen affinity, and are finally sampled. The output is a set of
 per-cell AIRR records <em>plus</em> the ground-truth lineage tree (topology,
-ancestral sequences, abundances) — exactly what B-cell lineage-inference tools
+ancestral sequences, abundances) — the kind of object B-cell lineage-inference tools
 (GCtree, IgPhyML, dowser, Change-O) are built to reconstruct. This page explains
 precisely how it works under the hood; nothing here is a black box.</p>
 
@@ -30,7 +29,7 @@ truth for lineage reconstruction. `clonal_lineage` adds the missing biology.
 > `ValueError`. A TCR "clone" is one rearrangement proliferated to many identical
 > copies; the meaningful quantity is the **clone-size distribution**, not a mutation
 > tree. For **TCR and flat clonal repertoires**, use
-> [`clonal_repertoire`](clonal-repertoire.html) — it draws a heavy-tailed clone size
+> [`clonal_repertoire`](clonal-repertoire.md) — it draws a heavy-tailed clone size
 > per clone and emits `clone_id` + `duplicate_count` (see
 > [Clone-size distributions](#clone-size-distributions-tcr-and-repertoire-mix)).
 
@@ -276,7 +275,8 @@ its own seed, and the resulting artefacts are merged back onto the cell's record
 The founder's recombination provenance (`v_call`, `d_call`, `j_call`, trims,
 junction) **and** the per-segment SHM counts are preserved; the record additionally
 reports the artefact counters (`n_quality_errors`, `n_pcr_errors`, `n_indels`, …).
-Supported passes are the same per-read library-prep set `expand_clones` allows:
+Supported passes are the per-read library-prep / sequencing artefact set also
+used by `clonal_repertoire` and legacy `expand_clones`:
 `sequencing_errors`, `pcr_amplify`, `polymerase_indels`, `end_loss_*`,
 `ambiguous_base_calls`, `random_strand_orientation`.
 
@@ -294,21 +294,22 @@ columns from the founder assignments, and `result.outcomes` carries the per-reco
 
 ## Clone-size distributions (TCR and repertoire mix)
 
-> **For TCR, use [`clonal_repertoire`](clonal-repertoire.html).** `clonal_lineage`
+> **For TCR, use [`clonal_repertoire`](clonal-repertoire.md).** `clonal_lineage`
 > itself is **BCR-only** — it still rejects TCR loci. The heavy-tailed clone-size
 > model described below is now exposed as a fluent DSL workflow via
-> [`clonal_repertoire`](clonal-repertoire.html); that is the TCR (and flat-BCR-abundance)
+> [`clonal_repertoire`](clonal-repertoire.md); that is the TCR (and flat-BCR-abundance)
 > path. This section explains the model; the dedicated guide is the place to drive it.
 
 Real repertoires are not uniform: a few clones are huge, most are singletons.
-[`clonal_repertoire`](clonal-repertoire.html) draws **clone sizes** from a
-heavy-tailed distribution (power-law/Zipf by default, log-normal optional) with a
-controllable **unexpanded fraction** (size-1, never-expanded clones). For TCR —
+[`clonal_repertoire`](clonal-repertoire.md) draws **clone sizes** from a
+heavy-tailed distribution (rounded power-law / Zipf-like by default, log-normal
+optional) with a controllable **unexpanded fraction** (size-1, never-expanded
+clones). For TCR —
 which has no SHM — a clone is simply one rearrangement at copy-number `size`, with
 within-clone variation coming only from the post-fork sequencing/PCR-error passes;
 identical reads collapse into AIRR records carrying `clone_id` + `duplicate_count`.
 That mixes large expanded families with a realistic singleton tail. See the
-[Clonal repertoires guide](clonal-repertoire.html) for the full workflow.
+[Clonal repertoires guide](clonal-repertoire.md) for the full workflow.
 
 ## Determinism
 
@@ -430,6 +431,6 @@ affinity-maturation trees rather than a flat star, so the surface differs:
 
 What *does* carry over: the same per-read library-prep / sequencing passes
 (`sequencing_errors`, `pcr_amplify`, …) can follow `clonal_lineage` exactly as they
-follow `expand_clones`, applied independently per observed cell (see
+follow other clonal workflows, applied independently per observed cell (see
 [Library-prep & sequencing artefacts](#library-prep-sequencing-artefacts)). And
 `run_records(..., validate_records=True)` is supported on lineage results too.

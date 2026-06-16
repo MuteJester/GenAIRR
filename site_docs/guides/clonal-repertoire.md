@@ -1,7 +1,6 @@
 # Clonal repertoires (TCR & abundance)
 
-<p class="lead">Where <a href="clonal-lineage.html"><code>clonal_lineage</code></a>
-grows BCR affinity-maturation <em>trees</em>, <code>clonal_repertoire</code> builds
+<p class="lead">Where <code>clonal_lineage</code> grows BCR affinity-maturation <em>trees</em>, <code>clonal_repertoire</code> builds
 a <em>non-tree</em> clonal repertoire: each clone is one rearrangement proliferated
 to a clone <strong>size</strong> drawn from a heavy-tailed distribution, and those
 copies are emitted as reads through the library-prep / sequencing passes. Identical
@@ -19,8 +18,9 @@ structure. For each of `n_clones` clones it:
 
 1. runs the pre-fork plan (`recombine()`) **once** to fix the clone's
    V/D/J + trim + NP backbone — the single rearrangement that defines the clone;
-2. draws a **size** from a heavy-tailed clone-size distribution (power-law/Zipf by
-   default, log-normal optional), with a controllable **unexpanded-singleton fraction**;
+2. draws a **size** from a heavy-tailed clone-size distribution (rounded
+   power-law / Zipf-like by default, log-normal optional), with a controllable
+   **unexpanded-singleton fraction**;
 3. emits that many **reads** through the post-fork library-prep / sequencing passes,
    so reads diverge only by technical noise;
 4. **genotype-collapses** identical reads into AIRR records, each carrying a
@@ -35,13 +35,13 @@ a per-clone mutation genealogy.
 | | What it models | Ground truth | Loci |
 |---|---|---|---|
 | **`clonal_repertoire`** | Non-tree clonal abundance; one rearrangement × N copies + technical noise | `clone_id` + `duplicate_count` | **TCR** and flat **BCR** |
-| [`clonal_lineage`](clonal-lineage.html) | BCR affinity-maturation **trees** (per-division SHM, selection) | Lineage tree + per-cell records | **BCR only** |
-| `expand_clones` *(deprecated)* | Star: fixed `per_clone` count, **no** size distribution | `clone_id` | BCR / TCR |
+| [`clonal_lineage`](clonal-lineage.md) | BCR affinity-maturation **trees** (per-division SHM, selection) | Lineage tree + per-cell records | **BCR only** |
+| `expand_clones` *(deprecated)* | Star: fixed `per_clone` count, **no** size distribution | `clone_id` + `parent_id` | BCR / TCR |
 
 `clonal_repertoire` is the modern replacement for flat clonal expansion: instead of
 `expand_clones`' fixed `per_clone` count, every clone draws a realistic heavy-tailed
 size. For BCR **lineage trees** (genealogy, ancestral sequences, selection), use
-[`clonal_lineage`](clonal-lineage.html) instead.
+[`clonal_lineage`](clonal-lineage.md) instead.
 
 ## The biology
 
@@ -203,7 +203,7 @@ claim they were validated against `clonal_repertoire` output here.
 
 - **No mutation tree.** `clonal_repertoire` is a flat, non-tree model — there are no
   ancestral nodes, generations, or selection. For a BCR genealogy (Newick / FASTA /
-  node table, affinity maturation), use [`clonal_lineage`](clonal-lineage.html).
+  node table, affinity maturation), use [`clonal_lineage`](clonal-lineage.md).
   A post-fork `.mutate()` on BCR applies *flat* SHM per copy, not a lineage.
 - **Power-law is continuous-rounded, not exact discrete Zipf.** Sizes come from a
   continuous inverse-CDF rounded to integers; this approximates true discrete Zipf

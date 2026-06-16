@@ -287,10 +287,14 @@ ValueError: replay_from_trace_file: pass plan signature mismatch.
 
 ---
 
-## 4. Clonal families
+## 4. Legacy fixed-size clonal families
 
 One parent recombination can fork into many independently mutated
-descendants.
+descendants. This demo uses legacy `expand_clones` for the simple
+fixed-size star shape; for new clone benchmarks, see
+[`clonal_lineage`](guides/clonal-lineage.md) for BCR trees and
+[`clonal_repertoire`](guides/clonal-repertoire.md) for TCR / abundance
+repertoires.
 
 <div class="demo-run-card" markdown="1">
 <div class="demo-cell-label">Code</div>

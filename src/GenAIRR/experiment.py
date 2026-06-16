@@ -337,8 +337,8 @@ def _validate_v_subregion_rates(
 # collapses descendant diversity (every clone member shares an
 # identical effect because the pass ran once on the parent IR).
 #
-# :meth:`Experiment.expand_clones` scans the already-appended step
-# list against this table; the first match is rejected with a
+# The clonal fork methods scan the already-appended step list against
+# this table; the first match is rejected with a
 # message naming the offending DSL method and the canonical fix.
 #
 # Each entry is ``(predicate, dsl_method_name)`` where the predicate
@@ -350,9 +350,9 @@ def _descendant_phase_step_classifier(step):
     """Return the DSL method name a descendant-phase ``step`` came
     from, or ``None`` if ``step`` is not a descendant-phase step.
 
-    Single source of truth for the unified guard in
-    :meth:`Experiment.expand_clones`. Adding a new descendant-phase
-    DSL method means appending a clause here (and adding the
+    Single source of truth for the unified guard in the flat clonal
+    fork methods. Adding a new descendant-phase DSL method means
+    appending a clause here (and adding the
     companion spec test in
     ``tests/test_clonal_descendant_phase_guards.py``).
     """
@@ -976,10 +976,11 @@ class Experiment:
         ``n == n_clones * per_clone``.
 
         .. deprecated::
-            Use :meth:`clonal_lineage` instead, which grows real
-            affinity-maturation lineage trees rather than a flat star
-            topology. ``expand_clones`` remains supported for flat
-            clonal expansion.
+            Use :meth:`clonal_lineage` for BCR affinity-maturation
+            trees, or :meth:`clonal_repertoire` for TCR / flat-BCR
+            abundance repertoires with clone-size distributions.
+            ``expand_clones`` remains supported for fixed-size flat
+            star expansion.
 
         Constraints:
         - Both ``n_clones`` and ``per_clone`` must be positive ints.
@@ -994,17 +995,14 @@ class Experiment:
         NP bases) and only diverges through the post-fork passes.
         """
         warnings.warn(
-            "Experiment.expand_clones() is deprecated in favor of "
-            "Experiment.clonal_lineage(). Note this is NOT a drop-in "
-            "replacement: clonal_lineage() grows real affinity-maturation "
-            "lineage trees (internal SHM, no per_clone — the observed count "
-            "depends on n_sample / selection), returns a "
-            "SimulationResultWithLineages with per-clone .lineage_trees, and "
-            "takes different parameters. Library-prep / sequencing passes "
-            "(sequencing_errors, pcr_amplify, …) can now follow "
-            "clonal_lineage() too, applied independently per observed cell. "
-            "expand_clones() remains supported for flat star-topology "
-            "expansion.",
+            "Experiment.expand_clones() is deprecated. Use "
+            "Experiment.clonal_lineage() for BCR affinity-maturation trees "
+            "(internal SHM, lineage_trees, no per_clone) or "
+            "Experiment.clonal_repertoire() for TCR / flat-BCR abundance "
+            "repertoires with clone-size distributions and duplicate_count. "
+            "Neither is a drop-in replacement for fixed per_clone output; "
+            "expand_clones() remains supported for legacy fixed-size flat "
+            "star expansion.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -1575,17 +1573,20 @@ class Experiment:
         )
 
     def _has_clonal_fork(self) -> bool:
-        """Whether :meth:`expand_clones` has already been appended.
+        """Whether any clonal fork has already been appended.
 
         Used by the DSL ordering guards on :meth:`invert_d`,
-        :meth:`receptor_revision`, and :meth:`expand_clones` itself.
-        Each step lowers into either the pre-fork (per-clone) or
-        the post-fork (per-descendant) plan; misordered calls used
-        to silently lower into the wrong half and produce records
-        with empty / default fields. The guards reject those
-        configurations at the DSL boundary.
+        :meth:`receptor_revision`, and the clonal fork methods.
+        Each fork has a pre-fork parent/founder phase; recombination-time
+        mechanisms must be inherited by every descendant, emitted copy,
+        or lineage node. Misordered calls used to lower into the wrong
+        half and produce records with empty / default fields. The guards
+        reject those configurations at the DSL boundary.
         """
-        return any(isinstance(s, _ClonalForkStep) for s in self._steps)
+        return any(
+            isinstance(s, (_ClonalForkStep, _RepertoireForkStep, _LineageForkStep))
+            for s in self._steps
+        )
 
     def _is_tcr_refdata(self) -> bool:
         """Detect whether the bound refdata is a TCR locus.
@@ -2053,10 +2054,11 @@ class Experiment:
         # even at prob=1.0. Reject at the DSL boundary instead.
         if self._has_clonal_fork():
             raise ValueError(
-                "invert_d must be called before expand_clones(); D "
+                "invert_d must be called before the clonal fork; D "
                 "inversion is a recombination-time decision and must "
                 "be inherited by all clone descendants. Move the "
-                "invert_d(...) call before expand_clones(...)."
+                "invert_d(...) call before clonal_lineage(...), "
+                "clonal_repertoire(...), or expand_clones(...)."
             )
         if not isinstance(prob, (int, float)):
             raise ValueError(
@@ -2151,10 +2153,11 @@ class Experiment:
         if self._has_clonal_fork():
             raise ValueError(
                 "receptor_revision must be called before "
-                "expand_clones(); receptor revision is a "
+                "the clonal fork; receptor revision is a "
                 "recombination-time decision and must be inherited by "
                 "all clone descendants. Move the "
-                "receptor_revision(...) call before expand_clones(...)."
+                "receptor_revision(...) call before clonal_lineage(...), "
+                "clonal_repertoire(...), or expand_clones(...)."
             )
         if not isinstance(prob, (int, float)):
             raise ValueError(

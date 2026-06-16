@@ -178,31 +178,37 @@ few interactions are worth knowing:
   at projection time, exactly once; the writer never applies a
   second flip.
 
-## Clonal families
+## Clonal workflows
 
 `paired_end` is a descendant-phase pass — R1/R2 windows are
-per-read, so each clone member gets its own independent layout
-draw. If you put `.paired_end(...)` before `.expand_clones(...)`,
-the DSL raises at chain time. The right order:
+per-read, so each emitted clone member gets its own independent layout
+draw. It is fully supported after legacy `expand_clones(...)`, and
+accepted after `clonal_repertoire(...)` with one important caveat:
+`clonal_repertoire` collapses identical assembled sequences into one
+record with `duplicate_count`, and FASTQ export does not expand that
+abundance back into multiple read pairs. `clonal_lineage(...)` does
+not support paired-end projection yet. If you put `.paired_end(...)`
+before a flat clonal fork, the DSL raises at chain time. The right
+order for a collapsed clonal-repertoire record surface:
 
 ```python
 result = (
     ga.Experiment.on("human_igh")
       .recombine()
-      .expand_clones(n_clones=50, per_clone=20)
+      .clonal_repertoire(n_clones=50, max_size=100)
       .mutate(model="s5f", rate=0.05)
       .paired_end(r1_length=150, insert_size=300)
       .run_records(seed=1)
 )
 
 result.to_paired_fastq("reads_R1.fastq", "reads_R2.fastq")
-# 1,000 paired records (50 clones × 20 descendants). Each
-# descendant has its own R1 / R2 windows, possibly drawn
-# from a different insert_size.
+# Each emitted read has its own R1 / R2 windows, possibly drawn from
+# a different insert_size; identical reads may have collapsed into
+# duplicate_count before export.
 ```
 
-See [Clonal families](clonal-families.md) for the ancestor / descendant
-phase rules in full.
+See [Clonal simulation overview](clonal-families.md) for the clonal model
+chooser and phase rules in full.
 
 ## Validation
 
@@ -242,12 +248,14 @@ discipline.
 
 A handful of issues that show up repeatedly with paired-end.
 
-**Calling `.paired_end()` before `.expand_clones()`.** R1/R2
-windows are per-read, so `paired_end` is descendant-phase. The
-DSL rejects this at chain time: "paired_end must be called after
-expand_clones(); it is descendant-specific and must be sampled
-independently for each clone member." Move `.paired_end(...)`
-after `.expand_clones(...)`.
+**Calling `.paired_end()` before a flat clonal fork.** R1/R2 windows
+are per-read, so `paired_end` is descendant-phase. Move
+`.paired_end(...)` after `clonal_repertoire(...)` or legacy
+`expand_clones(...)`. For exact per-copy paired FASTQ depth today,
+use legacy `expand_clones`; `clonal_repertoire` is abundance-collapsed
+and exposes copy number through `duplicate_count`. `clonal_lineage(...)`
+currently rejects `.paired_end(...)` even after the fork; paired-end
+lineage output is a future addition.
 
 **Expecting two AIRR rows per molecule.** There's still one row
 per record — paired-end is a layered projection, not a record
@@ -278,8 +286,8 @@ instead.
 - **[Validation & reproducibility](../validation/index.md)** — the
   validator that checks paired-end geometry, plus the
   reproducibility model.
-- **[Clonal families](clonal-families.md)** — the ancestor /
-  descendant phase rules and why `paired_end` must come after
-  `expand_clones`.
+- **[Clonal simulation overview](clonal-families.md)** — the clonal
+  model chooser and why `paired_end` must come after flat clonal
+  forks.
 - **[The Experiment builder](experiment-builder.md)** — where
   `paired_end` sits in the full DSL pipeline.

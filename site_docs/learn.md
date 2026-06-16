@@ -73,10 +73,16 @@ where the v1 boundary sits.
 4. **[SHM and mutation targeting](guides/shm-targeting.md)** —
    uniform vs S5F, per-segment and per-V-subregion rates,
    counter partitions.
-5. **[Clonal families](guides/clonal-families.md)** — ancestor /
-   descendant phase discipline, `clone_id` / `parent_id`, family
-   validation.
-6. **[Corruption + sequencing artefacts](guides/corruption-sequencing.md)**
+5. **[Clonal simulation overview](guides/clonal-families.md)** —
+   choose `clonal_lineage` for BCR trees, `clonal_repertoire` for
+   TCR / abundance repertoires, or legacy `expand_clones`.
+6. **[Clonal lineage trees](guides/clonal-lineage.md)** — BCR SHM
+   trees, selection, final-cell sampling, lineage metadata, and
+   tree exports.
+7. **[Clonal repertoires](guides/clonal-repertoire.md)** — TCR and
+   flat-BCR clone sizes, `duplicate_count`, and AIRR clone-caller
+   export.
+8. **[Corruption + sequencing artefacts](guides/corruption-sequencing.md)**
    — the observation-stage mechanisms (PCR, sequencing errors,
    indels, end-loss, N corruption, strand).
 

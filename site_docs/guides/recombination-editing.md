@@ -65,7 +65,7 @@ print(sum(1 for r in result.records if r["d_inverted"]))
 - **Single call per pipeline.** A second `.invert_d(...)` raises
   `ValueError: invert_d already configured on this experiment;
   v1 accepts at most one inversion step per pipeline`.
-- **Must come before `.expand_clones(...)`** (ancestor-phase). See
+- **Must come before clonal forks** (ancestor-phase). See
   [Clonal placement](#clonal-placement) below.
 
 ### The `d_inverted` AIRR field
@@ -148,7 +148,7 @@ print(sum(1 for r in result.records if r["receptor_revision_applied"]))
 - **Single call per pipeline.** A second call raises
   `ValueError: receptor_revision already configured on this
   experiment`.
-- **Must come before `.expand_clones(...)`** (ancestor-phase).
+- **Must come before clonal forks** (ancestor-phase).
 - The compile path also checks that the cartridge has a V pool
   in refdata — required because the replacement allele draws from
   it.
@@ -209,24 +209,25 @@ after V assembly).
 
 ## Clonal placement
 
-Both methods must be configured BEFORE `.expand_clones(...)` —
+Both methods must be configured BEFORE a clonal fork
+(`clonal_lineage`, `clonal_repertoire`, or legacy `expand_clones`) —
 they're recombination-time decisions that the family inherits.
 The DSL enforces this at chain time with two symmetric guards:
 
 ```python
-# WRONG — invert_d after expand_clones raises ValueError
+# WRONG — invert_d after a clonal fork raises ValueError
 ga.Experiment.on("human_igh") \
    .recombine() \
-   .expand_clones(n_clones=10, per_clone=20) \
+   .clonal_repertoire(n_clones=10, max_size=20) \
    .invert_d(prob=0.05)
-# ValueError: invert_d must be called before expand_clones();
+# ValueError: invert_d must be called before the clonal fork;
 # D inversion is a recombination-time decision and must be
 # inherited by all clone descendants. Move the invert_d(...)
-# call before expand_clones(...).
+# call before clonal_lineage(...), clonal_repertoire(...), or expand_clones(...).
 ```
 
 Symmetric message for `receptor_revision` placed after
-`expand_clones`. The right order is:
+a clonal fork. The right order is:
 
 ```python
 result = (
@@ -234,7 +235,7 @@ result = (
       .recombine()
       .invert_d(prob=0.05)              # ancestor phase
       .receptor_revision(prob=0.02)     # ancestor phase
-      .expand_clones(n_clones=10, per_clone=20)
+      .clonal_repertoire(n_clones=10, max_size=20)
       .mutate(model="s5f", rate=0.03)   # descendant phase
       .run_records(seed=1)
 )
@@ -248,7 +249,7 @@ checks (via the `truth_*_call` fields when provenance exposure is
 on; the parent-aware validator also compares `d_inverted` and
 `original_v_call` against the parent Outcome).
 
-See [Clonal families](clonal-families.md) for the full
+See [Clonal simulation overview](clonal-families.md) for the full
 ancestor-vs-descendant phase discipline.
 
 ## Validation and replay
@@ -329,8 +330,8 @@ re-RCs the bytes before comparing, do it on
 `rec["sequence"][d_sequence_start:d_sequence_end]` — don't
 remap the coordinates.
 
-**Putting `.invert_d()` or `.receptor_revision()` after
-`.expand_clones()`.** The DSL rejects this immediately at chain
+**Putting `.invert_d()` or `.receptor_revision()` after a clonal
+fork.** The DSL rejects this immediately at chain
 time with the symmetric message above. Both decisions must be
 shared across every descendant of a clonal family; the API will
 not let you accidentally split them.
@@ -340,7 +341,7 @@ not let you accidentally split them.
 - **[Recombination and junction biology](recombination-junction.md)**
   — what `.recombine()` produces in the first place, before
   either of these mechanisms run.
-- **[Clonal families](clonal-families.md)** — the ancestor-vs-
+- **[Clonal simulation overview](clonal-families.md)** — the ancestor-vs-
   descendant phase discipline both mechanisms participate in.
 - **[Validation & reproducibility](../validation/index.md)** —
   the validator's issue catalogue (including the three issue

@@ -80,6 +80,28 @@ def test_clonal_repertoire_rejects_double_fork():
          .clonal_repertoire(n_clones=3, max_size=5))
 
 
+@pytest.mark.parametrize("method", ["invert_d", "receptor_revision"])
+def test_recombination_time_edits_reject_after_clonal_repertoire(method):
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .clonal_repertoire(n_clones=5, max_size=10)
+    )
+    with pytest.raises(ValueError, match="before the clonal fork"):
+        getattr(exp, method)(prob=0.05)
+
+
+@pytest.mark.parametrize("method", ["invert_d", "receptor_revision"])
+def test_recombination_time_edits_reject_after_clonal_lineage(method):
+    exp = (
+        ga.Experiment.on("human_igh")
+        .recombine()
+        .clonal_lineage(n_clones=1, max_generations=2, n_sample=2)
+    )
+    with pytest.raises(ValueError, match="before the clonal fork"):
+        getattr(exp, method)(prob=0.05)
+
+
 def test_clonal_repertoire_validates_args():
     base = ga.Experiment.on("human_igh").recombine()
     with pytest.raises(ValueError):

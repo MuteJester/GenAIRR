@@ -37,7 +37,9 @@ better starting point.
 | **End-loss (5′ / 3′)** | `.end_loss_5prime(length=...)`, `.end_loss_3prime(length=...)` (or `primer_trim_*prime` aliases) | Library / sequencing artefact — descendant | `end_loss_5_length`, `end_loss_3_length` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
 | **Random strand orientation** | `.random_strand_orientation(prob=0.5)` | Read layout — descendant | `rev_comp` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
 | **Paired-end layout** | `.paired_end(r1_length=..., insert_size=...)` | Read layout — descendant | `read_layout`, `r1_sequence`, `r2_sequence`, `r1_start`, `r1_end`, `r2_start`, `r2_end`, `insert_size` | [Paired-end reads and FASTQ](paired-end-fastq.md) |
-| **Clonal expansion** | `.expand_clones(n_clones=..., per_clone=...)` | Ancestor / descendant fork | `clone_id`, `parent_id` (stamped Python-side) | [Clonal families](clonal-families.md) |
+| **BCR lineage trees** | `.clonal_lineage(...)` | BCR affinity-maturation tree | `clone_id`, `lineage_*`, `duplicate_count`, `result.lineage_trees` | [Clonal lineage trees](clonal-lineage.md) |
+| **TCR / flat-BCR clone-size repertoires** | `.clonal_repertoire(...)` | Non-tree clonal abundance | `clone_id`, `duplicate_count` | [Clonal repertoires](clonal-repertoire.md) |
+| **Legacy fixed-size clonal stars** | `.expand_clones(n_clones=..., per_clone=...)` | Ancestor / descendant fork | `clone_id`, `parent_id`, `result.parents` | [Clonal simulation overview](clonal-families.md) |
 | **Contamination** | `.contaminate(prob=...)` | Library / sequencing artefact — descendant | `is_contaminant` | [Experiment builder](experiment-builder.md) |
 | **Sample metadata** | `.with_metadata(**fields)` | Bookkeeping — post-run | Arbitrary user-stamped columns | [Experiment builder](experiment-builder.md) |
 
@@ -56,24 +58,32 @@ insertion. Productivity constraints (`productive_only`,
 `.receptor_revision()` edit the just-recombined molecule. Each
 can fire at most once per record.
 
-**3. Ancestor / descendant fork (clonal pipelines only).**
-`.expand_clones()` partitions the pipeline. Everything before
-the fork runs once per ancestor; everything after fires per
-descendant.
+**3. Clonal structure (optional).** Choose one clonal surface:
+`clonal_lineage()` for BCR trees, `clonal_repertoire()` for TCR /
+flat-BCR clone-size repertoires, or legacy `expand_clones()` for a
+fixed-size star. For flat forks, everything before the fork runs once
+per clone and everything after fires per emitted copy. For
+`clonal_lineage`, the tree growth and SHM happen inside the lineage
+engine.
 
 **4. Biology — descendant phase.** `.mutate(...)` accumulates
-biological SHM on top of recombination. On clonal pipelines
-this fires *after* `expand_clones`; SHM is per-descendant, not
-shared across the family.
+biological SHM on top of recombination. On flat clonal pipelines
+(`clonal_repertoire` / `expand_clones`) this fires after the fork so
+SHM is per copy, not shared across the clone. TCR refdata rejects
+`.mutate(...)`. `clonal_lineage` has its own tree-internal SHM rate.
 
 **5. Library / sequencing artefacts + read layout —
 descendant phase.** All corruption passes (`pcr_amplify`,
 `sequencing_errors`, `ambiguous_base_calls`, `polymerase_indels`,
 `end_loss_5prime`, `end_loss_3prime`, `random_strand_orientation`,
 `contaminate`) plus the read-layout projection
-(`paired_end`). On clonal pipelines these must come after
-`.expand_clones()`; calling any of them *before* the fork raises
-`ValueError`.
+(`paired_end`). On flat clonal pipelines these must come after the
+fork; calling any of them before `clonal_repertoire()` or
+`expand_clones()` raises `ValueError`. `clonal_lineage` accepts the
+corruption passes after the fork but not `paired_end` yet. With
+`clonal_repertoire`, paired-end records remain abundance-collapsed:
+`duplicate_count` carries copy number and FASTQ export does not expand
+it into repeated read pairs.
 
 **Per-batch bookkeeping** (`.with_metadata(...)`) stamps the
 result after every other stage has run.
@@ -84,8 +94,8 @@ The two main ordering invariants:
   mutation; the corruption passes model the wet lab. Reversing
   the order would model SHM mutating an already-corrupted
   sequence, which doesn't match reality.
-- **All descendant-phase passes follow `expand_clones`.** That's
-  what makes them per-descendant. Putting them earlier would
+- **All descendant/read-phase passes follow flat clonal forks.**
+  That's what makes them per emitted copy. Putting them earlier would
   share their effects across the whole family.
 
 ## Cartridge-controlled vs Experiment-controlled
@@ -135,7 +145,8 @@ The `Experiment` DSL carries the experimental design:
 - **Targeting overrides** — `segment_rates`, `v_subregion_rates`
   on `mutate(...)`; per-experiment `trim(v_3=..., d_5=..., ...)`
   distributions that override the cartridge defaults.
-- **Clonal structure** — `expand_clones(n_clones, per_clone)`.
+- **Clonal structure** — `clonal_lineage(...)`,
+  `clonal_repertoire(...)`, or legacy `expand_clones(...)`.
 - **Read layout** — `paired_end(...)`,
   `random_strand_orientation(...)`.
 - **Run-time flags** — `strict`, `expose_provenance`,
@@ -170,10 +181,10 @@ priors.
 - **Paired-end geometry** — when `read_layout == "paired_end"`,
   R1/R2 coordinates checked against `insert_size`; reads are
   consistent with their parent assembled sequence.
-- **Family invariants** — `validate_families` and
-  `validate_families_with_parents` assert each `clone_id` group
-  agrees on `truth_v_call` / `truth_d_call` / `truth_j_call`.
-  The parent-aware form additionally compares descendants
+- **Family invariants** — `validate_families` groups by `clone_id`
+  and, when truth columns are present, asserts each group agrees on
+  `truth_v_call` / `truth_d_call` / `truth_j_call`. The parent-aware
+  form additionally compares legacy `expand_clones` descendants
   against their actual parent `Outcome`.
 
 **NOT validated:**

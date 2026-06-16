@@ -5,21 +5,23 @@ builder. Every method returns the same <code>Experiment</code>
 extended by one pipeline stage; the pipeline runs when you call
 <code>.run_records(...)</code>, <code>.run(...)</code>, or
 <code>.compile().run(...)</code>. For the conceptual walk-through —
-which methods are ancestor-phase vs descendant-phase, how clonal
-expansion partitions the pipeline, how compile reuse works — see
+which methods are ancestor-phase vs descendant-phase, which clonal
+model to choose, how compile reuse works — see
 the <a href="../guides/experiment-builder.md">Experiment builder
 guide</a>. The reference below catalogues the public surface.</p>
 
 ## Common methods
 
-The six methods you'll reach for in 90 % of real pipelines:
+The methods you'll reach for in most real pipelines:
 
 | Method | Purpose |
 |---|---|
 | `.recombine(...)` | Add the V(D)J recombination pass — the foundational ancestor-phase mechanism |
 | `.productive_only()` | Constrain sampling so only productive rearrangements survive |
 | `.mutate(...)` | Apply biological SHM (uniform or S5F) on top of recombination |
-| `.expand_clones(...)` | Partition the pipeline into ancestor + descendant phases for clonal families |
+| `.clonal_lineage(...)` | Grow BCR affinity-maturation lineage trees |
+| `.clonal_repertoire(...)` | Generate TCR / flat-BCR abundance repertoires with clone sizes and `duplicate_count` |
+| `.expand_clones(...)` | Legacy fixed-size clonal star model |
 | `.paired_end(...)` | Project assembled sequences as paired R1 / R2 reads |
 | `.run_records(...)` | Compile + run + return a `SimulationResult` |
 
@@ -43,6 +45,8 @@ pilot for the wider generated-reference effort.
         - recombine
         - productive_only
         - mutate
+        - clonal_lineage
+        - clonal_repertoire
         - expand_clones
         - paired_end
         - run_records
