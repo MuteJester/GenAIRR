@@ -27,6 +27,7 @@ except _PackageNotFoundError:
 
 # The simulation entry point.
 from .experiment import CompiledExperiment, Experiment, dataconfig_to_refdata
+from .genotype import Genotype
 from .result import FamilyValidationReport, SimulationResult, ValidationReport
 from ._validation import FamilyValidationFailedError, RecordValidationFailedError
 
