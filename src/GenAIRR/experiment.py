@@ -1012,9 +1012,10 @@ class Experiment:
             )
         if not isinstance(per_clone, int) or isinstance(per_clone, bool) or per_clone < 1:
             raise ValueError(f"per_clone must be a positive int, got {per_clone!r}")
-        if any(isinstance(s, _ClonalForkStep) for s in self._steps):
+        if self._has_clonal_fork():
             raise ValueError(
-                "expand_clones() can only be called once per pipeline"
+                "expand_clones() / clonal_lineage() / clonal_repertoire() "
+                "can only be called once per pipeline"
             )
         # Unified descendant-phase ordering guard. Scan the appended
         # step list for any step that came from a descendant-phase
@@ -1382,9 +1383,10 @@ class Experiment:
             )
         # --- reject duplicate fork steps ---
         for s in self._steps:
-            if isinstance(s, (_ClonalForkStep, _LineageForkStep)):
+            if isinstance(s, (_ClonalForkStep, _RepertoireForkStep, _LineageForkStep)):
                 raise ValueError(
-                    "clonal_lineage() / expand_clones() can only be called once per pipeline"
+                    "clonal_lineage() / expand_clones() / clonal_repertoire() "
+                    "can only be called once per pipeline"
                 )
         # --- descendant-phase guard (same as expand_clones) ---
         for step in self._steps:

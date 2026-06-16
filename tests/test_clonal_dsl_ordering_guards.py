@@ -349,3 +349,38 @@ def test_has_clonal_fork_helper_reflects_pipeline_state() -> None:
     assert base._has_clonal_fork() is False
     forked = base.expand_clones(n_clones=1, per_clone=1)
     assert forked._has_clonal_fork() is True
+
+
+# ──────────────────────────────────────────────────────────────────
+# A pipeline may contain at most one clonal fork — stacking any two
+# of expand_clones / clonal_lineage / clonal_repertoire raises a
+# clear "once per pipeline" error at DSL time (not a confusing
+# downstream TypeError at compile()).
+# ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        ("clonal_repertoire", "clonal_lineage"),
+        ("clonal_lineage", "clonal_repertoire"),
+        ("expand_clones", "clonal_lineage"),
+        ("expand_clones", "clonal_repertoire"),
+        ("clonal_lineage", "expand_clones"),
+        ("clonal_repertoire", "expand_clones"),
+    ],
+)
+def test_two_clonal_forks_rejected_once_per_pipeline(first: str, second: str) -> None:
+    """Any second clonal fork is rejected with the canonical
+    "once per pipeline" message, regardless of which fork came
+    first."""
+    kwargs = {
+        "expand_clones": dict(n_clones=1, per_clone=2),
+        "clonal_lineage": dict(n_clones=1),
+        "clonal_repertoire": dict(n_clones=1),
+    }
+    exp = getattr(
+        ga.Experiment.on("human_igh").recombine(), first
+    )(**kwargs[first])
+    with pytest.raises(ValueError, match="once per pipeline"):
+        getattr(exp, second)(**kwargs[second])
