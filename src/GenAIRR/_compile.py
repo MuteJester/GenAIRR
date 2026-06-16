@@ -254,8 +254,9 @@ def _push_genotype_recombine(genotype, step, plan, refdata, *, d_required):
     # (``reference_models.allele_usage``), resolved onto ``step.weights_*``
     # by recombine(). NOTE: bundled configs that don't author a typed
     # allele_usage leave these ``None`` here, so gene choice for those is
-    # uniform-over-present-genes (× copy dosage). Legacy ``gene_use_dict``
-    # is intentionally NOT consulted (mirrors recombine()'s precedence).
+    # uniform-over-present-genes (× copy dosage). The legacy per-gene
+    # usage dict is intentionally NOT consulted (mirrors recombine()'s
+    # precedence chain).
     v_weights = list(step.weights_v) if step.weights_v is not None else None
     d_weights = list(step.weights_d) if step.weights_d is not None else None
     j_weights = list(step.weights_j) if step.weights_j is not None else None
