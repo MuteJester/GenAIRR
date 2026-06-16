@@ -206,6 +206,7 @@ nav:
       - D inversion + receptor revision: guides/recombination-editing.md
       - Clonal families: guides/clonal-families.md
       - Clonal lineage trees: guides/clonal-lineage.md
+      - Clonal repertoires (TCR & abundance): guides/clonal-repertoire.md
       - Junction N/P additions: guides/junction-additions.md
       - Targeted SHM rates: guides/shm-targeting.md
       - Corruption + sequencing artefacts: guides/corruption-sequencing.md

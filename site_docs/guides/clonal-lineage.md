@@ -29,9 +29,9 @@ truth for lineage reconstruction. `clonal_lineage` adds the missing biology.
 > `clonal_lineage` applies S5F SHM, so calling it on a TCR locus raises a clear
 > `ValueError`. A TCR "clone" is one rearrangement proliferated to many identical
 > copies; the meaningful quantity is the **clone-size distribution**, not a mutation
-> tree. GenAIRR has the heavy-tailed clone-size **primitives** in the engine, but
-> they are **not yet exposed as a DSL workflow** — there is no `clonal_lineage` TCR
-> path today (see
+> tree. For **TCR and flat clonal repertoires**, use
+> [`clonal_repertoire`](clonal-repertoire.html) — it draws a heavy-tailed clone size
+> per clone and emits `clone_id` + `duplicate_count` (see
 > [Clone-size distributions](#clone-size-distributions-tcr-and-repertoire-mix)).
 
 ## Quick start
@@ -294,21 +294,21 @@ columns from the founder assignments, and `result.outcomes` carries the per-reco
 
 ## Clone-size distributions (TCR and repertoire mix)
 
-> **Engine primitives, not yet a DSL workflow.** `clonal_lineage` itself is
-> **BCR-only** — there is **no `clonal_lineage` TCR path today**. The clone-size
-> machinery below lives in the engine but is **not yet wired into a fluent DSL
-> workflow**; it is documented here as a forward-looking capability, not as
-> something you can drive from `clonal_lineage(...)`.
+> **For TCR, use [`clonal_repertoire`](clonal-repertoire.html).** `clonal_lineage`
+> itself is **BCR-only** — it still rejects TCR loci. The heavy-tailed clone-size
+> model described below is now exposed as a fluent DSL workflow via
+> [`clonal_repertoire`](clonal-repertoire.html); that is the TCR (and flat-BCR-abundance)
+> path. This section explains the model; the dedicated guide is the place to drive it.
 
-Real repertoires are not uniform: a few clones are huge, most are singletons. The
-engine includes heavy-tailed **clone-size distributions** (`CloneSizeDist`:
-power-law/Zipf by default, log-normal optional) and a repertoire-composition
-sampler that draws a set of clone sizes with a controllable **unexpanded fraction**
-(size-1, never-expanded clones). For TCR — which has no SHM — a clone is simply one
-rearrangement at copy-number `size`, with within-clone variation coming only from
-the existing sequencing/PCR-error passes. These primitives are the basis for
-mixing large expanded families with a realistic singleton tail, but exposing them
-as a TCR clone-size DSL workflow is still future work.
+Real repertoires are not uniform: a few clones are huge, most are singletons.
+[`clonal_repertoire`](clonal-repertoire.html) draws **clone sizes** from a
+heavy-tailed distribution (power-law/Zipf by default, log-normal optional) with a
+controllable **unexpanded fraction** (size-1, never-expanded clones). For TCR —
+which has no SHM — a clone is simply one rearrangement at copy-number `size`, with
+within-clone variation coming only from the post-fork sequencing/PCR-error passes;
+identical reads collapse into AIRR records carrying `clone_id` + `duplicate_count`.
+That mixes large expanded families with a realistic singleton tail. See the
+[Clonal repertoires guide](clonal-repertoire.html) for the full workflow.
 
 ## Determinism
 
