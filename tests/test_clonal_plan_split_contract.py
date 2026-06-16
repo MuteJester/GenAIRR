@@ -188,7 +188,10 @@ def test_pin_scaffold_ancestor_phase_post_fork_rejects(method) -> None:
         .recombine()
         .expand_clones(n_clones=1, per_clone=2)
     )
-    with pytest.raises(ValueError, match="before expand_clones"):
+    # Message generalized to cover all three clonal forks
+    # (clonal_lineage / clonal_repertoire / expand_clones); the
+    # rejection behaviour is unchanged.
+    with pytest.raises(ValueError, match="before the clonal fork"):
         _ANCESTOR_PHASE_BUILDERS[method](exp)
 
 
