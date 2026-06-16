@@ -189,6 +189,30 @@ class _ClonalForkStep:
 
 
 @dataclass(frozen=True)
+class _RepertoireForkStep:
+    """Marks a non-tree clonal-repertoire fork.
+
+    Generalizes :class:`_ClonalForkStep`: instead of a fixed
+    ``per_clone`` size, each clone draws a size from a heavy-tailed
+    distribution (with an unexpanded-singleton fraction). That many
+    reads pass through the post-fork library-prep / sequencing passes
+    and identical reads collapse into AIRR records carrying a standard
+    ``duplicate_count``.
+
+    Causes :meth:`Experiment.compile` to return a
+    :class:`~GenAIRR._compiled.CompiledRepertoireExperiment`.
+    """
+
+    n_clones: int
+    size_distribution: str
+    exponent: float
+    mu: float
+    sigma: float
+    max_size: int
+    unexpanded_fraction: float
+
+
+@dataclass(frozen=True)
 class _LineageForkStep:
     """Marks an affinity-maturation lineage fork.
 

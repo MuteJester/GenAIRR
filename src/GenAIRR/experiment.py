@@ -49,7 +49,12 @@ from ._compile import (
     _lower_recombine,
     lower_step,
 )
-from ._compiled import CompiledClonalExperiment, CompiledExperiment, CompiledLineageExperiment
+from ._compiled import (
+    CompiledClonalExperiment,
+    CompiledExperiment,
+    CompiledLineageExperiment,
+    CompiledRepertoireExperiment,
+)
 from ._refdata_resolver import (
     _CONFIG_ALIASES,
     ExperimentInput,
@@ -72,8 +77,9 @@ from ._pipeline_ir import (
     _LineageForkStep,
     _MutateStep,
     _PairedEndStep,
-    _ReceptorRevisionStep,
     _RecombineStep,
+    _ReceptorRevisionStep,
+    _RepertoireForkStep,
 )
 
 
@@ -1043,6 +1049,145 @@ class Experiment:
                 f"{offending_method}(...) after expand_clones(...)."
             )
         self._steps.append(_ClonalForkStep(n_clones=n_clones, size=per_clone))
+        return self
+
+    def clonal_repertoire(
+        self,
+        *,
+        n_clones: int,
+        size_distribution: str = "power_law",
+        exponent: float = 2.0,
+        mu: float = 1.0,
+        sigma: float = 1.0,
+        max_size: int = 1000,
+        unexpanded_fraction: float = 0.0,
+    ) -> "Experiment":
+        """Expand the pipeline into a non-tree clonal **repertoire**.
+
+        This is the non-tree clonal model (contrast with
+        :meth:`clonal_lineage`, which grows real affinity-maturation
+        lineage *trees*). It generalizes the deprecated
+        :meth:`expand_clones`: instead of a fixed ``per_clone`` size,
+        each clone draws a size from a heavy-tailed distribution (with
+        an unexpanded-singleton fraction). That many reads pass through
+        the post-fork library-prep / sequencing passes, and identical
+        reads are genotype-collapsed into AIRR records carrying a
+        standard ``duplicate_count`` that records abundance.
+
+        Like :meth:`expand_clones`, this call marks the per-clone /
+        per-read boundary: steps appended *before* it run **once per
+        clone** (typically just :meth:`recombine`, establishing the
+        clonal V/D/J + trim + NP backbone); steps appended *after* it
+        run **once per read** (the library-prep / sequencing passes
+        that introduce per-read divergence).
+
+        Concrete shape::
+
+            exp = (Experiment.on("human_igh")
+                   .recombine()
+                   .clonal_repertoire(n_clones=200, max_size=500,
+                                      unexpanded_fraction=0.3)
+                   .sequencing_errors(rate=0.005))
+            result = exp.run_records(seed=0)
+            # Each record carries a `clone_id` and a `duplicate_count`.
+
+        Parameters:
+        - ``n_clones`` — number of clones (positive int).
+        - ``size_distribution`` — ``"power_law"`` or ``"lognormal"``.
+        - ``exponent`` — power-law exponent (``> 0``; used when
+          ``size_distribution="power_law"``).
+        - ``mu`` / ``sigma`` — lognormal parameters (``sigma >= 0``;
+          used when ``size_distribution="lognormal"``).
+        - ``max_size`` — clamps the largest clone. Because the total
+          number of reads simulated is roughly the **sum** of the drawn
+          sizes when post-fork passes are present, keep ``max_size``
+          modest to bound runtime.
+        - ``unexpanded_fraction`` — fraction of clones forced to size 1
+          (unexpanded singletons), in ``[0, 1]``.
+
+        TCR works out of the box (no SHM): the reads diverge only
+        through the post-fork sequencing passes. Note that ``mutate``
+        after this call is rejected on TCR by :meth:`mutate`'s own TCR
+        guard; on BCR an optional post-fork ``mutate`` adds flat SHM.
+
+        **No-corruption shortcut:** a clone with no post-fork passes
+        emits identical copies, so it collapses to a single record whose
+        ``duplicate_count`` equals the drawn size.
+
+        Constraints:
+        - At most one fork per pipeline — calling this when an
+          :meth:`expand_clones`, :meth:`clonal_lineage`, or
+          :meth:`clonal_repertoire` fork is already present raises
+          ``ValueError``.
+        - The same descendant-phase ordering guard as
+          :meth:`expand_clones` applies: a descendant-phase step (e.g.
+          ``.mutate()``) appended *before* this call is rejected;
+          :meth:`recombine` is fine.
+        """
+        if not isinstance(n_clones, int) or isinstance(n_clones, bool) or n_clones < 1:
+            raise ValueError(
+                f"n_clones must be a positive int, got {n_clones!r}"
+            )
+        if size_distribution not in ("power_law", "lognormal"):
+            raise ValueError(
+                "size_distribution must be 'power_law' or 'lognormal', got "
+                f"{size_distribution!r}"
+            )
+        if not (isinstance(exponent, (int, float)) and exponent > 0):
+            raise ValueError(f"exponent must be > 0, got {exponent!r}")
+        if not (isinstance(sigma, (int, float)) and sigma >= 0):
+            raise ValueError(f"sigma must be >= 0, got {sigma!r}")
+        if not isinstance(max_size, int) or isinstance(max_size, bool) or max_size < 1:
+            raise ValueError(f"max_size must be a positive int, got {max_size!r}")
+        if not (
+            isinstance(unexpanded_fraction, (int, float))
+            and 0.0 <= unexpanded_fraction <= 1.0
+        ):
+            raise ValueError(
+                "unexpanded_fraction must be in [0, 1], got "
+                f"{unexpanded_fraction!r}"
+            )
+        if any(
+            isinstance(s, (_ClonalForkStep, _RepertoireForkStep, _LineageForkStep))
+            for s in self._steps
+        ):
+            raise ValueError(
+                "clonal_repertoire() / expand_clones() / clonal_lineage() "
+                "can only be called once per pipeline"
+            )
+        # Same descendant-phase ordering guard as expand_clones: a
+        # descendant-phase step (mutate / corruption / paired_end)
+        # appended before the fork is rejected.
+        for step in self._steps:
+            offending_method = _descendant_phase_step_classifier(step)
+            if offending_method is None:
+                continue
+            if offending_method == "mutate":
+                detail = (
+                    "SHM is descendant-specific in GenAIRR's current "
+                    "clonal model"
+                )
+            else:
+                detail = (
+                    "it is descendant-specific and must be sampled "
+                    "independently for each read"
+                )
+            raise ValueError(
+                f"{offending_method} must be called after "
+                f"clonal_repertoire(); {detail}. Move "
+                f"{offending_method}(...) after clonal_repertoire(...)."
+            )
+        self._steps.append(
+            _RepertoireForkStep(
+                n_clones=n_clones,
+                size_distribution=size_distribution,
+                exponent=float(exponent),
+                mu=float(mu),
+                sigma=float(sigma),
+                max_size=max_size,
+                unexpanded_fraction=float(unexpanded_fraction),
+            )
+        )
         return self
 
     def clonal_lineage(
@@ -2476,6 +2621,55 @@ class Experiment:
                 metadata=self._metadata,
             )
 
+        # if a `_RepertoireForkStep` is present, split the step list
+        # at it and compile the pre-fork (per-clone) simulator plus an
+        # optional post-fork (per-read) simulator, mirroring the
+        # `_ClonalForkStep` branch. Per-clone sizes are drawn at run
+        # time from the heavy-tailed distribution; identical reads are
+        # collapsed into `duplicate_count`-carrying records.
+        repertoire_idx = next(
+            (
+                i
+                for i, s in enumerate(self._steps)
+                if isinstance(s, _RepertoireForkStep)
+            ),
+            None,
+        )
+        if repertoire_idx is not None:
+            repertoire_step: _RepertoireForkStep = self._steps[repertoire_idx]
+            pre_steps = self._steps[:repertoire_idx]
+            post_steps = self._steps[repertoire_idx + 1 :]
+            pre_simulator = self._build_simulator(
+                pre_steps,
+                contracts,
+                any_lock,
+                replace_fn=_replace,
+                allow_curatable_refdata=allow_curatable_refdata,
+            )
+            # post_steps may be empty — that's the pure-copy case
+            # (each clone collapses to one record with
+            # duplicate_count = size). When present, the post-fork
+            # plan inherits the parent's V/D/J/NP backbone, so
+            # any_lock=False and no recombination facts on this side
+            # (same as the clonal branch).
+            post_simulator = None
+            if post_steps:
+                post_simulator = self._build_simulator(
+                    post_steps,
+                    contracts,
+                    any_lock=False,
+                    replace_fn=_replace,
+                    allow_curatable_refdata=allow_curatable_refdata,
+                )
+            return CompiledRepertoireExperiment(
+                pre_simulator,
+                post_simulator,
+                repertoire_step,
+                self._refdata,
+                dataconfig=self._dataconfig,
+                metadata=self._metadata,
+            )
+
         # if a `_LineageForkStep` is present, compile a
         # CompiledLineageExperiment: pre-fork steps (recombine) become
         # the founder simulator; post-fork steps must be empty (the
@@ -2687,6 +2881,20 @@ class Experiment:
         if isinstance(compiled, CompiledClonalExperiment):
             result = compiled.run_records(
                 n=n,
+                seed=seed,
+                strict=strict,
+                expose_provenance=expose_provenance,
+                validate_records=validate_records,
+            )
+        elif isinstance(compiled, CompiledRepertoireExperiment):
+            if n is not None:
+                raise ValueError(
+                    "The 'n' parameter is not supported for clonal_repertoire "
+                    "experiments. The number of records depends on the per-clone "
+                    "sizes drawn from the heavy-tailed distribution and the "
+                    "read-collapse, not a fixed product."
+                )
+            result = compiled.run_records(
                 seed=seed,
                 strict=strict,
                 expose_provenance=expose_provenance,
