@@ -73,3 +73,41 @@ def test_permissive_is_flagged():
     g = Genotype.permissive(cfg)
     assert g.is_permissive is True
     assert Genotype.from_dataconfig(cfg).is_permissive is False
+
+
+def test_delete_one_haplotype_of_unspecified_gene_raises():
+    cfg = _cfg()
+    v_gene = next(iter(cfg.v_alleles))
+    with pytest.raises(ValueError, match="before deleting one haplotype"):
+        Genotype.from_dataconfig(cfg).delete_gene(v_gene, haplotype=1)
+
+
+def test_one_haplotype_deletion_is_labelled_hemizygous():
+    cfg = _cfg()
+    v_gene = next(iter(cfg.v_alleles))
+    a1 = cfg.v_alleles[v_gene][0].name
+    g = Genotype.from_dataconfig(cfg).homozygous(v_gene, a1).delete_gene(v_gene, haplotype=1)
+    row = next(r for r in g.to_table() if r["gene"] == v_gene)
+    assert row["zygosity"] == "hemizygous"
+    assert row["haplotype_0"] == [a1]
+    assert row["haplotype_1"] == []
+
+
+def test_chromosome_weights_rejects_nan():
+    cfg = _cfg()
+    with pytest.raises(ValueError, match="finite"):
+        Genotype.from_dataconfig(cfg).chromosome_weights(float("nan"), 1.0)
+
+
+def test_snapshot_decouples_from_later_mutation():
+    cfg = _cfg()
+    import GenAIRR as ga
+
+    v_gene = next(iter(cfg.v_alleles))
+    a1 = cfg.v_alleles[v_gene][0].name
+    g = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("S1")
+    exp = ga.Experiment.on(cfg).with_genotype(g)
+    # Mutate the builder AFTER attach — must not affect the attached snapshot.
+    g.with_subject("MUTATED").delete_gene(v_gene, haplotype="both")
+    assert exp._genotype.subject_id == "S1"
+    assert exp._genotype.carried_alleles("V", v_gene)  # still carried in snapshot

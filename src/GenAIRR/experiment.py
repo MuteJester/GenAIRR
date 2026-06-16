@@ -1647,7 +1647,10 @@ class Experiment:
                 "with_genotype() and recombine(*_allele_weights=...) are mutually "
                 "exclusive: the genotype owns allele expression"
             )
-        self._genotype = genotype
+        # Snapshot the (mutable) builder so later edits to ``genotype``
+        # cannot desync the compiled engine genotype from
+        # ``result.genotypes`` (review #8).
+        self._genotype = genotype._snapshot()
         return self
 
     def restrict_alleles(
@@ -2619,6 +2622,17 @@ class Experiment:
             raise ValueError(
                 "receptor_revision() is not supported with with_genotype() in this "
                 "release (the revision pass is not haplotype-aware)"
+            )
+
+        # Genotype provenance (subject_id / haplotype / result.genotypes)
+        # is only threaded through the plain compiled path, not the
+        # clonal/lineage/repertoire forked classes. Reject the
+        # combination rather than silently dropping provenance (review
+        # #9); genotype + clonal cohorts are a planned follow-on.
+        if self._genotype is not None and self._has_clonal_fork():
+            raise ValueError(
+                "with_genotype() is not supported together with expand_clones() / "
+                "clonal_lineage() / clonal_repertoire() in this release"
             )
         from dataclasses import replace as _replace
 

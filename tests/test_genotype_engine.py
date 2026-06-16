@@ -16,7 +16,7 @@ def test_phased_recombine_only_emits_carried_allele_for_overridden_gene():
     carried = names[1]
     g = (
         Genotype.from_dataconfig(cfg)
-        .complete_from_reference("homozygous_common")
+        .complete_from_reference("homozygous_first_reference")
         .homozygous(v_gene, carried)
         .with_subject("S1")
     )

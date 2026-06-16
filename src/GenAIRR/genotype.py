@@ -61,6 +61,12 @@ class Genotype:
         return self
 
     def chromosome_weights(self, w0: float, w1: float) -> "Genotype":
+        import math
+
+        if not (math.isfinite(w0) and math.isfinite(w1)):
+            raise ValueError(
+                f"chromosome_weights must be finite, got {(w0, w1)}"
+            )
         if w0 < 0 or w1 < 0 or (w0 + w1) <= 0:
             raise ValueError(
                 f"chromosome_weights must be non-negative and sum>0, got {(w0, w1)}"
@@ -90,6 +96,17 @@ class Genotype:
         return self
 
     def delete_gene(self, gene: str, haplotype="both", segment: str = "V") -> "Genotype":
+        # One-haplotype (hemizygous) deletion requires the gene to be
+        # specified first, otherwise the *other* haplotype would also be
+        # empty — silently producing a full deletion that
+        # complete_from_reference() then skips. Full ("both") deletion of
+        # an unspecified gene is fine.
+        if haplotype != "both" and gene not in self._slots[segment]:
+            raise ValueError(
+                f"specify {segment} gene {gene!r} (homozygous/heterozygous) before "
+                f"deleting one haplotype; deleting a single haplotype of an "
+                f"unspecified gene would delete both"
+            )
         cur = self._slots[segment].get(gene, [[], []])
         # copy to avoid aliasing if the slot was shared
         cur = [list(cur[0]), list(cur[1])]
@@ -111,14 +128,25 @@ class Genotype:
         self._slots[segment][gene] = cur
         return self
 
-    def complete_from_reference(self, policy: str = "homozygous_common") -> "Genotype":
-        """Fill every UNspecified gene with a valid diploid state."""
+    def complete_from_reference(
+        self, policy: str = "homozygous_first_reference"
+    ) -> "Genotype":
+        """Fill every UNspecified gene with a valid diploid state.
+
+        ``policy``:
+        - ``"homozygous_first_reference"`` (default): each unspecified
+          gene becomes homozygous for its **first cartridge allele** (NOT
+          a population-frequency-common allele — there is no frequency
+          prior in PR1; the name says exactly what it does).
+        - ``"heterozygous_first_two"``: first two cartridge alleles, one
+          per haplotype (homozygous if the gene has a single allele).
+        """
         for seg in _SEGMENTS:
             for gene, allele_objs in _alleles_by_gene(self._cfg, seg).items():
                 if gene in self._slots[seg] or not allele_objs:
                     continue
                 names = [a.name for a in allele_objs]
-                if policy == "homozygous_common":
+                if policy == "homozygous_first_reference":
                     self.homozygous(gene, names[0], segment=seg)
                 elif policy == "heterozygous_first_two":
                     if len(names) >= 2:
@@ -128,6 +156,24 @@ class Genotype:
                 else:
                     raise ValueError(f"unknown policy {policy!r}")
         return self
+
+    # ── snapshot ──────────────────────────────────────────────────
+    def _snapshot(self) -> "Genotype":
+        """Return an independent copy for attachment to an experiment, so
+        that mutating the builder after ``with_genotype()``/``compile()``
+        cannot desync ``result.genotypes`` from the compiled engine
+        genotype. Shares the (immutable) cartridge reference; deep-copies
+        the editable slot state."""
+        import copy as _copy
+
+        g = Genotype.__new__(Genotype)
+        g._cfg = self._cfg
+        g._permissive = self._permissive
+        g.subject_id = self.subject_id
+        g._chromosome_weights = self._chromosome_weights
+        g._slots = _copy.deepcopy(self._slots)
+        g._source_hash = self._source_hash
+        return g
 
     # ── queries / export ──────────────────────────────────────────
     @property
@@ -143,26 +189,38 @@ class Genotype:
             out.update(a for (a, _c, _w) in hap)
         return out
 
+    @staticmethod
+    def _zygosity(h0: List, h1: List) -> str:
+        s0 = {a for (a, _, _) in h0}
+        s1 = {a for (a, _, _) in h1}
+        if not s0 and not s1:
+            return "deleted"
+        if bool(s0) != bool(s1):  # exactly one haplotype carries the gene
+            return "hemizygous"
+        if s0 == s1 and len(s0) == 1:
+            return "homozygous"
+        return "heterozygous"
+
     def to_table(self) -> List[Dict]:
+        """One row per (segment, gene) with full diploid truth: zygosity
+        (incl. ``hemizygous`` / ``deleted``), the carried alleles per
+        haplotype, and per-haplotype copy/weight detail. Suitable as a
+        ground-truth genotype table for inference benchmarks."""
         rows = []
         for seg in _SEGMENTS:
             for gene, haps in self._slots[seg].items():
-                h0 = {a for (a, _, _) in haps[0]}
-                h1 = {a for (a, _, _) in haps[1]}
-                carried = sorted(h0 | h1)
-                if not carried:
-                    zyg = "deleted"
-                elif h0 == h1 and len(h0) == 1:
-                    zyg = "homozygous"
-                else:
-                    zyg = "heterozygous"
+                h0, h1 = haps[0], haps[1]
                 rows.append(
                     {
+                        "subject_id": self.subject_id,
                         "segment": seg,
                         "gene": gene,
-                        "zygosity": zyg,
-                        "haplotype_0": sorted(h0),
-                        "haplotype_1": sorted(h1),
+                        "zygosity": self._zygosity(h0, h1),
+                        "haplotype_0": sorted(a for (a, _, _) in h0),
+                        "haplotype_1": sorted(a for (a, _, _) in h1),
+                        # per-haplotype (allele, copies, weight) detail
+                        "haplotype_0_detail": sorted(h0),
+                        "haplotype_1_detail": sorted(h1),
                         "permissive": self._permissive,
                     }
                 )
@@ -171,20 +229,33 @@ class Genotype:
     def to_tsv(self, path: str) -> None:
         import csv
 
+        def _fmt(detail):
+            # allele:copies:weight ; ...
+            return ";".join(f"{a}:{c}:{w}" for (a, c, w) in detail)
+
         rows = self.to_table()
         with open(path, "w", newline="") as fh:
             w = csv.writer(fh, delimiter="\t")
             w.writerow(
-                ["segment", "gene", "zygosity", "haplotype_0", "haplotype_1", "permissive"]
+                [
+                    "subject_id",
+                    "segment",
+                    "gene",
+                    "zygosity",
+                    "haplotype_0",
+                    "haplotype_1",
+                    "permissive",
+                ]
             )
             for r in rows:
                 w.writerow(
                     [
+                        r["subject_id"],
                         r["segment"],
                         r["gene"],
                         r["zygosity"],
-                        ";".join(r["haplotype_0"]),
-                        ";".join(r["haplotype_1"]),
+                        _fmt(r["haplotype_0_detail"]),
+                        _fmt(r["haplotype_1_detail"]),
                         r["permissive"],
                     ]
                 )

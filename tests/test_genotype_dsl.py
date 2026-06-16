@@ -53,6 +53,18 @@ def test_receptor_revision_with_genotype_raises_at_compile():
         exp.compile()
 
 
+def test_genotype_with_clonal_fork_raises_at_compile():
+    g = _full_genotype()
+    exp = (
+        ga.Experiment.on(_cfg())
+        .with_genotype(g)
+        .recombine()
+        .clonal_lineage(n_clones=2)
+    )
+    with pytest.raises(ValueError, match="not supported together with"):
+        exp.compile()
+
+
 def test_cartridge_hash_mismatch_raises():
     # Genotype built on IGH, attached to a TCRB experiment → mismatch.
     g = Genotype.from_dataconfig(_cfg()).complete_from_reference()
