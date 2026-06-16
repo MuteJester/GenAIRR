@@ -305,6 +305,40 @@ impl Pass for SampleGenotypePass {
         "sample_genotype"
     }
 
+    /// Encode the attached genotype so two different genotypes produce
+    /// distinct plan signatures (replay-cache correctness): source
+    /// cartridge hash, subject, chromosome weights, and the full
+    /// per-haplotype/per-segment carried slots (allele id, copies,
+    /// weight bits).
+    fn parameter_signature(&self) -> String {
+        use std::fmt::Write;
+        let g = &self.genotype;
+        let mut s = String::new();
+        let _ = write!(
+            s,
+            "geno|hash={}|subj={}|cw={:?}|d={}",
+            g.source_refdata_hash(),
+            g.subject_id().unwrap_or(""),
+            g.chromosome_weights(),
+            self.d_required,
+        );
+        for c in 0..2usize {
+            let hap = g.haplotype(c);
+            for seg in self.segments() {
+                for gene in hap.present_genes(seg) {
+                    let mut copies: Vec<(u32, u8, u32)> = hap
+                        .slot(seg, gene)
+                        .iter()
+                        .map(|cp| (cp.allele.index(), cp.copies, cp.weight.to_bits()))
+                        .collect();
+                    copies.sort_unstable();
+                    let _ = write!(s, "|h{}.{:?}.g{}={:?}", c, seg, gene.index(), copies);
+                }
+            }
+        }
+        s
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_checked(sim, ctx)
             .expect("SampleGenotypePass permissive execution must not error")
