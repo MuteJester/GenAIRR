@@ -142,11 +142,10 @@ def _genotype_priors_manifest_block(cfg):
     genotype plane). Audit-sized: counts and identity, never the full tables.
     Reads the top-level ``DataConfig.genotype_priors`` plane (independent of
     ``reference_models``)."""
-    model = getattr(cfg, "genotype_priors", None)
-    if model is None:
-        return {
-            "available": False,
-            "valid": None,
+    def _empty(available, valid, error=None):
+        b = {
+            "available": available,
+            "valid": valid,
             "model_id": None,
             "source": None,
             "version": None,
@@ -158,6 +157,20 @@ def _genotype_priors_manifest_block(cfg):
             "chromosome_weights": None,
             "source_field": "DataConfig.genotype_priors",
         }
+        if error is not None:
+            b["validation_error"] = error
+        return b
+
+    model = getattr(cfg, "genotype_priors", None)
+    if model is None:
+        return _empty(False, None)
+    if not isinstance(model, PopulationGenotypeModel):
+        # Field is typed Optional[PopulationGenotypeModel] but Python won't enforce
+        # it; a garbage value must not crash the manifest (called from build()).
+        return _empty(True, False,
+                      f"genotype_priors is not a PopulationGenotypeModel "
+                      f"(got {type(model).__name__})")
+
     # A plane may have been attached directly (bypassing builder validation).
     # Report validity rather than leaking non-JSON-clean numerics (e.g. NaN
     # chromosome weights) into the manifest.
@@ -167,22 +180,33 @@ def _genotype_priors_manifest_block(cfg):
         valid, validation_error = True, None
     except ValueError as exc:
         valid, validation_error = False, str(exc)
-    freq = model.allele_frequencies or {}
-    dele = model.haplotype_deletion_prob or {}
+
+    # content_checksum / float() can themselves raise on a malformed model; never
+    # let that crash the manifest — report None and the validity flag instead.
+    try:
+        checksum = model.content_checksum()
+    except Exception:
+        checksum = None
     cw = None
     if valid:
-        cw = [float(model.chromosome_weights[0]), float(model.chromosome_weights[1])]
+        try:
+            cw = [float(model.chromosome_weights[0]), float(model.chromosome_weights[1])]
+        except Exception:
+            cw = None
+    freq = model.allele_frequencies if isinstance(model.allele_frequencies, dict) else {}
+    dele = model.haplotype_deletion_prob if isinstance(model.haplotype_deletion_prob, dict) else {}
+    novels = model.novel_alleles if isinstance(model.novel_alleles, (list, tuple)) else []
     block = {
         "available": True,
         "valid": valid,
-        "model_id": model.model_id or None,
-        "source": model.source or None,
-        "version": model.version or None,
-        "model_checksum": model.content_checksum(),
+        "model_id": (model.model_id or None) if isinstance(model.model_id, str) else None,
+        "source": (model.source or None) if isinstance(model.source, str) else None,
+        "version": (model.version or None) if isinstance(model.version, str) else None,
+        "model_checksum": checksum,
         "segments_with_frequencies": [s for s in ("V", "D", "J") if freq.get(s)],
         "freq_gene_counts": {s: len(freq.get(s, {})) for s in ("V", "D", "J")},
         "deletion_gene_counts": {s: len(dele.get(s, {})) for s in ("V", "D", "J")},
-        "novel_allele_count": len(model.novel_alleles or []),
+        "novel_allele_count": len(novels),
         "chromosome_weights": cw,
         "source_field": "DataConfig.genotype_priors",
     }

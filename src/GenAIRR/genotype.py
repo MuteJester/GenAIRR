@@ -674,6 +674,9 @@ class Genotype:
 
         if isinstance(max_resamples, bool) or not isinstance(max_resamples, int) or max_resamples < 1:
             raise ValueError(f"max_resamples must be an int >= 1, got {max_resamples!r}")
+        if not isinstance(use_cartridge_priors, bool):
+            raise ValueError(
+                f"use_cartridge_priors must be a bool, got {use_cartridge_priors!r}")
         # Identity checks (not `in (...)`): Python's `1 == True` / `0 == False`
         # would otherwise let integers slip through and silently act like False.
         _icna = include_cartridge_novel_alleles

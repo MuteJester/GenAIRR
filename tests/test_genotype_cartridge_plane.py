@@ -589,6 +589,58 @@ def test_to_metadata_effective_refdata_hash_for_novel():
     assert md2["effective_refdata_hash"] == md2["source_refdata_hash"]
 
 
+def test_manifest_never_crashes_on_garbage_plane():
+    import copy, math
+    cfg = copy.deepcopy(_cfg())
+    # non-finite frequency weight + bad chromosome weight type -> content_checksum
+    # and float() would raise; the manifest must stay JSON-clean and not crash.
+    cfg.genotype_priors = PopulationGenotypeModel(model_id="m", source="s",
+        chromosome_weights=("x", 1.0))
+    block = cfg.cartridge_manifest()["models"]["genotype_priors"]
+    assert block["available"] is True and block["valid"] is False
+    assert block["chromosome_weights"] is None
+    assert block["model_checksum"] is None or isinstance(block["model_checksum"], str)
+
+    # genotype_priors set to a non-model object must not crash the manifest either
+    cfg.genotype_priors = object()
+    block = cfg.cartridge_manifest()["models"]["genotype_priors"]
+    assert block["available"] is True and block["valid"] is False
+
+
+def test_use_cartridge_priors_must_be_bool():
+    cfg, vg, a0, a1 = _planed_cfg()
+    for bad in ("False", 1, 0, None):
+        with pytest.raises(ValueError, match="use_cartridge_priors"):
+            Genotype.sample(cfg, seed=1, use_cartridge_priors=bad)
+
+
+def test_from_genotypes_include_novel_must_be_bool():
+    cfg = _cfg()
+    g = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("A")
+    for bad in ("yes", 1, None):
+        with pytest.raises(ValueError, match="include_novel"):
+            PopulationGenotypeModel.from_genotypes([g], cfg=cfg, include_novel=bad,
+                                                   model_id="x", source="y")
+
+
+def test_from_genotypes_min_subjects_and_segments_validation():
+    cfg = _cfg()
+    g = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("A")
+    for bad in (-1, 0, True, "2"):
+        with pytest.raises(ValueError, match="min_subjects"):
+            PopulationGenotypeModel.from_genotypes([g], cfg=cfg, min_subjects=bad,
+                                                   model_id="x", source="y")
+    with pytest.raises(ValueError, match="segment"):
+        PopulationGenotypeModel.from_genotypes([g], cfg=cfg, segments=("X",),
+                                               model_id="x", source="y")
+    with pytest.raises(ValueError, match="segment"):
+        PopulationGenotypeModel.from_genotypes([g], cfg=cfg, segments="V",
+                                               model_id="x", source="y")
+    with pytest.raises(ValueError, match="segment"):
+        PopulationGenotypeModel.from_genotypes([g], cfg=cfg, segments=("V", "V"),
+                                               model_id="x", source="y")
+
+
 def test_sample_draw_independent_of_freq_dict_order():
     import copy
     cfg = _cfg()

@@ -214,18 +214,26 @@ class PopulationGenotypeModel:
         n = len(gts)
         if n == 0:
             raise ValueError("from_genotypes: need at least one genotype")
-        if min_subjects is not None and n < min_subjects:
-            raise ValueError(
-                f"from_genotypes: min_subjects={min_subjects} but only {n} given")
+        if min_subjects is not None:
+            if isinstance(min_subjects, bool) or not isinstance(min_subjects, int) or min_subjects < 1:
+                raise ValueError(
+                    f"from_genotypes: min_subjects must be an int >= 1 (or None), "
+                    f"got {min_subjects!r}")
+            if n < min_subjects:
+                raise ValueError(
+                    f"from_genotypes: min_subjects={min_subjects} but only {n} given")
         if (isinstance(pseudocount, bool) or not isinstance(pseudocount, (int, float))
                 or not math.isfinite(pseudocount) or pseudocount < 0):
             raise ValueError(
                 f"from_genotypes: pseudocount must be a finite number >= 0, "
                 f"got {pseudocount!r}")
+        if not isinstance(include_novel, bool):
+            raise ValueError(
+                f"from_genotypes: include_novel must be a bool, got {include_novel!r}")
 
         if cfg is None:
             cfg = gts[0]._cfg
-        seg_list = segments if segments is not None else cls._segments_for(cfg)
+        seg_list = cls._resolve_estimate_segments(cfg, segments)
 
         by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
 
@@ -336,6 +344,34 @@ class PopulationGenotypeModel:
             segs.append("D")
         segs.append("J")
         return segs
+
+    @classmethod
+    def _resolve_estimate_segments(cls, cfg, segments):
+        """Validate / canonicalize the ``segments`` argument: a non-empty
+        iterable of unique V/D/J labels each present in the cartridge. A bare
+        string is rejected (it would iterate as characters)."""
+        if segments is None:
+            return cls._segments_for(cfg)
+        if isinstance(segments, str):
+            raise ValueError(
+                f"from_genotypes: segments must be a list/tuple of segment labels, "
+                f"not a string ({segments!r})")
+        seq = list(segments)
+        if not seq:
+            raise ValueError("from_genotypes: segments must be a non-empty iterable")
+        by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
+        seen = []
+        for s in seq:
+            if s not in _SEGMENTS:
+                raise ValueError(
+                    f"from_genotypes: unknown segment {s!r}; expected one of {_SEGMENTS}")
+            if s in seen:
+                raise ValueError(f"from_genotypes: duplicate segment {s!r}")
+            if not by_seg[s]:
+                raise ValueError(f"from_genotypes: cartridge has no {s} segment")
+            seen.append(s)
+        # canonical V/D/J order
+        return [s for s in _SEGMENTS if s in seen]
 
     @staticmethod
     def _normalize_chain_type(chain_type):
