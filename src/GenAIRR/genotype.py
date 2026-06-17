@@ -14,6 +14,7 @@ explicitly non-diploid fallback (see its docstring).
 """
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Optional, Set, Tuple
 
 _SEGMENTS = ("V", "D", "J")
@@ -389,6 +390,154 @@ class Genotype:
         g._novel = _copy.deepcopy(self._novel)
         g._source_hash = self._source_hash
         return g
+
+    # ── population sampling ───────────────────────────────────────
+    @staticmethod
+    def _required_segments(cfg) -> List[str]:
+        req = ["V", "J"]
+        if _alleles_by_gene(cfg, "D"):
+            req.insert(1, "D")  # V, D, J
+        return req
+
+    @classmethod
+    def _resolve_sample_segments(cls, cfg, segments_to_sample) -> List[str]:
+        required = cls._required_segments(cfg)
+        if segments_to_sample is None:
+            return required
+        segs = list(segments_to_sample)
+        for s in segs:
+            if s not in _SEGMENTS:
+                raise ValueError(f"unknown segment {s!r}; expected one of {_SEGMENTS}")
+            if not _alleles_by_gene(cfg, s):
+                raise ValueError(f"cartridge has no {s} segment")
+        missing = [r for r in required if r not in segs]
+        if missing:
+            raise ValueError(
+                f"segments_to_sample must cover the chain's required segments "
+                f"{required}; missing {missing}. Partial sampling is not supported "
+                f"by Genotype.sample (it must return a runnable genotype)."
+            )
+        return segs
+
+    @classmethod
+    def _gene_segment_index(cls, cfg, segs) -> Dict[str, List[str]]:
+        """gene name -> [segments it appears in] (for flat-shape disambiguation)."""
+        idx: Dict[str, List[str]] = {}
+        for seg in segs:
+            for gene in _alleles_by_gene(cfg, seg):
+                idx.setdefault(gene, []).append(seg)
+        return idx
+
+    @staticmethod
+    def _weighted_pick(rng, pairs):
+        names = [n for (n, _w) in pairs]
+        weights = [w for (_n, w) in pairs]
+        return rng.choices(names, weights=weights, k=1)[0]
+
+    @classmethod
+    def _resolve_allele_frequencies(cls, cfg, spec, segs):
+        # Task 2 fleshes out spec handling; uniform-within-gene for now.
+        return {
+            seg: {
+                gene: [(a.name, 1.0) for a in alleles]
+                for gene, alleles in _alleles_by_gene(cfg, seg).items()
+            }
+            for seg in segs
+        }
+
+    @classmethod
+    def _resolve_haplotype_deletion(cls, cfg, spec, segs):
+        # Task 3 fleshes out dict handling; global float for now.
+        if isinstance(spec, (int, float)) and not isinstance(spec, bool):
+            p = float(spec)
+            if not (0.0 <= p <= 1.0):
+                raise ValueError(f"haplotype_deletion_prob must be in [0, 1], got {p}")
+            return {
+                seg: {gene: p for gene in _alleles_by_gene(cfg, seg)} for seg in segs
+            }
+        raise ValueError("haplotype_deletion_prob dict handling not yet implemented")
+
+    @classmethod
+    def sample(
+        cls,
+        cfg,
+        *,
+        seed: int = 0,
+        allele_frequencies=None,
+        haplotype_deletion_prob=0.0,
+        segments_to_sample=None,
+        chromosome_weights: Tuple[float, float] = (0.5, 0.5),
+        subject_id: Optional[str] = None,
+        ensure_viable: bool = True,
+        max_resamples: int = 1000,
+    ) -> "Genotype":
+        """Sample a fully-specified diploid genotype from population priors.
+
+        Independent per-gene, per-chromosome Hardy-Weinberg model: each gene on
+        each chromosome is independently deleted (prob
+        ``haplotype_deletion_prob``) or assigned one allele drawn from the gene's
+        allele frequencies. Homozygous/heterozygous/hemizygous/deleted states
+        emerge at Hardy-Weinberg rates.
+
+        This is NOT a population haplotype model — no linkage disequilibrium, gene
+        co-deletion blocks, ancestry, or donor-specific haplotype structure. It
+        samples catalogue alleles only (no novel alleles) and deletion only (no
+        copy-number duplication). The default prior is uniform within each gene;
+        supply ``allele_frequencies`` for realistic per-gene frequencies.
+
+        With ``ensure_viable=True`` (default), the draw is repeated (with a
+        deterministic sub-seed) up to ``max_resamples`` times until at least one
+        chromosome carries every required segment, raising ``ValueError`` if that
+        is impossible under the given deletion settings.
+        """
+        if isinstance(max_resamples, bool) or not isinstance(max_resamples, int) or max_resamples < 1:
+            raise ValueError(f"max_resamples must be an int >= 1, got {max_resamples!r}")
+        segs = cls._resolve_sample_segments(cfg, segments_to_sample)
+        freqs = cls._resolve_allele_frequencies(cfg, allele_frequencies, segs)
+        delp = cls._resolve_haplotype_deletion(cfg, haplotype_deletion_prob, segs)
+
+        attempts = max_resamples if ensure_viable else 1
+        for attempt in range(attempts):
+            g = cls._draw_one(
+                cfg, seed + attempt, segs, freqs, delp, chromosome_weights, subject_id
+            )
+            if not ensure_viable or g._is_viable(cfg):
+                return g
+        raise ValueError(
+            f"could not sample a viable genotype after {max_resamples} attempts; "
+            f"haplotype_deletion_prob is too high to leave a complete haplotype "
+            f"for required segments {cls._required_segments(cfg)}"
+        )
+
+    @classmethod
+    def _draw_one(cls, cfg, seed, segs, freqs, delp, chromosome_weights, subject_id):
+        import random
+
+        rng = random.Random(seed)
+        g = cls.from_dataconfig(cfg)
+        g.chromosome_weights(*chromosome_weights)  # validates finite/non-negative/sum>0
+        if subject_id is not None:
+            g.with_subject(subject_id)
+        for seg in segs:
+            for gene in _alleles_by_gene(cfg, seg):
+                pdel = delp[seg][gene]
+                slots: List[List[Tuple[str, int, float]]] = [[], []]
+                for h in (0, 1):
+                    if rng.random() < pdel:
+                        continue  # deleted on this chromosome
+                    allele = cls._weighted_pick(rng, freqs[seg][gene])
+                    slots[h] = [(allele, 1, 1.0)]
+                g._slots[seg][gene] = slots
+        return g
+
+    def _is_viable(self, cfg) -> bool:
+        for c in (0, 1):
+            if all(
+                any(self._slots[seg].get(gene, [[], []])[c] for gene in self._slots[seg])
+                for seg in self._required_segments(cfg)
+            ):
+                return True
+        return False
 
     # ── queries / export ──────────────────────────────────────────
     @property
