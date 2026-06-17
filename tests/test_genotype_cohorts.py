@@ -171,6 +171,43 @@ def test_run_cohort_counts_length_mismatch_raises():
         ga.Experiment.on(cfg).recombine().run_cohort(gs, counts=[1])
 
 
+def test_run_cohort_counts_rejects_mapping_and_bytes():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id=f"D{s}") for s in range(2)]
+    for bad in ({0: 5, 1: 7}, b"12", "12"):
+        with pytest.raises(ValueError, match="counts"):
+            ga.Experiment.on(cfg).recombine().run_cohort(gs, counts=bad)
+
+
+def test_run_cohort_applies_with_metadata():
+    cfg = _cfg()
+    g = Genotype.sample(cfg, seed=0, subject_id="A")
+    c = (ga.Experiment.on(cfg).recombine().with_metadata(sample_id="S1")
+         .run_cohort([g], n_per_subject=3, seed=0))
+    assert all(r["sample_id"] == "S1" for r in c.records)
+    # cohort-owned fields are still correct (not clobbered by metadata)
+    assert all(r["subject_id"] == "A" for r in c.records)
+
+
+def test_run_cohort_metadata_collision_with_cohort_fields_raises():
+    cfg = _cfg()
+    g = Genotype.sample(cfg, seed=0, subject_id="A")
+    for bad_key in ("subject_id", "sequence_id", "haplotype"):
+        with pytest.raises(ValueError, match="cohort-owned|reserved"):
+            (ga.Experiment.on(cfg).recombine().with_metadata(**{bad_key: "X"})
+             .run_cohort([g], n_per_subject=1))
+
+
+def test_run_cohort_empty_export_has_schema():
+    cfg = _cfg()
+    g = Genotype.sample(cfg, seed=0, subject_id="A")
+    c = ga.Experiment.on(cfg).recombine().run_cohort([g], counts=[0])
+    df = c.to_dataframe()
+    assert len(df) == 0
+    assert len(df.columns) > 0                # default AIRR columns preserved
+    assert "sequence_id" in df.columns
+
+
 def test_run_cohort_duplicate_subject_ids_raise():
     cfg = _cfg()
     gs = [Genotype.sample(cfg, seed=s, subject_id="DUP") for s in range(2)]

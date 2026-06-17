@@ -43,6 +43,11 @@ def _resolve_counts(n_genotypes: int, n_per_subject, counts) -> List[int]:
     _check_count(n_per_subject, "n_per_subject")
     if counts is None:
         return [int(n_per_subject)] * n_genotypes
+    from collections.abc import Mapping
+    if isinstance(counts, (str, bytes, bytearray, Mapping)):
+        raise ValueError(
+            "run_cohort: counts must be a parallel list/tuple of ints, not a "
+            f"{type(counts).__name__}")
     counts = list(counts)
     if len(counts) != n_genotypes:
         raise ValueError(
@@ -118,7 +123,18 @@ class CohortResult:
         stable union across subjects (pandas fills missing keys with NaN)."""
         import pandas as pd
 
+        from .result import _DEFAULT_COLUMN_ORDER
+
         records = self.records
+        if not records:
+            # Empty cohort: preserve the default AIRR schema plus cohort-owned
+            # columns so an empty export still has a usable header (parity with
+            # SimulationResult.to_dataframe on an empty result).
+            cols = list(_DEFAULT_COLUMN_ORDER)
+            for extra in ("subject_id", "haplotype"):
+                if extra not in cols:
+                    cols.append(extra)
+            return pd.DataFrame(columns=cols)
         if airr_strict:
             from .result import _to_airr_strict
             records = [_to_airr_strict(r) for r in records]

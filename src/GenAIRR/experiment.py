@@ -3019,6 +3019,14 @@ class Experiment:
             raise ValueError(
                 "run_cohort() is not supported together with expand_clones() / "
                 "clonal_lineage() / clonal_repertoire() in this release")
+        # with_metadata() is applied per subject below, but it must not overwrite
+        # cohort-owned columns.
+        _cohort_owned = {"subject_id", "sequence_id", "haplotype"}
+        _md_collision = _cohort_owned & set(self._metadata)
+        if _md_collision:
+            raise ValueError(
+                f"run_cohort: with_metadata keys {sorted(_md_collision)} are "
+                f"cohort-owned (reserved); rename them")
 
         # Cartridge-hash check (same as with_genotype).
         live_hash = self._refdata.content_hash()
@@ -3053,7 +3061,14 @@ class Experiment:
                     n=count, seed=sub_seed, strict=strict,
                     expose_provenance=expose_provenance,
                     validate_records=validate_records)
-            # Namespace sequence_id so combined export never collides.
+            # Apply with_metadata() per subject (parity with run_records), then
+            # namespace sequence_id so combined export never collides. Metadata
+            # is stamped first; the cohort-owned sequence_id rewrite wins (and a
+            # collision was already rejected up front).
+            if self._metadata:
+                for rec in res.records:
+                    for key, value in self._metadata.items():
+                        rec[key] = value
             for rec in res.records:
                 rec["sequence_id"] = f"{sid}_{rec.get('sequence_id', '')}"
             subjects.append(CohortSubjectResult(
