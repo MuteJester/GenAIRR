@@ -86,3 +86,49 @@ def test_usage_as_prior_requires_typed_usage():
     cfg = _cfg()  # no typed allele_usage
     with pytest.raises(ValueError, match="allele_usage|usage_as_prior"):
         Genotype.sample(cfg, seed=0, allele_frequencies="usage_as_prior")
+
+
+def test_deletion_prob_per_gene():
+    cfg = _cfg()
+    drop = list(cfg.v_alleles)[0]
+    other = list(cfg.v_alleles)[1]
+    g = Genotype.sample(cfg, seed=0, haplotype_deletion_prob={"V": {drop: 1.0}})
+    assert g.carried_alleles("V", drop) == set()  # fully deleted
+    assert g.carried_alleles("V", other)          # others still carried
+
+
+def test_deletion_validation():
+    cfg = _cfg()
+    with pytest.raises(ValueError, match=r"in \[0, 1\]"):
+        Genotype.sample(cfg, seed=0, haplotype_deletion_prob=1.5)
+    with pytest.raises(ValueError, match="unknown"):
+        Genotype.sample(cfg, seed=0, haplotype_deletion_prob={"V": {"NOPE": 0.5}})
+
+
+def test_ensure_viable_raises_when_all_deleted():
+    cfg = _cfg()
+    with pytest.raises(ValueError, match="viable|deletion"):
+        Genotype.sample(cfg, seed=0, haplotype_deletion_prob=1.0)
+    g = Genotype.sample(cfg, seed=0, haplotype_deletion_prob=1.0, ensure_viable=False)
+    assert all(g.carried_alleles("V", gene) == set() for gene in cfg.v_alleles)
+
+
+def test_max_resamples_validation():
+    cfg = _cfg()
+    with pytest.raises(ValueError, match="max_resamples"):
+        Genotype.sample(cfg, seed=0, max_resamples=0)
+
+
+def test_end_to_end_truth_calls_are_carried():
+    cfg = _cfg()
+    g = Genotype.sample(cfg, seed=11, haplotype_deletion_prob=0.1)
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=200, seed=2, expose_provenance=True
+    )
+    for r in res:
+        for seg, col in (("V", "truth_v_call"), ("D", "truth_d_call"), ("J", "truth_j_call")):
+            call = r[col]
+            if not call:
+                continue
+            gene = call.split("*")[0]
+            assert call in g.carried_alleles(seg, gene), (seg, call)

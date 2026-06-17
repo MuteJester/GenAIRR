@@ -520,15 +520,46 @@ class Genotype:
 
     @classmethod
     def _resolve_haplotype_deletion(cls, cfg, spec, segs):
-        # Task 3 fleshes out dict handling; global float for now.
-        if isinstance(spec, (int, float)) and not isinstance(spec, bool):
-            p = float(spec)
+        def _check(p, where):
+            if isinstance(p, bool) or not isinstance(p, (int, float)) or not math.isfinite(p):
+                raise ValueError(f"{where}: deletion probability must be a finite number, got {p!r}")
             if not (0.0 <= p <= 1.0):
-                raise ValueError(f"haplotype_deletion_prob must be in [0, 1], got {p}")
-            return {
-                seg: {gene: p for gene in _alleles_by_gene(cfg, seg)} for seg in segs
-            }
-        raise ValueError("haplotype_deletion_prob dict handling not yet implemented")
+                raise ValueError(f"{where}: deletion probability must be in [0, 1], got {p}")
+            return float(p)
+
+        out = {seg: {gene: 0.0 for gene in _alleles_by_gene(cfg, seg)} for seg in segs}
+        if isinstance(spec, (int, float)) and not isinstance(spec, bool):
+            p = _check(spec, "haplotype_deletion_prob")
+            for seg in segs:
+                for gene in out[seg]:
+                    out[seg][gene] = p
+            return out
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"haplotype_deletion_prob must be a float or a dict, got {type(spec).__name__}"
+            )
+        keys = set(spec)
+        if keys and keys <= set(_SEGMENTS):  # nested {seg: {gene: prob}}
+            for seg, genes in spec.items():
+                if seg not in segs:
+                    raise ValueError(f"haplotype_deletion_prob: segment {seg!r} not being sampled")
+                for gene, p in genes.items():
+                    if gene not in out[seg]:
+                        raise ValueError(f"haplotype_deletion_prob: unknown {seg} gene {gene!r}")
+                    out[seg][gene] = _check(p, f"haplotype_deletion_prob[{seg}][{gene}]")
+        else:  # flat {gene: prob}
+            gidx = cls._gene_segment_index(cfg, segs)
+            for gene, p in spec.items():
+                segs_for = gidx.get(gene)
+                if not segs_for:
+                    raise ValueError(f"haplotype_deletion_prob: unknown gene {gene!r}")
+                if len(segs_for) > 1:
+                    raise ValueError(
+                        f"haplotype_deletion_prob: gene {gene!r} is ambiguous across "
+                        f"segments {segs_for}; use the {{segment: {{gene: prob}}}} shape"
+                    )
+                out[segs_for[0]][gene] = _check(p, f"haplotype_deletion_prob[{gene}]")
+        return out
 
     @classmethod
     def sample(
