@@ -36,6 +36,10 @@ def test_cohort_result_core_accessors():
     assert len(c.records) == 5              # fresh concatenated list
     c.records.append({"x": 1})              # mutating the returned list...
     assert len(c.records) == 5              # ...does not affect the cohort
+    # mutating a record dict in the returned view must not corrupt the subject
+    recs = c.records
+    recs[0]["sequence_id"] = "TAMPERED"
+    assert c.records[0]["sequence_id"] != "TAMPERED"
     with pytest.raises(KeyError):
         c.result_for("NOPE")
 
@@ -184,6 +188,10 @@ def test_run_cohort_mutual_exclusions():
     with pytest.raises(ValueError, match="restrict_alleles"):
         (ga.Experiment.on(cfg).recombine()
          .restrict_alleles(v=cfg.v_alleles[next(iter(cfg.v_alleles))][0].name)
+         .run_cohort([g]))
+    vname = cfg.v_alleles[next(iter(cfg.v_alleles))][0].name
+    with pytest.raises(ValueError, match="allele_weights"):
+        (ga.Experiment.on(cfg).recombine(v_allele_weights={vname: 100.0})
          .run_cohort([g]))
 
 

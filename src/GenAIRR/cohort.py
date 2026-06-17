@@ -98,11 +98,12 @@ class CohortResult:
     @property
     def records(self) -> List[Dict[str, Any]]:
         """A fresh concatenated list of every subject's record dicts (each
-        already ``subject_id``-tagged and ``sequence_id``-namespaced). Mutating
-        the returned list does not affect the cohort."""
+        already ``subject_id``-tagged and ``sequence_id``-namespaced). Each dict
+        is a shallow copy, so neither the returned list nor mutating a record in
+        it affects the per-subject results — edit those via ``result_for``."""
         out: List[Dict[str, Any]] = []
         for s in self._subjects:
-            out.extend(s.result.records)
+            out.extend(dict(rec) for rec in s.result.records)
         return out
 
     def __len__(self) -> int:
