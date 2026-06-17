@@ -183,9 +183,11 @@ Notes and guard-rails:
 - `with_genotype` is **mutually exclusive** with
   [`restrict_alleles`](../reference/experiment.md) and the
   `recombine(*_allele_weights=...)` kwargs — the genotype owns allele presence and
-  expression. It is also rejected together with `receptor_revision` and with the
-  clonal forks (`expand_clones` / `clonal_lineage` / `clonal_repertoire`) in this
-  release (see [Limitations](#limitations-this-release)).
+  expression. `receptor_revision` **is** supported (see
+  [Receptor revision with a genotype](#receptor-revision-with-a-genotype)); the
+  clonal forks (`expand_clones` / `clonal_lineage` / `clonal_repertoire`) are still
+  rejected with a genotype in this release (see
+  [Limitations](#limitations-this-release)).
 
 ### Gene usage
 
@@ -462,8 +464,40 @@ auto-assigned `subject_0..N-1`. Mixed (some set, some not) or duplicate IDs rais
 a cohort is fully reproducible and subjects are independent.
 
 `run_cohort` is mutually exclusive with `with_genotype`, `restrict_alleles`, and
-`recombine(*_allele_weights=...)` (the genotype owns allele expression), and — in
-this release — is not combined with `receptor_revision` or clonal forks.
+`recombine(*_allele_weights=...)` (the genotype owns allele expression). It
+**supports** `receptor_revision` (each subject's replacement V is restricted to
+its own carried alleles); clonal forks are not combined with a cohort in this
+release.
+
+## Receptor revision with a genotype
+
+[Receptor revision](../reference/experiment.md) models a post-recombination V
+replacement. With a genotype attached, the replacement V is drawn from the
+**carried** V alleles on the **drawn rearrangement chromosome** (the haplotype the
+original V came from), excluding the current V — so the revised receptor stays
+consistent with the individual's germline:
+
+```python
+g = Genotype.sample(cfg, seed=0, subject_id="donor")
+res = (ga.Experiment.on(cfg).with_genotype(g)
+       .recombine().receptor_revision(prob=0.2)        # same_haplotype=True by default
+       .run_records(n=500, seed=1, expose_provenance=True))
+# revised records: original_v_call = pre-revision V; v_call / truth_v_call = the
+# carried replacement; receptor_revision_applied = True
+```
+
+`same_haplotype=False` is a **synthetic control** that draws the replacement from
+either chromosome's carried V alleles — useful for ablation studies, but not a
+realistic model of secondary V rearrangement (which is a *cis*, same-chromosome
+event). Either way the record's `haplotype` provenance keeps naming the original
+rearrangement chromosome.
+
+This is **haplotype-aware V replacement**: it guarantees the replacement is an
+allele the individual carries, but it does not model genomic V order, RSS
+constraints, upstream-V availability, or deletion of intervening loci. Carried
+**novel** alleles on the drawn chromosome are valid replacement targets. Receptor
+revision works the same way inside [`run_cohort`](#cohorts) (per subject) and is
+still not combined with the clonal forks.
 
 ## Novel / private alleles
 
@@ -674,8 +708,6 @@ The genotype foundation is deliberately scoped. Deferred to later work:
 
 - **External loaders** — importing genotypes from VDJbase / TIgGER / IgDiscover /
   partis output.
-- **Same-haplotype receptor revision** — `receptor_revision` with a genotype is
-  rejected for now.
 
 ## Backward compatibility
 
