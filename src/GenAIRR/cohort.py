@@ -13,6 +13,44 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 
+def _resolve_subject_ids(raw_ids: List[Any]) -> List[str]:
+    """Resolve per-subject IDs: all-None -> subject_0..N-1; all-present ->
+    require unique after str() normalization; mixed -> raise."""
+    none_count = sum(1 for i in raw_ids if i is None)
+    n = len(raw_ids)
+    if none_count == n:
+        return [f"subject_{i}" for i in range(n)]
+    if none_count != 0:
+        raise ValueError(
+            "run_cohort: some genotypes have a subject_id and others don't; set "
+            "subject_id on all genotypes or none")
+    ids = [str(i) for i in raw_ids]
+    if len(ids) != len(set(ids)):
+        raise ValueError("run_cohort: duplicate subject_id after normalization")
+    return ids
+
+
+def _check_count(c, where: str) -> int:
+    if isinstance(c, bool) or not isinstance(c, int) or c < 0:
+        raise ValueError(f"{where} must be an int >= 0, got {c!r}")
+    return c
+
+
+def _resolve_counts(n_genotypes: int, n_per_subject, counts) -> List[int]:
+    """Resolve per-subject record counts. ``counts`` (a parallel sequence)
+    overrides ``n_per_subject`` when supplied; entries are validated as
+    non-bool ints >= 0."""
+    _check_count(n_per_subject, "n_per_subject")
+    if counts is None:
+        return [int(n_per_subject)] * n_genotypes
+    counts = list(counts)
+    if len(counts) != n_genotypes:
+        raise ValueError(
+            f"run_cohort: counts length {len(counts)} != number of genotypes "
+            f"{n_genotypes}")
+    return [_check_count(c, f"counts[{i}]") for i, c in enumerate(counts)]
+
+
 @dataclass(frozen=True)
 class CohortSubjectResult:
     """One subject's slice of a cohort run."""

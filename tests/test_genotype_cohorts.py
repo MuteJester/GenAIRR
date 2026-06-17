@@ -4,7 +4,12 @@ import pytest
 import GenAIRR as ga
 import GenAIRR.data as gdata
 from GenAIRR.genotype import Genotype
-from GenAIRR.cohort import CohortResult, CohortSubjectResult
+from GenAIRR.cohort import (
+    CohortResult,
+    CohortSubjectResult,
+    _resolve_counts,
+    _resolve_subject_ids,
+)
 
 
 def _cfg():
@@ -67,3 +72,28 @@ def test_cohort_result_export_union_and_fasta(tmp_path):
     csv = tmp_path / "cohort.csv"
     c.to_csv(str(csv))
     assert csv.read_text().count("\n") >= 5        # header + 4 rows
+
+
+def test_resolve_subject_ids():
+    assert _resolve_subject_ids([None, None, None]) == ["subject_0", "subject_1", "subject_2"]
+    assert _resolve_subject_ids(["A", "B"]) == ["A", "B"]
+    assert _resolve_subject_ids([1, 2]) == ["1", "2"]          # normalized to str
+    with pytest.raises(ValueError, match="duplicate"):
+        _resolve_subject_ids(["A", "A"])
+    with pytest.raises(ValueError, match="duplicate"):
+        _resolve_subject_ids([1, "1"])                          # collide after str()
+    with pytest.raises(ValueError, match="some .* subject_id"):
+        _resolve_subject_ids(["A", None])                       # mixed
+
+
+def test_resolve_counts():
+    assert _resolve_counts(3, 5, None) == [5, 5, 5]
+    assert _resolve_counts(3, 5, [1, 2, 0]) == [1, 2, 0]
+    with pytest.raises(ValueError, match="length"):
+        _resolve_counts(3, 5, [1, 2])
+    for bad in (-1, True, "2", 1.5):
+        with pytest.raises(ValueError, match="n_per_subject"):
+            _resolve_counts(2, bad, None)
+    for bad_list in ([1, -1], [1, True], [1, "2"]):
+        with pytest.raises(ValueError, match="counts"):
+            _resolve_counts(2, 1, bad_list)
