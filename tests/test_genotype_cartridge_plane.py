@@ -474,3 +474,32 @@ def test_estimate_genotype_priors_chainable_and_attaches():
     out = b.estimate_genotype_priors([gA, gB], model_id="est", source="cohort")
     assert out is b
     assert b._genotype_priors.allele_frequencies["V"][vg][a0] == 3.0
+
+
+# ── Task 10: end-to-end ──────────────────────────────────────────
+
+
+def test_end_to_end_planed_cartridge_truth_calls_carried():
+    cfg, vg, a0, a1 = _planed_cfg()
+    g = Genotype.sample(cfg, seed=11)
+    assert g.prior_provenance["allele_frequencies"] == "cartridge"
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=200, seed=2, expose_provenance=True)
+    assert len(res) == 200
+    for r in res:
+        for seg, col in (("V", "truth_v_call"), ("D", "truth_d_call"), ("J", "truth_j_call")):
+            call = r[col]
+            if not call:
+                continue
+            gene = call.split("*")[0]
+            assert call in g.carried_alleles(seg, gene), (seg, call)
+
+
+def test_end_to_end_planed_novel_flows_to_records():
+    cfg, vg, base, novel = _planed_cfg_with_novel()
+    g = Genotype.sample(cfg, seed=1)
+    assert novel in g.carried_alleles("V", vg)
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=50, seed=3, expose_provenance=True)
+    # the novel can legitimately appear as a V truth call
+    assert any(r["truth_v_call"] == novel for r in res)
