@@ -2149,7 +2149,7 @@ class Experiment:
         self._steps.append(_InvertDStep(prob=prob_f))
         return self
 
-    def receptor_revision(self, *, prob: float = 0.05) -> "Experiment":
+    def receptor_revision(self, *, prob: float = 0.05, same_haplotype: bool = True) -> "Experiment":
         """Append a receptor-revision step.
 
         Models post-recombination V-segment replacement: with
@@ -2243,7 +2243,14 @@ class Experiment:
             raise ValueError(
                 f"receptor_revision prob must be in [0.0, 1.0], got {prob_f}"
             )
-        self._steps.append(_ReceptorRevisionStep(prob=prob_f))
+        if not isinstance(same_haplotype, bool):
+            raise ValueError(
+                "receptor_revision same_haplotype must be a bool, got "
+                f"{same_haplotype!r}"
+            )
+        self._steps.append(
+            _ReceptorRevisionStep(prob=prob_f, same_haplotype=same_haplotype)
+        )
         return self
 
     def paired_end(
@@ -2908,7 +2915,9 @@ class Experiment:
         # schedule edge or place the pass at the end of the plan
         # (after corruption), both of which break the design doc §2
         # ordering.
-        receptor_revision_prob, steps = _extract_receptor_revision_prob(steps)
+        receptor_revision_prob, receptor_revision_same_haplotype, steps = (
+            _extract_receptor_revision_prob(steps)
+        )
         # Pull out the (at-most-one) paired-end step too. It must
         # land at the END of the plan, not inline with recombine —
         # see `_extract_paired_end_step` for the rationale on
@@ -2932,6 +2941,7 @@ class Experiment:
                     refdata,
                     invert_d_prob=invert_d_prob,
                     receptor_revision_prob=receptor_revision_prob,
+                    receptor_revision_same_haplotype=receptor_revision_same_haplotype,
                     genotype=self._genotype,
                 )
             else:

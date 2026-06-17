@@ -301,9 +301,16 @@ class _ReceptorRevisionStep:
     biology of receptor revision is heavy-chain-only in v1.
     :meth:`Experiment.receptor_revision` rejects VJ at the DSL
     boundary before this dataclass is constructed.
+
+    ``same_haplotype`` (default ``True``) only matters when a genotype
+    is attached: the replacement V is restricted to the carried V
+    alleles on the drawn rearrangement chromosome (the cis VH-
+    replacement model). ``False`` is a synthetic control that draws
+    from both chromosomes. Ignored on the no-genotype path.
     """
 
     prob: float
+    same_haplotype: bool = True
 
 
 @dataclass(frozen=True)
