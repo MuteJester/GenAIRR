@@ -2978,8 +2978,9 @@ class Experiment:
 
         Mutually exclusive with :meth:`with_genotype`, :meth:`restrict_alleles`,
         and ``recombine(*_allele_weights=...)`` (the genotype owns allele
-        expression). Not supported with :meth:`receptor_revision` or clonal forks
-        in this release.
+        expression). :meth:`receptor_revision` is supported (each subject's
+        replacement V is restricted to its carried alleles on the drawn
+        chromosome); clonal forks are not supported in this release.
         """
         import copy as _copy
         import random as _random

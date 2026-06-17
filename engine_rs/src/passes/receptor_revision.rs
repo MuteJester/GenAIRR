@@ -191,7 +191,7 @@ impl ReceptorRevisionPass {
             let (new_id, derived_trim_3) = self.consume_replay_choices_genotype(
                 constraint, c, current_v, refdata, old_v_len, ctx,
             )?;
-            return self.finish_apply(sim, refdata, new_id, derived_trim_3, c, ctx);
+            return self.finish_apply(sim, refdata, new_id, derived_trim_3, c, strict, ctx);
         }
 
         // Fresh: applied = coin AND an eligible alternate exists.
@@ -232,7 +232,7 @@ impl ReceptorRevisionPass {
             .get(Segment::V, new_id)
             .ok_or_else(|| PassError::missing_allele(self.name(), Segment::V, new_id.index()))?;
         let derived_trim_3 = new_allele.len() - old_v_len;
-        self.finish_apply(sim, refdata, new_id, derived_trim_3, c, ctx)
+        self.finish_apply(sim, refdata, new_id, derived_trim_3, c, strict, ctx)
     }
 
     /// Record the typed choices + commit the replacement (shared by the fresh
@@ -245,6 +245,7 @@ impl ReceptorRevisionPass {
         new_id: AlleleId,
         derived_trim_3: u32,
         c: usize,
+        strict: bool,
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         if derived_trim_3 > u16::MAX as u32 {
@@ -268,6 +269,33 @@ impl ReceptorRevisionPass {
             ChoiceValue::Int(derived_trim_3 as i64),
         );
         let old_v_len = self.old_v_region_len(sim)?;
+        // Strict post-event contract arbitration — parity with the non-genotype
+        // path: build a hypothetical post-replacement IR (no trace/sink side
+        // effects) and ask the active contracts whether the receptor-revised
+        // state is admissible (e.g. productive_only). Permissive skips this.
+        if strict && ctx.contracts.is_some() {
+            let mut hypothetical_ctx = PassContext {
+                trace: ctx.trace,
+                rng: ctx.rng,
+                pass_index: ctx.pass_index,
+                refdata: ctx.refdata,
+                contracts: ctx.contracts,
+                feasibility: ctx.feasibility,
+                reference_index: ctx.reference_index,
+                replay_cursor: None,
+                event_log_sink: None,
+            };
+            let hypothetical = self.commit_replacement(
+                sim.clone(),
+                &new_allele,
+                new_id,
+                derived_trim_3 as u16,
+                old_v_len,
+                Some(c as u8),
+                &mut hypothetical_ctx,
+            );
+            self.validate_post_event_contracts(sim, &hypothetical, ctx)?;
+        }
         Ok(self.commit_replacement(
             sim.clone(),
             &new_allele,
@@ -1044,6 +1072,35 @@ mod tests {
         // sim_v_assembled assigns V0 WITHOUT a haplotype stamp.
         let err = run_with_ctx(&pass, &cfg, None, sim_v_assembled(v0), None, None).unwrap_err();
         assert!(matches!(err, PassError::InvalidPlanState { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn genotype_strict_post_event_contract_rejection_errors() {
+        use crate::contract::{Contract, ContractViolation};
+
+        // A contract whose verify() always rejects the post-event state.
+        struct RejectAll;
+        impl Contract for RejectAll {
+            fn name(&self) -> &str {
+                "reject_all_test"
+            }
+            fn verify(
+                &self,
+                _sim: &Simulation,
+                _refdata: Option<&RefDataConfig>,
+            ) -> Result<(), ContractViolation> {
+                Err(ContractViolation::new(self.name(), "rejected by test"))
+            }
+        }
+
+        let (cfg, v0, v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        let contracts = ContractSet::new().with(Box::new(RejectAll));
+        // Strict mode (execute_checked) with a rejecting contract must surface a
+        // contract violation — parity with the non-genotype path.
+        let err =
+            run_with_ctx(&pass, &cfg, Some(&contracts), geno_sim(v0), None, None).unwrap_err();
+        assert!(matches!(err, PassError::ContractViolation { .. }), "got {err:?}");
     }
 
     // ── genotype-aware replay validation ────────────────────────
