@@ -2618,18 +2618,10 @@ class Experiment:
         if allow_curatable_refdata is None:
             allow_curatable_refdata = self._allow_curatable_refdata
 
-        # Receptor revision is not supported alongside a phased genotype
-        # in this release: the revision pass samples a replacement V from
-        # its own distribution with no chromosome/carried-allele
-        # awareness. Reject the combination (same-haplotype revision is a
-        # planned follow-on).
-        if self._genotype is not None and any(
-            isinstance(s, _ReceptorRevisionStep) for s in self._steps
-        ):
-            raise ValueError(
-                "receptor_revision() is not supported with with_genotype() in this "
-                "release (the revision pass is not haplotype-aware)"
-            )
+        # Receptor revision with a phased genotype is now haplotype-aware:
+        # the lowering builds a genotype-aware ReceptorRevisionPass that
+        # restricts the replacement V to carried alleles on the drawn
+        # rearrangement chromosome (see _lower_recombine). No rejection here.
 
         # Genotype provenance (subject_id / haplotype / result.genotypes)
         # is only threaded through the plain compiled path, not the
@@ -3021,10 +3013,9 @@ class Experiment:
             raise ValueError(
                 "run_cohort() and recombine(*_allele_weights=...) are mutually "
                 "exclusive: the genotype owns allele expression")
-        if any(isinstance(s, _ReceptorRevisionStep) for s in self._steps):
-            raise ValueError(
-                "run_cohort() is not supported with receptor_revision() in this "
-                "release (the revision pass is not haplotype-aware)")
+        # receptor_revision is supported per subject (each subject's compile
+        # builds a genotype-aware revision pass restricted to that subject's
+        # carried alleles on the drawn chromosome) — no rejection here.
         if self._has_clonal_fork():
             raise ValueError(
                 "run_cohort() is not supported together with expand_clones() / "
