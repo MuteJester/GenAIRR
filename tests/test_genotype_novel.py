@@ -136,6 +136,57 @@ def test_to_table_and_tsv_expose_novel(tmp_path):
     assert "novel" in header
 
 
+def test_unplaced_novel_allele_not_injected_or_emitted():
+    cfg = _cfg()
+    gene = "IGHVF1-G1"
+    # Define a novel allele but NEVER place it on a haplotype.
+    g = (
+        Genotype.from_dataconfig(cfg)
+        .add_novel_allele(f"{gene}*unplaced", base=f"{gene}*01", mutations=_SAFE)
+        .complete_from_reference()
+        .with_subject("S1")
+    )
+    # Effective reference must not contain the unplaced novel allele.
+    eff = g.effective_dataconfig()
+    eff_names = {a.name for alleles in eff.v_alleles.values() for a in alleles}
+    assert f"{gene}*unplaced" not in eff_names
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=200, seed=4, expose_provenance=True
+    )
+    assert all(f"{gene}*unplaced" not in r["v_call"] for r in res)
+    assert all(f"{gene}*unplaced" not in r["truth_v_call"] for r in res)
+
+
+def test_haplotype_argument_validation():
+    cfg = _cfg()
+    gene = "IGHVF1-G1"
+    a0 = cfg.v_alleles[gene][0].name
+    g = Genotype.from_dataconfig(cfg).homozygous(gene, a0)
+    with pytest.raises(ValueError, match="haplotype must be"):
+        g.delete_gene(gene, haplotype=2)
+    with pytest.raises(ValueError, match="haplotype must be"):
+        g.delete_gene(gene, haplotype="x")
+    with pytest.raises(ValueError, match="haplotype must be 0 or 1"):
+        Genotype.from_dataconfig(cfg).duplicate_gene(gene, [a0], haplotype=-1)
+    with pytest.raises(ValueError, match="haplotype must be 0 or 1"):
+        Genotype.from_dataconfig(cfg).duplicate_gene(gene, [a0], haplotype=2)
+
+
+def test_novel_synthesis_tolerates_missing_gapped_seq():
+    import copy
+
+    cfg = copy.deepcopy(_cfg())
+    # Simulate a custom cartridge whose base allele has no gapped sequence.
+    cfg.v_alleles["IGHVF1-G1"][0].gapped_seq = ""
+    g = Genotype.from_dataconfig(cfg).add_novel_allele(
+        "IGHVF1-G1*i01", base="IGHVF1-G1*01", mutations=_SAFE
+    )
+    nv = g._novel["IGHVF1-G1*i01"]["allele"]
+    # falls back to ungapped form (no crash)
+    assert nv.gapped_seq == nv.ungapped_seq
+    assert nv.ungapped_seq[38] == "C"
+
+
 def test_genotype_without_novel_is_unaffected():
     cfg = _cfg()
     g = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("S1")

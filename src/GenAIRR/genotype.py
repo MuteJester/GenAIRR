@@ -109,6 +109,10 @@ class Genotype:
         return self
 
     def delete_gene(self, gene: str, haplotype="both", segment: str = "V") -> "Genotype":
+        if haplotype not in ("both", 0, 1):
+            raise ValueError(
+                f"haplotype must be 'both', 0, or 1, got {haplotype!r}"
+            )
         # One-haplotype (hemizygous) deletion requires the gene to be
         # specified first, otherwise the *other* haplotype would also be
         # empty — silently producing a full deletion that
@@ -133,11 +137,13 @@ class Genotype:
     def duplicate_gene(
         self, gene: str, alleles: List[str], haplotype: int, segment: str = "V"
     ) -> "Genotype":
+        if haplotype not in (0, 1):
+            raise ValueError(f"haplotype must be 0 or 1, got {haplotype!r}")
         for a in alleles:
             self._check_allele(segment, gene, a)
         cur = self._slots[segment].get(gene, [[], []])
         cur = [list(cur[0]), list(cur[1])]
-        cur[int(haplotype)] = [(a, 1, 1.0) for a in alleles]
+        cur[haplotype] = [(a, 1, 1.0) for a in alleles]
         self._slots[segment][gene] = cur
         return self
 
@@ -210,9 +216,13 @@ class Genotype:
             raise ValueError("provide exactly one of `mutations` or `sequence`")
 
         base_ungapped = base_allele.ungapped_seq.upper()
-        gapped = list(base_allele.gapped_seq)
-        # ungapped index -> gapped index (positions of non-gap characters)
-        ung_to_gap = [i for i, ch in enumerate(base_allele.gapped_seq) if ch != "."]
+        gapped = list(base_allele.gapped_seq or "")
+        # ungapped index -> gapped index (positions of non-gap characters).
+        # Some custom cartridges carry no (or inconsistent) gapped sequence;
+        # in that case we can't project onto gaps, so fall back to an
+        # ungapped novel sequence (no gap-derived metadata).
+        ung_to_gap = [i for i, ch in enumerate(base_allele.gapped_seq or "") if ch != "."]
+        project_gaps = len(ung_to_gap) == len(base_ungapped)
         seq = list(base_ungapped)
         if sequence is not None:
             sequence = sequence.upper()
@@ -241,15 +251,20 @@ class Genotype:
         if new_ungapped == base_ungapped:
             raise ValueError("novel allele is identical to its base allele")
         # Project the substitutions onto the gapped sequence too, so
-        # gap-dependent metadata stays consistent.
-        for k, b in enumerate(seq):
-            gapped[ung_to_gap[k]] = b
+        # gap-dependent metadata stays consistent. If the base has no
+        # usable gapped sequence, fall back to the ungapped form.
+        if project_gaps:
+            for k, b in enumerate(seq):
+                gapped[ung_to_gap[k]] = b
+            new_gapped = "".join(gapped)
+        else:
+            new_gapped = new_ungapped
 
         novel = _copy.deepcopy(base_allele)
         novel.name = name
         novel.gene = gene
         novel.ungapped_seq = new_ungapped
-        novel.gapped_seq = "".join(gapped)
+        novel.gapped_seq = new_gapped
         if hasattr(novel, "ungapped_len"):
             novel.ungapped_len = len(new_ungapped)
 
@@ -296,15 +311,31 @@ class Genotype:
     def novel_allele_names(self) -> Set[str]:
         return set(self._novel)
 
+    def _carried_allele_names(self) -> Set[str]:
+        """Allele names actually placed on a haplotype (across segments)."""
+        names: Set[str] = set()
+        for seg in _SEGMENTS:
+            for haps in self._slots[seg].values():
+                for hap in haps:
+                    names.update(a for (a, _c, _w) in hap)
+        return names
+
     def effective_dataconfig(self):
         """Return a copy of the source ``DataConfig`` with this genotype's
-        novel alleles appended to their genes' allele lists — the reference
-        the engine actually runs against when novel alleles are present."""
+        **carried** novel alleles appended to their genes' allele lists —
+        the reference the engine actually runs against when novel alleles
+        are present. A novel allele that was defined but never placed on a
+        haplotype is NOT injected (it would otherwise pollute the aligner
+        reference and could surface in ``v_call`` despite being absent from
+        the ground truth)."""
         import copy as _copy
 
         cfg = _copy.deepcopy(self._cfg)
         by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
-        for info in self._novel.values():
+        carried = self._carried_allele_names()
+        for name, info in self._novel.items():
+            if name not in carried:
+                continue
             d = by_seg[info["segment"]]
             existing = list(d.get(info["gene"], []))
             existing.append(_copy.deepcopy(info["allele"]))

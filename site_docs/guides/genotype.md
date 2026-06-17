@@ -35,6 +35,15 @@ a D and a J **from the same chromosome**. That linkage is exactly the signal
 haplotype-inference methods exploit (e.g. the IGHJ6-anchor approach), and GenAIRR
 reproduces it.
 
+!!! note "Supported loci and chains"
+    Genotypes work on any GenAIRR reference cartridge — BCR **and** TCR, heavy
+    **and** light/α/β chains. On **VDJ** loci (IGH, TRB, TRD) the genotype spans
+    V, D and J and each rearrangement draws all three from one chromosome. On
+    **VJ** loci (IGK, IGL, TRA, TRG) there is no D segment: genotype V and J,
+    D rows are simply not required and are ignored. The examples below use the
+    human IGH cartridge, but the same API applies to every locus; just use that
+    cartridge's gene/allele names.
+
 ## Quick start
 
 ```python
@@ -100,7 +109,8 @@ the J drawn later (the phased choices are evaluated together, not independently)
 ### Strict vs permissive
 
 `Genotype.from_dataconfig(cfg)` is **strict**: any gene that could be used during
-recombination but was never specified is an error at attach time — you must define
+recombination but was never specified is an error when the experiment is compiled
+(`compile()` / `run_records()`) — you must define
 the whole genotype (use `complete_from_reference` to fill the genes you don't care
 about). This guarantees a genuine diploid complement, which is what you want for a
 ground-truth benchmark.
@@ -134,6 +144,27 @@ g.chromosome_weights(0.6, 0.4)                          # allelic-expression imb
 g.with_subject("DONOR01")                               # provenance label
 
 g.complete_from_reference("homozygous_first_reference") # fill every unspecified gene
+```
+
+Every editing method takes a `segment` argument (`"V"` default, or `"D"` / `"J"`),
+so genotype the D and J loci too — important since J anchors and D/J usage drive
+haplotype-inference methods:
+
+| Method | Signature | Notes |
+|---|---|---|
+| `homozygous` | `(gene, allele, segment="V")` | one allele on both chromosomes |
+| `heterozygous` | `(gene, allele0, allele1, segment="V")` | one allele per chromosome |
+| `delete_gene` | `(gene, haplotype="both"\|0\|1, segment="V")` | whole-gene or one-chromosome (hemizygous) deletion |
+| `duplicate_gene` | `(gene, alleles=[...], haplotype=0\|1, segment="V")` | >1 copy on one chromosome |
+| `add_novel_allele` | `(name, *, base, mutations\|sequence, segment="V", allow_nonfunctional=False)` | define a private allele (see below) |
+| `chromosome_weights` | `(w0, w1)` | allelic-expression imbalance (default 0.5/0.5) |
+| `with_subject` | `(sid)` | provenance label stamped on every record |
+| `complete_from_reference` | `(policy="homozygous_first_reference"\|"heterozygous_first_two")` | fill unspecified genes |
+
+```python
+# Genotype the J locus too — e.g. heterozygous IGHJ6 + a homozygous IGHJ4:
+g.heterozygous("IGHJ6", "IGHJ6*02", "IGHJ6*03", segment="J")
+g.homozygous("IGHJ4", "IGHJ4*02", segment="J")
 ```
 
 Notes and guard-rails:
@@ -359,36 +390,57 @@ deletions correct.*
 
 ### Reproduce it
 
+This builds the **exact** genotype behind the figure — 3 heterozygous, 3
+homozygous, and 3 deleted study V genes, the rest filled from the reference —
+simulates 4,000 reads with light SHM at `seed=7`, and writes every input the two
+tools need plus the ground truth to score against:
+
 ```python
 import GenAIRR as ga
 import GenAIRR.data as gdata
 from GenAIRR.genotype import Genotype
 
 cfg = gdata.HUMAN_IGH_OGRDB
-g = (
-    Genotype.from_dataconfig(cfg)
-      .complete_from_reference("homozygous_first_reference")
-      .heterozygous("IGHVF1-G1", "IGHVF1-G1*01", "IGHVF1-G1*02")
-      .homozygous("IGHVF2-G4", "IGHVF2-G4*01")
-      .delete_gene("IGHVF3-G7", haplotype="both")
-      .with_subject("DONOR01")
-)
+HET = ["IGHVF1-G1", "IGHVF1-G2", "IGHVF1-G3"]   # 2 alleles each
+HOM = ["IGHVF2-G4", "IGHVF3-G5", "IGHVF3-G6"]   # 1 allele
+DEL = ["IGHVF3-G7", "IGHVF3-G8", "IGHVF3-G9"]   # deleted (both chromosomes)
+
+g = Genotype.from_dataconfig(cfg).complete_from_reference("homozygous_first_reference")
+for gene in HET:
+    a0, a1 = (a.name for a in cfg.v_alleles[gene][:2])
+    g.heterozygous(gene, a0, a1)
+for gene in HOM:
+    g.homozygous(gene, cfg.v_alleles[gene][0].name)
+for gene in DEL:
+    g.delete_gene(gene, haplotype="both")
+g.with_subject("DONOR01")
+
 res = (
     ga.Experiment.on(cfg).with_genotype(g).recombine()
       .mutate(rate=0.004)                       # light SHM, as in real data
-      .run_records(n=4000, seed=7)
+      .run_records(n=4000, seed=7, expose_provenance=True)
 )
+
 res.to_tsv("repertoire.tsv")                    # AIRR table → TIgGER
 g.to_tsv("truth_genotype.tsv")                  # ground truth to score against
 
-# export the cartridge V germline (names match v_call) for TIgGER's germline_db
-with open("germline_V.fasta", "w") as fh:
+with open("reads.fasta", "w") as fh:            # raw reads → IgDiscover / partis
+    for r in res:
+        fh.write(f">{r['sequence_id']}\n{r['sequence'].upper()}\n")
+
+with open("germline_V.fasta", "w") as fh:       # cartridge V germline (names match v_call)
     for gene, alleles in cfg.v_alleles.items():
         for a in alleles:
             fh.write(f">{a.name}\n{a.ungapped_seq.upper()}\n")
 ```
 
-Then run the R snippet above and compare `geno` against `truth_genotype.tsv`.
+**Score it.** Run TIgGER (R snippet above) on `repertoire.tsv`, or IgDiscover on
+`reads.fasta` with the cartridge as its starting database
+(`igdiscover init --database db/ --single-reads reads.fasta project/ && cd project
+&& igdiscover run`). Then compare each tool's per-gene allele set against
+`g.to_table()` (the planted truth): allele-presence precision/recall, zygosity,
+and deletion calls. With the genotype above this yields TIgGER precision/recall
+1.00 (52/52 genes) and IgDiscover precision 1.00 / recall 0.96 — the figure.
 
 ### Running other tools on the same data
 
