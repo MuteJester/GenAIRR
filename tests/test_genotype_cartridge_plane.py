@@ -177,3 +177,27 @@ def test_manifest_genotype_priors_block():
     assert block["novel_allele_count"] == 1
     assert block["chromosome_weights"] == [0.5, 0.5]
     assert block["source_field"] == "DataConfig.genotype_priors"
+
+
+# ── Task 5: provenance scaffolding ───────────────────────────────
+
+
+def test_prior_provenance_default_and_metadata():
+    cfg = _cfg()
+    vg, a0, _a1 = _vg_two_alleles(cfg)
+    g = Genotype.from_dataconfig(cfg).homozygous(vg, a0).with_subject("S1")
+    # builder-path genotype: every source non-cartridge, no model id
+    prov = g.prior_provenance
+    assert prov["allele_frequencies"] == "manual"
+    assert prov["model_id"] is None
+    md = g.to_metadata()
+    assert md["subject_id"] == "S1"
+    assert md["prior_provenance"] == prov
+    assert "source_refdata_hash" in md
+
+
+def test_prior_provenance_survives_snapshot():
+    cfg = _cfg()
+    g = Genotype.sample(cfg, seed=1)
+    snap = g._snapshot()
+    assert snap.prior_provenance == g.prior_provenance

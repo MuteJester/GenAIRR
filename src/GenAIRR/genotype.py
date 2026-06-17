@@ -36,6 +36,10 @@ class Genotype:
         self._cfg = cfg
         self._permissive = bool(permissive)
         self.subject_id: Optional[str] = None  # plain attribute (read anywhere)
+        # Provenance of any population prior used to build this genotype. For
+        # builder-constructed genotypes every source is "manual" / None; for
+        # Genotype.sample(...) it records explicit/cartridge/uniform per input.
+        self.prior_provenance: Dict = self._manual_provenance()
         self._chromosome_weights: Tuple[float, float] = (0.5, 0.5)
         # segment -> gene -> [hap0 list[(allele, copies, weight)], hap1 ...]
         self._slots: Dict[str, Dict[str, List[List[Tuple[str, int, float]]]]] = {
@@ -65,6 +69,17 @@ class Genotype:
     def with_subject(self, sid: str) -> "Genotype":
         self.subject_id = str(sid)
         return self
+
+    @staticmethod
+    def _manual_provenance() -> Dict:
+        return {
+            "allele_frequencies": "manual",
+            "haplotype_deletion_prob": "manual",
+            "chromosome_weights": "manual",
+            "novel_alleles": "manual",
+            "model_id": None,
+            "model_checksum": None,
+        }
 
     @staticmethod
     def _check_chromosome_weights(w0, w1) -> Tuple[float, float]:
@@ -391,6 +406,7 @@ class Genotype:
         g._slots = _copy.deepcopy(self._slots)
         g._novel = _copy.deepcopy(self._novel)
         g._source_hash = self._source_hash
+        g.prior_provenance = _copy.deepcopy(self.prior_provenance)
         return g
 
     # ── population sampling ───────────────────────────────────────
@@ -690,6 +706,7 @@ class Genotype:
         g._slots = {s: {} for s in _SEGMENTS}
         g._novel = {}
         g._source_hash = source_hash
+        g.prior_provenance = cls._manual_provenance()  # sample() overwrites with real sources
         for seg in segs:
             for gene in _alleles_by_gene(cfg, seg):
                 pdel = delp[seg][gene]
@@ -743,6 +760,17 @@ class Genotype:
         if s0 == s1 and len(s0) == 1:
             return "homozygous"
         return "heterozygous"
+
+    def to_metadata(self) -> Dict:
+        """Flat genotype-level metadata (subject + prior provenance + source
+        refdata hash) for sidecar export / benchmark tooling. Distinct from
+        ``to_table`` (one row per gene), which carries no provenance."""
+        import copy as _copy
+        return {
+            "subject_id": self.subject_id,
+            "source_refdata_hash": self._source_hash,
+            "prior_provenance": _copy.deepcopy(self.prior_provenance),
+        }
 
     def to_table(self) -> List[Dict]:
         """One row per (segment, gene) with full diploid truth: zygosity
