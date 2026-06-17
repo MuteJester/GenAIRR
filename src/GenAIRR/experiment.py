@@ -2948,6 +2948,135 @@ class Experiment:
             allow_curatable_refdata=allow_curatable_refdata,
         )
 
+    def run_cohort(
+        self,
+        genotypes,
+        *,
+        n_per_subject: int = 1,
+        seed: int = 0,
+        counts=None,
+        strict: bool = False,
+        expose_provenance: bool = False,
+        validate_records: bool = False,
+        allow_curatable_refdata: Optional[bool] = None,
+    ) -> "CohortResult":
+        """Run a cohort: N subjects, each with its own diploid genotype, in one
+        call. A Python loop around the single-subject genotype path — each
+        subject is compiled and run independently, records are tagged with
+        ``subject_id`` and given a namespaced ``sequence_id``, and the per-subject
+        ``SimulationResult`` (with its own refdata) is collected into a
+        :class:`~GenAIRR.cohort.CohortResult`.
+
+        ``n_per_subject`` applies to every subject; ``counts`` (a parallel
+        sequence, same length as ``genotypes``) overrides it per subject and may
+        contain ``0`` (that subject appears with zero records). Subject IDs are
+        taken from each genotype, or auto-assigned ``subject_0..N-1`` when all are
+        unset; mixed/duplicate IDs raise. Per-subject sub-seeds are derived
+        deterministically from ``seed``.
+
+        Mutually exclusive with :meth:`with_genotype`, :meth:`restrict_alleles`,
+        and ``recombine(*_allele_weights=...)`` (the genotype owns allele
+        expression). Not supported with :meth:`receptor_revision` or clonal forks
+        in this release.
+        """
+        import copy as _copy
+        import random as _random
+
+        from .cohort import (
+            CohortResult,
+            CohortSubjectResult,
+            _resolve_counts,
+            _resolve_subject_ids,
+        )
+        from .genotype import Genotype
+        from .result import SimulationResult
+
+        gts = list(genotypes)
+        if not gts:
+            raise ValueError("run_cohort: genotypes must be a non-empty sequence")
+        for g in gts:
+            if not isinstance(g, Genotype):
+                raise TypeError(
+                    f"run_cohort: every element must be a Genotype, got "
+                    f"{type(g).__name__}")
+
+        # Mutual exclusions — mirror with_genotype / compile.
+        if self._genotype is not None:
+            raise ValueError(
+                "run_cohort() and with_genotype() are mutually exclusive")
+        if any(v is not None for v in self._locks.values()):
+            raise ValueError(
+                "run_cohort() and restrict_alleles() are mutually exclusive")
+        if self._user_allele_weights_set:
+            raise ValueError(
+                "run_cohort() and recombine(*_allele_weights=...) are mutually "
+                "exclusive: the genotype owns allele expression")
+        if any(isinstance(s, _ReceptorRevisionStep) for s in self._steps):
+            raise ValueError(
+                "run_cohort() is not supported with receptor_revision() in this "
+                "release (the revision pass is not haplotype-aware)")
+        if self._has_clonal_fork():
+            raise ValueError(
+                "run_cohort() is not supported together with expand_clones() / "
+                "clonal_lineage() / clonal_repertoire() in this release")
+        # with_metadata() is applied per subject below, but it must not overwrite
+        # cohort-owned columns.
+        _cohort_owned = {"subject_id", "sequence_id", "haplotype"}
+        _md_collision = _cohort_owned & set(self._metadata)
+        if _md_collision:
+            raise ValueError(
+                f"run_cohort: with_metadata keys {sorted(_md_collision)} are "
+                f"cohort-owned (reserved); rename them")
+
+        # Cartridge-hash check (same as with_genotype).
+        live_hash = self._refdata.content_hash()
+        for g in gts:
+            if g._source_hash != live_hash:
+                raise ValueError(
+                    "run_cohort: a genotype was built against a different cartridge "
+                    f"(content hash {g._source_hash!r} != experiment {live_hash!r})")
+
+        resolved_counts = _resolve_counts(len(gts), n_per_subject, counts)
+        subject_ids = _resolve_subject_ids([g.subject_id for g in gts])
+        base_rng = _random.Random(seed)
+
+        subjects = []
+        for g, sid, count in zip(gts, subject_ids, resolved_counts):
+            sub_seed = base_rng.getrandbits(63)
+            snap = g._snapshot()
+            snap.subject_id = sid
+            # Clone the uncompiled experiment; never mutate self.
+            exp_i = _copy.copy(self)
+            exp_i._genotype = snap
+            compiled = exp_i.compile(allow_curatable_refdata=allow_curatable_refdata)
+            refdata_i = compiled.refdata
+            if count == 0:
+                # run() rejects n < 1; build an empty result and stamp the
+                # genotype manually (run_records would otherwise do it).
+                res = SimulationResult.from_outcomes(
+                    [], refdata_i, expose_provenance=expose_provenance)
+                res._genotypes = [snap]
+            else:
+                res = compiled.run_records(
+                    n=count, seed=sub_seed, strict=strict,
+                    expose_provenance=expose_provenance,
+                    validate_records=validate_records)
+            # Apply with_metadata() per subject (parity with run_records), then
+            # namespace sequence_id so combined export never collides. Metadata
+            # is stamped first; the cohort-owned sequence_id rewrite wins (and a
+            # collision was already rejected up front).
+            if self._metadata:
+                for rec in res.records:
+                    for key, value in self._metadata.items():
+                        rec[key] = value
+            for rec in res.records:
+                rec["sequence_id"] = f"{sid}_{rec.get('sequence_id', '')}"
+            subjects.append(CohortSubjectResult(
+                subject_id=sid, genotype=snap, result=res, refdata=refdata_i,
+                seed=sub_seed, count=count))
+
+        return CohortResult(subjects)
+
     def run_records(
         self,
         *,
