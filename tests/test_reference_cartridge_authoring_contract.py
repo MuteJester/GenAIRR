@@ -434,6 +434,9 @@ def test_pin_estimate_step_method_boundary_post_p_nucleotide_length_slice() -> N
         "estimate_np_length_distributions",
         "estimate_np_base_model",
         "estimate_p_nucleotide_lengths",
+        # Cartridge genotype plane slice — estimates a population genotype
+        # prior from observed Genotype objects and attaches it.
+        "estimate_genotype_priors",
     }
     for owner_name in ("DataConfig", "RefDataConfig", "ReferenceCartridgeBuilder"):
         owner = getattr(ga, owner_name, None)
