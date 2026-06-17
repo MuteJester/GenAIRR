@@ -98,3 +98,30 @@ def test_content_checksum_is_canonical():
     m3 = PopulationGenotypeModel(model_id="m", source="s",
         allele_frequencies={"V": {vg: {"IGHV1-2*02": 3.0, "IGHV1-2*04": 1.0}}})
     assert m3.content_checksum() != m1.content_checksum()
+
+
+def test_genotype_priors_field_default_and_checksum_invariant():
+    cfg = _cfg()
+    # default-new and bundled both have no plane
+    assert getattr(cfg, "genotype_priors", "MISSING") is None
+    base_checksum = cfg.compute_checksum()
+
+    import copy
+    cfg2 = copy.deepcopy(cfg)
+    cfg2.genotype_priors = None  # explicitly None must not change the checksum
+    assert cfg2.compute_checksum() == base_checksum
+
+    cfg3 = copy.deepcopy(cfg)
+    cfg3.genotype_priors = PopulationGenotypeModel(model_id="m", source="s")
+    assert cfg3.compute_checksum() != base_checksum  # a real plane is cartridge identity
+
+
+def test_genotype_priors_pickle_round_trip():
+    import copy
+    cfg = copy.deepcopy(_cfg())
+    m = PopulationGenotypeModel(model_id="m", source="s",
+        haplotype_deletion_prob={"V": {next(iter(cfg.v_alleles)): 0.2}})
+    cfg.genotype_priors = m
+    back = pickle.loads(pickle.dumps(cfg, protocol=4))
+    assert back.genotype_priors.model_id == "m"
+    assert back.genotype_priors.content_checksum() == m.content_checksum()

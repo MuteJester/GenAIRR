@@ -15,6 +15,7 @@ import pickle
 from GenAIRR.alleles.allele import Allele
 from GenAIRR.reference_models import ReferenceEmpiricalModels
 from GenAIRR.reference_rules import ReferenceRulesSpec
+from GenAIRR.genotype_priors import PopulationGenotypeModel
 
 
 DEFAULT_P_NUCLEOTIDE_LENGTH_PROBS = {0: 0.50, 1: 0.25, 2: 0.15, 3: 0.07, 4: 0.03}
@@ -301,6 +302,15 @@ class DataConfig:
     # ``reference_rules``.
     reference_models: Optional[ReferenceEmpiricalModels] = None
 
+    # Donor-population germline prior plane (Slice — Cartridge genotype plane).
+    # ``None`` means no population prior; ``Genotype.sample(cfg)`` then falls
+    # back to a uniform synthetic prior. A non-``None`` plane is cartridge
+    # identity (folds into compute_checksum). See
+    # ``site_docs/guides/genotype.md`` ("Population genotype models on a
+    # cartridge"). Same soft-transition checksum policy as ``reference_rules`` /
+    # ``reference_models``.
+    genotype_priors: Optional[PopulationGenotypeModel] = None
+
     def __getattr__(self, name):
         # Backward-compat shim for pickled DataConfigs missing post-v1
         # fields. Note: schema_version / schema_sha256 fall through to
@@ -318,6 +328,8 @@ class DataConfig:
         if name == 'reference_rules':
             return None
         if name == 'reference_models':
+            return None
+        if name == 'genotype_priors':
             return None
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
@@ -355,6 +367,8 @@ class DataConfig:
         pop_rules = 'reference_rules' in self.__dict__ and rr_value is None
         rm_value = self.__dict__.get('reference_models')
         pop_models = 'reference_models' in self.__dict__ and rm_value is None
+        gp_value = self.__dict__.get('genotype_priors')
+        pop_priors = 'genotype_priors' in self.__dict__ and gp_value is None
 
         self.schema_sha256 = ""
         if had_report:
@@ -363,6 +377,8 @@ class DataConfig:
             del self.__dict__['reference_rules']
         if pop_models:
             del self.__dict__['reference_models']
+        if pop_priors:
+            del self.__dict__['genotype_priors']
         try:
             blob = pickle.dumps(self, protocol=4)
             return hashlib.sha256(blob).hexdigest()
@@ -374,6 +390,8 @@ class DataConfig:
                 self.__dict__['reference_rules'] = rr_value
             if pop_models:
                 self.__dict__['reference_models'] = rm_value
+            if pop_priors:
+                self.__dict__['genotype_priors'] = gp_value
 
     def verify_integrity(self) -> None:
         """Validate schema_version and schema_sha256.
