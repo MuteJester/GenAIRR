@@ -220,3 +220,70 @@ def test_run_cohort_failure_midway_leaves_base_experiment_clean():
     # base experiment is untouched and still runnable
     assert exp._genotype is None
     assert len(exp.run_records(n=2, seed=1)) == 2
+
+
+def _functional_novel_seq(cfg, base_name):
+    base = next(a for g in cfg.v_alleles.values() for a in g if a.name == base_name)
+    bs = base.ungapped_seq.upper()
+    for pos in range(len(bs)):
+        for nt in "ACGT":
+            if nt == bs[pos]:
+                continue
+            cand = bs[:pos] + nt + bs[pos + 1:]
+            try:
+                (Genotype.from_dataconfig(cfg)
+                 .add_novel_allele(f"{base_name.split('*')[0]}*97", base=base_name,
+                                   sequence=cand, segment="V"))
+                return cand
+            except ValueError:
+                continue
+    raise AssertionError("no functional novel found")
+
+
+def test_run_cohort_mixed_novel_and_plain_subjects():
+    cfg = _cfg()
+    vg = next(iter(cfg.v_alleles))
+    base = cfg.v_alleles[vg][0].name
+    novel = f"{vg}*97"
+    seq = _functional_novel_seq(cfg, base)
+    # subject A carries a novel; subject B is plain
+    gA = (Genotype.from_dataconfig(cfg)
+          .add_novel_allele(novel, base=base, sequence=seq, segment="V")
+          .homozygous(vg, novel).complete_from_reference().with_subject("A"))
+    gB = Genotype.sample(cfg, seed=2, subject_id="B")
+    c = (ga.Experiment.on(cfg).recombine()
+         .run_cohort([gA, gB], n_per_subject=40, seed=0, expose_provenance=True))
+    # every record's truth call is carried by its subject's genotype
+    geno = {s.subject_id: s.genotype for s in c.subjects}
+    for r in c.records:
+        for seg, col in (("V", "truth_v_call"), ("D", "truth_d_call"), ("J", "truth_j_call")):
+            call = r.get(col)
+            if not call:
+                continue
+            assert call in geno[r["subject_id"]].carried_alleles(seg, call.split("*")[0])
+    # the novel appears for subject A and never for subject B
+    assert any(r["truth_v_call"] == novel for r in c.result_for("A").records
+               if r.get("truth_v_call"))
+    assert all(r.get("truth_v_call") != novel for r in c.result_for("B").records)
+
+
+def test_run_cohort_per_subject_validate_records():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id=f"D{s}") for s in range(2)]
+    # validate_records=True runs each subject's validator against its own refdata
+    c = (ga.Experiment.on(cfg).recombine()
+         .run_cohort(gs, n_per_subject=10, seed=0, validate_records=True))
+    assert len(c) == 20
+
+
+def test_run_cohort_end_to_end_from_sample():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id=f"S{s}") for s in range(4)]
+    c = (ga.Experiment.on(cfg).recombine()
+         .run_cohort(gs, n_per_subject=25, seed=3, expose_provenance=True))
+    assert len(c) == 100
+    geno = {s.subject_id: s.genotype for s in c.subjects}
+    for r in c.records:
+        call = r.get("truth_v_call")
+        if call:
+            assert call in geno[r["subject_id"]].carried_alleles("V", call.split("*")[0])
