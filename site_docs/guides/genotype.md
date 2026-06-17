@@ -264,6 +264,48 @@ for row in g.to_table():
         print(row["gene"], row["zygosity"], row["haplotype_0"], row["haplotype_1"])
 ```
 
+## Sampling from population priors
+
+Instead of specifying every gene, draw a plausible diploid genotype with
+`Genotype.sample`. It uses an **independent per-gene, per-chromosome
+Hardy-Weinberg model**: each gene on each chromosome is independently deleted
+(`haplotype_deletion_prob`) or assigned an allele from that gene's frequencies, so
+homozygous / heterozygous / hemizygous / deleted states emerge at the expected
+rates.
+
+```python
+g = Genotype.sample(
+    cfg,
+    seed=7,
+    allele_frequencies={                 # {segment: {gene: {allele: weight}}}
+        "V": {"IGHVF1-G1": {"IGHVF1-G1*01": 8, "IGHVF1-G1*02": 2}},
+    },                                   # unspecified genes -> uniform within gene
+    haplotype_deletion_prob=0.05,        # 5% per-haplotype gene-absence
+    subject_id="DONOR_R1",
+)
+res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(n=500, seed=1)
+```
+
+`Genotype.sample` always returns a **fully-specified, runnable** genotype. By
+default `ensure_viable=True` re-draws (up to `max_resamples`, deterministically)
+until at least one chromosome carries every required segment, raising a clear error
+only if your deletion settings make that impossible; pass `ensure_viable=False` to
+allow infeasible draws. Frequency priors accept the segment-aware
+`{segment: {gene: {allele: weight}}}` shape (or a flat `{gene: …}` when the gene is
+unambiguous); a supplied gene's listed alleles define its distribution (weight `0`
+excludes an allele), and unspecified genes fall back to uniform.
+`haplotype_deletion_prob` is a float or a per-gene/per-segment dict.
+
+!!! warning "What this model is — and isn't"
+    This is an **independent per-gene** sampler. It does **not** model linkage
+    disequilibrium, gene co-deletion blocks, ancestry, or donor-specific haplotype
+    structure, and it samples **catalogue alleles only** (no novel alleles) and
+    **deletion only** (no duplication). Supply explicit `allele_frequencies` from a
+    population source (e.g. VDJbase) for realistic per-gene frequencies; the default
+    is uniform within each gene. `allele_frequencies="usage_as_prior"` is an
+    explicit opt-in that reuses the cartridge's recombination `allele_usage` as a
+    frequency proxy — convenient but biologically approximate.
+
 ## Novel / private alleles
 
 Individuals carry germline alleles that aren't in any reference — *private* or
@@ -473,8 +515,6 @@ The genotype foundation is deliberately scoped. Deferred to later work:
 
 - **Cohorts** — many subjects, each with their own genotype, in one run
   (`with_genotype` is single-subject; `result.genotypes` is a one-element list).
-- **Population priors** — sampling a plausible diploid genotype from
-  allele/deletion frequencies (today genotypes are specified explicitly).
 - **External loaders** — importing genotypes from VDJbase / TIgGER / IgDiscover /
   partis output.
 - **Cartridge genotype plane** — persisting a population genotype model in a
