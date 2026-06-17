@@ -703,10 +703,24 @@ class Genotype:
         cw = cls._check_chromosome_weights(*cw_in)
         segs = cls._resolve_sample_segments(cfg, segments_to_sample)
 
-        # Candidate-novel injection (Task 7 fills this in). For now: no novels.
-        sampling_cfg = cfg
+        # Candidate-novel injection. Plane novels are draw CANDIDATES (injected
+        # into the sampling cfg) only when their source is active; the returned
+        # genotype still exports only CARRIED novels via effective_dataconfig().
+        inject_novels = False
+        if plane is not None and plane.novel_alleles:
+            if include_cartridge_novel_alleles is True:
+                inject_novels = True
+            elif include_cartridge_novel_alleles == "auto":
+                inject_novels = freq_src in ("cartridge", "uniform")
+            # False -> never
         novel_src = "none"
+        sampling_cfg = cfg
         novel_helper = None
+        if inject_novels:
+            novel_helper = cls._register_plane_novels(cfg, plane)
+            sampling_cfg = cls._dataconfig_injecting_all_novels(novel_helper)
+            freq_spec = cls._augment_freqs_with_novels(sampling_cfg, freq_spec, plane, segs)
+            novel_src = "cartridge"
 
         freqs = cls._resolve_allele_frequencies(sampling_cfg, freq_spec, segs)
         delp = cls._resolve_haplotype_deletion(sampling_cfg, del_spec, segs)
@@ -746,6 +760,62 @@ class Genotype:
         if not use_cartridge_priors:
             return None
         return getattr(cfg, "genotype_priors", None)
+
+    @classmethod
+    def _register_plane_novels(cls, cfg, plane):
+        """Build a throwaway Genotype carrying every plane novel as a registered
+        novel allele. This is where catalogue-aware + functional validation of
+        plane novels happens (via add_novel_allele). Returns the helper."""
+        helper = cls.from_dataconfig(cfg)
+        for nv in plane.novel_alleles:
+            helper.add_novel_allele(
+                nv.name, base=nv.base_allele, sequence=nv.sequence.upper(),
+                segment=nv.segment, allow_nonfunctional=nv.allow_nonfunctional)
+        return helper
+
+    @staticmethod
+    def _dataconfig_injecting_all_novels(helper):
+        """A cfg copy with ALL of the helper's registered novels injected as
+        catalogue alleles — the *sampling* reference (candidates), distinct from
+        effective_dataconfig() which injects only carried novels."""
+        import copy as _copy
+        cfg = _copy.deepcopy(helper._cfg)
+        by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
+        for name, info in helper._novel.items():
+            d = by_seg[info["segment"]]
+            existing = list(d.get(info["gene"], []))
+            existing.append(_copy.deepcopy(info["allele"]))
+            d[info["gene"]] = existing
+        return cfg
+
+    @classmethod
+    def _augment_freqs_with_novels(cls, sampling_cfg, freq_spec, plane, segs):
+        """Return a nested freq spec that includes each plane novel in its gene's
+        table per the synthesis rule: authored table -> preserve + add novel;
+        no table -> catalogue alleles 1.0 + novel frequency. Collisions raise."""
+        if freq_spec == "usage_as_prior":
+            nested = cls._usage_frequencies(sampling_cfg, segs)
+            nested = {seg: {g: dict(al) for g, al in genes.items()}
+                      for seg, genes in nested.items()}
+        else:
+            nested = {seg: {g: dict(al) for g, al in genes.items()}
+                      for seg, genes in cls._normalize_freq_spec(sampling_cfg, freq_spec, segs).items()}
+        for nv in plane.novel_alleles:
+            seg = nv.segment
+            if seg not in segs:
+                continue
+            gene = nv.name.split("*")[0]
+            gene_tbl = nested.setdefault(seg, {}).get(gene)
+            if gene_tbl is None:
+                # no authored table for this gene: catalogue 1.0 + novel
+                catalogue = _alleles_by_gene(sampling_cfg, seg).get(gene, [])
+                gene_tbl = {a.name: 1.0 for a in catalogue if a.name != nv.name}
+                nested[seg][gene] = gene_tbl
+            if nv.name in gene_tbl:
+                raise ValueError(
+                    f"plane novel {nv.name!r} collides with an existing allele weight")
+            gene_tbl[nv.name] = float(nv.frequency)
+        return nested
 
     @staticmethod
     def _rebind_to_base(g, base_cfg, novel_helper):

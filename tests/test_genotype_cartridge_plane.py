@@ -273,3 +273,84 @@ def test_sample_no_plane_unchanged():
     g = Genotype.sample(cfg, seed=3)
     assert g.prior_provenance["allele_frequencies"] == "uniform"
     assert g.prior_provenance["haplotype_deletion_prob"] == "default"
+
+
+# ── Task 7: candidate-vs-carried novel injection ─────────────────
+
+
+def _functional_novel_seq(cfg, base_name):
+    """Find a single-base substitution off ``base_name`` that Genotype accepts
+    as functional (avoids stop codons / anchor breakage), returning the seq."""
+    base_allele = next(a for g in cfg.v_alleles.values() for a in g if a.name == base_name)
+    base_seq = base_allele.ungapped_seq.upper()
+    for pos in range(len(base_seq)):
+        for nt in "ACGT":
+            if nt == base_seq[pos]:
+                continue
+            cand = base_seq[:pos] + nt + base_seq[pos + 1:]
+            try:
+                (Genotype.from_dataconfig(cfg)
+                 .add_novel_allele(f"{base_name.split('*')[0]}*97", base=base_name,
+                                   sequence=cand, segment="V"))
+                return cand
+            except ValueError:
+                continue
+    raise AssertionError("no functional single-base novel found")
+
+
+def _planed_cfg_with_novel(freq_novel=1000.0):
+    import copy
+    cfg = copy.deepcopy(_cfg())
+    vg = next(g for g, al in cfg.v_alleles.items() if len(al) >= 1)
+    base = cfg.v_alleles[vg][0].name
+    novel_seq = _functional_novel_seq(cfg, base)
+    novel = f"{vg}*97"
+    cfg.genotype_priors = PopulationGenotypeModel(
+        model_id="mN", source="toy",
+        allele_frequencies={"V": {vg: {base: 1.0}}},
+        haplotype_deletion_prob={"V": {vg: 0.0}},
+        novel_alleles=[PopulationNovelAllele(name=novel, segment="V",
+            base_allele=base, sequence=novel_seq, frequency=freq_novel)],
+    )
+    return cfg, vg, base, novel
+
+
+def test_plane_novel_is_drawn_and_carried():
+    cfg, vg, base, novel = _planed_cfg_with_novel()
+    g = Genotype.sample(cfg, seed=1)  # auto -> cartridge freqs -> novels injected
+    assert g.prior_provenance["novel_alleles"] == "cartridge"
+    assert novel in g.carried_alleles("V", vg)  # dominant novel frequency
+    eff = g.effective_dataconfig()
+    assert any(a.name == novel for a in eff.v_alleles[vg])
+
+
+def test_uncarried_plane_novel_absent_from_export():
+    # rare novel: base dominates -> novel essentially never carried
+    cfg, vg, base, novel = _planed_cfg_with_novel(freq_novel=1e-9)
+    g = Genotype.sample(cfg, seed=7)
+    assert novel not in g.carried_alleles("V", vg)
+    eff = g.effective_dataconfig()
+    assert all(a.name != novel for a in eff.v_alleles[vg])
+
+
+def test_novel_skipped_with_explicit_freqs_auto():
+    cfg, vg, base, novel = _planed_cfg_with_novel()
+    g = Genotype.sample(cfg, seed=1, allele_frequencies={"V": {vg: {base: 1.0}}})
+    assert g.prior_provenance["novel_alleles"] == "none"
+    assert novel not in g.carried_alleles("V", vg)
+
+
+def test_novel_forced_with_explicit_freqs_true():
+    cfg, vg, base, novel = _planed_cfg_with_novel()
+    g = Genotype.sample(cfg, seed=1, allele_frequencies={"V": {vg: {base: 1.0}}},
+                        include_cartridge_novel_alleles=True)
+    assert g.prior_provenance["novel_alleles"] == "cartridge"
+    # synthesized table: explicit base at 1.0 + novel at huge frequency -> novel wins
+    assert novel in g.carried_alleles("V", vg)
+
+
+def test_novel_disabled():
+    cfg, vg, base, novel = _planed_cfg_with_novel()
+    g = Genotype.sample(cfg, seed=1, include_cartridge_novel_alleles=False)
+    assert g.prior_provenance["novel_alleles"] == "none"
+    assert novel not in g.carried_alleles("V", vg)
