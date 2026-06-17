@@ -114,6 +114,13 @@ pub struct AlleleInstance {
     /// (today the DSL prevents chaining, but the field stays
     /// stable under any future relaxation).
     pub receptor_revision_original_id: Option<AlleleId>,
+    /// The diploid rearrangement chromosome (0 or 1) this assignment was
+    /// sampled from, when phased genotype recombination ran; `None` on the
+    /// flat (no-genotype) path. Immutable provenance of the *original*
+    /// rearrangement — receptor revision preserves it even when a
+    /// cross-haplotype replacement (`same_haplotype=false`) comes from the
+    /// other chromosome.
+    pub haplotype: Option<u8>,
 }
 
 impl AlleleInstance {
@@ -130,6 +137,7 @@ impl AlleleInstance {
             trim_3: 0,
             orientation: SegmentOrientation::Forward,
             receptor_revision_original_id: None,
+            haplotype: None,
         }
     }
 
@@ -164,6 +172,18 @@ impl AlleleInstance {
     pub fn with_receptor_revision_original_id(self, original_id: AlleleId) -> Self {
         Self {
             receptor_revision_original_id: Some(original_id),
+            ..self
+        }
+    }
+
+    /// Return a new instance with the rearrangement `haplotype` (0 or 1)
+    /// set; receiver unchanged. Panics if `hap` is not 0 or 1 — a diploid
+    /// genotype has exactly two haplotypes.
+    #[must_use]
+    pub fn with_haplotype(self, hap: u8) -> Self {
+        assert!(hap <= 1, "haplotype must be 0 or 1, got {}", hap);
+        Self {
+            haplotype: Some(hap),
             ..self
         }
     }
@@ -335,6 +355,21 @@ mod tests {
             .with_trim_3(7);
         assert_eq!(a.trim_5, 2);
         assert_eq!(a.trim_3, 7);
+    }
+
+    #[test]
+    fn allele_instance_haplotype_defaults_none_and_with_haplotype_isolates() {
+        let a = AlleleInstance::new(AlleleId::new(0));
+        assert_eq!(a.haplotype, None);
+        let b = a.with_haplotype(1);
+        assert_eq!(a.haplotype, None); // receiver unchanged (persistent)
+        assert_eq!(b.haplotype, Some(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "haplotype must be 0 or 1")]
+    fn with_haplotype_rejects_out_of_range() {
+        let _ = AlleleInstance::new(AlleleId::new(0)).with_haplotype(2);
     }
 
     #[test]
