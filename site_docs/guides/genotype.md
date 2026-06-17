@@ -377,7 +377,7 @@ print(g.prior_provenance)
 # {'allele_frequencies': 'cartridge', 'haplotype_deletion_prob': 'cartridge',
 #  'chromosome_weights': 'cartridge', 'novel_alleles': 'none',  # 'cartridge' if the model has novels
 #  'model_id': 'IGH-toy-1', 'model_checksum': '…'}
-print(g.to_metadata())                  # subject_id + provenance + source refdata hash
+print(g.to_metadata())                  # subject_id + provenance + source/effective refdata hashes
 ```
 
 Pass `use_cartridge_priors=False` for a clean uniform, catalogue-only draw (all

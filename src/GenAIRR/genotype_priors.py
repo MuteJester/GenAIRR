@@ -217,6 +217,11 @@ class PopulationGenotypeModel:
         if min_subjects is not None and n < min_subjects:
             raise ValueError(
                 f"from_genotypes: min_subjects={min_subjects} but only {n} given")
+        if (isinstance(pseudocount, bool) or not isinstance(pseudocount, (int, float))
+                or not math.isfinite(pseudocount) or pseudocount < 0):
+            raise ValueError(
+                f"from_genotypes: pseudocount must be a finite number >= 0, "
+                f"got {pseudocount!r}")
 
         if cfg is None:
             cfg = gts[0]._cfg
@@ -224,12 +229,13 @@ class PopulationGenotypeModel:
 
         by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
 
-        # reject duplicated genes (copy-number > 1 on any slot)
+        # reject duplicated genes (copy-number > 1 on any slot) — both multi-entry
+        # slots AND a single entry whose copy_count > 1. The plane is deletion-only.
         for g in gts:
             for seg in _SEGMENTS:
                 for gene, haps in g._slots[seg].items():
                     for hap in haps:
-                        if len(hap) > 1:
+                        if len(hap) > 1 or any(c > 1 for (_a, c, _w) in hap):
                             raise ValueError(
                                 f"from_genotypes: genotype {g.subject_id!r} carries a "
                                 f"duplicated gene ({seg} {gene}, copy-number > 1); the "
@@ -272,8 +278,22 @@ class PopulationGenotypeModel:
                         for nm in names:
                             if nm in counts:
                                 counts[nm] += 1.0
-                            elif include_novel:
+                                continue
+                            # Not a catalogue allele of this gene: it must be a
+                            # registered novel of THIS genotype matching gene +
+                            # segment, otherwise it is unknown/corrupt and we must
+                            # not silently drop it.
+                            info = getattr(g, "_novel", {}).get(nm)
+                            if (info is None or info.get("gene") != gene
+                                    or info.get("segment") != seg):
+                                raise ValueError(
+                                    f"from_genotypes: genotype {g.subject_id!r} carries "
+                                    f"allele {nm!r} in {seg} {gene} that is neither a "
+                                    f"catalogue allele nor a registered novel of that "
+                                    f"gene/segment")
+                            if include_novel:
                                 novel_freq[nm] = novel_freq.get(nm, 0.0) + 1.0
+                            # include_novel=False -> registered novel intentionally excluded
                 if pseudocount:
                     for nm in counts:
                         counts[nm] += float(pseudocount)
@@ -300,10 +320,14 @@ class PopulationGenotypeModel:
             # catalogue table with novel frequencies via _augment_freqs_with_novels.
             novels.extend(novel_spec.values())
 
-        return cls(allele_frequencies=freqs, haplotype_deletion_prob=dele,
-                   chromosome_weights=(0.5, 0.5), novel_alleles=novels,
-                   model_id=model_id, source=source, description=description,
-                   version=version)
+        model = cls(allele_frequencies=freqs, haplotype_deletion_prob=dele,
+                    chromosome_weights=(0.5, 0.5), novel_alleles=novels,
+                    model_id=model_id, source=source, description=description,
+                    version=version)
+        # Required-field + shape validation still applies to estimator output
+        # (empty model_id/source, non-string description/version, etc.).
+        model.validate(chain_type=getattr(getattr(cfg, "metadata", None), "chain_type", None))
+        return model
 
     @staticmethod
     def _segments_for(cfg):

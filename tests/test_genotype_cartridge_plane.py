@@ -517,6 +517,78 @@ def test_estimate_with_novel_round_trips_and_samples():
     assert novel not in model.allele_frequencies.get("V", {}).get(vg, {})
 
 
+def test_from_genotypes_pseudocount_validation():
+    cfg = _cfg()
+    g = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("A")
+    for bad in (-1.0, float("nan"), float("inf"), True):
+        with pytest.raises(ValueError, match="pseudocount"):
+            PopulationGenotypeModel.from_genotypes([g], cfg=cfg, pseudocount=bad,
+                                                   model_id="x", source="y")
+
+
+def test_from_genotypes_rejects_unknown_carried_allele():
+    cfg = _cfg()
+    vg, a0, _a1 = _vg_two_alleles(cfg)
+    g = Genotype.from_dataconfig(cfg).homozygous(vg, a0).complete_from_reference().with_subject("A")
+    # forge an unregistered, non-catalogue allele directly into a slot
+    g._slots["V"][vg] = [[("BOGUS*01", 1, 1.0)], [(a0, 1, 1.0)]]
+    with pytest.raises(ValueError, match="neither a catalogue allele nor a registered novel"):
+        PopulationGenotypeModel.from_genotypes([g], cfg=cfg, model_id="x", source="y")
+
+
+def test_from_genotypes_rejects_copy_count_gt_one():
+    cfg = _cfg()
+    vg, a0, _a1 = _vg_two_alleles(cfg)
+    g = Genotype.from_dataconfig(cfg).homozygous(vg, a0).complete_from_reference().with_subject("A")
+    g._slots["V"][vg] = [[(a0, 2, 1.0)], [(a0, 1, 1.0)]]  # single entry, copies=2
+    with pytest.raises(ValueError, match="copy-number|duplicated"):
+        PopulationGenotypeModel.from_genotypes([g], cfg=cfg, model_id="x", source="y")
+
+
+def test_from_genotypes_validates_identity_before_return():
+    cfg = _cfg()
+    g = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("A")
+    with pytest.raises(ValueError, match="model_id"):
+        PopulationGenotypeModel.from_genotypes([g], cfg=cfg, model_id="", source="y")
+
+
+def test_sample_validates_directly_attached_plane():
+    import copy
+    cfg = copy.deepcopy(_cfg())
+    vg, a0, _a1 = _vg_two_alleles(cfg)
+    # invalid plane attached directly (bypassing the builder)
+    cfg.genotype_priors = PopulationGenotypeModel(model_id="", source="",
+        allele_frequencies={"V": {vg: {a0: 1.0}}})
+    with pytest.raises(ValueError, match="model_id|source"):
+        Genotype.sample(cfg, seed=1)
+
+
+def test_manifest_invalid_plane_marked_not_valid():
+    import copy, math
+    cfg = copy.deepcopy(_cfg())
+    cfg.genotype_priors = PopulationGenotypeModel(model_id="m", source="s",
+        chromosome_weights=(float("nan"), 1.0))
+    block = cfg.cartridge_manifest()["models"]["genotype_priors"]
+    assert block["available"] is True
+    assert block["valid"] is False
+    # no non-JSON-clean (NaN) numerics leak through
+    cw = block["chromosome_weights"]
+    assert cw is None or all(math.isfinite(x) for x in cw)
+
+
+def test_to_metadata_effective_refdata_hash_for_novel():
+    cfg, vg, base, novel = _planed_cfg_with_novel()
+    g = Genotype.sample(cfg, seed=1)
+    assert novel in g.carried_alleles("V", vg)
+    md = g.to_metadata()
+    assert "effective_refdata_hash" in md
+    assert md["effective_refdata_hash"] != md["source_refdata_hash"]
+    # a no-novel genotype: effective == source
+    g2 = Genotype.from_dataconfig(_cfg()).complete_from_reference()
+    md2 = g2.to_metadata()
+    assert md2["effective_refdata_hash"] == md2["source_refdata_hash"]
+
+
 def test_sample_draw_independent_of_freq_dict_order():
     import copy
     cfg = _cfg()

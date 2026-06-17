@@ -683,6 +683,12 @@ class Genotype:
                 f"got {include_cartridge_novel_alleles!r}")
 
         plane = cls._resolve_plane(cfg, use_cartridge_priors)
+        if plane is not None:
+            # A plane attached via the builder is already validated, but a plane
+            # set directly on the DataConfig bypasses that — validate before use so
+            # a malformed prior (empty model_id, NaN weights, D-on-VJ) fails loudly
+            # rather than being silently sampled and stamped into provenance.
+            plane.validate(chain_type=getattr(getattr(cfg, "metadata", None), "chain_type", None))
 
         # Per-input source resolution.
         if allele_frequencies is not None:
@@ -908,13 +914,23 @@ class Genotype:
         return "heterozygous"
 
     def to_metadata(self) -> Dict:
-        """Flat genotype-level metadata (subject + prior provenance + source
-        refdata hash) for sidecar export / benchmark tooling. Distinct from
-        ``to_table`` (one row per gene), which carries no provenance."""
+        """Flat genotype-level metadata (subject + prior provenance + refdata
+        hashes) for sidecar export / benchmark tooling. Distinct from
+        ``to_table`` (one row per gene), which carries no provenance.
+
+        ``source_refdata_hash`` is the base cartridge's content hash;
+        ``effective_refdata_hash`` is the hash the engine actually runs against —
+        equal to the source hash unless carried novel alleles are injected, in
+        which case it reflects the effective (novel-augmented) reference."""
         import copy as _copy
+        effective = self._source_hash
+        if self.has_novel():
+            effective = self.effective_dataconfig().cartridge_manifest()[
+                "hashes"]["refdata_content_hash"]
         return {
             "subject_id": self.subject_id,
             "source_refdata_hash": self._source_hash,
+            "effective_refdata_hash": effective,
             "prior_provenance": _copy.deepcopy(self.prior_provenance),
         }
 

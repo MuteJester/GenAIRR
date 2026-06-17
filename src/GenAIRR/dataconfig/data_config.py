@@ -146,6 +146,7 @@ def _genotype_priors_manifest_block(cfg):
     if model is None:
         return {
             "available": False,
+            "valid": None,
             "model_id": None,
             "source": None,
             "version": None,
@@ -157,10 +158,23 @@ def _genotype_priors_manifest_block(cfg):
             "chromosome_weights": None,
             "source_field": "DataConfig.genotype_priors",
         }
+    # A plane may have been attached directly (bypassing builder validation).
+    # Report validity rather than leaking non-JSON-clean numerics (e.g. NaN
+    # chromosome weights) into the manifest.
+    try:
+        model.validate(
+            chain_type=getattr(getattr(cfg, "metadata", None), "chain_type", None))
+        valid, validation_error = True, None
+    except ValueError as exc:
+        valid, validation_error = False, str(exc)
     freq = model.allele_frequencies or {}
     dele = model.haplotype_deletion_prob or {}
-    return {
+    cw = None
+    if valid:
+        cw = [float(model.chromosome_weights[0]), float(model.chromosome_weights[1])]
+    block = {
         "available": True,
+        "valid": valid,
         "model_id": model.model_id or None,
         "source": model.source or None,
         "version": model.version or None,
@@ -169,10 +183,12 @@ def _genotype_priors_manifest_block(cfg):
         "freq_gene_counts": {s: len(freq.get(s, {})) for s in ("V", "D", "J")},
         "deletion_gene_counts": {s: len(dele.get(s, {})) for s in ("V", "D", "J")},
         "novel_allele_count": len(model.novel_alleles or []),
-        "chromosome_weights": [float(model.chromosome_weights[0]),
-                               float(model.chromosome_weights[1])],
+        "chromosome_weights": cw,
         "source_field": "DataConfig.genotype_priors",
     }
+    if validation_error is not None:
+        block["validation_error"] = validation_error
+    return block
 
 
 def _np_length_models_manifest_block(cfg):
