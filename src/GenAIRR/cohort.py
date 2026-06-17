@@ -72,3 +72,31 @@ class CohortResult:
 
     def __repr__(self) -> str:
         return f"<CohortResult subjects={len(self._subjects)} records={len(self)}>"
+
+    # ── combined export ─────────────────────────────────────────────
+    def to_dataframe(self, *, airr_strict: bool = False):
+        """Combined DataFrame over every subject's records. Column set is the
+        stable union across subjects (pandas fills missing keys with NaN)."""
+        import pandas as pd
+
+        records = self.records
+        if airr_strict:
+            from .result import _to_airr_strict
+            records = [_to_airr_strict(r) for r in records]
+        return pd.DataFrame(records)
+
+    def to_csv(self, path: str, *, airr_strict: bool = False) -> None:
+        """Write the combined records as CSV (union columns guaranteed by the
+        DataFrame)."""
+        self.to_dataframe(airr_strict=airr_strict).to_csv(path, index=False)
+
+    def to_fasta(self, path: str) -> None:
+        """Write one FASTA record per concatenated record. Header is exactly
+        ``>{sequence_id}`` (the namespaced id); body is the record's
+        ``sequence``. Unlike ``SimulationResult.to_fasta`` (whose headers come
+        from the enumerate index), this keeps cohort headers globally unique."""
+        with open(path, "w", encoding="utf-8") as fh:
+            for rec in self.records:
+                sid = rec.get("sequence_id", "")
+                seq = rec.get("sequence", "")
+                fh.write(f">{sid}\n{seq}\n")
