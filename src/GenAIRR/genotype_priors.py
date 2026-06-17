@@ -195,10 +195,18 @@ class PopulationGenotypeModel:
                 f"got {subject_id_policy!r}")
         if subject_id_policy == "require_unique":
             ids = [g.subject_id for g in gts]
-            if any(i is None for i in ids) and any(i is not None for i in ids):
+            none_count = sum(1 for i in ids if i is None)
+            if 0 < none_count < len(ids):
                 raise ValueError(
                     "subject_id_policy='require_unique': some genotypes have a "
                     "subject_id and others don't")
+            if none_count == len(ids) and len(ids) > 1:
+                # all-None: uniqueness cannot be verified, so double-counting
+                # cannot be ruled out — fail loudly rather than silently allow it.
+                raise ValueError(
+                    "subject_id_policy='require_unique': none of the genotypes have a "
+                    "subject_id, so uniqueness cannot be verified; set with_subject(...) "
+                    "or pass subject_id_policy='allow_duplicates'")
             present = [i for i in ids if i is not None]
             if len(present) != len(set(present)):
                 raise ValueError(
@@ -214,6 +222,8 @@ class PopulationGenotypeModel:
             cfg = gts[0]._cfg
         seg_list = segments if segments is not None else cls._segments_for(cfg)
 
+        by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
+
         # reject duplicated genes (copy-number > 1 on any slot)
         for g in gts:
             for seg in _SEGMENTS:
@@ -226,7 +236,20 @@ class PopulationGenotypeModel:
                                 f"population plane is deletion-only — remove duplications "
                                 f"or collapse them before estimating")
 
-        by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
+        # Require completeness: a gene absent from _slots is UNSPECIFIED (unknown),
+        # NOT deleted. Counting absence as deletion silently inflates p_del, so we
+        # require every estimated-segment catalogue gene to be specified (call
+        # complete_from_reference() to fill, or delete_gene() to mark absence).
+        for g in gts:
+            for seg in seg_list:
+                for gene in (by_seg[seg] or {}):
+                    if gene not in g._slots[seg]:
+                        raise ValueError(
+                            f"from_genotypes: genotype {g.subject_id!r} does not specify "
+                            f"{seg} gene {gene!r}; an unspecified gene is unknown, not "
+                            f"deleted. Call complete_from_reference() (or delete_gene to "
+                            f"mark it absent) before estimating")
+
         freqs: Dict[str, Dict[str, Dict[str, float]]] = {}
         dele: Dict[str, Dict[str, float]] = {}
         novel_freq: Dict[str, float] = {}
@@ -270,11 +293,12 @@ class PopulationGenotypeModel:
                             sequence=info["allele"].ungapped_seq.upper(),
                             frequency=novel_freq[name],
                             allow_nonfunctional=not info.get("functional", True))
-            for name, nv in novel_spec.items():
-                gene = name.split("*")[0]
-                seg = nv.segment
-                freqs.setdefault(seg, {}).setdefault(gene, {})[name] = novel_freq[name]
-                novels.append(nv)
+            # Novel frequency is carried on the PopulationNovelAllele itself, NOT
+            # duplicated into allele_frequencies — putting a non-catalogue name
+            # there would (a) fail set_genotype_priors' catalogue-aware check and
+            # (b) collide with sample-time novel synthesis. sample() combines the
+            # catalogue table with novel frequencies via _augment_freqs_with_novels.
+            novels.extend(novel_spec.values())
 
         return cls(allele_frequencies=freqs, haplotype_deletion_prob=dele,
                    chromosome_weights=(0.5, 0.5), novel_alleles=novels,

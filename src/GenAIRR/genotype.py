@@ -560,7 +560,10 @@ class Genotype:
                     continue
                 pairs: List[Tuple[str, float]] = []
                 total = 0.0
-                for nm, w in supplied.items():
+                # Sort by allele name so the draw is independent of the spec's
+                # dict insertion order — two content-equal models (same
+                # content_checksum) then produce identical draws at a given seed.
+                for nm, w in sorted(supplied.items()):
                     if nm not in names:
                         raise ValueError(f"{seg} gene {gene}: {nm!r} is not a known allele")
                     if isinstance(w, bool) or not isinstance(w, (int, float)) or not math.isfinite(w) or w < 0:

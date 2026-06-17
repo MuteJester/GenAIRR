@@ -476,6 +476,63 @@ def test_estimate_genotype_priors_chainable_and_attaches():
     assert b._genotype_priors.allele_frequencies["V"][vg][a0] == 3.0
 
 
+def test_from_genotypes_requires_complete_genotypes():
+    # A genotype missing a catalogue gene (no complete_from_reference) must NOT
+    # be silently scored as a double deletion — it should raise.
+    cfg = _cfg()
+    vg, a0, _a1 = _vg_two_alleles(cfg)
+    g = Genotype.from_dataconfig(cfg).homozygous(vg, a0).with_subject("P")  # partial
+    with pytest.raises(ValueError, match="does not specify|complete_from_reference"):
+        PopulationGenotypeModel.from_genotypes([g], cfg=cfg, model_id="x", source="y")
+
+
+def test_from_genotypes_all_none_subject_ids_rejected_under_require_unique():
+    cfg = _cfg()
+    g1 = Genotype.from_dataconfig(cfg).complete_from_reference()  # no subject id
+    g2 = Genotype.from_dataconfig(cfg).complete_from_reference()
+    with pytest.raises(ValueError, match="subject_id"):
+        PopulationGenotypeModel.from_genotypes([g1, g2], cfg=cfg,
+                                               model_id="x", source="y")
+
+
+def test_estimate_with_novel_round_trips_and_samples():
+    cfg, vg, base, novel = _planed_cfg_with_novel()  # gives us a functional novel seq
+    novel_seq = next(a for a in cfg.genotype_priors.novel_alleles).sequence
+    base_cfg = _cfg()
+    gn = (Genotype.from_dataconfig(base_cfg)
+          .add_novel_allele(novel, base=base, sequence=novel_seq, segment="V")
+          .homozygous(vg, novel).complete_from_reference().with_subject("N"))
+    from GenAIRR.cartridge_builder import ReferenceCartridgeBuilder
+    from GenAIRR.dataconfig.enums import ChainType
+    b = ReferenceCartridgeBuilder(ChainType.BCR_HEAVY)
+    b._v_alleles = {g: list(a) for g, a in base_cfg.v_alleles.items()}
+    b._d_alleles = {g: list(a) for g, a in (base_cfg.d_alleles or {}).items()}
+    b._j_alleles = {g: list(a) for g, a in base_cfg.j_alleles.items()}
+    b._metadata = base_cfg.metadata
+    # round-trip must not raise (novel lives in novel_alleles, not allele_frequencies)
+    b.estimate_genotype_priors([gn], model_id="e", source="c",
+                               subject_id_policy="allow_duplicates")
+    model = b._genotype_priors
+    assert any(nv.name == novel for nv in model.novel_alleles)
+    assert novel not in model.allele_frequencies.get("V", {}).get(vg, {})
+
+
+def test_sample_draw_independent_of_freq_dict_order():
+    import copy
+    cfg = _cfg()
+    vg, a0, a1 = _vg_two_alleles(cfg)
+    c1 = copy.deepcopy(cfg)
+    c1.genotype_priors = PopulationGenotypeModel(model_id="m", source="s",
+        allele_frequencies={"V": {vg: {a0: 2.0, a1: 3.0}}})
+    c2 = copy.deepcopy(cfg)
+    c2.genotype_priors = PopulationGenotypeModel(model_id="m", source="s",
+        allele_frequencies={"V": {vg: {a1: 3.0, a0: 2.0}}})  # reversed insertion order
+    assert c1.genotype_priors.content_checksum() == c2.genotype_priors.content_checksum()
+    for s in range(15):
+        assert (Genotype.sample(c1, seed=s).to_table()
+                == Genotype.sample(c2, seed=s).to_table())
+
+
 # ── Task 10: end-to-end ──────────────────────────────────────────
 
 
