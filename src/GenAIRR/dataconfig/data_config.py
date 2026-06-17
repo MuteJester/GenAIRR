@@ -137,6 +137,44 @@ def _allele_usage_manifest_block(cfg):
     }
 
 
+def _genotype_priors_manifest_block(cfg):
+    """Build the ``models.genotype_priors`` manifest block (Slice — Cartridge
+    genotype plane). Audit-sized: counts and identity, never the full tables.
+    Reads the top-level ``DataConfig.genotype_priors`` plane (independent of
+    ``reference_models``)."""
+    model = getattr(cfg, "genotype_priors", None)
+    if model is None:
+        return {
+            "available": False,
+            "model_id": None,
+            "source": None,
+            "version": None,
+            "model_checksum": None,
+            "segments_with_frequencies": [],
+            "freq_gene_counts": {"V": 0, "D": 0, "J": 0},
+            "deletion_gene_counts": {"V": 0, "D": 0, "J": 0},
+            "novel_allele_count": 0,
+            "chromosome_weights": None,
+            "source_field": "DataConfig.genotype_priors",
+        }
+    freq = model.allele_frequencies or {}
+    dele = model.haplotype_deletion_prob or {}
+    return {
+        "available": True,
+        "model_id": model.model_id or None,
+        "source": model.source or None,
+        "version": model.version or None,
+        "model_checksum": model.content_checksum(),
+        "segments_with_frequencies": [s for s in ("V", "D", "J") if freq.get(s)],
+        "freq_gene_counts": {s: len(freq.get(s, {})) for s in ("V", "D", "J")},
+        "deletion_gene_counts": {s: len(dele.get(s, {})) for s in ("V", "D", "J")},
+        "novel_allele_count": len(model.novel_alleles or []),
+        "chromosome_weights": [float(model.chromosome_weights[0]),
+                               float(model.chromosome_weights[1])],
+        "source_field": "DataConfig.genotype_priors",
+    }
+
+
 def _np_length_models_manifest_block(cfg):
     """Build the ``models.np_length_models`` manifest block
     per the NP Length Distribution Estimation v1 audit
@@ -935,6 +973,10 @@ class DataConfig:
             # ``np_length_keys`` / ``legacy_np_lengths_present``
             # entries above.
             "np_length_models": _np_length_models_manifest_block(self),
+            # Donor-population germline prior plane (Slice — Cartridge genotype
+            # plane). Read from the top-level ``DataConfig.genotype_priors``
+            # field (NOT ``reference_models``); ``source_field`` records that.
+            "genotype_priors": _genotype_priors_manifest_block(self),
         }
 
         # Bridge once (or accept the provided refdata) to read the

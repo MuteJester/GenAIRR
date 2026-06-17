@@ -125,3 +125,29 @@ def test_genotype_priors_pickle_round_trip():
     back = pickle.loads(pickle.dumps(cfg, protocol=4))
     assert back.genotype_priors.model_id == "m"
     assert back.genotype_priors.content_checksum() == m.content_checksum()
+
+
+def test_manifest_genotype_priors_block():
+    import copy
+    cfg = copy.deepcopy(_cfg())
+    block = cfg.cartridge_manifest()["models"]["genotype_priors"]
+    assert block["available"] is False
+
+    vg = next(iter(cfg.v_alleles))
+    cfg.genotype_priors = PopulationGenotypeModel(
+        model_id="m1", source="VDJbase-toy", version="1",
+        allele_frequencies={"V": {vg: {cfg.v_alleles[vg][0].name: 1.0}}},
+        haplotype_deletion_prob={"V": {vg: 0.1}},
+        novel_alleles=[PopulationNovelAllele(name="IGHV1-2*99", segment="V",
+            base_allele="IGHV1-2*02", sequence="ACGT", frequency=1.0)],
+    )
+    block = cfg.cartridge_manifest()["models"]["genotype_priors"]
+    assert block["available"] is True
+    assert block["model_id"] == "m1"
+    assert block["source"] == "VDJbase-toy"
+    assert block["model_checksum"] == cfg.genotype_priors.content_checksum()
+    assert block["freq_gene_counts"]["V"] == 1
+    assert block["deletion_gene_counts"]["V"] == 1
+    assert block["novel_allele_count"] == 1
+    assert block["chromosome_weights"] == [0.5, 0.5]
+    assert block["source_field"] == "DataConfig.genotype_priors"
