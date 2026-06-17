@@ -97,3 +97,42 @@ def test_resolve_counts():
     for bad_list in ([1, -1], [1, True], [1, "2"]):
         with pytest.raises(ValueError, match="counts"):
             _resolve_counts(2, 1, bad_list)
+
+
+def test_run_cohort_happy_path():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id=f"D{s}") for s in range(3)]
+    c = (ga.Experiment.on(cfg).recombine()
+         .run_cohort(gs, n_per_subject=5, seed=0, expose_provenance=True))
+    assert isinstance(c, CohortResult)
+    assert c.subject_ids == ["D0", "D1", "D2"]
+    assert len(c.genotypes) == 3
+    assert len(c) == 15
+    # every record is subject-tagged and its sequence_id is namespaced + unique
+    sids = [r["sequence_id"] for r in c.records]
+    assert len(set(sids)) == 15
+    for r in c.records:
+        assert r["sequence_id"].startswith(r["subject_id"] + "_")
+    # each subject's result exposes its genotype
+    assert c.result_for("D1").genotypes[0].subject_id == "D1"
+
+
+def test_run_cohort_deterministic_and_independent():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id=f"D{s}") for s in range(2)]
+    a = ga.Experiment.on(cfg).recombine().run_cohort(gs, n_per_subject=4, seed=7)
+    b = ga.Experiment.on(cfg).recombine().run_cohort(gs, n_per_subject=4, seed=7)
+    assert [r["sequence"] for r in a.records] == [r["sequence"] for r in b.records]
+    d = ga.Experiment.on(cfg).recombine().run_cohort(gs, n_per_subject=4, seed=8)
+    assert [r["sequence"] for r in a.records] != [r["sequence"] for r in d.records]
+
+
+def test_run_cohort_does_not_mutate_base_experiment():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id=f"D{s}") for s in range(2)]
+    exp = ga.Experiment.on(cfg).recombine()
+    exp.run_cohort(gs, n_per_subject=2, seed=0)
+    assert exp._genotype is None
+    # still usable as a plain (no-genotype) experiment afterwards
+    res = exp.run_records(n=2, seed=1)
+    assert len(res) == 2
