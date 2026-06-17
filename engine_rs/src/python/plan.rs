@@ -345,6 +345,137 @@ impl PyPassPlan {
         Ok(())
     }
 
+    /// Append a single `SampleGenotypePass` that replaces the three flat
+    /// `SampleAllelePass` passes when a genotype is attached. The pass
+    /// draws the chromosome once, then V/(D)/J alleles from that
+    /// chromosome's carried set (phased).
+    ///
+    /// `v`/`d`/`j` are flat rows `(haplotype, allele_id, copies, weight)`
+    /// already resolved to this refdata's allele ids; rows are grouped by
+    /// the gene the allele belongs to (via the segment's `GeneIndex`).
+    ///
+    /// `*_weights` are optional pool-aligned allele-usage weight vectors
+    /// (from the cartridge's allele-usage model). They are aggregated to
+    /// gene-level usage (sum of an allele's weights per gene) so gene
+    /// choice reflects empirical usage instead of being uniform.
+    #[pyo3(signature = (refdata, chromosome_weights, subject_id, source_hash, v, d, j, d_required, v_weights=None, d_weights=None, j_weights=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn push_genotype_recombine(
+        &mut self,
+        refdata: &PyRefDataConfig,
+        chromosome_weights: (f32, f32),
+        subject_id: Option<String>,
+        source_hash: String,
+        v: Vec<(u8, u32, u8, f32)>,
+        d: Vec<(u8, u32, u8, f32)>,
+        j: Vec<(u8, u32, u8, f32)>,
+        d_required: bool,
+        v_weights: Option<Vec<f64>>,
+        d_weights: Option<Vec<f64>>,
+        j_weights: Option<Vec<f64>>,
+    ) -> PyResult<()> {
+        use crate::genotype::{GeneCopy, Genotype, Haplotype};
+        use crate::ir::Segment;
+        use crate::refdata::{AlleleId, GeneId, GeneIndex};
+        use std::collections::HashMap;
+
+        let cfg = refdata.inner();
+
+        let build_index = |seg: Segment| -> PyResult<GeneIndex> {
+            let pool = cfg
+                .pool_for(seg)
+                .ok_or_else(|| PyValueError::new_err(format!("no pool for segment {:?}", seg)))?;
+            Ok(GeneIndex::build(pool))
+        };
+        let v_index = build_index(Segment::V)?;
+        let j_index = build_index(Segment::J)?;
+        let d_index = if d_required {
+            Some(build_index(Segment::D)?)
+        } else {
+            None
+        };
+
+        // Aggregate pool-aligned allele weights to gene-level usage.
+        let gene_usage = |idx: &GeneIndex, weights: &Option<Vec<f64>>| -> Vec<(GeneId, f64)> {
+            match weights {
+                None => Vec::new(),
+                Some(w) => idx
+                    .genes()
+                    .map(|(g, _)| {
+                        let mass: f64 = idx
+                            .alleles_of(g)
+                            .iter()
+                            .map(|a| w.get(a.as_usize()).copied().unwrap_or(0.0))
+                            .sum();
+                        (g, mass)
+                    })
+                    .collect(),
+            }
+        };
+        let usage_v = gene_usage(&v_index, &v_weights);
+        let usage_j = gene_usage(&j_index, &j_weights);
+        let usage_d = match &d_index {
+            Some(di) => gene_usage(di, &d_weights),
+            None => Vec::new(),
+        };
+
+        let mut haps = [Haplotype::new(), Haplotype::new()];
+        let fill = |haps: &mut [Haplotype; 2],
+                    seg: Segment,
+                    idx: &GeneIndex,
+                    rows: &[(u8, u32, u8, f32)]|
+         -> PyResult<()> {
+            let pool_len = cfg.pool_for(seg).map(|p| p.len() as u32).unwrap_or(0);
+            let mut grouped: HashMap<(u8, u32), Vec<GeneCopy>> = HashMap::new();
+            for (h, aid, copies, weight) in rows {
+                if *h > 1 {
+                    return Err(PyValueError::new_err(format!(
+                        "haplotype index must be 0 or 1, got {}",
+                        h
+                    )));
+                }
+                if *aid >= pool_len {
+                    return Err(PyValueError::new_err(format!(
+                        "{:?} allele id {} out of range (pool size {})",
+                        seg, aid, pool_len
+                    )));
+                }
+                let allele = AlleleId::new(*aid);
+                let gene = idx.gene_of(allele);
+                grouped.entry((*h, gene.index())).or_default().push(GeneCopy {
+                    allele,
+                    copies: *copies,
+                    weight: *weight,
+                });
+            }
+            for ((h, gene_idx), copies) in grouped {
+                haps[h as usize].set(seg, GeneId::new(gene_idx), copies);
+            }
+            Ok(())
+        };
+        fill(&mut haps, Segment::V, &v_index, &v)?;
+        fill(&mut haps, Segment::J, &j_index, &j)?;
+        if let Some(di) = &d_index {
+            fill(&mut haps, Segment::D, di, &d)?;
+        }
+
+        let genotype = std::sync::Arc::new(Genotype::new(
+            haps,
+            [chromosome_weights.0, chromosome_weights.1],
+            subject_id,
+            source_hash,
+        ));
+        self.inner_mut()?
+            .push(Box::new(crate::passes::sample_genotype::SampleGenotypePass::new(
+                genotype,
+                d_required,
+                usage_v,
+                usage_d,
+                usage_j,
+            )));
+        Ok(())
+    }
+
     /// Append an `AssembleSegmentPass` for `segment`. The matching
     /// `SampleAllelePass` must already be earlier in the plan
     /// (otherwise the assembler will fail at execute time with a

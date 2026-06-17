@@ -63,6 +63,12 @@ pub enum ChoiceValue {
     /// A boolean choice (e.g., D inversion: yes/no, receptor
     /// revision: yes/no, contaminant injection: yes/no).
     Bool(bool),
+
+    /// A chromosome index for phased genotype sampling (0 or 1).
+    Haplotype(u8),
+
+    /// A refdata-local gene identifier (see `refdata::GeneId`).
+    GeneId(u32),
 }
 
 /// On-disk discriminant tag for `ChoiceValue`. Lives as a separate
@@ -78,6 +84,8 @@ enum ChoiceValueWire {
     Bases(String),
     AlleleId(u32),
     Bool(bool),
+    Haplotype(u8),
+    GeneId(u32),
 }
 
 impl Serialize for ChoiceValue {
@@ -92,6 +100,8 @@ impl Serialize for ChoiceValue {
             ),
             ChoiceValue::AlleleId(id) => ChoiceValueWire::AlleleId(id),
             ChoiceValue::Bool(b) => ChoiceValueWire::Bool(b),
+            ChoiceValue::Haplotype(h) => ChoiceValueWire::Haplotype(h),
+            ChoiceValue::GeneId(g) => ChoiceValueWire::GeneId(g),
         };
         wire.serialize(ser)
     }
@@ -120,6 +130,8 @@ impl<'de> Deserialize<'de> for ChoiceValue {
             }
             ChoiceValueWire::AlleleId(id) => ChoiceValue::AlleleId(id),
             ChoiceValueWire::Bool(b) => ChoiceValue::Bool(b),
+            ChoiceValueWire::Haplotype(h) => ChoiceValue::Haplotype(h),
+            ChoiceValueWire::GeneId(g) => ChoiceValue::GeneId(g),
         })
     }
 }
@@ -312,6 +324,15 @@ mod tests {
         assert_eq!(run_trace.choices()[0].address, "first.choice");
         assert_eq!(run_trace.choices()[1].address, "second.choice");
         assert_eq!(run_trace.choices()[2].address, "third.choice");
+    }
+
+    #[test]
+    fn haplotype_and_gene_id_choice_values_round_trip_through_wire() {
+        for v in [ChoiceValue::Haplotype(1), ChoiceValue::GeneId(7)] {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: ChoiceValue = serde_json::from_str(&json).unwrap();
+            assert_eq!(v, back);
+        }
     }
 
     #[test]

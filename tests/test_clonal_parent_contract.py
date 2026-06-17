@@ -366,14 +366,20 @@ def test_pin_scaffold_clonal_truth_calls_stable_within_clone_under_normal_fixtur
 def test_pin_scaffold_simulationresult_slots_documented_for_extension() -> None:
     """``SimulationResult.__slots__`` is the documented attribute
     surface. After Slice 2 it carries
-    ``("_records", "_outcomes", "_parents")``. A reviewer adding
-    a new slot must update this pin in lockstep so the slot-list
+    ``("_records", "_outcomes", "_parents")``; the genotype slice adds
+    ``"_genotypes"`` (per-subject ground-truth genotypes). A reviewer
+    adding a new slot must update this pin in lockstep so the slot-list
     change shows up as a deliberate, audited diff."""
-    assert SimulationResult.__slots__ == ("_records", "_outcomes", "_parents"), (
+    assert SimulationResult.__slots__ == (
+        "_records",
+        "_outcomes",
+        "_parents",
+        "_genotypes",
+    ), (
         f"SimulationResult.__slots__ drifted to {SimulationResult.__slots__}; "
-        "expected ('_records', '_outcomes', '_parents'). Either Slice 2 "
-        "regressed (parent accessor removed) or a new slot landed without "
-        "updating the lockstep pin."
+        "expected ('_records', '_outcomes', '_parents', '_genotypes'). Either "
+        "Slice 2 regressed (parent accessor removed) or a new slot landed "
+        "without updating the lockstep pin."
     )
 
 

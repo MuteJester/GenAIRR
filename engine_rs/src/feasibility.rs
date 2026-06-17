@@ -219,6 +219,17 @@ impl VjProductiveFeasibility {
                 .map(|instance| vec![instance.allele_id]);
         }
 
+        // Even at the *same* pass index, if the segment is already
+        // assigned in the partial simulation, treat it as committed. The
+        // consolidated `SampleGenotypePass` assigns V (and D) before
+        // sampling J within one pass index; without this, J feasibility
+        // would ignore the V already chosen and over-accept. The flat
+        // one-segment-per-pass path never assigns another segment at the
+        // same index, so this is a no-op there.
+        if let Some(instance) = sim.assignments.get(segment) {
+            return Some(vec![instance.allele_id]);
+        }
+
         Some(domain.values.clone())
     }
 

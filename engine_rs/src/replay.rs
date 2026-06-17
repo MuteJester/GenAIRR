@@ -137,6 +137,8 @@ pub fn choice_value_kind(value: &ChoiceValue) -> &'static str {
         ChoiceValue::Bases(_) => "Bases",
         ChoiceValue::AlleleId(_) => "AlleleId",
         ChoiceValue::Bool(_) => "Bool",
+        ChoiceValue::Haplotype(_) => "Haplotype",
+        ChoiceValue::GeneId(_) => "GeneId",
     }
 }
 
@@ -300,6 +302,24 @@ impl TraceCursor {
         match value {
             ChoiceValue::Bool(b) => Ok(b),
             other => Err(kind_mismatch(position, &address_str, "Bool", &other)),
+        }
+    }
+
+    /// Consume the next record as a `ChoiceValue::Haplotype`.
+    pub fn expect_haplotype(&mut self, address: ChoiceAddress) -> Result<u8, ReplayError> {
+        let (position, address_str, value) = self.advance_with_address(address)?;
+        match value {
+            ChoiceValue::Haplotype(h) => Ok(h),
+            other => Err(kind_mismatch(position, &address_str, "Haplotype", &other)),
+        }
+    }
+
+    /// Consume the next record as a `ChoiceValue::GeneId`.
+    pub fn expect_gene_id(&mut self, address: ChoiceAddress) -> Result<u32, ReplayError> {
+        let (position, address_str, value) = self.advance_with_address(address)?;
+        match value {
+            ChoiceValue::GeneId(g) => Ok(g),
+            other => Err(kind_mismatch(position, &address_str, "GeneId", &other)),
         }
     }
 }

@@ -95,6 +95,89 @@ impl AlleleId {
     }
 }
 
+/// Stable, refdata-local identifier for a gene within one segment's
+/// pool. Assigned in first-appearance order over the pool's alleles, so
+/// it is deterministic for a fixed cartridge (and therefore safe to
+/// record in the trace for replay, gated by `refdata_content_hash`).
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct GeneId(u32);
+
+impl GeneId {
+    pub const fn new(idx: u32) -> Self {
+        Self(idx)
+    }
+    pub const fn index(self) -> u32 {
+        self.0
+    }
+    pub const fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// Gene-level grouping over a single `AllelePool`, derived from each
+/// allele's `gene` string. Built on demand; the pool itself is
+/// unchanged, so `Allele` and `refdata_content_hash` are untouched.
+#[derive(Clone, Debug)]
+pub struct GeneIndex {
+    names: Vec<String>,                                   // GeneId.index() -> gene name
+    by_name: std::collections::HashMap<String, GeneId>,   // gene name -> GeneId
+    alleles: Vec<Vec<AlleleId>>,                          // GeneId.index() -> alleles, pool order
+    gene_of: Vec<GeneId>,                                 // AlleleId.index() -> GeneId
+}
+
+impl GeneIndex {
+    /// Build the gene grouping from a pool. Genes are numbered in the
+    /// order their first allele appears in the pool.
+    pub fn build(pool: &AllelePool) -> Self {
+        let mut names: Vec<String> = Vec::new();
+        let mut by_name: std::collections::HashMap<String, GeneId> =
+            std::collections::HashMap::new();
+        let mut alleles: Vec<Vec<AlleleId>> = Vec::new();
+        let mut gene_of: Vec<GeneId> = Vec::with_capacity(pool.len());
+        for (id, allele) in pool.iter() {
+            let gid = *by_name.entry(allele.gene.clone()).or_insert_with(|| {
+                let g = GeneId::new(names.len() as u32);
+                names.push(allele.gene.clone());
+                alleles.push(Vec::new());
+                g
+            });
+            alleles[gid.as_usize()].push(id);
+            gene_of.push(gid);
+        }
+        Self {
+            names,
+            by_name,
+            alleles,
+            gene_of,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.names.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+    pub fn gene_id(&self, name: &str) -> Option<GeneId> {
+        self.by_name.get(name).copied()
+    }
+    pub fn gene_name(&self, g: GeneId) -> &str {
+        &self.names[g.as_usize()]
+    }
+    pub fn alleles_of(&self, g: GeneId) -> &[AlleleId] {
+        &self.alleles[g.as_usize()]
+    }
+    pub fn gene_of(&self, a: AlleleId) -> GeneId {
+        self.gene_of[a.as_usize()]
+    }
+    pub fn genes(&self) -> impl Iterator<Item = (GeneId, &str)> {
+        self.names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (GeneId::new(i as u32), n.as_str()))
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────
 // ChainType — VJ (light) vs VDJ (heavy)
 // ──────────────────────────────────────────────────────────────────
@@ -1178,5 +1261,48 @@ mod tests {
         assert!(cfg.d_pool.is_empty());
         assert_eq!(cfg.v_pool.len(), 1);
         assert_eq!(cfg.j_pool.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod gene_index_tests {
+    use super::*;
+
+    fn pool_with(genes: &[(&str, &str)]) -> AllelePool {
+        // genes: (allele_name, gene_name)
+        let mut p = AllelePool::new();
+        for (name, gene) in genes {
+            let _ = p.push(Allele {
+                name: (*name).to_string(),
+                gene: (*gene).to_string(),
+                seq: vec![b'A'; 10],
+                segment: Segment::V,
+                anchor: Some(3),
+                functional_status: None,
+                subregions: Vec::new(),
+            });
+        }
+        p
+    }
+
+    #[test]
+    fn gene_index_groups_alleles_by_gene_in_first_appearance_order() {
+        let pool = pool_with(&[
+            ("IGHV1-2*01", "IGHV1-2"),
+            ("IGHV1-2*02", "IGHV1-2"),
+            ("IGHV3-23*01", "IGHV3-23"),
+        ]);
+        let idx = GeneIndex::build(&pool);
+
+        assert_eq!(idx.len(), 2);
+        let g12 = idx.gene_id("IGHV1-2").unwrap();
+        let g323 = idx.gene_id("IGHV3-23").unwrap();
+        assert_eq!(g12.index(), 0); // first appearance
+        assert_eq!(g323.index(), 1);
+        assert_eq!(idx.gene_name(g12), "IGHV1-2");
+        assert_eq!(idx.alleles_of(g12), &[AlleleId::new(0), AlleleId::new(1)]);
+        assert_eq!(idx.alleles_of(g323), &[AlleleId::new(2)]);
+        assert_eq!(idx.gene_of(AlleleId::new(1)), g12);
+        assert!(idx.gene_id("nope").is_none());
     }
 }
