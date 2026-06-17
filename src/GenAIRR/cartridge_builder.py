@@ -90,6 +90,7 @@ class _BuilderDAllele(DAllele):
 from .dataconfig.config_info import ConfigInfo
 from .dataconfig.data_config import DataConfig
 from .dataconfig.enums import ChainType, Species
+from .genotype_priors import PopulationGenotypeModel
 from .reference_models import (
     AlleleUsageSpec,
     EmpiricalDistributionSpec,
@@ -346,6 +347,7 @@ class ReferenceCartridgeBuilder:
         self._metadata: Optional[ConfigInfo] = None
         self._reference_rules: Optional[ReferenceRulesSpec] = None
         self._reference_models: Optional[ReferenceEmpiricalModels] = None
+        self._genotype_priors: Optional[PopulationGenotypeModel] = None
         self._report = CartridgeBuildReport()
 
     # ──────────────────────────────────────────────────────────
@@ -713,6 +715,81 @@ class ReferenceCartridgeBuilder:
     # ──────────────────────────────────────────────────────────
     # Estimators
     # ──────────────────────────────────────────────────────────
+
+    def _build_working_cfg(self):
+        """A lightweight DataConfig carrying only the parsed catalogues — used by
+        genotype-prior validation/estimation to resolve gene/allele names and
+        construct throwaway Genotypes for novel functional validation."""
+        return DataConfig(
+            name=self._name or "WORKING",
+            metadata=self._metadata,
+            v_alleles=self._v_alleles,
+            d_alleles=self._d_alleles or None,
+            j_alleles=self._j_alleles,
+            c_alleles=None,
+        )
+
+    def set_genotype_priors(
+        self, model: PopulationGenotypeModel
+    ) -> "ReferenceCartridgeBuilder":
+        """Attach a hand-authored population genotype prior, validated against
+        this cartridge's chain type and catalogue. Chainable."""
+        from GenAIRR.genotype import Genotype
+
+        if not isinstance(model, PopulationGenotypeModel):
+            raise TypeError(
+                f"set_genotype_priors expects a PopulationGenotypeModel, "
+                f"got {type(model).__name__}")
+        chain_label = "vdj" if self._chain_type.has_d else "vj"
+        model.validate(chain_type=chain_label)  # catalogue-free
+
+        # Catalogue-aware checks against the builder's pools.
+        cfg = self._build_working_cfg()
+        by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles or {}, "J": cfg.j_alleles}
+        for table_name, table in (("allele_frequencies", model.allele_frequencies),
+                                  ("haplotype_deletion_prob", model.haplotype_deletion_prob)):
+            for seg, genes in (table or {}).items():
+                catalogue = by_seg[seg]
+                for gene, payload in genes.items():
+                    if gene not in catalogue:
+                        raise ValueError(
+                            f"genotype_priors.{table_name}: {seg} gene {gene!r} is not "
+                            f"in the cartridge")
+                    if table_name == "allele_frequencies":
+                        names = {a.name for a in catalogue[gene]}
+                        for allele in payload:
+                            if allele not in names:
+                                raise ValueError(
+                                    f"genotype_priors.allele_frequencies: {allele!r} is "
+                                    f"not a known allele of {gene!r}")
+        # Novels: reuse Genotype.add_novel_allele for full functional validation.
+        helper = Genotype.from_dataconfig(cfg)
+        for nv in model.novel_alleles:
+            helper.add_novel_allele(
+                nv.name, base=nv.base_allele, sequence=nv.sequence.upper(),
+                segment=nv.segment, allow_nonfunctional=nv.allow_nonfunctional)
+
+        self._genotype_priors = model
+        self._report.stages.append({
+            "stage": "set_genotype_priors",
+            "inputs": {"model_id": model.model_id, "source": model.source,
+                       "chain_type_label": chain_label},
+            "inferred": {"model_checksum": model.content_checksum(),
+                         "novel_allele_count": len(model.novel_alleles)},
+            "warnings": [],
+        })
+        return self
+
+    def estimate_genotype_priors(
+        self, genotypes, **kwargs
+    ) -> "ReferenceCartridgeBuilder":
+        """Estimate a population genotype prior from observed ``Genotype`` objects
+        and attach it (chainable). Thin wrapper over
+        :meth:`PopulationGenotypeModel.from_genotypes` followed by
+        :meth:`set_genotype_priors`."""
+        model = PopulationGenotypeModel.from_genotypes(
+            genotypes, cfg=self._build_working_cfg(), **kwargs)
+        return self.set_genotype_priors(model)
 
     def estimate_allele_usage(
         self,
@@ -2276,6 +2353,7 @@ class ReferenceCartridgeBuilder:
             c_alleles=None,  # v1 boundary
             reference_rules=self._reference_rules,
             reference_models=self._reference_models,
+            genotype_priors=self._genotype_priors,
         )
         # Pull a manifest snapshot + checksum. The manifest call
         # runs before verify_integrity so the report carries the

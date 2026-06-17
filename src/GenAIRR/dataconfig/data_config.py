@@ -15,6 +15,7 @@ import pickle
 from GenAIRR.alleles.allele import Allele
 from GenAIRR.reference_models import ReferenceEmpiricalModels
 from GenAIRR.reference_rules import ReferenceRulesSpec
+from GenAIRR.genotype_priors import PopulationGenotypeModel
 
 
 DEFAULT_P_NUCLEOTIDE_LENGTH_PROBS = {0: 0.50, 1: 0.25, 2: 0.15, 3: 0.07, 4: 0.03}
@@ -134,6 +135,84 @@ def _allele_usage_manifest_block(cfg):
         "in_plan_signature": False,  # documented soft gap 1
         "source": "ReferenceEmpiricalModels.allele_usage",
     }
+
+
+def _genotype_priors_manifest_block(cfg):
+    """Build the ``models.genotype_priors`` manifest block (Slice — Cartridge
+    genotype plane). Audit-sized: counts and identity, never the full tables.
+    Reads the top-level ``DataConfig.genotype_priors`` plane (independent of
+    ``reference_models``)."""
+    def _empty(available, valid, error=None):
+        b = {
+            "available": available,
+            "valid": valid,
+            "model_id": None,
+            "source": None,
+            "version": None,
+            "model_checksum": None,
+            "segments_with_frequencies": [],
+            "freq_gene_counts": {"V": 0, "D": 0, "J": 0},
+            "deletion_gene_counts": {"V": 0, "D": 0, "J": 0},
+            "novel_allele_count": 0,
+            "chromosome_weights": None,
+            "source_field": "DataConfig.genotype_priors",
+        }
+        if error is not None:
+            b["validation_error"] = error
+        return b
+
+    model = getattr(cfg, "genotype_priors", None)
+    if model is None:
+        return _empty(False, None)
+    if not isinstance(model, PopulationGenotypeModel):
+        # Field is typed Optional[PopulationGenotypeModel] but Python won't enforce
+        # it; a garbage value must not crash the manifest (called from build()).
+        return _empty(True, False,
+                      f"genotype_priors is not a PopulationGenotypeModel "
+                      f"(got {type(model).__name__})")
+
+    # A plane may have been attached directly (bypassing builder validation).
+    # Report validity rather than leaking non-JSON-clean numerics (e.g. NaN
+    # chromosome weights) into the manifest.
+    try:
+        model.validate(
+            chain_type=getattr(getattr(cfg, "metadata", None), "chain_type", None))
+        valid, validation_error = True, None
+    except ValueError as exc:
+        valid, validation_error = False, str(exc)
+
+    # content_checksum / float() can themselves raise on a malformed model; never
+    # let that crash the manifest — report None and the validity flag instead.
+    try:
+        checksum = model.content_checksum()
+    except Exception:
+        checksum = None
+    cw = None
+    if valid:
+        try:
+            cw = [float(model.chromosome_weights[0]), float(model.chromosome_weights[1])]
+        except Exception:
+            cw = None
+    freq = model.allele_frequencies if isinstance(model.allele_frequencies, dict) else {}
+    dele = model.haplotype_deletion_prob if isinstance(model.haplotype_deletion_prob, dict) else {}
+    novels = model.novel_alleles if isinstance(model.novel_alleles, (list, tuple)) else []
+    block = {
+        "available": True,
+        "valid": valid,
+        "model_id": (model.model_id or None) if isinstance(model.model_id, str) else None,
+        "source": (model.source or None) if isinstance(model.source, str) else None,
+        "version": (model.version or None) if isinstance(model.version, str) else None,
+        "model_checksum": checksum,
+        "segments_with_frequencies": [s for s in ("V", "D", "J") if freq.get(s)],
+        "freq_gene_counts": {s: len(freq.get(s, {})) for s in ("V", "D", "J")},
+        "deletion_gene_counts": {s: len(dele.get(s, {})) for s in ("V", "D", "J")},
+        "novel_allele_count": len(novels),
+        "chromosome_weights": cw,
+        "source_field": "DataConfig.genotype_priors",
+    }
+    if validation_error is not None:
+        block["validation_error"] = validation_error
+    return block
 
 
 def _np_length_models_manifest_block(cfg):
@@ -301,6 +380,15 @@ class DataConfig:
     # ``reference_rules``.
     reference_models: Optional[ReferenceEmpiricalModels] = None
 
+    # Donor-population germline prior plane (Slice — Cartridge genotype plane).
+    # ``None`` means no population prior; ``Genotype.sample(cfg)`` then falls
+    # back to a uniform synthetic prior. A non-``None`` plane is cartridge
+    # identity (folds into compute_checksum). See
+    # ``site_docs/guides/genotype.md`` ("Population genotype models on a
+    # cartridge"). Same soft-transition checksum policy as ``reference_rules`` /
+    # ``reference_models``.
+    genotype_priors: Optional[PopulationGenotypeModel] = None
+
     def __getattr__(self, name):
         # Backward-compat shim for pickled DataConfigs missing post-v1
         # fields. Note: schema_version / schema_sha256 fall through to
@@ -318,6 +406,8 @@ class DataConfig:
         if name == 'reference_rules':
             return None
         if name == 'reference_models':
+            return None
+        if name == 'genotype_priors':
             return None
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
@@ -355,6 +445,8 @@ class DataConfig:
         pop_rules = 'reference_rules' in self.__dict__ and rr_value is None
         rm_value = self.__dict__.get('reference_models')
         pop_models = 'reference_models' in self.__dict__ and rm_value is None
+        gp_value = self.__dict__.get('genotype_priors')
+        pop_priors = 'genotype_priors' in self.__dict__ and gp_value is None
 
         self.schema_sha256 = ""
         if had_report:
@@ -363,6 +455,8 @@ class DataConfig:
             del self.__dict__['reference_rules']
         if pop_models:
             del self.__dict__['reference_models']
+        if pop_priors:
+            del self.__dict__['genotype_priors']
         try:
             blob = pickle.dumps(self, protocol=4)
             return hashlib.sha256(blob).hexdigest()
@@ -374,6 +468,8 @@ class DataConfig:
                 self.__dict__['reference_rules'] = rr_value
             if pop_models:
                 self.__dict__['reference_models'] = rm_value
+            if pop_priors:
+                self.__dict__['genotype_priors'] = gp_value
 
     def verify_integrity(self) -> None:
         """Validate schema_version and schema_sha256.
@@ -917,6 +1013,10 @@ class DataConfig:
             # ``np_length_keys`` / ``legacy_np_lengths_present``
             # entries above.
             "np_length_models": _np_length_models_manifest_block(self),
+            # Donor-population germline prior plane (Slice — Cartridge genotype
+            # plane). Read from the top-level ``DataConfig.genotype_priors``
+            # field (NOT ``reference_models``); ``source_field`` records that.
+            "genotype_priors": _genotype_priors_manifest_block(self),
         }
 
         # Bridge once (or accept the provided refdata) to read the

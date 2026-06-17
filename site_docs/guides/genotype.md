@@ -316,6 +316,99 @@ excludes an allele), and unspecified genes fall back to uniform.
     explicit opt-in that reuses the cartridge's recombination `allele_usage` as a
     frequency proxy — convenient but biologically approximate.
 
+## Population genotype models on a cartridge
+
+The `allele_frequencies` / `haplotype_deletion_prob` you pass to
+`Genotype.sample` can instead be **authored once on the cartridge** as a
+*population genotype model* — a donor-population germline prior. It is a distinct
+plane from `reference_models.allele_usage`: `allele_usage` weights how often each
+allele is *expressed* during recombination, whereas a genotype prior describes
+which alleles a *donor population carries* (frequencies, gene-deletion rates, and
+population novel alleles). It lives on `DataConfig.genotype_priors`.
+
+### Authoring and attaching a model
+
+```python
+from GenAIRR.genotype_priors import PopulationGenotypeModel, PopulationNovelAllele
+
+model = PopulationGenotypeModel(
+    model_id="IGH-toy-1", source="hand-authored",     # identity is required
+    allele_frequencies={"V": {"IGHVF1-G1": {"IGHVF1-G1*01": 3.0, "IGHVF1-G1*02": 1.0}}},
+    haplotype_deletion_prob={"V": {"IGHVF1-G1": 0.1}},
+)
+# Attach via the cartridge builder (validated against the chain type + catalogue):
+#   cfg = builder.set_genotype_priors(model).build()
+```
+
+`set_genotype_priors` validates the model against the cartridge: unknown
+genes/alleles raise, and any population novel allele goes through the same
+functional validation as `add_novel_allele` (conserved anchor, stop-free frame,
+base-allele match). A non-`None` plane becomes part of cartridge identity (it
+folds into `compute_checksum()` and the manifest).
+
+### Estimating a model from observed genotypes
+
+Given a list of observed `Genotype` objects (e.g. one per donor), estimate a
+prior directly:
+
+```python
+model = PopulationGenotypeModel.from_genotypes(
+    [g_donor1, g_donor2, g_donor3],
+    cfg=cfg, model_id="cohort-est", source="my-cohort",
+)
+# or, attaching to a builder in one chained step:
+#   builder.estimate_genotype_priors([g_donor1, g_donor2, g_donor3], source="my-cohort")
+```
+
+Estimator conventions: allele frequencies are counted **per carried chromosome**
+(homozygous contributes 2, hemizygous 1, deleted 0); gene deletion probability is
+`deleted_haplotypes / (2 × n_subjects)`. `pseudocount` smooths the per-gene
+catalogue-allele counts only (deletion gets none). Genotypes carrying a
+duplicated gene are rejected — the plane is deletion-only.
+
+### Drawing from the cartridge plane
+
+When a cartridge carries a plane, `Genotype.sample(cfg)` **auto-uses it** and
+records where every input came from:
+
+```python
+g = Genotype.sample(cfg, seed=7)        # plane supplies freqs / deletion / weights
+print(g.prior_provenance)
+# {'allele_frequencies': 'cartridge', 'haplotype_deletion_prob': 'cartridge',
+#  'chromosome_weights': 'cartridge', 'novel_alleles': 'none',  # 'cartridge' if the model has novels
+#  'model_id': 'IGH-toy-1', 'model_checksum': '…'}
+print(g.to_metadata())                  # subject_id + provenance + source/effective refdata hashes
+```
+
+Pass `use_cartridge_priors=False` for a clean uniform, catalogue-only draw (all
+plane consumption — including novels — disabled). Each input is sourced
+**independently**, so you can mix explicit and cartridge values:
+
+```python
+g = Genotype.sample(
+    cfg, seed=7,
+    allele_frequencies={"V": {"IGHVF1-G1": {"IGHVF1-G1*01": 1.0}}},  # explicit
+    # haplotype_deletion_prob and chromosome_weights left to the plane
+)
+print(g.prior_provenance["allele_frequencies"])      # 'explicit'
+print(g.prior_provenance["haplotype_deletion_prob"]) # 'cartridge'
+print(g.prior_provenance["chromosome_weights"])      # 'cartridge'
+```
+
+**Population novel alleles** on the plane are *candidate* alleles for the draw: a
+novel that gets sampled is carried (and flows into `v_call` / reads / truth like
+any allele); a novel that isn't drawn never pollutes the output reference. By
+default (`include_cartridge_novel_alleles="auto"`) novels are injected only when
+the allele frequencies are cartridge- or uniform-sourced — supplying an
+**explicit** frequency table keeps it explicit. Pass
+`include_cartridge_novel_alleles=True` to inject them anyway, or `False` to never.
+
+### Auditing the plane
+
+`cfg.cartridge_manifest()["models"]["genotype_priors"]` reports availability,
+`model_id` / `source` / `version`, the plane's `model_checksum`, per-segment gene
+counts, the novel-allele count, and `source_field` (`"DataConfig.genotype_priors"`).
+
 ## Novel / private alleles
 
 Individuals carry germline alleles that aren't in any reference — *private* or
@@ -527,8 +620,6 @@ The genotype foundation is deliberately scoped. Deferred to later work:
   (`with_genotype` is single-subject; `result.genotypes` is a one-element list).
 - **External loaders** — importing genotypes from VDJbase / TIgGER / IgDiscover /
   partis output.
-- **Cartridge genotype plane** — persisting a population genotype model in a
-  cartridge.
 - **Same-haplotype receptor revision** — `receptor_revision` with a genotype is
   rejected for now.
 

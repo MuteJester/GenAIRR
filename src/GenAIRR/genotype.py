@@ -36,6 +36,10 @@ class Genotype:
         self._cfg = cfg
         self._permissive = bool(permissive)
         self.subject_id: Optional[str] = None  # plain attribute (read anywhere)
+        # Provenance of any population prior used to build this genotype. For
+        # builder-constructed genotypes every source is "manual" / None; for
+        # Genotype.sample(...) it records explicit/cartridge/uniform per input.
+        self.prior_provenance: Dict = self._manual_provenance()
         self._chromosome_weights: Tuple[float, float] = (0.5, 0.5)
         # segment -> gene -> [hap0 list[(allele, copies, weight)], hap1 ...]
         self._slots: Dict[str, Dict[str, List[List[Tuple[str, int, float]]]]] = {
@@ -65,6 +69,17 @@ class Genotype:
     def with_subject(self, sid: str) -> "Genotype":
         self.subject_id = str(sid)
         return self
+
+    @staticmethod
+    def _manual_provenance() -> Dict:
+        return {
+            "allele_frequencies": "manual",
+            "haplotype_deletion_prob": "manual",
+            "chromosome_weights": "manual",
+            "novel_alleles": "manual",
+            "model_id": None,
+            "model_checksum": None,
+        }
 
     @staticmethod
     def _check_chromosome_weights(w0, w1) -> Tuple[float, float]:
@@ -391,6 +406,7 @@ class Genotype:
         g._slots = _copy.deepcopy(self._slots)
         g._novel = _copy.deepcopy(self._novel)
         g._source_hash = self._source_hash
+        g.prior_provenance = _copy.deepcopy(self.prior_provenance)
         return g
 
     # ── population sampling ───────────────────────────────────────
@@ -544,7 +560,10 @@ class Genotype:
                     continue
                 pairs: List[Tuple[str, float]] = []
                 total = 0.0
-                for nm, w in supplied.items():
+                # Sort by allele name so the draw is independent of the spec's
+                # dict insertion order — two content-equal models (same
+                # content_checksum) then produce identical draws at a given seed.
+                for nm, w in sorted(supplied.items()):
                     if nm not in names:
                         raise ValueError(f"{seg} gene {gene}: {nm!r} is not a known allele")
                     if isinstance(w, bool) or not isinstance(w, (int, float)) or not math.isfinite(w) or w < 0:
@@ -616,26 +635,30 @@ class Genotype:
         *,
         seed: int = 0,
         allele_frequencies=None,
-        haplotype_deletion_prob=0.0,
+        haplotype_deletion_prob=None,
         segments_to_sample=None,
-        chromosome_weights: Tuple[float, float] = (0.5, 0.5),
+        chromosome_weights: Optional[Tuple[float, float]] = None,
         subject_id: Optional[str] = None,
         ensure_viable: bool = True,
         max_resamples: int = 1000,
+        use_cartridge_priors: bool = True,
+        include_cartridge_novel_alleles="auto",
     ) -> "Genotype":
         """Sample a fully-specified diploid genotype from population priors.
 
         Independent per-gene, per-chromosome Hardy-Weinberg model: each gene on
-        each chromosome is independently deleted (prob
-        ``haplotype_deletion_prob``) or assigned one allele drawn from the gene's
-        allele frequencies. Homozygous/heterozygous/hemizygous/deleted states
-        emerge at Hardy-Weinberg rates.
+        each chromosome is independently deleted or assigned one allele drawn
+        from the gene's allele frequencies. Homozygous/heterozygous/hemizygous/
+        deleted states emerge at Hardy-Weinberg rates.
+
+        When ``cfg`` carries a ``genotype_priors`` plane and an argument is left
+        at its default, the plane supplies it (``use_cartridge_priors=False``
+        disables ALL plane consumption — a clean uniform catalogue-only draw).
+        Each input is sourced independently and recorded in
+        ``g.prior_provenance`` (explicit / cartridge / uniform / default).
 
         This is NOT a population haplotype model — no linkage disequilibrium, gene
-        co-deletion blocks, ancestry, or donor-specific haplotype structure. It
-        samples catalogue alleles only (no novel alleles) and deletion only (no
-        copy-number duplication). The default prior is uniform within each gene;
-        supply ``allele_frequencies`` for realistic per-gene frequencies.
+        co-deletion blocks, ancestry, or donor-specific haplotype structure.
 
         With ``ensure_viable=True`` (default), the draw is repeated (with a
         deterministic sub-seed) up to ``max_resamples`` times until at least one
@@ -651,10 +674,71 @@ class Genotype:
 
         if isinstance(max_resamples, bool) or not isinstance(max_resamples, int) or max_resamples < 1:
             raise ValueError(f"max_resamples must be an int >= 1, got {max_resamples!r}")
-        cw = cls._check_chromosome_weights(*chromosome_weights)
+        if not isinstance(use_cartridge_priors, bool):
+            raise ValueError(
+                f"use_cartridge_priors must be a bool, got {use_cartridge_priors!r}")
+        # Identity checks (not `in (...)`): Python's `1 == True` / `0 == False`
+        # would otherwise let integers slip through and silently act like False.
+        _icna = include_cartridge_novel_alleles
+        if not (_icna is True or _icna is False or _icna == "auto"):
+            raise ValueError(
+                "include_cartridge_novel_alleles must be 'auto', True, or False, "
+                f"got {include_cartridge_novel_alleles!r}")
+
+        plane = cls._resolve_plane(cfg, use_cartridge_priors)
+        if plane is not None:
+            # A plane attached via the builder is already validated, but a plane
+            # set directly on the DataConfig bypasses that — validate before use so
+            # a malformed prior (empty model_id, NaN weights, D-on-VJ) fails loudly
+            # rather than being silently sampled and stamped into provenance.
+            plane.validate(chain_type=getattr(getattr(cfg, "metadata", None), "chain_type", None))
+
+        # Per-input source resolution.
+        if allele_frequencies is not None:
+            freq_spec, freq_src = allele_frequencies, "explicit"
+        elif plane is not None and plane.allele_frequencies:
+            freq_spec, freq_src = plane.allele_frequencies, "cartridge"
+        else:
+            freq_spec, freq_src = None, "uniform"
+
+        if haplotype_deletion_prob is not None:
+            del_spec, del_src = haplotype_deletion_prob, "explicit"
+        elif plane is not None and plane.haplotype_deletion_prob:
+            del_spec, del_src = plane.haplotype_deletion_prob, "cartridge"
+        else:
+            del_spec, del_src = 0.0, "default"
+
+        if chromosome_weights is not None:
+            cw_in, cw_src = chromosome_weights, "explicit"
+        elif plane is not None:
+            cw_in, cw_src = plane.chromosome_weights, "cartridge"
+        else:
+            cw_in, cw_src = (0.5, 0.5), "default"
+
+        cw = cls._check_chromosome_weights(*cw_in)
         segs = cls._resolve_sample_segments(cfg, segments_to_sample)
-        freqs = cls._resolve_allele_frequencies(cfg, allele_frequencies, segs)
-        delp = cls._resolve_haplotype_deletion(cfg, haplotype_deletion_prob, segs)
+
+        # Candidate-novel injection. Plane novels are draw CANDIDATES (injected
+        # into the sampling cfg) only when their source is active; the returned
+        # genotype still exports only CARRIED novels via effective_dataconfig().
+        inject_novels = False
+        if plane is not None and plane.novel_alleles:
+            if include_cartridge_novel_alleles is True:
+                inject_novels = True
+            elif include_cartridge_novel_alleles == "auto":
+                inject_novels = freq_src in ("cartridge", "uniform")
+            # False -> never
+        novel_src = "none"
+        sampling_cfg = cfg
+        novel_helper = None
+        if inject_novels:
+            novel_helper = cls._register_plane_novels(cfg, plane)
+            sampling_cfg = cls._dataconfig_injecting_all_novels(novel_helper)
+            freq_spec = cls._augment_freqs_with_novels(sampling_cfg, freq_spec, plane, segs)
+            novel_src = "cartridge"
+
+        freqs = cls._resolve_allele_frequencies(sampling_cfg, freq_spec, segs)
+        delp = cls._resolve_haplotype_deletion(sampling_cfg, del_spec, segs)
         # Compute the cartridge content hash ONCE (it rebuilds refdata + hashes);
         # reuse it across all draws instead of recomputing per attempt.
         source_hash = cfg.cartridge_manifest()["hashes"]["refdata_content_hash"]
@@ -662,11 +746,22 @@ class Genotype:
         # `seed` cannot collide with a direct draw at `seed + 1`.
         base_rng = random.Random(seed)
 
+        provenance = {
+            "allele_frequencies": freq_src,
+            "haplotype_deletion_prob": del_src,
+            "chromosome_weights": cw_src,
+            "novel_alleles": novel_src,
+            "model_id": plane.model_id if plane is not None else None,
+            "model_checksum": plane.content_checksum() if plane is not None else None,
+        }
+
         attempts = max_resamples if ensure_viable else 1
         for _attempt in range(attempts):
             sub_seed = base_rng.getrandbits(63)
-            g = cls._draw_one(cfg, sub_seed, segs, freqs, delp, cw, subject_id, source_hash)
+            g = cls._draw_one(sampling_cfg, sub_seed, segs, freqs, delp, cw, subject_id, source_hash)
             if not ensure_viable or g._is_viable(cfg, cw):
+                cls._rebind_to_base(g, cfg, novel_helper)
+                g.prior_provenance = dict(provenance)
                 return g
         raise ValueError(
             f"could not sample a viable genotype after {max_resamples} attempts; "
@@ -674,6 +769,82 @@ class Genotype:
             f"haplotype for required segments {cls._required_segments(cfg)} "
             f"(chromosome_weights={cw})"
         )
+
+    @staticmethod
+    def _resolve_plane(cfg, use_cartridge_priors):
+        if not use_cartridge_priors:
+            return None
+        return getattr(cfg, "genotype_priors", None)
+
+    @classmethod
+    def _register_plane_novels(cls, cfg, plane):
+        """Build a throwaway Genotype carrying every plane novel as a registered
+        novel allele. This is where catalogue-aware + functional validation of
+        plane novels happens (via add_novel_allele). Returns the helper."""
+        helper = cls.from_dataconfig(cfg)
+        for nv in plane.novel_alleles:
+            helper.add_novel_allele(
+                nv.name, base=nv.base_allele, sequence=nv.sequence.upper(),
+                segment=nv.segment, allow_nonfunctional=nv.allow_nonfunctional)
+        return helper
+
+    @staticmethod
+    def _dataconfig_injecting_all_novels(helper):
+        """A cfg copy with ALL of the helper's registered novels injected as
+        catalogue alleles — the *sampling* reference (candidates), distinct from
+        effective_dataconfig() which injects only carried novels."""
+        import copy as _copy
+        cfg = _copy.deepcopy(helper._cfg)
+        by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
+        for name, info in helper._novel.items():
+            d = by_seg[info["segment"]]
+            existing = list(d.get(info["gene"], []))
+            existing.append(_copy.deepcopy(info["allele"]))
+            d[info["gene"]] = existing
+        return cfg
+
+    @classmethod
+    def _augment_freqs_with_novels(cls, sampling_cfg, freq_spec, plane, segs):
+        """Return a nested freq spec that includes each plane novel in its gene's
+        table per the synthesis rule: authored table -> preserve + add novel;
+        no table -> catalogue alleles 1.0 + novel frequency. Collisions raise."""
+        if freq_spec == "usage_as_prior":
+            nested = cls._usage_frequencies(sampling_cfg, segs)
+            nested = {seg: {g: dict(al) for g, al in genes.items()}
+                      for seg, genes in nested.items()}
+        else:
+            nested = {seg: {g: dict(al) for g, al in genes.items()}
+                      for seg, genes in cls._normalize_freq_spec(sampling_cfg, freq_spec, segs).items()}
+        for nv in plane.novel_alleles:
+            seg = nv.segment
+            if seg not in segs:
+                continue
+            gene = nv.name.split("*")[0]
+            gene_tbl = nested.setdefault(seg, {}).get(gene)
+            if gene_tbl is None:
+                # no authored table for this gene: catalogue 1.0 + novel
+                catalogue = _alleles_by_gene(sampling_cfg, seg).get(gene, [])
+                gene_tbl = {a.name: 1.0 for a in catalogue if a.name != nv.name}
+                nested[seg][gene] = gene_tbl
+            if nv.name in gene_tbl:
+                raise ValueError(
+                    f"plane novel {nv.name!r} collides with an existing allele weight")
+            gene_tbl[nv.name] = float(nv.frequency)
+        return nested
+
+    @staticmethod
+    def _rebind_to_base(g, base_cfg, novel_helper):
+        """Point a drawn genotype back at the base cfg and register only the
+        novels it actually carries, so effective_dataconfig() injects carried
+        novels (and nothing else). Task 7 supplies ``novel_helper``."""
+        import copy as _copy
+        g._cfg = base_cfg
+        if novel_helper is None:
+            return
+        carried = g._carried_allele_names()
+        for name, info in novel_helper._novel.items():
+            if name in carried:
+                g._novel[name] = _copy.deepcopy(info)
 
     @classmethod
     def _draw_one(cls, cfg, seed, segs, freqs, delp, cw, subject_id, source_hash):
@@ -690,6 +861,7 @@ class Genotype:
         g._slots = {s: {} for s in _SEGMENTS}
         g._novel = {}
         g._source_hash = source_hash
+        g.prior_provenance = cls._manual_provenance()  # sample() overwrites with real sources
         for seg in segs:
             for gene in _alleles_by_gene(cfg, seg):
                 pdel = delp[seg][gene]
@@ -743,6 +915,27 @@ class Genotype:
         if s0 == s1 and len(s0) == 1:
             return "homozygous"
         return "heterozygous"
+
+    def to_metadata(self) -> Dict:
+        """Flat genotype-level metadata (subject + prior provenance + refdata
+        hashes) for sidecar export / benchmark tooling. Distinct from
+        ``to_table`` (one row per gene), which carries no provenance.
+
+        ``source_refdata_hash`` is the base cartridge's content hash;
+        ``effective_refdata_hash`` is the hash the engine actually runs against —
+        equal to the source hash unless carried novel alleles are injected, in
+        which case it reflects the effective (novel-augmented) reference."""
+        import copy as _copy
+        effective = self._source_hash
+        if self.has_novel():
+            effective = self.effective_dataconfig().cartridge_manifest()[
+                "hashes"]["refdata_content_hash"]
+        return {
+            "subject_id": self.subject_id,
+            "source_refdata_hash": self._source_hash,
+            "effective_refdata_hash": effective,
+            "prior_provenance": _copy.deepcopy(self.prior_provenance),
+        }
 
     def to_table(self) -> List[Dict]:
         """One row per (segment, gene) with full diploid truth: zygosity
