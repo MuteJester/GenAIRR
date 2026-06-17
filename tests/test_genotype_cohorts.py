@@ -136,3 +136,87 @@ def test_run_cohort_does_not_mutate_base_experiment():
     # still usable as a plain (no-genotype) experiment afterwards
     res = exp.run_records(n=2, seed=1)
     assert len(res) == 2
+
+
+def test_run_cohort_auto_subject_ids_and_no_mutation_of_originals():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s) for s in range(3)]   # no subject_id set
+    c = ga.Experiment.on(cfg).recombine().run_cohort(gs, n_per_subject=1, seed=0)
+    assert c.subject_ids == ["subject_0", "subject_1", "subject_2"]
+    # originals are untouched (resolution happened on snapshots)
+    assert all(g.subject_id is None for g in gs)
+
+
+def test_run_cohort_counts_override_and_zero():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id=f"D{s}") for s in range(3)]
+    c = ga.Experiment.on(cfg).recombine().run_cohort(gs, seed=0, counts=[4, 0, 2])
+    assert [len(r) for r in c.results] == [4, 0, 2]
+    assert len(c) == 6
+    # zero-count subject: empty records, but present with stamped genotype + refdata
+    zero = c.result_for("D1")
+    assert zero.records == []
+    assert zero.genotypes[0].subject_id == "D1"
+    assert c.refdata_for("D1") is not None
+
+
+def test_run_cohort_counts_length_mismatch_raises():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id=f"D{s}") for s in range(2)]
+    with pytest.raises(ValueError, match="length"):
+        ga.Experiment.on(cfg).recombine().run_cohort(gs, counts=[1])
+
+
+def test_run_cohort_duplicate_subject_ids_raise():
+    cfg = _cfg()
+    gs = [Genotype.sample(cfg, seed=s, subject_id="DUP") for s in range(2)]
+    with pytest.raises(ValueError, match="duplicate"):
+        ga.Experiment.on(cfg).recombine().run_cohort(gs, n_per_subject=1)
+
+
+def test_run_cohort_mutual_exclusions():
+    cfg = _cfg()
+    g = Genotype.sample(cfg, seed=0, subject_id="A")
+    with pytest.raises(ValueError, match="non-empty"):
+        ga.Experiment.on(cfg).recombine().run_cohort([])
+    with pytest.raises(ValueError, match="with_genotype"):
+        ga.Experiment.on(cfg).with_genotype(g).recombine().run_cohort([g])
+    with pytest.raises(ValueError, match="restrict_alleles"):
+        (ga.Experiment.on(cfg).recombine()
+         .restrict_alleles(v=cfg.v_alleles[next(iter(cfg.v_alleles))][0].name)
+         .run_cohort([g]))
+
+
+def test_run_cohort_cartridge_hash_mismatch_raises():
+    cfg = _cfg()
+    g = Genotype.sample(cfg, seed=0, subject_id="A")
+    g._source_hash = "sha256:deadbeef"          # forge a mismatch
+    with pytest.raises(ValueError, match="different cartridge"):
+        ga.Experiment.on(cfg).recombine().run_cohort([g])
+
+
+def test_run_cohort_failure_midway_leaves_base_experiment_clean():
+    cfg = _cfg()
+    good = Genotype.sample(cfg, seed=0, subject_id="A")
+    bad = Genotype.sample(cfg, seed=1, subject_id="B")
+    import GenAIRR.genotype as _gmod
+    exp = ga.Experiment.on(cfg).recombine()
+    orig_snapshot = _gmod.Genotype._snapshot
+
+    calls = {"n": 0}
+
+    def boom(self):
+        calls["n"] += 1
+        if calls["n"] == 2:                      # fail on the 2nd subject
+            raise RuntimeError("forced compile-time failure")
+        return orig_snapshot(self)
+
+    _gmod.Genotype._snapshot = boom
+    try:
+        with pytest.raises(RuntimeError, match="forced"):
+            exp.run_cohort([good, bad], n_per_subject=1, seed=0)
+    finally:
+        _gmod.Genotype._snapshot = orig_snapshot
+    # base experiment is untouched and still runnable
+    assert exp._genotype is None
+    assert len(exp.run_records(n=2, seed=1)) == 2
