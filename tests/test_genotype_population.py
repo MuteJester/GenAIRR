@@ -108,7 +108,7 @@ def test_deletion_validation():
 def test_ensure_viable_raises_when_all_deleted():
     cfg = _cfg()
     with pytest.raises(ValueError, match="viable|deletion"):
-        Genotype.sample(cfg, seed=0, haplotype_deletion_prob=1.0)
+        Genotype.sample(cfg, seed=0, haplotype_deletion_prob=1.0, max_resamples=10)
     g = Genotype.sample(cfg, seed=0, haplotype_deletion_prob=1.0, ensure_viable=False)
     assert all(g.carried_alleles("V", gene) == set() for gene in cfg.v_alleles)
 
