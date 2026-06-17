@@ -201,3 +201,75 @@ def test_prior_provenance_survives_snapshot():
     g = Genotype.sample(cfg, seed=1)
     snap = g._snapshot()
     assert snap.prior_provenance == g.prior_provenance
+
+
+# ── Task 6: sample plane consumption (catalogue alleles) ─────────
+
+
+def _planed_cfg():
+    import copy
+    cfg = copy.deepcopy(_cfg())
+    vg, a0, a1 = _vg_two_alleles(cfg)
+    cfg.genotype_priors = PopulationGenotypeModel(
+        model_id="m1", source="toy",
+        allele_frequencies={"V": {vg: {a0: 100.0, a1: 1.0}}},
+        haplotype_deletion_prob={"V": {vg: 0.0}},
+        chromosome_weights=(0.5, 0.5),
+    )
+    return cfg, vg, a0, a1
+
+
+def test_sample_auto_uses_plane_with_provenance():
+    cfg, vg, a0, a1 = _planed_cfg()
+    homo_a0 = sum(1 for s in range(60)
+                  if Genotype.sample(cfg, seed=s).carried_alleles("V", vg) == {a0})
+    assert homo_a0 > 40  # dominant plane allele -> usually homozygous-common
+    g = Genotype.sample(cfg, seed=1)
+    assert g.prior_provenance["allele_frequencies"] == "cartridge"
+    assert g.prior_provenance["haplotype_deletion_prob"] == "cartridge"
+    assert g.prior_provenance["chromosome_weights"] == "cartridge"
+    assert g.prior_provenance["model_id"] == "m1"
+    assert g.prior_provenance["model_checksum"] == cfg.genotype_priors.content_checksum()
+
+
+def test_sample_opt_out_is_uniform():
+    cfg, vg, a0, a1 = _planed_cfg()
+    g = Genotype.sample(cfg, seed=1, use_cartridge_priors=False)
+    assert g.prior_provenance["allele_frequencies"] == "uniform"
+    assert g.prior_provenance["haplotype_deletion_prob"] == "default"
+    assert g.prior_provenance["chromosome_weights"] == "default"
+    assert g.prior_provenance["model_id"] is None
+    # uniform: a1 should appear materially more than under the biased plane
+    a1_seen = sum(1 for s in range(60)
+                  if a1 in Genotype.sample(cfg, seed=s, use_cartridge_priors=False)
+                  .carried_alleles("V", vg))
+    assert a1_seen > 5
+
+
+def test_sample_explicit_overrides_plane():
+    cfg, vg, a0, a1 = _planed_cfg()
+    g = Genotype.sample(cfg, seed=1, allele_frequencies={"V": {vg: {a1: 1.0}}})
+    assert g.prior_provenance["allele_frequencies"] == "explicit"
+    assert g.carried_alleles("V", vg) <= {a1}
+
+
+def test_sample_mixed_sourcing():
+    cfg, vg, a0, a1 = _planed_cfg()
+    g = Genotype.sample(cfg, seed=2, allele_frequencies={"V": {vg: {a0: 1.0}}})
+    # explicit freq, cartridge deletion, cartridge chromosome weights
+    assert g.prior_provenance["allele_frequencies"] == "explicit"
+    assert g.prior_provenance["haplotype_deletion_prob"] == "cartridge"
+    assert g.prior_provenance["chromosome_weights"] == "cartridge"
+
+
+def test_include_cartridge_novel_alleles_validated():
+    cfg, vg, a0, a1 = _planed_cfg()
+    with pytest.raises(ValueError, match="include_cartridge_novel_alleles"):
+        Genotype.sample(cfg, seed=1, include_cartridge_novel_alleles="yes")
+
+
+def test_sample_no_plane_unchanged():
+    cfg = _cfg()  # no plane
+    g = Genotype.sample(cfg, seed=3)
+    assert g.prior_provenance["allele_frequencies"] == "uniform"
+    assert g.prior_provenance["haplotype_deletion_prob"] == "default"
