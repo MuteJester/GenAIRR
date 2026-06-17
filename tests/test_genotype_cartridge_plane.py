@@ -266,6 +266,10 @@ def test_include_cartridge_novel_alleles_validated():
     cfg, vg, a0, a1 = _planed_cfg()
     with pytest.raises(ValueError, match="include_cartridge_novel_alleles"):
         Genotype.sample(cfg, seed=1, include_cartridge_novel_alleles="yes")
+    # integers must NOT slip through (1 == True / 0 == False in Python)
+    for bad in (0, 1, 2):
+        with pytest.raises(ValueError, match="include_cartridge_novel_alleles"):
+            Genotype.sample(cfg, seed=1, include_cartridge_novel_alleles=bad)
 
 
 def test_sample_no_plane_unchanged():

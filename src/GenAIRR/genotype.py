@@ -671,7 +671,10 @@ class Genotype:
 
         if isinstance(max_resamples, bool) or not isinstance(max_resamples, int) or max_resamples < 1:
             raise ValueError(f"max_resamples must be an int >= 1, got {max_resamples!r}")
-        if include_cartridge_novel_alleles not in ("auto", True, False):
+        # Identity checks (not `in (...)`): Python's `1 == True` / `0 == False`
+        # would otherwise let integers slip through and silently act like False.
+        _icna = include_cartridge_novel_alleles
+        if not (_icna is True or _icna is False or _icna == "auto"):
             raise ValueError(
                 "include_cartridge_novel_alleles must be 'auto', True, or False, "
                 f"got {include_cartridge_novel_alleles!r}")
@@ -822,13 +825,14 @@ class Genotype:
         """Point a drawn genotype back at the base cfg and register only the
         novels it actually carries, so effective_dataconfig() injects carried
         novels (and nothing else). Task 7 supplies ``novel_helper``."""
+        import copy as _copy
         g._cfg = base_cfg
         if novel_helper is None:
             return
         carried = g._carried_allele_names()
         for name, info in novel_helper._novel.items():
             if name in carried:
-                g._novel[name] = info
+                g._novel[name] = _copy.deepcopy(info)
 
     @classmethod
     def _draw_one(cls, cfg, seed, segs, freqs, delp, cw, subject_id, source_hash):
