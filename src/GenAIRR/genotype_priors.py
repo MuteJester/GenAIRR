@@ -165,3 +165,41 @@ class PopulationGenotypeModel:
             raise ValueError(
                 f"{where}: D-segment prior on a VJ chain is meaningless (no D pool). "
                 f"Drop the D entries or use a VDJ cartridge.")
+
+    def content_checksum(self) -> str:
+        """Canonical sha256 of the plane's semantic content — stable across dict
+        insertion order, int-vs-float spelling, and DNA case. This (not the
+        pickle-based DataConfig checksum) is what manifest/provenance report."""
+
+        def _num(x):
+            return repr(float(x))
+
+        def _freqs(d):
+            return {seg: {gene: {al: _num(w) for al, w in sorted(alleles.items())}
+                          for gene, alleles in sorted(genes.items())}
+                    for seg, genes in sorted(d.items())}
+
+        def _del(d):
+            return {seg: {gene: _num(p) for gene, p in sorted(genes.items())}
+                    for seg, genes in sorted(d.items())}
+
+        novels = sorted(
+            ({"name": nv.name, "segment": nv.segment, "base_allele": nv.base_allele,
+              "sequence": nv.sequence.upper(), "frequency": _num(nv.frequency),
+              "allow_nonfunctional": bool(nv.allow_nonfunctional)}
+             for nv in self.novel_alleles),
+            key=lambda r: r["name"],
+        )
+        canon = {
+            "schema": SCHEMA_TAG,
+            "model_id": self.model_id,
+            "source": self.source,
+            "description": self.description,
+            "version": self.version,
+            "allele_frequencies": _freqs(self.allele_frequencies),
+            "haplotype_deletion_prob": _del(self.haplotype_deletion_prob),
+            "chromosome_weights": [_num(self.chromosome_weights[0]), _num(self.chromosome_weights[1])],
+            "novel_alleles": novels,
+        }
+        blob = json.dumps(canon, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()

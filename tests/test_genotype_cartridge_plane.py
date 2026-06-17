@@ -80,3 +80,21 @@ def test_d_on_vj_rejected():
         allele_frequencies={"D": {"IGHD1-1": {"IGHD1-1*01": 1.0}}})
     with pytest.raises(ValueError, match="VJ|D-segment|D segment"):
         m.validate(chain_type="vj")
+
+
+def test_content_checksum_is_canonical():
+    vg = "IGHV1-2"
+    m1 = PopulationGenotypeModel(model_id="m", source="s",
+        allele_frequencies={"V": {vg: {"IGHV1-2*02": 2, "IGHV1-2*04": 1}}},
+        novel_alleles=[PopulationNovelAllele(name="IGHV1-2*99", segment="V",
+            base_allele="IGHV1-2*02", sequence="acgt", frequency=1.0)])
+    # same content, different dict insertion order + int-vs-float + DNA case
+    m2 = PopulationGenotypeModel(model_id="m", source="s",
+        allele_frequencies={"V": {vg: {"IGHV1-2*04": 1.0, "IGHV1-2*02": 2.0}}},
+        novel_alleles=[PopulationNovelAllele(name="IGHV1-2*99", segment="V",
+            base_allele="IGHV1-2*02", sequence="ACGT", frequency=1.0)])
+    assert m1.content_checksum() == m2.content_checksum()
+
+    m3 = PopulationGenotypeModel(model_id="m", source="s",
+        allele_frequencies={"V": {vg: {"IGHV1-2*02": 3.0, "IGHV1-2*04": 1.0}}})
+    assert m3.content_checksum() != m1.content_checksum()
