@@ -171,6 +171,124 @@ class PopulationGenotypeModel:
                 raise ValueError(f"{name}.novel_alleles: duplicate novel name {nv.name!r}")
             seen.add(nv.name)
 
+    @classmethod
+    def from_genotypes(cls, genotypes, *, cfg=None, pseudocount=0.0,
+                       include_novel=True, min_subjects=None,
+                       subject_id_policy="require_unique", segments=None,
+                       model_id="estimated", source="from_genotypes",
+                       description="", version="") -> "PopulationGenotypeModel":
+        """Estimate a population genotype model from observed ``Genotype`` objects.
+
+        Allele frequencies are counted **per carried chromosome** (homozygous=2,
+        hemizygous=1, deleted=0); ``pseudocount`` is added to every catalogue
+        allele per gene (and to a novel only when ``include_novel`` and the novel
+        belongs to the gene). Deletion probability is per haplotype:
+        ``deleted_haplotypes / (2 * n_subjects)`` (NO pseudocount). Genotypes
+        carrying a duplicated gene (copy-number > 1) are rejected — the plane is
+        deletion-only. ``subject_id_policy`` ('require_unique' | 'allow_duplicates')
+        guards against double-counting; ``min_subjects`` guards tiny estimates.
+        """
+        gts = list(genotypes)
+        if subject_id_policy not in ("require_unique", "allow_duplicates"):
+            raise ValueError(
+                f"subject_id_policy must be 'require_unique' or 'allow_duplicates', "
+                f"got {subject_id_policy!r}")
+        if subject_id_policy == "require_unique":
+            ids = [g.subject_id for g in gts]
+            if any(i is None for i in ids) and any(i is not None for i in ids):
+                raise ValueError(
+                    "subject_id_policy='require_unique': some genotypes have a "
+                    "subject_id and others don't")
+            present = [i for i in ids if i is not None]
+            if len(present) != len(set(present)):
+                raise ValueError(
+                    "subject_id_policy='require_unique': duplicate subject_id found")
+        n = len(gts)
+        if n == 0:
+            raise ValueError("from_genotypes: need at least one genotype")
+        if min_subjects is not None and n < min_subjects:
+            raise ValueError(
+                f"from_genotypes: min_subjects={min_subjects} but only {n} given")
+
+        if cfg is None:
+            cfg = gts[0]._cfg
+        seg_list = segments if segments is not None else cls._segments_for(cfg)
+
+        # reject duplicated genes (copy-number > 1 on any slot)
+        for g in gts:
+            for seg in _SEGMENTS:
+                for gene, haps in g._slots[seg].items():
+                    for hap in haps:
+                        if len(hap) > 1:
+                            raise ValueError(
+                                f"from_genotypes: genotype {g.subject_id!r} carries a "
+                                f"duplicated gene ({seg} {gene}, copy-number > 1); the "
+                                f"population plane is deletion-only — remove duplications "
+                                f"or collapse them before estimating")
+
+        by_seg = {"V": cfg.v_alleles, "D": cfg.d_alleles, "J": cfg.j_alleles}
+        freqs: Dict[str, Dict[str, Dict[str, float]]] = {}
+        dele: Dict[str, Dict[str, float]] = {}
+        novel_freq: Dict[str, float] = {}
+        novel_spec: Dict[str, "PopulationNovelAllele"] = {}
+
+        for seg in seg_list:
+            catalogue = by_seg[seg] or {}
+            freqs[seg] = {}
+            dele[seg] = {}
+            for gene, alleles in catalogue.items():
+                counts = {a.name: 0.0 for a in alleles}
+                deleted_haps = 0
+                for g in gts:
+                    haps = g._slots[seg].get(gene, [[], []])
+                    for hap in haps:
+                        names = {a for (a, _c, _w) in hap}
+                        if not names:
+                            deleted_haps += 1
+                            continue
+                        for nm in names:
+                            if nm in counts:
+                                counts[nm] += 1.0
+                            elif include_novel:
+                                novel_freq[nm] = novel_freq.get(nm, 0.0) + 1.0
+                if pseudocount:
+                    for nm in counts:
+                        counts[nm] += float(pseudocount)
+                kept = {nm: c for nm, c in counts.items() if c > 0}
+                if kept:
+                    freqs[seg][gene] = kept
+                dele[seg][gene] = deleted_haps / (2.0 * n)
+
+        novels: List[PopulationNovelAllele] = []
+        if include_novel:
+            for g in gts:
+                for name, info in getattr(g, "_novel", {}).items():
+                    if name in novel_freq and name not in novel_spec:
+                        novel_spec[name] = PopulationNovelAllele(
+                            name=name, segment=info["segment"],
+                            base_allele=info["base"],
+                            sequence=info["allele"].ungapped_seq.upper(),
+                            frequency=novel_freq[name],
+                            allow_nonfunctional=not info.get("functional", True))
+            for name, nv in novel_spec.items():
+                gene = name.split("*")[0]
+                seg = nv.segment
+                freqs.setdefault(seg, {}).setdefault(gene, {})[name] = novel_freq[name]
+                novels.append(nv)
+
+        return cls(allele_frequencies=freqs, haplotype_deletion_prob=dele,
+                   chromosome_weights=(0.5, 0.5), novel_alleles=novels,
+                   model_id=model_id, source=source, description=description,
+                   version=version)
+
+    @staticmethod
+    def _segments_for(cfg):
+        segs = ["V"]
+        if getattr(cfg, "d_alleles", None):
+            segs.append("D")
+        segs.append("J")
+        return segs
+
     @staticmethod
     def _normalize_chain_type(chain_type):
         """Return ``"vj"`` / ``"vdj"`` / ``None`` from a string or a

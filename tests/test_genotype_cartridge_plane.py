@@ -358,3 +358,69 @@ def test_novel_disabled():
     g = Genotype.sample(cfg, seed=1, include_cartridge_novel_alleles=False)
     assert g.prior_provenance["novel_alleles"] == "none"
     assert novel not in g.carried_alleles("V", vg)
+
+
+# ── Task 8: from_genotypes pure estimator ────────────────────────
+
+
+def test_from_genotypes_counts_chromosomes_and_deletions():
+    cfg = _cfg()
+    vg, a0, a1 = _vg_two_alleles(cfg)
+    # subject A: homozygous a0 (2 chromosomes of a0)
+    gA = (Genotype.from_dataconfig(cfg).homozygous(vg, a0)
+          .complete_from_reference().with_subject("A"))
+    # subject B: heterozygous a0/a1 (1 each)
+    gB = (Genotype.from_dataconfig(cfg).heterozygous(vg, a0, a1)
+          .complete_from_reference().with_subject("B"))
+    # subject C: a0 on hap0, deleted on hap1 (hemizygous) -> 1 deleted haplotype
+    gC = (Genotype.from_dataconfig(cfg).homozygous(vg, a0)
+          .delete_gene(vg, haplotype=1).complete_from_reference().with_subject("C"))
+
+    m = PopulationGenotypeModel.from_genotypes([gA, gB, gC], cfg=cfg,
+                                               model_id="est", source="unit")
+    # a0 chromosomes: A=2, B=1, C=1 => 4 ; a1: B=1 => 1
+    assert m.allele_frequencies["V"][vg][a0] == 4.0
+    assert m.allele_frequencies["V"][vg][a1] == 1.0
+    # deletions for vg: only C hap1 => 1 / (2*3) subjects
+    assert m.haplotype_deletion_prob["V"][vg] == pytest.approx(1.0 / 6.0)
+    m.validate(chain_type="vdj")  # estimator output is shape-valid
+
+
+def test_from_genotypes_duplicate_subject_id_rejected():
+    cfg = _cfg()
+    g1 = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("X")
+    g2 = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("X")
+    with pytest.raises(ValueError, match="duplicate subject"):
+        PopulationGenotypeModel.from_genotypes([g1, g2], cfg=cfg,
+                                               model_id="e", source="u")
+
+
+def test_from_genotypes_min_subjects():
+    cfg = _cfg()
+    g1 = Genotype.from_dataconfig(cfg).complete_from_reference().with_subject("X")
+    with pytest.raises(ValueError, match="min_subjects"):
+        PopulationGenotypeModel.from_genotypes([g1], cfg=cfg, min_subjects=5,
+                                               model_id="e", source="u")
+
+
+def test_from_genotypes_rejects_duplicated_gene():
+    cfg = _cfg()
+    vg, a0, a1 = _vg_two_alleles(cfg)
+    g = (Genotype.from_dataconfig(cfg).homozygous(vg, a0)
+         .duplicate_gene(vg, [a0, a1], haplotype=0)  # copy-number > 1 on a slot
+         .complete_from_reference().with_subject("D"))
+    with pytest.raises(ValueError, match="copy-number|duplicated gene"):
+        PopulationGenotypeModel.from_genotypes([g], cfg=cfg, model_id="e", source="u")
+
+
+def test_from_genotypes_pseudocount_scope():
+    cfg = _cfg()
+    vg, a0, a1 = _vg_two_alleles(cfg)
+    gA = (Genotype.from_dataconfig(cfg).homozygous(vg, a0)
+          .complete_from_reference().with_subject("A"))
+    m = PopulationGenotypeModel.from_genotypes([gA], cfg=cfg, pseudocount=0.5,
+                                               subject_id_policy="allow_duplicates",
+                                               model_id="e", source="u")
+    # a0 observed twice + 0.5 ; a1 unobserved but catalogue -> 0.5 (pseudocount only)
+    assert m.allele_frequencies["V"][vg][a0] == pytest.approx(2.5)
+    assert m.allele_frequencies["V"][vg][a1] == pytest.approx(0.5)
