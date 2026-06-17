@@ -82,6 +82,32 @@ def test_d_on_vj_rejected():
         m.validate(chain_type="vj")
 
 
+def test_d_on_vj_rejected_via_chaintype_object():
+    class _FakeChainType:  # ChainType-like: exposes has_d
+        has_d = False
+    m = PopulationGenotypeModel(model_id="t", source="s",
+        haplotype_deletion_prob={"D": {"IGHD1-1": 0.5}})
+    with pytest.raises(ValueError, match="VJ|D-segment|D segment"):
+        m.validate(chain_type=_FakeChainType())
+
+
+def test_gene_keys_must_be_strings():
+    with pytest.raises(ValueError, match="gene"):
+        PopulationGenotypeModel(model_id="t", source="s",
+            allele_frequencies={"V": {123: {"IGHV1-2*02": 1.0}}}).validate()
+    with pytest.raises(ValueError, match="gene"):
+        PopulationGenotypeModel(model_id="t", source="s",
+            haplotype_deletion_prob={"V": {123: 0.1}}).validate()
+
+
+def test_allow_nonfunctional_must_be_bool():
+    with pytest.raises(ValueError, match="allow_nonfunctional"):
+        PopulationGenotypeModel(model_id="t", source="s", novel_alleles=[
+            PopulationNovelAllele(name="IGHV1-2*99", segment="V",
+                base_allele="IGHV1-2*02", sequence="ACGT", frequency=1.0,
+                allow_nonfunctional="yes")]).validate()
+
+
 def test_content_checksum_is_canonical():
     vg = "IGHV1-2"
     m1 = PopulationGenotypeModel(model_id="m", source="s",

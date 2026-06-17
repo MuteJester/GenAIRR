@@ -70,10 +70,12 @@ class PopulationGenotypeModel:
     description: str = ""
     version: str = ""
 
-    def validate(self, chain_type: Optional[str] = None, *, name: str = "genotype_priors") -> None:
+    def validate(self, chain_type=None, *, name: str = "genotype_priors") -> None:
         """Catalogue-free shape + numeric/DNA sanity. Raises ``ValueError`` on
-        the first violation. ``chain_type="vj"`` rejects any D entry."""
-        ct = chain_type.lower() if isinstance(chain_type, str) else None
+        the first violation. ``chain_type`` rejects any D entry on a VJ chain;
+        it accepts ``"vj"`` / ``"vdj"`` strings or a ``ChainType``-like object
+        exposing ``has_d``."""
+        ct = self._normalize_chain_type(chain_type)
         if not isinstance(self.model_id, str) or not self.model_id:
             raise ValueError(f"{name}.model_id must be a non-empty string")
         if not isinstance(self.source, str) or not self.source:
@@ -90,6 +92,10 @@ class PopulationGenotypeModel:
             if not isinstance(genes, dict):
                 raise ValueError(f"{name}.allele_frequencies[{seg!r}] must be a dict")
             for gene, alleles in genes.items():
+                if not isinstance(gene, str) or not gene:
+                    raise ValueError(
+                        f"{name}.allele_frequencies[{seg!r}]: gene names must be "
+                        f"non-empty strings, got {gene!r}")
                 if not isinstance(alleles, dict) or not alleles:
                     raise ValueError(
                         f"{name}.allele_frequencies[{seg!r}][{gene!r}] must be a "
@@ -117,6 +123,10 @@ class PopulationGenotypeModel:
             if not isinstance(genes, dict):
                 raise ValueError(f"{name}.haplotype_deletion_prob[{seg!r}] must be a dict")
             for gene, p in genes.items():
+                if not isinstance(gene, str) or not gene:
+                    raise ValueError(
+                        f"{name}.haplotype_deletion_prob[{seg!r}]: gene names must be "
+                        f"non-empty strings, got {gene!r}")
                 if isinstance(p, bool) or not isinstance(p, (int, float)) or not math.isfinite(p):
                     raise ValueError(
                         f"{name}.haplotype_deletion_prob[{seg}][{gene}] must be finite, got {p!r}")
@@ -153,9 +163,26 @@ class PopulationGenotypeModel:
                     f"{name}.novel_alleles[{nv.name!r}]: sequence must be DNA (A/C/G/T only)")
             _check_weight(nv.frequency, f"{name}.novel_alleles[{nv.name!r}].frequency",
                           strict_positive=True)
+            if not isinstance(nv.allow_nonfunctional, bool):
+                raise ValueError(
+                    f"{name}.novel_alleles[{nv.name!r}].allow_nonfunctional must be a "
+                    f"bool, got {type(nv.allow_nonfunctional).__name__}")
             if nv.name in seen:
                 raise ValueError(f"{name}.novel_alleles: duplicate novel name {nv.name!r}")
             seen.add(nv.name)
+
+    @staticmethod
+    def _normalize_chain_type(chain_type):
+        """Return ``"vj"`` / ``"vdj"`` / ``None`` from a string or a
+        ``ChainType``-like object (one exposing ``has_d``)."""
+        if chain_type is None:
+            return None
+        if isinstance(chain_type, str):
+            return chain_type.lower()
+        has_d = getattr(chain_type, "has_d", None)
+        if has_d is None:
+            return None
+        return "vdj" if has_d else "vj"
 
     @staticmethod
     def _check_segment(seg, ct, where):
