@@ -424,3 +424,53 @@ def test_from_genotypes_pseudocount_scope():
     # a0 observed twice + 0.5 ; a1 unobserved but catalogue -> 0.5 (pseudocount only)
     assert m.allele_frequencies["V"][vg][a0] == pytest.approx(2.5)
     assert m.allele_frequencies["V"][vg][a1] == pytest.approx(0.5)
+
+
+# ── Task 9: builder set/estimate_genotype_priors ─────────────────
+
+
+def _builder_from_bundled():
+    """A ReferenceCartridgeBuilder seeded from the bundled IGH catalogue."""
+    from GenAIRR.cartridge_builder import ReferenceCartridgeBuilder
+    from GenAIRR.dataconfig.enums import ChainType
+    cfg = _cfg()
+    b = ReferenceCartridgeBuilder(ChainType.BCR_HEAVY)
+    b._v_alleles = {g: list(a) for g, a in cfg.v_alleles.items()}
+    b._d_alleles = {g: list(a) for g, a in (cfg.d_alleles or {}).items()}
+    b._j_alleles = {g: list(a) for g, a in cfg.j_alleles.items()}
+    b._metadata = cfg.metadata
+    return b, cfg
+
+
+def test_set_genotype_priors_catalogue_aware():
+    b, cfg = _builder_from_bundled()
+    vg = next(iter(cfg.v_alleles))
+    good = PopulationGenotypeModel(model_id="m", source="s",
+        allele_frequencies={"V": {vg: {cfg.v_alleles[vg][0].name: 1.0}}})
+    assert b.set_genotype_priors(good) is b  # chainable
+    assert b._genotype_priors is good
+
+    with pytest.raises(ValueError, match="not in the cartridge|unknown"):
+        b.set_genotype_priors(PopulationGenotypeModel(model_id="m", source="s",
+            allele_frequencies={"V": {"NOPE-GENE": {"NOPE*01": 1.0}}}))
+    with pytest.raises(ValueError, match="not a known allele|allele"):
+        b.set_genotype_priors(PopulationGenotypeModel(model_id="m", source="s",
+            allele_frequencies={"V": {vg: {"IGHVNOPE*99": 1.0}}}))
+
+
+def test_set_genotype_priors_validates_novel():
+    b, cfg = _builder_from_bundled()
+    with pytest.raises(ValueError, match="base allele|not found"):
+        b.set_genotype_priors(PopulationGenotypeModel(model_id="m", source="s",
+            novel_alleles=[PopulationNovelAllele(name="IGHV1-2*99", segment="V",
+                base_allele="IGHVNOPE*01", sequence="ACGT", frequency=1.0)]))
+
+
+def test_estimate_genotype_priors_chainable_and_attaches():
+    b, cfg = _builder_from_bundled()
+    vg, a0, a1 = _vg_two_alleles(cfg)
+    gA = Genotype.from_dataconfig(cfg).homozygous(vg, a0).complete_from_reference().with_subject("A")
+    gB = Genotype.from_dataconfig(cfg).heterozygous(vg, a0, a1).complete_from_reference().with_subject("B")
+    out = b.estimate_genotype_priors([gA, gB], model_id="est", source="cohort")
+    assert out is b
+    assert b._genotype_priors.allele_frequencies["V"][vg][a0] == 3.0
