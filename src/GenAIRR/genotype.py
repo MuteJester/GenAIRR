@@ -15,6 +15,7 @@ explicitly non-diploid fallback (see its docstring).
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from typing import Dict, List, Optional, Set, Tuple
 
 _SEGMENTS = ("V", "D", "J")
@@ -65,18 +66,19 @@ class Genotype:
         self.subject_id = str(sid)
         return self
 
-    def chromosome_weights(self, w0: float, w1: float) -> "Genotype":
-        import math
-
-        if not (math.isfinite(w0) and math.isfinite(w1)):
-            raise ValueError(
-                f"chromosome_weights must be finite, got {(w0, w1)}"
-            )
+    @staticmethod
+    def _check_chromosome_weights(w0, w1) -> Tuple[float, float]:
+        for w in (w0, w1):
+            if isinstance(w, bool) or not isinstance(w, (int, float)) or not math.isfinite(w):
+                raise ValueError(f"chromosome_weights must be finite numbers, got {(w0, w1)}")
         if w0 < 0 or w1 < 0 or (w0 + w1) <= 0:
             raise ValueError(
                 f"chromosome_weights must be non-negative and sum>0, got {(w0, w1)}"
             )
-        self._chromosome_weights = (float(w0), float(w1))
+        return (float(w0), float(w1))
+
+    def chromosome_weights(self, w0: float, w1: float) -> "Genotype":
+        self._chromosome_weights = self._check_chromosome_weights(w0, w1)
         return self
 
     def _check_allele(self, segment: str, gene: str, allele: str) -> None:
@@ -405,19 +407,24 @@ class Genotype:
         if segments_to_sample is None:
             return required
         segs = list(segments_to_sample)
+        seen = set()
         for s in segs:
             if s not in _SEGMENTS:
                 raise ValueError(f"unknown segment {s!r}; expected one of {_SEGMENTS}")
+            if s in seen:
+                raise ValueError(f"segments_to_sample contains duplicate segment {s!r}")
+            seen.add(s)
             if not _alleles_by_gene(cfg, s):
                 raise ValueError(f"cartridge has no {s} segment")
-        missing = [r for r in required if r not in segs]
+        missing = [r for r in required if r not in seen]
         if missing:
             raise ValueError(
                 f"segments_to_sample must cover the chain's required segments "
                 f"{required}; missing {missing}. Partial sampling is not supported "
                 f"by Genotype.sample (it must return a runnable genotype)."
             )
-        return segs
+        # canonical _SEGMENTS order so the result is independent of input order
+        return [s for s in _SEGMENTS if s in seen]
 
     @classmethod
     def _gene_segment_index(cls, cfg, segs) -> Dict[str, List[str]]:
@@ -437,16 +444,41 @@ class Genotype:
     @classmethod
     def _normalize_freq_spec(cls, cfg, spec, segs):
         """Return nested ``{seg: {gene: {allele: weight}}}`` from a nested or flat
-        ``allele_frequencies`` spec, validating segment/gene addressing."""
+        ``allele_frequencies`` spec, fully validating segment/gene/allele
+        addressing and shapes (unknown names and malformed values raise)."""
         if spec is None:
             return {}
+        if not isinstance(spec, Mapping):
+            raise ValueError(
+                "allele_frequencies must be a mapping (or 'usage_as_prior' / None), "
+                f"got {type(spec).__name__}"
+            )
         nested: Dict[str, Dict[str, Dict[str, float]]] = {}
         keys = set(spec)
         if keys and keys <= set(_SEGMENTS):  # segment-keyed (nested) shape
             for seg, genes in spec.items():
                 if seg not in segs:
-                    raise ValueError(f"allele_frequencies: segment {seg!r} not being sampled")
-                nested.setdefault(seg, {}).update(genes)
+                    raise ValueError(
+                        f"allele_frequencies: segment {seg!r} is not being sampled "
+                        f"(sampling {segs})"
+                    )
+                if not isinstance(genes, Mapping):
+                    raise ValueError(
+                        f"allele_frequencies[{seg!r}] must be a mapping of "
+                        f"gene -> {{allele: weight}}, got {type(genes).__name__}"
+                    )
+                catalogue = _alleles_by_gene(cfg, seg)
+                for gene, alleles in genes.items():
+                    if gene not in catalogue:
+                        raise ValueError(
+                            f"allele_frequencies: {seg} gene {gene!r} is not in the cartridge"
+                        )
+                    if not isinstance(alleles, Mapping) or not alleles:
+                        raise ValueError(
+                            f"allele_frequencies[{seg!r}][{gene!r}] must be a non-empty "
+                            f"mapping of allele -> weight"
+                        )
+                    nested.setdefault(seg, {})[gene] = alleles
         else:  # flat {gene: {...}} shape
             gidx = cls._gene_segment_index(cfg, segs)
             for gene, alleles in spec.items():
@@ -457,6 +489,11 @@ class Genotype:
                     raise ValueError(
                         f"allele_frequencies: gene {gene!r} is ambiguous across segments "
                         f"{segs_for}; use the {{segment: {{gene: ...}}}} shape"
+                    )
+                if not isinstance(alleles, Mapping) or not alleles:
+                    raise ValueError(
+                        f"allele_frequencies[{gene!r}] must be a non-empty mapping of "
+                        f"allele -> weight"
                     )
                 nested.setdefault(segs_for[0], {})[gene] = alleles
         return nested
@@ -479,8 +516,14 @@ class Genotype:
                     f"allele_frequencies='usage_as_prior': cartridge allele_usage has no "
                     f"entries for requested segment {seg!r}"
                 )
+            catalogue = _alleles_by_gene(cfg, seg)
             for allele_name, w in table.items():
                 gene = allele_name.split("*")[0]
+                if gene not in catalogue:
+                    raise ValueError(
+                        f"allele_frequencies='usage_as_prior': usage allele {allele_name!r} "
+                        f"maps to {seg} gene {gene!r}, which is not in the cartridge catalogue"
+                    )
                 nested.setdefault(seg, {}).setdefault(gene, {})[allele_name] = w
         return nested
 
@@ -534,15 +577,20 @@ class Genotype:
                 for gene in out[seg]:
                     out[seg][gene] = p
             return out
-        if not isinstance(spec, dict):
+        if not isinstance(spec, Mapping):
             raise ValueError(
-                f"haplotype_deletion_prob must be a float or a dict, got {type(spec).__name__}"
+                f"haplotype_deletion_prob must be a float or a mapping, got {type(spec).__name__}"
             )
         keys = set(spec)
         if keys and keys <= set(_SEGMENTS):  # nested {seg: {gene: prob}}
             for seg, genes in spec.items():
                 if seg not in segs:
                     raise ValueError(f"haplotype_deletion_prob: segment {seg!r} not being sampled")
+                if not isinstance(genes, Mapping):
+                    raise ValueError(
+                        f"haplotype_deletion_prob[{seg!r}] must be a mapping of "
+                        f"gene -> probability, got {type(genes).__name__}"
+                    )
                 for gene, p in genes.items():
                     if gene not in out[seg]:
                         raise ValueError(f"haplotype_deletion_prob: unknown {seg} gene {gene!r}")
@@ -591,37 +639,57 @@ class Genotype:
 
         With ``ensure_viable=True`` (default), the draw is repeated (with a
         deterministic sub-seed) up to ``max_resamples`` times until at least one
-        chromosome carries every required segment, raising ``ValueError`` if that
-        is impossible under the given deletion settings.
+        **positive-weight** chromosome carries every required segment, raising
+        ``ValueError`` if that is impossible under the given deletion settings.
+
+        NOTE: with the default ``ensure_viable=True`` the result is Hardy-Weinberg
+        **conditioned on viability** (draws with no complete usable haplotype are
+        rejected), not the unconditional HW distribution. Use
+        ``ensure_viable=False`` for the raw (possibly infeasible) HW draw.
         """
+        import random
+
         if isinstance(max_resamples, bool) or not isinstance(max_resamples, int) or max_resamples < 1:
             raise ValueError(f"max_resamples must be an int >= 1, got {max_resamples!r}")
+        cw = cls._check_chromosome_weights(*chromosome_weights)
         segs = cls._resolve_sample_segments(cfg, segments_to_sample)
         freqs = cls._resolve_allele_frequencies(cfg, allele_frequencies, segs)
         delp = cls._resolve_haplotype_deletion(cfg, haplotype_deletion_prob, segs)
+        # Compute the cartridge content hash ONCE (it rebuilds refdata + hashes);
+        # reuse it across all draws instead of recomputing per attempt.
+        source_hash = cfg.cartridge_manifest()["hashes"]["refdata_content_hash"]
+        # Derive each attempt's sub-seed from a base RNG so a failed attempt at
+        # `seed` cannot collide with a direct draw at `seed + 1`.
+        base_rng = random.Random(seed)
 
         attempts = max_resamples if ensure_viable else 1
-        for attempt in range(attempts):
-            g = cls._draw_one(
-                cfg, seed + attempt, segs, freqs, delp, chromosome_weights, subject_id
-            )
-            if not ensure_viable or g._is_viable(cfg):
+        for _attempt in range(attempts):
+            sub_seed = base_rng.getrandbits(63)
+            g = cls._draw_one(cfg, sub_seed, segs, freqs, delp, cw, subject_id, source_hash)
+            if not ensure_viable or g._is_viable(cfg, cw):
                 return g
         raise ValueError(
             f"could not sample a viable genotype after {max_resamples} attempts; "
-            f"haplotype_deletion_prob is too high to leave a complete haplotype "
-            f"for required segments {cls._required_segments(cfg)}"
+            f"haplotype_deletion_prob is too high to leave a complete, positive-weight "
+            f"haplotype for required segments {cls._required_segments(cfg)} "
+            f"(chromosome_weights={cw})"
         )
 
     @classmethod
-    def _draw_one(cls, cfg, seed, segs, freqs, delp, chromosome_weights, subject_id):
+    def _draw_one(cls, cfg, seed, segs, freqs, delp, cw, subject_id, source_hash):
         import random
 
         rng = random.Random(seed)
-        g = cls.from_dataconfig(cfg)
-        g.chromosome_weights(*chromosome_weights)  # validates finite/non-negative/sum>0
-        if subject_id is not None:
-            g.with_subject(subject_id)
+        # Build a bare Genotype directly (avoid from_dataconfig, which recomputes
+        # the cartridge hash on every draw); reuse the precomputed source_hash.
+        g = cls.__new__(cls)
+        g._cfg = cfg
+        g._permissive = False
+        g.subject_id = subject_id
+        g._chromosome_weights = cw
+        g._slots = {s: {} for s in _SEGMENTS}
+        g._novel = {}
+        g._source_hash = source_hash
         for seg in segs:
             for gene in _alleles_by_gene(cfg, seg):
                 pdel = delp[seg][gene]
@@ -634,8 +702,15 @@ class Genotype:
                 g._slots[seg][gene] = slots
         return g
 
-    def _is_viable(self, cfg) -> bool:
+    def _is_viable(self, cfg, chromosome_weights=None) -> bool:
+        """A genotype is viable iff at least one chromosome that can actually be
+        expressed (positive chromosome weight) carries every required segment.
+        A complete haplotype on a zero-weight chromosome does NOT count — the
+        engine would never draw it."""
+        cw = chromosome_weights if chromosome_weights is not None else self._chromosome_weights
         for c in (0, 1):
+            if cw[c] <= 0:
+                continue
             if all(
                 any(self._slots[seg].get(gene, [[], []])[c] for gene in self._slots[seg])
                 for seg in self._required_segments(cfg)

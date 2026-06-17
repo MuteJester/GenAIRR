@@ -119,6 +119,79 @@ def test_max_resamples_validation():
         Genotype.sample(cfg, seed=0, max_resamples=0)
 
 
+def test_nested_freq_validation_no_silent_ignore():
+    cfg = _cfg()
+    vg = next(iter(cfg.v_alleles))
+    with pytest.raises(ValueError, match="not in the cartridge"):
+        Genotype.sample(cfg, seed=0, allele_frequencies={"V": {"NOPE": {"NOPE*01": 1.0}}})
+    with pytest.raises(ValueError, match="must be a mapping"):
+        Genotype.sample(cfg, seed=0, allele_frequencies={"V": []})
+    with pytest.raises(ValueError, match="non-empty mapping"):
+        Genotype.sample(cfg, seed=0, allele_frequencies={"V": {vg: None}})
+    with pytest.raises(ValueError, match="non-empty mapping"):
+        Genotype.sample(cfg, seed=0, allele_frequencies={"V": {vg: {}}})
+    with pytest.raises(ValueError, match="must be a mapping"):
+        Genotype.sample(cfg, seed=0, allele_frequencies=True)
+
+
+def test_deletion_dict_non_mapping_raises():
+    cfg = _cfg()
+    with pytest.raises(ValueError, match="must be a mapping"):
+        Genotype.sample(cfg, seed=0, haplotype_deletion_prob={"V": []})
+
+
+def test_segments_dedup_and_order_invariant():
+    cfg = _cfg()
+    with pytest.raises(ValueError, match="duplicate segment"):
+        Genotype.sample(cfg, seed=0, segments_to_sample=("V", "V", "D", "J"))
+    # order-invariant: same seed, reordered segments -> identical genotype
+    a = Genotype.sample(cfg, seed=3, segments_to_sample=("V", "D", "J"))
+    b = Genotype.sample(cfg, seed=3, segments_to_sample=("J", "D", "V"))
+    assert a.to_table() == b.to_table()
+
+
+def test_zero_weight_chromosome_never_expressed():
+    cfg = _cfg()
+    # 100% express chromosome 1; chromosome 0 must never appear in records.
+    g = Genotype.sample(cfg, seed=4, chromosome_weights=(0.0, 1.0))
+    res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
+        n=60, seed=1, expose_provenance=True
+    )
+    assert all(r["haplotype"] == 1 for r in res)
+
+
+def test_zero_weight_chromosome_not_counted_viable():
+    cfg = _cfg()
+    # Delete heavily on chromosome 1 only, but give all weight to chromosome 1:
+    # the only complete haplotype (chrom 0) has zero weight -> not viable -> raises.
+    with pytest.raises(ValueError, match="positive-weight|viable"):
+        Genotype.sample(
+            cfg,
+            seed=0,
+            haplotype_deletion_prob={"J": {gene: 1.0 for gene in cfg.j_alleles}},
+            chromosome_weights=(1.0, 0.0),
+            max_resamples=5,
+        )
+
+
+def test_chromosome_weights_validation_in_sample():
+    cfg = _cfg()
+    with pytest.raises(ValueError, match="finite"):
+        Genotype.sample(cfg, seed=0, chromosome_weights=(float("nan"), 1.0))
+    with pytest.raises(ValueError, match="non-negative"):
+        Genotype.sample(cfg, seed=0, chromosome_weights=(-1.0, 1.0))
+
+
+def test_conditioned_vs_unconditioned_viability():
+    cfg = _cfg()
+    # ensure_viable=False can yield an infeasible (no complete haplotype) draw at
+    # high deletion; ensure_viable=True never does.
+    g_uncond = Genotype.sample(cfg, seed=0, haplotype_deletion_prob=1.0, ensure_viable=False)
+    assert not g_uncond._is_viable(cfg)  # all deleted -> not viable
+    with pytest.raises(ValueError):
+        Genotype.sample(cfg, seed=0, haplotype_deletion_prob=1.0, max_resamples=5)
+
+
 def test_end_to_end_truth_calls_are_carried():
     cfg = _cfg()
     g = Genotype.sample(cfg, seed=11, haplotype_deletion_prob=0.1)

@@ -288,9 +288,19 @@ res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(n=500, seed
 
 `Genotype.sample` always returns a **fully-specified, runnable** genotype. By
 default `ensure_viable=True` re-draws (up to `max_resamples`, deterministically)
-until at least one chromosome carries every required segment, raising a clear error
-only if your deletion settings make that impossible; pass `ensure_viable=False` to
-allow infeasible draws. Frequency priors accept the segment-aware
+until at least one **expressible** (positive-weight) chromosome carries every
+required segment, raising a clear error only if your deletion settings make that
+impossible; pass `ensure_viable=False` to allow infeasible draws.
+
+!!! note "Default sampling is HW *conditioned on viability*"
+    With the default `ensure_viable=True`, draws that leave no complete usable
+    haplotype are rejected, so per-gene deletion/zygosity rates are Hardy-Weinberg
+    **conditioned on at least one viable chromosome** — not the unconditional HW
+    rates. This only matters at high `haplotype_deletion_prob` (e.g. a single-J
+    cartridge with a high J-deletion prob). Use `ensure_viable=False` for the raw,
+    unconditional draw (which may be infeasible and rejected at compile).
+
+Frequency priors accept the segment-aware
 `{segment: {gene: {allele: weight}}}` shape (or a flat `{gene: …}` when the gene is
 unambiguous); a supplied gene's listed alleles define its distribution (weight `0`
 excludes an allele), and unspecified genes fall back to uniform.

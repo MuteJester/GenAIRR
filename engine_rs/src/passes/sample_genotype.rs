@@ -153,14 +153,19 @@ impl SampleGenotypePass {
     /// mode the feasibility-viable set is authoritative (empty → the
     /// caller raises).
     fn viable_set(&self, sim: &Simulation, ctx: &PassContext, strict: bool) -> Vec<usize> {
+        // A zero-weight chromosome is never expressed, so it can never make the
+        // genotype viable — exclude it from the candidate set entirely (rather
+        // than letting draw_haplotype fall back to a zero-weight chromosome).
+        let w = self.genotype.chromosome_weights();
+        let expressible = |c: usize| w[c] as f64 > 0.0;
         let feasible: Vec<usize> = (0..2)
-            .filter(|&c| self.is_viable(c, sim, ctx, true))
+            .filter(|&c| expressible(c) && self.is_viable(c, sim, ctx, true))
             .collect();
         if strict || !feasible.is_empty() {
             return feasible;
         }
         (0..2)
-            .filter(|&c| self.is_viable(c, sim, ctx, false))
+            .filter(|&c| expressible(c) && self.is_viable(c, sim, ctx, false))
             .collect()
     }
 
