@@ -435,15 +435,88 @@ class Genotype:
         return rng.choices(names, weights=weights, k=1)[0]
 
     @classmethod
+    def _normalize_freq_spec(cls, cfg, spec, segs):
+        """Return nested ``{seg: {gene: {allele: weight}}}`` from a nested or flat
+        ``allele_frequencies`` spec, validating segment/gene addressing."""
+        if spec is None:
+            return {}
+        nested: Dict[str, Dict[str, Dict[str, float]]] = {}
+        keys = set(spec)
+        if keys and keys <= set(_SEGMENTS):  # segment-keyed (nested) shape
+            for seg, genes in spec.items():
+                if seg not in segs:
+                    raise ValueError(f"allele_frequencies: segment {seg!r} not being sampled")
+                nested.setdefault(seg, {}).update(genes)
+        else:  # flat {gene: {...}} shape
+            gidx = cls._gene_segment_index(cfg, segs)
+            for gene, alleles in spec.items():
+                segs_for = gidx.get(gene)
+                if not segs_for:
+                    raise ValueError(f"allele_frequencies: unknown gene {gene!r}")
+                if len(segs_for) > 1:
+                    raise ValueError(
+                        f"allele_frequencies: gene {gene!r} is ambiguous across segments "
+                        f"{segs_for}; use the {{segment: {{gene: ...}}}} shape"
+                    )
+                nested.setdefault(segs_for[0], {})[gene] = alleles
+        return nested
+
+    @classmethod
+    def _usage_frequencies(cls, cfg, segs):
+        rm = getattr(cfg, "reference_models", None)
+        usage = getattr(rm, "allele_usage", None) if rm else None
+        if usage is None:
+            raise ValueError(
+                "allele_frequencies='usage_as_prior' requires a cartridge with a "
+                "typed reference_models.allele_usage; this cartridge has none"
+            )
+        nested: Dict[str, Dict[str, Dict[str, float]]] = {}
+        seg_attr = {"V": "v", "D": "d", "J": "j"}
+        for seg in segs:
+            table = getattr(usage, seg_attr[seg], None) or {}
+            if not table:
+                raise ValueError(
+                    f"allele_frequencies='usage_as_prior': cartridge allele_usage has no "
+                    f"entries for requested segment {seg!r}"
+                )
+            for allele_name, w in table.items():
+                gene = allele_name.split("*")[0]
+                nested.setdefault(seg, {}).setdefault(gene, {})[allele_name] = w
+        return nested
+
+    @classmethod
     def _resolve_allele_frequencies(cls, cfg, spec, segs):
-        # Task 2 fleshes out spec handling; uniform-within-gene for now.
-        return {
-            seg: {
-                gene: [(a.name, 1.0) for a in alleles]
-                for gene, alleles in _alleles_by_gene(cfg, seg).items()
-            }
-            for seg in segs
-        }
+        if spec == "usage_as_prior":
+            nested = cls._usage_frequencies(cfg, segs)
+        else:
+            nested = cls._normalize_freq_spec(cfg, spec, segs)
+        out: Dict[str, Dict[str, List[Tuple[str, float]]]] = {}
+        for seg in segs:
+            out[seg] = {}
+            for gene, alleles in _alleles_by_gene(cfg, seg).items():
+                names = {a.name for a in alleles}
+                supplied = nested.get(seg, {}).get(gene)
+                if supplied is None:
+                    out[seg][gene] = [(a.name, 1.0) for a in alleles]  # uniform fallback
+                    continue
+                pairs: List[Tuple[str, float]] = []
+                total = 0.0
+                for nm, w in supplied.items():
+                    if nm not in names:
+                        raise ValueError(f"{seg} gene {gene}: {nm!r} is not a known allele")
+                    if isinstance(w, bool) or not isinstance(w, (int, float)) or not math.isfinite(w) or w < 0:
+                        raise ValueError(
+                            f"{seg} gene {gene}: weight for {nm!r} must be finite and >= 0, got {w!r}"
+                        )
+                    if w > 0:
+                        pairs.append((nm, float(w)))
+                    total += w
+                if total <= 0 or not pairs:
+                    raise ValueError(
+                        f"{seg} gene {gene}: at least one allele weight must be > 0"
+                    )
+                out[seg][gene] = pairs
+        return out
 
     @classmethod
     def _resolve_haplotype_deletion(cls, cfg, spec, segs):
