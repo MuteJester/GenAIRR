@@ -141,29 +141,22 @@ newick = result.lineage_trees[0].to_newick()    # ground-truth lineage tree per 
 </div>
 
 [See the full quick start →](getting-started/quick-start.md){ .btn .btn-primary }
-[Learn by simulating one molecule →](getting-started/index.md){ .btn .btn-ghost }
+[Start the getting-started track →](getting-started/index.md){ .btn .btn-ghost }
 
 ---
 
 ## Choose your path
 
-Eight paths through the docs, organised by what you came here to
-do. Each one is a short curriculum. Pick the one that matches
-your task.
+A few of the most common starting points - the
+**[Choose your path](learn.md)** page has the full set (eight paths),
+each expanded into a short ordered reading list.
 
 | If you want to ... | Start here |
 |---|---|
-| **Simulate sequences** | [Quick start](getting-started/quick-start.md) → [The Experiment builder](guides/experiment-builder.md) → [API reference](reference/index.md) |
+| **Simulate sequences** | [Quick start](getting-started/quick-start.md) → [The Experiment builder](guides/experiment-builder.md) |
 | **Simulate per-individual genotypes** | [Genotypes](guides/genotype.md) → [Sampling & population priors](guides/genotype-priors.md) → [Cohorts](guides/genotype-cohorts.md) |
-| **Simulate clonal lineages & repertoires** | [Clonal simulation overview](guides/clonal-families.md) → [Clonal lineage trees](guides/clonal-lineage.md) → [Clonal repertoires](guides/clonal-repertoire.md) |
-| **Benchmark tools against ground truth** | [Quick start](getting-started/quick-start.md) → [Validate AIRR records](validation/validate-records.md) → [Benchmarking genotype inference](guides/genotype-benchmarking.md) |
-| **Build a reference cartridge** | [Reference cartridge concept](concepts/reference-cartridge.md) → [Build a reference cartridge](guides/build-reference-cartridge.md) |
-| **Get reproducible / validated output** | [Validation hub](validation/index.md) → [Validate AIRR records](validation/validate-records.md) → [Trace, replay, reproducibility](guides/trace-replay.md) |
-| **Understand the biological mechanisms** | [Recombination + junction biology](guides/recombination-junction.md), [SHM and mutation targeting](guides/shm-targeting.md), [Corruption + sequencing artefacts](guides/corruption-sequencing.md) |
-| **Contribute to GenAIRR** | [Architecture (Contributor)](architecture/index.md) |
-
-The **[Choose your path](learn.md)** page expands each of these
-into a short ordered reading list.
+| **Simulate clonal repertoires** | [Clonal overview](guides/clonal-families.md) → [Lineage trees](guides/clonal-lineage.md) → [Repertoires](guides/clonal-repertoire.md) |
+| **Benchmark tools against ground truth** | [Quick start](getting-started/quick-start.md) → [Benchmarking genotype inference](guides/genotype-benchmarking.md) |
 
 ---
 

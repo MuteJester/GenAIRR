@@ -95,6 +95,11 @@ result[0]["haplotype"]           # 0 or 1      - which chromosome this read used
 result.genotypes[0].to_table()   # ground-truth genotype (per gene, per haplotype)
 ```
 
+`subject_id` and `haplotype` are on every record; add
+`run_records(..., expose_provenance=True)` to also get the
+`truth_v_call` / `truth_d_call` / `truth_j_call` columns (the alleles the
+engine actually sampled).
+
 ## How recombination samples from a genotype
 
 When a genotype is attached, recombination runs a single phased sampling pass per
