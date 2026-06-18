@@ -141,13 +141,13 @@ workflow, mechanism additions.
    engine mental model, the audit-first workflow, the
    "before you add a new mechanism" checklist, deep links into
    the audit corpus.
-2. **[`docs/engine_architecture.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/engine_architecture.md)**
+2. **[`audit-docs/engine_architecture.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/engine_architecture.md)**
    the seven engine invariants. Required reading before any
    kernel work.
-3. **[`docs/adding_a_pass.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/adding_a_pass.md)**
+3. **[`audit-docs/adding_a_pass.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/adding_a_pass.md)**
    the pass-author playbook with the minimal pass template
    and the three required test patterns.
-4. **[`docs/validation_matrix.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/validation_matrix.md)**
+4. **[`audit-docs/validation_matrix.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/validation_matrix.md)**
    the navigable map: every guarantee → audit doc → test file
    → kernel invariant.
 

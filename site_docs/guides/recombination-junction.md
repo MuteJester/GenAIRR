@@ -83,7 +83,7 @@ walker can't disambiguate between alleles from the assembled
 sequence alone:
 
 ```python
-rec["v_call"]   # 'IGHV1-2*02,IGHV1-2*04'  ← tie set: two alleles equally consistent
+rec["v_call"]   # 'IGHVF1-G1*01,IGHVF1-G1*02'  ← tie set: two alleles equally consistent
 ```
 
 Two facts to know about call provenance:
@@ -125,11 +125,11 @@ the universe:
 # Per-experiment subset:
 ga.Experiment.on("human_igh") \
    .recombine() \
-   .restrict_alleles(v=["IGHV1-2*02", "IGHV3-23*01"])
+   .restrict_alleles(v=["IGHVF1-G1*01", "IGHVF1-G2*01"])
 
 # Per-cartridge weights:
 cfg.reference_models = ReferenceEmpiricalModels(
-    allele_usage=AlleleUsageSpec(v={"IGHV1-2*02": 100.0, "IGHV3-23*01": 60.0}),
+    allele_usage=AlleleUsageSpec(v={"IGHVF1-G1*01": 100.0, "IGHVF1-G2*01": 60.0}),
 )
 ```
 

@@ -350,6 +350,6 @@ not let you accidentally split them.
   biology stage that runs *after* recombination edits; SHM
   accumulates on the post-revision V and the inverted D.
 - For the engine-side mechanics + audit details, see
-  [`docs/d_inversion_design.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/d_inversion_design.md)
+  [`audit-docs/d_inversion_design.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/d_inversion_design.md)
   and
-  [`docs/receptor_revision_design.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/receptor_revision_design.md).
+  [`audit-docs/receptor_revision_design.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/receptor_revision_design.md).

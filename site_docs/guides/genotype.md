@@ -195,8 +195,9 @@ Notes and guard-rails:
 - **`complete_from_reference(policy=...)`** fills only genes you haven't touched.
   `"homozygous_first_reference"` (default) makes each unspecified gene homozygous
   for its first cartridge allele - note this is the *first listed* allele, **not**
-  a population-frequency-common one (GenAIRR has no frequency prior in this
-  release; the name says exactly what it does). `"heterozygous_first_two"` uses
+  a population-frequency-common one (this policy consults no frequency prior; for
+  frequency-driven genotypes use
+  [`Genotype.sample`](genotype-priors.md)). `"heterozygous_first_two"` uses
   the first two alleles.
 - Unknown gene/allele names, NaN/inf chromosome weights, and segments left with no
   usable allele are all rejected at build/attach with clear messages.
