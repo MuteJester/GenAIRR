@@ -42,9 +42,11 @@
 //! 2. `TrimChanged { V, Three, old: Some(prev.trim_3), new: derived_trim_3 }`
 //! 3. `SegmentReplaced { V, old_region, new_region, bytes_delta: 0 }`
 //!
-//! Slice C ships the pass surface only — no public DSL method yet,
-//! no AIRR `receptor_revision_applied` field yet. Those land in
-//! Slices D / E.
+//! The pass is wired through the `receptor_revision()` DSL method and
+//! the AIRR record exposes `receptor_revision_applied` + `original_v_call`
+//! (pre-revision V); `v_call` is the post-revision V. A genotype-aware
+//! variant (see `GenotypeVConstraint`) restricts the replacement V to the
+//! carried alleles on the drawn rearrangement chromosome.
 
 use crate::address;
 use crate::assignment::{AlleleInstance, TrimEnd};
@@ -334,6 +336,13 @@ impl ReceptorRevisionPass {
             .map_err(|r| PassError::replay(self.name(), r))?;
         let id = AlleleId::new(id_index);
 
+        // Resolve the allele FIRST so an unresolvable (out-of-range) recorded id
+        // surfaces as `missing_allele` — matching the non-genotype replay path's
+        // diagnostic contract — before the eligible/current/length checks.
+        let allele = refdata
+            .get(Segment::V, id)
+            .ok_or_else(|| PassError::missing_allele(self.name(), Segment::V, id_index))?;
+
         let eligible = self.genotype_eligible(constraint, c, current_v, refdata, old_v_len);
         if !eligible.iter().any(|(eid, _)| eid.index() == id_index) {
             return Err(PassError::invalid_distribution_output(
@@ -347,9 +356,6 @@ impl ReceptorRevisionPass {
                 },
             ));
         }
-        let allele = refdata
-            .get(Segment::V, id)
-            .ok_or_else(|| PassError::missing_allele(self.name(), Segment::V, id_index))?;
         if trim_i64 < 0 || trim_i64 > u16::MAX as i64 {
             return Err(PassError::invalid_distribution_output(
                 self.name(),
@@ -1135,6 +1141,20 @@ mod tests {
         let mut cursor = TraceCursor::from_owned(replay_records(true, Some(v1.index()), Some(2)));
         let err = run_with_ctx(&pass, &cfg, None, geno_sim(v0), Some(&mut cursor), None).unwrap_err();
         assert!(matches!(err, PassError::InvalidDistributionOutput { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn replay_genotype_unresolvable_allele_id_reports_missing_allele() {
+        let (cfg, v0, _v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0)], vec![(v0, 1.0)]], true);
+        // out-of-range recorded v_allele -> missing_allele (not "not_carried"),
+        // matching the non-genotype replay diagnostic contract.
+        let mut cursor = TraceCursor::from_owned(replay_records(true, Some(999), Some(0)));
+        let err = run_with_ctx(&pass, &cfg, None, geno_sim(v0), Some(&mut cursor), None).unwrap_err();
+        match err {
+            PassError::MissingAllele { allele_id, .. } => assert_eq!(allele_id, 999),
+            other => panic!("expected MissingAllele, got {other:?}"),
+        }
     }
 
     #[test]

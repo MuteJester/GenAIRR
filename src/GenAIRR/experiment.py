@@ -2194,12 +2194,11 @@ class Experiment:
         the plan, giving the canonical "recombine → revise →
         mutate/corrupt" order the design doc §2 requires.
 
-        The DSL does **not** expose ``receptor_revision_applied``
-        or ``original_v_call`` on the AIRR record yet — those are
-        the Slice E follow-up. End-to-end observability today is
-        via the trace (the three
-        ``receptor_revision.*`` records above) and the post-event
-        pool bytes.
+        AIRR records expose ``receptor_revision_applied`` (bool) and
+        ``original_v_call`` (the pre-revision V; empty when no
+        revision applied). ``v_call`` / ``truth_v_call`` are the
+        **post**-revision V. The three ``receptor_revision.*`` trace
+        records above remain available for replay.
 
         Returns ``self`` so the call chains fluently.
         """

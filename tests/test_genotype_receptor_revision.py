@@ -69,20 +69,37 @@ def test_same_haplotype_revision_truth_is_carried_changed_and_on_drawn_chromosom
         assert tv in _carried_on_hap(g, "V", r["haplotype"])
 
 
+def _equal_len_two_allele_v_gene(cfg):
+    for gene, al in cfg.v_alleles.items():
+        if len(al) >= 2 and len(al[0].ungapped_seq) == len(al[1].ungapped_seq):
+            return gene, al[0].name, al[1].name
+    raise AssertionError("no V gene with two equal-length alleles")
+
+
 def test_same_haplotype_false_admits_other_chromosome():
+    # Heterozygous V gene (a0 on hap0, a1 on hap1, equal length); force the
+    # rearrangement to always draw hap0 via chromosome_weights=(1, 0). a1 is
+    # carried ONLY on hap1, so it can never be the original V — its appearance as
+    # a revised truth V proves same_haplotype=False pulled across chromosomes.
     cfg = _cfg()
-    g = Genotype.sample(cfg, seed=12, subject_id="A")
+    vg, a0, a1 = _equal_len_two_allele_v_gene(cfg)
+    g = (Genotype.from_dataconfig(cfg)
+         .heterozygous(vg, a0, a1, segment="V")
+         .complete_from_reference()
+         .chromosome_weights(1.0, 0.0)
+         .with_subject("A"))
     res = (ga.Experiment.on(cfg).with_genotype(g)
            .recombine().receptor_revision(prob=1.0, same_haplotype=False)
-           .run_records(n=200, seed=4, expose_provenance=True))
+           .run_records(n=400, seed=4, expose_provenance=True))
     applied = [r for r in res if r.get("receptor_revision_applied")]
     assert applied
-    for r in applied:
-        # under both-haplotype mode the revised V is carried somewhere in the
-        # diploid genotype (union), and still differs from the original
-        gene = r["truth_v_call"].split("*")[0]
-        assert r["truth_v_call"] in g.carried_alleles("V", gene)
-        assert r["truth_v_call"] != r["original_v_call"]
+    # every rearrangement drew hap0, so any revision target carried only on hap1
+    # (here a1) is a genuine cross-chromosome replacement.
+    assert all(r["haplotype"] == 0 for r in res)
+    assert any(r["truth_v_call"] == a1 for r in applied), (
+        "same_haplotype=False must admit the opposite chromosome's allele")
+    # sanity: a1 is indeed hap1-exclusive in this genotype
+    assert a1 in _carried_on_hap(g, "V", 1) and a1 not in _carried_on_hap(g, "V", 0)
 
 
 def test_novel_v_can_be_revision_target():
