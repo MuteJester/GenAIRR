@@ -846,10 +846,12 @@ impl Pass for ReceptorRevisionPass {
     }
 
     fn requirements(&self) -> Vec<PassRequirement> {
-        // V must be assigned (and assembled) before receptor
-        // revision runs. RefData is required to resolve the
-        // replacement allele's bytes; the schedule analyser auto-
-        // derives the dependency from this declaration.
+        // The engine-enforced requirement is `AlleleAssignment(V)` (+ RefData to
+        // resolve the replacement allele's bytes); the schedule analyser derives
+        // the dependency from this declaration. The stronger "V region already
+        // assembled" guarantee is a lowering/schedule-position contract (Python
+        // inlines the pass after `push_assemble("J")`), backstopped at runtime by
+        // `old_v_region_len()` which errors if no V region is present.
         vec![
             PassRequirement::RefData,
             PassRequirement::AlleleAssignment(Segment::V),
@@ -1106,6 +1108,35 @@ mod tests {
         // contract violation — parity with the non-genotype path.
         let err =
             run_with_ctx(&pass, &cfg, Some(&contracts), geno_sim(v0), None, None).unwrap_err();
+        assert!(matches!(err, PassError::ContractViolation { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn genotype_replay_strict_post_event_contract_rejection_errors() {
+        use crate::contract::{Contract, ContractViolation};
+
+        struct RejectAll;
+        impl Contract for RejectAll {
+            fn name(&self) -> &str {
+                "reject_all_test"
+            }
+            fn verify(
+                &self,
+                _sim: &Simulation,
+                _refdata: Option<&RefDataConfig>,
+            ) -> Result<(), ContractViolation> {
+                Err(ContractViolation::new(self.name(), "rejected by test"))
+            }
+        }
+
+        let (cfg, v0, v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        let contracts = ContractSet::new().with(Box::new(RejectAll));
+        // A valid applied=true replay (v1, trim 2) must STILL be rejected by the
+        // post-event contract in strict mode — replay parity with the fresh path.
+        let mut cursor = TraceCursor::from_owned(replay_records(true, Some(v1.index()), Some(2)));
+        let err = run_with_ctx(&pass, &cfg, Some(&contracts), geno_sim(v0), Some(&mut cursor), None)
+            .unwrap_err();
         assert!(matches!(err, PassError::ContractViolation { .. }), "got {err:?}");
     }
 
