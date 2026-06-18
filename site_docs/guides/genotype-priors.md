@@ -59,6 +59,34 @@ excludes an allele), and unspecified genes fall back to uniform.
     explicit opt-in that reuses the cartridge's recombination `allele_usage` as a
     frequency proxy — convenient but biologically approximate.
 
+### Loading population frequencies
+
+GenAIRR has no built-in population-frequency loader yet (that is a deferred
+feature), but the `allele_frequencies` argument is a plain nested dict, so any
+table you assemble works. For realistic per-allele frequencies, build the dict
+from a population source — for example a frequency table you export from
+[VDJbase](https://vdjbase.org/) (which reports per-individual genotypes and
+allele frequencies across populations). Given a CSV with
+`segment,gene,allele,frequency` columns:
+
+```python
+import csv
+from collections import defaultdict
+
+freqs: dict = defaultdict(lambda: defaultdict(dict))
+with open("allele_frequencies.csv") as fh:           # your exported table
+    for row in csv.DictReader(fh):
+        freqs[row["segment"]][row["gene"]][row["allele"]] = float(row["frequency"])
+
+g = Genotype.sample(
+    cfg, seed=7,
+    allele_frequencies={s: dict(genes) for s, genes in freqs.items()},
+)
+```
+
+Allele names in the table must match the cartridge's names (see the naming note
+in the [overview](genotype.md)); genes you omit fall back to uniform.
+
 ## Population genotype models on a cartridge
 
 The `allele_frequencies` / `haplotype_deletion_prob` you pass to
@@ -86,8 +114,11 @@ model = PopulationGenotypeModel(
 `set_genotype_priors` validates the model against the cartridge: unknown
 genes/alleles raise, and any population novel allele goes through the same
 functional validation as `add_novel_allele` (conserved anchor, stop-free frame,
-base-allele match). A non-`None` plane becomes part of cartridge identity (it
-folds into `compute_checksum()` and the manifest).
+base-allele match). A non-`None` plane becomes part of **cartridge identity** —
+it folds into the cartridge's `compute_checksum()` (the content hash that changes
+whenever the reference changes) and its **manifest** (the cartridge's
+machine-readable provenance/identity record), so a prior baked onto a cartridge
+travels and versions with it.
 
 ### Estimating a model from observed genotypes
 

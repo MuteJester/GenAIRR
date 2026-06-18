@@ -39,13 +39,30 @@ haplotype-inference methods exploit (e.g. the IGHJ6-anchor approach), and GenAIR
 reproduces it.
 
 !!! note "Supported loci and chains"
-    Genotypes work on any GenAIRR reference cartridge — BCR **and** TCR, heavy
-    **and** light/α/β chains. On **VDJ** loci (IGH, TRB, TRD) the genotype spans
-    V, D and J and each rearrangement draws all three from one chromosome. On
-    **VJ** loci (IGK, IGL, TRA, TRG) there is no D segment: genotype V and J,
-    D rows are simply not required and are ignored. The examples below use the
-    human IGH cartridge, but the same API applies to every locus; just use that
-    cartridge's gene/allele names.
+    Genotypes work on any GenAIRR **reference cartridge** — a packaged germline
+    reference set (V/D/J alleles plus the empirical models for one locus; see
+    [Reference cartridge](../concepts/reference-cartridge.md)). They cover BCR
+    **and** TCR, heavy **and** light/α/β chains. On **VDJ** loci (IGH, TRB, TRD)
+    the genotype spans V, D and J and each rearrangement draws all three from one
+    chromosome. On **VJ** loci (IGK, IGL, TRA, TRG) there is no D segment:
+    genotype V and J, D rows are simply not required and are ignored. The
+    examples below use the human IGH cartridge, but the same API applies to every
+    locus; just use that cartridge's gene/allele names.
+
+!!! note "A note on the gene/allele names in these examples"
+    The examples use the bundled human IGH cartridge (`HUMAN_IGH_OGRDB`), whose
+    `metadata.reference_set` reads `"OGRDB V8"` — it is derived from
+    [OGRDB](https://ogrdb.airr-community.org/), the AIRR Community's *Open
+    Germline Receptor Database*, which provides curated immunoglobulin and T-cell
+    receptor germline gene sequences. In this cartridge the genes and alleles are
+    labelled like **`IGHVF1-G1*01`**, not the IMGT positional names
+    (**`IGHV1-69*01`**) you may be used to — that is simply this cartridge's
+    labelling. GenAIRR uses each cartridge's own gene/allele names **verbatim**:
+    they are exactly what appears in `v_call` / `truth_v_call` and in the
+    genotype tables, so they line up with the germline database you score
+    against. Substitute your own cartridge's names in the examples — many bundled
+    cartridges (for example `HUMAN_TCRB_IMGT` and the per-species `*_IMGT` sets)
+    use IMGT naming instead.
 
 ## Quick start
 
@@ -349,9 +366,18 @@ output against the planted novel sequence. (Write the base germline FASTA from
 
 A genotype experiment emits, by construction, everything an evaluation needs:
 
-- **Per-record fields:** `subject_id` and `haplotype` (`0`/`1`, the chromosome the
-  rearrangement used) are stamped on every AIRR record. Standard truth columns
-  (`truth_v_call`, …) are available with `expose_provenance=True`.
+- **Per-record fields:** `subject_id` and `haplotype` are **always** stamped on
+  every record; the truth/provenance columns (`truth_v_call` / `truth_d_call` /
+  `truth_j_call`, and `original_v_call` / `receptor_revision_applied` when
+  revision is used) require `expose_provenance=True`.
+- **AIRR-standard vs GenAIRR extensions:** `sequence_id`, `sequence`,
+  `sequence_alignment`, `v_call` / `d_call` / `j_call` etc. are standard
+  [AIRR Rearrangement](https://docs.airr-community.org/en/stable/datarep/rearrangements.html)
+  fields. `haplotype` (a `0`/`1` chromosome index — **not** the AIRR
+  `*_germline_alignment`/haplotype-set sense), `subject_id`, `truth_*`,
+  `original_v_call`, and `receptor_revision_applied` are **GenAIRR extension
+  columns** added for ground-truth benchmarking; you won't find them in the AIRR
+  schema.
 - **`result.genotypes`:** the list of attached `Genotype` objects (one per subject).
 - **`Genotype.to_table()` / `to_tsv(path)`:** the ground-truth genotype as a table
   — one row per (segment, gene) with `zygosity`
@@ -378,10 +404,27 @@ for row in result.genotypes[0].to_table():
 
 ## Limitations (this release)
 
-The genotype foundation is deliberately scoped. Deferred to later work:
+**Model assumptions** (what the genotype machinery does *not* try to capture, so
+you can judge whether it fits your study):
+
+- **Sampling is independent per gene.** `Genotype.sample` draws each gene
+  independently under a per-chromosome Hardy–Weinberg model — **no** linkage
+  disequilibrium, gene co-deletion blocks, ancestry, or donor-specific haplotype
+  structure (see the caveat box in
+  [Sampling & population priors](genotype-priors.md)). Hand-built genotypes are
+  exactly what you specify.
+- **Deletion, not duplication, in sampling.** Sampling models gene presence/
+  deletion only; gene duplication / copy-number > 1 must be built explicitly with
+  `duplicate_gene`.
+- **Receptor revision is haplotype-aware, not mechanistic.** It restricts the
+  replacement V to carried alleles on the drawn chromosome, but does not model
+  genomic V order, RSS constraints, upstream-V availability, or deletion of
+  intervening loci.
+
+**Deferred features:**
 
 - **External loaders** — importing genotypes from VDJbase / TIgGER / IgDiscover /
-  partis output.
+  partis output. (You can build the equivalent `Genotype` by hand today.)
 
 ## Backward compatibility
 

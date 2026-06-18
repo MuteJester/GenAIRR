@@ -26,8 +26,10 @@ cohort.to_csv("cohort.csv")   # combined, subject-tagged, unique sequence_id
 
 - `.subject_ids` / `.genotypes` / `.results` — per-subject, in input order.
 - `.result_for(sid)` / `.refdata_for(sid)` — one subject's `SimulationResult` and
-  the reference it ran against (preserved per subject, so `validate_records` and
-  novel-allele truth calls stay correct even when subjects differ).
+  the reference it ran against. Each subject can carry different novel/private
+  alleles, so its *effective* germline (base catalogue + that subject's novels)
+  differs; keeping it per subject is what lets `validate_records` and
+  novel-allele truth calls stay correct across a heterogeneous cohort.
 - `.records` — a fresh, subject-tagged, `sequence_id`-namespaced concatenation
   (each `sequence_id` is `"{subject_id}_{...}"`, so combined AIRR/FASTA export
   never collides).

@@ -33,9 +33,15 @@ Because GenAIRR already emits AIRR records with `v_call` **and**
 library(tigger); library(airr)
 rep    <- read_rearrangement("repertoire.tsv")     # GenAIRR's AIRR output
 germ_v <- readIgFasta("germline_V.fasta")          # cartridge V germline (names match v_call)
+# find_unmutated=TRUE asks inferGenotype to base calls on unmutated reads per
+# allele; the light-SHM simulation below provides them.
 geno   <- inferGenotype(rep, germline_db = germ_v, find_unmutated = TRUE)
 plotGenotype(geno)
 ```
+
+The `germline_V.fasta` written below is **ungapped** — fine for `inferGenotype`;
+if you go on to TIgGER's IMGT-gapped steps (`reassignAlleles`) supply a gapped V
+germline instead.
 
 TIgGER recovered the planted genotype **exactly**: every heterozygous gene → two
 alleles, every homozygous gene → one, every deleted gene → **absent**. Across all
@@ -48,6 +54,14 @@ independently agreed: **precision = 1.00** (zero false-positive alleles),
 and **all heterozygous genes fully resolved** (both alleles recovered). The two
 missed alleles were low-expression single-copy genes below IgDiscover's default
 expression threshold — a tool-tuning matter, not a simulation artefact.
+
+!!! note "These are upper-bound numbers on idealised data"
+    Near-perfect recovery is expected here: the simulated germline names match the
+    scoring database exactly, SHM is light and substitution-only, and there are no
+    indels, chimeras, or contamination. Real data is harder — which is the point
+    of being able to **dial difficulty up** (heavier SHM via `mutate`, sequencing
+    artefacts via the corruption passes, lower per-allele depth) and re-measure
+    how each tool degrades against the same known truth.
 
 ![GenAIRR-simulated genotype recovered by TIgGER and IgDiscover: planted vs inferred allele counts agree for every gene](../assets/genotype-tigger-recovery.png)
 
@@ -128,9 +142,19 @@ running their own aligner:
   ```
 
 - **[partis](https://github.com/psathyrella/partis)** — HMM annotation with
-  per-sample germline inference (`partis cache-parameters --infname reads.fa
-  --initial-germline-dir db/`). partis also reports per-sample allele support and
-  novel alleles, scored the same way.
+  per-sample germline inference. Start from the cartridge germline and cache
+  parameters into a parameter directory:
+
+  ```bash
+  partis cache-parameters --infname reads.fa \
+      --initial-germline-dir db/ --parameter-dir out/
+  ```
+
+  partis infers a per-sample germline set during this step (starting from
+  `--initial-germline-dir`) and writes it under `--parameter-dir`; see partis's
+  [germline-inference docs](https://github.com/psathyrella/partis/blob/main/docs/germline-inference.md)
+  for the exact output location. Score that recovered allele set against
+  `g.to_table()` the same way.
 
 Because the genotype is planted, every tool is scored identically: recovered
 allele set vs `genotype.to_table()` — presence precision/recall, zygosity, and
