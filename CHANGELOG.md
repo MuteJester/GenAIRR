@@ -2,6 +2,47 @@
 
 All notable changes to GenAIRR are documented here.
 
+## [2.3.0] - 2026-06-18
+
+### Added - Per-individual diploid genotypes
+
+A new `Genotype` layer makes V(D)J recombination haplotype-phased: attach a
+genotype to an `Experiment` and the V, D and J of each rearrangement are drawn
+from a single chromosome, honouring allele presence/absence, zygosity, gene
+deletion, copy number, and novel/private alleles.
+
+- **`Genotype` builder** - `from_dataconfig` / `permissive`, `homozygous` /
+  `heterozygous` / `delete_gene` / `duplicate_gene`, `add_novel_allele` (private
+  alleles injected into an effective reference), `complete_from_reference`,
+  `chromosome_weights`, `with_subject`, `to_table` / `to_tsv`.
+- **`Experiment.with_genotype(g)`** - phased recombination, with per-record
+  `subject_id` / `haplotype` provenance and `result.genotypes`.
+- **`Genotype.sample(...)`** - draw a genotype from population priors
+  (independent per-gene Hardy-Weinberg: allele frequencies + per-haplotype
+  deletion).
+- **Cartridge genotype-priors plane** - persist a donor-population germline
+  prior on a cartridge (`DataConfig.genotype_priors` / `PopulationGenotypeModel`);
+  author or estimate it (`PopulationGenotypeModel.from_genotypes`, builder
+  `set_genotype_priors` / `estimate_genotype_priors`); `Genotype.sample(cfg)`
+  consumes it with per-input provenance.
+- **`Experiment.run_cohort(...)`** - simulate many subjects (each with its own
+  genotype) in one call, returning a `CohortResult` with per-subject access and
+  combined export.
+- **Genotype-aware receptor revision** -
+  `receptor_revision(..., same_haplotype=True)` restricts the replacement V to
+  the carried alleles on the drawn rearrangement chromosome.
+
+### Documentation
+
+- New genotype guide cluster: overview, sampling & population priors, cohorts,
+  and benchmarking genotype inference (with a worked TIgGER / IgDiscover example
+  recovering a planted genotype).
+
+### Compatibility
+
+- Purely additive. An experiment with no genotype attached produces
+  byte-identical output to 2.2.0 (pinned by a checksum test).
+
 ## [2.0.0] — 2026-05-25
 
 ### Breaking Changes — Experiment DSL refactor for biological readability
