@@ -208,6 +208,9 @@ nav:
       - Clonal lineage trees: guides/clonal-lineage.md
       - Clonal repertoires (TCR & abundance): guides/clonal-repertoire.md
       - Genotypes (per-individual diploid): guides/genotype.md
+      - Genotype sampling & population priors: guides/genotype-priors.md
+      - Genotype cohorts: guides/genotype-cohorts.md
+      - Benchmarking genotype inference: guides/genotype-benchmarking.md
       - Junction N/P additions: guides/junction-additions.md
       - Targeted SHM rates: guides/shm-targeting.md
       - Corruption + sequencing artefacts: guides/corruption-sequencing.md
