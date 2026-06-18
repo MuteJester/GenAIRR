@@ -42,9 +42,11 @@
 //! 2. `TrimChanged { V, Three, old: Some(prev.trim_3), new: derived_trim_3 }`
 //! 3. `SegmentReplaced { V, old_region, new_region, bytes_delta: 0 }`
 //!
-//! Slice C ships the pass surface only — no public DSL method yet,
-//! no AIRR `receptor_revision_applied` field yet. Those land in
-//! Slices D / E.
+//! The pass is wired through the `receptor_revision()` DSL method and
+//! the AIRR record exposes `receptor_revision_applied` + `original_v_call`
+//! (pre-revision V); `v_call` is the post-revision V. A genotype-aware
+//! variant (see `GenotypeVConstraint`) restricts the replacement V to the
+//! carried alleles on the drawn rearrangement chromosome.
 
 use crate::address;
 use crate::assignment::{AlleleInstance, TrimEnd};
@@ -55,9 +57,19 @@ use crate::pass::{Pass, PassContext, PassError, PassRequirement};
 use crate::refdata::{Allele, AlleleId, RefDataConfig};
 use crate::trace::ChoiceValue;
 
+/// Per-haplotype carried-V candidates for genotype-aware receptor revision.
+/// `per_hap[c]` is the list of `(allele, mass)` (mass = weight * copies)
+/// carried on chromosome `c`. `same_haplotype` restricts the draw to the
+/// rearrangement chromosome; otherwise both haplotypes are aggregated.
+pub struct GenotypeVConstraint {
+    pub per_hap: [Vec<(AlleleId, f64)>; 2],
+    pub same_haplotype: bool,
+}
+
 pub struct ReceptorRevisionPass {
     prob: f64,
     v_distribution: Box<dyn Distribution<Output = AlleleId>>,
+    genotype_v: Option<GenotypeVConstraint>,
 }
 
 impl ReceptorRevisionPass {
@@ -78,12 +90,296 @@ impl ReceptorRevisionPass {
         Self {
             prob,
             v_distribution,
+            genotype_v: None,
         }
     }
 
     /// Read-only accessor for tests / report builders.
     pub fn prob(&self) -> f64 {
         self.prob
+    }
+
+    /// Attach a genotype-V constraint, switching the pass to genotype-aware
+    /// candidate selection (carried alleles on the drawn chromosome, current
+    /// V excluded). Builder — returns `self`.
+    #[must_use]
+    pub fn with_genotype_constraint(mut self, constraint: GenotypeVConstraint) -> Self {
+        self.genotype_v = Some(constraint);
+        self
+    }
+
+    /// Aggregated, current-excluded, same-length-eligible candidate pool for
+    /// genotype-aware revision. Aggregates mass by `AlleleId` (summing across
+    /// haplotypes when `!same_haplotype`, and collapsing duplicates within a
+    /// haplotype), drops the currently-assigned `current_v`, and keeps only
+    /// alleles whose length admits the retained slice.
+    fn genotype_eligible(
+        &self,
+        constraint: &GenotypeVConstraint,
+        c: usize,
+        current_v: AlleleId,
+        refdata: &RefDataConfig,
+        old_v_len: u32,
+    ) -> Vec<(AlleleId, f64)> {
+        use std::collections::BTreeMap;
+        let mut agg: BTreeMap<u32, f64> = BTreeMap::new();
+        let haps: &[Vec<(AlleleId, f64)>] = if constraint.same_haplotype {
+            std::slice::from_ref(&constraint.per_hap[c])
+        } else {
+            &constraint.per_hap
+        };
+        for list in haps {
+            for (id, mass) in list {
+                if *mass > 0.0 {
+                    *agg.entry(id.index()).or_insert(0.0) += *mass;
+                }
+            }
+        }
+        agg.into_iter()
+            .filter(|(idx, _)| *idx != current_v.index())
+            .filter(|(idx, _)| {
+                refdata
+                    .get(Segment::V, AlleleId::new(*idx))
+                    .map(|a| a.len() >= old_v_len)
+                    .unwrap_or(false)
+            })
+            .map(|(idx, mass)| (AlleleId::new(idx), mass))
+            .collect()
+    }
+
+    fn execute_genotype_aware(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+        constraint: &GenotypeVConstraint,
+    ) -> Result<Simulation, PassError> {
+        if !sim.assignments.has(Segment::V) {
+            return Err(PassError::missing_assignment(self.name(), Segment::V));
+        }
+        let refdata = ctx
+            .refdata
+            .ok_or_else(|| PassError::missing_refdata(self.name()))?;
+        let old_v_len = self.old_v_region_len(sim)?;
+        let current = sim.assignments.get(Segment::V).expect("V assigned");
+        let current_v = current.allele_id;
+        let c = current.haplotype.ok_or_else(|| {
+            PassError::invalid_plan_state(
+                self.name(),
+                "genotype-aware receptor revision requires a haplotype-stamped V \
+                 assignment (SampleGenotypePass must run first)",
+            )
+        })? as usize;
+
+        let replaying = ctx.replay_cursor.is_some();
+        let coin = if replaying {
+            ctx.replay_cursor
+                .as_deref_mut()
+                .expect("cursor")
+                .expect_bool(address::ChoiceAddress::ReceptorRevisionApplied)
+                .map_err(|r| PassError::replay(self.name(), r))?
+        } else {
+            ctx.rng.next_f64() < self.prob
+        };
+
+        if replaying {
+            ctx.trace.record_choice(
+                address::ChoiceAddress::ReceptorRevisionApplied,
+                ChoiceValue::Bool(coin),
+            );
+            if !coin {
+                return Ok(sim.clone());
+            }
+            let (new_id, derived_trim_3) = self.consume_replay_choices_genotype(
+                constraint, c, current_v, refdata, old_v_len, ctx,
+            )?;
+            return self.finish_apply(sim, refdata, new_id, derived_trim_3, c, strict, ctx);
+        }
+
+        // Fresh: applied = coin AND an eligible alternate exists.
+        let eligible = self.genotype_eligible(constraint, c, current_v, refdata, old_v_len);
+        if coin && eligible.is_empty() {
+            if strict {
+                return Err(PassError::constraint_sampling(
+                    self.name(),
+                    address::ChoiceAddress::ReceptorRevisionVAllele.to_string(),
+                    crate::dist::FilteredSampleError::EmptyAdmissibleSupport,
+                ));
+            }
+            ctx.trace.record_choice(
+                address::ChoiceAddress::ReceptorRevisionApplied,
+                ChoiceValue::Bool(false),
+            );
+            return Ok(sim.clone());
+        }
+        let applied = coin && !eligible.is_empty();
+        ctx.trace.record_choice(
+            address::ChoiceAddress::ReceptorRevisionApplied,
+            ChoiceValue::Bool(applied),
+        );
+        if !applied {
+            return Ok(sim.clone());
+        }
+        let total: f64 = eligible.iter().map(|(_, m)| m).sum();
+        let mut u = ctx.rng.next_f64() * total;
+        let mut new_id = eligible.last().expect("eligible non-empty").0;
+        for (id, m) in &eligible {
+            u -= *m;
+            if u <= 0.0 {
+                new_id = *id;
+                break;
+            }
+        }
+        let new_allele = refdata
+            .get(Segment::V, new_id)
+            .ok_or_else(|| PassError::missing_allele(self.name(), Segment::V, new_id.index()))?;
+        let derived_trim_3 = new_allele.len() - old_v_len;
+        self.finish_apply(sim, refdata, new_id, derived_trim_3, c, strict, ctx)
+    }
+
+    /// Record the typed choices + commit the replacement (shared by the fresh
+    /// and replay genotype paths). Stamps the original rearrangement haplotype
+    /// `c` onto the replacement instance.
+    fn finish_apply(
+        &self,
+        sim: &Simulation,
+        refdata: &RefDataConfig,
+        new_id: AlleleId,
+        derived_trim_3: u32,
+        c: usize,
+        strict: bool,
+        ctx: &mut PassContext,
+    ) -> Result<Simulation, PassError> {
+        if derived_trim_3 > u16::MAX as u32 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                address::ChoiceAddress::ReceptorRevisionVTrim3.to_string(),
+                derived_trim_3 as i64,
+                "trim_exceeds_u16",
+            ));
+        }
+        let new_allele = refdata
+            .get(Segment::V, new_id)
+            .ok_or_else(|| PassError::missing_allele(self.name(), Segment::V, new_id.index()))?
+            .clone();
+        ctx.trace.record_choice(
+            address::ChoiceAddress::ReceptorRevisionVAllele,
+            ChoiceValue::AlleleId(new_id.index()),
+        );
+        ctx.trace.record_choice(
+            address::ChoiceAddress::ReceptorRevisionVTrim3,
+            ChoiceValue::Int(derived_trim_3 as i64),
+        );
+        let old_v_len = self.old_v_region_len(sim)?;
+        // Strict post-event contract arbitration — parity with the non-genotype
+        // path: build a hypothetical post-replacement IR (no trace/sink side
+        // effects) and ask the active contracts whether the receptor-revised
+        // state is admissible (e.g. productive_only). Permissive skips this.
+        if strict && ctx.contracts.is_some() {
+            let mut hypothetical_ctx = PassContext {
+                trace: ctx.trace,
+                rng: ctx.rng,
+                pass_index: ctx.pass_index,
+                refdata: ctx.refdata,
+                contracts: ctx.contracts,
+                feasibility: ctx.feasibility,
+                reference_index: ctx.reference_index,
+                replay_cursor: None,
+                event_log_sink: None,
+            };
+            let hypothetical = self.commit_replacement(
+                sim.clone(),
+                &new_allele,
+                new_id,
+                derived_trim_3 as u16,
+                old_v_len,
+                Some(c as u8),
+                &mut hypothetical_ctx,
+            );
+            self.validate_post_event_contracts(sim, &hypothetical, ctx)?;
+        }
+        Ok(self.commit_replacement(
+            sim.clone(),
+            &new_allele,
+            new_id,
+            derived_trim_3 as u16,
+            old_v_len,
+            Some(c as u8),
+            ctx,
+        ))
+    }
+
+    /// Replay validation for genotype-aware revision: the recorded
+    /// `(v_allele, v_trim_3)` must be carried by the allowed pool (per
+    /// `same_haplotype`), differ from the current V, resolve in refdata, and
+    /// retain exactly `old_v_len` bytes. "Trace proposes, engine validates."
+    fn consume_replay_choices_genotype(
+        &self,
+        constraint: &GenotypeVConstraint,
+        c: usize,
+        current_v: AlleleId,
+        refdata: &RefDataConfig,
+        old_v_len: u32,
+        ctx: &mut PassContext,
+    ) -> Result<(AlleleId, u32), PassError> {
+        let id_index = ctx
+            .replay_cursor
+            .as_deref_mut()
+            .expect("cursor")
+            .expect_allele_id(address::ChoiceAddress::ReceptorRevisionVAllele)
+            .map_err(|r| PassError::replay(self.name(), r))?;
+        let trim_i64 = ctx
+            .replay_cursor
+            .as_deref_mut()
+            .expect("cursor")
+            .expect_int(address::ChoiceAddress::ReceptorRevisionVTrim3)
+            .map_err(|r| PassError::replay(self.name(), r))?;
+        let id = AlleleId::new(id_index);
+
+        // Resolve the allele FIRST so an unresolvable (out-of-range) recorded id
+        // surfaces as `missing_allele` — matching the non-genotype replay path's
+        // diagnostic contract — before the eligible/current/length checks.
+        let allele = refdata
+            .get(Segment::V, id)
+            .ok_or_else(|| PassError::missing_allele(self.name(), Segment::V, id_index))?;
+
+        let eligible = self.genotype_eligible(constraint, c, current_v, refdata, old_v_len);
+        if !eligible.iter().any(|(eid, _)| eid.index() == id_index) {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                address::ChoiceAddress::ReceptorRevisionVAllele.to_string(),
+                id_index as i64,
+                if id_index == current_v.index() {
+                    "receptor_revision_allele_equals_current"
+                } else {
+                    "receptor_revision_allele_not_carried_on_haplotype"
+                },
+            ));
+        }
+        if trim_i64 < 0 || trim_i64 > u16::MAX as i64 {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                address::ChoiceAddress::ReceptorRevisionVTrim3.to_string(),
+                trim_i64,
+                "trim_out_of_range",
+            ));
+        }
+        let trim_3 = trim_i64 as u32;
+        let retained = (allele.len() as i64).checked_sub(trim_3 as i64).unwrap_or(-1);
+        if retained != old_v_len as i64 {
+            return Err(PassError::invalid_plan_state(
+                self.name(),
+                format!(
+                    "replay length mismatch: allele {} length {} trim_3 {} retains {}, expected {}",
+                    allele.name,
+                    allele.len(),
+                    trim_3,
+                    retained,
+                    old_v_len
+                ),
+            ));
+        }
+        Ok((id, trim_3))
     }
 
     /// Resolve the single V region in `sim`. Receptor revision v1
@@ -182,6 +478,7 @@ impl ReceptorRevisionPass {
         new_id: AlleleId,
         derived_trim_3: u16,
         old_v_len: u32,
+        haplotype: Option<u8>,
         ctx: &mut PassContext,
     ) -> Simulation {
         // Capture the pre-revision V identity **before** the builder
@@ -215,11 +512,15 @@ impl ReceptorRevisionPass {
         //    derived value but preserves every other field on the
         //    instance (including the provenance) per the
         //    `AlleleInstance::with_trim_3` contract.
-        builder.assign_allele(
-            Segment::V,
-            AlleleInstance::new(new_id)
-                .with_receptor_revision_original_id(preserved_original_id),
-        );
+        // Preserve the rearrangement-chromosome provenance: receptor revision
+        // does not change which chromosome the receptor was rearranged on, even
+        // when a cross-haplotype (same_haplotype=false) replacement is drawn.
+        let mut new_inst =
+            AlleleInstance::new(new_id).with_receptor_revision_original_id(preserved_original_id);
+        if let Some(h) = haplotype {
+            new_inst = new_inst.with_haplotype(h);
+        }
+        builder.assign_allele(Segment::V, new_inst);
         // 2. Commit the derived 3' trim.
         builder.update_trim(Segment::V, TrimEnd::Three, derived_trim_3);
         // 3. Build the replacement nucleotides — the retained slice
@@ -267,6 +568,12 @@ impl ReceptorRevisionPass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
+        // Genotype-aware mode: restrict the replacement V to carried alleles on
+        // the drawn rearrangement chromosome (same-haplotype), excluding the
+        // current V. The non-genotype path below is unchanged (byte-identical).
+        if let Some(constraint) = self.genotype_v.as_ref() {
+            return self.execute_genotype_aware(sim, ctx, strict, constraint);
+        }
         // Pre-conditions: V must be assigned and refdata must be
         // available. The schedule analyser already orders us after
         // `AssembleSegmentPass(V)`, but a hand-built plan can skip
@@ -397,6 +704,7 @@ impl ReceptorRevisionPass {
                 new_id,
                 derived_trim_3 as u16,
                 old_v_len,
+                None,
                 &mut hypothetical_ctx,
             );
             self.validate_post_event_contracts(sim, &hypothetical, ctx)?;
@@ -408,6 +716,7 @@ impl ReceptorRevisionPass {
             new_id,
             derived_trim_3 as u16,
             old_v_len,
+            None,
             ctx,
         ))
     }
@@ -492,7 +801,27 @@ impl Pass for ReceptorRevisionPass {
         // The V replacement distribution is over the same V pool
         // covered by `refdata_content_hash`; skip it (same
         // rationale as `SampleAllelePass`) and pin only `prob`.
-        crate::passes::paramsig::fmt_prob("prob", self.prob)
+        let base = crate::passes::paramsig::fmt_prob("prob", self.prob);
+        match &self.genotype_v {
+            None => base,
+            Some(g) => {
+                // Genotype-aware mode pins the constraint state directly so
+                // two genotypes with different carried-V sets (or different
+                // same_haplotype) produce distinct plan signatures (replay-
+                // cache correctness), rather than relying on the genotype
+                // pass's own signature.
+                use std::fmt::Write;
+                let mut s = base;
+                let _ = write!(s, "|geno_rr|same={}", g.same_haplotype);
+                for (c, list) in g.per_hap.iter().enumerate() {
+                    let mut rows: Vec<(u32, u64)> =
+                        list.iter().map(|(id, m)| (id.index(), m.to_bits())).collect();
+                    rows.sort_unstable();
+                    let _ = write!(s, "|h{}={:?}", c, rows);
+                }
+                s
+            }
+        }
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -517,10 +846,12 @@ impl Pass for ReceptorRevisionPass {
     }
 
     fn requirements(&self) -> Vec<PassRequirement> {
-        // V must be assigned (and assembled) before receptor
-        // revision runs. RefData is required to resolve the
-        // replacement allele's bytes; the schedule analyser auto-
-        // derives the dependency from this declaration.
+        // The engine-enforced requirement is `AlleleAssignment(V)` (+ RefData to
+        // resolve the replacement allele's bytes); the schedule analyser derives
+        // the dependency from this declaration. The stronger "V region already
+        // assembled" guarantee is a lowering/schedule-position contract (Python
+        // inlines the pass after `push_assemble("J")`), backstopped at runtime by
+        // `old_v_region_len()` which errors if no V region is present.
         vec![
             PassRequirement::RefData,
             PassRequirement::AlleleAssignment(Segment::V),
@@ -664,6 +995,234 @@ mod tests {
             -0.5,
             Box::new(AllelePoolDist::uniform(&cfg.v_pool)),
         );
+    }
+
+    // ── genotype-aware candidate selection ──────────────────────
+
+    fn constraint(per_hap: [Vec<(AlleleId, f64)>; 2], same: bool) -> GenotypeVConstraint {
+        GenotypeVConstraint { per_hap, same_haplotype: same }
+    }
+
+    fn geno_sim(v0: AlleleId) -> Simulation {
+        sim_v_assembled(v0)
+            .with_allele_assigned(Segment::V, AlleleInstance::new(v0).with_haplotype(0))
+    }
+
+    fn geno_pass(cfg: &RefDataConfig, per_hap: [Vec<(AlleleId, f64)>; 2], same: bool) -> ReceptorRevisionPass {
+        ReceptorRevisionPass::new(1.0, Box::new(AllelePoolDist::uniform(&cfg.v_pool)))
+            .with_genotype_constraint(constraint(per_hap, same))
+    }
+
+    #[test]
+    fn genotype_same_haplotype_excludes_current_and_restricts_to_chromosome() {
+        let (cfg, v0, v1) = two_v_refdata();
+        // hap0 carries {V0, V1}; hap1 carries {V0}. Current is V0 on hap0.
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        let (trace, after) = run_with_ctx(&pass, &cfg, None, geno_sim(v0), None, None).unwrap();
+        assert_eq!(trace.find("receptor_revision.applied").unwrap().value, ChoiceValue::Bool(true));
+        // exclude-current: the only eligible alternate on hap0 is V1
+        assert_eq!(after.assignments.get(Segment::V).unwrap().allele_id, v1);
+        assert_eq!(after.assignments.get(Segment::V).unwrap().receptor_revision_original_id, Some(v0));
+        assert_eq!(after.assignments.get(Segment::V).unwrap().haplotype, Some(0));
+    }
+
+    fn run_permissive(pass: &ReceptorRevisionPass, cfg: &RefDataConfig, initial: Simulation) -> (Trace, Simulation) {
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0xc0ff_ee);
+        let mut ctx = PassContext {
+            trace: &mut trace,
+            rng: &mut rng,
+            pass_index: 0,
+            refdata: Some(cfg),
+            contracts: None,
+            feasibility: None,
+            reference_index: None,
+            replay_cursor: None,
+            event_log_sink: None,
+        };
+        let next = pass.execute(&initial, &mut ctx);
+        (trace, next)
+    }
+
+    #[test]
+    fn genotype_no_eligible_alternate_permissive_applied_false() {
+        let (cfg, v0, _v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0)], vec![(v0, 1.0)]], true);
+        let (trace, after) = run_permissive(&pass, &cfg, geno_sim(v0));
+        assert_eq!(trace.find("receptor_revision.applied").unwrap().value, ChoiceValue::Bool(false));
+        assert!(trace.find("receptor_revision.v_allele").is_none());
+        assert_eq!(after.assignments.get(Segment::V).unwrap().allele_id, v0);
+    }
+
+    #[test]
+    fn genotype_no_eligible_alternate_strict_errors() {
+        let (cfg, v0, _v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0)], vec![(v0, 1.0)]], true);
+        let err = run_with_ctx(&pass, &cfg, None, geno_sim(v0), None, None).unwrap_err();
+        assert!(matches!(err, PassError::ConstraintSampling { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn genotype_both_haplotypes_admits_other_chromosome_allele() {
+        let (cfg, v0, v1) = two_v_refdata();
+        // V1 carried only on hap1; same_haplotype=false aggregates both.
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0)], vec![(v1, 1.0)]], false);
+        let (_t, after) = run_with_ctx(&pass, &cfg, None, geno_sim(v0), None, None).unwrap();
+        assert_eq!(after.assignments.get(Segment::V).unwrap().allele_id, v1);
+        // haplotype provenance preserved as the original rearrangement chromosome (0)
+        assert_eq!(after.assignments.get(Segment::V).unwrap().haplotype, Some(0));
+    }
+
+    #[test]
+    fn genotype_missing_haplotype_stamp_errors() {
+        let (cfg, v0, v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        // sim_v_assembled assigns V0 WITHOUT a haplotype stamp.
+        let err = run_with_ctx(&pass, &cfg, None, sim_v_assembled(v0), None, None).unwrap_err();
+        assert!(matches!(err, PassError::InvalidPlanState { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn genotype_strict_post_event_contract_rejection_errors() {
+        use crate::contract::{Contract, ContractViolation};
+
+        // A contract whose verify() always rejects the post-event state.
+        struct RejectAll;
+        impl Contract for RejectAll {
+            fn name(&self) -> &str {
+                "reject_all_test"
+            }
+            fn verify(
+                &self,
+                _sim: &Simulation,
+                _refdata: Option<&RefDataConfig>,
+            ) -> Result<(), ContractViolation> {
+                Err(ContractViolation::new(self.name(), "rejected by test"))
+            }
+        }
+
+        let (cfg, v0, v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        let contracts = ContractSet::new().with(Box::new(RejectAll));
+        // Strict mode (execute_checked) with a rejecting contract must surface a
+        // contract violation — parity with the non-genotype path.
+        let err =
+            run_with_ctx(&pass, &cfg, Some(&contracts), geno_sim(v0), None, None).unwrap_err();
+        assert!(matches!(err, PassError::ContractViolation { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn genotype_replay_strict_post_event_contract_rejection_errors() {
+        use crate::contract::{Contract, ContractViolation};
+
+        struct RejectAll;
+        impl Contract for RejectAll {
+            fn name(&self) -> &str {
+                "reject_all_test"
+            }
+            fn verify(
+                &self,
+                _sim: &Simulation,
+                _refdata: Option<&RefDataConfig>,
+            ) -> Result<(), ContractViolation> {
+                Err(ContractViolation::new(self.name(), "rejected by test"))
+            }
+        }
+
+        let (cfg, v0, v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        let contracts = ContractSet::new().with(Box::new(RejectAll));
+        // A valid applied=true replay (v1, trim 2) must STILL be rejected by the
+        // post-event contract in strict mode — replay parity with the fresh path.
+        let mut cursor = TraceCursor::from_owned(replay_records(true, Some(v1.index()), Some(2)));
+        let err = run_with_ctx(&pass, &cfg, Some(&contracts), geno_sim(v0), Some(&mut cursor), None)
+            .unwrap_err();
+        assert!(matches!(err, PassError::ContractViolation { .. }), "got {err:?}");
+    }
+
+    // ── genotype-aware replay validation ────────────────────────
+
+    fn replay_records(applied: bool, allele: Option<u32>, trim: Option<i64>) -> Vec<crate::trace::ChoiceRecord> {
+        let mut t = Trace::new();
+        t.record_choice(address::ChoiceAddress::ReceptorRevisionApplied, ChoiceValue::Bool(applied));
+        if let Some(a) = allele {
+            t.record_choice(address::ChoiceAddress::ReceptorRevisionVAllele, ChoiceValue::AlleleId(a));
+        }
+        if let Some(tr) = trim {
+            t.record_choice(address::ChoiceAddress::ReceptorRevisionVTrim3, ChoiceValue::Int(tr));
+        }
+        t.choices().to_vec()
+    }
+
+    #[test]
+    fn replay_genotype_valid_replacement_reproduces() {
+        let (cfg, v0, v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        let mut cursor = TraceCursor::from_owned(replay_records(true, Some(v1.index()), Some(2)));
+        let (_t, after) = run_with_ctx(&pass, &cfg, None, geno_sim(v0), Some(&mut cursor), None).unwrap();
+        assert_eq!(after.assignments.get(Segment::V).unwrap().allele_id, v1);
+        assert!(cursor.is_drained());
+    }
+
+    #[test]
+    fn replay_genotype_allele_not_carried_on_haplotype_errors() {
+        let (cfg, v0, v1) = two_v_refdata();
+        // hap0 carries only V0; recorded V1 is not carried on the drawn chromosome.
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0)], vec![(v0, 1.0), (v1, 1.0)]], true);
+        let mut cursor = TraceCursor::from_owned(replay_records(true, Some(v1.index()), Some(2)));
+        let err = run_with_ctx(&pass, &cfg, None, geno_sim(v0), Some(&mut cursor), None).unwrap_err();
+        assert!(matches!(err, PassError::InvalidDistributionOutput { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn replay_genotype_unresolvable_allele_id_reports_missing_allele() {
+        let (cfg, v0, _v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0)], vec![(v0, 1.0)]], true);
+        // out-of-range recorded v_allele -> missing_allele (not "not_carried"),
+        // matching the non-genotype replay diagnostic contract.
+        let mut cursor = TraceCursor::from_owned(replay_records(true, Some(999), Some(0)));
+        let err = run_with_ctx(&pass, &cfg, None, geno_sim(v0), Some(&mut cursor), None).unwrap_err();
+        match err {
+            PassError::MissingAllele { allele_id, .. } => assert_eq!(allele_id, 999),
+            other => panic!("expected MissingAllele, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replay_genotype_equals_current_allele_errors() {
+        let (cfg, v0, v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        let mut cursor = TraceCursor::from_owned(replay_records(true, Some(v0.index()), Some(0)));
+        let err = run_with_ctx(&pass, &cfg, None, geno_sim(v0), Some(&mut cursor), None).unwrap_err();
+        assert!(matches!(err, PassError::InvalidDistributionOutput { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn replay_genotype_trim_length_mismatch_errors() {
+        let (cfg, v0, v1) = two_v_refdata();
+        let pass = geno_pass(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true);
+        // V1 len 8, old 6 -> trim must be 2; record 3 (retains 5) => mismatch.
+        let mut cursor = TraceCursor::from_owned(replay_records(true, Some(v1.index()), Some(3)));
+        let err = run_with_ctx(&pass, &cfg, None, geno_sim(v0), Some(&mut cursor), None).unwrap_err();
+        assert!(matches!(err, PassError::InvalidPlanState { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn genotype_signature_differs_by_candidate_set_and_same_haplotype() {
+        let (cfg, v0, v1) = two_v_refdata();
+        let no_geno = ReceptorRevisionPass::new(0.5, Box::new(AllelePoolDist::uniform(&cfg.v_pool)))
+            .parameter_signature();
+        let g_true = geno_pass_prob(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], true).parameter_signature();
+        let g_false = geno_pass_prob(&cfg, [vec![(v0, 1.0), (v1, 1.0)], vec![(v0, 1.0)]], false).parameter_signature();
+        let g_other = geno_pass_prob(&cfg, [vec![(v0, 2.0)], vec![(v1, 1.0)]], true).parameter_signature();
+        assert_ne!(g_true, no_geno);
+        assert_ne!(g_true, g_false);
+        assert_ne!(g_true, g_other);
+    }
+
+    fn geno_pass_prob(cfg: &RefDataConfig, per_hap: [Vec<(AlleleId, f64)>; 2], same: bool) -> ReceptorRevisionPass {
+        ReceptorRevisionPass::new(0.5, Box::new(AllelePoolDist::uniform(&cfg.v_pool)))
+            .with_genotype_constraint(constraint(per_hap, same))
     }
 
     // ── prob=0: no replacement ──────────────────────────────────

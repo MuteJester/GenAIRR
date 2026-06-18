@@ -208,12 +208,12 @@ impl SampleGenotypePass {
         )
     }
 
-    fn commit(&self, seg: Segment, sim: Simulation, id: AlleleId, ctx: &mut PassContext) -> Simulation {
+    fn commit(&self, seg: Segment, sim: Simulation, id: AlleleId, c: usize, ctx: &mut PassContext) -> Simulation {
         let mut b = SimulationBuilder::from_simulation(sim);
         if ctx.event_log_sink.is_some() {
             b.attach_event_log_observer();
         }
-        b.assign_allele(seg, AlleleInstance::new(id));
+        b.assign_allele(seg, AlleleInstance::new(id).with_haplotype(c as u8));
         if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
             sink.extend(b.seal_event_log_observer());
         }
@@ -325,7 +325,7 @@ impl SampleGenotypePass {
         }
         ctx.trace
             .record_choice(ChoiceAddress::SampleAllele(vseg), ChoiceValue::AlleleId(id.index()));
-        Ok(self.commit(seg, sim, id, ctx))
+        Ok(self.commit(seg, sim, id, c, ctx))
     }
 
     /// Replay (trace-injected) sampling of one segment within `c`.
@@ -409,7 +409,7 @@ impl SampleGenotypePass {
         }
         ctx.trace
             .record_choice(ChoiceAddress::SampleAllele(vseg), ChoiceValue::AlleleId(id.index()));
-        Ok(self.commit(seg, sim, id, ctx))
+        Ok(self.commit(seg, sim, id, c, ctx))
     }
 
     /// Shared execute body. `strict` selects feasibility-filtered
@@ -607,6 +607,30 @@ mod tests {
             );
             // single-copy slots => no within-slot record
             assert!(outcome.trace.find("sample_allele_in_slot.v").is_none());
+        }
+    }
+
+    #[test]
+    fn commit_stamps_drawn_haplotype_on_assignments() {
+        // Only hap0 is viable (hap1 lacks J), so the drawn chromosome is
+        // always 0; the V and J assignments must carry haplotype Some(0).
+        let g = Arc::new(test_support::geno_chrom1_deletes_j());
+        let pass = SampleGenotypePass::new(g, false, vec![], vec![], vec![]);
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(pass));
+        let outcome = PassRuntime::execute(&plan, Simulation::new(), 7);
+        let drawn = match outcome.trace.find("sample_haplotype").unwrap().value {
+            ChoiceValue::Haplotype(h) => h,
+            _ => panic!("expected Haplotype record"),
+        };
+        assert_eq!(drawn, 0);
+        let sim = outcome.final_simulation();
+        for seg in [Segment::V, Segment::J] {
+            assert_eq!(
+                sim.assignments.get(seg).unwrap().haplotype,
+                Some(drawn),
+                "{seg:?} assignment must carry the drawn haplotype",
+            );
         }
     }
 

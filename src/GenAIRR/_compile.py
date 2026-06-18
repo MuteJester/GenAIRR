@@ -154,9 +154,11 @@ def _extract_receptor_revision_prob(steps):
     giving the canonical "recombine → revise → mutate/corrupt"
     order the design doc §2 requires.
 
-    Returns ``(receptor_revision_prob, filtered_steps)``.
+    Returns ``(receptor_revision_prob, receptor_revision_same_haplotype,
+    filtered_steps)``.
     """
     revision_prob = None
+    same_haplotype = True
     filtered = []
     for step in steps:
         if isinstance(step, _ReceptorRevisionStep):
@@ -168,9 +170,10 @@ def _extract_receptor_revision_prob(steps):
                     "is a structural bug."
                 )
             revision_prob = step.prob
+            same_haplotype = step.same_haplotype
             continue
         filtered.append(step)
-    return revision_prob, filtered
+    return revision_prob, same_haplotype, filtered
 
 
 def _name_to_id(refdata, segment):
@@ -285,6 +288,7 @@ def _lower_recombine(
     *,
     invert_d_prob=None,
     receptor_revision_prob=None,
+    receptor_revision_same_haplotype=True,
     genotype=None,
 ) -> None:
     chain = refdata.chain_type
@@ -425,7 +429,21 @@ def _lower_recombine(
         # inlining instead of a standalone _ReceptorRevisionStep lower
         # path.
         if receptor_revision_prob is not None:
-            plan.push_receptor_revision(receptor_revision_prob, refdata)
+            if genotype is not None:
+                # Genotype-aware: restrict the replacement V to carried alleles
+                # on the drawn rearrangement chromosome. `refdata` here is the
+                # effective refdata (base + injected novels), so carried novel
+                # V alleles are valid candidates. `v_rows` is the genotype's
+                # carried V slots as (haplotype, allele_index, copies, weight).
+                v_rows = _genotype_segment_rows(genotype, refdata, "V")
+                plan.push_genotype_receptor_revision(
+                    receptor_revision_prob,
+                    receptor_revision_same_haplotype,
+                    refdata,
+                    v_rows,
+                )
+            else:
+                plan.push_receptor_revision(receptor_revision_prob, refdata)
     else:  # pragma: no cover — RefDataConfig only constructs vj/vdj.
         raise ValueError(f"unsupported chain_type {chain!r}")
 

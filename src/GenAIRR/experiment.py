@@ -2149,7 +2149,7 @@ class Experiment:
         self._steps.append(_InvertDStep(prob=prob_f))
         return self
 
-    def receptor_revision(self, *, prob: float = 0.05) -> "Experiment":
+    def receptor_revision(self, *, prob: float = 0.05, same_haplotype: bool = True) -> "Experiment":
         """Append a receptor-revision step.
 
         Models post-recombination V-segment replacement: with
@@ -2194,12 +2194,11 @@ class Experiment:
         the plan, giving the canonical "recombine → revise →
         mutate/corrupt" order the design doc §2 requires.
 
-        The DSL does **not** expose ``receptor_revision_applied``
-        or ``original_v_call`` on the AIRR record yet — those are
-        the Slice E follow-up. End-to-end observability today is
-        via the trace (the three
-        ``receptor_revision.*`` records above) and the post-event
-        pool bytes.
+        AIRR records expose ``receptor_revision_applied`` (bool) and
+        ``original_v_call`` (the pre-revision V; empty when no
+        revision applied). ``v_call`` / ``truth_v_call`` are the
+        **post**-revision V. The three ``receptor_revision.*`` trace
+        records above remain available for replay.
 
         Returns ``self`` so the call chains fluently.
         """
@@ -2243,7 +2242,14 @@ class Experiment:
             raise ValueError(
                 f"receptor_revision prob must be in [0.0, 1.0], got {prob_f}"
             )
-        self._steps.append(_ReceptorRevisionStep(prob=prob_f))
+        if not isinstance(same_haplotype, bool):
+            raise ValueError(
+                "receptor_revision same_haplotype must be a bool, got "
+                f"{same_haplotype!r}"
+            )
+        self._steps.append(
+            _ReceptorRevisionStep(prob=prob_f, same_haplotype=same_haplotype)
+        )
         return self
 
     def paired_end(
@@ -2611,18 +2617,10 @@ class Experiment:
         if allow_curatable_refdata is None:
             allow_curatable_refdata = self._allow_curatable_refdata
 
-        # Receptor revision is not supported alongside a phased genotype
-        # in this release: the revision pass samples a replacement V from
-        # its own distribution with no chromosome/carried-allele
-        # awareness. Reject the combination (same-haplotype revision is a
-        # planned follow-on).
-        if self._genotype is not None and any(
-            isinstance(s, _ReceptorRevisionStep) for s in self._steps
-        ):
-            raise ValueError(
-                "receptor_revision() is not supported with with_genotype() in this "
-                "release (the revision pass is not haplotype-aware)"
-            )
+        # Receptor revision with a phased genotype is now haplotype-aware:
+        # the lowering builds a genotype-aware ReceptorRevisionPass that
+        # restricts the replacement V to carried alleles on the drawn
+        # rearrangement chromosome (see _lower_recombine). No rejection here.
 
         # Genotype provenance (subject_id / haplotype / result.genotypes)
         # is only threaded through the plain compiled path, not the
@@ -2908,7 +2906,9 @@ class Experiment:
         # schedule edge or place the pass at the end of the plan
         # (after corruption), both of which break the design doc §2
         # ordering.
-        receptor_revision_prob, steps = _extract_receptor_revision_prob(steps)
+        receptor_revision_prob, receptor_revision_same_haplotype, steps = (
+            _extract_receptor_revision_prob(steps)
+        )
         # Pull out the (at-most-one) paired-end step too. It must
         # land at the END of the plan, not inline with recombine —
         # see `_extract_paired_end_step` for the rationale on
@@ -2932,6 +2932,7 @@ class Experiment:
                     refdata,
                     invert_d_prob=invert_d_prob,
                     receptor_revision_prob=receptor_revision_prob,
+                    receptor_revision_same_haplotype=receptor_revision_same_haplotype,
                     genotype=self._genotype,
                 )
             else:
@@ -2976,8 +2977,9 @@ class Experiment:
 
         Mutually exclusive with :meth:`with_genotype`, :meth:`restrict_alleles`,
         and ``recombine(*_allele_weights=...)`` (the genotype owns allele
-        expression). Not supported with :meth:`receptor_revision` or clonal forks
-        in this release.
+        expression). :meth:`receptor_revision` is supported (each subject's
+        replacement V is restricted to its carried alleles on the drawn
+        chromosome); clonal forks are not supported in this release.
         """
         import copy as _copy
         import random as _random
@@ -3011,10 +3013,9 @@ class Experiment:
             raise ValueError(
                 "run_cohort() and recombine(*_allele_weights=...) are mutually "
                 "exclusive: the genotype owns allele expression")
-        if any(isinstance(s, _ReceptorRevisionStep) for s in self._steps):
-            raise ValueError(
-                "run_cohort() is not supported with receptor_revision() in this "
-                "release (the revision pass is not haplotype-aware)")
+        # receptor_revision is supported per subject (each subject's compile
+        # builds a genotype-aware revision pass restricted to that subject's
+        # carried alleles on the drawn chromosome) — no rejection here.
         if self._has_clonal_fork():
             raise ValueError(
                 "run_cohort() is not supported together with expand_clones() / "

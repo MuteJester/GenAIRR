@@ -46,11 +46,14 @@ def test_with_genotype_then_recombine_weights_raises():
         ga.Experiment.on(_cfg()).with_genotype(g).recombine(v_allele_weights={a1: 2.0})
 
 
-def test_receptor_revision_with_genotype_raises_at_compile():
+def test_receptor_revision_with_genotype_compiles_and_runs():
+    # Genotype-aware receptor revision is now supported: the replacement V is
+    # restricted to carried alleles on the drawn chromosome (no longer rejected).
     g = _full_genotype()
     exp = ga.Experiment.on(_cfg()).with_genotype(g).recombine().receptor_revision(prob=0.5)
-    with pytest.raises(ValueError, match="receptor_revision"):
-        exp.compile()
+    exp.compile()  # no raise
+    res = exp.run_records(n=10, seed=1, expose_provenance=True)
+    assert len(res) == 10
 
 
 def test_genotype_with_clonal_fork_raises_at_compile():

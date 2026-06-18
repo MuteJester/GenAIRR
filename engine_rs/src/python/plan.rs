@@ -1162,6 +1162,77 @@ impl PyPassPlan {
         Ok(())
     }
 
+    /// Append a genotype-aware `ReceptorRevisionPass`. `v_rows` is the
+    /// genotype's carried V slots as `(haplotype, allele_index, copies,
+    /// weight)`; the pass restricts the replacement V to carried alleles on
+    /// the drawn chromosome (or both when `same_haplotype` is false),
+    /// excluding the current V. Validates prob, the V pool, and every row.
+    fn push_genotype_receptor_revision(
+        &mut self,
+        prob: f64,
+        same_haplotype: bool,
+        refdata: &PyRefDataConfig,
+        v_rows: Vec<(u8, u32, u8, f32)>,
+    ) -> PyResult<()> {
+        use crate::ir::Segment;
+        use crate::passes::receptor_revision::GenotypeVConstraint;
+        use crate::refdata::AlleleId;
+        if !prob.is_finite() || !(0.0..=1.0).contains(&prob) {
+            return Err(PyValueError::new_err(format!(
+                "prob must be a finite number in [0.0, 1.0], got {}",
+                prob
+            )));
+        }
+        let cfg = refdata.inner();
+        let pool = cfg.pool_for(Segment::V).ok_or_else(|| {
+            PyValueError::new_err("receptor_revision requires a V pool in refdata")
+        })?;
+        if pool.is_empty() {
+            return Err(PyValueError::new_err(
+                "receptor_revision requires a non-empty V pool",
+            ));
+        }
+        let pool_len = pool.len() as u32;
+        let mut per_hap: [Vec<(AlleleId, f64)>; 2] = [Vec::new(), Vec::new()];
+        for (h, aid, copies, weight) in &v_rows {
+            if *h > 1 {
+                return Err(PyValueError::new_err(format!(
+                    "haplotype index must be 0 or 1, got {}",
+                    h
+                )));
+            }
+            if *aid >= pool_len {
+                return Err(PyValueError::new_err(format!(
+                    "V allele id {} out of range (pool size {})",
+                    aid, pool_len
+                )));
+            }
+            if !(*weight as f64).is_finite() || *weight <= 0.0 {
+                return Err(PyValueError::new_err(format!(
+                    "V candidate weight must be finite and > 0, got {}",
+                    weight
+                )));
+            }
+            if *copies == 0 {
+                return Err(PyValueError::new_err(
+                    "V candidate copies must be >= 1",
+                ));
+            }
+            let mass = *weight as f64 * *copies as f64;
+            if !(mass > 0.0) {
+                return Err(PyValueError::new_err("V candidate mass must be > 0"));
+            }
+            per_hap[*h as usize].push((AlleleId::new(*aid), mass));
+        }
+        let pass = ReceptorRevisionPass::new(prob, Box::new(AllelePoolDist::uniform(pool)))
+            .with_genotype_constraint(GenotypeVConstraint {
+                per_hap,
+                same_haplotype,
+            });
+        self.inner_mut()?.push(Box::new(pass));
+        Ok(())
+    }
+
     /// Append a `TrimPass` for `(segment, end)`. `end` is `"5"` or
     /// `"3"` (the prime end being trimmed). `length_pairs` defines
     /// the trim-amount distribution.

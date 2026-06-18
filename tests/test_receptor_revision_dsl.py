@@ -14,8 +14,9 @@ revision as a fluent step:
 - Calling `.receptor_revision()` twice raises `ValueError`.
 - prob validation (NaN, out-of-range) raises at the DSL boundary.
 
-No `receptor_revision_applied` / `original_v_call` AIRR field
-assertions here — that surface lands in Slice E.
+`receptor_revision_applied` / `original_v_call` AIRR-field behavior is
+covered in the end-to-end / provenance tests, not here (this file pins the
+DSL boundary).
 """
 from __future__ import annotations
 
