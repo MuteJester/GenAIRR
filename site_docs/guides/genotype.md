@@ -7,8 +7,11 @@ recombination becomes <strong>haplotype-phased</strong>: the V, D and J of each
 rearrangement are drawn from a single chromosome, honouring allele
 presence/absence, zygosity, and gene deletion. With no genotype attached the
 engine is byte-for-byte unchanged. This page explains exactly what a genotype is,
-how the engine samples from it, how to build one, and how to use it to benchmark
-genotype-inference tools — nothing here is a black box.</p>
+how the engine samples from it, and how to build one — nothing here is a black
+box. Three companion pages cover the rest:
+<a href="genotype-priors/">sampling &amp; population priors</a>,
+<a href="genotype-cohorts/">cohorts</a> (many subjects at once), and
+<a href="genotype-benchmarking/">benchmarking genotype inference</a>.</p>
 
 ## What a genotype is (and why it matters)
 
@@ -36,13 +39,30 @@ haplotype-inference methods exploit (e.g. the IGHJ6-anchor approach), and GenAIR
 reproduces it.
 
 !!! note "Supported loci and chains"
-    Genotypes work on any GenAIRR reference cartridge — BCR **and** TCR, heavy
-    **and** light/α/β chains. On **VDJ** loci (IGH, TRB, TRD) the genotype spans
-    V, D and J and each rearrangement draws all three from one chromosome. On
-    **VJ** loci (IGK, IGL, TRA, TRG) there is no D segment: genotype V and J,
-    D rows are simply not required and are ignored. The examples below use the
-    human IGH cartridge, but the same API applies to every locus; just use that
-    cartridge's gene/allele names.
+    Genotypes work on any GenAIRR **reference cartridge** — a packaged germline
+    reference set (V/D/J alleles plus the empirical models for one locus; see
+    [Reference cartridge](../concepts/reference-cartridge.md)). They cover BCR
+    **and** TCR, heavy **and** light/α/β chains. On **VDJ** loci (IGH, TRB, TRD)
+    the genotype spans V, D and J and each rearrangement draws all three from one
+    chromosome. On **VJ** loci (IGK, IGL, TRA, TRG) there is no D segment:
+    genotype V and J, D rows are simply not required and are ignored. The
+    examples below use the human IGH cartridge, but the same API applies to every
+    locus; just use that cartridge's gene/allele names.
+
+!!! note "A note on the gene/allele names in these examples"
+    The examples use the bundled human IGH cartridge (`HUMAN_IGH_OGRDB`), whose
+    `metadata.reference_set` reads `"OGRDB V8"` — it is derived from
+    [OGRDB](https://ogrdb.airr-community.org/), the AIRR Community's *Open
+    Germline Receptor Database*, which provides curated immunoglobulin and T-cell
+    receptor germline gene sequences. In this cartridge the genes and alleles are
+    labelled like **`IGHVF1-G1*01`**, not the IMGT positional names
+    (**`IGHV1-69*01`**) you may be used to — that is simply this cartridge's
+    labelling. GenAIRR uses each cartridge's own gene/allele names **verbatim**:
+    they are exactly what appears in `v_call` / `truth_v_call` and in the
+    genotype tables, so they line up with the germline database you score
+    against. Substitute your own cartridge's names in the examples — many bundled
+    cartridges (for example `HUMAN_TCRB_IMGT` and the per-species `*_IMGT` sets)
+    use IMGT naming instead.
 
 ## Quick start
 
@@ -266,209 +286,6 @@ for row in g.to_table():
         print(row["gene"], row["zygosity"], row["haplotype_0"], row["haplotype_1"])
 ```
 
-## Sampling from population priors
-
-Instead of specifying every gene, draw a plausible diploid genotype with
-`Genotype.sample`. It uses an **independent per-gene, per-chromosome
-Hardy-Weinberg model**: each gene on each chromosome is independently deleted
-(`haplotype_deletion_prob`) or assigned an allele from that gene's frequencies, so
-homozygous / heterozygous / hemizygous / deleted states emerge at the expected
-rates.
-
-```python
-g = Genotype.sample(
-    cfg,
-    seed=7,
-    allele_frequencies={                 # {segment: {gene: {allele: weight}}}
-        "V": {"IGHVF1-G1": {"IGHVF1-G1*01": 8, "IGHVF1-G1*02": 2}},
-    },                                   # unspecified genes -> uniform within gene
-    haplotype_deletion_prob=0.05,        # 5% per-haplotype gene-absence
-    subject_id="DONOR_R1",
-)
-res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(n=500, seed=1)
-```
-
-`Genotype.sample` always returns a **fully-specified, runnable** genotype. By
-default `ensure_viable=True` re-draws (up to `max_resamples`, deterministically)
-until at least one **expressible** (positive-weight) chromosome carries every
-required segment, raising a clear error only if your deletion settings make that
-impossible; pass `ensure_viable=False` to allow infeasible draws.
-
-!!! note "Default sampling is HW *conditioned on viability*"
-    With the default `ensure_viable=True`, draws that leave no complete usable
-    haplotype are rejected, so per-gene deletion/zygosity rates are Hardy-Weinberg
-    **conditioned on at least one viable chromosome** — not the unconditional HW
-    rates. This only matters at high `haplotype_deletion_prob` (e.g. a single-J
-    cartridge with a high J-deletion prob). Use `ensure_viable=False` for the raw,
-    unconditional draw (which may be infeasible and rejected at compile).
-
-Frequency priors accept the segment-aware
-`{segment: {gene: {allele: weight}}}` shape (or a flat `{gene: …}` when the gene is
-unambiguous); a supplied gene's listed alleles define its distribution (weight `0`
-excludes an allele), and unspecified genes fall back to uniform.
-`haplotype_deletion_prob` is a float or a per-gene/per-segment dict.
-
-!!! warning "What this model is — and isn't"
-    This is an **independent per-gene** sampler. It does **not** model linkage
-    disequilibrium, gene co-deletion blocks, ancestry, or donor-specific haplotype
-    structure, and it samples **catalogue alleles only** (no novel alleles) and
-    **deletion only** (no duplication). Supply explicit `allele_frequencies` from a
-    population source (e.g. VDJbase) for realistic per-gene frequencies; the default
-    is uniform within each gene. `allele_frequencies="usage_as_prior"` is an
-    explicit opt-in that reuses the cartridge's recombination `allele_usage` as a
-    frequency proxy — convenient but biologically approximate.
-
-## Population genotype models on a cartridge
-
-The `allele_frequencies` / `haplotype_deletion_prob` you pass to
-`Genotype.sample` can instead be **authored once on the cartridge** as a
-*population genotype model* — a donor-population germline prior. It is a distinct
-plane from `reference_models.allele_usage`: `allele_usage` weights how often each
-allele is *expressed* during recombination, whereas a genotype prior describes
-which alleles a *donor population carries* (frequencies, gene-deletion rates, and
-population novel alleles). It lives on `DataConfig.genotype_priors`.
-
-### Authoring and attaching a model
-
-```python
-from GenAIRR.genotype_priors import PopulationGenotypeModel, PopulationNovelAllele
-
-model = PopulationGenotypeModel(
-    model_id="IGH-toy-1", source="hand-authored",     # identity is required
-    allele_frequencies={"V": {"IGHVF1-G1": {"IGHVF1-G1*01": 3.0, "IGHVF1-G1*02": 1.0}}},
-    haplotype_deletion_prob={"V": {"IGHVF1-G1": 0.1}},
-)
-# Attach via the cartridge builder (validated against the chain type + catalogue):
-#   cfg = builder.set_genotype_priors(model).build()
-```
-
-`set_genotype_priors` validates the model against the cartridge: unknown
-genes/alleles raise, and any population novel allele goes through the same
-functional validation as `add_novel_allele` (conserved anchor, stop-free frame,
-base-allele match). A non-`None` plane becomes part of cartridge identity (it
-folds into `compute_checksum()` and the manifest).
-
-### Estimating a model from observed genotypes
-
-Given a list of observed `Genotype` objects (e.g. one per donor), estimate a
-prior directly:
-
-```python
-model = PopulationGenotypeModel.from_genotypes(
-    [g_donor1, g_donor2, g_donor3],
-    cfg=cfg, model_id="cohort-est", source="my-cohort",
-)
-# or, attaching to a builder in one chained step:
-#   builder.estimate_genotype_priors([g_donor1, g_donor2, g_donor3], source="my-cohort")
-```
-
-Estimator conventions: allele frequencies are counted **per carried chromosome**
-(homozygous contributes 2, hemizygous 1, deleted 0); gene deletion probability is
-`deleted_haplotypes / (2 × n_subjects)`. `pseudocount` smooths the per-gene
-catalogue-allele counts only (deletion gets none). Genotypes carrying a
-duplicated gene are rejected — the plane is deletion-only.
-
-### Drawing from the cartridge plane
-
-When a cartridge carries a plane, `Genotype.sample(cfg)` **auto-uses it** and
-records where every input came from:
-
-```python
-g = Genotype.sample(cfg, seed=7)        # plane supplies freqs / deletion / weights
-print(g.prior_provenance)
-# {'allele_frequencies': 'cartridge', 'haplotype_deletion_prob': 'cartridge',
-#  'chromosome_weights': 'cartridge', 'novel_alleles': 'none',  # 'cartridge' if the model has novels
-#  'model_id': 'IGH-toy-1', 'model_checksum': '…'}
-print(g.to_metadata())                  # subject_id + provenance + source/effective refdata hashes
-```
-
-Pass `use_cartridge_priors=False` for a clean uniform, catalogue-only draw (all
-plane consumption — including novels — disabled). Each input is sourced
-**independently**, so you can mix explicit and cartridge values:
-
-```python
-g = Genotype.sample(
-    cfg, seed=7,
-    allele_frequencies={"V": {"IGHVF1-G1": {"IGHVF1-G1*01": 1.0}}},  # explicit
-    # haplotype_deletion_prob and chromosome_weights left to the plane
-)
-print(g.prior_provenance["allele_frequencies"])      # 'explicit'
-print(g.prior_provenance["haplotype_deletion_prob"]) # 'cartridge'
-print(g.prior_provenance["chromosome_weights"])      # 'cartridge'
-```
-
-**Population novel alleles** on the plane are *candidate* alleles for the draw: a
-novel that gets sampled is carried (and flows into `v_call` / reads / truth like
-any allele); a novel that isn't drawn never pollutes the output reference. By
-default (`include_cartridge_novel_alleles="auto"`) novels are injected only when
-the allele frequencies are cartridge- or uniform-sourced — supplying an
-**explicit** frequency table keeps it explicit. Pass
-`include_cartridge_novel_alleles=True` to inject them anyway, or `False` to never.
-
-### Auditing the plane
-
-`cfg.cartridge_manifest()["models"]["genotype_priors"]` reports availability,
-`model_id` / `source` / `version`, the plane's `model_checksum`, per-segment gene
-counts, the novel-allele count, and `source_field` (`"DataConfig.genotype_priors"`).
-
-## Cohorts
-
-A single genotype models one subject. To simulate a **cohort** — many subjects,
-each with their own genotype — use `run_cohort`. It runs the single-subject path
-once per subject and collects the results:
-
-```python
-import GenAIRR as ga
-import GenAIRR.data as gdata
-from GenAIRR.genotype import Genotype
-
-cfg = gdata.HUMAN_IGH_OGRDB
-# one sampled genotype per donor
-donors = [Genotype.sample(cfg, seed=s, subject_id=f"donor_{s}") for s in range(5)]
-
-cohort = ga.Experiment.on(cfg).recombine().run_cohort(
-    donors, n_per_subject=200, seed=0, expose_provenance=True)
-
-cohort.subject_ids            # ['donor_0', ..., 'donor_4']
-len(cohort)                   # 1000 total records
-cohort.result_for("donor_2")  # that donor's SimulationResult
-cohort.to_csv("cohort.csv")   # combined, subject-tagged, unique sequence_id
-```
-
-`run_cohort` returns a `CohortResult`:
-
-- `.subject_ids` / `.genotypes` / `.results` — per-subject, in input order.
-- `.result_for(sid)` / `.refdata_for(sid)` — one subject's `SimulationResult` and
-  the reference it ran against (preserved per subject, so `validate_records` and
-  novel-allele truth calls stay correct even when subjects differ).
-- `.records` — a fresh, subject-tagged, `sequence_id`-namespaced concatenation
-  (each `sequence_id` is `"{subject_id}_{...}"`, so combined AIRR/FASTA export
-  never collides).
-- `.to_dataframe()` / `.to_csv()` / `.to_fasta()` — combined export over a stable
-  union of columns.
-
-**Record counts.** `n_per_subject` applies to all subjects; pass `counts` (a
-parallel list, same length as the genotypes) to vary per-subject repertoire
-sizes. A count of `0` is allowed — that subject appears in the cohort with zero
-records.
-
-```python
-cohort = ga.Experiment.on(cfg).recombine().run_cohort(
-    donors, counts=[500, 200, 0, 1000, 300], seed=0)
-```
-
-**Subject IDs.** Taken from each genotype's `subject_id`; if none are set they are
-auto-assigned `subject_0..N-1`. Mixed (some set, some not) or duplicate IDs raise.
-
-**Determinism.** Each subject gets an independent sub-seed derived from `seed`, so
-a cohort is fully reproducible and subjects are independent.
-
-`run_cohort` is mutually exclusive with `with_genotype`, `restrict_alleles`, and
-`recombine(*_allele_weights=...)` (the genotype owns allele expression). It
-**supports** `receptor_revision` (each subject's replacement V is restricted to
-its own carried alleles); clonal forks are not combined with a cohort in this
-release.
-
 ## Receptor revision with a genotype
 
 [Receptor revision](../reference/experiment.md) models a post-recombination V
@@ -496,8 +313,8 @@ This is **haplotype-aware V replacement**: it guarantees the replacement is an
 allele the individual carries, but it does not model genomic V order, RSS
 constraints, upstream-V availability, or deletion of intervening loci. Carried
 **novel** alleles on the drawn chromosome are valid replacement targets. Receptor
-revision works the same way inside [`run_cohort`](#cohorts) (per subject) and is
-still not combined with the clonal forks.
+revision works the same way inside [`run_cohort`](genotype-cohorts.md) (per
+subject) and is still not combined with the clonal forks.
 
 ## Novel / private alleles
 
@@ -549,9 +366,18 @@ output against the planted novel sequence. (Write the base germline FASTA from
 
 A genotype experiment emits, by construction, everything an evaluation needs:
 
-- **Per-record fields:** `subject_id` and `haplotype` (`0`/`1`, the chromosome the
-  rearrangement used) are stamped on every AIRR record. Standard truth columns
-  (`truth_v_call`, …) are available with `expose_provenance=True`.
+- **Per-record fields:** `subject_id` and `haplotype` are **always** stamped on
+  every record; the truth/provenance columns (`truth_v_call` / `truth_d_call` /
+  `truth_j_call`, and `original_v_call` / `receptor_revision_applied` when
+  revision is used) require `expose_provenance=True`.
+- **AIRR-standard vs GenAIRR extensions:** `sequence_id`, `sequence`,
+  `sequence_alignment`, `v_call` / `d_call` / `j_call` etc. are standard
+  [AIRR Rearrangement](https://docs.airr-community.org/en/stable/datarep/rearrangements.html)
+  fields. `haplotype` (a `0`/`1` chromosome index — **not** the AIRR
+  `*_germline_alignment`/haplotype-set sense), `subject_id`, `truth_*`,
+  `original_v_call`, and `receptor_revision_applied` are **GenAIRR extension
+  columns** added for ground-truth benchmarking; you won't find them in the AIRR
+  schema.
 - **`result.genotypes`:** the list of attached `Genotype` objects (one per subject).
 - **`Genotype.to_table()` / `to_tsv(path)`:** the ground-truth genotype as a table
   — one row per (segment, gene) with `zygosity`
@@ -565,149 +391,40 @@ for row in result.genotypes[0].to_table():
         print(row["gene"], row["zygosity"], row["haplotype_0"], row["haplotype_1"])
 ```
 
-## Research workflow: benchmarking genotype inference
+## More genotype topics
 
-The point of simulating from a *known* genotype is that you can run a
-genotype-inference tool on the resulting repertoire and score it against the
-planted truth — with no real-data uncertainty about what the right answer is.
-
-The recipe is the same for any tool:
-
-1. Build a `Genotype`, simulate a repertoire, write the AIRR table
-   (`result.to_tsv(...)`) and/or reads FASTA, and the ground truth
-   (`genotype.to_tsv(...)`).
-2. Run the inference tool to recover the per-individual allele set.
-3. Compare recovered vs planted: presence/absence, zygosity, and (for
-   discovery tools) any novel alleles.
-
-### Worked example: TIgGER and IgDiscover recover a planted genotype
-
-To show this end to end we planted a diploid IGH genotype in `human_igh` —
-**3 heterozygous** V genes (two alleles each), **3 homozygous** (one allele),
-and **3 fully deleted** genes — and filled the rest from the reference. We
-simulated 4,000 reads with light SHM, then ran two independent AIRR
-genotype-inference tools on the result:
-[**TIgGER**](https://tigger.readthedocs.io) (Immcantation; consumes the AIRR
-table) and [**IgDiscover**](https://igdiscover.se) (germline discovery from the
-raw reads, with its own IgBLAST).
-
-Because GenAIRR already emits AIRR records with `v_call` **and**
-`sequence_alignment`, TIgGER's `inferGenotype` consumes the rearrangement table
-**directly — no separate IgBLAST step is needed**:
-
-```r
-library(tigger); library(airr)
-rep    <- read_rearrangement("repertoire.tsv")     # GenAIRR's AIRR output
-germ_v <- readIgFasta("germline_V.fasta")          # cartridge V germline (names match v_call)
-geno   <- inferGenotype(rep, germline_db = germ_v, find_unmutated = TRUE)
-plotGenotype(geno)
-```
-
-TIgGER recovered the planted genotype **exactly**: every heterozygous gene → two
-alleles, every homozygous gene → one, every deleted gene → **absent**. Across all
-52 V genes, allele-presence **precision = 1.00**, **recall = 1.00**, and the
-per-gene allele count matched the truth for **52/52** genes.
-
-**IgDiscover**, run on the raw reads with the cartridge as its starting database,
-independently agreed: **precision = 1.00** (zero false-positive alleles),
-**recall = 0.96** (50/52 carried alleles), with **all three deletions correct**
-and **all heterozygous genes fully resolved** (both alleles recovered). The two
-missed alleles were low-expression single-copy genes below IgDiscover's default
-expression threshold — a tool-tuning matter, not a simulation artefact.
-
-![GenAIRR-simulated genotype recovered by TIgGER and IgDiscover: planted vs inferred allele counts agree for every gene](../assets/genotype-tigger-recovery.png)
-
-*(A) The nine study genes: both tools' inferred allele counts match the planted
-zygosity for each (heterozygous → 2, homozygous → 1, deleted → 0). (B) All 52 V
-genes fall on the agreement diagonal; presence precision = 1.00 for both tools,
-recall 1.00 (TIgGER) / 0.96 (IgDiscover), zero false-positive alleles, all
-deletions correct.*
-
-### Reproduce it
-
-This builds the **exact** genotype behind the figure — 3 heterozygous, 3
-homozygous, and 3 deleted study V genes, the rest filled from the reference —
-simulates 4,000 reads with light SHM at `seed=7`, and writes every input the two
-tools need plus the ground truth to score against:
-
-```python
-import GenAIRR as ga
-import GenAIRR.data as gdata
-from GenAIRR.genotype import Genotype
-
-cfg = gdata.HUMAN_IGH_OGRDB
-HET = ["IGHVF1-G1", "IGHVF1-G2", "IGHVF1-G3"]   # 2 alleles each
-HOM = ["IGHVF2-G4", "IGHVF3-G5", "IGHVF3-G6"]   # 1 allele
-DEL = ["IGHVF3-G7", "IGHVF3-G8", "IGHVF3-G9"]   # deleted (both chromosomes)
-
-g = Genotype.from_dataconfig(cfg).complete_from_reference("homozygous_first_reference")
-for gene in HET:
-    a0, a1 = (a.name for a in cfg.v_alleles[gene][:2])
-    g.heterozygous(gene, a0, a1)
-for gene in HOM:
-    g.homozygous(gene, cfg.v_alleles[gene][0].name)
-for gene in DEL:
-    g.delete_gene(gene, haplotype="both")
-g.with_subject("DONOR01")
-
-res = (
-    ga.Experiment.on(cfg).with_genotype(g).recombine()
-      .mutate(rate=0.004)                       # light SHM, as in real data
-      .run_records(n=4000, seed=7, expose_provenance=True)
-)
-
-res.to_tsv("repertoire.tsv")                    # AIRR table → TIgGER
-g.to_tsv("truth_genotype.tsv")                  # ground truth to score against
-
-with open("reads.fasta", "w") as fh:            # raw reads → IgDiscover / partis
-    for r in res:
-        fh.write(f">{r['sequence_id']}\n{r['sequence'].upper()}\n")
-
-with open("germline_V.fasta", "w") as fh:       # cartridge V germline (names match v_call)
-    for gene, alleles in cfg.v_alleles.items():
-        for a in alleles:
-            fh.write(f">{a.name}\n{a.ungapped_seq.upper()}\n")
-```
-
-**Score it.** Run TIgGER (R snippet above) on `repertoire.tsv`, or IgDiscover on
-`reads.fasta` with the cartridge as its starting database
-(`igdiscover init --database db/ --single-reads reads.fasta project/ && cd project
-&& igdiscover run`). Then compare each tool's per-gene allele set against
-`g.to_table()` (the planted truth): allele-presence precision/recall, zygosity,
-and deletion calls. With the genotype above this yields TIgGER precision/recall
-1.00 (52/52 genes) and IgDiscover precision 1.00 / recall 0.96 — the figure.
-
-### Running other tools on the same data
-
-The only difference between tools is whether they consume the **AIRR table**
-(TIgGER) or the **raw reads** (`reads.fasta`, which you can write from `result`),
-running their own aligner:
-
-- **[IgDiscover](https://igdiscover.se)** — germline *discovery* from reads (its
-  own IgBLAST + iterative filtering). Initialise with the cartridge germline as
-  the starting database and the simulated reads, then run the pipeline; the
-  `final/database/V.fasta` expressed-allele set is the recovered genotype:
-
-  ```bash
-  igdiscover init --database db/ --single-reads reads.fasta project/
-  cd project && igdiscover run
-  ```
-
-- **[partis](https://github.com/psathyrella/partis)** — HMM annotation with
-  per-sample germline inference (`partis cache-parameters --infname reads.fa
-  --initial-germline-dir db/`). partis also reports per-sample allele support and
-  novel alleles, scored the same way.
-
-Because the genotype is planted, every tool is scored identically: recovered
-allele set vs `genotype.to_table()` — presence precision/recall, zygosity, and
-deletion calls.
+- **[Genotype sampling & population priors](genotype-priors.md)** — draw a
+  plausible genotype with `Genotype.sample`, or author a donor-population prior
+  on the cartridge so sampling is data-driven.
+- **[Genotype cohorts](genotype-cohorts.md)** — `run_cohort` to simulate many
+  subjects, each with their own genotype, in one call.
+- **[Benchmarking genotype inference](genotype-benchmarking.md)** — the
+  end-to-end recipe + a worked TIgGER / IgDiscover example recovering a planted
+  genotype.
 
 ## Limitations (this release)
 
-The genotype foundation is deliberately scoped. Deferred to later work:
+**Model assumptions** (what the genotype machinery does *not* try to capture, so
+you can judge whether it fits your study):
+
+- **Sampling is independent per gene.** `Genotype.sample` draws each gene
+  independently under a per-chromosome Hardy–Weinberg model — **no** linkage
+  disequilibrium, gene co-deletion blocks, ancestry, or donor-specific haplotype
+  structure (see the caveat box in
+  [Sampling & population priors](genotype-priors.md)). Hand-built genotypes are
+  exactly what you specify.
+- **Deletion, not duplication, in sampling.** Sampling models gene presence/
+  deletion only; gene duplication / copy-number > 1 must be built explicitly with
+  `duplicate_gene`.
+- **Receptor revision is haplotype-aware, not mechanistic.** It restricts the
+  replacement V to carried alleles on the drawn chromosome, but does not model
+  genomic V order, RSS constraints, upstream-V availability, or deletion of
+  intervening loci.
+
+**Deferred features:**
 
 - **External loaders** — importing genotypes from VDJbase / TIgGER / IgDiscover /
-  partis output.
+  partis output. (You can build the equivalent `Genotype` by hand today.)
 
 ## Backward compatibility
 
