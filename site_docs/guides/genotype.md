@@ -222,8 +222,8 @@ allele-usage model (`reference_models.allele_usage`), aggregated to the gene
 level, and scaled by **copy-number dosage** (a duplicated gene recombines
 proportionally more often). Cartridges that don't author a typed `allele_usage`
 fall back to uniform-over-present-genes (× dosage). See
-[Allele usage](v-usage.md) and [Estimate models from data](estimate-cartridge-models.md)
-for authoring usage.
+[Allele usage](recombination-junction.md#controlling-the-allele-universe) and
+[Estimate models from data](estimate-cartridge-models.md) for authoring usage.
 
 ### More genotype recipes
 

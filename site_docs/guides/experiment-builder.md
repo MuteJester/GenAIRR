@@ -183,7 +183,7 @@ exp.mutate(model="uniform", count=12)   # exactly 12 uniform mutations per recor
 
 `end_loss_*prime(length=...)` follows the same `int` / `(low, high)` /
 `[(value, weight), ...]` shape. Read [`Tune corruption
-rates`](tune-corruption.md) for the per-mechanism shape reference;
+rates`](corruption-sequencing.md) for the per-mechanism shape reference;
 the API reference page has the formal signatures.
 
 ## How `productive_only()` works
@@ -269,5 +269,5 @@ seed produces the same draws, which is how golden tests work.
 | Authoring or tuning a custom reference cartridge | [Reference cartridge](../concepts/reference-cartridge.md) |
 | Confirming output integrity post-run | [`validate_records`](../validation/validate-records.md) |
 | Per-record AIRR field catalogue | [Your first AIRR record](../getting-started/first-airr-record.md) |
-| The mental model behind the DSL | [The simulation pipeline](../concepts/pipeline.md) |
+| The mental model behind the DSL | [Core concepts](../concepts/index.md) |
 | Every public symbol's signature | [API reference](../reference/index.md) |

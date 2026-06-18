@@ -153,10 +153,12 @@ each expanded into a short ordered reading list.
 
 | If you want to ... | Start here |
 |---|---|
-| **Simulate sequences** | [Quick start](getting-started/quick-start.md) → [The Experiment builder](guides/experiment-builder.md) |
+| **Simulate sequences** | [Quick start](getting-started/quick-start.md) → [The Experiment builder](guides/experiment-builder.md) → [API reference](reference/index.md) |
 | **Simulate per-individual genotypes** | [Genotypes](guides/genotype.md) → [Sampling & population priors](guides/genotype-priors.md) → [Cohorts](guides/genotype-cohorts.md) |
 | **Simulate clonal repertoires** | [Clonal overview](guides/clonal-families.md) → [Lineage trees](guides/clonal-lineage.md) → [Repertoires](guides/clonal-repertoire.md) |
+| **Build a reference cartridge** | [Reference cartridge concept](concepts/reference-cartridge.md) → [Build a reference cartridge](guides/build-reference-cartridge.md) |
 | **Benchmark tools against ground truth** | [Quick start](getting-started/quick-start.md) → [Benchmarking genotype inference](guides/genotype-benchmarking.md) |
+| **Get validated / reproducible output** | [Validate AIRR records](validation/validate-records.md) → [Trace, replay, reproducibility](guides/trace-replay.md) |
 
 ---
 

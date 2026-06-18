@@ -201,6 +201,7 @@ nav:
   - Simulation Guides:
       - guides/index.md
       - The Experiment builder: guides/experiment-builder.md
+      - Sample only productive sequences: guides/productive.md
       - Biology map: guides/biology-map.md
       - Recombination + junction biology: guides/recombination-junction.md
       - D inversion + receptor revision: guides/recombination-editing.md

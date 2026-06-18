@@ -242,7 +242,7 @@ what to reach for when you need them:
   cached `SegmentLiveCall` against a from-scratch recompute. That
   layer is internal to engine maintenance - users rarely need it
   unless they're filing a bug against the cache. Both layers are
-  documented in the [two-layer integrity model](two-layer-model.md).
+  documented in the [architecture guide](../architecture/index.md#the-two-layer-integrity-model).
 
 ---
 

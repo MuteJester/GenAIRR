@@ -80,7 +80,7 @@ five canonical IMGT region intervals (`FWR1` / `CDR1` / `FWR2` /
 region mutation counters. When a V allele has a populated IMGT-
 gapped sequence, the bridge derives these intervals for you;
 otherwise you can supply them explicitly. See
-[V-subregion annotations](../cartridges/v-subregion-annotations.md).
+[Build a reference cartridge](../guides/build-reference-cartridge.md).
 
 ### Rules
 
@@ -235,7 +235,7 @@ P-nucleotide lengths) and writes the result into the corresponding
 typed empirical-model sub-plane. The build report's
 `stages` list captures every estimator's inputs and inferred
 distributions for provenance. See
-[Cartridge estimators](../cartridges/estimators/index.md) for
+[Estimate models from data](../guides/estimate-cartridge-models.md) for
 per-estimator detail.
 
 ## The manifest
