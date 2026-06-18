@@ -13,7 +13,7 @@ GenAIRR has two layers of reproducibility, and they answer
 different questions.
 
 **Seed reproducibility.** Run the same code, against the same
-config, with the same seed — and the engine's RNG produces the
+config, with the same seed - and the engine's RNG produces the
 same sequence of draws. Seeds are tiny, immortal, and require
 the *exact* same environment to mean anything. Change a single
 default in your `Experiment` and the same seed produces a
@@ -24,7 +24,7 @@ the engine made during one run. It includes the seed, but it
 also includes the resolved plan signature, the cartridge
 signature, the content hash, and the actual value at every
 address the engine touched. With a trace you can replay an
-outcome even if the environment has shifted slightly — as long
+outcome even if the environment has shifted slightly - as long
 as the plan and refdata signatures match, every recorded value
 is consumed verbatim.
 
@@ -62,10 +62,10 @@ A few things to know:
 - **`TraceFile` is an engine-level export.** It lives at
   `GenAIRR._engine.TraceFile`, not at top-level `ga.TraceFile`.
   The PyO3 type is stable; the placement on the public namespace
-  is intentional — traces are a *contract* with the engine, not
+  is intentional - traces are a *contract* with the engine, not
   with the Python wrapper.
 - **`trace_file_from(outcome, seed)`** packages one outcome + its
-  seed into a trace. Pass the same seed you used for the run — the
+  seed into a trace. Pass the same seed you used for the run - the
   trace's `seed` field carries it forward for inspection.
 - **`write_to(path)`** writes the trace as JSON. The file is plain
   text, gzip-able, diffable, and small (one entry per sampled
@@ -89,7 +89,7 @@ The simulator walks the plan, hits every address in the same
 order, and reads the corresponding value out of the trace instead
 of asking the RNG. The returned `Outcome` is byte-identical to
 the original (modulo non-determinism in code paths that aren't
-sampling — there shouldn't be any).
+sampling - there shouldn't be any).
 
 ## Rerun from trace
 
@@ -112,7 +112,7 @@ The difference matters:
 Both walk the **same** address sequence (gated by the same plan
 signature). Replay reproduces the *exact* outcome from the trace.
 Rerun reproduces a *fresh* outcome that should match the original
-when the environment hasn't drifted — and exposes any drift
+when the environment hasn't drifted - and exposes any drift
 loudly when it has, since the re-drawn values differ from the
 trace.
 
@@ -145,7 +145,7 @@ What's deliberately **not** in the trace:
 - The assembled sequences from the original outcome
 - The compiled pass results (these are derived during replay)
 - The contract set used at compile time
-- The execution policy (strict / permissive) — that's a replay-time argument
+- The execution policy (strict / permissive) - that's a replay-time argument
 
 The trace is small because the cartridge is its provenance, not
 its payload. You ship the trace + the cartridge name; the engine
@@ -156,7 +156,7 @@ re-derives everything else from the recorded choices.
 Replay raises `ValueError` (never `KeyError`, never a custom
 exception) with one of these distinct shapes:
 
-### Validation phase — checked before any choices are consumed
+### Validation phase - checked before any choices are consumed
 
 | Failure mode | When it fires |
 |---|---|
@@ -165,16 +165,16 @@ exception) with one of these distinct shapes:
 | `refdata_content_hash_mismatch` | A plane referenced by the trace has changed bytes |
 
 These three are the load-bearing gates. A `plan_signature_mismatch`
-means the pipeline differs — somebody added an `.invert_d()`
+means the pipeline differs - somebody added an `.invert_d()`
 between recording and replaying, or changed a `mutate(rate=...)`
 value. A `refdata_signature_mismatch` means the cartridge identity
-differs — you're trying to replay an `HUMAN_IGH_OGRDB` trace
+differs - you're trying to replay an `HUMAN_IGH_OGRDB` trace
 against `HUMAN_IGH_EXTENDED`. A `refdata_content_hash_mismatch`
 is the subtle one: the cartridge name is the same but a plane
-referenced by the trace has changed — usually because someone
+referenced by the trace has changed - usually because someone
 re-estimated a model and overwrote the cartridge in place.
 
-### Loading phase — checked when the trace file is parsed
+### Loading phase - checked when the trace file is parsed
 
 | Failure mode | When it fires |
 |---|---|
@@ -184,7 +184,7 @@ This fires before replay even starts. Old traces eventually become
 unreadable when the address schema bumps; the engine version field
 in the file tells you which release wrote it.
 
-### Execution phase — checked while choices are consumed
+### Execution phase - checked while choices are consumed
 
 | Failure mode | When it fires |
 |---|---|
@@ -193,7 +193,7 @@ in the file tells you which release wrote it.
 | `value_kind_mismatch` | The recorded value type doesn't match what the address expects (e.g. an integer where a base draw is required) |
 | `unused_trailing_records` | Replay finished but the trace still had entries left |
 
-These four don't usually fire under normal use — they catch
+These four don't usually fire under normal use - they catch
 *real* engine-level corruption (a hand-edited trace, a refactor
 that changed address ordering without bumping the schema). The
 three validation-phase gates fire far more often in day-to-day
@@ -202,7 +202,7 @@ work.
 ## Strict mode and replay
 
 `strict=True` on a fresh `run(...)` raises `StrictSamplingError`
-when an admissible-support gate fires — for example, no
+when an admissible-support gate fires - for example, no
 productive-safe NP composition exists for the current draws.
 
 When a trace was **recorded** under strict mode:
@@ -213,7 +213,7 @@ When a trace was **recorded** under strict mode:
   recovery sentinels).
 - **Replay** consumes those recorded values verbatim. The
   `strict` flag on `replay_from_trace_file` doesn't change what
-  values get returned — replay always returns what was recorded.
+  values get returned - replay always returns what was recorded.
   The flag controls how the replay engine handles trailing /
   exhausted conditions described above.
 - **Rerun** does re-sample, so a `rerun_from_trace_file(...,
@@ -241,7 +241,7 @@ trace_file.write_to("debug-record-42.trace.json")
 ```
 
 You can hand that one JSON file plus the cartridge name to a
-colleague and they can replay it on their machine — no
+colleague and they can replay it on their machine - no
 multi-gigabyte FASTQ exchange required.
 
 ### Sharing reproducible examples
@@ -287,7 +287,7 @@ surface.
 
 **Changing a parameter and expecting replay to work.** Any change
 to the `Experiment` pipeline that affects the plan signature
-breaks replay — adding a pass, removing a pass, changing
+breaks replay - adding a pass, removing a pass, changing
 `mutate(rate=0.02)` to `mutate(rate=0.03)`, even toggling
 `productive_only()`. The `plan_signature_mismatch` failure is
 loud on purpose. Use **rerun** if you want to see what would
@@ -296,13 +296,13 @@ change; use **replay** when you want to verify nothing did.
 **Using a different cartridge.** Replaying a `HUMAN_IGH_OGRDB`
 trace against `HUMAN_IGH_EXTENDED` fires
 `refdata_signature_mismatch`. The two cartridges have different
-catalogues, different allele names at the same index — replay
+catalogues, different allele names at the same index - replay
 would silently corrupt. The gate catches it.
 
 **Confusing replay with rerun.** Replay consumes recorded values;
 rerun re-draws. Calling `replay_from_trace_file` and expecting
 "the same plan but with a different RNG path" is a category
-error — pass the original trace to `rerun_from_trace_file` if you
+error - pass the original trace to `rerun_from_trace_file` if you
 want fresh draws under the same plan.
 
 **Expecting the trace to contain the full sequence or cartridge.**
@@ -321,13 +321,13 @@ parameter and trace *that*.
 
 ## Where to go next
 
-- **[Validation hub](../validation/index.md)** — the broader
+- **[Validation hub](../validation/index.md)** - the broader
   picture of GenAIRR's reproducibility and validation guarantees.
-- **[`validate_records`](../validation/validate-records.md)** —
+- **[`validate_records`](../validation/validate-records.md)** -
   per-record AIRR-output gate that pairs cleanly with
   replay-pinned regression tests.
-- **[The Experiment builder](experiment-builder.md)** — the
+- **[The Experiment builder](experiment-builder.md)** - the
   pipeline whose plan signature replay's first gate checks.
-- **[Reference cartridge](../concepts/reference-cartridge.md)** —
+- **[Reference cartridge](../concepts/reference-cartridge.md)** -
   the four-plane model whose identity + content hashes ride into
   the trace's validation gates.

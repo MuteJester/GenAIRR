@@ -1,6 +1,6 @@
 # Paired-end reads and FASTQ export
 
-<p class="lead">Paired-end is a projection — it adds R1/R2 read
+<p class="lead">Paired-end is a projection - it adds R1/R2 read
 windows over the final assembled molecule without changing what
 the engine simulated. One DSL method enables it; eight AIRR
 fields carry the geometry; one writer dumps R1.fastq and
@@ -10,7 +10,7 @@ R2.fastq files synchronised by <code>sequence_id</code>.</p>
 
 Paired-end is a **read-layout layer**, not a recombination or
 biology mechanism. The simulated receptor truth is already
-complete by the time `.paired_end(...)` runs — `paired_end`
+complete by the time `.paired_end(...)` runs - `paired_end`
 just decides where to slice R1 and R2 windows over the final
 assembled molecule and stamps the windows onto the AIRR record.
 
@@ -19,11 +19,11 @@ Three consequences follow from that framing:
 - **There's still one record per molecule.** Paired-end doesn't
   produce two AIRR rows; it produces one row carrying both R1
   and R2 fields. The two reads share `sequence_id`, V/D/J calls,
-  junction, productive flag, mutation counters — everything.
+  junction, productive flag, mutation counters - everything.
 - **R2 is already reverse-complemented at projection time.** The
   `r2_sequence` field carries the RC sequence, sliced from the
   3' window of the insert. The FASTQ writer outputs it verbatim
-  — no second flip.
+  no second flip.
 - **The molecule is the simulated truth, not the reads.** All the
   validators run against the molecule. Slicing the R1/R2 windows
   is downstream of biology; the molecule's `sequence`, `v_call`,
@@ -55,7 +55,7 @@ Three things to know about `.paired_end(...)`:
 - **`r1_length` is required**; `r2_length` defaults to `r1_length`.
 - **`insert_size` is required**. Each length argument accepts an
   `int` (fixed), a `(low, high)` tuple (uniform), or a
-  `[(value, weight), ...]` list (empirical distribution) — the
+  `[(value, weight), ...]` list (empirical distribution) - the
   same shape every length-or-count argument uses elsewhere in the
   DSL.
 - The pass runs late in the pipeline (after end-loss, after strand
@@ -114,8 +114,8 @@ ccaggcaccggg...
 HHIIIJJJKKKK...
 ```
 
-No `|`-pipe metadata in the headers (some aligners — STAR < 2.7
-in particular — split on `|` and lose context). The
+No `|`-pipe metadata in the headers (some aligners - STAR < 2.7
+in particular - split on `|` and lose context). The
 `sequence_id` joins back to the AIRR TSV row by row.
 
 ### Quality models
@@ -126,7 +126,7 @@ single-end `to_fastq` writer:
 ```python
 result.to_paired_fastq(
     "R1.fastq", "R2.fastq",
-    quality="illumina",        # default — trapezoid shape, per read
+    quality="illumina",        # default - trapezoid shape, per read
 )
 
 result.to_paired_fastq(
@@ -136,7 +136,7 @@ result.to_paired_fastq(
 ```
 
 `illumina` produces realistic ramp-up + tail-down quality
-profiles. Each read is scored independently — R1 and R2 each get
+profiles. Each read is scored independently - R1 and R2 each get
 their own ramp from position 0, matching what real sequencer
 output looks like. `constant` is the simpler choice for testing.
 
@@ -151,7 +151,7 @@ result.to_paired_fastq("R1.fastq", "R2.fastq", overwrite=True)  # replaces both
 
 The pre-existence check covers BOTH files. If one of the two
 already exists and `overwrite=False`, the writer raises before
-touching either — you won't end up with a stale R1 paired to a
+touching either - you won't end up with a stale R1 paired to a
 fresh R2.
 
 ## Interaction with strand and end-loss
@@ -164,7 +164,7 @@ few interactions are worth knowing:
   pipeline, they shorten the molecule first; `paired_end` then
   slices R1/R2 windows over what's left. A 300-bp insert request
   against a 290-bp post-end-loss molecule clips to what's
-  available — no error, just a shorter insert.
+  available - no error, just a shorter insert.
 - **Random strand orientation flips before R1/R2 windows.** When
   `.random_strand_orientation(prob=0.5)` is in the pipeline and
   the record draws a strand flip, the molecule's sequence is
@@ -180,7 +180,7 @@ few interactions are worth knowing:
 
 ## Clonal workflows
 
-`paired_end` is a descendant-phase pass — R1/R2 windows are
+`paired_end` is a descendant-phase pass - R1/R2 windows are
 per-read, so each emitted clone member gets its own independent layout
 draw. It is fully supported after legacy `expand_clones(...)`, and
 accepted after `clonal_repertoire(...)` with one important caveat:
@@ -225,7 +225,7 @@ in the pipeline, every record is checked for:
 - `insert_size` equals the drawn insert distance.
 
 When `.paired_end(...)` is NOT in the pipeline, the validator
-short-circuits the paired-end checks — `read_layout == "single"`
+short-circuits the paired-end checks - `read_layout == "single"`
 records pass the eight-field defaults without issue.
 
 The FASTQ writer's job is different: it checks the *shape* of
@@ -258,7 +258,7 @@ currently rejects `.paired_end(...)` even after the fork; paired-end
 lineage output is a future addition.
 
 **Expecting two AIRR rows per molecule.** There's still one row
-per record — paired-end is a layered projection, not a record
+per record - paired-end is a layered projection, not a record
 multiplier. Both R1 and R2 fields live on the same row. If you
 want a row per read for downstream joining, derive it yourself
 from the DataFrame (`df.melt(...)`-style); GenAIRR doesn't do the
@@ -280,14 +280,14 @@ instead.
 
 ## Where to go next
 
-- **[Export the results](../getting-started/export-results.md)** —
+- **[Export the results](../getting-started/export-results.md)** -
   every export format (TSV / CSV / FASTA / FASTQ / DataFrame /
   paired FASTQ) in one place.
-- **[Validation & reproducibility](../validation/index.md)** — the
+- **[Validation & reproducibility](../validation/index.md)** - the
   validator that checks paired-end geometry, plus the
   reproducibility model.
-- **[Clonal simulation overview](clonal-families.md)** — the clonal
+- **[Clonal simulation overview](clonal-families.md)** - the clonal
   model chooser and why `paired_end` must come after flat clonal
   forks.
-- **[The Experiment builder](experiment-builder.md)** — where
+- **[The Experiment builder](experiment-builder.md)** - where
   `paired_end` sits in the full DSL pipeline.

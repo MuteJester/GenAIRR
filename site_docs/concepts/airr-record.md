@@ -1,6 +1,6 @@
 # The AIRR record
 
-<p class="lead">An AIRR record is one row of GenAIRR's output —
+<p class="lead">An AIRR record is one row of GenAIRR's output -
 one simulated molecule (or one paired-end read pair) with its
 ground truth, its observed sequence, and the counters that
 describe what happened on the way through the pipeline. This
@@ -13,7 +13,7 @@ the right field for the question you're asking.</p>
 A GenAIRR record is **not** an accumulator of fields filled in
 across the pipeline. It's computed once, at the end, by reading
 the final intermediate-representation pool. Coordinates, CIGARs,
-junction, productivity, calls — everything is derived from one
+junction, productivity, calls - everything is derived from one
 source of truth, so nothing can drift out of sync.
 
 Most simulators carry an AIRR record alongside the sequence and
@@ -25,7 +25,7 @@ chance to introduce a desynchronisation bug.
 GenAIRR keeps no such running record. Coordinates exist only on
 the final pool. CIGARs are walked once at the end. `productive`
 is decided by reading the junction codons from the final state.
-There is no parallel state to fall out of sync — there is
+There is no parallel state to fall out of sync - there is
 nothing to fall out of sync *with*.
 
 That property is also why the [`validate_records`](../validation/validate-records.md)
@@ -68,7 +68,7 @@ The remaining sections walk through each.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sequence_id` | str | `"{prefix}{i}"` — defaults to `"seq0"`, `"seq1"`, … |
+| `sequence_id` | str | `"{prefix}{i}"` - defaults to `"seq0"`, `"seq1"`, … |
 | `sequence` | str | The observed nucleotide sequence; lower-case bases mark corrupted positions (low quality / PCR / sequencing error) |
 | `sequence_aa` | str | Amino-acid translation in the V reading frame |
 | `sequence_alignment` | str | Gapped sequence aligned to the germline (when present) |
@@ -78,7 +78,7 @@ The remaining sections walk through each.
 | `rev_comp` | bool | `True` when the projection reverse-complemented the molecule (set by `random_strand_orientation`) |
 | `locus` | str | Cartridge identity (e.g. `"IGH"`, `"TRB"`) |
 
-The lower-case base convention on `sequence` is load-bearing —
+The lower-case base convention on `sequence` is load-bearing -
 the FASTQ exporter (`to_fastq` / `to_paired_fastq`) routes those
 positions to the low-quality bucket. See the
 [Corruption + sequencing artefacts guide](../guides/corruption-sequencing.md)
@@ -92,7 +92,7 @@ truth_v_call, truth_d_call, truth_j_call  ← provenance (opt-in)
 ```
 
 `v_call` (and `d_call`, `j_call`) carry the **resolved allele
-name** committed during recombination — or the post-revision
+name** committed during recombination - or the post-revision
 identity after `receptor_revision()`. The call field is a
 comma-separated **tie set** when the engine sampled an
 indistinguishable group:
@@ -108,7 +108,7 @@ wants to credit ambiguity fractionally should split and divide.
 Either policy is valid; just pick one.
 
 **`d_call`** is empty (`""`) on VJ-chain records (kappa, lambda,
-TCR alpha). The empty string — not `None` — is the canonical
+TCR alpha). The empty string - not `None` - is the canonical
 absent value, mirroring how missing fields work in AIRR TSV.
 
 ### Truth columns (opt-in)
@@ -130,7 +130,7 @@ load-bearing in two cases:
   [Clonal simulation overview](../guides/clonal-families.md)).
 - **Aligner benchmarking** treats `v_call` as the aligner's
   prediction and `truth_*_call` as the ground truth, even when
-  both came from the same simulator — the column split makes the
+  both came from the same simulator - the column split makes the
   benchmark script's join symmetric.
 
 Without `expose_provenance=True`, the truth columns are absent
@@ -149,7 +149,7 @@ entirely.
 | `stop_codon` | bool | `True` iff a stop codon exists in `sequence_aa` |
 
 When the pipeline includes `.productive_only()`, every record
-has `productive: True` by construction — the constraint masks
+has `productive: True` by construction - the constraint masks
 the sampling support before the draw, so the engine never
 produces an unproductive record in the first place. See
 [Recombination and junction biology](../guides/recombination-junction.md#productivity)
@@ -177,10 +177,10 @@ For each of V, D, J:
 | `v_trim_3` | Bases removed from the V allele's 3′ end during recombination |
 | `d_trim_5`, `d_trim_3` | Bases removed from the D allele's 5′ and 3′ ends |
 | `j_trim_5` | Bases removed from the J allele's 5′ end |
-| `v_trim_5`, `j_trim_3` | Always `0` — these positions aren't trimmed during recombination (the canonical biology) |
+| `v_trim_5`, `j_trim_3` | Always `0` - these positions aren't trimmed during recombination (the canonical biology) |
 
 These four trim fields are the recombination-stage diet. They
-are **not** the observation-stage length loss — that's
+are **not** the observation-stage length loss - that's
 `end_loss_5_length` and `end_loss_3_length` (next section).
 Mixing them up is the most common confusion on the record
 surface; the trim fields describe biology (the recombinase
@@ -191,14 +191,14 @@ end-loss describes the sequencer (the read ran short).
 
 | Field | Meaning |
 |---|---|
-| `np1` | Non-templated bases between V and D ends — **P-clean** (V–D junction in VDJ; V–J junction in VJ) |
-| `np2` | Non-templated bases between D and J ends — **P-clean** (VDJ only; empty on VJ) |
+| `np1` | Non-templated bases between V and D ends - **P-clean** (V–D junction in VDJ; V–J junction in VJ) |
+| `np2` | Non-templated bases between D and J ends - **P-clean** (VDJ only; empty on VJ) |
 | `np1_aa`, `np2_aa` | Amino-acid translations |
 | `np1_length`, `np2_length` | Lengths in nucleotides |
 
 `np1` and `np2` are the **non-templated** strings only. When the
 engine claims a P-nucleotide span back as a templated extension
-of V, D, or J, those positions drop out of `np1` / `np2` — the
+of V, D, or J, those positions drop out of `np1` / `np2` - the
 NP strings are P-clean by construction.
 
 ### P-nucleotide lengths
@@ -209,14 +209,14 @@ sampled during recombination:
 | Field | Meaning |
 |---|---|
 | `p_v_3_length` | Number of P bases off the V allele's 3′ end (V → NP1 side) |
-| `p_d_5_length` | Number of P bases off the D allele's 5′ end (NP1 → D side) — VDJ only, `0` on VJ |
-| `p_d_3_length` | Number of P bases off the D allele's 3′ end (D → NP2 side) — VDJ only, `0` on VJ |
+| `p_d_5_length` | Number of P bases off the D allele's 5′ end (NP1 → D side) - VDJ only, `0` on VJ |
+| `p_d_3_length` | Number of P bases off the D allele's 3′ end (D → NP2 side) - VDJ only, `0` on VJ |
 | `p_j_5_length` | Number of P bases off the J allele's 5′ end (NP2 → J side on VDJ; NP1 → J side on VJ) |
 
 P bases **contribute to `sequence` and `junction`** (they are
 real palindromic nucleotides in the assembled molecule) but
 `np1` / `np2` remain N-only. **GenAIRR exposes P lengths, not P
-strings** — there is no per-base P field. If you need the actual
+strings** - there is no per-base P field. If you need the actual
 P-nucleotide bases for a record, slice them from `sequence` using
 the per-segment coordinates plus the four length fields.
 
@@ -256,7 +256,7 @@ it ever breaks.
 
 **`n_mutations` is biology only.** PCR errors, sequencing
 errors, indel-pass errors, and end-loss never increment these
-counters — they have their own.
+counters - they have their own.
 
 ### V-subregion mutation partition
 
@@ -292,13 +292,13 @@ end_loss_3_length      ← bases lost from the 3′ end (EndLossPass / primer_tr
 is_contaminant         ← True when this record is a contaminant (set by `contaminate`)
 ```
 
-`n_v_indels + n_d_indels + n_j_indels ≤ n_indels` — indels that
+`n_v_indels + n_d_indels + n_j_indels ≤ n_indels` - indels that
 land in NP1 or NP2 are counted in `n_indels` but not in any
 per-segment bucket (NP indels don't belong to a germline
 segment).
 
 `primer_trim_*prime` is a backwards-compatibility alias for
-`end_loss_*prime` — both write the same `end_loss_*_length`
+`end_loss_*prime` - both write the same `end_loss_*_length`
 field.
 
 ## Advanced mechanism provenance
@@ -310,7 +310,7 @@ decisions:
 |---|---|---|
 | `d_inverted` | bool | `True` when `invert_d()` committed the D allele in reverse-complement orientation; `False` otherwise (VJ chains, VDJ without `invert_d`, inversion that landed on the forward branch) |
 | `receptor_revision_applied` | bool | `True` when `receptor_revision()` fired and replaced the committed V; `False` otherwise |
-| `original_v_call` | str | When `receptor_revision_applied: True`, the V allele name the recombine pass originally committed (before revision). Empty string `""` otherwise — never `None` |
+| `original_v_call` | str | When `receptor_revision_applied: True`, the V allele name the recombine pass originally committed (before revision). Empty string `""` otherwise - never `None` |
 
 When `receptor_revision_applied: True`, `v_call` reports the
 **post-revision identity** and `original_v_call` carries the
@@ -392,7 +392,7 @@ the SHM partition (`n_mutations`, `n_v_mutations`,
 V-subregion fields) describes biology. `n_pcr_errors`,
 `n_quality_errors`, `n_indels`, and the end-loss lengths
 describe library / sequencer artefacts. They live on the same
-record by design — they don't share a counter.
+record by design - they don't share a counter.
 
 **Assuming call fields are single alleles.** `v_call`,
 `d_call`, and `j_call` can be comma-separated tie sets. Split on
@@ -406,7 +406,7 @@ artefact (the read ran short / was 3′ end-loss-clipped). The
 field names are similar; the biology is different.
 
 **Inferring P-nucleotides from `np1` / `np2`.** Don't. The NP
-strings are P-clean — P bases that have been claimed back as
+strings are P-clean - P bases that have been claimed back as
 templated extensions of V / D / J are deliberately excluded
 from `np1` / `np2`. Use the four `p_*_length` fields
 (`p_v_3_length`, `p_d_5_length`, `p_d_3_length`, `p_j_5_length`)
@@ -418,14 +418,14 @@ if you need the actual P bases.
 eight read-layout fields are present in every record but default
 to empty / zero on single-molecule pipelines. `r1_sequence ==
 ""` is the canonical "no paired-end projection ran" check. Don't
-try to write FASTQ from a single-molecule pipeline — `to_fastq`
+try to write FASTQ from a single-molecule pipeline - `to_fastq`
 emits the assembled sequence; `to_paired_fastq` raises if
 `read_layout != "paired_end"`.
 
 **Expecting `truth_*_call` columns to always be present.** They
 appear only when `expose_provenance=True` is passed to
 `run_records(...)`. Without the flag, the columns are absent
-entirely — not `None`-valued, absent.
+entirely - not `None`-valued, absent.
 
 **Expecting `clone_id` on non-clonal records.** Without a clonal
 workflow (`clonal_lineage`, `clonal_repertoire`, or legacy
@@ -436,14 +436,14 @@ all. Check for presence with `"clone_id" in rec`, not
 ## Where to go next
 
 - **[Your first AIRR record](../getting-started/first-airr-record.md)**
-  — a worked walk-through of one record, field by field.
+  a worked walk-through of one record, field by field.
 - **[Export the results](../getting-started/export-results.md)**
-  — how records become TSV / CSV / FASTA / FASTQ.
+  how records become TSV / CSV / FASTA / FASTQ.
 - **[SHM and mutation targeting](../guides/shm-targeting.md)**
-  — the SHM counters in depth.
+  the SHM counters in depth.
 - **[Corruption and sequencing artefacts](../guides/corruption-sequencing.md)**
-  — the artefact counters in depth.
-- **[Clonal simulation overview](../guides/clonal-families.md)** —
+  the artefact counters in depth.
+- **[Clonal simulation overview](../guides/clonal-families.md)** -
   `clone_id`, `duplicate_count`, lineage metadata, and family validation.
-- **[Validation hub](../validation/index.md)** — re-deriving every
+- **[Validation hub](../validation/index.md)** - re-deriving every
   field from the underlying `Outcome`.

@@ -15,7 +15,7 @@ result = ga.Experiment.on("human_igh").recombine().run_records(n=1000, seed=42)
 result.to_tsv("repertoire.tsv")
 ```
 
-Writes the canonical AIRR-spec TSV — one row per record, 50+
+Writes the canonical AIRR-spec TSV - one row per record, 50+
 columns covering sequence, V/D/J calls, junction, productive flag,
 mutation counters, paired-end fields (when present), and arbitrary
 metadata fields added by `with_metadata(...)`. The column order is
@@ -51,10 +51,10 @@ gaggtgcagctggtg...
 
 Pass `prefix="myseq"` to change the per-record ID prefix.
 
-### Blinded handoff — strip truth columns
+### Blinded handoff - strip truth columns
 
 FASTA is the natural format when the next stage is an aligner
-that should NOT see the ground-truth columns — e.g. an aligner
+that should NOT see the ground-truth columns - e.g. an aligner
 benchmark or a tool comparison where leaking `v_call` /
 `truth_v_call` would defeat the point. `to_fasta` already
 emits only `sequence_id` + the assembled sequence, so it's
@@ -63,7 +63,7 @@ implicitly blinded.
 For a blinded TSV, two options:
 
 ```python
-# Option A — write a regular TSV, then drop truth columns
+# Option A - write a regular TSV, then drop truth columns
 import pandas as pd
 
 result.to_tsv("panel.tsv")
@@ -74,7 +74,7 @@ df.drop(
 )
 df.to_csv("panel_blinded.tsv", sep="\t", index=False)
 
-# Option B — don't expose provenance in the first place
+# Option B - don't expose provenance in the first place
 result = (
     ga.Experiment.on("human_igh")
        .recombine()
@@ -83,7 +83,7 @@ result = (
 result.to_tsv("panel_blinded.tsv")
 ```
 
-Option B is the default — `truth_*` columns are only emitted
+Option B is the default - `truth_*` columns are only emitted
 when you pass `expose_provenance=True` to `run_records(...)`.
 Option A is the recipe for *post hoc* blinding when the same
 batch needs to be shared in both forms.
@@ -98,7 +98,7 @@ Writes single-end FASTQ with the same `sequence_id` headers and
 synthetic quality scores. Two quality models ship:
 
 ```python
-result.to_fastq("sequences.fastq", quality="illumina")             # default — trapezoid shape
+result.to_fastq("sequences.fastq", quality="illumina")             # default - trapezoid shape
 result.to_fastq("sequences.fastq", quality="constant", q=30)       # uniform Q-score
 ```
 
@@ -123,13 +123,13 @@ result.to_paired_fastq("reads_R1.fastq", "reads_R2.fastq")
 ```
 
 Headers use the universally-portable `/1` and `/2` suffix
-(`@seq0/1` and `@seq0/2`) — no `|`-pipe metadata that some aligners
+(`@seq0/1` and `@seq0/2`) - no `|`-pipe metadata that some aligners
 split on. R2 is already reverse-complemented at projection time;
 the writer doesn't apply a second flip.
 
 The default `overwrite=False` refuses to clobber existing files;
 pass `overwrite=True` to replace. Quality models match the
-single-end writer — `quality="illumina"` (default) or
+single-end writer - `quality="illumina"` (default) or
 `quality="constant"` with `q=...`.
 
 ## pandas DataFrame
@@ -172,13 +172,13 @@ on the TSV/DataFrame; the FASTQ files only carry sequence + quality.
 
 → Pick the workflow that matches your goal:
 
-- **[Validate AIRR records](../validation/validate-records.md)** —
+- **[Validate AIRR records](../validation/validate-records.md)** -
   confirm every field is internally consistent before downstream
   analysis.
-- **[The simulation pipeline concept](../concepts/pipeline.md)** —
+- **[The simulation pipeline concept](../concepts/pipeline.md)** -
   the mental model behind the DSL and what each pass actually does.
-- **[Productive sampling guide](../guides/productive.md)** — what
+- **[Productive sampling guide](../guides/productive.md)** - what
   "productive" means biologically and how the constraint composes
   with other passes.
 - **[Build your own cartridge](../concepts/reference-cartridge.md)**
-  — author a custom reference cartridge from FASTA.
+  author a custom reference cartridge from FASTA.

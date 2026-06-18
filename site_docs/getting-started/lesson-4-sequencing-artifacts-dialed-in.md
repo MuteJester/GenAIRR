@@ -1,4 +1,4 @@
-# Lesson 4 — Sequencing artifacts, dialed in
+# Lesson 4 - Sequencing artifacts, dialed in
 
 !!! info "Migration placeholder"
     This page is a placeholder. Content lands in **Phase 3**

@@ -1,9 +1,9 @@
-# `validate_records` — AIRR record postcondition validation
+# `validate_records` - AIRR record postcondition validation
 
 <p class="lead">Every AIRR record GenAIRR emits is supposed to be
 internally consistent with the outcome that produced it and with the
 reference data the engine ran against. <code>validate_records</code>
-is the single call that proves it — re-deriving every reported field
+is the single call that proves it - re-deriving every reported field
 from upstream sources and surfacing any divergence as a structured
 report.</p>
 
@@ -20,7 +20,7 @@ report.</p>
 > consistent and biologically derivable?
 
 The validator does not check whether your simulation is biologically
-*realistic* — that's a question about your cartridge and your
+*realistic* - that's a question about your cartridge and your
 parameters. It checks whether the engine's output is *self-consistent*:
 that the `v_call` matches what an independent walker would assign,
 that `n_mutations` matches the event ledger, that `junction_length`
@@ -71,7 +71,7 @@ result = (
 # if you call it explicitly; the runtime flag is just a convenience.
 ```
 
-The runtime flag is off by default — validation is intentionally an
+The runtime flag is off by default - validation is intentionally an
 *opt-in* discipline so production simulation loops that have already
 qualified their parameters don't pay the per-record overhead.
 
@@ -83,10 +83,10 @@ designed to be both immediately readable and CI-assertable:
 ```python
 report = result.validate_records(refdata)
 
-report.ok            # True / False — short-circuit gate for CI
-report.count         # int — total records validated
-report.failures      # list[dict] — one entry per failing record
-report.summary()     # str — single-line histogram of issue kinds
+report.ok            # True / False - short-circuit gate for CI
+report.count         # int - total records validated
+report.failures      # list[dict] - one entry per failing record
+report.summary()     # str - single-line histogram of issue kinds
 bool(report)         # equivalent to report.ok
 
 assert report, report.summary()   # the canonical CI one-liner
@@ -106,7 +106,7 @@ When `ok` is `False`, each entry of `failures` carries:
 ```
 
 `issues` is a list because a single record can fail multiple
-invariants — the validator never short-circuits on the first
+invariants - the validator never short-circuits on the first
 problem.
 
 ## Common issue categories
@@ -133,14 +133,14 @@ Every counter on the record is re-derived from a canonical source:
 
 | Counter | Source |
 |---|---|
-| `n_mutations` | `Simulation.mutation_count` — set by S5F / Uniform at seal time |
+| `n_mutations` | `Simulation.mutation_count` - set by S5F / Uniform at seal time |
 | `n_v_mutations` / `n_d_mutations` / `n_j_mutations` / `n_np_mutations` | The same SHM events, partitioned by carried segment |
 | `n_pcr_errors` / `n_quality_errors` | Trace addresses on the corruption passes |
 | `n_indels` / `n_v_indels` / `n_d_indels` / `n_j_indels` | `IndelInserted` + `IndelDeleted` events from the indel pass |
 | `end_loss_5_length` / `end_loss_3_length` | Trace addresses on the end-loss pass |
 
 A `MutationCountSumMismatch` issue means the per-segment counters
-don't add up to `n_mutations` — almost always a sign that a
+don't add up to `n_mutations` - almost always a sign that a
 mechanism added events to a segment the partition didn't anticipate.
 
 ### Junction + productivity
@@ -162,7 +162,7 @@ storm" is immediately diagnosable.
 ### Allele calls
 
 The validator rescores `v_call` / `d_call` / `j_call` against an
-independent walker — same matching rules, different implementation
+independent walker - same matching rules, different implementation
 path. Mismatches surface the engine-reported and oracle-reported
 tie-sets side-by-side so you can see whether the engine picked
 the wrong allele or just ordered the tie-set differently.
@@ -240,7 +240,7 @@ what to reach for when you need them:
   release-tier CI runs a second integrity check called
   `check_live_call_cache_parity` on every outcome, comparing the
   cached `SegmentLiveCall` against a from-scratch recompute. That
-  layer is internal to engine maintenance — users rarely need it
+  layer is internal to engine maintenance - users rarely need it
   unless they're filing a bug against the cache. Both layers are
   documented in the [two-layer integrity model](two-layer-model.md).
 

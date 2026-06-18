@@ -8,8 +8,8 @@ alphabet, severity policy). These specs are the schemas the
 estimators write into; you can also hand-author them when
 estimating from records isn't possible.</p>
 
-For the conceptual model — four typed planes (identity,
-catalogue, rules, empirical models) — see
+For the conceptual model - four typed planes (identity,
+catalogue, rules, empirical models) - see
 [the reference-cartridge concept page](../concepts/reference-cartridge.md).
 
 ## Empirical models

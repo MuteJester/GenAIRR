@@ -286,13 +286,13 @@ collapse. Passing `n` to `run_records` raises.
 
 ## Where to go next
 
-- **[Clonal lineage trees](clonal-lineage.md)** — full BCR lineage model,
+- **[Clonal lineage trees](clonal-lineage.md)** - full BCR lineage model,
   affinity-selection proxy, tree exporters, and Change-O validation example.
-- **[Clonal repertoires](clonal-repertoire.md)** — TCR and flat-BCR abundance
+- **[Clonal repertoires](clonal-repertoire.md)** - TCR and flat-BCR abundance
   model, clone-size parameters, `duplicate_count`, and tool export notes.
-- **[Validation & reproducibility](../validation/index.md)** — record and family
+- **[Validation & reproducibility](../validation/index.md)** - record and family
   validation layers.
-- **[Corruption + sequencing artefacts](corruption-sequencing.md)** — technical
+- **[Corruption + sequencing artefacts](corruption-sequencing.md)** - technical
   noise passes that compose with clonal workflows.
-- **[Paired-end reads and FASTQ](paired-end-fastq.md)** — paired-end output;
+- **[Paired-end reads and FASTQ](paired-end-fastq.md)** - paired-end output;
   currently available for non-lineage clonal workflows.

@@ -1,6 +1,6 @@
 # Validation & reproducibility
 
-<p class="lead">GenAIRR's outputs are rich — 50+ AIRR fields per
+<p class="lead">GenAIRR's outputs are rich - 50+ AIRR fields per
 record, full event ledgers per outcome, recoverable traces per
 seed. Validation answers one question across all of it: does what
 the record reports agree with what the engine actually did? This
@@ -20,11 +20,11 @@ workflows for development and CI.</p>
 
 ## Why validation exists
 
-The engine drives every AIRR field from internal state — the
+The engine drives every AIRR field from internal state - the
 persistent IR, the event ledger, and the per-draw trace. The
 projection that maps that state into the record runs *outside*
 the engine, so a bug in the projection (or in any code path that
-feeds the projection — live-call caching, V-subregion attribution,
+feeds the projection - live-call caching, V-subregion attribution,
 counter aggregation) could silently produce a record whose fields
 don't match the outcome that produced them. Validation closes that
 loop: independently re-derive every reported field from the
@@ -34,13 +34,13 @@ report.
 If you ever ask "does this record's `v_call` match the allele the
 engine actually sampled?", "do `n_v + n_d + n_j + n_np` add up to
 `n_mutations`?", "is `productive` consistent with the actual
-junction translation?" — validation is the call that answers,
+junction translation?" - validation is the call that answers,
 without you writing the cross-check yourself.
 
 ## The three validation layers
 
 GenAIRR exposes three user-facing validation surfaces. All of
-them are opt-in — production loops that have qualified their
+them are opt-in - production loops that have qualified their
 pipeline don't pay the per-record overhead by default.
 
 ### Record validation
@@ -69,7 +69,7 @@ validation checks clone-level record consistency:
 family_report = result.validate_families()
 assert family_report, family_report.summary()
 
-# Stronger gate — runs per-record validation on every parent first.
+# Stronger gate - runs per-record validation on every parent first.
 full_report = result.validate_families_with_parents(refdata)
 assert full_report, full_report.summary()
 ```
@@ -99,7 +99,7 @@ result = exp.run_records(n=100, seed=1, validate_records=True)
 
 The validator runs inline after each batch; the result is the same
 as calling `result.validate_records(refdata)` explicitly. Off by
-default — opt in during development; leave off in production
+default - opt in during development; leave off in production
 hot loops.
 
 ## What each layer catches
@@ -115,7 +115,7 @@ hot loops.
 | Clonal batch is consistently stamped with `clone_id`; truth V/D/J calls are invariant within clone when truth columns are present | `validate_families` |
 | Legacy `expand_clones` descendants agree with their parent `Outcome` | `validate_families_with_parents` |
 
-The three layers are independent — `validate_records` doesn't
+The three layers are independent - `validate_records` doesn't
 require a clonal structure; `validate_families` doesn't require
 a refdata. They compose for the strongest possible gate:
 
@@ -151,7 +151,7 @@ For most users, the seed argument is the whole reproducibility
 story. The trace+replay surface matters when:
 
 - You want a *durable* replay artifact that captures the cartridge
-  identity, engine version, and DSL signature — not just the seed.
+  identity, engine version, and DSL signature - not just the seed.
 - You want to verify, weeks later, that a recorded run *still*
   reproduces against the current code + cartridge.
 - You're filing a bug and want a self-contained artifact a
@@ -187,12 +187,12 @@ trace_file.schema_version      # int
 
 Two complementary replay paths on the simulator:
 
-- **`replay_from_trace_file(trace_file)`** — consumes the recorded
+- **`replay_from_trace_file(trace_file)`** - consumes the recorded
   values verbatim at every sampling slot. The trace becomes the
   source of randomness, not the RNG. This is the strongest
   reproducibility gate: byte-identical output even if the seed's
   RNG sequence drifts in a future version.
-- **`rerun_from_trace_file(trace_file)`** — re-runs the sampler
+- **`rerun_from_trace_file(trace_file)`** - re-runs the sampler
   from the trace's recorded seed. The trace acts as a signature
   bundle (plan + refdata gates) rather than as a value source.
   Useful when you want a fresh draw against the same configured
@@ -229,10 +229,10 @@ but it's the canonical failure mode of an unsatisfiable plan
 NP-length distribution).
 
 ```python
-# Default — permissive
+# Default - permissive
 result = exp.run_records(n=100, seed=0)
 
-# Strict — fail loud on empty admissible support
+# Strict - fail loud on empty admissible support
 result = exp.run_records(n=100, seed=0, strict=True)
 ```
 
@@ -240,10 +240,10 @@ The two modes diverge only when admissible support is empty:
 
 | Mode | When admissible support is empty | What you see |
 |---|---|---|
-| `strict=False` (default) | Falls back to a documented sentinel value — indel site `-1`, NP length `0`, NP base `N`, trim `0`; SHM substitution skips the slot. | Execution continues; the record may end up non-productive at that site. |
+| `strict=False` (default) | Falls back to a documented sentinel value - indel site `-1`, NP length `0`, NP base `N`, trim `0`; SHM substitution skips the slot. | Execution continues; the record may end up non-productive at that site. |
 | `strict=True` | Raises `StrictSamplingError` immediately. | The call fails with `(pass_name, address, reason)` args naming the failing site. |
 
-`StrictSamplingError` is **not** a `ValueError` subclass — `except
+`StrictSamplingError` is **not** a `ValueError` subclass - `except
 ValueError` will not catch it. Catch it by name from the top-level
 import:
 
@@ -257,7 +257,7 @@ except ga.StrictSamplingError as e:
     print(f"{pass_name} couldn't satisfy the contract at {address}: {reason}")
 ```
 
-The `reason` field is a stable lowercase code — common values:
+The `reason` field is a stable lowercase code - common values:
 `"empty_admissible_support"`, `"support_unavailable"`,
 `"missing_allele.V.42"`, `"contract_violation.NoStopCodonInJunction"`.
 
@@ -266,7 +266,7 @@ the sentinel fallback keeps your batch flowing; **turn strict on
 during cartridge / DSL development**, where you want the
 unsatisfiable plan to surface immediately rather than silently.
 
-Note that strict mode applies only to *fresh* sampling — replay
+Note that strict mode applies only to *fresh* sampling - replay
 consumes recorded values verbatim, so it never re-evaluates
 contract admissibility. To force strict-fresh semantics on a
 recorded trace, call `simulator.run(seed=<original_seed>,
@@ -335,7 +335,7 @@ For legacy `expand_clones(...)`, add
 ## When validation is not enough
 
 GenAIRR's validation answers *is this record internally
-consistent with how the engine claims it was produced* — not *is
+consistent with how the engine claims it was produced* - not *is
 this output biologically realistic*. A pipeline can validate
 clean and still produce simulations that don't match the
 biology you're targeting. Three places the validators don't help:
@@ -370,14 +370,14 @@ if cfg.build_report is not None:
 
 ## Where to go next
 
-- **[`validate_records`](validate-records.md)** — the full guide
+- **[`validate_records`](validate-records.md)** - the full guide
   to the per-record validator: API, the five issue categories,
   reading a `ValidationReport`.
 - **[Your first AIRR record](../getting-started/first-airr-record.md)**
-  — the field catalogue the validator checks against.
-- **[Reference cartridge](../concepts/reference-cartridge.md)** —
+  the field catalogue the validator checks against.
+- **[Reference cartridge](../concepts/reference-cartridge.md)** -
   the cartridge model the validator gates against and the
   manifest that documents input-model provenance.
-- **[The Experiment builder](../guides/experiment-builder.md)** —
+- **[The Experiment builder](../guides/experiment-builder.md)** -
   how the pipeline composes and where `validate_records=True`
   and `strict=True` sit in the call surface.

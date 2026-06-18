@@ -1,6 +1,6 @@
 # SHM and mutation targeting
 
-<p class="lead">Somatic hypermutation is GenAIRR's richest knob — you
+<p class="lead">Somatic hypermutation is GenAIRR's richest knob - you
 can pick a per-base rate, choose a uniform or context-aware model,
 target specific V/D/J/NP buckets, drill further into FWR vs CDR
 sub-regions, and read every realised mutation back off the AIRR
@@ -23,7 +23,7 @@ that:
   fields.
 - Recombination-stage mechanisms (D inversion, receptor revision)
   rewrite the assembled sequence but are *also* excluded from
-  `n_mutations` — they happen before any biology-stage mutation.
+  `n_mutations` - they happen before any biology-stage mutation.
 
 If a downstream tool wants the count of "biology that actually
 changed the sequence under SHM", `n_mutations` is the answer. For
@@ -98,7 +98,7 @@ subregion-targeted SHM (next two sections).
 ## Controlling where SHM can land
 
 `segment_rates={...}` multiplies the per-site mutability by a
-per-bucket factor. Four buckets — V, D, J, NP — and every site
+per-bucket factor. Four buckets - V, D, J, NP - and every site
 falls into exactly one:
 
 ```python
@@ -113,21 +113,21 @@ In this configuration:
 
 - The V region keeps the cartridge's S5F mutability untouched
   (factor 1.0).
-- D bases get a 0.2× scaling — SHM is biologically rare in D.
+- D bases get a 0.2× scaling - SHM is biologically rare in D.
 - J bases get a 0.5× scaling.
 - **NP regions are excluded entirely.** A `0.0` factor doesn't
-  just make NP sites unlikely to mutate — it removes them from the
+  just make NP sites unlikely to mutate - it removes them from the
   proposal support before constraint admissibility runs. Zero
   means *cannot land here*, not *unlikely to land here*.
 
 Omitted buckets default to `1.0`. The default (no kwarg at all, or
 `{}`, or explicit all-ones) is byte-identical to the pre-targeting
-engine — opt-in only.
+engine - opt-in only.
 
 ## V-subregion targeting
 
 For V, you can drill further: the five canonical IMGT subregions
-— `FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` — each get their own
+`FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` - each get their own
 multiplicative factor on top of `segment_rates["V"]`.
 
 ```python
@@ -150,7 +150,7 @@ example above resolves to:
 {"FWR1": 0.5, "FWR2": 1.0, "FWR3": 0.5, "CDR1": 2.0, "CDR2": 2.0}
 ```
 
-— FWR2 wins its own value because the explicit label beats the
+FWR2 wins its own value because the explicit label beats the
 alias.
 
 A few hard rules:
@@ -161,7 +161,7 @@ A few hard rules:
   The bundled human OGRDB cartridges have them; check the
   manifest's `v_subregion_support` block before assuming.
 - **Non-V sites are unaffected.** D, J, and NP sites multiply by
-  identity `1.0` — `v_subregion_rates` only modulates V positions.
+  identity `1.0` - `v_subregion_rates` only modulates V positions.
 - **Zero excludes.** `{"CDR": 0.0}` removes CDR1 and CDR2 from the
   proposal support, exactly like a zero `segment_rates` entry.
 - The composition is multiplicative: a V-site SHM weight is
@@ -192,7 +192,7 @@ rec["n_np_mutations"]  # NP1 + NP2 combined
 
 `n_v + n_d + n_j + n_np == n_mutations` by construction. The
 validator's `MutationCountSumMismatch` issue fires if this ever
-breaks — it's a load-bearing invariant of the SHM partition.
+breaks - it's a load-bearing invariant of the SHM partition.
 
 ### Per-V-subregion partition
 
@@ -214,7 +214,7 @@ don't land in any of the five canonical labels. Three legitimate
 cases produce non-zero values:
 
 - A V allele in your cartridge has no subregion annotations (legacy
-  or hand-authored — the bundled OGRDB cartridges annotate
+  or hand-authored - the bundled OGRDB cartridges annotate
   everything).
 - The SHM event lands in the **V-side CDR3 contribution stretch**
   between FWR3.end and the V allele's end. The five canonical
@@ -251,13 +251,13 @@ What you observe as a user:
 
 - Every record still has `productive: True`.
 - `n_mutations` is the count of **accepted biological mutations**
-  — substitutions that landed and survived the constraint mask.
+  substitutions that landed and survived the constraint mask.
 - Asking for `rate=0.1` on a cartridge whose junction would
   saturate at 5% productive-safe sites is **not an error**; the
   draw simply caps at what the constraint allows.
 
 This composes cleanly with `segment_rates` and `v_subregion_rates`
-— targeting an SHM rate at CDR2 while requiring productivity
+targeting an SHM rate at CDR2 while requiring productivity
 simply means the CDR2-targeted proposals that would break the
 junction frame are masked out. There's no retry loop; the
 constraint prunes the candidate set at sample time.
@@ -270,7 +270,7 @@ Two reproducibility surfaces stay in your favour automatically:
   `segment_rates` and `v_subregion_rates` are part of the plan
   signature, so replaying a trace against an `Experiment` with a
   different rate vector fails *before* any choices are consumed
-  — you get a clear plan-signature mismatch, not silent divergence.
+  you get a clear plan-signature mismatch, not silent divergence.
 - **The counter partition is validator-enforced.** When you call
   `result.validate_records(refdata)`, the validator independently
   re-derives every counter from the event ledger and checks
@@ -280,7 +280,7 @@ Two reproducibility surfaces stay in your favour automatically:
   `VSubregionMutationCountSumMismatch` issues with the per-record
   breakdown.
 
-Neither rate vector enters `refdata_content_hash` — they're
+Neither rate vector enters `refdata_content_hash` - they're
 per-experiment knobs, not cartridge identity.
 
 ## Comparing two SHM models
@@ -294,7 +294,7 @@ patterns.
 
 The pattern: two panels, identical seed, swapped model. Bases
 the mutation pass doesn't touch are byte-identical across the
-runs — only the SHM events differ.
+runs - only the SHM events differ.
 
 ```python
 import GenAIRR as ga
@@ -318,7 +318,7 @@ Two diagnostics are most informative:
 
 ### V-identity densities
 
-`v_identity` is the strongest single axis — every record yields
+`v_identity` is the strongest single axis - every record yields
 one value in [0, 1] and the shape is sensitive to whether the
 model concentrates mutations in motifs or scatters them.
 
@@ -337,14 +337,14 @@ ax.legend()
 
 Density plots can hide structural differences. Bucket every
 mutated position by its 5-mer context (centred on the mutated
-base) and the gap becomes obvious — S5F over-represents AID
+base) and the gap becomes obvious - S5F over-represents AID
 hotspots like `WRC` / `GYW`, uniform scatters flat across
 contexts.
 
 ```python
 from collections import Counter
 
-# Mutated positions aren't a record field — derive them by diffing
+# Mutated positions aren't a record field - derive them by diffing
 # sequence_alignment against germline_alignment, then take the 5-mer
 # context around each mutated position from germline_alignment.
 def motif_counts(df, k=5):
@@ -359,7 +359,7 @@ def motif_counts(df, k=5):
 
 ma = motif_counts(a)
 mb = motif_counts(b)
-# Diff the top 20 motifs — S5F should over-represent WRC, GYW
+# Diff the top 20 motifs - S5F should over-represent WRC, GYW
 ```
 
 ## Common mistakes
@@ -373,7 +373,7 @@ library-and-sequencing artefacts; use `n_mutations` only for SHM.
 
 **Setting every rate to zero.** `segment_rates={"V": 0, "D": 0,
 "J": 0, "NP": 0}` doesn't produce zero mutations with a "no
-sites available" error — it makes the proposal support empty, so
+sites available" error - it makes the proposal support empty, so
 the pass draws nothing. Every record will have `n_mutations: 0`.
 If you wanted that, fine; if you didn't, check which buckets you
 zeroed.
@@ -392,7 +392,7 @@ you need the two-bucket view (see the admonition above).
 
 **Mistaking `n_v_unannotated_mutations` for a cartridge bug.**
 On bundled cartridges this counter is usually non-zero but small
-— it's the V-side CDR3 contribution stretch (everything past
+it's the V-side CDR3 contribution stretch (everything past
 FWR3.end is unannotated by design). Only a *large* unannotated
 count on a cartridge whose `v_subregion_support.available` is
 `True` is a real signal worth investigating.
@@ -400,15 +400,15 @@ count on a cartridge whose `v_subregion_support.available` is
 ## Where to go next
 
 - **[Corruption and sequencing artefacts](corruption-sequencing.md)**
-  — the observation-stage mechanisms (PCR / indel / end-loss /
+  the observation-stage mechanisms (PCR / indel / end-loss /
   N-injection / strand) that surface on separate counters from
   `n_mutations`.
-- **[The Experiment builder](experiment-builder.md)** — how SHM
+- **[The Experiment builder](experiment-builder.md)** - how SHM
   composes with the other passes in the pipeline.
-- **[`validate_records`](../validation/validate-records.md)** — what
+- **[`validate_records`](../validation/validate-records.md)** - what
   the counter-partition invariants actually check.
-- **[Reference cartridge](../concepts/reference-cartridge.md)** —
+- **[Reference cartridge](../concepts/reference-cartridge.md)** -
   the V-subregion annotation surface that drives subregion
   targeting.
 - **[Your first AIRR record](../getting-started/first-airr-record.md)**
-  — the field-by-field catalogue these counters live on.
+  the field-by-field catalogue these counters live on.

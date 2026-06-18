@@ -2,7 +2,7 @@
 
 <p class="lead">A reference cartridge is the sealed, typed description
 of the biological universe a simulation runs against. Every record
-GenAIRR produces is attributable to one cartridge — its identity,
+GenAIRR produces is attributable to one cartridge - its identity,
 its rules, and its catalogue all participate in the simulation's
 content hash and trace metadata.</p>
 
@@ -19,7 +19,7 @@ content hash and trace metadata.</p>
 ## What is a reference cartridge?
 
 If you've used the simulator with `Experiment.on("human_igh")`, you
-already used a cartridge — the bundled `HUMAN_IGH_OGRDB` cartridge,
+already used a cartridge - the bundled `HUMAN_IGH_OGRDB` cartridge,
 loaded for you. The cartridge concept makes that "reference data"
 explicit and typed: instead of an opaque pickle that the engine
 inspects with hardcoded assumptions, every piece of biology is
@@ -30,7 +30,7 @@ import GenAIRR as ga
 
 cfg = ga.HUMAN_IGH_OGRDB
 manifest = cfg.cartridge_manifest()
-# JSON-clean inventory of what's on the cartridge — identity, plane keys,
+# JSON-clean inventory of what's on the cartridge - identity, plane keys,
 # legacy state, supported model kinds, content-hash participation, ...
 ```
 
@@ -48,7 +48,7 @@ A cartridge has four typed planes plus one orthogonal concept
 
 ### Identity
 
-Identity declares *what cartridge this is* — species, locus,
+Identity declares *what cartridge this is* - species, locus,
 reference set, name, and curation source. Two cartridges with
 identical catalogues but different declared identity hash
 differently; the trace files for their runs are not confusable.
@@ -62,7 +62,7 @@ cfg.name                     # "human_igh"
 
 The cartridge validator cross-checks `chain_type` against the locus
 in `identity`: IGH / TRB / TRD must be VDJ; IGK / IGL / TRA / TRG
-must be VJ. A mismatch is a *fatal* issue — neither curation nor
+must be VJ. A mismatch is a *fatal* issue - neither curation nor
 opt-in can mask it.
 
 ### Catalogue
@@ -70,10 +70,10 @@ opt-in can mask it.
 The set of V / D / J / C alleles available to the simulator. Each
 allele carries a name, gene, sequence, segment, and an optional
 anchor position (V Cys / J W-or-F codon offset). The catalogue is
-exactly what `cfg.add_v_allele(...)` etc. have always populated —
+exactly what `cfg.add_v_allele(...)` etc. have always populated -
 the cartridge concept is unchanged from earlier GenAIRR versions.
 
-V alleles can additionally carry **subregion annotations** — the
+V alleles can additionally carry **subregion annotations** - the
 five canonical IMGT region intervals (`FWR1` / `CDR1` / `FWR2` /
 `CDR2` / `FWR3`) that drive per-V-region SHM targeting and per-V-
 region mutation counters. When a V allele has a populated IMGT-
@@ -98,17 +98,17 @@ rules = ReferenceRulesSpec(
 cfg.reference_rules = rules
 ```
 
-Severity strings are `"fatal"` or `"curatable"` — the same
+Severity strings are `"fatal"` or `"curatable"` - the same
 vocabulary the cartridge validator uses. When a `ReferenceRulesSpec`
 is attached to a cartridge, it overrides the engine's bundled-locus
 defaults (IGH → W anchor, IGK/IGL/TR* → F anchor). Non-canonical
 species with custom J anchor amino acids or extended sequence
-alphabets are first-class authoring scenarios — not "hack the
+alphabets are first-class authoring scenarios - not "hack the
 engine" workarounds.
 
 ### Empirical models
 
-The **defaults plane** — distributions the engine samples from when
+The **defaults plane** - distributions the engine samples from when
 the user doesn't override at recombine time. v1 carries five typed
 sub-planes plus the SHM-targeting kwargs that ride on
 `Experiment.mutate`:
@@ -150,7 +150,7 @@ cfg.reference_models = ReferenceEmpiricalModels(
 | `allele_usage` | Per-segment allele sampling weights | `v`, `d`, `j` |
 | `trims` | Recombination-stage exonuclease trim distributions | `V_3`, `D_5`, `D_3`, `J_5` |
 | `np_lengths` | NP1 / NP2 region length distributions | `NP1`, `NP2` |
-| `np_bases` | NP-region base sampling — uniform / empirical / Markov | `NP1`, `NP2` |
+| `np_bases` | NP-region base sampling - uniform / empirical / Markov | `NP1`, `NP2` |
 | `p_nucleotide_lengths` | Templated P-nucleotide length distributions | `V_3`, `D_5`, `D_3`, `J_5` |
 
 **SHM targeting** is a per-experiment surface, not a cartridge
@@ -194,7 +194,7 @@ builder = (
 )
 
 cfg = builder.build()
-report = builder.report()       # CartridgeBuildReport — pickleable, JSON-clean
+report = builder.report()       # CartridgeBuildReport - pickleable, JSON-clean
 print(report.to_dict())          # Capture for CI artefacts
 ```
 
@@ -240,7 +240,7 @@ per-estimator detail.
 ## The manifest
 
 `cfg.cartridge_manifest()` returns a JSON-clean inventory of
-everything on the cartridge — identity, catalogue counts, rules,
+everything on the cartridge - identity, catalogue counts, rules,
 typed-plane keys, legacy state, model-kind support, and
 content-hash participation. It's the canonical surface for
 introspection:
@@ -275,8 +275,8 @@ rules, which subset of alleles do we let the engine sample from?*
 
 Two policies in v1:
 
-- `"raw"` — identity (no filtering).
-- `"functional_anchors_only"` — drop V/J alleles that fail the
+- `"raw"` - identity (no filtering).
+- `"functional_anchors_only"` - drop V/J alleles that fail the
   active `AnchorRule`: missing anchor, anchor out of bounds, or
   anchor codon AA outside the expected set. D and C pools pass
   through unchanged.
@@ -289,7 +289,7 @@ ga.Experiment.on("mouse_igh") \
 ```
 
 Curation **never** silences structural corruption (duplicate
-names, invalid bytes, locus/chain mismatch) — those continue to
+names, invalid bytes, locus/chain mismatch) - those continue to
 surface from the validator on the curated cartridge.
 
 ### Curation vs `allow_curatable_refdata`
@@ -298,7 +298,7 @@ Two ways to handle pseudogene-bearing catalogues:
 
 - `curate_refdata("functional_anchors_only")` **removes** the
   non-canonical alleles. The cartridge is clean; strict validation
-  passes by construction. This is the professional model — the
+  passes by construction. This is the professional model - the
   cartridge identifies which alleles participate.
 - `allow_curatable_refdata()` **keeps** the catalogue as-is and
   relaxes the validator at compile time. Strict validation passes
@@ -319,7 +319,7 @@ Three layers, in the order they fire:
    (`"fatal"` or `"curatable"`).
 2. **Curation** selects which alleles participate. Re-runs validation
    on the curated cartridge. Fatal structural issues are NOT fixed
-   by curation — they still surface.
+   by curation - they still surface.
 3. **Compile** runs validation under either strict mode (default)
    or `AllowCuratable` mode (after `.allow_curatable_refdata()`).
    Fatal issues always reject; Curatable issues reject only under
@@ -339,7 +339,7 @@ ga.Experiment.on(cfg).allow_curatable_refdata().compile()
 When authoring a new cartridge, the practical workflow is: build the
 catalogue + identity + rules + models, run `cfg.validate()` to see
 what the validator says, then either curate or opt-in depending on
-what you want for pseudogenes — and fix anything Fatal at the
+what you want for pseudogenes - and fix anything Fatal at the
 cartridge level (neither curation nor opt-in helps with those).
 
 ## Common mistakes
@@ -371,7 +371,7 @@ explicitly.
 `DataConfig.NP_lengths` / `trim_dicts` / `gene_use_dict` /
 `NP_transitions` / `NP_first_bases` / `p_nucleotide_length_probs`
 dicts continue to drive the engine when no typed plane is
-authored — but they are NOT lifted into the typed
+authored - but they are NOT lifted into the typed
 `ReferenceEmpiricalModels` planes automatically. If you populate
 the typed plane, the typed plane wins and the legacy dict is
 ignored. The manifest's `legacy_*_present` flags tell you which

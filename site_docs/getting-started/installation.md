@@ -23,7 +23,7 @@ Rust toolchain (`rustup install stable`); see
 pip install GenAIRR
 ```
 
-That's the whole install. Nothing else needs to be on your system —
+That's the whole install. Nothing else needs to be on your system -
 no Rust toolchain, no compiler, no external services. A virtual
 environment (`venv` or `conda`) is recommended to avoid clashing
 with other repertoire-analysis packages.
@@ -61,7 +61,7 @@ pip install GenAIRR[mcp]          # fastmcp (for the MCP server)
 ```
 
 `pandas` is needed for `result.to_dataframe()`; it ships under
-`[all]`. The core simulator works without any extras — every export
+`[all]`. The core simulator works without any extras - every export
 format except `to_dataframe` is implemented in pure Python on the
 standard library.
 
@@ -76,11 +76,11 @@ make docs-serve
 
 The site then renders at `http://localhost:8000` with live reload.
 `make docs-build` runs a `--strict` build that fails on broken
-links — the same command CI uses.
+links - the same command CI uses.
 
 ---
 
 ## Next step
 
-→ [First simulation](quick-start.md) — generate 1,000 productive
+→ [First simulation](quick-start.md) - generate 1,000 productive
 heavy-chain sequences and inspect what comes back.

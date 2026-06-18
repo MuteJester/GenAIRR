@@ -4,7 +4,7 @@
 amplifies errors, sequencers miscall bases, polymerases insert
 and delete, adapter loss clips the ends, and library prep flips
 the strand half the time. GenAIRR models each of these as a
-distinct observation-stage pass — separate from biological SHM,
+distinct observation-stage pass - separate from biological SHM,
 separately counted, and individually tunable to match the
 artefact profile of the sequencer you're benchmarking against.</p>
 
@@ -18,14 +18,14 @@ each is independently tunable:
 |---|---|---|
 | `.pcr_amplify(...)` | PCR-cycle substitution errors | `n_pcr_errors` |
 | `.sequencing_errors(...)` | Sequencer base-call errors (lowercases bytes) | `n_quality_errors` |
-| `.ambiguous_base_calls(...)` | N-base injection (replaces bytes with `N`) | (no dedicated counter — see below) |
+| `.ambiguous_base_calls(...)` | N-base injection (replaces bytes with `N`) | (no dedicated counter - see below) |
 | `.polymerase_indels(...)` | Polymerase-stage insertions and deletions | `n_indels`, `n_v_indels`, `n_d_indels`, `n_j_indels` |
 | `.end_loss_5prime(...)` | 5' adapter / primer loss | `end_loss_5_length` |
 | `.end_loss_3prime(...)` | 3' adapter / primer loss | `end_loss_3_length` |
 | `.random_strand_orientation(...)` | Strand flip during library prep | `rev_comp` |
 
-Plus `.paired_end(...)`, which isn't corruption — it's a read-layout
-projection — but it sits in the same descendant-phase block of the
+Plus `.paired_end(...)`, which isn't corruption - it's a read-layout
+projection - but it sits in the same descendant-phase block of the
 pipeline and is usually configured alongside the corruption passes.
 See [Paired-end reads and FASTQ](paired-end-fastq.md).
 
@@ -39,16 +39,16 @@ real biology to library prep and vice versa.
 
 | Mechanism | Pipeline stage | Counter |
 |---|---|---|
-| Somatic hypermutation | Biology — `.mutate(...)` | `n_mutations` (plus per-segment `n_v_mutations` etc.) |
-| PCR substitution | Library — `.pcr_amplify(...)` | `n_pcr_errors` |
-| Sequencer base-call error | Sequencer — `.sequencing_errors(...)` | `n_quality_errors` |
-| N-base injection | Sequencer / quality flagging — `.ambiguous_base_calls(...)` | (none on the record) |
-| Polymerase indel | Library — `.polymerase_indels(...)` | `n_indels` + per-segment partition |
-| Adapter / primer loss | Library — `.end_loss_*prime(...)` | `end_loss_*_length` |
-| Strand flip | Library — `.random_strand_orientation(...)` | `rev_comp` |
+| Somatic hypermutation | Biology - `.mutate(...)` | `n_mutations` (plus per-segment `n_v_mutations` etc.) |
+| PCR substitution | Library - `.pcr_amplify(...)` | `n_pcr_errors` |
+| Sequencer base-call error | Sequencer - `.sequencing_errors(...)` | `n_quality_errors` |
+| N-base injection | Sequencer / quality flagging - `.ambiguous_base_calls(...)` | (none on the record) |
+| Polymerase indel | Library - `.polymerase_indels(...)` | `n_indels` + per-segment partition |
+| Adapter / primer loss | Library - `.end_loss_*prime(...)` | `end_loss_*_length` |
+| Strand flip | Library - `.random_strand_orientation(...)` | `rev_comp` |
 
 `n_mutations` is biology, every other field is artefact. If you
-want a "total perturbation budget" you sum them downstream — they
+want a "total perturbation budget" you sum them downstream - they
 don't aggregate automatically.
 
 See [SHM and mutation targeting](shm-targeting.md) for the biology
@@ -56,7 +56,7 @@ side of the boundary in detail.
 
 ## PCR and sequencing errors
 
-Two substitution-style corruption passes — same shape, different
+Two substitution-style corruption passes - same shape, different
 biology.
 
 ### PCR errors
@@ -70,7 +70,7 @@ result = (
 )
 
 rec = result[0]
-rec["n_pcr_errors"]    # int — number of PCR substitutions on this record
+rec["n_pcr_errors"]    # int - number of PCR substitutions on this record
 ```
 
 Each PCR error is a single-base substitution drawn uniformly across
@@ -87,7 +87,7 @@ result = (
       .run_records(n=100, seed=1)
 )
 
-rec["n_quality_errors"]    # int — number of sequencer base-call errors
+rec["n_quality_errors"]    # int - number of sequencer base-call errors
 ```
 
 `sequencing_errors` models sequencer-quality miscalls. The pass
@@ -129,7 +129,7 @@ analysis:
 - **Junction translation produces `X` codons.** An `N`-containing
   codon translates to `X`; `junction_aa` and `sequence_aa` may
   carry `X` characters. The `productive` predicate still evaluates
-  correctly — `X` codons don't satisfy the stop-codon check but
+  correctly - `X` codons don't satisfy the stop-codon check but
   also don't satisfy the V-Cys or J-W/F anchor preservation checks
   if they land at the anchor positions.
 
@@ -187,7 +187,7 @@ rec["end_loss_5_length"]    # bases removed from 5' end
 rec["end_loss_3_length"]    # bases removed from 3' end
 ```
 
-End-loss models adapter / primer loss during library prep —
+End-loss models adapter / primer loss during library prep -
 the read starts a few bases in from the molecule's actual 5' end
 and / or terminates a few bases short of the 3' end. The
 `length` argument follows the standard
@@ -198,7 +198,7 @@ and / or terminates a few bases short of the 3' end. The
 ```python
 # These two are exactly equivalent:
 .end_loss_5prime(length=(0, 8))
-.primer_trim_5prime(length=(0, 8))    # legacy alias — same pass, same fields
+.primer_trim_5prime(length=(0, 8))    # legacy alias - same pass, same fields
 ```
 
 The legacy `primer_trim_*prime` names predate the engine's
@@ -217,7 +217,7 @@ two separate passes with two separate sets of fields:
 | **Recombination trim** | `TrimPass` | `v_trim_3`, `d_trim_5`, `d_trim_3`, `j_trim_5` | Recombination (germline exonuclease) |
 | **End loss** | `EndLossPass` | `end_loss_5_length`, `end_loss_3_length` | Observation (library prep / sequencing) |
 
-Don't conflate them — they capture different biology and a
+Don't conflate them - they capture different biology and a
 downstream pipeline that adds them together gets the wrong total.
 See the [Recombination + junction biology](recombination-junction.md#trims-vs-end-loss)
 guide for the detailed comparison.
@@ -232,7 +232,7 @@ result = (
       .run_records(n=100, seed=1)
 )
 
-rec["rev_comp"]    # bool — True if this record was flipped
+rec["rev_comp"]    # bool - True if this record was flipped
 ```
 
 At `prob=0.5`, half the records get reverse-complemented in place.
@@ -256,7 +256,7 @@ A few facts to know:
 ## Ordering with clonal workflows
 
 **All seven corruption passes are descendant-phase.** They model
-per-read artefacts — every emitted clone member or observed lineage
+per-read artefacts - every emitted clone member or observed lineage
 cell gets independent PCR errors, independent indel events,
 independent end-loss draws, etc.
 
@@ -265,8 +265,8 @@ result = (
     ga.Experiment.on("human_igh")
       .recombine()
       .clonal_repertoire(n_clones=10, max_size=50)
-      .mutate(model="s5f", rate=0.03)        # biology — descendant-phase
-      .pcr_amplify(count=(0, 3))             # corruption — descendant-phase
+      .mutate(model="s5f", rate=0.03)        # biology - descendant-phase
+      .pcr_amplify(count=(0, 3))             # corruption - descendant-phase
       .polymerase_indels(count=(0, 2))
       .ambiguous_base_calls(count=(0, 2))
       .sequencing_errors(count=(0, 5))
@@ -332,7 +332,7 @@ result = apply_profile(
 ).run_records(n=5000, seed=42)
 ```
 
-The set of passes you call **is** the profile — these are
+The set of passes you call **is** the profile - these are
 starting points, not exhaustive: add `pcr_amplify` or
 `sequencing_errors` rates when the platform calls for them.
 
@@ -381,7 +381,7 @@ stable trace addresses (`corrupt.pcr.count`, `corrupt.quality.count`,
 etc.), so trace replay reproduces the same artefacts deterministically.
 
 Paired-end FASTQ export writes the projected `r1_sequence` /
-`r2_sequence` fields verbatim — by AIRR-projection time the
+`r2_sequence` fields verbatim - by AIRR-projection time the
 corruption + strand-flip + paired-end pipeline has already
 finished, so the exported reads carry all the artefacts the
 record's counters report. See [Validation hub](../validation/index.md)
@@ -406,7 +406,7 @@ separate passes, separate fields, separate biology stages. The
 guide has the side-by-side comparison.
 
 **Putting corruption before a clonal fork.** All seven corruption
-passes are descendant-phase — they're per-read artefacts that need to
+passes are descendant-phase - they're per-read artefacts that need to
 vary within a clonal family. The DSL rejects this before
 `clonal_repertoire()` or `expand_clones()` with a message naming the
 offending method and telling you to move it after the fork.
@@ -422,23 +422,23 @@ downstream produces wrong reads. The validator's
 state.
 
 **Looking for an `n_ns` counter.** `ambiguous_base_calls` doesn't
-ship one. The only signal is the `N` characters in `sequence` —
+ship one. The only signal is the `N` characters in `sequence` -
 count them yourself with `rec["sequence"].count("N")`.
 
 ## Where to go next
 
-- **[SHM and mutation targeting](shm-targeting.md)** — the biology
+- **[SHM and mutation targeting](shm-targeting.md)** - the biology
   side of the boundary; the per-segment / per-V-subregion
   partition.
-- **[Paired-end reads and FASTQ](paired-end-fastq.md)** — the
+- **[Paired-end reads and FASTQ](paired-end-fastq.md)** - the
   read-layout projection that usually sits alongside corruption.
-- **[Clonal simulation overview](clonal-families.md)** — the
+- **[Clonal simulation overview](clonal-families.md)** - the
   clonal model chooser and phase discipline that gates every
   corruption pass.
 - **[Recombination + junction biology](recombination-junction.md)**
-  — the trim vs end-loss boundary in detail.
-- **[Validation & reproducibility](../validation/index.md)** — the
+  the trim vs end-loss boundary in detail.
+- **[Validation & reproducibility](../validation/index.md)** - the
   validator's issue catalogue covering every corruption counter.
 - **[Your first AIRR record](../getting-started/first-airr-record.md)**
-  — the field-by-field catalogue including every counter named on
+  the field-by-field catalogue including every counter named on
   this page.

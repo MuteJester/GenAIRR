@@ -1,6 +1,6 @@
 # Estimate cartridge models from real data
 
-<p class="lead">A reference cartridge ships with biology baked in — but
+<p class="lead">A reference cartridge ships with biology baked in - but
 the empirical models inside (allele usage, trim distributions, NP
 lengths, NP base composition, P-nucleotide lengths) come from
 data. GenAIRR's estimator surface lets you turn a real AIRR
@@ -65,7 +65,7 @@ The expected column names by estimator:
 Columns are read **per-field**, not per-row: a row missing one
 column for one estimator is rejected only for that estimator's
 stage, not for the whole pipeline. Run all five estimators in
-sequence against the same record set — each takes what it needs
+sequence against the same record set - each takes what it needs
 and reports independently on the rest.
 
 VJ-chain cartridges (kappa, lambda) silently ignore the D-segment
@@ -101,8 +101,8 @@ report = builder.report()
 ```
 
 Every call returns the same `ReferenceCartridgeBuilder` so the
-chain stays fluent. Order doesn't matter for correctness — each
-estimator writes its own plane — but the build report records the
+chain stays fluent. Order doesn't matter for correctness - each
+estimator writes its own plane - but the build report records the
 calls in the order they ran, so put them in the order a future
 reader will find easiest to follow.
 
@@ -151,7 +151,7 @@ The `ambiguous` keyword chooses how comma-separated tie sets
 | Policy | Behaviour |
 |---|---|
 | `"fractional"` (default) | Splits credit evenly across the known alleles in the tie set. Unknown alleles inside a tie set surface as `unknown_allele` rejection entries, one per segment per row, without dropping the row if at least one allele in the set is known. |
-| `"truth_first"` | Collapses to the first allele in the tie set before resolution — closest to "treat the call as a single allele". |
+| `"truth_first"` | Collapses to the first allele in the tie set before resolution - closest to "treat the call as a single allele". |
 | `"reject"` | Drops the entire row if any segment has multiple alleles. Useful when you want to estimate from confident calls only. |
 
 ### P-nucleotide naive input detector
@@ -181,13 +181,13 @@ Two important composition rules:
 
 - **Explicit `Experiment` kwargs always override the cartridge.**
   When you pass `.trim(v_3=..., d_5=..., d_3=..., j_5=...)` to an
-  experiment, those overrides win — the estimated cartridge
+  experiment, those overrides win - the estimated cartridge
   distribution is the *default*, not a floor.
 - **The plan signature folds these distributions** where applicable,
   so replaying a trace against a cartridge whose estimated
   distributions have drifted will fail cleanly with a plan-signature
   mismatch. The one documented soft gap is in allele-usage
-  weights — see `docs/replay_protocol.md` for the precise
+  weights - see `docs/replay_protocol.md` for the precise
   envelope.
 
 The cartridge itself doesn't expose run-time sampling code; the
@@ -203,11 +203,11 @@ Two readable handles after `build()`:
 
 ```python
 report = builder.report()
-report.stages              # list[dict] — one entry per builder call
-report.warnings            # list[str]  — build-finalisation warnings
-report.rejected            # list[dict] — per-row + per-allele drops
-report.manifest_snapshot   # dict | None — cfg.cartridge_manifest() at build time
-report.checksum_at_build_time  # str | None — schema_sha256 stamped on cfg
+report.stages              # list[dict] - one entry per builder call
+report.warnings            # list[str]  - build-finalisation warnings
+report.rejected            # list[dict] - per-row + per-allele drops
+report.manifest_snapshot   # dict | None - cfg.cartridge_manifest() at build time
+report.checksum_at_build_time  # str | None - schema_sha256 stamped on cfg
 report.to_dict()           # JSON-clean dict for CI artifacts
 ```
 
@@ -255,14 +255,14 @@ you carry forward a hand-authored cartridge with legacy fields,
 **Calling `estimate_p_nucleotide_lengths` on a generic AIRR
 table.** External tools usually don't populate `p_*_length`
 columns at all. The estimator's 95 % zero-fraction warning is
-the signal that you're estimating off P-naive input — at that
+the signal that you're estimating off P-naive input - at that
 point the model is "always-zero", not biology. Either source the
 records from a P-aware tool or skip this estimator.
 
 **Expecting the SHM-rate estimator today.** It's deferred to a
 follow-up slice. Calling `builder.estimate_shm_rates(...)` raises
 `AttributeError`. Use the cartridge's bundled S5F kernel and tune
-the rate via the `Experiment.mutate(rate=..., model=...)` knob —
+the rate via the `Experiment.mutate(rate=..., model=...)` knob -
 see [SHM and mutation targeting](shm-targeting.md).
 
 **Forgetting `replace=False` when you want single-call
@@ -270,8 +270,8 @@ discipline.** All estimators default to `replace=True`: calling
 the same estimator twice silently overwrites the first result
 and stamps `replaced=True` on the stage entry. That's the
 ergonomic default for iterative work. When you want a build
-script that *asserts* you only ran each estimator once — for CI
-hygiene, or to catch a duplicated method call in a longer chain —
+script that *asserts* you only ran each estimator once - for CI
+hygiene, or to catch a duplicated method call in a longer chain -
 pass `replace=False` on every estimator call. The second call
 then raises `ValueError` instead of overwriting.
 
@@ -286,12 +286,12 @@ representative.
 ## Where to go next
 
 - **[Build a reference cartridge](build-reference-cartridge.md)**
-  — the broader builder workflow these estimators plug into.
-- **[Reference cartridge](../concepts/reference-cartridge.md)** —
+  the broader builder workflow these estimators plug into.
+- **[Reference cartridge](../concepts/reference-cartridge.md)** -
   the four-plane conceptual model and why the empirical-models
   plane is typed.
-- **[Junction N/P additions](junction-additions.md)** — how the
+- **[Junction N/P additions](junction-additions.md)** - how the
   NP-base and P-length models affect what the engine samples.
-- **[Validation hub](../validation/index.md)** — replay and
+- **[Validation hub](../validation/index.md)** - replay and
   plan-signature guarantees that ride on top of an estimated
   cartridge.

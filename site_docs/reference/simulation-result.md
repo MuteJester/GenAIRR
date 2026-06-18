@@ -59,7 +59,7 @@ result.to_paired_fastq(
 ```
 
 `to_paired_fastq` requires the experiment to have included
-`.paired_end(r1_length=..., r2_length=..., insert_size=...)` —
+`.paired_end(r1_length=..., r2_length=..., insert_size=...)` -
 otherwise it raises. It also refuses to overwrite an existing
 output file unless you pass `overwrite=True`.
 

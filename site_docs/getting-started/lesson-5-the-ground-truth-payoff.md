@@ -1,4 +1,4 @@
-# Lesson 5 — The ground-truth payoff
+# Lesson 5 - The ground-truth payoff
 
 !!! info "Migration placeholder"
     This page is a placeholder. Content lands in **Phase 3**

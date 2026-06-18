@@ -3,7 +3,7 @@
 <p class="lead">Every simulation you write in GenAIRR is built with
 the <code>Experiment</code> DSL: a fluent pipeline of biological,
 library-prep, and sequencing mechanisms that compiles to a
-deterministic plan. This page is the control panel — what every
+deterministic plan. This page is the control panel - what every
 method does, the order they go in, and which guide to read for
 each one.</p>
 
@@ -93,7 +93,7 @@ pass actually does:
 
 **Junction mechanisms (P and N additions) are NOT separate Experiment
 methods.** They're driven by the cartridge's empirical models plane
-— `ReferenceEmpiricalModels.np_lengths` / `np_bases` /
+`ReferenceEmpiricalModels.np_lengths` / `np_bases` /
 `p_nucleotide_lengths`. Authoring those values on your cartridge
 controls how much N is added and what bases get drawn; the
 `.recombine()` pass consumes them automatically.
@@ -162,13 +162,13 @@ pairs for arbitrary distributions. The pattern is consistent
 across passes:
 
 ```python
-# Fixed count — every record gets exactly this many.
+# Fixed count - every record gets exactly this many.
 exp.polymerase_indels(count=2)
 
-# Uniform tuple — every record draws a count in [0, 3].
+# Uniform tuple - every record draws a count in [0, 3].
 exp.pcr_amplify(count=(0, 3))
 
-# Empirical list — every record draws from this empirical distribution.
+# Empirical list - every record draws from this empirical distribution.
 exp.ambiguous_base_calls(count=[(0, 0.6), (1, 0.3), (2, 0.1)])
 ```
 
@@ -209,22 +209,22 @@ bundle:
 
 Bases the engine touches that the contracts don't gate (mutation
 events, all corruption passes) can still degrade the result
-downstream — that's the intentional split. Heavy SHM or 5′ / 3′
+downstream - that's the intentional split. Heavy SHM or 5′ / 3′
 loss can still produce a non-productive *observed* sequence;
 the recombination-time identity stays productive.
 
 ### Strict mode on empty support
 
-Some configurations are over-constrained — a particular allele
+Some configurations are over-constrained - a particular allele
 pair may have no admissible NP length that keeps the junction
 in-frame. The `strict=` flag on `run_records(...)` picks the
 behaviour:
 
-- **`strict=False` (default)** — fall back to the unconstrained
+- **`strict=False` (default)** - fall back to the unconstrained
   distribution at that single draw and continue. Records can
   contain rare non-productive sequences when the constraint
   couldn't be satisfied.
-- **`strict=True`** — raise `StrictSamplingError(pass_name,
+- **`strict=True`** - raise `StrictSamplingError(pass_name,
   address, reason)` and stop. Use this for training datasets,
   validation runs, and formal benchmarks where 100 % contract
   compliance is required.
@@ -242,11 +242,11 @@ result = exp.run_records(n=1000, seed=42, validate_records=True)
 
 Two flags carry most of the reproducibility story:
 
-- **`seed=`** — same seed → byte-identical output across runs and
+- **`seed=`** - same seed → byte-identical output across runs and
   platforms. `n` consecutive seeded records use seeds
   `[seed, seed+1, …, seed+n-1]`, so batches stitch together if you
   offset the starting seed.
-- **`validate_records=True`** — runs the postcondition validator
+- **`validate_records=True`** - runs the postcondition validator
   inline on every record after the run. Off by default;
   release-tier loops opt in. See
   [`validate_records`](../validation/validate-records.md).

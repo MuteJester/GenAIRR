@@ -43,7 +43,7 @@ rest of the API follows from them.
 | Noun | Role | Example |
 |---|---|---|
 | **`Experiment`** | The pipeline. A fluent builder of biology + library + sequencing passes. | `ga.Experiment.on("human_igh").recombine().mutate(rate=0.05)` |
-| **`DataConfig`** | The reference cartridge. Identity, allele catalogue, rules, empirical models — everything the engine needs to know about the biology it's simulating. | `ga.HUMAN_IGH_OGRDB`, or load via the string shortcut `"human_igh"` |
+| **`DataConfig`** | The reference cartridge. Identity, allele catalogue, rules, empirical models - everything the engine needs to know about the biology it's simulating. | `ga.HUMAN_IGH_OGRDB`, or load via the string shortcut `"human_igh"` |
 | **`SimulationResult`** | The output. A list-like wrapper around a batch of AIRR record dicts plus the underlying `Outcome` objects for advanced introspection. | `result = exp.run_records(n=100)`; `result[0]["v_call"]` |
 
 Every method call on `Experiment` returns the same `Experiment`,
@@ -58,7 +58,7 @@ the compiled plan first). This means the DSL composes cleanly:
 | Step | Effect |
 |---|---|
 | `Experiment.on("human_igh")` | Bind to the bundled human IGH cartridge. Other shortcuts: `"human_igk"`, `"human_igl"`, `"mouse_igh"`, `"human_tcrb"`. Pass a `DataConfig` instead of a string for a custom cartridge. |
-| `.recombine()` | Append a V(D)J recombination pass — sample alleles, trim, fill NP1/NP2, assemble. Defaults to the cartridge's empirical models. |
+| `.recombine()` | Append a V(D)J recombination pass - sample alleles, trim, fill NP1/NP2, assemble. Defaults to the cartridge's empirical models. |
 | `.productive_only()` | Constraint-aware: the engine samples only choices that produce a productive sequence (in-frame junction, no stop codons, anchors preserved). No retry loops. |
 | `.run_records(n=1000, seed=42)` | Compile the plan, run 1,000 seeded draws, project each into an AIRR-format record. Same seed → byte-identical output across runs and platforms. |
 
@@ -66,20 +66,20 @@ the compiled plan first). This means the DSL composes cleanly:
 
 The simulation's done; now you can:
 
-- **[Inspect your first AIRR record](first-airr-record.md)** — what
+- **[Inspect your first AIRR record](first-airr-record.md)** - what
   each field means and where it came from.
-- **[Export the results](export-results.md)** — AIRR TSV, FASTA,
+- **[Export the results](export-results.md)** - AIRR TSV, FASTA,
   FASTQ, paired-end FASTQ, pandas DataFrame.
-- **[Validate the output](../validation/validate-records.md)** — run
+- **[Validate the output](../validation/validate-records.md)** - run
   the postcondition validator to confirm every field is internally
   consistent.
 - **[Build your own cartridge](../concepts/reference-cartridge.md)**
-  — the four-plane cartridge model and how to author a custom
+  the four-plane cartridge model and how to author a custom
   reference from FASTA.
 
 ---
 
 ## Next step
 
-→ [Your first AIRR record](first-airr-record.md) — read the output
+→ [Your first AIRR record](first-airr-record.md) - read the output
 field by field.

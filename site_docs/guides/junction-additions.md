@@ -1,7 +1,7 @@
 # Junction N and P additions
 
 <p class="lead">The junction between V, D, and J segments isn't just
-the gap between coding ends — it's where N-addition and P-nucleotide
+the gap between coding ends - it's where N-addition and P-nucleotide
 biology gets written. GenAIRR drives both from typed cartridge
 planes, and every base ends up labelled on the AIRR record so you
 can see exactly where it came from.</p>
@@ -13,8 +13,8 @@ similar on a sequencer trace, but they come from different places.
 
 | Addition | Source | Determinism | Cartridge plane |
 |---|---|---|---|
-| **N addition** | TdT-like template-free polymerase | Random — bases are sampled from a model | `np_lengths`, `np_bases` |
-| **P addition** | Hairpin opening of the coding end | **Deterministic** — bases are the palindromic complement of the trimmed coding-end flank | `p_nucleotide_lengths` |
+| **N addition** | TdT-like template-free polymerase | Random - bases are sampled from a model | `np_lengths`, `np_bases` |
+| **P addition** | Hairpin opening of the coding end | **Deterministic** - bases are the palindromic complement of the trimmed coding-end flank | `p_nucleotide_lengths` |
 
 Both contribute bases that affect the junction sequence, junction
 length, and therefore the productive-triad evaluation. The
@@ -22,7 +22,7 @@ distinction matters because:
 
 - **N additions** are sampled from a distribution. You author the
   distribution; the engine draws values.
-- **P additions** are derived bytes — once the trim and length are
+- **P additions** are derived bytes - once the trim and length are
   fixed, the bases are forced by the coding-end sequence. You only
   control the length, not the bases.
 
@@ -59,7 +59,7 @@ A few rules to keep in mind when you reason about the geometry:
 ## N length models
 
 `ReferenceEmpiricalModels.np_lengths` controls how many bases each
-NP region holds. Keys are `NP1` (always) and `NP2` (VDJ only — VJ
+NP region holds. Keys are `NP1` (always) and `NP2` (VDJ only - VJ
 cartridges reject `NP2` keys at attach time):
 
 ```python
@@ -74,7 +74,7 @@ cfg.reference_models = ReferenceEmpiricalModels(
 ```
 
 Each `EmpiricalDistributionSpec` is a flat `[(value, weight), ...]`
-list — non-negative integer values, finite positive weights. The
+list - non-negative integer values, finite positive weights. The
 engine normalises internally; weights don't need to sum to 1.
 
 Per-experiment overrides go through `Experiment.recombine`:
@@ -88,7 +88,7 @@ ga.Experiment.on(cfg).recombine(
 
 The kwarg wins over the cartridge plane wins over the legacy
 `cfg.NP_lengths` dict wins over a uniform fallback. **Passing
-`np2_lengths` on a VJ cartridge raises `ValueError`** — there's
+`np2_lengths` on a VJ cartridge raises `ValueError`** - there's
 no NP2 region to extend.
 
 ## N base models
@@ -99,16 +99,16 @@ drawn at each NP position. Three kinds, each shipped end-to-end:
 ```python
 from GenAIRR import NpBaseModelSpec
 
-# Uniform — every position samples A/C/G/T uniformly.
+# Uniform - every position samples A/C/G/T uniformly.
 NpBaseModelSpec(kind="uniform")
 
-# Empirical first-base — full base composition over every position.
+# Empirical first-base - full base composition over every position.
 NpBaseModelSpec(
     kind="empirical_first_base",
     first_base={"A": 0.4, "C": 0.1, "G": 0.4, "T": 0.1},
 )
 
-# Markov — 1-step previous-base-conditional.
+# Markov - 1-step previous-base-conditional.
 NpBaseModelSpec(
     kind="markov",
     first_base={"A": 0.25, "C": 0.25, "G": 0.25, "T": 0.25},
@@ -123,14 +123,14 @@ NpBaseModelSpec(
 
 Notes on each kind:
 
-- **`uniform`** is the engine baseline — byte-identical to the
+- **`uniform`** is the engine baseline - byte-identical to the
   pre-typed-model behaviour when no spec is authored.
 - **`empirical_first_base`** uses the supplied categorical at
   *every* position (the historical name is preserved; the
   biologically correct estimate is the full base composition).
 - **`markov`** uses `first_base` at position 0 and the transition
   matrix for position 1+. **All four A/C/G/T from-base rows must
-  be populated** — the spec validator rejects partial matrices at
+  be populated** - the spec validator rejects partial matrices at
   attach time.
 
 Attach the spec to either NP region independently:
@@ -139,7 +139,7 @@ Attach the spec to either NP region independently:
 cfg.reference_models = ReferenceEmpiricalModels(
     np_bases={
         "NP1": NpBaseModelSpec(kind="markov", first_base=..., transitions=...),
-        # NP2 omitted — falls back to uniform
+        # NP2 omitted - falls back to uniform
     },
 )
 ```
@@ -173,10 +173,10 @@ cfg.reference_models = ReferenceEmpiricalModels(
 **Bases are deterministic.** Once a record draws a P length at a
 given end, the bases are the reverse-complement palindrome of the
 adjacent coding-end's trimmed flank. You don't get to author the
-bases — only the length distribution and (indirectly via the trim
+bases - only the length distribution and (indirectly via the trim
 distribution) which bases the palindrome will reflect.
 
-Empty / omitted P-end keys mean no P-pass runs at that end —
+Empty / omitted P-end keys mean no P-pass runs at that end -
 byte-identical to the pre-P-plane baseline. Authoring
 `p_nucleotide_lengths` is opt-in.
 
@@ -186,12 +186,12 @@ Every record carries the realised N and P state on dedicated AIRR
 fields:
 
 ```python
-rec["np1"]              # 'ACGT'  — NP1 nucleotide string
+rec["np1"]              # 'ACGT'  - NP1 nucleotide string
 rec["np1_length"]       # 4
-rec["np2"]              # 'TAGC'  — NP2 string (VDJ only; empty on VJ)
+rec["np2"]              # 'TAGC'  - NP2 string (VDJ only; empty on VJ)
 rec["np2_length"]       # 4
 
-rec["p_v_3_length"]     # 1      — number of P bases at V_3 end
+rec["p_v_3_length"]     # 1      - number of P bases at V_3 end
 rec["p_d_5_length"]     # 0
 rec["p_d_3_length"]     # 1
 rec["p_j_5_length"]     # 0
@@ -201,11 +201,11 @@ Two things to know:
 
 - **`np1` / `np2` are P-clean.** The structural NP region span
   excludes P bases by construction, so `len(rec["np1"]) ==
-  rec["np1_length"]` on every record GenAIRR produces — even
+  rec["np1_length"]` on every record GenAIRR produces - even
   under a max-P plane.
 - **P bases don't have their own string fields in v1.** Per-base P
   strings (`p_v_3`, `p_d_5`, etc.) and an aggregate
-  `n_p_nucleotides` counter are deliberately deferred — the
+  `n_p_nucleotides` counter are deliberately deferred - the
   `p_*_length` fields are the only P provenance v1 ships.
 
 ## Interaction with `productive_only`
@@ -228,7 +228,7 @@ GenAIRR's default permissive mode falls back to unconstrained
 sampling and the run continues (the record may end up
 non-productive at that site). Pass `strict=True` to
 `run_records(...)` to surface the empty-support condition as
-`StrictSamplingError` instead — useful during cartridge
+`StrictSamplingError` instead - useful during cartridge
 development when you want to catch unsatisfiable plans loudly:
 
 ```python
@@ -263,7 +263,7 @@ Each estimator reads only the AIRR fields it needs:
   these; external AIRR tools usually do too.
 - **`estimate_np_base_model`** consumes the `np1` / `np2` *string*
   fields (not derived from length arithmetic). With `kind="markov"`,
-  pass a non-zero `pseudocount` if the input is small — otherwise
+  pass a non-zero `pseudocount` if the input is small - otherwise
   unobserved transitions leave rows the spec validator will
   reject.
 - **`estimate_p_nucleotide_lengths`** consumes `p_v_3_length` /
@@ -313,13 +313,13 @@ chance to silently lose your spec.
 
 ## Where to go next
 
-- **[The Experiment builder](experiment-builder.md)** — how the
+- **[The Experiment builder](experiment-builder.md)** - how the
   recombination pipeline composes with corruption and clonal
   expansion.
-- **[Reference cartridge](../concepts/reference-cartridge.md)** —
+- **[Reference cartridge](../concepts/reference-cartridge.md)** -
   the four typed planes (identity, catalogue, rules, empirical
   models) the engine reads.
-- **[SHM and mutation targeting](shm-targeting.md)** — biology-stage
+- **[SHM and mutation targeting](shm-targeting.md)** - biology-stage
   mutation after junction biology is complete.
-- **[Validate AIRR records](../validation/validate-records.md)** —
+- **[Validate AIRR records](../validation/validate-records.md)** -
   what the validator checks about NP / P fields specifically.

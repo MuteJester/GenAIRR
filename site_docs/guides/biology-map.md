@@ -4,15 +4,15 @@
 GenAIRR models to the API surface that controls it, the stage
 where it fires, the AIRR output fields it affects, and the guide
 that explains it. Useful when you know what biology you want to
-model and need to find the GenAIRR knob — or when you're reading
+model and need to find the GenAIRR knob - or when you're reading
 a record and want to know what produced a specific field.</p>
 
 ## How to use this map
 
 You know the biology term, you want the GenAIRR surface. Find
 the row in the table below, read the surface column, click the
-guide for context. Going the other direction — you know the
-field name and want to know which mechanism produced it — the
+guide for context. Going the other direction - you know the
+field name and want to know which mechanism produced it - the
 [AIRR record concept page](../concepts/airr-record.md) is the
 better starting point.
 
@@ -28,25 +28,25 @@ better starting point.
 | **Receptor revision** | `.receptor_revision(prob=...)` | Recombination editing | `receptor_revision_applied`, `original_v_call`, post-revision `v_call` | [D inversion + receptor revision](recombination-editing.md) |
 | **Productivity constraint** | `.productive_only()` | Constraint-aware sampling | `productive=True` (by construction) | [Experiment builder](experiment-builder.md#how-productive_only-works) |
 | **Allele restriction** | `.restrict_alleles(v=..., d=..., j=...)` | Constraint-aware sampling | Sampled `v_call`/`d_call`/`j_call` restricted to the listed alleles | [Recombination + junction biology](recombination-junction.md) |
-| **Somatic hypermutation (SHM)** | `.mutate(model="s5f", rate=...)` or `.mutate(model="uniform", count=...)` | Biology — descendant phase | `n_mutations`, `mutation_rate`, `n_v_mutations`, `n_d_mutations`, `n_j_mutations`, `n_np_mutations` | [SHM and mutation targeting](shm-targeting.md) |
-| **Targeted SHM** | `.mutate(..., segment_rates=..., v_subregion_rates=...)` | Biology — descendant phase | Same plus the six V-subregion counters (`n_fwr1_mutations` … `n_v_unannotated_mutations`) | [SHM and mutation targeting](shm-targeting.md) |
-| **PCR substitution errors** | `.pcr_amplify(count=...)` or `.pcr_amplify(rate=...)` | Library / sequencing artefact — descendant | `n_pcr_errors`, lowercase corruption markers in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
-| **Sequencing errors** | `.sequencing_errors(count=...)` or `.sequencing_errors(rate=...)` | Library / sequencing artefact — descendant | `n_quality_errors`, lowercase corruption markers in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
-| **Ambiguous base calls (N)** | `.ambiguous_base_calls(count=...)` | Library / sequencing artefact — descendant | `n_quality_errors`, `N` characters in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
-| **Polymerase indels** | `.polymerase_indels(count=..., insertion_prob=0.5)` | Library / sequencing artefact — descendant | `n_indels`, `n_v_indels`, `n_d_indels`, `n_j_indels` (NP indels count toward total only) | [Corruption + sequencing artefacts](corruption-sequencing.md) |
-| **End-loss (5′ / 3′)** | `.end_loss_5prime(length=...)`, `.end_loss_3prime(length=...)` (or `primer_trim_*prime` aliases) | Library / sequencing artefact — descendant | `end_loss_5_length`, `end_loss_3_length` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
-| **Random strand orientation** | `.random_strand_orientation(prob=0.5)` | Read layout — descendant | `rev_comp` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
-| **Paired-end layout** | `.paired_end(r1_length=..., insert_size=...)` | Read layout — descendant | `read_layout`, `r1_sequence`, `r2_sequence`, `r1_start`, `r1_end`, `r2_start`, `r2_end`, `insert_size` | [Paired-end reads and FASTQ](paired-end-fastq.md) |
+| **Somatic hypermutation (SHM)** | `.mutate(model="s5f", rate=...)` or `.mutate(model="uniform", count=...)` | Biology - descendant phase | `n_mutations`, `mutation_rate`, `n_v_mutations`, `n_d_mutations`, `n_j_mutations`, `n_np_mutations` | [SHM and mutation targeting](shm-targeting.md) |
+| **Targeted SHM** | `.mutate(..., segment_rates=..., v_subregion_rates=...)` | Biology - descendant phase | Same plus the six V-subregion counters (`n_fwr1_mutations` … `n_v_unannotated_mutations`) | [SHM and mutation targeting](shm-targeting.md) |
+| **PCR substitution errors** | `.pcr_amplify(count=...)` or `.pcr_amplify(rate=...)` | Library / sequencing artefact - descendant | `n_pcr_errors`, lowercase corruption markers in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
+| **Sequencing errors** | `.sequencing_errors(count=...)` or `.sequencing_errors(rate=...)` | Library / sequencing artefact - descendant | `n_quality_errors`, lowercase corruption markers in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
+| **Ambiguous base calls (N)** | `.ambiguous_base_calls(count=...)` | Library / sequencing artefact - descendant | `n_quality_errors`, `N` characters in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
+| **Polymerase indels** | `.polymerase_indels(count=..., insertion_prob=0.5)` | Library / sequencing artefact - descendant | `n_indels`, `n_v_indels`, `n_d_indels`, `n_j_indels` (NP indels count toward total only) | [Corruption + sequencing artefacts](corruption-sequencing.md) |
+| **End-loss (5′ / 3′)** | `.end_loss_5prime(length=...)`, `.end_loss_3prime(length=...)` (or `primer_trim_*prime` aliases) | Library / sequencing artefact - descendant | `end_loss_5_length`, `end_loss_3_length` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
+| **Random strand orientation** | `.random_strand_orientation(prob=0.5)` | Read layout - descendant | `rev_comp` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
+| **Paired-end layout** | `.paired_end(r1_length=..., insert_size=...)` | Read layout - descendant | `read_layout`, `r1_sequence`, `r2_sequence`, `r1_start`, `r1_end`, `r2_start`, `r2_end`, `insert_size` | [Paired-end reads and FASTQ](paired-end-fastq.md) |
 | **BCR lineage trees** | `.clonal_lineage(...)` | BCR affinity-maturation tree | `clone_id`, `lineage_*`, `duplicate_count`, `result.lineage_trees` | [Clonal lineage trees](clonal-lineage.md) |
 | **TCR / flat-BCR clone-size repertoires** | `.clonal_repertoire(...)` | Non-tree clonal abundance | `clone_id`, `duplicate_count` | [Clonal repertoires](clonal-repertoire.md) |
 | **Legacy fixed-size clonal stars** | `.expand_clones(n_clones=..., per_clone=...)` | Ancestor / descendant fork | `clone_id`, `parent_id`, `result.parents` | [Clonal simulation overview](clonal-families.md) |
-| **Contamination** | `.contaminate(prob=...)` | Library / sequencing artefact — descendant | `is_contaminant` | [Experiment builder](experiment-builder.md) |
-| **Sample metadata** | `.with_metadata(**fields)` | Bookkeeping — post-run | Arbitrary user-stamped columns | [Experiment builder](experiment-builder.md) |
+| **Contamination** | `.contaminate(prob=...)` | Library / sequencing artefact - descendant | `is_contaminant` | [Experiment builder](experiment-builder.md) |
+| **Sample metadata** | `.with_metadata(**fields)` | Bookkeeping - post-run | Arbitrary user-stamped columns | [Experiment builder](experiment-builder.md) |
 
 ## Stage ordering
 
 GenAIRR's pipeline splits into five conceptual stages. The
-engine enforces the ordering at compile time — any out-of-order
+engine enforces the ordering at compile time - any out-of-order
 call raises `ValueError`.
 
 **1. Recombination.** `.recombine()` runs the V(D)J join,
@@ -66,13 +66,13 @@ per clone and everything after fires per emitted copy. For
 `clonal_lineage`, the tree growth and SHM happen inside the lineage
 engine.
 
-**4. Biology — descendant phase.** `.mutate(...)` accumulates
+**4. Biology - descendant phase.** `.mutate(...)` accumulates
 biological SHM on top of recombination. On flat clonal pipelines
 (`clonal_repertoire` / `expand_clones`) this fires after the fork so
 SHM is per copy, not shared across the clone. TCR refdata rejects
 `.mutate(...)`. `clonal_lineage` has its own tree-internal SHM rate.
 
-**5. Library / sequencing artefacts + read layout —
+**5. Library / sequencing artefacts + read layout -
 descendant phase.** All corruption passes (`pcr_amplify`,
 `sequencing_errors`, `ambiguous_base_calls`, `polymerase_indels`,
 `end_loss_5prime`, `end_loss_3prime`, `random_strand_orientation`,
@@ -107,21 +107,21 @@ experimental design (Experiment).
 
 The reference cartridge carries the immutable biological priors:
 
-- **Allele universe** — `cfg.alleles.v`, `cfg.alleles.d`,
+- **Allele universe** - `cfg.alleles.v`, `cfg.alleles.d`,
   `cfg.alleles.j`, `cfg.alleles.c`. The sequences and metadata
   the recombinase has access to.
-- **Empirical recombination distributions** —
+- **Empirical recombination distributions** -
   `cfg.reference_models.allele_usage`,
   `cfg.reference_models.trims`,
   `cfg.reference_models.np_lengths`,
   `cfg.reference_models.np_bases`,
   `cfg.reference_models.p_nucleotide_lengths`. The per-segment
   draws the recombination pass samples from.
-- **SHM kernel** — the cartridge's S5F mutability table (used
+- **SHM kernel** - the cartridge's S5F mutability table (used
   when `.mutate(model="s5f", ...)` runs).
-- **V-subregion annotations** — `cfg.alleles.v[i].subregions`.
+- **V-subregion annotations** - `cfg.alleles.v[i].subregions`.
   Required for `v_subregion_rates`.
-- **Rules / anchors** — `cfg.reference_rules` (V Cys + J anchor
+- **Rules / anchors** - `cfg.reference_rules` (V Cys + J anchor
   expectations, allowed bases, severity).
 
 The cartridge says **what** biology is available. The four
@@ -133,23 +133,23 @@ hash. See [Inspect manifest + build report](cartridge-manifest-report.md).
 
 The `Experiment` DSL carries the experimental design:
 
-- **Which mechanisms to enable** — the chained method calls.
+- **Which mechanisms to enable** - the chained method calls.
   Omit a method, that mechanism doesn't fire.
-- **Rates and counts** — kwargs on the methods (e.g.
+- **Rates and counts** - kwargs on the methods (e.g.
   `mutate(rate=0.05)`, `pcr_amplify(count=(0, 3))`,
   `invert_d(prob=0.05)`).
-- **Constraints** — `productive_only()`,
+- **Constraints** - `productive_only()`,
   `restrict_alleles(v=..., d=..., j=...)`. Both
   constraint-aware: they prune the sampling support at relevant
   draw points rather than rejecting after the fact.
-- **Targeting overrides** — `segment_rates`, `v_subregion_rates`
+- **Targeting overrides** - `segment_rates`, `v_subregion_rates`
   on `mutate(...)`; per-experiment `trim(v_3=..., d_5=..., ...)`
   distributions that override the cartridge defaults.
-- **Clonal structure** — `clonal_lineage(...)`,
+- **Clonal structure** - `clonal_lineage(...)`,
   `clonal_repertoire(...)`, or legacy `expand_clones(...)`.
-- **Read layout** — `paired_end(...)`,
+- **Read layout** - `paired_end(...)`,
   `random_strand_orientation(...)`.
-- **Run-time flags** — `strict`, `expose_provenance`,
+- **Run-time flags** - `strict`, `expose_provenance`,
   `validate_records` on `run_records(...)`.
 
 The Experiment says **how** the available biology is exercised.
@@ -158,30 +158,30 @@ flips replay safety.
 
 ## What's validated
 
-GenAIRR's two-layer validation surface — `validate_records` and
-`validate_families` — covers the engine's *internal* consistency.
+GenAIRR's two-layer validation surface - `validate_records` and
+`validate_families` - covers the engine's *internal* consistency.
 It does NOT validate the biological realism of your chosen
 priors.
 
 **Validated:**
 
-- **Projection consistency** — every AIRR field is independently
+- **Projection consistency** - every AIRR field is independently
   re-derived from the underlying `Outcome` events and compared
   with the projected record. Bugs in projection / live-call
   cache / counter aggregation fire here.
-- **Counter partitions** — `n_v_mutations + n_d_mutations +
+- **Counter partitions** - `n_v_mutations + n_d_mutations +
   n_j_mutations + n_np_mutations == n_mutations`. The six
   V-subregion counters sum to `n_v_mutations`. Indel counters
   partition correctly (with NP indels counted toward the total
   but not the per-segment partition). Mismatches fire
   `MutationCountSumMismatch` and friends.
-- **Junction + productivity** — junction coordinates re-derived
+- **Junction + productivity** - junction coordinates re-derived
   from anchor codons; `productive` flag re-derived from the
   four-clause definition; `vj_in_frame` and `stop_codon` checked.
-- **Paired-end geometry** — when `read_layout == "paired_end"`,
+- **Paired-end geometry** - when `read_layout == "paired_end"`,
   R1/R2 coordinates checked against `insert_size`; reads are
   consistent with their parent assembled sequence.
-- **Family invariants** — `validate_families` groups by `clone_id`
+- **Family invariants** - `validate_families` groups by `clone_id`
   and, when truth columns are present, asserts each group agrees on
   `truth_v_call` / `truth_d_call` / `truth_j_call`. The parent-aware
   form additionally compares legacy `expand_clones` descendants
@@ -202,8 +202,8 @@ priors.
   coordinate conventions (`airr_strict=True` on the exporters)
   are an export-time setting, not a validator-enforced invariant.
 
-For the canonical reproducibility surface — plan signatures,
-refdata content hashes, trace replay — see
+For the canonical reproducibility surface - plan signatures,
+refdata content hashes, trace replay - see
 [Trace, replay, reproducibility](trace-replay.md) and
 [Validation hub](../validation/index.md).
 
@@ -214,7 +214,7 @@ refdata content hashes, trace replay — see
   control panel every mechanism plugs into.
 - **Matching a real dataset's empirical distributions** →
   [Estimate cartridge models from real data](estimate-cartridge-models.md).
-  Allele usage, trims, NP lengths, NP bases, P lengths — all
+  Allele usage, trims, NP lengths, NP bases, P lengths - all
   estimable from AIRR-like records.
 - **Debugging an unexpected output** → [Validation hub](../validation/index.md).
   Start with `validate_records(refdata)`; escalate to trace

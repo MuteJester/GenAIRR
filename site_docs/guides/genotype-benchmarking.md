@@ -3,7 +3,7 @@
 
 The point of simulating from a *known* genotype is that you can run a
 genotype-inference tool on the resulting repertoire and score it against the
-planted truth — with no real-data uncertainty about what the right answer is.
+planted truth - with no real-data uncertainty about what the right answer is.
 
 The recipe is the same for any tool:
 
@@ -16,9 +16,9 @@ The recipe is the same for any tool:
 
 ### Worked example: TIgGER and IgDiscover recover a planted genotype
 
-To show this end to end we planted a diploid IGH genotype in `human_igh` —
+To show this end to end we planted a diploid IGH genotype in `human_igh` -
 **3 heterozygous** V genes (two alleles each), **3 homozygous** (one allele),
-and **3 fully deleted** genes — and filled the rest from the reference. We
+and **3 fully deleted** genes - and filled the rest from the reference. We
 simulated 4,000 reads with light SHM, then ran two independent AIRR
 genotype-inference tools on the result:
 [**TIgGER**](https://tigger.readthedocs.io) (Immcantation; consumes the AIRR
@@ -27,7 +27,7 @@ raw reads, with its own IgBLAST).
 
 Because GenAIRR already emits AIRR records with `v_call` **and**
 `sequence_alignment`, TIgGER's `inferGenotype` consumes the rearrangement table
-**directly — no separate IgBLAST step is needed**:
+**directly - no separate IgBLAST step is needed**:
 
 ```r
 library(tigger); library(airr)
@@ -39,7 +39,7 @@ geno   <- inferGenotype(rep, germline_db = germ_v, find_unmutated = TRUE)
 plotGenotype(geno)
 ```
 
-The `germline_V.fasta` written below is **ungapped** — fine for `inferGenotype`;
+The `germline_V.fasta` written below is **ungapped** - fine for `inferGenotype`;
 if you go on to TIgGER's IMGT-gapped steps (`reassignAlleles`) supply a gapped V
 germline instead.
 
@@ -53,12 +53,12 @@ independently agreed: **precision = 1.00** (zero false-positive alleles),
 **recall = 0.96** (50/52 carried alleles), with **all three deletions correct**
 and **all heterozygous genes fully resolved** (both alleles recovered). The two
 missed alleles were low-expression single-copy genes below IgDiscover's default
-expression threshold — a tool-tuning matter, not a simulation artefact.
+expression threshold - a tool-tuning matter, not a simulation artefact.
 
 !!! note "These are upper-bound numbers on idealised data"
     Near-perfect recovery is expected here: the simulated germline names match the
     scoring database exactly, SHM is light and substitution-only, and there are no
-    indels, chimeras, or contamination. Real data is harder — which is the point
+    indels, chimeras, or contamination. Real data is harder - which is the point
     of being able to **dial difficulty up** (heavier SHM via `mutate`, sequencing
     artefacts via the corruption passes, lower per-allele depth) and re-measure
     how each tool degrades against the same known truth.
@@ -73,8 +73,8 @@ deletions correct.*
 
 ### Reproduce it
 
-This builds the **exact** genotype behind the figure — 3 heterozygous, 3
-homozygous, and 3 deleted study V genes, the rest filled from the reference —
+This builds the **exact** genotype behind the figure - 3 heterozygous, 3
+homozygous, and 3 deleted study V genes, the rest filled from the reference -
 simulates 4,000 reads with light SHM at `seed=7`, and writes every input the two
 tools need plus the ground truth to score against:
 
@@ -123,7 +123,7 @@ with open("germline_V.fasta", "w") as fh:       # cartridge V germline (names ma
 && igdiscover run`). Then compare each tool's per-gene allele set against
 `g.to_table()` (the planted truth): allele-presence precision/recall, zygosity,
 and deletion calls. With the genotype above this yields TIgGER precision/recall
-1.00 (52/52 genes) and IgDiscover precision 1.00 / recall 0.96 — the figure.
+1.00 (52/52 genes) and IgDiscover precision 1.00 / recall 0.96 - the figure.
 
 ### Running other tools on the same data
 
@@ -131,7 +131,7 @@ The only difference between tools is whether they consume the **AIRR table**
 (TIgGER) or the **raw reads** (`reads.fasta`, which you can write from `result`),
 running their own aligner:
 
-- **[IgDiscover](https://igdiscover.se)** — germline *discovery* from reads (its
+- **[IgDiscover](https://igdiscover.se)** - germline *discovery* from reads (its
   own IgBLAST + iterative filtering). Initialise with the cartridge germline as
   the starting database and the simulated reads, then run the pipeline; the
   `final/database/V.fasta` expressed-allele set is the recovered genotype:
@@ -141,7 +141,7 @@ running their own aligner:
   cd project && igdiscover run
   ```
 
-- **[partis](https://github.com/psathyrella/partis)** — HMM annotation with
+- **[partis](https://github.com/psathyrella/partis)** - HMM annotation with
   per-sample germline inference. Start from the cartridge germline and cache
   parameters into a parameter directory:
 
@@ -157,6 +157,6 @@ running their own aligner:
   `g.to_table()` the same way.
 
 Because the genotype is planted, every tool is scored identically: recovered
-allele set vs `genotype.to_table()` — presence precision/recall, zygosity, and
+allele set vs `genotype.to_table()` - presence precision/recall, zygosity, and
 deletion calls.
 

@@ -4,9 +4,9 @@
 builder. Every method returns the same <code>Experiment</code>
 extended by one pipeline stage; the pipeline runs when you call
 <code>.run_records(...)</code>, <code>.run(...)</code>, or
-<code>.compile().run(...)</code>. For the conceptual walk-through —
+<code>.compile().run(...)</code>. For the conceptual walk-through -
 which methods are ancestor-phase vs descendant-phase, which clonal
-model to choose, how compile reuse works — see
+model to choose, how compile reuse works - see
 the <a href="../guides/experiment-builder.md">Experiment builder
 guide</a>. The reference below catalogues the public surface.</p>
 
@@ -16,7 +16,7 @@ The methods you'll reach for in most real pipelines:
 
 | Method | Purpose |
 |---|---|
-| `.recombine(...)` | Add the V(D)J recombination pass — the foundational ancestor-phase mechanism |
+| `.recombine(...)` | Add the V(D)J recombination pass - the foundational ancestor-phase mechanism |
 | `.productive_only()` | Constrain sampling so only productive rearrangements survive |
 | `.mutate(...)` | Apply biological SHM (uniform or S5F) on top of recombination |
 | `.clonal_lineage(...)` | Grow BCR affinity-maturation lineage trees |

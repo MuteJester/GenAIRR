@@ -1,8 +1,8 @@
 # Build a reference cartridge
 
 <p class="lead">When the 106 bundled cartridges don't match what you
-need — a non-human locus, a curated allele subset, lab-specific
-priors, or a simulation calibrated to a real dataset —
+need - a non-human locus, a curated allele subset, lab-specific
+priors, or a simulation calibrated to a real dataset -
 <code>ReferenceCartridgeBuilder</code> is the practical path. This
 guide walks the builder pipeline end to end: FASTA inputs in,
 validated cartridge + build report out.</p>
@@ -21,7 +21,7 @@ Reach for the builder when any of these apply:
   characteristic trim distributions or NP biases you want
   simulated faithfully.
 - **Simulation benchmark matching a dataset.** You have a real
-  AIRR dataset and want a simulator whose biology mirrors it —
+  AIRR dataset and want a simulator whose biology mirrors it -
   estimated allele usage, trims, NP lengths, and base composition
   drawn from the data itself.
 
@@ -61,12 +61,12 @@ What each call does:
 
 | Call | Effect |
 |---|---|
-| `from_fasta(v_fasta=..., d_fasta=..., j_fasta=..., chain_type=...)` | Classmethod constructor — parses V/J (and D on VDJ; C on optional) FASTA into per-segment allele buckets. Accepts file paths, open text handles, or raw FASTA strings. |
+| `from_fasta(v_fasta=..., d_fasta=..., j_fasta=..., chain_type=...)` | Classmethod constructor - parses V/J (and D on VDJ; C on optional) FASTA into per-segment allele buckets. Accepts file paths, open text handles, or raw FASTA strings. |
 | `.infer_identity(species=..., locus=..., reference_set=..., name=...)` | Populates the cartridge's identity plane and tags every parsed allele with provenance. |
-| `.infer_v_subregions()` | Derives IMGT `FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` intervals from gapped V sequences. Idempotent — calling twice re-derives. Required if you want `v_subregion_rates`-driven SHM targeting later. |
+| `.infer_v_subregions()` | Derives IMGT `FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` intervals from gapped V sequences. Idempotent - calling twice re-derives. Required if you want `v_subregion_rates`-driven SHM targeting later. |
 | `.build()` | Assembles a validated `DataConfig`, stamps the checksum, attaches the build report + manifest snapshot, runs `verify_integrity()` as the final gate. |
 
-`from_fasta` is the only constructor. The builder is fluent —
+`from_fasta` is the only constructor. The builder is fluent -
 every step returns the same builder so calls chain.
 
 ## Inspect the build report
@@ -76,7 +76,7 @@ can audit exactly how the cartridge was constructed:
 
 ```python
 report = builder.report()        # CartridgeBuildReport dataclass
-d = report.to_dict()             # JSON-clean dict — pickleable, CI-artifact-safe
+d = report.to_dict()             # JSON-clean dict - pickleable, CI-artifact-safe
 print(d.keys())
 # dict_keys(['stages', 'warnings', 'rejected', 'manifest_snapshot', 'checksum_at_build_time'])
 ```
@@ -105,7 +105,7 @@ print(parse_stage["inputs"])
 parse_drops = [r for r in report.rejected
                if r["stage"] == "from_fasta" and r.get("segment") == "V"]
 for r in parse_drops:
-    print(r["allele_name"], "—", r["reason"])
+    print(r["allele_name"], "-", r["reason"])
 
 # What did each estimator see?
 for s in report.stages:
@@ -114,7 +114,7 @@ for s in report.stages:
 ```
 
 The `manifest_snapshot` is a frozen capture of the cartridge's
-state at build time — useful for cartridge diffs and CI provenance.
+state at build time - useful for cartridge diffs and CI provenance.
 
 ## Validate and compile
 
@@ -129,10 +129,10 @@ compiled = exp.compile()         # raises on validation failure
 
 GenAIRR's validation classifies issues into two severities:
 
-- **Fatal** — duplicate allele names, invalid bytes, locus / chain
+- **Fatal** - duplicate allele names, invalid bytes, locus / chain
   mismatch, empty required pools. These always reject; neither
   curation nor opt-in helps. Fix them at the cartridge level.
-- **Curatable** — pseudogene-shape anchor anomalies (missing anchor,
+- **Curatable** - pseudogene-shape anchor anomalies (missing anchor,
   out-of-bounds, AA outside the expected set). These reject under
   strict mode but pass under `allow_curatable_refdata()`.
 
@@ -174,7 +174,7 @@ cfg = (
 )
 ```
 
-`with_rules` validates the spec immediately — if the anchor /
+`with_rules` validates the spec immediately - if the anchor /
 severity / alphabet shape is wrong, you get the error here rather
 than at compile time. Severity strings are `"fatal"` or
 `"curatable"` (the same vocabulary the cartridge validator uses).
@@ -222,8 +222,8 @@ models = ReferenceEmpiricalModels(
 cfg = builder.with_models(models).build()
 ```
 
-The five typed sub-planes — `allele_usage` / `trims` /
-`np_lengths` / `np_bases` / `p_nucleotide_lengths` — are validated
+The five typed sub-planes - `allele_usage` / `trims` /
+`np_lengths` / `np_bases` / `p_nucleotide_lengths` - are validated
 at attach time against the cartridge's chain type, so a D-end
 key on a VJ cartridge fails immediately.
 
@@ -231,14 +231,14 @@ key on a VJ cartridge fails immediately.
 rates (`segment_rates`) and per-V-subregion SHM rates
 (`v_subregion_rates`) ride on `Experiment.mutate(...)` instead.
 They fold into the plan signature but don't enter cartridge
-identity — same cartridge, different SHM regimes per experiment.
+identity - same cartridge, different SHM regimes per experiment.
 See [SHM and mutation targeting](shm-targeting.md).
 
 ## Estimate models from AIRR-like data
 
 If you have a representative AIRR-format dataset, the builder can
 estimate every typed model plane for you. Five estimators have
-shipped — and the focused **[Estimate cartridge models from real
+shipped - and the focused **[Estimate cartridge models from real
 data](estimate-cartridge-models.md)** guide is the deep dive on
 the workflow, ambiguity handling, rejection reasons, and common
 mistakes. The condensed reference below covers the same surface
@@ -287,7 +287,7 @@ A few notes:
   tie-set entries), `"truth_first"` (use the first call only), or
   `"reject"` (drop ambiguous rows into `report.rejected`).
 - **`estimate_np_base_model`'s `kind` kwarg** picks the output
-  model — `"markov"` (default; first-base row + 4×4 transitions)
+  model - `"markov"` (default; first-base row + 4×4 transitions)
   or `"empirical_first_base"` (position-independent categorical).
   Markov on sparse input needs `pseudocount > 0` to avoid leaving
   unfillable transition rows.
@@ -295,7 +295,7 @@ A few notes:
   the input.** External AIRR tools (IgBLAST, MiXCR, ...) do NOT
   populate `p_*_length`. Run this estimator against GenAIRR's own
   output or a dataset where you populated the P-length columns
-  yourself — the estimator emits a stage-level warning when ≥95%
+  yourself - the estimator emits a stage-level warning when ≥95%
   of contributing rows reported zero.
 
 **`estimate_shm_rates` is intentionally deferred.** SHM rate
@@ -307,7 +307,7 @@ v_subregion_rates=...)` is the workaround until it ships.
 ## Curation
 
 Curation is *which subset of the catalogue participates in
-sampling* — orthogonal to the four cartridge planes. Two policies
+sampling* - orthogonal to the four cartridge planes. Two policies
 in v1:
 
 ```python
@@ -318,8 +318,8 @@ exp = (
 )
 ```
 
-- **`"raw"`** — identity. No filtering.
-- **`"functional_anchors_only"`** — drop V/J alleles that fail the
+- **`"raw"`** - identity. No filtering.
+- **`"functional_anchors_only"`** - drop V/J alleles that fail the
   active `AnchorRule` (missing anchor, anchor out of bounds, AA
   outside `expected_aa`). D and C pools pass through unchanged.
 
@@ -327,14 +327,14 @@ exp = (
 
 - `curate_refdata(...)` *removes* the non-canonical alleles from
   the cartridge before sampling. Strict validation passes by
-  construction. This is the professional model — the cartridge
+  construction. This is the professional model - the cartridge
   itself identifies which alleles participate.
 - `allow_curatable_refdata()` *keeps* the catalogue intact and
   relaxes the validator at compile time. Curatable issues pass;
   Fatal issues still reject.
 
 Curation never silences Fatal structural corruption (duplicate
-names, invalid bytes, locus/chain mismatch) — those continue to
+names, invalid bytes, locus/chain mismatch) - those continue to
 surface from the validator on the curated cartridge.
 
 The manifest is the canonical introspection surface for any
@@ -358,7 +358,7 @@ manifest.get("errors", [])                    # bridge-failure messages (key is 
 
 Two cartridges whose manifests differ on any content-hash-
 participating field will produce different trace files for the
-same seed — that's how reproducibility crosses machines and code
+same seed - that's how reproducibility crosses machines and code
 versions.
 
 ## Common mistakes
@@ -379,7 +379,7 @@ several legacy nested dicts (`NP_lengths`, `trim_dicts`,
 `NP_first_bases`, `NP_transitions`, `gene_use_dict`,
 `p_nucleotide_length_probs`) that the modern engine no longer
 reads. Authoring on your own cartridge requires writing into the
-typed planes — the legacy dicts are not auto-lifted. The manifest's
+typed planes - the legacy dicts are not auto-lifted. The manifest's
 `legacy_*_present` flags tell you which legacy fields are sitting
 unused.
 
@@ -394,32 +394,32 @@ loading.
 `chain_type` is one of the VDJ shapes (BCR_HEAVY, TCR_BETA,
 TCR_DELTA). Omitting it raises immediately. For VJ shapes
 (BCR_LIGHT_KAPPA, BCR_LIGHT_LAMBDA, TCR_ALPHA, TCR_GAMMA), `d_fasta`
-must NOT be supplied — passing it on VJ raises the same way.
+must NOT be supplied - passing it on VJ raises the same way.
 
 **Using `estimate_p_nucleotide_lengths` on generic AIRR.** External
 AIRR tools don't model P-nucleotides; their output either omits
 the `p_*_length` columns or populates them as zero. The estimator
 will produce a degenerate `[(0, 1.0)]` distribution and emit the
 ≥95%-zero warning. Run this estimator only against data that
-genuinely carries P-length annotations — typically GenAIRR's own
+genuinely carries P-length annotations - typically GenAIRR's own
 output, or a dataset where you populated the P-length columns
 yourself.
 
 ## Where to go next
 
 - **[Inspect manifest + build report](cartridge-manifest-report.md)**
-  — the focused guide for auditing what's in a cartridge and
+  the focused guide for auditing what's in a cartridge and
   pinning it in CI.
 - **[Reference cartridge concept](../concepts/reference-cartridge.md)**
-  — the four-plane model behind the builder API.
-- **[SHM and mutation targeting](shm-targeting.md)** — per-segment
+  the four-plane model behind the builder API.
+- **[SHM and mutation targeting](shm-targeting.md)** - per-segment
   + per-V-subregion SHM rates that ride on `Experiment.mutate`,
   not the cartridge.
-- **[Junction N/P additions](junction-additions.md)** — the
+- **[Junction N/P additions](junction-additions.md)** - the
   cartridge planes that drive NP and P biology, plus the
   estimator-specific quirks.
-- **[Validate AIRR records](../validation/validate-records.md)** —
+- **[Validate AIRR records](../validation/validate-records.md)** -
   the postcondition validator that gates every cartridge's
   output at run time.
-- **[The Experiment builder](experiment-builder.md)** — what to do
+- **[The Experiment builder](experiment-builder.md)** - what to do
   with the cartridge once it's built.

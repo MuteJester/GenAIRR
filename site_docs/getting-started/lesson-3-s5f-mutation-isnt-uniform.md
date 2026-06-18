@@ -1,4 +1,4 @@
-# Lesson 3 — S5F: mutation isn't uniform
+# Lesson 3 - S5F: mutation isn't uniform
 
 !!! info "Migration placeholder"
     This page is a placeholder. Content lands in **Phase 3**

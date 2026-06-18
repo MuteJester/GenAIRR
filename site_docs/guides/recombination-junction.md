@@ -1,7 +1,7 @@
 # Recombination and junction biology
 
 <p class="lead">Recombination is the single pass that creates the
-V(D)J receptor — it picks alleles, trims their coding ends, fills
+V(D)J receptor - it picks alleles, trims their coding ends, fills
 NP regions, optionally adds palindromic P-bases, and assembles
 the molecule. This guide is the conceptual bridge between the
 high-level Experiment builder and the detailed Junction N/P
@@ -26,7 +26,7 @@ analysis would call "the receptor":
 Everything before `.mutate()`, a clonal fork (`clonal_lineage`,
 `clonal_repertoire`, legacy `expand_clones`), or any corruption pass is
 recombination's responsibility. After the pass, the molecule is "finished" in
-the recombination-biology sense — SHM, clonal expansion, and library prep happen
+the recombination-biology sense - SHM, clonal expansion, and library prep happen
 on top of it.
 
 ## A minimal recombination
@@ -44,7 +44,7 @@ print(rec["np1"], rec["np2"])
 print(rec["productive"], rec["vj_in_frame"], rec["stop_codon"])
 ```
 
-Five records each go through one recombination pass — sample
+Five records each go through one recombination pass - sample
 alleles, trim, fill NP regions, assemble. No SHM, no PCR errors,
 no end-loss. Every field above is recombination's output.
 
@@ -72,7 +72,7 @@ empty string when D and NP2 don't exist.
 
 Authoring a VJ cartridge with D-end keys on `trims` or
 `p_nucleotide_lengths`, or with `NP2` on `np_lengths`, raises
-`ValueError` at the cartridge attach time — the validator catches
+`ValueError` at the cartridge attach time - the validator catches
 the impossible shape before the engine gets the chance.
 
 ## Allele calls and ambiguity
@@ -98,7 +98,7 @@ Two facts to know about call provenance:
   independent walker over the assembled sequence and reports
   what *that walker* would conclude. Under high SHM or short
   trims the walker can genuinely lose the truth allele from the
-  tie set — that's not a bug, it's the alignment evidence being
+  tie set - that's not a bug, it's the alignment evidence being
   ambiguous.
 
 When you want the original sampled allele explicitly, opt into
@@ -116,7 +116,7 @@ report.
 
 ### Controlling the allele universe
 
-The cartridge defines which alleles exist — bundled cartridges
+The cartridge defines which alleles exist - bundled cartridges
 ship 100+ V alleles per locus, and the recombination pass
 samples uniformly across them by default. Two surfaces narrow
 the universe:
@@ -155,8 +155,8 @@ Two fields exist on the AIRR record but are **always zero** on
 every record GenAIRR produces:
 
 ```python
-rec["v_trim_5"]   # always 0  — no recombination-stage 5' V trim in v1
-rec["j_trim_3"]   # always 0  — no recombination-stage 3' J trim in v1
+rec["v_trim_5"]   # always 0  - no recombination-stage 5' V trim in v1
+rec["j_trim_3"]   # always 0  - no recombination-stage 3' J trim in v1
 ```
 
 The four populated fields are driven by the cartridge's
@@ -190,23 +190,23 @@ them, the per-allele identity calculations will be wrong.
 ## N and P additions
 
 NP regions and P-nucleotides are also recombination biology, but
-they're rich enough to deserve their own page —
+they're rich enough to deserve their own page -
 [**Junction N/P additions**](junction-additions.md) covers the
 typed cartridge planes that drive them, the engine pass order,
 and the AIRR fields where realised state lands. Quick summary
 here:
 
-- **N additions** — random bases sampled from the cartridge's
+- **N additions** - random bases sampled from the cartridge's
   `np_lengths` + `np_bases` planes. Realised on `np1` /
   `np1_length`, `np2` / `np2_length` (VDJ only).
-- **P additions** — deterministic palindromic bases derived from
+- **P additions** - deterministic palindromic bases derived from
   each coding end. Realised lengths on `p_v_3_length` /
   `p_d_5_length` / `p_d_3_length` / `p_j_5_length`.
 
 Crucially: `np1` and `np2` strings are P-clean. The structural
 NP region span excludes P bases by construction, so
 `len(rec["np1"]) == rec["np1_length"]` on every record. Don't
-re-derive lengths by string counting — they may include neither
+re-derive lengths by string counting - they may include neither
 P nor NP attribution as you'd expect.
 
 ## Productivity
@@ -222,7 +222,7 @@ P nor NP attribution as you'd expect.
 
 `productive == True` iff all four hold. When `productive == False`,
 the issue payload from `validate_records` names which predicate
-fired — `OutOfFrame`, `JunctionStopCodon`, `VAnchorAaChanged`,
+fired - `OutOfFrame`, `JunctionStopCodon`, `VAnchorAaChanged`,
 or `JAnchorAaChanged`. The four flags on the record decompose the
 verdict so you can debug a non-productive storm without re-running.
 
@@ -241,12 +241,12 @@ result = (
 ```
 
 This isn't a retry loop. The engine *narrows the sample space*
-at recombination time — trims, NP bases, NP lengths, P lengths
+at recombination time - trims, NP bases, NP lengths, P lengths
 are all proposed against an admissible-only mask. The engine
 never proposes a candidate that would break productivity, so
 every record carries `productive: True` by construction.
 
-When productivity can't be satisfied at a given site (rare —
+When productivity can't be satisfied at a given site (rare -
 usually means an unsatisfiable plan, like a cartridge whose
 trim distribution leaves no in-frame option), default
 permissive mode falls back to unconstrained sampling and the
@@ -292,7 +292,7 @@ rec["sequence"], rec["sequence_aa"]
 ```
 
 CIGAR strings only emit canonical M / I / D / S / N / P / X / = ops
-— no soft-clips. Coordinates are 0-based exclusive end by default;
+no soft-clips. Coordinates are 0-based exclusive end by default;
 pass `airr_strict=True` to TSV/CSV/DataFrame exports for the
 AIRR-C 1-based-inclusive convention.
 
@@ -302,9 +302,9 @@ A handful of issues that show up repeatedly when reading
 recombination output.
 
 **Confusing trim with end-loss.** Recombination trims
-(`*_trim_*`) are biology — the germline exonuclease activity
+(`*_trim_*`) are biology - the germline exonuclease activity
 during recombination. End-loss (`end_loss_*_length`) is a
-corruption-stage artefact — 5'/3' adapter or primer loss
+corruption-stage artefact - 5'/3' adapter or primer loss
 during library prep / sequencing. They're separate fields,
 separate engine passes, separate biology stages. A downstream
 pipeline that conflates them will misattribute the source of
@@ -335,21 +335,21 @@ debug a non-productive storm in one pass.
 
 ## Where to go next
 
-- **[Junction N/P additions](junction-additions.md)** — the
+- **[Junction N/P additions](junction-additions.md)** - the
   detailed cartridge planes that drive N and P biology, plus the
   estimator-specific quirks.
 - **[D inversion + receptor revision](recombination-editing.md)**
-  — advanced recombination-stage mechanisms that edit V/D truth.
-- **[Reference cartridge](../concepts/reference-cartridge.md)** —
+  advanced recombination-stage mechanisms that edit V/D truth.
+- **[Reference cartridge](../concepts/reference-cartridge.md)** -
   the four-plane cartridge model that controls allele universe,
   trims, NP lengths/bases, and P lengths.
-- **[SHM and mutation targeting](shm-targeting.md)** — the
+- **[SHM and mutation targeting](shm-targeting.md)** - the
   biology stage that runs *after* recombination is complete.
 - **[Your first AIRR record](../getting-started/first-airr-record.md)**
-  — the field-by-field catalogue.
-- **[Validation & reproducibility](../validation/index.md)** —
+  the field-by-field catalogue.
+- **[Validation & reproducibility](../validation/index.md)** -
   the postcondition validator that checks every recombination
   field against the simulated outcome.
-- **[The Experiment builder](experiment-builder.md)** — where
+- **[The Experiment builder](experiment-builder.md)** - where
   `.recombine()` and `.productive_only()` sit in the full
   pipeline.

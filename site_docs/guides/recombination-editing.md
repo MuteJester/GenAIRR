@@ -14,7 +14,7 @@ tell what happened.</p>
 D inversion and receptor revision belong together because they
 share four properties:
 
-- Both are **recombination-stage / ancestor-phase** decisions —
+- Both are **recombination-stage / ancestor-phase** decisions -
   every descendant of a clone inherits the parent's edited state.
 - Both are **heavy-chain (VDJ) only**; the DSL rejects them on
   light chains and TCR-alpha/gamma at chain time.
@@ -26,7 +26,7 @@ share four properties:
   re-derives the provenance fields from the simulation IR and
   surfaces any divergence.
 
-Neither is on by default — each requires an explicit
+Neither is on by default - each requires an explicit
 probability-keyword opt-in.
 
 ## D inversion
@@ -71,7 +71,7 @@ print(sum(1 for r in result.records if r["d_inverted"]))
 ### The `d_inverted` AIRR field
 
 ```python
-rec["d_inverted"]    # bool — True when this record's D was reverse-complemented
+rec["d_inverted"]    # bool - True when this record's D was reverse-complemented
 ```
 
 | Pipeline + outcome | `d_inverted` value |
@@ -81,7 +81,7 @@ rec["d_inverted"]    # bool — True when this record's D was reverse-complement
 | VDJ cartridge, `.invert_d(prob=0.05)`, draw fired False | `False` |
 | VDJ cartridge, `.invert_d(prob=0.05)`, draw fired True | `True` |
 
-The field is sourced from the final IR, not from the trace — the
+The field is sourced from the final IR, not from the trace - the
 post-pipeline D orientation is treated as canonical ground
 truth.
 
@@ -92,7 +92,7 @@ A crucial detail: when `d_inverted == True`, the **`d_germline_start`
 allele orientation**. They don't track the inverted orientation
 that's in the assembled pool. `d_cigar` continues to use only
 canonical M/I/D ops (never X), tallied over the inverted pool
-bytes vs the forward allele bytes — so under inversion the
+bytes vs the forward allele bytes - so under inversion the
 match-rate `d_identity` drops, but the M-op length still equals
 the retained slice's allele-coordinate span.
 
@@ -103,7 +103,7 @@ This convention means:
 - `d_identity` reflects the alignment evidence (low identity is
   expected under inversion).
 - `d_inverted` is the single source of truth for "did inversion
-  happen" — don't try to infer it from `d_identity` or coordinate
+  happen" - don't try to infer it from `d_identity` or coordinate
   patterns.
 
 ### D allele calls are orientation-aware
@@ -111,7 +111,7 @@ This convention means:
 The live-call walker that produces `d_call` is orientation-aware:
 it complements the observed pool byte on the fly before scoring
 against the reference index. So inverted records still get a
-meaningful `d_call` — the same forward allele id, just scored
+meaningful `d_call` - the same forward allele id, just scored
 through a single-complement pass instead of via a parallel
 inverted index. The orientation lives on the AlleleInstance,
 not on the call.
@@ -119,7 +119,7 @@ not on the call.
 ## Receptor revision
 
 In real B-cell biology, the V segment can be replaced after
-initial recombination — receptor editing in the bone marrow.
+initial recombination - receptor editing in the bone marrow.
 GenAIRR models that with a per-record Bernoulli draw at the
 post-recombine point: with probability `prob`, the originally
 sampled V is replaced with a different germline V allele; with
@@ -150,15 +150,15 @@ print(sum(1 for r in result.records if r["receptor_revision_applied"]))
   experiment`.
 - **Must come before clonal forks** (ancestor-phase).
 - The compile path also checks that the cartridge has a V pool
-  in refdata — required because the replacement allele draws from
+  in refdata - required because the replacement allele draws from
   it.
 
 ### Provenance fields
 
 ```python
-rec["receptor_revision_applied"]    # bool — did revision fire on this record?
-rec["original_v_call"]              # str — the pre-revision V identity (when applied)
-rec["v_call"]                       # str — the POST-revision V evidence-call
+rec["receptor_revision_applied"]    # bool - did revision fire on this record?
+rec["original_v_call"]              # str - the pre-revision V identity (when applied)
+rec["v_call"]                       # str - the POST-revision V evidence-call
 ```
 
 | Field | When revision NOT applied | When revision applied |
@@ -176,7 +176,7 @@ distinction:
   carries the new V. The pre-revision identity survives only on
   `original_v_call`.
 - **`original_v_call` is empty when revision DIDN'T fire.** Not
-  `None`, not equal to `v_call` — empty string. The empty
+  `None`, not equal to `v_call` - empty string. The empty
   sentinel is deliberate: it reads cleaner than `original_v_call
   == v_call` because the latter would force you to cross-check
   `receptor_revision_applied` to disambiguate "not revised" from
@@ -201,7 +201,7 @@ df = pd.DataFrame(result.records)
 df.groupby(["d_inverted", "receptor_revision_applied"]).size()
 ```
 
-The two are independent — a single record can carry both
+The two are independent - a single record can carry both
 `d_inverted=True` and `receptor_revision_applied=True`. The
 schedule analyser orders them per their pass requirements
 (`invert_d` runs before `assemble.D`; `receptor_revision` runs
@@ -210,12 +210,12 @@ after V assembly).
 ## Clonal placement
 
 Both methods must be configured BEFORE a clonal fork
-(`clonal_lineage`, `clonal_repertoire`, or legacy `expand_clones`) —
+(`clonal_lineage`, `clonal_repertoire`, or legacy `expand_clones`) -
 they're recombination-time decisions that the family inherits.
 The DSL enforces this at chain time with two symmetric guards:
 
 ```python
-# WRONG — invert_d after a clonal fork raises ValueError
+# WRONG - invert_d after a clonal fork raises ValueError
 ga.Experiment.on("human_igh") \
    .recombine() \
    .clonal_repertoire(n_clones=10, max_size=20) \
@@ -243,7 +243,7 @@ result = (
 
 Each clone inherits the parent's `d_inverted` value and
 `receptor_revision_applied` / `original_v_call`. Every descendant
-of the same clone carries the same triple of provenance fields —
+of the same clone carries the same triple of provenance fields -
 that's precisely the family-truth invariance `validate_families`
 checks (via the `truth_*_call` fields when provenance exposure is
 on; the parent-aware validator also compares `d_inverted` and
@@ -258,14 +258,14 @@ The postcondition validator re-derives both mechanisms' fields
 from the IR, independently of the AIRR projection path. Three
 issue kinds can fire:
 
-- **`DInvertedMismatch { reported, expected }`** — `d_inverted`
+- **`DInvertedMismatch { reported, expected }`** - `d_inverted`
   on the record disagrees with the IR's D orientation. Re-derived
   by inspecting `Simulation.assignments[D].orientation`.
-- **`ReceptorRevisionAppliedMismatch { reported, expected }`** —
+- **`ReceptorRevisionAppliedMismatch { reported, expected }`** -
   the applied flag disagrees with whether the IR's V slot carries
   a `receptor_revision_original_id`. Re-derived from the slot,
   not from the trace.
-- **`OriginalVCallMismatch { reported, expected }`** — the
+- **`OriginalVCallMismatch { reported, expected }`** - the
   reported `original_v_call` doesn't match what `refdata.get(V,
   receptor_revision_original_id).name` resolves to.
 
@@ -308,7 +308,7 @@ mechanisms.
 invert_d is only valid for VDJ chains (current
 chain_type='vj')` at chain time. The same applies to
 `.receptor_revision()`. Neither mechanism exists for light chains
-or TCR-alpha/gamma — recombination biology only models them in
+or TCR-alpha/gamma - recombination biology only models them in
 heavy chains.
 
 **Expecting `original_v_call` to be non-empty when revision
@@ -322,12 +322,12 @@ the replacement allele happened to land on the same V).
 
 **Treating `d_cigar` coordinates as reversed.** Under
 `d_inverted=True`, the CIGAR ops still use the forward allele's
-coordinate space — `d_germline_start/end` are forward-allele
+coordinate space - `d_germline_start/end` are forward-allele
 coordinates. The match-rate `d_identity` drops because the
 inverted pool bytes don't match the forward allele bytes, but
 the coordinate system stays stable. If your downstream pipeline
 re-RCs the bytes before comparing, do it on
-`rec["sequence"][d_sequence_start:d_sequence_end]` — don't
+`rec["sequence"][d_sequence_start:d_sequence_end]` - don't
 remap the coordinates.
 
 **Putting `.invert_d()` or `.receptor_revision()` after a clonal
@@ -339,14 +339,14 @@ not let you accidentally split them.
 ## Where to go next
 
 - **[Recombination and junction biology](recombination-junction.md)**
-  — what `.recombine()` produces in the first place, before
+  what `.recombine()` produces in the first place, before
   either of these mechanisms run.
-- **[Clonal simulation overview](clonal-families.md)** — the ancestor-vs-
+- **[Clonal simulation overview](clonal-families.md)** - the ancestor-vs-
   descendant phase discipline both mechanisms participate in.
-- **[Validation & reproducibility](../validation/index.md)** —
+- **[Validation & reproducibility](../validation/index.md)** -
   the validator's issue catalogue (including the three issue
   kinds named above) and the replay model.
-- **[SHM and mutation targeting](shm-targeting.md)** — the
+- **[SHM and mutation targeting](shm-targeting.md)** - the
   biology stage that runs *after* recombination edits; SHM
   accumulates on the post-revision V and the inverted D.
 - For the engine-side mechanics + audit details, see

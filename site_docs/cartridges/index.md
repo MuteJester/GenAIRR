@@ -8,14 +8,14 @@ you can pin in CI.</p>
 ## The three guides
 
 1. **[Build a reference cartridge](../guides/build-reference-cartridge.md)**
-   — the practical builder workflow from FASTA to `build()`.
+   the practical builder workflow from FASTA to `build()`.
    Start here for any custom cartridge.
 2. **[Estimate models from data](../guides/estimate-cartridge-models.md)**
-   — turn an AIRR-like rearrangement table into empirical models
+   turn an AIRR-like rearrangement table into empirical models
    on the cartridge (allele usage, trim, NP length, NP base,
    P-nucleotide length).
 3. **[Inspect manifest + build report](../guides/cartridge-manifest-report.md)**
-   — audit the cartridge's current state and how it was produced;
+   audit the cartridge's current state and how it was produced;
    the canonical CI-gate surface.
 
 ## Background

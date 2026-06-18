@@ -6,7 +6,7 @@ one stage; at <code>.build()</code> the engine validates the
 typed planes and stamps a <code>schema_sha256</code> on the
 resulting <code>DataConfig</code>. Every stage's inputs,
 warnings, and rejection details are captured in
-<code>builder.report()</code> — the cartridge ships with an
+<code>builder.report()</code> - the cartridge ships with an
 auditable trail.</p>
 
 For the broader workflow, see

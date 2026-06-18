@@ -1,4 +1,4 @@
-# Lesson 2 — The pipeline scrubber
+# Lesson 2 - The pipeline scrubber
 
 !!! info "Migration placeholder"
     This page is a placeholder. Content lands in **Phase 3**

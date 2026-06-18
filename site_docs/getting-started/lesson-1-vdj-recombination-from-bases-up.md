@@ -1,4 +1,4 @@
-# Lesson 1 — V(D)J recombination, from bases up
+# Lesson 1 - V(D)J recombination, from bases up
 
 !!! info "Migration placeholder"
     This page is a placeholder. Content lands in **Phase 3**

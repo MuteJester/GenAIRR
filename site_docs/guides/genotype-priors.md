@@ -38,7 +38,7 @@ impossible; pass `ensure_viable=False` to allow infeasible draws.
 !!! note "Default sampling is HW *conditioned on viability*"
     With the default `ensure_viable=True`, draws that leave no complete usable
     haplotype are rejected, so per-gene deletion/zygosity rates are Hardy-Weinberg
-    **conditioned on at least one viable chromosome** — not the unconditional HW
+    **conditioned on at least one viable chromosome** - not the unconditional HW
     rates. This only matters at high `haplotype_deletion_prob` (e.g. a single-J
     cartridge with a high J-deletion prob). Use `ensure_viable=False` for the raw,
     unconditional draw (which may be infeasible and rejected at compile).
@@ -49,7 +49,7 @@ unambiguous); a supplied gene's listed alleles define its distribution (weight `
 excludes an allele), and unspecified genes fall back to uniform.
 `haplotype_deletion_prob` is a float or a per-gene/per-segment dict.
 
-!!! warning "What this model is — and isn't"
+!!! warning "What this model is - and isn't"
     This is an **independent per-gene** sampler. It does **not** model linkage
     disequilibrium, gene co-deletion blocks, ancestry, or donor-specific haplotype
     structure, and it samples **catalogue alleles only** (no novel alleles) and
@@ -57,14 +57,14 @@ excludes an allele), and unspecified genes fall back to uniform.
     population source (e.g. VDJbase) for realistic per-gene frequencies; the default
     is uniform within each gene. `allele_frequencies="usage_as_prior"` is an
     explicit opt-in that reuses the cartridge's recombination `allele_usage` as a
-    frequency proxy — convenient but biologically approximate.
+    frequency proxy - convenient but biologically approximate.
 
 ### Loading population frequencies
 
 GenAIRR has no built-in population-frequency loader yet (that is a deferred
 feature), but the `allele_frequencies` argument is a plain nested dict, so any
 table you assemble works. For realistic per-allele frequencies, build the dict
-from a population source — for example a frequency table you export from
+from a population source - for example a frequency table you export from
 [VDJbase](https://vdjbase.org/) (which reports per-individual genotypes and
 allele frequencies across populations). Given a CSV with
 `segment,gene,allele,frequency` columns:
@@ -91,7 +91,7 @@ in the [overview](genotype.md)); genes you omit fall back to uniform.
 
 The `allele_frequencies` / `haplotype_deletion_prob` you pass to
 `Genotype.sample` can instead be **authored once on the cartridge** as a
-*population genotype model* — a donor-population germline prior. It is a distinct
+*population genotype model* - a donor-population germline prior. It is a distinct
 plane from `reference_models.allele_usage`: `allele_usage` weights how often each
 allele is *expressed* during recombination, whereas a genotype prior describes
 which alleles a *donor population carries* (frequencies, gene-deletion rates, and
@@ -114,7 +114,7 @@ model = PopulationGenotypeModel(
 `set_genotype_priors` validates the model against the cartridge: unknown
 genes/alleles raise, and any population novel allele goes through the same
 functional validation as `add_novel_allele` (conserved anchor, stop-free frame,
-base-allele match). A non-`None` plane becomes part of **cartridge identity** —
+base-allele match). A non-`None` plane becomes part of **cartridge identity** -
 it folds into the cartridge's `compute_checksum()` (the content hash that changes
 whenever the reference changes) and its **manifest** (the cartridge's
 machine-readable provenance/identity record), so a prior baked onto a cartridge
@@ -138,7 +138,7 @@ Estimator conventions: allele frequencies are counted **per carried chromosome**
 (homozygous contributes 2, hemizygous 1, deleted 0); gene deletion probability is
 `deleted_haplotypes / (2 × n_subjects)`. `pseudocount` smooths the per-gene
 catalogue-allele counts only (deletion gets none). Genotypes carrying a
-duplicated gene are rejected — the plane is deletion-only.
+duplicated gene are rejected - the plane is deletion-only.
 
 ### Drawing from the cartridge plane
 
@@ -155,7 +155,7 @@ print(g.to_metadata())                  # subject_id + provenance + source/effec
 ```
 
 Pass `use_cartridge_priors=False` for a clean uniform, catalogue-only draw (all
-plane consumption — including novels — disabled). Each input is sourced
+plane consumption - including novels - disabled). Each input is sourced
 **independently**, so you can mix explicit and cartridge values:
 
 ```python
@@ -173,7 +173,7 @@ print(g.prior_provenance["chromosome_weights"])      # 'cartridge'
 novel that gets sampled is carried (and flows into `v_call` / reads / truth like
 any allele); a novel that isn't drawn never pollutes the output reference. By
 default (`include_cartridge_novel_alleles="auto"`) novels are injected only when
-the allele frequencies are cartridge- or uniform-sourced — supplying an
+the allele frequencies are cartridge- or uniform-sourced - supplying an
 **explicit** frequency table keeps it explicit. Pass
 `include_cartridge_novel_alleles=True` to inject them anyway, or `False` to never.
 

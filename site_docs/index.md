@@ -112,7 +112,7 @@ an aligner.</p>
 ```python
 import GenAIRR as ga
 
-# Grow real BCR clonal lineage trees — affinity maturation, with ground truth
+# Grow real BCR clonal lineage trees - affinity maturation, with ground truth
 result = (
     ga.Experiment.on("human_igh")
       .recombine()

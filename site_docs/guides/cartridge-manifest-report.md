@@ -1,11 +1,11 @@
 # Inspect a cartridge: manifest and build report
 
-<p class="lead">Once you have a cartridge — built, estimated, and
-ready to simulate — two inspection surfaces let you audit it.
+<p class="lead">Once you have a cartridge - built, estimated, and
+ready to simulate - two inspection surfaces let you audit it.
 The <strong>manifest</strong> describes the cartridge's current
 state. The <strong>build report</strong> describes how that state
 was produced. Together they let you verify identity, catalogue
-coverage, model availability, and reproducibility hashes — before
+coverage, model availability, and reproducibility hashes - before
 you run a simulation, before you ship a dataset, and inside CI.</p>
 
 ## Why inspect a cartridge
@@ -29,7 +29,7 @@ Three moments where this guide pays off:
 - **When reproducing a dataset-matched model.** If the goal is
   to match an external repertoire's empirical distributions,
   the manifest tells you which planes are estimated from records
-  vs falling through to defaults — i.e. where the cartridge
+  vs falling through to defaults - i.e. where the cartridge
   *isn't* matched yet.
 
 ## The two inspection surfaces
@@ -45,7 +45,7 @@ report   = cfg.build_report                   # how it was built
 | `cfg.cartridge_manifest()` | What is in this cartridge **now**? |
 | `cfg.build_report` / `builder.report()` | How was this cartridge **produced**? |
 
-A cartridge can mutate after build — you can pop a model plane,
+A cartridge can mutate after build - you can pop a model plane,
 swap a rules block, or hand-author a field. The manifest reflects
 those edits; the build report doesn't. The pair tells you both
 the present state and the immutable history of how you got here.
@@ -80,7 +80,7 @@ manifest["identity"]
 
 `name`, `species`, and `reference_set` come from the cartridge
 itself. `locus` and `source` are populated through the engine
-bridge (`dataconfig_to_refdata`) — they reflect what the engine
+bridge (`dataconfig_to_refdata`) - they reflect what the engine
 actually sees, not what the Python-side dataclass holds.
 
 ### `catalogue`
@@ -97,7 +97,7 @@ manifest["catalogue"]
 ```
 
 Counts come from the Python-side allele lists. Use these as the
-first sanity check on any custom-built cartridge — a count of
+first sanity check on any custom-built cartridge - a count of
 zero on a segment your chain needs is the most common failure
 mode after building from FASTA.
 
@@ -116,7 +116,7 @@ manifest["rules"]
 `has_explicit_rules` is `True` when a `ReferenceRulesSpec` is
 attached (via `with_rules` or directly on `cfg.reference_rules`).
 The `allowed_bases`, `v_anchor`, and `j_anchor` entries are
-populated through the engine bridge — so they reflect the
+populated through the engine bridge - so they reflect the
 *effective* rules including any cartridge-shipped defaults.
 
 ### `models`
@@ -143,19 +143,19 @@ manifest["models"]
 
 Each typed block carries:
 
-- `in_plan_signature` — does this plane affect the plan
+- `in_plan_signature` - does this plane affect the plan
   signature? (replay safety surface)
-- `in_content_hash` — does this plane affect the refdata
+- `in_content_hash` - does this plane affect the refdata
   content hash? (cartridge identity surface)
 - A model-specific availability marker (`available`,
   `length_keys`, `models`, etc.)
-- `legacy_*_present` — does the cartridge carry an older
+- `legacy_*_present` - does the cartridge carry an older
   pre-typed-plane field for this surface that didn't auto-lift?
 
 The two `legacy_*_present` flags at the top of the block expose
 the pre-typed-plane fields (`NP_lengths`, `trim_dicts`). They
-don't drive the engine — only the typed
-`reference_models.<plane>` paths do — but the flags tell you
+don't drive the engine - only the typed
+`reference_models.<plane>` paths do - but the flags tell you
 whether a stale dict is sitting on the cartridge.
 
 For the SHM block specifically, `shm.v_subregion_support.available`
@@ -175,7 +175,7 @@ manifest["curation"]
 
 The `source_tag` is the unmodified bridged identity source.
 `policies` is the parsed list of curation policies applied via
-`Experiment.curate_refdata(...)` — empty when the cartridge is
+`Experiment.curate_refdata(...)` - empty when the cartridge is
 uncurated. The encoding is parsed from `|curated:` markers in
 the source tag; see
 [The Experiment builder](experiment-builder.md) for the curation
@@ -191,11 +191,11 @@ manifest["hashes"]
 # }
 ```
 
-- **`data_config_checksum`** is `cfg.compute_checksum()` — the
+- **`data_config_checksum`** is `cfg.compute_checksum()` - the
   sha256 of the pickled `DataConfig` with a few transient fields
   zeroed (build report and `schema_sha256` itself, so the field
   can't include itself in its own hash).
-- **`refdata_content_hash`** is the engine-side content hash —
+- **`refdata_content_hash`** is the engine-side content hash -
   the same value that gates replay (see [Trace, replay, and
   reproducibility](trace-replay.md)). It hashes the cartridge
   bytes the engine consumes; changing a plane that affects
@@ -216,7 +216,7 @@ manifest["orphan_dataconfig_fields"]
 ```
 
 These two lists name documented completeness gaps from the
-manifest audit — fields the manifest doesn't surface (because
+manifest audit - fields the manifest doesn't surface (because
 they're not used by the engine) but that an inspecting tool
 should know exist. Reading them tells you whether the cartridge
 carries pre-typed-plane orphans that didn't auto-lift.
@@ -231,7 +231,7 @@ manifest.get("errors")
 The `errors` key **is not present** in a clean manifest. It only
 appears when the manifest builder encountered a recoverable
 problem reading the bridge or a plane. Treat `manifest.get("errors")`
-truthy as a CI gate worth failing on — it means part of the
+truthy as a CI gate worth failing on - it means part of the
 manifest is incomplete and downstream consumers may be reading
 stale data.
 
@@ -242,11 +242,11 @@ a `CartridgeBuildReport` dataclass:
 
 ```python
 report = cfg.build_report
-report.stages                   # list[dict] — one entry per builder stage
-report.warnings                 # list[str]  — finalisation warnings
-report.rejected                 # list[dict] — per-row + per-allele drops
-report.manifest_snapshot        # dict | None — manifest at build time
-report.checksum_at_build_time   # str  | None — schema_sha256 stamped on cfg
+report.stages                   # list[dict] - one entry per builder stage
+report.warnings                 # list[str]  - finalisation warnings
+report.rejected                 # list[dict] - per-row + per-allele drops
+report.manifest_snapshot        # dict | None - manifest at build time
+report.checksum_at_build_time   # str  | None - schema_sha256 stamped on cfg
 report.to_dict()                # JSON-clean dict for CI artifacts
 ```
 
@@ -254,19 +254,19 @@ report.to_dict()                # JSON-clean dict for CI artifacts
 
 One entry per builder method that ran. Each carries:
 
-- `stage` — the method name (e.g. `"from_fasta"`,
+- `stage` - the method name (e.g. `"from_fasta"`,
   `"estimate_allele_usage"`)
-- `inputs` — the kwargs the user passed
-- `inferred` — what the stage computed (counts, model summaries,
+- `inputs` - the kwargs the user passed
+- `inferred` - what the stage computed (counts, model summaries,
   fallback flags)
-- `warnings` — stage-level warnings (e.g. P-naive zero-fraction)
-- `replaced` — `True` when an estimator overwrote a prior typed
+- `warnings` - stage-level warnings (e.g. P-naive zero-fraction)
+- `replaced` - `True` when an estimator overwrote a prior typed
   plane (idempotency marker; see
   [Estimate cartridge models from real data](estimate-cartridge-models.md))
 
 ### `warnings`
 
-Build-finalisation warnings — distinct from the per-stage warnings
+Build-finalisation warnings - distinct from the per-stage warnings
 inside `stages[*].warnings`. These are emitted by `.build()` itself
 during plane normalisation / identity resolution.
 
@@ -280,7 +280,7 @@ explicitly in
 ### `manifest_snapshot` and `checksum_at_build_time`
 
 These two stamp the cartridge's state **at the moment `.build()`
-returned**. If you later mutate the cartridge (rare — usually
+returned**. If you later mutate the cartridge (rare - usually
 discouraged), the live manifest will drift but the snapshot stays
 pinned to the build-time state.
 
@@ -314,7 +314,7 @@ assert manifest["catalogue"]["v_count"] >= 300
 assert manifest["catalogue"]["d_count"] >= 25
 assert manifest["catalogue"]["j_count"] >= 5
 
-# Models — every plane you need must be attached
+# Models - every plane you need must be attached
 assert manifest["models"]["allele_usage"]["available"]
 assert manifest["models"]["trim_models"]["available"]
 assert manifest["models"]["np_length_models"]["available"]
@@ -351,7 +351,7 @@ build-time error instead.
 
 **P-naive input warning.** From `estimate_p_nucleotide_lengths`:
 ≥ 95 % of input rows reported zero on a `p_*_length` field. The
-estimated distribution is "always-zero" — not biology. See
+estimated distribution is "always-zero" - not biology. See
 [Estimate cartridge models from real data](estimate-cartridge-models.md#p-nucleotide-naive-input-detector).
 
 **Unknown alleles in estimator records.** Per-row entries in
@@ -383,13 +383,13 @@ schema-checksum fields zeroed. Useful for caching cartridge
 loads and detecting accidental mutation.
 
 **`refdata_content_hash`** answers "does this trace replay against
-this cartridge?" It hashes the engine-consumed material — the
+this cartridge?" It hashes the engine-consumed material - the
 same hash that gates `replay_from_trace_file` and
 `rerun_from_trace_file`. Use this for trace pinning. See
 [Trace, replay, and reproducibility](trace-replay.md).
 
 **`pass_plan_signature`** lives only on the trace file, not on
-the cartridge. It hashes the *pipeline* — every method call on
+the cartridge. It hashes the *pipeline* - every method call on
 the `Experiment`. Changes to the pipeline flip the plan
 signature; changes to the cartridge content flip the refdata
 content hash. The two are independent.
@@ -405,8 +405,8 @@ What none of these prove on their own:
 - A matching `pass_plan_signature` doesn't prove the cartridge
   is the same (different cartridges can pin the same plan).
 
-The triple — `(plan_signature, refdata_signature,
-refdata_content_hash)` — is what replay actually checks.
+The triple - `(plan_signature, refdata_signature,
+refdata_content_hash)` - is what replay actually checks.
 
 ## Common mistakes
 
@@ -430,7 +430,7 @@ record, not a live view.
 **Ignoring `manifest.get("errors")`.** The `errors` key is
 absent by default and only appears when the manifest builder
 encountered a recoverable problem. A truthy `errors` list means
-part of the manifest is incomplete — downstream consumers
+part of the manifest is incomplete - downstream consumers
 reading the affected blocks may be reading stale data. Fail CI
 on it.
 
@@ -441,7 +441,7 @@ but **don't** drive the modern engine. The
 `legacy_*_present` flags in the manifest tell you whether
 they're sitting on the cartridge as orphans; auto-lift is
 deliberately disabled because it would silently change output
-bytes. Estimate the typed planes explicitly instead — see
+bytes. Estimate the typed planes explicitly instead - see
 [Estimate cartridge models from real data](estimate-cartridge-models.md).
 
 **Pinning `data_config_checksum` instead of
@@ -454,11 +454,11 @@ actually needs.
 ## Where to go next
 
 - **[Build a reference cartridge](build-reference-cartridge.md)**
-  — the builder workflow these inspection surfaces describe.
+  the builder workflow these inspection surfaces describe.
 - **[Estimate cartridge models from real data](estimate-cartridge-models.md)**
-  — the estimator workflow that drives the `rejected` /
+  the estimator workflow that drives the `rejected` /
   `warnings` entries in the build report.
 - **[Reference cartridge](../concepts/reference-cartridge.md)**
-  — the four-plane conceptual model behind the `models` block.
-- **[Trace, replay, and reproducibility](trace-replay.md)** — how
+  the four-plane conceptual model behind the `models` block.
+- **[Trace, replay, and reproducibility](trace-replay.md)** - how
   `refdata_content_hash` gates trace replay.
