@@ -140,7 +140,9 @@ plugins:
         # — preserving every live `mutejester.github.io/GenAIRR/<page>.html`.
         # 29 entries: one per existing website/*.html page, modulo
         # `index.html` which is the homepage itself (`/` already serves it).
-        "learn.md": "getting-started/index.md"
+        # NOTE: no 'learn.md' redirect — learn.md is a real nav page
+        # ("Choose your path"); a redirect here would clobber the built
+        # learn.html with a stub and make the page unreachable.
         "lesson-1.md": "getting-started/lesson-1-vdj-recombination-from-bases-up.md"
         "lesson-2.md": "getting-started/lesson-2-the-pipeline-scrubber.md"
         "lesson-3.md": "getting-started/lesson-3-s5f-mutation-isnt-uniform.md"
