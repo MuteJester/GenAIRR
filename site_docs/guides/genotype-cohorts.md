@@ -58,3 +58,11 @@ a cohort is fully reproducible and subjects are independent.
 its own carried alleles); clonal forks are not combined with a cohort in this
 release.
 
+## Where to go next
+
+- [Genotypes (overview)](genotype.md) - the core model and the `Genotype` builder.
+- [Sampling & population priors](genotype-priors.md) - draw the per-subject
+  genotypes a cohort runs on.
+- [Benchmarking genotype inference](genotype-benchmarking.md) - score a tool
+  against the planted truth; the recipe applies per subject across a cohort.
+

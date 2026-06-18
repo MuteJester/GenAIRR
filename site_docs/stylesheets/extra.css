@@ -639,7 +639,7 @@ code, kbd, pre, samp,
   }
 }
 
-/* 6-card capabilities grid (3×2) */
+/* capabilities grid (3 columns; flows to as many rows as cards) */
 .md-typeset .cap-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -665,6 +665,7 @@ code, kbd, pre, samp,
 }
 
 .md-typeset .cap-card.cap-recombine .cap-num { color: var(--accent-ink); }
+.md-typeset .cap-card.cap-genotype  .cap-num { color: var(--data-slate); }
 .md-typeset .cap-card.cap-mutate    .cap-num { color: var(--data-cyan); }
 .md-typeset .cap-card.cap-clone     .cap-num { color: var(--archive-ink); }
 .md-typeset .cap-card.cap-corrupt   .cap-num { color: var(--data-rust); }

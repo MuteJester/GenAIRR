@@ -107,9 +107,9 @@ experimental design (Experiment).
 
 The reference cartridge carries the immutable biological priors:
 
-- **Allele universe** - `cfg.alleles.v`, `cfg.alleles.d`,
-  `cfg.alleles.j`, `cfg.alleles.c`. The sequences and metadata
-  the recombinase has access to.
+- **Allele universe** - `cfg.v_alleles`, `cfg.d_alleles`,
+  `cfg.j_alleles`, `cfg.c_alleles` (dicts keyed by gene). The
+  sequences and metadata the recombinase has access to.
 - **Empirical recombination distributions** -
   `cfg.reference_models.allele_usage`,
   `cfg.reference_models.trims`,
@@ -119,7 +119,7 @@ The reference cartridge carries the immutable biological priors:
   draws the recombination pass samples from.
 - **SHM kernel** - the cartridge's S5F mutability table (used
   when `.mutate(model="s5f", ...)` runs).
-- **V-subregion annotations** - `cfg.alleles.v[i].subregions`.
+- **V-subregion annotations** - `cfg.v_alleles[gene][i].subregions`.
   Required for `v_subregion_rates`.
 - **Rules / anchors** - `cfg.reference_rules` (V Cys + J anchor
   expectations, allowed bases, severity).

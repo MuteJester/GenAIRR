@@ -242,7 +242,7 @@ what to reach for when you need them:
   cached `SegmentLiveCall` against a from-scratch recompute. That
   layer is internal to engine maintenance - users rarely need it
   unless they're filing a bug against the cache. Both layers are
-  documented in the [two-layer integrity model](two-layer-model.md).
+  documented in the [architecture guide](../architecture/index.md#the-two-layer-integrity-model).
 
 ---
 
@@ -254,7 +254,7 @@ and is exposed to Python through `SimulationResult.validate_records`.
 For the full check catalogue, the §5A/§5B silent invariants the
 validator pins, and the empirical sweep that drove the original
 landing, see the contributor audit at
-[`docs/airr_record_validator.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/airr_record_validator.md).
+[`audit-docs/airr_record_validator.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/airr_record_validator.md).
 For the engine-wide validation matrix (every guarantee → audit doc
 → test file → Rust kernel mapping), see
-[`docs/validation_matrix.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/validation_matrix.md).
+[`audit-docs/validation_matrix.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/validation_matrix.md).

@@ -95,6 +95,11 @@ result[0]["haplotype"]           # 0 or 1      - which chromosome this read used
 result.genotypes[0].to_table()   # ground-truth genotype (per gene, per haplotype)
 ```
 
+`subject_id` and `haplotype` are on every record; add
+`run_records(..., expose_provenance=True)` to also get the
+`truth_v_call` / `truth_d_call` / `truth_j_call` columns (the alleles the
+engine actually sampled).
+
 ## How recombination samples from a genotype
 
 When a genotype is attached, recombination runs a single phased sampling pass per
@@ -195,8 +200,9 @@ Notes and guard-rails:
 - **`complete_from_reference(policy=...)`** fills only genes you haven't touched.
   `"homozygous_first_reference"` (default) makes each unspecified gene homozygous
   for its first cartridge allele - note this is the *first listed* allele, **not**
-  a population-frequency-common one (GenAIRR has no frequency prior in this
-  release; the name says exactly what it does). `"heterozygous_first_two"` uses
+  a population-frequency-common one (this policy consults no frequency prior; for
+  frequency-driven genotypes use
+  [`Genotype.sample`](genotype-priors.md)). `"heterozygous_first_two"` uses
   the first two alleles.
 - Unknown gene/allele names, NaN/inf chromosome weights, and segments left with no
   usable allele are all rejected at build/attach with clear messages.
@@ -216,8 +222,8 @@ allele-usage model (`reference_models.allele_usage`), aggregated to the gene
 level, and scaled by **copy-number dosage** (a duplicated gene recombines
 proportionally more often). Cartridges that don't author a typed `allele_usage`
 fall back to uniform-over-present-genes (× dosage). See
-[Allele usage](v-usage.md) and [Estimate models from data](estimate-cartridge-models.md)
-for authoring usage.
+[Allele usage](recombination-junction.md#controlling-the-allele-universe) and
+[Estimate models from data](estimate-cartridge-models.md) for authoring usage.
 
 ### More genotype recipes
 

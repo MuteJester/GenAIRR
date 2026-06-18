@@ -98,8 +98,8 @@ comma-separated **tie set** when the engine sampled an
 indistinguishable group:
 
 ```text
-v_call: "IGHV3-23*01"
-v_call: "IGHV3-23*01,IGHV3-23*04"   ← tie set: two-way ambiguity
+v_call: "IGHVF1-G2*01"
+v_call: "IGHVF1-G2*01,IGHVF1-G2*02"   ← tie set: two-way ambiguity
 ```
 
 Downstream code that wants the single committed allele should

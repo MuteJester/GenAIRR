@@ -160,3 +160,10 @@ Because the genotype is planted, every tool is scored identically: recovered
 allele set vs `genotype.to_table()` - presence precision/recall, zygosity, and
 deletion calls.
 
+## Where to go next
+
+- [Genotypes (overview)](genotype.md) - building genotypes, novel alleles, and
+  the `to_table()` / `to_tsv()` ground truth you score against.
+- [Genotype cohorts](genotype-cohorts.md) - scale this recipe to many donors in
+  one `run_cohort` call.
+

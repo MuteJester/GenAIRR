@@ -70,8 +70,9 @@ opt-in can mask it.
 The set of V / D / J / C alleles available to the simulator. Each
 allele carries a name, gene, sequence, segment, and an optional
 anchor position (V Cys / J W-or-F codon offset). The catalogue is
-exactly what `cfg.add_v_allele(...)` etc. have always populated -
-the cartridge concept is unchanged from earlier GenAIRR versions.
+read through `cfg.v_alleles` / `cfg.d_alleles` / `cfg.j_alleles`
+(dicts keyed by gene) - the cartridge concept is unchanged from
+earlier GenAIRR versions.
 
 V alleles can additionally carry **subregion annotations** - the
 five canonical IMGT region intervals (`FWR1` / `CDR1` / `FWR2` /
@@ -79,7 +80,7 @@ five canonical IMGT region intervals (`FWR1` / `CDR1` / `FWR2` /
 region mutation counters. When a V allele has a populated IMGT-
 gapped sequence, the bridge derives these intervals for you;
 otherwise you can supply them explicitly. See
-[V-subregion annotations](../cartridges/v-subregion-annotations.md).
+[Build a reference cartridge](../guides/build-reference-cartridge.md).
 
 ### Rules
 
@@ -123,7 +124,7 @@ from GenAIRR import (
 
 cfg.reference_models = ReferenceEmpiricalModels(
     allele_usage=AlleleUsageSpec(
-        v={"IGHV1-2*02": 100.0, "IGHV3-23*01": 60.0},
+        v={"IGHVF1-G1*01": 100.0, "IGHVF1-G2*01": 60.0},
     ),
     trims={
         "V_3": EmpiricalDistributionSpec([(0, 5.0), (1, 3.0), (2, 1.0)]),
@@ -234,7 +235,7 @@ P-nucleotide lengths) and writes the result into the corresponding
 typed empirical-model sub-plane. The build report's
 `stages` list captures every estimator's inputs and inferred
 distributions for provenance. See
-[Cartridge estimators](../cartridges/estimators/index.md) for
+[Estimate models from data](../guides/estimate-cartridge-models.md) for
 per-estimator detail.
 
 ## The manifest

@@ -175,7 +175,7 @@ on the TSV/DataFrame; the FASTQ files only carry sequence + quality.
 - **[Validate AIRR records](../validation/validate-records.md)** -
   confirm every field is internally consistent before downstream
   analysis.
-- **[The simulation pipeline concept](../concepts/pipeline.md)** -
+- **[The Experiment builder](../guides/experiment-builder.md)** -
   the mental model behind the DSL and what each pass actually does.
 - **[Productive sampling guide](../guides/productive.md)** - what
   "productive" means biologically and how the constraint composes

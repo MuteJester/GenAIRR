@@ -1,19 +1,17 @@
 # MkDocs Material site configuration for GenAIRR docs.
 #
-# Status: scaffold only. Phase 0 of the migration plan in
-# `docs/docs_mkdocs_migration_plan.md`. No content has been
-# migrated yet — most nav entries below point at placeholder
-# files or files that don't exist yet. The contract pins in
-# `tests/test_docs_mkdocs_migration_contract.py` verify
-# scaffold completeness, not buildability.
+# The site is live and built from `site_docs/`. Some deeper pages
+# (a handful of concept/validation/cartridge-estimator stubs) are
+# still being written; the nav below ships the pages that have
+# content. The contract pins in
+# `tests/test_docs_mkdocs_migration_contract.py` guard structure.
 #
-# To build (once Phase 1 installs deps):
+# To build:
 #   pip install -e ".[docs]"
 #   mkdocs build --strict
 #
 # Existing live URLs at `mutejester.github.io/GenAIRR/<page>.html`
-# are preserved via the `redirects` plugin block (commented out
-# below until mkdocs-redirects is installed in Phase 1).
+# are preserved via the `redirects` plugin block below.
 
 site_name: GenAIRR
 site_description: Synthetic immune-receptor-sequence simulator with absolute ground truth
@@ -140,7 +138,9 @@ plugins:
         # — preserving every live `mutejester.github.io/GenAIRR/<page>.html`.
         # 29 entries: one per existing website/*.html page, modulo
         # `index.html` which is the homepage itself (`/` already serves it).
-        "learn.md": "getting-started/index.md"
+        # NOTE: no 'learn.md' redirect — learn.md is a real nav page
+        # ("Choose your path"); a redirect here would clobber the built
+        # learn.html with a stub and make the page unreachable.
         "lesson-1.md": "getting-started/lesson-1-vdj-recombination-from-bases-up.md"
         "lesson-2.md": "getting-started/lesson-2-the-pipeline-scrubber.md"
         "lesson-3.md": "getting-started/lesson-3-s5f-mutation-isnt-uniform.md"
@@ -197,10 +197,11 @@ nav:
   - Core Concepts:
       - concepts/index.md
       - AIRR Record: concepts/airr-record.md
-      - Reference Cartridge: concepts/reference-cartridge.md
+      - Reference Cartridge (concept): concepts/reference-cartridge.md
   - Simulation Guides:
       - guides/index.md
       - The Experiment builder: guides/experiment-builder.md
+      - Sample only productive sequences: guides/productive.md
       - Biology map: guides/biology-map.md
       - Recombination + junction biology: guides/recombination-junction.md
       - D inversion + receptor revision: guides/recombination-editing.md
