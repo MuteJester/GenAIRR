@@ -339,6 +339,11 @@ def test_pin_present_p_nucleotide_length_probs_has_no_simulator_consumer() -> No
     }
     allowed = {
         "src/GenAIRR/dataconfig/data_config.py",
+        # Manifest reporting surface extracted verbatim from
+        # data_config.py (behavior-preserving hygiene split); names
+        # the legacy field for REPORTING only, not as a simulator
+        # consumer — same category as data_config.py.
+        "src/GenAIRR/dataconfig/_manifest.py",
         "src/GenAIRR/utilities/mcp_helpers.py",
         # Post-slice — the typed-plane resolver explicitly
         # documents the no-auto-lift boundary in docstring +

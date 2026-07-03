@@ -315,6 +315,12 @@ def test_pin_present_gene_use_dict_has_no_simulator_pipeline_consumer() -> None:
     }
     allowed = {
         "src/GenAIRR/dataconfig/data_config.py",
+        # Manifest reporting surface extracted verbatim from
+        # data_config.py (behavior-preserving hygiene split). The
+        # documented-orphan-fields tuple + allele_usage manifest
+        # block name the legacy field for REPORTING only, not as a
+        # simulator consumer — same category as data_config.py.
+        "src/GenAIRR/dataconfig/_manifest.py",
         "src/GenAIRR/utilities/mcp_helpers.py",
         # Post-Allele-Usage-Estimation-v1 slice — the new typed
         # plane's resolver / lowering / spec docstrings
