@@ -21,8 +21,11 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "GPL-3.0-or-later" }
 authors = [
-    { name = "Thomas Konstantinovsky", email = "thomaskon90@gmail.com" },
+    { name = "Thomas Konstantinovsky" },
     { name = "Ayelet Peres" },
+]
+maintainers = [
+    { name = "Thomas Konstantinovsky", email = "thomaskon90@gmail.com" },
 ]
 keywords = ["immunogenetics", "sequence simulation", "bioinformatics", "alignment benchmarking"]
 classifiers = [
