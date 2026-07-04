@@ -99,10 +99,10 @@ def test_pin_scaffold_pipeline_ir_recombine_step_has_weights_fields() -> None:
 
 
 def test_pin_scaffold_lower_recombine_passes_weights_to_push_sample_allele() -> None:
-    """`_compile.py::_lower_recombine` calls
+    """`_lowering.py::_lower_recombine` calls
     ``plan.push_sample_allele(..., weights=...)`` with the
     per-step weight vector. Pinned at source."""
-    src = (_REPO_ROOT / "src" / "GenAIRR" / "_compile.py").read_text(encoding="utf-8")
+    src = (_REPO_ROOT / "src" / "GenAIRR" / "_lowering.py").read_text(encoding="utf-8")
     assert "push_sample_allele(" in src
     assert "weights=v_weights" in src
     assert "weights=j_weights" in src

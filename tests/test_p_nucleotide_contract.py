@@ -47,7 +47,7 @@ _ADDRESS_RS = _REPO_ROOT / "engine_rs" / "src" / "address.rs"
 _GENERATE_NP_SAMPLING = (
     _REPO_ROOT / "engine_rs" / "src" / "passes" / "generate_np" / "sampling.rs"
 )
-_COMPILE_PY = _REPO_ROOT / "src" / "GenAIRR" / "_compile.py"
+_LOWERING_PY = _REPO_ROOT / "src" / "GenAIRR" / "_lowering.py"
 _DATACONFIG_PY = _REPO_ROOT / "src" / "GenAIRR" / "dataconfig" / "data_config.py"
 _MCP_HELPERS_PY = _REPO_ROOT / "src" / "GenAIRR" / "utilities" / "mcp_helpers.py"
 _AIRR_RECORD_RS = _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "record.rs"
@@ -161,7 +161,7 @@ def test_pin_present_pipeline_order_has_p_addition_at_audited_positions() -> Non
     sequence must be read under the post-inversion orientation.
     See `docs/p_nucleotide_design.md` §9.3 for the corrected
     ordering."""
-    src = _COMPILE_PY.read_text(encoding="utf-8")
+    src = _LOWERING_PY.read_text(encoding="utf-8")
     assert 'push_p_addition("V_3"' in src
     assert 'push_p_addition("D_5"' in src
     assert 'push_p_addition("D_3"' in src
@@ -196,7 +196,7 @@ def test_pin_scaffold_invert_d_commits_before_assemble_d() -> None:
     `PAdditionPass(end=D_5)` inserted between them reads the
     post-inversion orientation of D's effective_seq. Pin the
     current ordering."""
-    src = _COMPILE_PY.read_text(encoding="utf-8")
+    src = _LOWERING_PY.read_text(encoding="utf-8")
     # In the VDJ branch, push_invert_d appears before
     # push_assemble("D"). Use rough textual ordering as the pin.
     invert_idx = src.find("push_invert_d(")

@@ -6,7 +6,7 @@ one of the dataclasses defined here to ``Experiment._steps``.
 
 This module owns the **step shape** (pure frozen dataclasses,
 no engine awareness). Lowering each step onto the engine-native
-:class:`_engine.PassPlan` lives in :mod:`._compile`. The split lets
+:class:`_engine.PassPlan` lives in :mod:`._lowering`. The split lets
 the pipeline IR be inspected, round-tripped, or serialized without
 importing the compiled Rust extension.
 

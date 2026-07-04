@@ -41,7 +41,7 @@ from ._normalize import (
     _to_immutable_byte_pairs,
     _to_immutable_pairs,
 )
-from ._compile import (
+from ._lowering import (
     _extract_invert_d_prob,
     _extract_paired_end_step,
     _extract_receptor_revision_prob,

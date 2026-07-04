@@ -336,7 +336,7 @@ def test_pin_scaffold_trim_pass_count_matches_segment_end_pairs() -> None:
     so a fifth `TrimPass` (e.g. `(V,Five)`) without the
     matching plane key surfaces here."""
     src = (
-        _REPO_ROOT / "src" / "GenAIRR" / "_compile.py"
+        _REPO_ROOT / "src" / "GenAIRR" / "_lowering.py"
     ).read_text(encoding="utf-8")
     # The lowering site dispatches via .push_trim("V","3"), etc.
     assert 'push_trim("V", "3"' in src
