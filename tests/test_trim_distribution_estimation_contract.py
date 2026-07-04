@@ -408,7 +408,7 @@ def test_pin_scaffold_end_loss_dsl_wires_to_end_loss_pass_not_trim() -> None:
     NOT `TrimPass`. The estimator MUST NOT consume DSL
     state from the end-loss surface."""
     src = (
-        _REPO_ROOT / "src" / "GenAIRR" / "experiment.py"
+        _REPO_ROOT / "src" / "GenAIRR" / "_experiment" / "corruption.py"
     ).read_text(encoding="utf-8")
     # Both DSL methods exist.
     assert "def end_loss_5prime(" in src

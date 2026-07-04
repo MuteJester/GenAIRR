@@ -332,7 +332,7 @@ def test_pin_present_gene_use_dict_has_no_simulator_pipeline_consumer() -> None:
         # comment explaining that the new estimator does NOT
         # touch `gene_use_dict`.
         "src/GenAIRR/_dataconfig_extract.py",
-        "src/GenAIRR/experiment.py",
+        "src/GenAIRR/_experiment/recombination.py",
         "src/GenAIRR/reference_models.py",
     }
     unexpected = consumers - allowed
