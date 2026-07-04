@@ -2,7 +2,7 @@ import os
 import pickle
 from dataclasses import dataclass
 from datetime import date
-from .enums import *
+from .enums import ChainType, Species
 
 @dataclass(frozen=True)
 class ConfigInfo:
