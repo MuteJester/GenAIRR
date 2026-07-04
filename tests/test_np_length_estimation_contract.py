@@ -105,12 +105,12 @@ def test_pin_scaffold_python_airr_projection_emits_np1_length_np2_length() -> No
 
 
 def test_pin_scaffold_result_column_order_includes_np_length_fields() -> None:
-    """`result.py`'s canonical column order declares both
+    """`_result_export.py`'s canonical column order declares both
     length fields. The estimator's output is consumed by
     `Experiment.on(cfg).recombine().run_records()` which
     will emit AIRR rows carrying these columns."""
     src = (
-        _REPO_ROOT / "src" / "GenAIRR" / "result.py"
+        _REPO_ROOT / "src" / "GenAIRR" / "_result_export.py"
     ).read_text(encoding="utf-8")
     assert '"np1_length"' in src
     assert '"np2_length"' in src

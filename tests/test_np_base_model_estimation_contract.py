@@ -95,11 +95,11 @@ def test_pin_scaffold_unclaimed_np_string_walks_structural_region_only() -> None
 
 
 def test_pin_scaffold_result_column_order_includes_np1_and_np2_strings() -> None:
-    """`result.py`'s canonical column order declares both
+    """`_result_export.py`'s canonical column order declares both
     `np1` and `np2` string fields. The estimator inherits
     the column names directly."""
     src = (
-        _REPO_ROOT / "src" / "GenAIRR" / "result.py"
+        _REPO_ROOT / "src" / "GenAIRR" / "_result_export.py"
     ).read_text(encoding="utf-8")
     assert '"np1"' in src
     assert '"np2"' in src
