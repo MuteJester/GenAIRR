@@ -25,6 +25,8 @@ _SEGMENTS = ("V", "D", "J")
 _DNA = set("ACGT")
 SCHEMA_TAG = "population_genotype_model/1"
 
+__all__ = ["PopulationNovelAllele", "PopulationGenotypeModel"]
+
 
 @dataclass
 class PopulationNovelAllele:

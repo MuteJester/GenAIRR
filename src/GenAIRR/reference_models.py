@@ -48,6 +48,18 @@ TRIM_KEYS_VJ: Tuple[str, ...] = ("V_3", "J_5")
 P_NUCLEOTIDE_END_KEYS: Tuple[str, ...] = ("V_3", "D_5", "D_3", "J_5")
 P_NUCLEOTIDE_END_KEYS_VJ: Tuple[str, ...] = ("V_3", "J_5")
 
+__all__ = [
+    "NP_KEYS",
+    "TRIM_KEYS",
+    "TRIM_KEYS_VJ",
+    "P_NUCLEOTIDE_END_KEYS",
+    "P_NUCLEOTIDE_END_KEYS_VJ",
+    "EmpiricalDistributionSpec",
+    "NpBaseModelSpec",
+    "AlleleUsageSpec",
+    "ReferenceEmpiricalModels",
+]
+
 
 @dataclass
 class EmpiricalDistributionSpec:

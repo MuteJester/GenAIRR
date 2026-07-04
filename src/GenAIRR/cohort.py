@@ -56,6 +56,9 @@ def _resolve_counts(n_genotypes: int, n_per_subject, counts) -> List[int]:
     return [_check_count(c, f"counts[{i}]") for i, c in enumerate(counts)]
 
 
+__all__ = ["CohortSubjectResult", "CohortResult"]
+
+
 @dataclass(frozen=True)
 class CohortSubjectResult:
     """One subject's slice of a cohort run."""
