@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Optional, Dict, List, Any
+from typing import TYPE_CHECKING, Optional, Dict, List, Any
 
 from GenAIRR.dataconfig.cartridge_views import (
     CartridgeCatalogueView,
@@ -22,9 +24,14 @@ import copy
 import hashlib
 import pickle
 from GenAIRR.alleles.allele import Allele
-from GenAIRR.reference_models import ReferenceEmpiricalModels
-from GenAIRR.reference_rules import ReferenceRulesSpec
-from GenAIRR.genotype_priors import PopulationGenotypeModel
+if TYPE_CHECKING:
+    # Authoring-layer types used only as field annotations. Deferred to
+    # TYPE_CHECKING so loading a pickled DataConfig (every bundled
+    # cartridge is one) does not eagerly force-import the entire
+    # cartridge-authoring subtree.
+    from GenAIRR.reference_models import ReferenceEmpiricalModels
+    from GenAIRR.reference_rules import ReferenceRulesSpec
+    from GenAIRR.genotype_priors import PopulationGenotypeModel
 
 
 DEFAULT_P_NUCLEOTIDE_LENGTH_PROBS = {0: 0.50, 1: 0.25, 2: 0.15, 3: 0.07, 4: 0.03}
