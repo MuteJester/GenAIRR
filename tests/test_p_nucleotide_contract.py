@@ -49,7 +49,6 @@ _GENERATE_NP_SAMPLING = (
 )
 _LOWERING_PY = _REPO_ROOT / "src" / "GenAIRR" / "_lowering.py"
 _DATACONFIG_PY = _REPO_ROOT / "src" / "GenAIRR" / "dataconfig" / "data_config.py"
-_MCP_HELPERS_PY = _REPO_ROOT / "src" / "GenAIRR" / "utilities" / "mcp_helpers.py"
 _AIRR_RECORD_RS = _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "record.rs"
 _VALIDATE_RS = _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "validate.rs"
 
@@ -212,31 +211,6 @@ def test_pin_scaffold_invert_d_commits_before_assemble_d() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pin_scaffold_mcp_p_nucleotides_endpoint_is_read_only() -> None:
-    """Audit §Pre-flight / §7.3 — the MCP helper's
-    `p_nucleotides` inspection section reads
-    `getattr(dc, "p_nucleotide_length_probs", {})` as a
-    diagnostic surface; it does NOT feed simulation. Pinned
-    so a refactor that wires the helper into the sampler
-    surfaces immediately."""
-    src = _MCP_HELPERS_PY.read_text(encoding="utf-8")
-    assert 'section == "p_nucleotides"' in src
-    assert 'getattr(dc, "p_nucleotide_length_probs"' in src
-    # The endpoint is a read-only data surface — no
-    # mutation / plan push / engine call.
-    for forbidden in (
-        "push_p_addition",
-        "plan.push",
-        "Experiment.on",
-    ):
-        # The text is allowed to contain `plan.push` only if it's
-        # part of a comment/docstring; we keep this check loose to
-        # avoid false positives on unrelated tooling code.
-        # The load-bearing assertion is that getattr is the
-        # source — which is.
-        pass
-
-
 # ──────────────────────────────────────────────────────────────────
 # 8. Present — p_nucleotide_length_probs exists with default
 # ──────────────────────────────────────────────────────────────────
@@ -316,8 +290,6 @@ def test_pin_present_p_nucleotide_length_probs_has_no_simulator_consumer() -> No
     # Allowed consumers:
     #   - the dataclass declaration itself
     #     (`src/GenAIRR/dataconfig/data_config.py`)
-    #   - the MCP read-only diagnostic endpoint
-    #     (`src/GenAIRR/utilities/mcp_helpers.py`)
     result = subprocess.run(
         [
             "grep",
@@ -344,7 +316,6 @@ def test_pin_present_p_nucleotide_length_probs_has_no_simulator_consumer() -> No
         # the legacy field for REPORTING only, not as a simulator
         # consumer — same category as data_config.py.
         "src/GenAIRR/dataconfig/_manifest.py",
-        "src/GenAIRR/utilities/mcp_helpers.py",
         # Post-slice — the typed-plane resolver explicitly
         # documents the no-auto-lift boundary in docstring +
         # comments referencing the legacy field name. Those

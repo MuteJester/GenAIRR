@@ -321,7 +321,6 @@ def test_pin_present_gene_use_dict_has_no_simulator_pipeline_consumer() -> None:
         # block name the legacy field for REPORTING only, not as a
         # simulator consumer — same category as data_config.py.
         "src/GenAIRR/dataconfig/_manifest.py",
-        "src/GenAIRR/utilities/mcp_helpers.py",
         # Post-Allele-Usage-Estimation-v1 slice — the new typed
         # plane's resolver / lowering / spec docstrings
         # explicitly document the no-auto-lift boundary
@@ -385,21 +384,6 @@ def test_pin_scaffold_dataconfig_validate_is_dead_code_today() -> None:
                 f"audit's dead-code assumption regressed — verify the "
                 f"gene_use_dict legacy requirement isn't reachable"
             )
-
-
-def test_pin_present_mcp_helpers_gene_use_endpoint_is_read_only() -> None:
-    """The MCP helper's `gene_use` diagnostic endpoint
-    reads `getattr(dc, "gene_use_dict", {})` as a read-only
-    inspection — it does NOT feed simulation. Pinned at
-    source so a refactor wiring the endpoint into the
-    sampler surfaces here."""
-    src = (
-        _REPO_ROOT / "src" / "GenAIRR" / "utilities" / "mcp_helpers.py"
-    ).read_text(encoding="utf-8")
-    assert "gene_use_dict" in src
-    assert 'section == "gene_use"' in src
-    # The endpoint reads, doesn't push to a plan.
-    assert "plan.push" not in src  # no engine wiring in mcp_helpers
 
 
 # ──────────────────────────────────────────────────────────────────
