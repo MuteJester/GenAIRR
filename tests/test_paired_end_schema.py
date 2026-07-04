@@ -282,7 +282,8 @@ def test_slice_b_geometry_check_helpers_landed_in_engine_source() -> None:
         / "engine_rs"
         / "src"
         / "airr_record"
-        / "validate.rs"
+        / "validate"
+        / "paired_end.rs"
     ).read_text(encoding="utf-8")
     # The geometry check function name + the four issue variants
     # it can produce. Each must appear in the dispatch path.
@@ -294,8 +295,8 @@ def test_slice_b_geometry_check_helpers_landed_in_engine_source() -> None:
         "RecordValidationIssue::ReadLayoutMismatch",
     ):
         assert required in validate_src, (
-            f"validate.rs no longer references {required!r}; Slice "
-            f"B's geometry dispatch has drifted."
+            f"validate/paired_end.rs no longer references {required!r}; "
+            f"Slice B's geometry dispatch has drifted."
         )
 
 

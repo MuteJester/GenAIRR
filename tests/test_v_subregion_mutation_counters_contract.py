@@ -203,7 +203,7 @@ def test_pin_scaffold_validator_recomputes_independently() -> None:
     The new V-subregion validator extension inherits the same
     discipline."""
     src = (
-        _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "validate.rs"
+        _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "validate" / "counters.rs"
     ).read_text(encoding="utf-8")
     # The four existing per-segment mismatch issue kinds.
     for kind in (
