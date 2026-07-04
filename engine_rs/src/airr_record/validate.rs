@@ -1459,14 +1459,3 @@ fn check_region_and_hypothesis_invariants(
         }
     }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// Tests
-// ──────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    //! Unit tests live alongside the integration tests in
-    //! `engine_rs/src/airr_record/tests/validate.rs`. Keeping them
-    //! out of this file makes the module easier to skim.
-}
