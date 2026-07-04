@@ -5,4 +5,5 @@ from .misc import reverse_complement
 from .misc import parse_mutation
 from .misc import parse_fasta
 from .AlleleNComparer import AlleleNComparer
+from .visualize import visualize_sequence
 
