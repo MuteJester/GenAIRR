@@ -63,7 +63,7 @@ def _all_config_aliases() -> List[str]:
     be passing to the other tools. We surface the aliases instead so the
     output of ``list_configs`` round-trips directly into every other tool.
     """
-    from GenAIRR.experiment import _CONFIG_ALIASES
+    from GenAIRR._refdata_resolver import _CONFIG_ALIASES
 
     return sorted(_CONFIG_ALIASES.keys())
 

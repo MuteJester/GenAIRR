@@ -90,11 +90,6 @@ from ._step_validation import (
     _validate_v_subregion_rates,
 )
 
-# Sentinels live in ._experiment._common now; re-exported here because
-# tests and legacy callers import them as GenAIRR.experiment._UNSET /
-# _LockInput. ``_UNSET`` must remain a single shared object (compared by
-# identity as a default-argument sentinel).
-from ._experiment._common import _LockInput, _UNSET, _Unset
 from ._experiment import (
     _ClonalMixin,
     _CompileMixin,

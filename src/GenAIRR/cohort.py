@@ -123,7 +123,7 @@ class CohortResult:
         stable union across subjects (pandas fills missing keys with NaN)."""
         import pandas as pd
 
-        from .result import _DEFAULT_COLUMN_ORDER
+        from ._result_export import _DEFAULT_COLUMN_ORDER
 
         records = self.records
         if not records:
@@ -136,7 +136,7 @@ class CohortResult:
                     cols.append(extra)
             return pd.DataFrame(columns=cols)
         if airr_strict:
-            from .result import _to_airr_strict
+            from ._result_export import _to_airr_strict
             records = [_to_airr_strict(r) for r in records]
         return pd.DataFrame(records)
 
