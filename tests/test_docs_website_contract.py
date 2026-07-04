@@ -105,7 +105,7 @@ def test_pin_post_cutover_deploy_docs_workflow_builds_mkdocs_and_uploads_site() 
 def test_pin_scaffold_docs_dir_carries_audit_design_md_files() -> None:
     """`audit-docs/` carries ≥ 35 markdown files (audits +
     designs + hubs). Originally housed in `docs/` (which is now
-    private — Claude session artefacts + impl-time notes); moved
+    private — design + impl-time notes); moved
     to `audit-docs/` so contract tests can reference them in CI.
     The pin is intentionally loose so adding new audits doesn't
     fail this test."""
@@ -160,33 +160,6 @@ def test_pin_scaffold_old_docs_dir_exists_as_abandoned_earlier_attempt() -> None
         f"_old_docs/tutorials/ has only {len(tutorials)} notebooks; "
         f"audit §1.4 documented 5"
     )
-
-
-def test_pin_scaffold_docs_superpowers_subdir_holds_session_artifacts() -> None:
-    """`docs/superpowers/plans/` carries Claude-session
-    planning artefacts, NOT user-facing documentation.
-    Pinned defensively so a future "is this a doc?" sweep
-    treats it correctly."""
-    superpowers = _DOCS / "superpowers"
-    if not superpowers.is_dir():
-        # If somebody moves it, that's fine — pin only the docs
-        # subdirs that exist today.
-        return
-    plans = superpowers / "plans"
-    if plans.is_dir():
-        plans_files = sorted(plans.glob("*.md"))
-        # The presence of a date-prefixed planning markdown is
-        # the canonical evidence (e.g. 2026-05-18-mcp-redesign-v2.md).
-        date_prefixed = [
-            f for f in plans_files
-            if re.match(r"^\d{4}-\d{2}-\d{2}-", f.name)
-        ]
-        assert date_prefixed, (
-            "docs/superpowers/plans/ has no date-prefixed planning "
-            "files — the session-artefact discipline broke; this "
-            "directory's contents may have been recategorised as "
-            "docs without an audit-doc update"
-        )
 
 
 def test_pin_scaffold_docs_build_subdir_holds_wheel_artefacts_not_docs() -> None:

@@ -5,7 +5,6 @@ genotype, produced by :meth:`GenAIRR.Experiment.run_cohort`.
 exposes per-subject access (``result_for`` / ``refdata_for``) plus combined
 export. It explicitly stores each subject's refdata because ``SimulationResult``
 does not preserve it (needed for ``validate_records`` and novel-allele subjects).
-See ``.private/specs/2026-06-17-genotype-cohorts-design.md``.
 """
 from __future__ import annotations
 

@@ -39,7 +39,7 @@ The following Allele methods exist on every subclass:
 ### `_find_anchor`
 
 **Build-time only.** `_find_anchor` runs inside `Allele.__init__`
-when one of the bundled-data builders in `.private/scripts/`
+when one of the private bundled-data builder scripts
 constructs `VAllele("name", gapped_seq, length)` — the constructor
 calls `self._find_anchor()` unless `anchor_override=...` was passed.
 

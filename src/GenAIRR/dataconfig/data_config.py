@@ -227,8 +227,7 @@ class DataConfig:
             raise DataConfigError(
                 f"DataConfig '{self.name or 'Unnamed'}' has schema_version="
                 f"{version}, but the current code expects "
-                f"{SCHEMA_VERSION}. Re-migrate this pickle (see "
-                f".private/scripts/migrate_pkl_to_v1.py) or rebuild it "
+                f"{SCHEMA_VERSION}. Re-migrate or rebuild this pickle "
                 f"from the IMGT source via dataconfig builders."
             )
         stored = getattr(self, "schema_sha256", "") or ""
