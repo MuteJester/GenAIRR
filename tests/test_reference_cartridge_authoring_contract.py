@@ -244,34 +244,23 @@ def test_pin_present_build_report_docstring_now_references_new_builder() -> None
         importlib.import_module("GenAIRR.dataconfig.make.random")
 
 
-def test_pin_present_private_build_script_now_raises_explicit_legacy_error() -> None:
-    """Post-slice — the `.private/scripts/build_imgt_configs.py`
-    script raises an explicit `NotImplementedError` at module-
-    load time pointing at the new builder, rather than failing
-    with a deep `ModuleNotFoundError` deep inside an obsolete
-    import. Flipped from the prior dead-import present-pin."""
-    script = _REPO_ROOT / ".private" / "scripts" / "build_imgt_configs.py"
-    if not script.exists():
-        pytest.skip(".private/scripts/build_imgt_configs.py absent")
-    src = script.read_text(encoding="utf-8")
-    # The dead import is no longer the load-time failure point.
-    # The explicit raise comes first.
-    assert "raise NotImplementedError(" in src, (
-        "private build script no longer raises explicit "
-        "NotImplementedError at module load — verify the dead-"
-        "reference cleanup landed and the script's failure mode "
-        "is still self-documenting"
-    )
+def test_pin_present_imgt_build_tool_uses_reference_cartridge_builder() -> None:
+    """The IMGT cartridge build tool is a first-class, tracked
+    maintainer tool (`tools/build_imgt_configs.py`) built on the
+    current `ReferenceCartridgeBuilder` — not the removed
+    `RandomDataConfigBuilder`. (Flipped from the prior pin on the
+    legacy private stub, now that the real tool exists.)"""
+    tool = _REPO_ROOT / "tools" / "build_imgt_configs.py"
+    assert tool.exists(), "tools/build_imgt_configs.py is missing"
+    src = tool.read_text(encoding="utf-8")
     assert "ReferenceCartridgeBuilder" in src, (
-        "private build script does not reference the new builder — "
-        "the porting hint regressed"
+        "IMGT build tool no longer uses ReferenceCartridgeBuilder"
     )
-    raise_pos = src.find("raise NotImplementedError(")
-    legacy_import_pos = src.find("from GenAIRR.dataconfig.make.random import")
-    assert legacy_import_pos == -1 or raise_pos < legacy_import_pos, (
-        "the dead import would fire BEFORE the explicit raise — "
-        "the legacy guard needs to come first or the dead import "
-        "needs to be moved into the unreachable body"
+    assert "RandomDataConfigBuilder" not in src, (
+        "IMGT build tool still references the removed RandomDataConfigBuilder"
+    )
+    assert "from GenAIRR.dataconfig.make" not in src, (
+        "IMGT build tool still imports the removed dataconfig.make namespace"
     )
 
 

@@ -398,14 +398,15 @@ def test_manual_dataconfig_construction_remains_supported() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_dead_reference_cleanup_data_config_docstring_and_private_script() -> None:
-    """Integration check that the lockstep cleanup landed:
+def test_dead_reference_cleanup_data_config_docstring_and_build_tool() -> None:
+    """Integration check that the RandomDataConfigBuilder retirement
+    landed in lockstep:
 
     - ``DataConfig.build_report`` docstring names the new
       builder.
-    - ``.private/scripts/build_imgt_configs.py`` raises
-      ``NotImplementedError`` at module-load time rather
-      than ``ModuleNotFoundError`` on the dead import.
+    - the IMGT cartridge build tool (`tools/build_imgt_configs.py`)
+      uses ``ReferenceCartridgeBuilder`` and no longer references
+      the removed ``RandomDataConfigBuilder``.
 
     The contract file's `pin_present_*` pins are the
     authoritative source; this test is the integration
@@ -420,11 +421,11 @@ def test_dead_reference_cleanup_data_config_docstring_and_private_script() -> No
     assert "RandomDataConfigBuilder" not in dc_src
     assert "ReferenceCartridgeBuilder" in dc_src
 
-    script = repo / ".private" / "scripts" / "build_imgt_configs.py"
-    if script.exists():
-        src = script.read_text(encoding="utf-8")
-        assert "raise NotImplementedError(" in src
-        assert "ReferenceCartridgeBuilder" in src
+    tool = repo / "tools" / "build_imgt_configs.py"
+    assert tool.exists(), "tools/build_imgt_configs.py is missing"
+    tool_src = tool.read_text(encoding="utf-8")
+    assert "ReferenceCartridgeBuilder" in tool_src
+    assert "RandomDataConfigBuilder" not in tool_src
 
 
 # ──────────────────────────────────────────────────────────────────
