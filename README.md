@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/MuteJester/GenAIRR/master/site_docs/assets/genairr_logo.png" alt="GenAIRR" width="200">
+</p>
+
 <h1 align="center">GenAIRR</h1>
 
 <p align="center">

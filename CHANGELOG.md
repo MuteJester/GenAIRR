@@ -2,6 +2,33 @@
 
 All notable changes to GenAIRR are documented here.
 
+## [2.3.1] - 2026-07-05
+
+Maintenance release. No public API or simulation-behaviour changes.
+
+### Packaging
+- Correct the PyPI author metadata (Thomas Konstantinovsky listed first).
+- Add the GenAIRR logo to the README / PyPI project page.
+
+### Added
+- `tools/build_imgt_configs.py` — a first-class maintainer tool that builds
+  structural cartridges from IMGT V-QUEST germline FASTA via
+  `ReferenceCartridgeBuilder`.
+- `__all__` on the documented public authoring modules (`reference_models`,
+  `reference_rules`, `cartridge_builder`, `genotype_priors`, `cohort`).
+
+### Changed
+- Large behaviour-preserving internal reorganization: several god-files split
+  into focused packages/modules (`experiment.py`, `_cartridge_estimators`,
+  `_compiled`, `result`, `genotype`, `utilities/visualize`, and the Rust
+  `airr_record/validate.rs`), plus dead-code and duplicate-module removal. No
+  user-visible import paths changed.
+
+### Documentation
+- Clarify that only the human IGH/IGK/IGL and TCRB cartridges carry
+  data-derived distributions; every other bundled cartridge uses
+  uniform/placeholder parameters (with guidance on fitting real ones).
+
 ## [2.3.0] - 2026-06-18
 
 ### Added - Per-individual diploid genotypes
