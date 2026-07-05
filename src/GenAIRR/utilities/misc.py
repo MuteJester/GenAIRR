@@ -1,5 +1,4 @@
 import random
-from collections import defaultdict
 
 _COMPLEMENT = str.maketrans('ATCGatcg', 'TAGCtagc')
 
@@ -96,18 +95,6 @@ def parse_mutation(mutation_str: str):
     """
     parts = mutation_str.split(">")
     return parts[0], parts[-1]
-
-
-def normalize_and_filter_convert_to_dict(obj):
-    if isinstance(obj, defaultdict):
-        nested_dict = {k: normalize_and_filter_convert_to_dict(v) for k, v in obj.items()}
-        if all(isinstance(val, float) for val in nested_dict.values()):
-            # Filter out keys that are not 'A', 'T', 'G', or 'C'
-            filtered_dict = {k: v for k, v in nested_dict.items() if k in ['A', 'T', 'G', 'C']}
-            total = sum(filtered_dict.values())
-            return {k: v / total for k, v in filtered_dict.items()}
-        return nested_dict
-    return obj
 
 
 def parse_fasta(file):

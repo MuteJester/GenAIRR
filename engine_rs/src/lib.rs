@@ -1,7 +1,6 @@
 //! GenAIRR engine — Rust kernel.
 //!
-//! This crate implements the simulation architecture described in
-//! `.private/engine_v6_living_design_2026-05-05.md`.
+//! This crate implements the GenAIRR simulation architecture.
 //!
 //! # Contributor-facing architecture
 //!

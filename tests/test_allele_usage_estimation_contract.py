@@ -99,10 +99,10 @@ def test_pin_scaffold_pipeline_ir_recombine_step_has_weights_fields() -> None:
 
 
 def test_pin_scaffold_lower_recombine_passes_weights_to_push_sample_allele() -> None:
-    """`_compile.py::_lower_recombine` calls
+    """`_lowering.py::_lower_recombine` calls
     ``plan.push_sample_allele(..., weights=...)`` with the
     per-step weight vector. Pinned at source."""
-    src = (_REPO_ROOT / "src" / "GenAIRR" / "_compile.py").read_text(encoding="utf-8")
+    src = (_REPO_ROOT / "src" / "GenAIRR" / "_lowering.py").read_text(encoding="utf-8")
     assert "push_sample_allele(" in src
     assert "weights=v_weights" in src
     assert "weights=j_weights" in src
@@ -315,7 +315,12 @@ def test_pin_present_gene_use_dict_has_no_simulator_pipeline_consumer() -> None:
     }
     allowed = {
         "src/GenAIRR/dataconfig/data_config.py",
-        "src/GenAIRR/utilities/mcp_helpers.py",
+        # Manifest reporting surface extracted verbatim from
+        # data_config.py (behavior-preserving hygiene split). The
+        # documented-orphan-fields tuple + allele_usage manifest
+        # block name the legacy field for REPORTING only, not as a
+        # simulator consumer — same category as data_config.py.
+        "src/GenAIRR/dataconfig/_manifest.py",
         # Post-Allele-Usage-Estimation-v1 slice — the new typed
         # plane's resolver / lowering / spec docstrings
         # explicitly document the no-auto-lift boundary
@@ -326,7 +331,7 @@ def test_pin_present_gene_use_dict_has_no_simulator_pipeline_consumer() -> None:
         # comment explaining that the new estimator does NOT
         # touch `gene_use_dict`.
         "src/GenAIRR/_dataconfig_extract.py",
-        "src/GenAIRR/experiment.py",
+        "src/GenAIRR/_experiment/recombination.py",
         "src/GenAIRR/reference_models.py",
     }
     unexpected = consumers - allowed
@@ -379,21 +384,6 @@ def test_pin_scaffold_dataconfig_validate_is_dead_code_today() -> None:
                 f"audit's dead-code assumption regressed — verify the "
                 f"gene_use_dict legacy requirement isn't reachable"
             )
-
-
-def test_pin_present_mcp_helpers_gene_use_endpoint_is_read_only() -> None:
-    """The MCP helper's `gene_use` diagnostic endpoint
-    reads `getattr(dc, "gene_use_dict", {})` as a read-only
-    inspection — it does NOT feed simulation. Pinned at
-    source so a refactor wiring the endpoint into the
-    sampler surfaces here."""
-    src = (
-        _REPO_ROOT / "src" / "GenAIRR" / "utilities" / "mcp_helpers.py"
-    ).read_text(encoding="utf-8")
-    assert "gene_use_dict" in src
-    assert 'section == "gene_use"' in src
-    # The endpoint reads, doesn't push to a plan.
-    assert "plan.push" not in src  # no engine wiring in mcp_helpers
 
 
 # ──────────────────────────────────────────────────────────────────

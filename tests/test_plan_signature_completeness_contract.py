@@ -624,11 +624,11 @@ def test_pin_legacy_address_schema_version_is_one() -> None:
 
 def test_pin_legacy_frozen_address_spellings_test_exists() -> None:
     """The `frozen_address_spellings_for_choice_address_schema_v1`
-    Rust unit test in `address.rs` pins one representative
+    Rust unit test in `address/tests.rs` pins one representative
     of every typed variant. The Python contract pin here
     asserts the Rust test fixture is present (the Rust
     test itself is the actual enforcement)."""
-    src = (_REPO_ROOT / "engine_rs" / "src" / "address.rs").read_text(encoding="utf-8")
+    src = (_REPO_ROOT / "engine_rs" / "src" / "address" / "tests.rs").read_text(encoding="utf-8")
     assert "fn frozen_address_spellings_for_choice_address_schema_v1" in src
 
 

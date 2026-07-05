@@ -556,7 +556,6 @@ def test_pin_present_imgt_regions_consumed_by_bridge_and_mcp() -> None:
     consumers = sorted(set(result.stdout.strip().splitlines()))
     expected = {
         "src/GenAIRR/_refdata_resolver.py",
-        "src/GenAIRR/utilities/mcp_helpers.py",
         # `ReferenceCartridgeBuilder.infer_v_subregions` uses the
         # same derivation helper at authoring time — same
         # boundary the bridge resolver uses at load time. See

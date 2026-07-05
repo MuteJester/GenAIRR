@@ -40,6 +40,8 @@ _MIN_REQUIRED_BASES: Tuple[str, ...] = ("A", "C", "G", "T")
 # semantics live elsewhere.
 _VALID_AA = set("ACDEFGHIKLMNPQRSTVWY*")
 
+__all__ = ["AnchorRuleSpec", "ReferenceRulesSpec"]
+
 
 @dataclass
 class AnchorRuleSpec:

@@ -48,7 +48,7 @@ _README = _REPO_ROOT / "README.md"
 _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy-docs.yml"
 
 # Tests in this file pin the migration plan's structure. The plan is a
-# private AI-session artifact (see docs/.gitignore); CI checkouts skip
+# private planning artifact (kept out of git); CI checkouts skip
 # the whole file rather than report dozens of irrelevant failures.
 pytestmark = pytest.mark.skipif(
     not _MIGRATION_PLAN.is_file(),

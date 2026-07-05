@@ -1,6 +1,6 @@
 """Tests for the redesigned GenAIRR MCP server.
 
-Layered per the spec at docs/superpowers/specs/2026-05-18-mcp-redesign-v2-design.md:
+Layered by tier:
 - Tier 1: happy path per tool (14 tests)
 - Tier 2: error envelope per error code (~6 tests)
 - Tier 3: one end-to-end agent-style chain (1 test)

@@ -4,8 +4,7 @@ top-level cartridge plane (``DataConfig.genotype_priors``).
 This is NOT an empirical recombination model (those live on
 ``ReferenceEmpiricalModels``); it is a per-gene carriage/deletion prior plus a
 catalogue of population novel/private alleles. ``Genotype.sample`` consumes it to
-draw a per-individual diploid genotype. See
-``.private/specs/2026-06-17-genotype-cartridge-plane-design.md``.
+draw a per-individual diploid genotype.
 
 The plane stays decoupled from a specific catalogue: ``validate()`` does shape +
 numeric/DNA sanity only. Catalogue-aware checks (gene/allele existence, novel
@@ -24,6 +23,8 @@ from typing import Dict, List, Optional, Tuple
 _SEGMENTS = ("V", "D", "J")
 _DNA = set("ACGT")
 SCHEMA_TAG = "population_genotype_model/1"
+
+__all__ = ["PopulationNovelAllele", "PopulationGenotypeModel"]
 
 
 @dataclass

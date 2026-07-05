@@ -5,7 +5,6 @@ genotype, produced by :meth:`GenAIRR.Experiment.run_cohort`.
 exposes per-subject access (``result_for`` / ``refdata_for``) plus combined
 export. It explicitly stores each subject's refdata because ``SimulationResult``
 does not preserve it (needed for ``validate_records`` and novel-allele subjects).
-See ``.private/specs/2026-06-17-genotype-cohorts-design.md``.
 """
 from __future__ import annotations
 
@@ -54,6 +53,9 @@ def _resolve_counts(n_genotypes: int, n_per_subject, counts) -> List[int]:
             f"run_cohort: counts length {len(counts)} != number of genotypes "
             f"{n_genotypes}")
     return [_check_count(c, f"counts[{i}]") for i, c in enumerate(counts)]
+
+
+__all__ = ["CohortSubjectResult", "CohortResult"]
 
 
 @dataclass(frozen=True)
@@ -123,7 +125,7 @@ class CohortResult:
         stable union across subjects (pandas fills missing keys with NaN)."""
         import pandas as pd
 
-        from .result import _DEFAULT_COLUMN_ORDER
+        from ._result_export import _DEFAULT_COLUMN_ORDER
 
         records = self.records
         if not records:
@@ -136,7 +138,7 @@ class CohortResult:
                     cols.append(extra)
             return pd.DataFrame(columns=cols)
         if airr_strict:
-            from .result import _to_airr_strict
+            from ._result_export import _to_airr_strict
             records = [_to_airr_strict(r) for r in records]
         return pd.DataFrame(records)
 

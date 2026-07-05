@@ -57,7 +57,7 @@ the compiled plan first). This means the DSL composes cleanly:
 
 | Step | Effect |
 |---|---|
-| `Experiment.on("human_igh")` | Bind to the bundled human IGH cartridge. Other shortcuts: `"human_igk"`, `"human_igl"`, `"mouse_igh"`, `"human_tcrb"`. Pass a `DataConfig` instead of a string for a custom cartridge. |
+| `Experiment.on("human_igh")` | Bind to the bundled human IGH cartridge. Other shortcuts: `"human_igk"`, `"human_igl"`, `"mouse_igh"`, `"human_tcrb"`. Pass a `DataConfig` instead of a string for a custom cartridge. (Only human IGH/IGK/IGL/TCRB carry real data-derived distributions — [other species use uniform placeholders](../concepts/reference-cartridge.md#empirical-models).) |
 | `.recombine()` | Append a V(D)J recombination pass - sample alleles, trim, fill NP1/NP2, assemble. Defaults to the cartridge's empirical models. |
 | `.productive_only()` | Constraint-aware: the engine samples only choices that produce a productive sequence (in-frame junction, no stop codons, anchors preserved). No retry loops. |
 | `.run_records(n=1000, seed=42)` | Compile the plan, run 1,000 seeded draws, project each into an AIRR-format record. Same seed → byte-identical output across runs and platforms. |

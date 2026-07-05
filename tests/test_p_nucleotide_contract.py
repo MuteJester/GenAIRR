@@ -47,9 +47,8 @@ _ADDRESS_RS = _REPO_ROOT / "engine_rs" / "src" / "address.rs"
 _GENERATE_NP_SAMPLING = (
     _REPO_ROOT / "engine_rs" / "src" / "passes" / "generate_np" / "sampling.rs"
 )
-_COMPILE_PY = _REPO_ROOT / "src" / "GenAIRR" / "_compile.py"
+_LOWERING_PY = _REPO_ROOT / "src" / "GenAIRR" / "_lowering.py"
 _DATACONFIG_PY = _REPO_ROOT / "src" / "GenAIRR" / "dataconfig" / "data_config.py"
-_MCP_HELPERS_PY = _REPO_ROOT / "src" / "GenAIRR" / "utilities" / "mcp_helpers.py"
 _AIRR_RECORD_RS = _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "record.rs"
 _VALIDATE_RS = _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "validate.rs"
 
@@ -161,7 +160,7 @@ def test_pin_present_pipeline_order_has_p_addition_at_audited_positions() -> Non
     sequence must be read under the post-inversion orientation.
     See `docs/p_nucleotide_design.md` §9.3 for the corrected
     ordering."""
-    src = _COMPILE_PY.read_text(encoding="utf-8")
+    src = _LOWERING_PY.read_text(encoding="utf-8")
     assert 'push_p_addition("V_3"' in src
     assert 'push_p_addition("D_5"' in src
     assert 'push_p_addition("D_3"' in src
@@ -196,7 +195,7 @@ def test_pin_scaffold_invert_d_commits_before_assemble_d() -> None:
     `PAdditionPass(end=D_5)` inserted between them reads the
     post-inversion orientation of D's effective_seq. Pin the
     current ordering."""
-    src = _COMPILE_PY.read_text(encoding="utf-8")
+    src = _LOWERING_PY.read_text(encoding="utf-8")
     # In the VDJ branch, push_invert_d appears before
     # push_assemble("D"). Use rough textual ordering as the pin.
     invert_idx = src.find("push_invert_d(")
@@ -210,31 +209,6 @@ def test_pin_scaffold_invert_d_commits_before_assemble_d() -> None:
 # ──────────────────────────────────────────────────────────────────
 # 7. Scaffold — MCP `p_nucleotides` diagnostic endpoint stays
 # ──────────────────────────────────────────────────────────────────
-
-
-def test_pin_scaffold_mcp_p_nucleotides_endpoint_is_read_only() -> None:
-    """Audit §Pre-flight / §7.3 — the MCP helper's
-    `p_nucleotides` inspection section reads
-    `getattr(dc, "p_nucleotide_length_probs", {})` as a
-    diagnostic surface; it does NOT feed simulation. Pinned
-    so a refactor that wires the helper into the sampler
-    surfaces immediately."""
-    src = _MCP_HELPERS_PY.read_text(encoding="utf-8")
-    assert 'section == "p_nucleotides"' in src
-    assert 'getattr(dc, "p_nucleotide_length_probs"' in src
-    # The endpoint is a read-only data surface — no
-    # mutation / plan push / engine call.
-    for forbidden in (
-        "push_p_addition",
-        "plan.push",
-        "Experiment.on",
-    ):
-        # The text is allowed to contain `plan.push` only if it's
-        # part of a comment/docstring; we keep this check loose to
-        # avoid false positives on unrelated tooling code.
-        # The load-bearing assertion is that getattr is the
-        # source — which is.
-        pass
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -316,8 +290,6 @@ def test_pin_present_p_nucleotide_length_probs_has_no_simulator_consumer() -> No
     # Allowed consumers:
     #   - the dataclass declaration itself
     #     (`src/GenAIRR/dataconfig/data_config.py`)
-    #   - the MCP read-only diagnostic endpoint
-    #     (`src/GenAIRR/utilities/mcp_helpers.py`)
     result = subprocess.run(
         [
             "grep",
@@ -339,7 +311,11 @@ def test_pin_present_p_nucleotide_length_probs_has_no_simulator_consumer() -> No
     }
     allowed = {
         "src/GenAIRR/dataconfig/data_config.py",
-        "src/GenAIRR/utilities/mcp_helpers.py",
+        # Manifest reporting surface extracted verbatim from
+        # data_config.py (behavior-preserving hygiene split); names
+        # the legacy field for REPORTING only, not as a simulator
+        # consumer — same category as data_config.py.
+        "src/GenAIRR/dataconfig/_manifest.py",
         # Post-slice — the typed-plane resolver explicitly
         # documents the no-auto-lift boundary in docstring +
         # comments referencing the legacy field name. Those

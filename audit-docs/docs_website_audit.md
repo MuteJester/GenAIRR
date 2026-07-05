@@ -92,11 +92,10 @@ sibling audits.
 | **Designs** (per-slice / per-mechanism scoping pre-implementation) | 17 | `clonal_family_design.md`, `clonal_parent_outcome_design.md`, `clonal_plan_split_design.md`, `d_inversion_design.md`, `d_inversion_extension_design.md`, `paired_end_design.md`, `receptor_revision_design.md`, `shm_segment_rate_design.md`, `v_subregion_shm_rate_design.md`, `np_markov_base_generator_design.md`, `p_nucleotide_design.md`, `fastq_export_design.md`, `allele_usage_estimation_design.md`, `trim_distribution_estimation_design.md`, `np_length_estimation_design.md`, `np_base_model_estimation_design.md`, `p_nucleotide_length_estimation_design.md` |
 | **Hubs / contributor entry points** | 6 | `engine_architecture.md`, `adding_a_pass.md`, `validation_matrix.md`, `reference_cartridge.md`, `airr_record_validator.md`, `allele_model_audit.md` |
 
-The `docs/superpowers/plans/` directory holds Claude-
-session planning artifacts (e.g.
-`2026-05-18-mcp-redesign-v2.md`) — **not user-facing
-documentation**, but currently mixed into the same
-`docs/` tree.
+A private planning directory holds pre-implementation
+planning notes (e.g. `2026-05-18-mcp-redesign-v2.md`) —
+**not user-facing documentation**, but currently mixed
+into the same `docs/` tree.
 
 The `docs/build/` directory holds Python wheel build
 artifacts (a side-effect of `python -m build`) — also
@@ -151,7 +150,6 @@ MkDocs Material lands.
 - `pin_scaffold_docs_dir_carries_thirty_eight_md_audit_design_files`
 - `pin_scaffold_old_docs_dir_exists_as_abandoned_earlier_attempt`
 - `pin_scaffold_deploy_docs_workflow_targets_website_dir`
-- `pin_scaffold_docs_superpowers_subdir_holds_session_artifacts_not_docs`
 - `pin_scaffold_docs_build_subdir_holds_wheel_artefacts_not_docs`
 
 ---
@@ -559,10 +557,10 @@ expand this audit.
   versioning; the MkDocs migration could add it (via
   `mike`). Decision belongs to the framework choice.
 - **Search backend.** Same — depends on framework choice.
-- **`docs/superpowers/plans/` cleanup.** The Claude-
-  session planning artefacts should probably move to a
-  separate `.private/` directory but that's a housekeeping
-  matter, not a docs structure issue.
+- **Private planning-notes cleanup.** The pre-implementation
+  planning notes should live in a separate private directory,
+  not under `docs/` — a housekeeping matter, not a docs
+  structure issue.
 
 ---
 
