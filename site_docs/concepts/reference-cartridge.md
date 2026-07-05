@@ -166,6 +166,27 @@ the legacy nested-dict fallback (`cfg.NP_lengths` /
 `cfg.trim_dicts`), then a uniform placeholder. So a cartridge can
 ship typed defaults that users override per-experiment.
 
+!!! warning "Which bundled cartridges carry *real* data-derived distributions"
+    Only the human **IGH**, **IGK**, **IGL**, and **TCRB** cartridges
+    ship with empirical distributions fitted from **real repertoire
+    data** — trim lengths, NP-region lengths, the NP base / Markov
+    model, and allele usage.
+
+    Every **other** bundled species/locus cartridge carries a real
+    germline **allele catalogue** (from IMGT), but its data-derived
+    parameters are **placeholders — uniformly / randomly initialised,
+    not estimated from real data**. This is deliberate: a uniform prior
+    gives even coverage of the scenarios a repertoire can express
+    rather than baking in the biases of one dataset. Don't read those
+    parameters as ground-truth statistics for the species.
+
+    Need empirically-grounded parameters for one of them? Fit your own:
+    estimate the distributions from real AIRR data with the
+    [cartridge estimators](../guides/estimate-cartridge-models.md) and
+    attach them to `cfg.reference_models`, or set the legacy dicts
+    (`cfg.trim_dicts`, `cfg.NP_lengths`, …) on the `DataConfig`
+    directly.
+
 ## Build a cartridge from FASTA
 
 For new cartridges with an audit trail, use `ReferenceCartridgeBuilder`.
