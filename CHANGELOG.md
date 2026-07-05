@@ -6,10 +6,6 @@ All notable changes to GenAIRR are documented here.
 
 Maintenance release. No public API or simulation-behaviour changes.
 
-### Packaging
-- Correct the PyPI author metadata (Thomas Konstantinovsky listed first).
-- Add the GenAIRR logo to the README / PyPI project page.
-
 ### Added
 - `tools/build_imgt_configs.py` — a first-class maintainer tool that builds
   structural cartridges from IMGT V-QUEST germline FASTA via
