@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+message: "If you use GenAIRR, please cite the following paper."
+title: "GenAIRR: simulation of adaptive immune receptor sequences with ground-truth annotations"
+type: software
+version: "2.3.1"
+date-released: 2026-07-05
+authors:
+  - family-names: Konstantinovsky
+    given-names: Thomas
+    orcid: "https://orcid.org/0000-0002-4448-7928"
+  - family-names: Peres
+    given-names: Ayelet
+  - family-names: Polak
+    given-names: Pazit
+  - family-names: Yaari
+    given-names: Gur
+license: GPL-3.0
+repository-code: "https://github.com/MuteJester/GenAIRR"
+url: "https://mutejester.github.io/GenAIRR/"
+keywords:
+  - AIRR
+  - immunoglobulin
+  - T-cell receptor
+  - VDJ
+  - simulation
+  - benchmarking
+preferred-citation:
+  type: article
+  title: "An unbiased comparison of immunoglobulin sequence aligners"
+  authors:
+    - family-names: Konstantinovsky
+      given-names: Thomas
+      orcid: "https://orcid.org/0000-0002-4448-7928"
+    - family-names: Peres
+      given-names: Ayelet
+    - family-names: Polak
+      given-names: Pazit
+    - family-names: Yaari
+      given-names: Gur
+  journal: "Briefings in Bioinformatics"
+  year: 2024
+  month: 9
+  volume: 25
+  issue: 6
+  start: bbae556
+  doi: 10.1093/bib/bbae556
