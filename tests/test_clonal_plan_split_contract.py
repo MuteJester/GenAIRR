@@ -1,7 +1,7 @@
 """Contract pins for the clonal plan-split architecture.
 
 Companion to
-[`docs/clonal_plan_split_design.md`](../docs/clonal_plan_split_design.md).
+[`audit-docs/clonal_plan_split_design.md`](../audit-docs/clonal_plan_split_design.md).
 The audit's predecessor passes (the Bug-A-through-F slices) shipped
 the user-visible changes; this contract suite freezes the resulting
 architecture as positive scaffold pins plus deferred-architecture
@@ -27,7 +27,6 @@ spec files.
 """
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 
@@ -408,21 +407,36 @@ def test_pin_scaffold_canonical_clonal_passes_all_three_validators() -> None:
     assert parent_report.family_count == 2
 
 
-def test_pin_scaffold_validate_records_true_does_not_invoke_parent_aware() -> None:
-    """Audit §6: ``validate_records=True`` on a clonal
-    ``run_records`` runs per-record + field-only family, NOT
-    parent-aware. Pinned via source inspection of the clonal
-    ``run_records`` body so a refactor that auto-wires the
-    parent-aware validator surfaces here."""
-    src = inspect.getsource(_compiled.CompiledClonalExperiment.run_records)
-    # The field-only family raiser must still be called.
-    assert "_raise_on_family_validation_failure" in src
-    # The parent-aware validator must NOT be invoked automatically.
-    assert "validate_families_with_parents" not in src, (
-        "validate_records=True now auto-invokes the parent-aware "
-        "validator; audit §6 architectural decision changed — flip "
-        "this pin in lockstep with the slice that made the change."
-    )
+def test_pin_scaffold_validate_records_true_does_not_invoke_parent_aware(monkeypatch) -> None:
+    """Legacy clonal runs retain the two automatic validation gates.
+
+    Duplex families intentionally add parent-aware validation. Check the
+    legacy runtime behavior rather than forbidding that call in shared code.
+    """
+    calls = []
+    original_records = SimulationResult.validate_records
+    original_families = SimulationResult.validate_families
+
+    def validate_records(result, refdata):
+        calls.append("records")
+        return original_records(result, refdata)
+
+    def validate_families(result, refdata=None):
+        calls.append("families")
+        return original_families(result, refdata)
+
+    def fail_if_parent_aware(*args, **kwargs):
+        raise AssertionError("legacy run automatically invoked parent-aware validation")
+
+    monkeypatch.setattr(SimulationResult, "validate_records", validate_records)
+    monkeypatch.setattr(SimulationResult, "validate_families", validate_families)
+    monkeypatch.setattr(SimulationResult, "validate_families_with_parents", fail_if_parent_aware)
+    with pytest.warns(DeprecationWarning):
+        experiment = (ga.Experiment.on("human_igh").recombine()
+                      .expand_clones(n_clones=1, per_clone=2))
+    result = experiment.run_records(seed=0, validate_records=True)
+    assert len(result) == 2
+    assert calls == ["records", "families"]
 
 
 # ──────────────────────────────────────────────────────────────────

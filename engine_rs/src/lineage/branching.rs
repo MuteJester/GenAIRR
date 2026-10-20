@@ -1,8 +1,9 @@
 //! Generation-synchronous clonal branching loop.
 
 use crate::contract::{ContractSet, ContractViolation};
+use crate::event::{EventRecord, StateSummary, TraceSpan};
 use crate::ir::Simulation;
-use crate::pass::{Pass, PassContext, PassError};
+use crate::pass::{Outcome, Pass, PassContext, PassError};
 use crate::refdata::RefDataConfig;
 use crate::rng::Rng;
 use crate::trace::Trace;
@@ -61,7 +62,7 @@ fn require_productive(
             return Err(PassError::contract_violation(
                 "lineage.productive",
                 vec![ContractViolation::new(
-                    crate::productivity::POLICY,
+                    crate::productivity::policy_name(sim),
                     assessment.reasons.join(","),
                 )],
             ));
@@ -77,9 +78,11 @@ fn mutate_child(
     mutator: &dyn Pass,
     child_seed: u64,
     context: Option<&LineageMutationContext<'_>>,
-) -> Result<Simulation, PassError> {
+    retain_edge: bool,
+) -> Result<(Simulation, Option<Outcome>), PassError> {
     let mut trace = Trace::new();
     let mut rng = Rng::new(child_seed);
+    let mut events = Vec::new();
     let mut ctx = PassContext {
         replay_cursor: None,
         trace: &mut trace,
@@ -89,11 +92,16 @@ fn mutate_child(
         contracts: context.and_then(|c| c.contracts),
         feasibility: None,
         reference_index: None,
-        event_log_sink: None,
+        event_log_sink: retain_edge.then_some(&mut events),
     };
-    let child = match context {
-        Some(context) => mutator.execute_with_policy(parent, &mut ctx, context.strict)?,
-        None => mutator.execute(parent, &mut ctx),
+    let any: &dyn std::any::Any = mutator;
+    let child = if let Some(s5f) = any.downcast_ref::<crate::passes::S5FMutationPass>() {
+        s5f.execute_for_lineage(parent, &mut ctx, context.is_some_and(|c| c.strict))?
+    } else {
+        match context {
+            Some(context) => mutator.execute_with_policy(parent, &mut ctx, context.strict)?,
+            None => mutator.execute(parent, &mut ctx),
+        }
     };
     if let Some(context) = context.filter(|c| c.strict) {
         if let Some(contracts) = context.contracts {
@@ -105,7 +113,85 @@ fn mutate_child(
         }
     }
     require_productive(&child, context)?;
-    Ok(child)
+    let edge = retain_edge.then(|| {
+        let event = EventRecord::pass_committed(
+            0,
+            mutator.name(),
+            mutator.effects(),
+            TraceSpan::new(0, trace.len()),
+            StateSummary::from_simulation(parent),
+            StateSummary::from_simulation(&child),
+            events,
+        );
+        Outcome {
+            revisions: vec![parent.clone(), child.clone()],
+            pass_names: vec![mutator.name().to_string()],
+            trace,
+            events: vec![event],
+        }
+    });
+    Ok((child, edge))
+}
+
+/// Validate the complete founder before division, including external native
+/// callers that do not enter through the Experiment compiler.
+pub(crate) fn validate_duplex_founder(
+    founder: &Simulation,
+    context: Option<&LineageMutationContext<'_>>,
+    mutator: Option<&dyn Pass>,
+) -> Result<(), PassError> {
+    if founder.duplex_provenance.is_none() {
+        return Ok(());
+    }
+    let fail = |reason: String| PassError::invalid_plan_state("lineage.duplex", reason);
+    let context =
+        context.ok_or_else(|| fail("duplex lineage requires its bound reference data".into()))?;
+    if context.contracts.is_some_and(|contracts| {
+        contracts.iter().any(|c| {
+            matches!(
+                c.kind(),
+                crate::contract::ContractKind::Custom
+                    | crate::contract::ContractKind::AnchorPreserved { .. }
+            )
+        })
+    }) {
+        return Err(fail(
+            "duplex lineage does not support custom or legacy AnchorPreserved contracts".into(),
+        ));
+    }
+    if mutator.is_some_and(|m| {
+        use std::any::TypeId;
+        ![
+            TypeId::of::<crate::passes::S5FMutationPass>(),
+            TypeId::of::<crate::passes::UniformMutationPass>(),
+        ]
+        .contains(&m.type_id())
+    }) {
+        return Err(fail(
+            "duplex lineage division requires an audited substitution mutator".into(),
+        ));
+    }
+    crate::duplex_repair::observation::project_duplex_simulation(founder, context.refdata)
+        .map_err(fail)?;
+    Ok(())
+}
+
+fn affinity_aa(
+    sim: &Simulation,
+    context: Option<&LineageMutationContext<'_>>,
+) -> Result<Vec<u8>, PassError> {
+    if sim.duplex_provenance.is_some() {
+        let context = context.ok_or_else(|| {
+            PassError::invalid_plan_state(
+                "lineage.duplex",
+                "duplex affinity requires reference data",
+            )
+        })?;
+        super::affinity::duplex_sim_to_aa(sim, context.refdata)
+            .map_err(|reason| PassError::invalid_plan_state("lineage.duplex", reason))
+    } else {
+        Ok(sim_to_aa(sim))
+    }
 }
 
 /// Core generation-synchronous growth. With `mutator = None`, children are exact
@@ -125,15 +211,28 @@ fn grow_core(
     mutator: Option<&dyn Pass>,
     affinity: Option<&AffinityModel>,
     context: Option<&LineageMutationContext<'_>>,
-) -> Result<(LineageTree, usize, Vec<Simulation>, Vec<u32>), PassError> {
+) -> Result<
+    (
+        LineageTree,
+        usize,
+        Vec<Simulation>,
+        Vec<u32>,
+        Vec<Option<Outcome>>,
+    ),
+    PassError,
+> {
+    validate_duplex_founder(founder, context, mutator)?;
     require_productive(founder, context)?;
+    let retain_edges = founder.duplex_provenance.is_some();
+    let mut edges = if retain_edges { vec![None] } else { Vec::new() };
     let mut nodes: Vec<LineageNode> = Vec::new();
     let mut sims: Vec<Simulation> = Vec::new();
     let mut rng = Rng::new(params.seed);
 
-    let root_affinity = affinity
-        .map(|m| m.affinity_value(&sim_to_aa(founder)))
-        .unwrap_or(0.0);
+    let root_affinity = match affinity {
+        Some(m) => m.affinity_value(&affinity_aa(founder, context)?),
+        None => 0.0,
+    };
 
     nodes.push(LineageNode {
         id: 0,
@@ -173,17 +272,24 @@ fn grow_core(
                     break 'generation;
                 }
                 let parent_mut_count = sims[parent_id as usize].mutation_count;
-                let child_sim = match mutator {
+                let (child_sim, edge) = match mutator {
                     Some(m) => {
                         let child_seed = rng.next_u64();
-                        mutate_child(&sims[parent_id as usize], m, child_seed, context)?
+                        mutate_child(
+                            &sims[parent_id as usize],
+                            m,
+                            child_seed,
+                            context,
+                            retain_edges,
+                        )?
                     }
-                    None => sims[parent_id as usize].clone(),
+                    None => (sims[parent_id as usize].clone(), None),
                 };
                 let muts = child_sim.mutation_count.saturating_sub(parent_mut_count);
-                let child_affinity = affinity
-                    .map(|m| m.affinity_value(&sim_to_aa(&child_sim)))
-                    .unwrap_or(0.0);
+                let child_affinity = match affinity {
+                    Some(m) => m.affinity_value(&affinity_aa(&child_sim, context)?),
+                    None => 0.0,
+                };
                 nodes.push(LineageNode {
                     id: next_id,
                     parent_id: Some(parent_id),
@@ -195,6 +301,9 @@ fn grow_core(
                     observed: false,
                 });
                 sims.push(child_sim);
+                if retain_edges {
+                    edges.push(edge);
+                }
                 next_live.push(next_id);
                 next_id += 1;
             }
@@ -209,7 +318,7 @@ fn grow_core(
     // completed generation's offspring (ran to max_generations) or empty (the
     // population went extinct — every live cell drew 0 offspring). This is the
     // living population sampling must draw from.
-    Ok((LineageTree { nodes }, peak_live, sims, live))
+    Ok((LineageTree { nodes }, peak_live, sims, live, edges))
 }
 
 /// Grow a full clonal lineage with per-division mutation via `mutator`.
@@ -239,7 +348,7 @@ pub fn grow_topology_with_live(
     founder: &Simulation,
     params: &BranchingParams,
 ) -> (LineageTree, Vec<u32>) {
-    let (tree, _peak, _sims, live) =
+    let (tree, _peak, _sims, live, _edges) =
         grow_core(founder, params, None, None, None).expect("unconstrained lineage");
     (tree, live)
 }
@@ -267,7 +376,7 @@ pub fn grow_lineage_retaining_sims(
     mutator: &dyn Pass,
     affinity: Option<&AffinityModel>,
 ) -> (LineageTree, Vec<Simulation>, Vec<u32>) {
-    let (tree, _peak, sims, live) =
+    let (tree, _peak, sims, live, _edges) =
         grow_core(founder, params, Some(mutator), affinity, None).expect("unconstrained lineage");
     (tree, sims, live)
 }
@@ -279,9 +388,112 @@ pub fn grow_lineage_retaining_sims_with_context(
     affinity: Option<&AffinityModel>,
     context: &LineageMutationContext<'_>,
 ) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>), PassError> {
-    let (tree, _peak, sims, live) =
+    let (tree, _peak, sims, live, _edges) =
         grow_core(founder, params, Some(mutator), affinity, Some(context))?;
     Ok((tree, sims, live))
+}
+
+/// Duplex-specific growth retains each incoming mutation transaction for
+/// exact branch replay without copying the whole ancestral path per cell.
+pub fn grow_lineage_retaining_edges_with_context(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    affinity: Option<&AffinityModel>,
+    context: &LineageMutationContext<'_>,
+) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>, Vec<Option<Outcome>>), PassError> {
+    let (tree, _peak, sims, live, edges) =
+        grow_core(founder, params, Some(mutator), affinity, Some(context))?;
+    Ok((tree, sims, live, edges))
+}
+
+/// Replay one stored division. All choices come from the recorded trace;
+/// even a hidden fallback draw is rejected by the RNG consumption fence.
+pub fn replay_mutation_edge(
+    parent: &Simulation,
+    recorded: &Outcome,
+    mutator: &crate::passes::S5FMutationPass,
+    context: &LineageMutationContext<'_>,
+) -> Result<Outcome, PassError> {
+    let fail = |reason: String| PassError::invalid_plan_state("lineage.replay", reason);
+    let boundary = Outcome {
+        revisions: vec![parent.clone()],
+        pass_names: vec![],
+        trace: Trace::new(),
+        events: vec![],
+    };
+    boundary
+        .with_continuation(recorded)
+        .map_err(|s| fail(s.into()))?;
+    if recorded.pass_names != [mutator.name()]
+        || recorded.revisions.len() != 2
+        || recorded.events.len() != 1
+    {
+        return Err(fail(
+            "recorded division has an invalid pass/revision/event layout".into(),
+        ));
+    }
+    let mut cursor = crate::replay::TraceCursor::new(recorded.trace.choices());
+    let mut trace = Trace::new();
+    let mut rng = Rng::new(1);
+    let mut events = Vec::new();
+    let mut ctx = PassContext {
+        replay_cursor: Some(&mut cursor),
+        trace: &mut trace,
+        rng: &mut rng,
+        pass_index: 0,
+        refdata: Some(context.refdata),
+        contracts: context.contracts,
+        feasibility: None,
+        reference_index: None,
+        event_log_sink: Some(&mut events),
+    };
+    let child = mutator.execute_for_lineage(parent, &mut ctx, context.strict)?;
+    drop(ctx);
+    cursor.assert_drained().map_err(|e| fail(e.to_string()))?;
+    if rng.words_consumed() != 0 {
+        return Err(fail("division replay consumed RNG".into()));
+    }
+    if context.strict {
+        if let Some(contracts) = context.contracts {
+            contracts
+                .verify(&child, Some(context.refdata))
+                .map_err(|v| PassError::contract_violation("lineage.replay", v))?;
+        }
+    }
+    require_productive(&child, Some(context))?;
+    let event = EventRecord::pass_committed(
+        0,
+        mutator.name(),
+        mutator.effects(),
+        TraceSpan::new(0, recorded.trace.len()),
+        StateSummary::from_simulation(parent),
+        StateSummary::from_simulation(&child),
+        events,
+    );
+    let expected = recorded.final_simulation();
+    if child.pool.as_slice() != expected.pool.as_slice()
+        || child.sequence.regions != expected.sequence.regions
+        || child.assignments != expected.assignments
+        || child.duplex_provenance != expected.duplex_provenance
+        || child.coding_end_provenance != expected.coding_end_provenance
+        || child.live_call_support != expected.live_call_support
+        || child.mutation_count != expected.mutation_count
+        || child.mutation_burden.to_bits() != expected.mutation_burden.to_bits()
+        || event != recorded.events[0]
+    {
+        return Err(fail(
+            "division replay differs from stored state or event evidence".into(),
+        ));
+    }
+    // Replay passes consume rather than re-record choices. Retain the exact
+    // validated original addresses and diagnostics in the returned Outcome.
+    Ok(Outcome {
+        revisions: vec![parent.clone(), child],
+        pass_names: recorded.pass_names.clone(),
+        trace: recorded.trace.clone(),
+        events: vec![event],
+    })
 }
 
 #[cfg(test)]
@@ -410,7 +622,7 @@ mod tests {
             n_sample: 10,
             seed: 7,
         };
-        let (_tree, peak_live, _sims, _live) =
+        let (_tree, peak_live, _sims, _live, _edges) =
             grow_core(&founder(), &params, None, None, None).unwrap();
         // hard cap: live population never exceeds n_max
         assert!(

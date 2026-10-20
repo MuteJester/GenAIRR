@@ -275,7 +275,7 @@ class _ResultExport:
                 if name.startswith("n_") or name.endswith(("_start", "_end", "_length"))
                 or "_trim_" in name
             } | {"sequence_length", "insert_size", "p_v_3_length", "p_d_5_length",
-                 "p_d_3_length", "p_j_5_length"}
+                 "p_d_3_length", "p_j_5_length", "lineage_mutations_from_parent"}
             for dtype, columns in (("boolean", booleans), ("Float64", floats), ("Int64", integers)):
                 for column in columns.intersection(frame.columns):
                     frame[column] = pd.array(frame[column], dtype=dtype)

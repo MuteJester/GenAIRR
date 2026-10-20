@@ -208,7 +208,7 @@ they cannot reinterpret these new histories as their old scalar models.
 
 `capabilities.simulation_seed` reports whether the bound product can enter
 the native single-segment execution IR, including its coordinate limits.
-`experiment_integration` is currently false. Native projection verifies the snapshot and its evidence
+`experiment_integration` is false for standalone products. Native projection verifies the snapshot and its evidence
 by exact deterministic replay before returning a record.
 
 Productivity uses the explicit `duplex_observed_vdj_v1` policy. It accepts
@@ -251,8 +251,8 @@ export_duplex_projection(observation, "duplex-observation.json")
 ```
 
 This is an experimental native continuation API. The finite-history
-`Experiment` integration below provides ordinary generation and replay;
-family simulation remains a later step. It adds no external tools or dependencies.
+`Experiment` integration below provides ordinary generation, family
+continuation and replay. It adds no external tools or dependencies.
 
 Supported continuations are the existing uniform and S5F mutation, PCR and
 quality substitution, N masking, structural indel, terminal loss and read
@@ -299,8 +299,8 @@ projector verifies the immutable repair snapshot, full edit and query replay,
 source assignments, coverage and structural partition before emitting metadata.
 Unknown legacy P lengths remain missing. Use this nullable projector and its
 JSON/TSV exporter, or normal nullable `Outcome`/`SimulationResult` record
-exports. Family exporters and durable traces from externally supplied seeds
-still reject these combinations. Source-backed experiment traces below bind
+exports. Durable traces from externally supplied seeds still require an
+initial-snapshot format. Source-backed experiment traces below bind
 the generating model and support ordinary replay. The stored repair script
 can also be replayed independently.
 
@@ -379,7 +379,7 @@ active context is invalid. Missing context rows raise a compilation error.
 The authored model owns both junctions. Explicit legacy NP-length arguments,
 `.trim(...)` (including `enabled=False`), and original-end processing conflict
 with this mode. Default cartridge trim/P/NP assembly is bypassed; allele-usage
-weights remain upstream. VJ, family expansion, receptor revision, contamination,
+weights remain upstream. VJ, receptor revision, contamination,
 paired-end read windows and arbitrary custom contracts require separate
 adapters. They are rejected before generation, including zero-probability
 configurations of unsupported passes.
@@ -405,7 +405,70 @@ Source-backed durable traces bind references, model content, the complete
 upstream sampling law and active policy/contracts. Replay checks positive
 support in the recorded context and executes the same kernel without a new
 history draw. External-seed `run_from` traces still require an initial-snapshot
-format; clone-family integration and measured calibration remain later steps.
+format; a durable full-family package and measured calibration remain later steps.
+
+### Families with unfitted history weights
+
+Omitting a history's weight uses `1.0`, an equal-weight control over the valid
+authored history IDs in that source context. This supplies a useful starting
+distribution without measured repair data. It does not assign enzyme rates or
+make distinct histories with the same DNA one choice. Later fitted weights can
+replace these values through the same model API.
+The example labels their origin with sample metadata; equal numeric weights
+alone do not establish how a model was obtained.
+
+Repair is sampled once per clone. Flat expansion and lineage branches inherit
+the immutable founder ledger while retaining independent observed histories.
+Lineage survival retries reuse that founder and retry only growth. Existing
+neutral growth and mutation parameters remain explicit model controls.
+
+```python
+equal_model = DuplexRepairModel.bind(
+    refs,
+    [DuplexHistory("blunt", first, "V*01", "D*01", "J*01"),
+     DuplexHistory("restored", second, "V*01", "D*01", "J*01")],
+    reference_ends_are_coding_ends=True,
+)
+family_result = (
+    Experiment.on(refs).with_metadata(repair_weight_source="unfitted_uniform_authored")
+    .recombine(duplex_repair=equal_model)
+    .clonal_lineage(n_clones=1, max_generations=2, n_max=8, n_sample=6,
+                    rate=0.05, lambda_base=3)
+    .productive_only().run_records(seed=42, strict=True, validate_records=True)
+)
+assert len(family_result) > 0
+assert all(r["repair_weight_source"] == "unfitted_uniform_authored" for r in family_result)
+assert len({r["duplex_repair"]["selection"]["history_id"] for r in family_result}) == 1
+family = family_result.families[0]
+observed = next(node for node in family_result.lineage_trees[0].nodes() if node.observed)
+replayed_node = family.replay_node(observed.id, refs)
+original_node = family.node_outcomes()[observed.id]
+assert replayed_node.airr_record(refs, sequence_id="same") == original_node.airr_record(refs, sequence_id="same")
+family_result.to_tsv("duplex-family.tsv")
+```
+
+Duplex lineage records retain distinct sampled cells even when their DNA is
+identical. Repeated draws of the same cell contribute to its
+`lineage_abundance` and `duplicate_count`. Duplex repertoire collapse requires
+all generated truth to agree, so equal DNA cannot hide different mutation,
+indel or ancestry histories. Existing legacy collapse behavior is unchanged.
+
+`parents` and `parent_id` connect records to their actual founder. Lineage
+results also retain native `families` aligned with `lineage_trees`.
+`lineage_mutations_from_parent` counts actual events on the incoming edge;
+cumulative mutation counts include reversions. Family validation compares
+immutable repair evidence while allowing current maps and paths to diverge.
+Lineage record validation checks node metadata against its retained origin.
+Local insertion identities require their enclosing clone/node/read context.
+
+`replay_node` accepts any retained node, including roots and unsampled cells.
+It consumes the recorded division choices without replacement draws
+and returns the cellular state before any per-read observation passes. It is
+an in-memory API requiring the matching bound reference; it does not claim a
+durable whole-family format. Ordinary compiled trace writers continue to reject
+merged family outcomes. Affinity scoring, when requested, translates the
+contiguous certified coding span across junction boundaries; unresolved coding
+phase cannot be replaced with an invented affinity.
 
 ### Bounded substrate contract
 

@@ -60,7 +60,8 @@ class SimulationResult(_ResultExport, _ResultValidation):
             list(outcomes) if outcomes is not None else None
         )
         # ``parents`` is the per-clone parent ``Outcome`` list; only
-        # populated by ``CompiledClonalExperiment.run_records``.
+        # populated by ``CompiledClonalExperiment.run_records`` and
+        # duplex repertoire/lineage runs.
         # ``None`` for non-clonal results — keep the absence
         # symmetric with the non-clonal record dict shape (no
         # ``clone_id`` / ``parent_id`` columns).
@@ -126,15 +127,14 @@ class SimulationResult(_ResultExport, _ResultValidation):
 
     @property
     def parents(self) -> Optional[List]:
-        """Per-clone parent ``Outcome`` objects for clonal results;
+        """Per-clone founder ``Outcome`` objects for fixed-size clonal and
+        duplex repertoire/lineage results;
         ``None`` for non-clonal results and for results built from
         records directly.
 
-        ``parents[c]`` is the recombination ancestor of clone ``c``:
-        every descendant record with
-        ``record["clone_id"] == record["parent_id"] == c`` was
-        produced by running the post-fork plan from this parent's
-        :meth:`final_simulation`.
+        ``parents[record["parent_id"]]`` is the record's recombination
+        ancestor. The dense parent index and ``clone_id`` have separate
+        meanings; consumers should not assume they are equal.
 
         The parent ``Outcome`` carries the pre-fork addressed-choice
         ``.trace()``, the pre-fork ``.events()`` ledger, the
@@ -144,10 +144,9 @@ class SimulationResult(_ResultExport, _ResultValidation):
         validator (Slice 3+ scope).
 
         The flat ``.outcomes`` list continues to carry **only the
-        descendant outcomes** (one entry per AIRR record); parents
-        live exclusively here. ``len(.parents)`` equals the clonal
-        pipeline's ``n_clones``; ``len(.outcomes)`` equals
-        ``n_clones * per_clone``.
+        descendant outcomes** (one entry per AIRR record). Parent outcomes
+        live here. Duplex lineage runs retain accepted extinct founders as
+        well, even when their trees produce no observed records.
         """
         return self._parents
 
@@ -180,7 +179,10 @@ class SimulationResultWithLineages(SimulationResult):
     ``.to_node_table_tsv()``.
     """
 
-    __slots__ = ("_lineage_trees",)
+    __slots__ = (
+        "_lineage_trees", "_families", "_lineage_record_origins",
+        "_lineage_origin_trees", "_lineage_origin_nodes",
+    )
 
     def __init__(
         self,
@@ -188,11 +190,50 @@ class SimulationResultWithLineages(SimulationResult):
         outcomes: "Optional[Sequence]" = None,
         parents: "Optional[Sequence]" = None,
         lineage_trees: "Optional[Sequence]" = None,
+        families: "Optional[Sequence]" = None,
+        lineage_record_origins: "Optional[Sequence]" = None,
     ) -> None:
         super().__init__(records, outcomes, parents)
         self._lineage_trees: "Optional[List]" = (
             list(lineage_trees) if lineage_trees is not None else None
         )
+        self._families: "Optional[List]" = (
+            list(families) if families is not None else None
+        )
+        # Immutable origin addressing lets validation detect edited namespace
+        # tags even when different cells happen to have identical DNA/history.
+        self._lineage_record_origins = (
+            tuple(tuple(origin) for origin in lineage_record_origins)
+            if lineage_record_origins is not None else None
+        )
+        self._lineage_origin_trees = (
+            tuple(self._lineage_trees or ())
+            if lineage_record_origins is not None else None
+        )
+        if self._lineage_record_origins is None:
+            self._lineage_origin_nodes = None
+        else:
+            # Read each native tree once, then retain only the observed nodes
+            # needed to check record metadata without cloning a whole arena
+            # for every record during validation.
+            native_nodes = [tree.nodes() for tree in self._lineage_origin_trees]
+            self._lineage_origin_nodes = tuple(
+                native_nodes[parent_id][node_id]
+                for parent_id, _, node_id in self._lineage_record_origins
+            )
+
+    @property
+    def families(self) -> "Optional[List]":
+        """Native family outcomes for duplex runs, aligned with lineage trees.
+
+        ``families[i].replay_node(node_id, refdata)`` replays a retained cell's
+        actual mutation traces from its founder without new random choices.
+        This is an in-memory replay interface; it is not a durable family
+        file format. Descendant repair IDs describe inherited founder
+        ancestry. Insertion IDs are local to a branch, identified by its
+        clone and lineage-node fields.
+        """
+        return self._families
 
     @property
     def lineage_trees(self) -> "Optional[List]":

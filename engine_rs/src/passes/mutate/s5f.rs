@@ -80,6 +80,17 @@ pub struct S5FMutationPass {
 }
 
 impl S5FMutationPass {
+    /// Fallible lineage dispatch preserves permissive empty-support no-ops
+    /// while allowing malformed recorded choices to return structured errors.
+    pub(crate) fn execute_for_lineage(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
+    }
+
     /// Construct from an explicit count distribution. Sampled once
     /// per pass execution independently of the pool length.
     pub fn new(kernel: S5FKernel, count_dist: Box<dyn Distribution<Output = i64>>) -> Self {
@@ -162,6 +173,23 @@ impl Pass for S5FMutationPass {
             fmt_segment_rates(&self.segment_rates),
             fmt_v_subregion_rates(&self.v_subregion_rates),
         ])
+    }
+
+    fn sampling_law_signature(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        hash.update(b"s5f_numeric_kernel_f64_le_v1\0");
+        for context in 0..1024 {
+            hash.update(self.kernel.mutability(context).to_bits().to_le_bytes());
+            for weight in self.kernel.substitution_row(context) {
+                hash.update(weight.to_bits().to_le_bytes());
+            }
+        }
+        format!(
+            "{};numeric_kernel=sha256:{:x}",
+            self.parameter_signature(),
+            hash.finalize()
+        )
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {

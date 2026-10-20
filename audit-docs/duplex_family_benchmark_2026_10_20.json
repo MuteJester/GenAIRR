@@ -1,0 +1,485 @@
+{
+  "identity": {
+    "benchmark_sha256": "894741a18ceac70c5ca4b295a07eb59bc1f6fa9e9baba1b0c35a72c94060d5e9",
+    "branch": "fix/biological-metadata-correctness",
+    "commit": "a75db8cf75443d29e0031c40bb6d8994adcadc49",
+    "dirty": true,
+    "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+    "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
+    "source_sha256": "2ded1989be24cd34e0b99ae33d0554910baa6a1149a4b1134429e7ee187540da"
+  },
+  "limitations": [
+    "Short synthetic 15-base founders do not establish performance for realistic full-length references or larger histories.",
+    "Equal authored history weights are unfitted controls, not measured biochemical rates.",
+    "Neutral offspring and mutation settings are declared benchmark controls, not an empirical family model fit.",
+    "All emitted metadata and native family replay state remain retained during measurements; this is not a bounded-stream benchmark.",
+    "Process RSS, allocator retention and high-water marks cannot prove individual immutable founder Arc sharing; no allocation introspection is performed.",
+    "Replay timing includes validation and metadata equality work; native replay time is also reported separately.",
+    "Two repeats at each depth are a small descriptive sample, not a statistical latency guarantee."
+  ],
+  "measurement": {
+    "compile": "normal Experiment.compile, after model/DSL construction",
+    "memory": "current resident RSS from Linux procfs plus monotonic process RSS high-water marks; KiB",
+    "process_isolation": "one sequential subprocess per depth and repeat",
+    "replay": "each emitted observed node; native replay, validation, metadata export and exact canonical JSON comparison",
+    "run_records": "normal compiled lineage run_records, full metadata export and all record/family validation"
+  },
+  "measurements": [
+    {
+      "actual_total_nodes": 22,
+      "after_compile_rss": {
+        "current_kib": 29172.0,
+        "peak_kib": 30824
+      },
+      "after_replay_rss": {
+        "current_kib": 34844.0,
+        "peak_kib": 34704
+      },
+      "after_run_records_rss": {
+        "current_kib": 34692.0,
+        "peak_kib": 34576
+      },
+      "before_compile_rss": {
+        "current_kib": 28524.0,
+        "peak_kib": 30824
+      },
+      "compile_peak_increase_kib": 0,
+      "compile_seconds": 0.00041490199510008097,
+      "identity": {
+        "benchmark_sha256": "894741a18ceac70c5ca4b295a07eb59bc1f6fa9e9baba1b0c35a72c94060d5e9",
+        "branch": "fix/biological-metadata-correctness",
+        "commit": "a75db8cf75443d29e0031c40bb6d8994adcadc49",
+        "dirty": true,
+        "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+        "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+        "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
+        "source_sha256": "2ded1989be24cd34e0b99ae33d0554910baa6a1149a4b1134429e7ee187540da"
+      },
+      "max_generations": 2,
+      "native_replay_seconds": 0.007716687032370828,
+      "nodes_by_family": [
+        7,
+        15
+      ],
+      "observed_records": 13,
+      "observed_records_by_family": [
+        5,
+        8
+      ],
+      "process_baseline_rss": {
+        "current_kib": 18764.0,
+        "peak_kib": 30824
+      },
+      "repeat": 0,
+      "replay_check_seconds": 0.02794186798564624,
+      "replay_errors": 0,
+      "replay_peak_increase_kib": 128,
+      "replay_seconds": 0.03568109999469016,
+      "replayed_records": 13,
+      "run_records_peak_increase_kib": 3752,
+      "run_records_seconds": 0.06796420100727119,
+      "sampled_cell_draws": 32,
+      "seed": 20261020,
+      "selected_histories": {
+        "restored-a": 1,
+        "restored-b": 1
+      },
+      "serialized_record_bytes": 460900
+    },
+    {
+      "actual_total_nodes": 42,
+      "after_compile_rss": {
+        "current_kib": 29148.0,
+        "peak_kib": 30824
+      },
+      "after_replay_rss": {
+        "current_kib": 35948.0,
+        "peak_kib": 35828
+      },
+      "after_run_records_rss": {
+        "current_kib": 35776.0,
+        "peak_kib": 35700
+      },
+      "before_compile_rss": {
+        "current_kib": 28500.0,
+        "peak_kib": 30824
+      },
+      "compile_peak_increase_kib": 0,
+      "compile_seconds": 0.0004493529995670542,
+      "identity": {
+        "benchmark_sha256": "894741a18ceac70c5ca4b295a07eb59bc1f6fa9e9baba1b0c35a72c94060d5e9",
+        "branch": "fix/biological-metadata-correctness",
+        "commit": "a75db8cf75443d29e0031c40bb6d8994adcadc49",
+        "dirty": true,
+        "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+        "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+        "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
+        "source_sha256": "2ded1989be24cd34e0b99ae33d0554910baa6a1149a4b1134429e7ee187540da"
+      },
+      "max_generations": 2,
+      "native_replay_seconds": 0.010014687009970658,
+      "nodes_by_family": [
+        31,
+        11
+      ],
+      "observed_records": 17,
+      "observed_records_by_family": [
+        10,
+        7
+      ],
+      "process_baseline_rss": {
+        "current_kib": 18740.0,
+        "peak_kib": 30824
+      },
+      "repeat": 1,
+      "replay_check_seconds": 0.03616786499333102,
+      "replay_errors": 0,
+      "replay_peak_increase_kib": 128,
+      "replay_seconds": 0.04620604499359615,
+      "replayed_records": 17,
+      "run_records_peak_increase_kib": 4876,
+      "run_records_seconds": 0.08682710799621418,
+      "sampled_cell_draws": 32,
+      "seed": 20261021,
+      "selected_histories": {
+        "restored-a": 1,
+        "restored-b": 1
+      },
+      "serialized_record_bytes": 598861
+    },
+    {
+      "actual_total_nodes": 97,
+      "after_compile_rss": {
+        "current_kib": 29160.0,
+        "peak_kib": 30824
+      },
+      "after_replay_rss": {
+        "current_kib": 38076.0,
+        "peak_kib": 37888
+      },
+      "after_run_records_rss": {
+        "current_kib": 37924.0,
+        "peak_kib": 37760
+      },
+      "before_compile_rss": {
+        "current_kib": 28512.0,
+        "peak_kib": 30824
+      },
+      "compile_peak_increase_kib": 0,
+      "compile_seconds": 0.0004377759905764833,
+      "identity": {
+        "benchmark_sha256": "894741a18ceac70c5ca4b295a07eb59bc1f6fa9e9baba1b0c35a72c94060d5e9",
+        "branch": "fix/biological-metadata-correctness",
+        "commit": "a75db8cf75443d29e0031c40bb6d8994adcadc49",
+        "dirty": true,
+        "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+        "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+        "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
+        "source_sha256": "2ded1989be24cd34e0b99ae33d0554910baa6a1149a4b1134429e7ee187540da"
+      },
+      "max_generations": 4,
+      "native_replay_seconds": 0.013736986016738228,
+      "nodes_by_family": [
+        40,
+        57
+      ],
+      "observed_records": 22,
+      "observed_records_by_family": [
+        13,
+        9
+      ],
+      "process_baseline_rss": {
+        "current_kib": 18752.0,
+        "peak_kib": 30824
+      },
+      "repeat": 0,
+      "replay_check_seconds": 0.0488179569656495,
+      "replay_errors": 0,
+      "replay_peak_increase_kib": 128,
+      "replay_seconds": 0.06259085499914363,
+      "replayed_records": 22,
+      "run_records_peak_increase_kib": 6936,
+      "run_records_seconds": 0.11400499800220132,
+      "sampled_cell_draws": 32,
+      "seed": 20261020,
+      "selected_histories": {
+        "restored-a": 1,
+        "restored-b": 1
+      },
+      "serialized_record_bytes": 800523
+    },
+    {
+      "actual_total_nodes": 120,
+      "after_compile_rss": {
+        "current_kib": 29220.0,
+        "peak_kib": 30824
+      },
+      "after_replay_rss": {
+        "current_kib": 36372.0,
+        "peak_kib": 36284
+      },
+      "after_run_records_rss": {
+        "current_kib": 36252.0,
+        "peak_kib": 36156
+      },
+      "before_compile_rss": {
+        "current_kib": 28572.0,
+        "peak_kib": 30824
+      },
+      "compile_peak_increase_kib": 0,
+      "compile_seconds": 0.000424003999796696,
+      "identity": {
+        "benchmark_sha256": "894741a18ceac70c5ca4b295a07eb59bc1f6fa9e9baba1b0c35a72c94060d5e9",
+        "branch": "fix/biological-metadata-correctness",
+        "commit": "a75db8cf75443d29e0031c40bb6d8994adcadc49",
+        "dirty": true,
+        "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+        "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+        "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
+        "source_sha256": "2ded1989be24cd34e0b99ae33d0554910baa6a1149a4b1134429e7ee187540da"
+      },
+      "max_generations": 4,
+      "native_replay_seconds": 0.010059527980047278,
+      "nodes_by_family": [
+        62,
+        58
+      ],
+      "observed_records": 16,
+      "observed_records_by_family": [
+        3,
+        13
+      ],
+      "process_baseline_rss": {
+        "current_kib": 18812.0,
+        "peak_kib": 30824
+      },
+      "repeat": 1,
+      "replay_check_seconds": 0.03799766901647672,
+      "replay_errors": 0,
+      "replay_peak_increase_kib": 128,
+      "replay_seconds": 0.048081135988468304,
+      "replayed_records": 16,
+      "run_records_peak_increase_kib": 5332,
+      "run_records_seconds": 0.08766583800024819,
+      "sampled_cell_draws": 32,
+      "seed": 20261021,
+      "selected_histories": {
+        "restored-a": 1,
+        "restored-b": 1
+      },
+      "serialized_record_bytes": 576746
+    },
+    {
+      "actual_total_nodes": 188,
+      "after_compile_rss": {
+        "current_kib": 29308.0,
+        "peak_kib": 30824
+      },
+      "after_replay_rss": {
+        "current_kib": 39744.0,
+        "peak_kib": 39576
+      },
+      "after_run_records_rss": {
+        "current_kib": 39612.0,
+        "peak_kib": 39448
+      },
+      "before_compile_rss": {
+        "current_kib": 28660.0,
+        "peak_kib": 30824
+      },
+      "compile_peak_increase_kib": 0,
+      "compile_seconds": 0.00042503401346039027,
+      "identity": {
+        "benchmark_sha256": "894741a18ceac70c5ca4b295a07eb59bc1f6fa9e9baba1b0c35a72c94060d5e9",
+        "branch": "fix/biological-metadata-correctness",
+        "commit": "a75db8cf75443d29e0031c40bb6d8994adcadc49",
+        "dirty": true,
+        "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+        "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+        "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
+        "source_sha256": "2ded1989be24cd34e0b99ae33d0554910baa6a1149a4b1134429e7ee187540da"
+      },
+      "max_generations": 6,
+      "native_replay_seconds": 0.015923323066090234,
+      "nodes_by_family": [
+        82,
+        106
+      ],
+      "observed_records": 24,
+      "observed_records_by_family": [
+        12,
+        12
+      ],
+      "process_baseline_rss": {
+        "current_kib": 18900.0,
+        "peak_kib": 30824
+      },
+      "repeat": 0,
+      "replay_check_seconds": 0.055135693968622945,
+      "replay_errors": 0,
+      "replay_peak_increase_kib": 128,
+      "replay_seconds": 0.07109526501153596,
+      "replayed_records": 24,
+      "run_records_peak_increase_kib": 8624,
+      "run_records_seconds": 0.12906742400082294,
+      "sampled_cell_draws": 32,
+      "seed": 20261020,
+      "selected_histories": {
+        "restored-a": 1,
+        "restored-b": 1
+      },
+      "serialized_record_bytes": 895788
+    },
+    {
+      "actual_total_nodes": 195,
+      "after_compile_rss": {
+        "current_kib": 29156.0,
+        "peak_kib": 30824
+      },
+      "after_replay_rss": {
+        "current_kib": 39704.0,
+        "peak_kib": 39552
+      },
+      "after_run_records_rss": {
+        "current_kib": 39536.0,
+        "peak_kib": 39424
+      },
+      "before_compile_rss": {
+        "current_kib": 28508.0,
+        "peak_kib": 30824
+      },
+      "compile_peak_increase_kib": 0,
+      "compile_seconds": 0.00043957799789495766,
+      "identity": {
+        "benchmark_sha256": "894741a18ceac70c5ca4b295a07eb59bc1f6fa9e9baba1b0c35a72c94060d5e9",
+        "branch": "fix/biological-metadata-correctness",
+        "commit": "a75db8cf75443d29e0031c40bb6d8994adcadc49",
+        "dirty": true,
+        "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+        "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+        "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
+        "source_sha256": "2ded1989be24cd34e0b99ae33d0554910baa6a1149a4b1134429e7ee187540da"
+      },
+      "max_generations": 6,
+      "native_replay_seconds": 0.01612101601494942,
+      "nodes_by_family": [
+        98,
+        97
+      ],
+      "observed_records": 25,
+      "observed_records_by_family": [
+        12,
+        13
+      ],
+      "process_baseline_rss": {
+        "current_kib": 18748.0,
+        "peak_kib": 30824
+      },
+      "repeat": 1,
+      "replay_check_seconds": 0.05587132902292069,
+      "replay_errors": 0,
+      "replay_peak_increase_kib": 128,
+      "replay_seconds": 0.07202433599741198,
+      "replayed_records": 25,
+      "run_records_peak_increase_kib": 8600,
+      "run_records_seconds": 0.13140129401290324,
+      "sampled_cell_draws": 32,
+      "seed": 20261021,
+      "selected_histories": {
+        "restored-a": 1,
+        "restored-b": 1
+      },
+      "serialized_record_bytes": 920747
+    }
+  ],
+  "model": "duplex_lineage_isolated_benchmark_v1",
+  "parameters": {
+    "lambda_base": 3.0,
+    "n_clones": 2,
+    "n_max": 32,
+    "n_sample": 16,
+    "productive_only": true,
+    "rate": 0.15,
+    "selection_strength": 0.0,
+    "strict": true,
+    "validate_records": true
+  },
+  "source": {
+    "history_ids": [
+      "restored-a",
+      "restored-b"
+    ],
+    "history_weights": [
+      1.0,
+      1.0
+    ],
+    "reference_bound": true,
+    "restored_v_top_bases": 1,
+    "sequence": "AAATGTCCCTTTAAA"
+  },
+  "summaries": [
+    {
+      "max_actual_total_nodes": 42,
+      "max_compile_peak_increase_kib": 0,
+      "max_generations": 2,
+      "max_observed_records": 17,
+      "max_replay_peak_increase_kib": 128,
+      "max_run_records_peak_increase_kib": 4876,
+      "median_compile_seconds": 0.0004321274973335676,
+      "median_native_replay_seconds": 0.008865687021170743,
+      "median_replay_check_seconds": 0.03205486648948863,
+      "median_replay_seconds": 0.040943572494143154,
+      "median_run_records_seconds": 0.07739565450174268,
+      "min_actual_total_nodes": 22,
+      "min_observed_records": 13,
+      "repeats": 2
+    },
+    {
+      "max_actual_total_nodes": 120,
+      "max_compile_peak_increase_kib": 0,
+      "max_generations": 4,
+      "max_observed_records": 22,
+      "max_replay_peak_increase_kib": 128,
+      "max_run_records_peak_increase_kib": 6936,
+      "median_compile_seconds": 0.00043088999518658966,
+      "median_native_replay_seconds": 0.011898256998392753,
+      "median_replay_check_seconds": 0.04340781299106311,
+      "median_replay_seconds": 0.05533599549380597,
+      "median_run_records_seconds": 0.10083541800122475,
+      "min_actual_total_nodes": 97,
+      "min_observed_records": 16,
+      "repeats": 2
+    },
+    {
+      "max_actual_total_nodes": 195,
+      "max_compile_peak_increase_kib": 0,
+      "max_generations": 6,
+      "max_observed_records": 25,
+      "max_replay_peak_increase_kib": 128,
+      "max_run_records_peak_increase_kib": 8624,
+      "median_compile_seconds": 0.00043230600567767397,
+      "median_native_replay_seconds": 0.016022169540519826,
+      "median_replay_check_seconds": 0.05550351149577182,
+      "median_replay_seconds": 0.07155980050447397,
+      "median_run_records_seconds": 0.1302343590068631,
+      "min_actual_total_nodes": 188,
+      "min_observed_records": 24,
+      "repeats": 2
+    }
+  ]
+}

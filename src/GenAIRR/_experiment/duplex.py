@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .._pipeline_ir import (
     _RecombineStep, _InvertDStep, _MutateStep, _CorruptStep,
+    _ClonalForkStep, _LineageForkStep, _RepertoireForkStep,
     _CORRUPT_KIND_CONTAMINANT,
 )
 
@@ -56,13 +57,24 @@ def validate_duplex_steps(steps):
                 "p_d_5_lengths", "p_d_3_lengths", "p_j_5_lengths", "np1_base_pairs",
                 "np2_base_pairs", "np1_markov_transitions", "np2_markov_transitions"))):
         raise ValueError("duplex repair excludes explicit legacy trim, P and NP processing")
+    forks = [step for step in steps if isinstance(
+        step, (_ClonalForkStep, _LineageForkStep, _RepertoireForkStep)
+    )]
+    if len(forks) > 1:
+        raise ValueError("duplex repair supports at most one family boundary")
+    fork_seen = False
     for step in steps[1:]:
+        if isinstance(step, (_ClonalForkStep, _LineageForkStep, _RepertoireForkStep)):
+            fork_seen = True
+            continue
+        if isinstance(step, _InvertDStep) and fork_seen:
+            raise ValueError("D inversion must precede the duplex family boundary")
         if isinstance(step, (_InvertDStep, _MutateStep)):
             continue
         if isinstance(step, _CorruptStep) and step.kind != _CORRUPT_KIND_CONTAMINANT:
             continue
         raise ValueError(
             f"{type(step).__name__} is unsupported with duplex repair; "
-            "family simulation, receptor revision, paired-end reads and contamination "
+            "receptor revision, paired-end reads and contamination "
             "require additional provenance adapters"
         )

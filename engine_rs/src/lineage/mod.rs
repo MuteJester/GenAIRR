@@ -39,3 +39,6 @@ pub use branching::{grow_lineage, grow_lineage_retaining_sims, grow_lineage_with
 pub use sampling::sample_and_collapse;
 pub use family::{simulate_family, simulate_family_sims, simulate_family_with_affinity};
 pub use export::{to_fasta, to_newick, to_node_table_tsv};
+
+#[cfg(test)]
+mod duplex_tests;

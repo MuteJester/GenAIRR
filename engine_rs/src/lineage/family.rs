@@ -25,7 +25,7 @@ pub fn simulate_family(
 ) -> LineageTree {
     let (mut tree, _sims, live) = grow_lineage_retaining_sims(founder, params, mutator, None);
     let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
-    sample_and_collapse(&mut tree, &live, params.n_sample, &mut sample_rng);
+    sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     tree
 }
 
@@ -39,7 +39,7 @@ pub fn simulate_family_with_affinity(
     let (mut tree, _sims, live) =
         grow_lineage_retaining_sims(founder, params, mutator, Some(model));
     let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
-    sample_and_collapse(&mut tree, &live, params.n_sample, &mut sample_rng);
+    sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     tree
 }
 
@@ -55,7 +55,7 @@ pub fn simulate_family_sims(
 ) -> (LineageTree, Vec<Simulation>) {
     let (mut tree, sims, live) = grow_lineage_retaining_sims(founder, params, mutator, affinity);
     let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
-    sample_and_collapse(&mut tree, &live, params.n_sample, &mut sample_rng);
+    sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     (tree, sims)
 }
 
@@ -71,8 +71,45 @@ pub fn simulate_family_sims_with_context(
         founder, params, mutator, affinity, context,
     )?;
     let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
-    sample_and_collapse(&mut tree, &live, params.n_sample, &mut sample_rng);
+    sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     Ok((tree, sims))
+}
+
+fn sample_observed(
+    tree: &mut LineageTree,
+    live: &[u32],
+    params: &BranchingParams,
+    founder: &Simulation,
+    rng: &mut Rng,
+) {
+    if founder.duplex_provenance.is_some() {
+        super::sampling::sample_cells(tree, live, params.n_sample, rng);
+    } else {
+        sample_and_collapse(tree, live, params.n_sample, rng);
+    }
+}
+
+pub fn simulate_family_edges_with_context(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    affinity: Option<&AffinityModel>,
+    context: &super::branching::LineageMutationContext<'_>,
+) -> Result<
+    (
+        LineageTree,
+        Vec<Simulation>,
+        Vec<Option<crate::pass::Outcome>>,
+    ),
+    crate::pass::PassError,
+> {
+    let (mut tree, sims, live, edges) =
+        super::branching::grow_lineage_retaining_edges_with_context(
+            founder, params, mutator, affinity, context,
+        )?;
+    let mut rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    sample_observed(&mut tree, &live, params, founder, &mut rng);
+    Ok((tree, sims, edges))
 }
 
 #[cfg(test)]

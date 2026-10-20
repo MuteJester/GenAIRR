@@ -101,6 +101,24 @@ pub fn sim_to_aa(sim: &Simulation) -> Vec<u8> {
     aa
 }
 
+/// Translate the observed coding span across source and junction boundaries.
+/// Duplex body placement is independent of the region's legacy phase cache.
+pub fn duplex_sim_to_aa(
+    sim: &Simulation,
+    refdata: &crate::refdata::RefDataConfig,
+) -> Result<Vec<u8>, String> {
+    let span = crate::productivity::coding_span(sim, refdata)
+        .ok_or("duplex affinity selection requires a resolved coding span")?;
+    if span.end > sim.pool.len() || span.start > span.end {
+        return Err("duplex affinity coding span is outside the observed molecule".into());
+    }
+    let bases = sim.pool.as_slice();
+    Ok((span.start..span.end.saturating_sub(2))
+        .step_by(3)
+        .map(|p| crate::codon::translate_codon(bases[p].base, bases[p + 1].base, bases[p + 2].base))
+        .collect())
+}
+
 /// Affinity-selection model: maps a cell's amino-acid sequence to an affinity in
 /// (0, 1] (1 = identical to target) and to a fitness multiplier for its offspring
 /// rate. `selection_strength == 0` makes fitness identically 1 (neutral).

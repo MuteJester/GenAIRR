@@ -54,6 +54,21 @@ pub fn sample_and_collapse(
     }
 }
 
+/// Sample physical cells with replacement, retaining distinct cell ancestry
+/// even when independent branches have the same observed DNA sequence.
+/// Only repeated draws of the very same cell contribute to its abundance.
+pub fn sample_cells(tree: &mut LineageTree, sampleable_ids: &[u32], n_sample: u32, rng: &mut Rng) {
+    if sampleable_ids.is_empty() {
+        return;
+    }
+    for _ in 0..n_sample {
+        let id = sampleable_ids[rng.range_u32(sampleable_ids.len() as u32) as usize];
+        let node = &mut tree.nodes[id as usize];
+        node.abundance += 1;
+        node.observed = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

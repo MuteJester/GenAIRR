@@ -190,8 +190,6 @@ def test_zero_weight_history_is_never_sampled_or_used_as_required_coverage():
     lambda exp: exp.contaminate(prob=0),
     lambda exp: exp.receptor_revision(prob=0),
     lambda exp: exp.paired_end(r1_length=10, insert_size=15),
-    lambda exp: exp.clonal_lineage(n_clones=1),
-    lambda exp: exp.clonal_repertoire(n_clones=1),
 ])
 def test_unsupported_suffix_is_rejected_at_compile_even_with_zero_effect_probability(configure):
     r = references()

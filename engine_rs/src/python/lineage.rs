@@ -142,7 +142,7 @@ impl PyLineageTree {
 #[pyo3(signature = (
     founder, mutability, substitution, rate,
     lambda_base, lambda_mut, max_generations, n_max, n_sample, seed,
-    selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5
+    selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5, refdata=None
 ))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn simulate_lineage(
@@ -160,14 +160,10 @@ pub(crate) fn simulate_lineage(
     beta: f64,
     target_aa: Option<String>,
     mature_substitutions: u32,
+    refdata: Option<&PyRefDataConfig>,
 ) -> PyResult<PyLineageTree> {
     use pyo3::exceptions::PyValueError;
 
-    if founder.inner.duplex_provenance.is_some() {
-        return Err(PyValueError::new_err(
-            "duplex family simulation is not supported yet; use explicit run_from continuations and project_duplex_simulation",
-        ));
-    }
     if mutability.len() != 1024 {
         return Err(PyValueError::new_err(format!(
             "simulate_lineage: mutability must have 1024 entries, got {}",
@@ -234,16 +230,58 @@ pub(crate) fn simulate_lineage(
         seed,
     };
 
-    // Validate affinity params.
     if !(beta.is_finite() && beta >= 0.0) {
         return Err(PyValueError::new_err(format!(
             "simulate_lineage: beta must be finite and >= 0, got {beta}"
         )));
     }
     if !(selection_strength.is_finite() && selection_strength >= 0.0) {
-        return Err(PyValueError::new_err(format!(
-            "simulate_lineage: selection_strength must be finite and >= 0, got {selection_strength}"
-        )));
+        return Err(PyValueError::new_err(format!("simulate_lineage: selection_strength must be finite and >= 0, got {selection_strength}")));
+    }
+    if founder.inner.duplex_provenance.is_some() {
+        let refdata = refdata
+            .ok_or_else(|| PyValueError::new_err("duplex simulate_lineage requires refdata"))?;
+        let context = crate::lineage::branching::LineageMutationContext {
+            refdata: refdata.inner(),
+            contracts: None,
+            strict: false,
+        };
+        crate::lineage::branching::validate_duplex_founder(
+            &founder.inner,
+            Some(&context),
+            Some(&mutator),
+        )
+        .map_err(super::contract::pass_error_to_pyerr)?;
+        let model = if selection_strength == 0.0 && target_aa.is_none() {
+            None
+        } else {
+            let aa = crate::lineage::affinity::duplex_sim_to_aa(&founder.inner, refdata.inner())
+                .map_err(PyValueError::new_err)?;
+            let target = match target_aa {
+                Some(s) => s.into_bytes(),
+                None => make_mature_target(
+                    &aa,
+                    mature_substitutions,
+                    &mut Rng::new(seed ^ 0x7461_7267_6574_0001),
+                ),
+            };
+            Some(AffinityModel::new(
+                target,
+                vec![1.0; aa.len()],
+                beta,
+                selection_strength,
+                &aa,
+            ))
+        };
+        let (tree, _) = crate::lineage::family::simulate_family_sims_with_context(
+            &founder.inner,
+            &params,
+            &mutator,
+            model.as_ref(),
+            &context,
+        )
+        .map_err(super::contract::pass_error_to_pyerr)?;
+        return Ok(PyLineageTree::new(tree));
     }
 
     // Neutral fast path: no selection and no explicit target → byte-identical to
@@ -276,10 +314,123 @@ pub(crate) fn simulate_lineage(
 pub struct PyFamilyOutcome {
     tree: LineageTree,
     node_outcomes: Vec<Option<Outcome>>, // index == node id
+    duplex_replay: Option<DuplexFamilyReplay>,
+}
+
+/// Private immutable evidence for in-memory branch replay. This is deliberately
+/// not a compiled-plan execution binding or a durable family file format.
+struct DuplexFamilyReplay {
+    founder: Outcome,
+    edges: Vec<Option<Outcome>>,
+    kernel: S5FKernel,
+    rate: f64,
+    contract_kinds: Option<Vec<crate::contract::ContractKind>>,
+    strict: bool,
+    reference_hash: String,
+}
+
+fn node_path(tree: &LineageTree, node_id: u32) -> PyResult<Vec<usize>> {
+    if tree.get(node_id).is_none() {
+        return Err(pyo3::exceptions::PyIndexError::new_err(
+            "family node_id is outside the tree",
+        ));
+    }
+    let mut path = Vec::new();
+    let mut current = node_id;
+    while let Some(parent) = tree.nodes[current as usize].parent_id {
+        path.push(current as usize);
+        current = parent;
+    }
+    path.reverse();
+    Ok(path)
+}
+
+fn duplex_node_outcome(
+    tree: &LineageTree,
+    evidence: &DuplexFamilyReplay,
+    node_id: u32,
+    refdata: &crate::refdata::RefDataConfig,
+    replay: bool,
+) -> PyResult<Outcome> {
+    use pyo3::exceptions::PyValueError;
+    if crate::trace_file::refdata_content_hash(refdata) != evidence.reference_hash {
+        return Err(PyValueError::new_err(
+            "duplex family replay reference content hash mismatch",
+        ));
+    }
+    let contracts = evidence.contract_kinds.as_ref().map(|kinds| {
+        use crate::contract::*;
+        let mut set = ContractSet::new();
+        for kind in kinds {
+            let contract: Box<dyn Contract> = match kind {
+                ContractKind::CodingSequenceIntegrity => Box::new(CodingSequenceIntegrity),
+                ContractKind::ProductiveJunctionFrame => Box::new(ProductiveJunctionFrame::new()),
+                ContractKind::NoStopCodonInJunction => Box::new(NoStopCodonInJunction::new()),
+                ContractKind::CanonicalAnchor { segment } => {
+                    Box::new(AnchorPreserved::canonical(*segment))
+                }
+                _ => unreachable!("duplex family preflight rejects unsupported contracts"),
+            };
+            set.add(contract);
+        }
+        set
+    });
+    let context = crate::lineage::branching::LineageMutationContext {
+        refdata,
+        contracts: contracts.as_ref(),
+        strict: evidence.strict,
+    };
+    let mutator = S5FMutationPass::new_rate(evidence.kernel.clone(), evidence.rate);
+    crate::lineage::branching::validate_duplex_founder(
+        evidence.founder.final_simulation(),
+        Some(&context),
+        Some(&mutator),
+    )
+    .map_err(super::contract::pass_error_to_pyerr)?;
+    let mut outcome = evidence.founder.clone();
+    for node in node_path(tree, node_id)? {
+        let stored = evidence
+            .edges
+            .get(node)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| PyValueError::new_err("duplex family division evidence is missing"))?;
+        let edge = if replay {
+            crate::lineage::branching::replay_mutation_edge(
+                outcome.final_simulation(),
+                stored,
+                &mutator,
+                &context,
+            )
+            .map_err(super::contract::pass_error_to_pyerr)?
+        } else {
+            stored.clone()
+        };
+        outcome = outcome
+            .with_continuation(&edge)
+            .map_err(PyValueError::new_err)?;
+    }
+    let index = ReferenceMatchIndex::build(refdata);
+    let final_sim = refresh_live_calls(outcome.final_simulation().clone(), &index);
+    // A cache refresh changes no historical state or transaction edge.
+    *outcome
+        .revisions
+        .last_mut()
+        .expect("founder has a revision") = final_sim;
+    Ok(outcome)
 }
 
 #[pymethods]
 impl PyFamilyOutcome {
+    /// Replay a duplex node from its stored founder and exact division choices.
+    /// No new random choices are drawn. Available only while this family object
+    /// retains its immutable in-memory evidence.
+    fn replay_node(&self, node_id: u32, refdata: &PyRefDataConfig) -> PyResult<PyOutcome> {
+        let evidence = self.duplex_replay.as_ref().ok_or_else(|| pyo3::exceptions::PyValueError::new_err(
+            "replay_node is available for duplex families; legacy families retain their existing synthesized outcomes"
+        ))?;
+        duplex_node_outcome(&self.tree, evidence, node_id, refdata.inner(), true)
+            .map(PyOutcome::new)
+    }
     /// The ground-truth lineage tree.
     fn tree(&self) -> PyLineageTree {
         PyLineageTree::new(self.tree.clone())
@@ -322,8 +473,15 @@ impl PyFamilyOutcome {
         let mut results = Vec::new();
         for (node_id, outcome) in self.node_outcomes.iter().enumerate() {
             let Some(outcome) = outcome else { continue };
-            super::outcome::require_legacy_airr_outcome(outcome)?;
             let sequence_id = format!("node{}", node_id);
+            if super::outcome::has_duplex_provenance(outcome) {
+                results.push(PyOutcome::new(outcome.clone()).airr_record(
+                    py,
+                    refdata,
+                    &sequence_id,
+                )?);
+                continue;
+            }
             let rec = build_airr_record(outcome, refdata.inner(), &sequence_id);
             let dict = airr_record_to_pydict(py, &rec)?;
             results.push(dict);
@@ -377,6 +535,10 @@ fn synthesize_shm_event_record(sim: &Simulation) -> (EventRecord, u32) {
 /// Merge a per-node lineage `Outcome` with a corruption `Outcome` that was
 /// run *from* the lineage node's final simulation.
 ///
+/// Duplex nodes use their actual cumulative division history and a validated
+/// `Outcome::with_continuation` boundary. The net-SHM description below applies
+/// to the unchanged legacy path.
+///
 /// `base` is a lineage node `Outcome`: its `trace` is the founder
 /// recombination trace, its `events` is the synthesized SHM `EventRecord`,
 /// and its final simulation is post-SHM (`mutation_count` = net SHM).
@@ -393,7 +555,19 @@ fn synthesize_shm_event_record(sim: &Simulation) -> (EventRecord, u32) {
 /// counters (`n_quality_errors`, `n_pcr_errors`, `n_indels`, …) from the
 /// corruption events / trace.
 #[pyfunction]
-pub(crate) fn merge_lineage_corruption(base: &PyOutcome, corruption: &PyOutcome) -> PyOutcome {
+pub(crate) fn merge_lineage_corruption(
+    base: &PyOutcome,
+    corruption: &PyOutcome,
+) -> PyResult<PyOutcome> {
+    if super::outcome::has_duplex_provenance(&base.inner)
+        || super::outcome::has_duplex_provenance(&corruption.inner)
+    {
+        return base
+            .inner
+            .with_continuation(&corruption.inner)
+            .map(PyOutcome::new)
+            .map_err(pyo3::exceptions::PyValueError::new_err);
+    }
     let trace_offset = base.inner.trace.len();
     let mut trace = base.inner.trace.clone();
     trace.append_delta(corruption.inner.trace.clone());
@@ -405,12 +579,12 @@ pub(crate) fn merge_lineage_corruption(base: &PyOutcome, corruption: &PyOutcome)
         event
     }));
 
-    PyOutcome::new(Outcome {
+    Ok(PyOutcome::new(Outcome {
         revisions: corruption.inner.revisions.clone(),
         pass_names: corruption.inner.pass_names.clone(),
         trace,
         events,
-    })
+    }))
 }
 
 /// Grow + sample a clonal lineage family from `founder` (a full `Outcome`) using
@@ -444,11 +618,6 @@ pub(crate) fn simulate_family_outcomes(
 ) -> PyResult<PyFamilyOutcome> {
     use pyo3::exceptions::PyValueError;
 
-    if super::outcome::has_duplex_provenance(&founder.inner) {
-        return Err(PyValueError::new_err(
-            "duplex family simulation is not supported yet; use explicit run_from continuations and project_duplex_simulation",
-        ));
-    }
     if mutability.len() != 1024 {
         return Err(PyValueError::new_err(format!(
             "simulate_family_outcomes: mutability must have 1024 entries, got {}",
@@ -516,7 +685,7 @@ pub(crate) fn simulate_family_outcomes(
     let founder_trace = founder.inner.trace.clone();
 
     let kernel = S5FKernel::new(mutability, substitution);
-    let mutator = S5FMutationPass::new_rate(kernel, rate);
+    let mutator = S5FMutationPass::new_rate(kernel.clone(), rate);
     let params = BranchingParams {
         lambda_base,
         lambda_mut,
@@ -530,7 +699,12 @@ pub(crate) fn simulate_family_outcomes(
     let model: Option<AffinityModel> = if selection_strength == 0.0 && target_aa.is_none() {
         None
     } else {
-        let founder_aa = sim_to_aa(&founder_sim);
+        let founder_aa = if founder_sim.duplex_provenance.is_some() {
+            crate::lineage::affinity::duplex_sim_to_aa(&founder_sim, refdata.inner())
+                .map_err(PyValueError::new_err)?
+        } else {
+            sim_to_aa(&founder_sim)
+        };
         let target = match target_aa {
             Some(s) => s.into_bytes(),
             None => {
@@ -547,6 +721,48 @@ pub(crate) fn simulate_family_outcomes(
             &founder_aa,
         ))
     };
+
+    if founder_sim.duplex_provenance.is_some() {
+        let context = crate::lineage::branching::LineageMutationContext {
+            refdata: refdata.inner(),
+            contracts: respect.map(|c| c.inner()),
+            strict,
+        };
+        let (tree, _sims, edges) = crate::lineage::family::simulate_family_edges_with_context(
+            &founder_sim,
+            &params,
+            &mutator,
+            model.as_ref(),
+            &context,
+        )
+        .map_err(super::contract::pass_error_to_pyerr)?;
+        let evidence = DuplexFamilyReplay {
+            founder: founder.inner.clone(),
+            edges,
+            kernel,
+            rate,
+            contract_kinds: respect
+                .map(|c| c.inner().iter().map(|contract| contract.kind()).collect()),
+            strict,
+            reference_hash: crate::trace_file::refdata_content_hash(refdata.inner()),
+        };
+        let node_outcomes = tree
+            .nodes
+            .iter()
+            .map(|node| {
+                if node.observed {
+                    duplex_node_outcome(&tree, &evidence, node.id, refdata.inner(), false).map(Some)
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        return Ok(PyFamilyOutcome {
+            tree,
+            node_outcomes,
+            duplex_replay: Some(evidence),
+        });
+    }
 
     let (tree, sims) = if respect.is_some() || strict {
         let context = crate::lineage::branching::LineageMutationContext {
@@ -613,6 +829,7 @@ pub(crate) fn simulate_family_outcomes(
     Ok(PyFamilyOutcome {
         tree,
         node_outcomes,
+        duplex_replay: None,
     })
 }
 

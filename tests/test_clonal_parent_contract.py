@@ -48,9 +48,8 @@ Slice 2 (parent observability) lockstep pins:
 
 Slice 3 (parent-aware validator) lockstep pins:
 - ``pin_present_parent_aware_validator`` (was absence). Validator
-  shipped; deliberately NOT auto-invoked by
-  ``validate_records=True`` — that decision is pinned in the
-  flipped test too.
+  shipped; legacy runs keep it explicit. Duplex family integration invokes
+  it with ``validate_records=True`` to check inherited repair evidence.
 
 Closing condition for the audit-only phase: every test here
 passes on the current codebase. A failure in
@@ -556,7 +555,7 @@ def test_parent_trace_and_events_are_retained_once_at_fork() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pin_present_parent_aware_validator() -> None:
+def test_pin_present_parent_aware_validator(monkeypatch) -> None:
     """Slice 3 shipped: ``SimulationResult.validate_families_with_parents``
     is the parent-aware companion of the field-only
     ``validate_families``. Flipped from
@@ -567,10 +566,9 @@ def test_pin_present_parent_aware_validator() -> None:
     [`tests/test_validate_families_with_parents.py`](test_validate_families_with_parents.py);
     this pin is the audit-doc lockstep counterpart.
 
-    The validator is **not wired into ``validate_records=True``**
-    by Slice 3 — that gate stays at per-record + field-only
-    family. Pin that decision here too so a future contributor
-    who wires it surfaces the change deliberately."""
+    Legacy runs keep the explicit diagnostic behavior from Slice 3.
+    Duplex family integration adds the parent check only for duplex runs.
+    """
     assert hasattr(SimulationResult, "validate_families_with_parents"), (
         "SimulationResult.validate_families_with_parents regressed; "
         "Slice 3 backed out."
@@ -578,21 +576,14 @@ def test_pin_present_parent_aware_validator() -> None:
     # The field-only validator stays a sibling, not replaced.
     assert hasattr(SimulationResult, "validate_families")
 
-    # Not wired into validate_records=True: the `_compiled.py` clonal
-    # run_records body must reference the field-only family raiser,
-    # not a parent-aware one.
-    import inspect
-    from GenAIRR import _compiled
-    src = inspect.getsource(_compiled.CompiledClonalExperiment.run_records)
-    assert "_raise_on_family_validation_failure" in src, (
-        "Clonal run_records no longer raises on field-only family "
-        "validation failure; Slice 1 wiring regressed."
+    def fail_if_invoked(*args, **kwargs):
+        raise AssertionError("legacy run automatically invoked parent-aware validation")
+
+    monkeypatch.setattr(SimulationResult, "validate_families_with_parents", fail_if_invoked)
+    result = _make_clonal(n_clones=1, per_clone=1).run_records(
+        seed=0, validate_records=True,
     )
-    assert "validate_families_with_parents" not in src, (
-        "Clonal run_records now invokes validate_families_with_parents "
-        "automatically; Slice 3 deliberately kept this as an explicit "
-        "diagnostic — flip the pin if the wiring is intentional."
-    )
+    assert len(result) == 1
 
 
 # ──────────────────────────────────────────────────────────────────

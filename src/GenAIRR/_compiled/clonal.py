@@ -217,6 +217,7 @@ class CompiledClonalExperiment:
         # replay / lineage tooling. Descendant outcomes merge its
         # provenance once; persistent simulation storage remains shared.
         parents: List["_engine.Outcome"] = []
+        duplex = "duplex.recombine" in self._pre.pass_names()
         for clone_idx in range(self._fork.n_clones):
             clone_seed = int(seed) + clone_idx * 1_000_000
             parent = self._pre.run(seed=clone_seed, strict=strict)
@@ -259,6 +260,10 @@ class CompiledClonalExperiment:
 
             _raise_on_validation_failure(result.validate_records(self._refdata))
             _raise_on_family_validation_failure(result.validate_families())
+            if duplex:
+                _raise_on_family_validation_failure(
+                    result.validate_families_with_parents(self._refdata)
+                )
         return result
 
     def __repr__(self) -> str:

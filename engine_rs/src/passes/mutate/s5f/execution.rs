@@ -73,6 +73,52 @@ impl S5FMutationPass {
             let base_choice_address = address::ChoiceAddress::MutateS5fBase(i);
             let base_address = base_choice_address.to_string();
 
+            // Fresh execution records no site/base pair for a deterministic
+            // empty profile, a skipped zero-row site or permissive contract
+            // exhaustion. Reconstruct only such naturally reachable no-ops;
+            // absence of an ordinary positive supported pair remains an error.
+            let missing_pair = tx.replay_cursor().is_some_and(|cursor| {
+                cursor.peek_address() != Some(site_choice_address.to_string().as_str())
+            });
+            if missing_pair {
+                let (sim_ref, ctx_ref) = tx.split_borrows();
+                let profile = self.build_profile(&sim_ref.pool, sim_ref, ctx_ref.refdata);
+                let total: f64 = profile.iter().map(|(_, m)| m).sum();
+                if profile.is_empty() || total <= 0.0 || !total.is_finite() {
+                    break;
+                }
+                if let Some(contracts) = ctx_ref.contracts {
+                    if !strict {
+                        let candidates = self
+                            .event_candidates(sim_ref, &profile, i, count)
+                            .map_err(|reason| {
+                                PassError::constraint_sampling(self.name(), &base_address, reason)
+                            })?;
+                        let any = candidates.iter().any(|candidate| {
+                            contracts
+                                .admissible_bases_at(
+                                    sim_ref,
+                                    ctx_ref.refdata,
+                                    NucHandle::new(candidate.event.site),
+                                )
+                                .admits(candidate.event.base)
+                        });
+                        if !any {
+                            continue;
+                        }
+                    }
+                } else {
+                    let candidates =
+                        self.event_candidates(sim_ref, &profile, i, count)
+                            .map_err(|reason| {
+                                PassError::constraint_sampling(self.name(), &base_address, reason)
+                            })?;
+                    if candidates.is_empty() {
+                        continue;
+                    }
+                }
+            }
+
             // ── Trace-injected replay (Tier 2, S5F) ──────────────
             //
             // Replay consumes the recorded `(site, base)` instead
@@ -98,13 +144,44 @@ impl S5FMutationPass {
             // produce it, so silently skipping would erase the
             // mismatch.
             let consumed_pair = if tx.replay_cursor().is_some() {
-                let cursor = tx
+                let site = tx
                     .replay_cursor()
-                    .expect("cursor presence checked above");
-                let site = cursor
+                    .expect("cursor presence checked above")
                     .expect_int(site_choice_address)
                     .map_err(|reason| PassError::replay(self.name(), reason))?;
-                let base = cursor
+                let no_base = tx
+                    .replay_cursor()
+                    .expect("cursor presence checked above")
+                    .peek_address()
+                    != Some(base_choice_address.to_string().as_str());
+                if no_base && site >= 0 {
+                    let (sim_ref, ctx_ref) = tx.split_borrows();
+                    if sim_ref.duplex_provenance.is_some() && ctx_ref.contracts.is_none() {
+                        let profile = self.build_profile(&sim_ref.pool, sim_ref, ctx_ref.refdata);
+                        let total: f64 = profile.iter().map(|(_, mu)| mu).sum();
+                        let positive_site = total.is_finite()
+                            && total > 0.0
+                            && profile
+                                .iter()
+                                .any(|(p, mu)| i64::from(*p) == site && *mu > 0.0);
+                        let empty_row = positive_site && u32::try_from(site)
+                            .ok()
+                            .and_then(|p| Self::context_at(&sim_ref.pool, p))
+                            .is_some_and(|context| {
+                                Self::positive_row_candidates(self.kernel.substitution_row(context))
+                                    .is_empty()
+                            });
+                        if positive_site && empty_row {
+                            ctx_ref
+                                .trace
+                                .record_choice(site_choice_address, ChoiceValue::Int(site));
+                            continue;
+                        }
+                    }
+                }
+                let base = tx
+                    .replay_cursor()
+                    .expect("cursor presence checked above")
                     .expect_base(base_choice_address)
                     .map_err(|reason| PassError::replay(self.name(), reason))?;
                 Some((site, base))
@@ -160,9 +237,7 @@ impl S5FMutationPass {
                 // configuration; reject rather than force-apply.
                 // Mirrors the build_profile filter that zeroes
                 // those sites in fresh-RNG runs.
-                if !self.segment_rates.is_default()
-                    || !self.v_subregion_rates.is_default()
-                {
+                if !self.segment_rates.is_default() || !self.v_subregion_rates.is_default() {
                     let (sim_ref, ctx_ref) = tx.split_borrows();
                     let site_rate =
                         crate::passes::mutation_transaction::substitution::combined_site_factor(
@@ -333,7 +408,18 @@ impl S5FMutationPass {
                     PassError::constraint_sampling(self.name(), &base_address, reason)
                 })? {
                     Some(base) => base,
-                    None => continue,
+                    None => {
+                        if tx.peek().duplex_provenance.is_some() {
+                            // Preserve the selected positive site even though
+                            // its zero destination row produces no base edit.
+                            // Legacy traces retain their existing wire shape.
+                            tx.trace().record_choice(
+                                site_choice_address,
+                                ChoiceValue::Int(chosen_pos as i64),
+                            );
+                        }
+                        continue;
+                    }
                 };
 
             tx.trace()

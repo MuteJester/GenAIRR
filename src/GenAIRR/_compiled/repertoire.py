@@ -35,7 +35,9 @@ class CompiledRepertoireExperiment:
     When there are no post-fork passes every read of a clone is
     identical, so the clone collapses to a single record whose
     ``duplicate_count`` equals the drawn size (the no-corruption
-    shortcut). Every record carries an integer ``clone_id``.
+    shortcut). Every record carries an integer ``clone_id``. Duplex reads
+    collapse only when all generated truth agrees, so equal sequence bytes
+    cannot hide different observation ancestry or error histories.
     """
 
     __slots__ = (
@@ -80,6 +82,7 @@ class CompiledRepertoireExperiment:
         whose record dicts carry ``clone_id`` and ``duplicate_count``.
         """
         import GenAIRR._engine as _engine
+        import json
 
         from .._airr_record import outcome_to_airr_record
         from ..result import SimulationResult, _inject_truth_columns
@@ -97,9 +100,14 @@ class CompiledRepertoireExperiment:
         )
         records: List[Dict[str, Any]] = []
         outcomes: List["_engine.Outcome"] = []
+        duplex = "duplex.recombine" in self._pre.pass_names()
+        parents = [] if duplex else None
         for clone_idx, size in enumerate(sizes):
             clone_seed = int(seed) + clone_idx * 1_000_000
             founder = self._pre.run(seed=clone_seed, strict=strict)
+            parent_id = len(parents) if parents is not None else None
+            if parents is not None:
+                parents.append(founder)
             founder_sim = founder.final_simulation()
             if self._post is None:
                 # No post-fork passes: all ``size`` copies are
@@ -110,6 +118,8 @@ class CompiledRepertoireExperiment:
                     sequence_id=f"clone{clone_idx}_read0",
                 )
                 rec["clone_id"] = clone_idx
+                if duplex:
+                    rec["parent_id"] = parent_id
                 rec["duplicate_count"] = int(size)
                 if expose_provenance:
                     _inject_truth_columns(founder, self._refdata, rec)
@@ -129,19 +139,28 @@ class CompiledRepertoireExperiment:
                     self._refdata,
                     sequence_id=f"clone{clone_idx}_read{read_idx}",
                 )
-                key = rec["sequence"]
+                key = (
+                    json.dumps(
+                        {field: value for field, value in rec.items()
+                         if field != "sequence_id"},
+                        sort_keys=True, separators=(",", ":"), allow_nan=False,
+                    )
+                    if duplex else rec["sequence"]
+                )
                 if key in by_seq:
                     by_seq[key][0] += 1
                 else:
                     by_seq[key] = [1, desc, rec]
             for count, desc, rec in by_seq.values():
                 rec["clone_id"] = clone_idx
+                if duplex:
+                    rec["parent_id"] = parent_id
                 rec["duplicate_count"] = count
                 if expose_provenance:
                     _inject_truth_columns(desc, self._refdata, rec)
                 records.append(rec)
                 outcomes.append(desc)
-        result = SimulationResult(records, outcomes=outcomes)
+        result = SimulationResult(records, outcomes=outcomes, parents=parents)
         if validate_records:
             from .._validation import (
                 _raise_on_family_validation_failure,
@@ -150,6 +169,10 @@ class CompiledRepertoireExperiment:
 
             _raise_on_validation_failure(result.validate_records(self._refdata))
             _raise_on_family_validation_failure(result.validate_families())
+            if duplex:
+                _raise_on_family_validation_failure(
+                    result.validate_families_with_parents(self._refdata)
+                )
         return result
 
     def __repr__(self) -> str:

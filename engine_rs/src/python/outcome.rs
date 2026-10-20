@@ -59,17 +59,6 @@ pub(crate) fn has_duplex_provenance(outcome: &Outcome) -> bool {
         .any(|simulation| simulation.duplex_provenance.is_some())
 }
 
-/// Guard legacy-only family/lineage paths. Ordinary Outcome records dispatch
-/// to the nullable duplex projector without entering the legacy Rust schema.
-pub(crate) fn require_legacy_airr_outcome(outcome: &Outcome) -> PyResult<()> {
-    if has_duplex_provenance(outcome) {
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "legacy AIRR record/validation does not support duplex provenance; use GenAIRR.experimental.project_duplex_simulation(outcome.final_simulation(), refdata)",
-        ));
-    }
-    Ok(())
-}
-
 fn duplex_record(
     outcome: &Outcome,
     refdata: &crate::refdata::RefDataConfig,
@@ -186,7 +175,7 @@ impl PyOutcome {
     /// Duplex-backed outcomes retain unknown values as `None` and include
     /// complete founder/observation provenance under `duplex_repair`.
     #[pyo3(signature = (refdata, *, sequence_id = ""))]
-    fn airr_record<'py>(
+    pub(crate) fn airr_record<'py>(
         &self,
         py: Python<'py>,
         refdata: &PyRefDataConfig,

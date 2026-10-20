@@ -57,7 +57,7 @@ def test_duplex_contamination_is_unsupported_even_when_configured_never_to_fire(
 
 
 @pytest.mark.parametrize("family_outcome", [False, True])
-def test_duplex_family_entrypoints_fail_before_mutation(family_outcome):
+def test_duplex_family_entrypoints_require_bound_reference_data(family_outcome):
     refdata, seed = fixture()
     args = dict(
         mutability=[1.0] * 1024, substitution=[0.25] * 4096, rate=0.0,
@@ -68,9 +68,15 @@ def test_duplex_family_entrypoints_fail_before_mutation(family_outcome):
         compiled = ge.PassPlan().compile(refdata=refdata)
         args["founder"] = compiled.run_from(seed, 7)
         args["refdata"] = refdata
-        method = ge.simulate_family_outcomes
+        family = ge.simulate_family_outcomes(**args)
+        for outcome in family.observed_outcomes():
+            assert outcome.validate_record(refdata) == []
+            assert outcome.airr_record(refdata)["p_v_3_length"] is None
+        root = family.replay_node(0, refdata)
+        assert root.airr_record(refdata)["sequence"] == "AAATGTCCCTTTAAA"
     else:
         args["founder"] = seed
-        method = ge.simulate_lineage
-    with pytest.raises(ValueError, match="duplex family simulation is not supported"):
-        method(**args)
+        with pytest.raises(ValueError, match="duplex simulate_lineage requires refdata"):
+            ge.simulate_lineage(**args)
+        tree = ge.simulate_lineage(**args, refdata=refdata)
+        tree.validate()

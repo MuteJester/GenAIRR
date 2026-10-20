@@ -119,6 +119,10 @@ class CompiledLineageExperiment:
         # record from the engine state that produced it.
         outcomes: List["_engine.Outcome"] = []
         lineage_trees = []
+        duplex = "duplex.recombine" in self._pre.pass_names()
+        parents = [] if duplex else None
+        families = [] if duplex else None
+        lineage_record_origins = [] if duplex else None
 
         # Bound on founder-survival retries. Sampling draws from the LIVING
         # final-generation population, so an extinct founder (drew 0 offspring)
@@ -133,13 +137,17 @@ class CompiledLineageExperiment:
 
         for clone_idx in range(step.n_clones):
             clone_seed = int(seed) + clone_idx * 1_000_000
+            # Repair is a once-per-founder choice. Conditioning duplex growth
+            # on survival must not reweight the source history by redrawing it.
+            founder = self._pre.run(seed=clone_seed, strict=strict) if duplex else None
             fam = None
             tree = None
             for attempt in range(_MAX_SURVIVAL_ATTEMPTS):
                 family_seed = clone_seed + attempt * _SUBSEED_STRIDE
                 # _pre.run() returns a single Outcome (not a list) — mirror
                 # CompiledClonalExperiment which calls self._pre.run(seed=...).
-                founder = self._pre.run(seed=family_seed, strict=strict)
+                if not duplex:
+                    founder = self._pre.run(seed=family_seed, strict=strict)
                 candidate = _eng.simulate_family_outcomes(
                     founder,
                     self._refdata,
@@ -182,14 +190,18 @@ class CompiledLineageExperiment:
                 continue
 
             lineage_trees.append(tree)
+            parent_id = len(parents) if parents is not None else None
+            if parents is not None:
+                parents.append(founder)
+                families.append(fam)
             if len(fam.observed_outcomes()) == 0:
                 # allow_extinction=True and this family is extinct: keep its
                 # (empty) tree for export parity but emit no records.
                 continue
 
             if self._post is None:
-                # Pristine-read path: project each observed node's
-                # synthesized SHM Outcome straight to an AIRR record.
+                # Pristine-read path: project each observed node's native
+                # SHM Outcome straight to an AIRR record.
                 # ``observed_outcomes()`` is index-aligned with both the
                 # observed-node list and ``airr_records()``.
                 observed_nodes = [n for n in tree.nodes() if n.observed]
@@ -199,6 +211,10 @@ class CompiledLineageExperiment:
                     observed_nodes, recs, observed_outcomes
                 ):
                     self._stamp_lineage_metadata(rec, clone_idx, node)
+                    if duplex:
+                        rec["parent_id"] = parent_id
+                        rec["lineage_mutations_from_parent"] = node.mutations_from_parent
+                        lineage_record_origins.append((parent_id, clone_idx, node.id))
                     if expose_provenance and node_outcome is not None:
                         _inject_truth_columns(node_outcome, self._refdata, rec)
                     records.append(rec)
@@ -228,13 +244,19 @@ class CompiledLineageExperiment:
                     sequence_id=f"clone{clone_idx}_node{node.id}",
                 )
                 self._stamp_lineage_metadata(rec, clone_idx, node)
+                if duplex:
+                    rec["parent_id"] = parent_id
+                    rec["lineage_mutations_from_parent"] = node.mutations_from_parent
+                    lineage_record_origins.append((parent_id, clone_idx, node.id))
                 if expose_provenance:
                     _inject_truth_columns(merged, self._refdata, rec)
                 records.append(rec)
                 outcomes.append(merged)
 
         result = SimulationResultWithLineages(
-            records, outcomes=outcomes, lineage_trees=lineage_trees
+            records, outcomes=outcomes, parents=parents,
+            lineage_trees=lineage_trees, families=families,
+            lineage_record_origins=lineage_record_origins,
         )
         if validate_records:
             from .._validation import (
@@ -244,6 +266,10 @@ class CompiledLineageExperiment:
 
             _raise_on_validation_failure(result.validate_records(self._refdata))
             _raise_on_family_validation_failure(result.validate_families())
+            if duplex:
+                _raise_on_family_validation_failure(
+                    result.validate_families_with_parents(self._refdata)
+                )
         return result
 
     @staticmethod
