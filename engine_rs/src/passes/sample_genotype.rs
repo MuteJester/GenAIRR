@@ -89,6 +89,103 @@ impl SampleGenotypePass {
         }
     }
 
+    /// The finite authored law must not silently erase positive source mass.
+    /// This stricter numeric boundary is opt-in at duplex compile time.
+    pub(crate) fn validate_finite_law(&self) -> Result<u64, String> {
+        fn nonnegative(weights: impl IntoIterator<Item = f64>) -> Result<(), String> {
+            if weights.into_iter().any(|w| !w.is_finite() || w < 0.0) {
+                return Err("finite duplex genotype weights must be finite and nonnegative".into());
+            }
+            Ok(())
+        }
+        fn cumulative(weights: impl IntoIterator<Item = f64>) -> Result<(), String> {
+            let mut total = 0.0;
+            for weight in weights.into_iter().filter(|w| *w > 0.0) {
+                let next = total + weight;
+                if !next.is_finite() || next <= total {
+                    return Err(
+                        "finite duplex genotype numerical support loses positive mass".into(),
+                    );
+                }
+                total = next;
+            }
+            Ok(())
+        }
+        let chromosome_weights = self.genotype.chromosome_weights();
+        let mut checks = chromosome_weights.len() as u64;
+        nonnegative(chromosome_weights.into_iter().map(f64::from))?;
+        cumulative(chromosome_weights.into_iter().map(f64::from))?;
+        for segment in self.segments() {
+            checks = checks.saturating_add(self.usage(segment).len() as u64);
+            nonnegative(self.usage(segment).iter().map(|(_, w)| *w))?;
+            for chromosome in 0..2 {
+                let hap = self.genotype.haplotype(chromosome);
+                let mut gene_weights = Vec::new();
+                for gene in hap.present_genes(segment) {
+                    let copies = hap.slot(segment, gene);
+                    checks = checks.saturating_add(copies.len() as u64);
+                    nonnegative(copies.iter().map(|cp| f64::from(cp.weight)))?;
+                    let usage = self.usage_of(segment, gene);
+                    if chromosome_weights[chromosome] <= 0.0 || usage <= 0.0 {
+                        continue;
+                    }
+                    let masses: Vec<_> = copies
+                        .iter()
+                        .filter(|cp| cp.copies > 0 && cp.weight > 0.0)
+                        .map(|cp| f64::from(cp.weight) * f64::from(cp.copies))
+                        .collect();
+                    cumulative(masses.iter().copied())?;
+                    // Filtering may retain only this copy. Its natural gene
+                    // mass must still be representable in that local support.
+                    if masses.iter().any(|mass| {
+                        let value = usage * mass;
+                        !value.is_finite() || value <= 0.0
+                    }) {
+                        return Err(
+                            "finite duplex genotype numerical support loses positive copy mass"
+                                .into(),
+                        );
+                    }
+                    let gene_weight = usage * masses.iter().sum::<f64>();
+                    if !gene_weight.is_finite() {
+                        return Err("finite duplex genotype numerical gene mass overflow".into());
+                    }
+                    gene_weights.push(gene_weight);
+                }
+                checks = checks.saturating_add(gene_weights.len() as u64);
+                cumulative(gene_weights)?;
+            }
+        }
+        Ok(checks)
+    }
+
+    /// Filtering changes CDF rounding as well as its mathematical support.
+    /// Recheck the exact current chromosome's local gene/copy distributions
+    /// before a C draw or replay; ordinary genotype sampling is unchanged.
+    fn validate_finite_segment_law(
+        &self,
+        c: usize,
+        seg: Segment,
+        sim: &Simulation,
+        ctx: &PassContext,
+    ) -> Result<(), PassError> {
+        let genes = self.gene_candidates(seg, c, sim, ctx, true);
+        for &(gene, _) in &genes {
+            let candidates = self.slot_candidates(seg, gene, c, sim, ctx, true);
+            let masses: Vec<_> = candidates
+                .iter()
+                .map(|(_, mass)| *mass)
+                .filter(|mass| *mass > 0.0)
+                .collect();
+            super::sample_allele::validate_finite_weights(&masses)
+                .map_err(|reason| PassError::invalid_plan_state(self.name(), reason))?;
+        }
+        super::sample_allele::validate_finite_weights(
+            &genes.iter().map(|(_, mass)| *mass).collect::<Vec<_>>(),
+        )
+        .map_err(|reason| PassError::invalid_plan_state(self.name(), reason))
+    }
+
     fn vseg(seg: Segment) -> address::VdjSegment {
         seg.try_into().expect("V/D/J segment")
     }
@@ -103,17 +200,18 @@ impl SampleGenotypePass {
     ) -> bool {
         let choice = ChoiceValue::AlleleId(id.index());
         let vseg = Self::vseg(seg);
-        let contract_ok = ctx.contracts.map_or(true, |k| {
-            k.admits_typed(
-                sim,
-                ctx.refdata,
-                ChoiceContext::none().with_address(ChoiceAddress::SampleAllele(vseg)),
-                &choice,
-            )
-            .is_ok()
-        });
+        let contract_ok = ctx.feasibility.is_some_and(|f| f.has_duplex())
+            || ctx.contracts.map_or(true, |k| {
+                k.admits_typed(
+                    sim,
+                    ctx.refdata,
+                    ChoiceContext::none().with_address(ChoiceAddress::SampleAllele(vseg)),
+                    &choice,
+                )
+                .is_ok()
+            });
         let feasible_ok = ctx.feasibility.map_or(true, |f| {
-            if f.has_p_productive() {
+            if f.has_p_productive() || f.has_duplex() {
                 // The compiled marginal support combines both chromosomes.
                 // Productive completion must instead use future alleles that
                 // can actually be sampled on the chromosome drawn here.
@@ -308,6 +406,44 @@ impl SampleGenotypePass {
             .collect()
     }
 
+    /// C conditions gene eligibility and within-gene copy choice separately.
+    /// A surviving gene keeps its complete natural dosage; infeasible copies
+    /// must not multiply that upstream gene weight by a success fraction.
+    /// The legacy sampler retains its historical filtered-dosage behavior.
+    fn gene_candidates(
+        &self,
+        seg: Segment,
+        c: usize,
+        sim: &Simulation,
+        ctx: &PassContext,
+        filter: bool,
+    ) -> Vec<(GeneId, f64)> {
+        let duplex = ctx.feasibility.is_some_and(|f| f.has_duplex());
+        let hap = self.genotype.haplotype(c);
+        let mut genes = Vec::new();
+        for gene in hap.present_genes(seg) {
+            let candidates = self.slot_candidates(seg, gene, c, sim, ctx, filter);
+            if candidates.is_empty() || (duplex && !candidates.iter().any(|(_, mass)| *mass > 0.0))
+            {
+                continue;
+            }
+            let dosage: f64 = if duplex {
+                hap.slot(seg, gene)
+                    .iter()
+                    .filter(|copy| copy.copies > 0 && copy.weight > 0.0)
+                    .map(|copy| f64::from(copy.weight) * f64::from(copy.copies))
+                    .sum()
+            } else {
+                candidates.iter().map(|(_, mass)| *mass).sum()
+            };
+            let mass = self.usage_of(seg, gene) * dosage;
+            if !duplex || mass > 0.0 {
+                genes.push((gene, mass));
+            }
+        }
+        genes
+    }
+
     /// Live (fresh-RNG) sampling of one segment within chromosome `c`.
     /// Records in canonical order: `sample_gene` → `sample_allele_in_slot`
     /// (only when the gene slot has >1 raw copy) → `sample_allele`.
@@ -321,6 +457,9 @@ impl SampleGenotypePass {
     ) -> Result<Simulation, PassError> {
         let hap = self.genotype.haplotype(c);
         let vseg = Self::vseg(seg);
+        if ctx.feasibility.is_some_and(|f| f.has_duplex()) {
+            self.validate_finite_segment_law(c, seg, &sim, ctx)?;
+        }
         // Filter-then-fallback, mirroring SampleAllelePass: prefer
         // feasibility-admissible candidates; only when NONE are admissible
         // do we fall back to the unfiltered carried set (permissive), or
@@ -337,18 +476,7 @@ impl SampleGenotypePass {
             ));
         }
         let filter = strict || feasible_exists;
-        // Genes present on this chromosome that have >=1 candidate copy,
-        // weighted by gene usage * total copy dosage (so a duplicated
-        // gene recombines more often).
-        let mut genes: Vec<(GeneId, f64)> = Vec::new();
-        for g in hap.present_genes(seg) {
-            let cands = self.slot_candidates(seg, g, c, &sim, ctx, filter);
-            if cands.is_empty() {
-                continue;
-            }
-            let dosage: f64 = cands.iter().map(|(_, m)| *m).sum();
-            genes.push((g, self.usage_of(seg, g) * dosage));
-        }
+        let genes = self.gene_candidates(seg, c, &sim, ctx, filter);
         if genes.is_empty() {
             return Err(PassError::constraint_sampling(
                 self.name(),
@@ -357,7 +485,10 @@ impl SampleGenotypePass {
             ));
         }
         let gene = Self::weighted_pick(&genes, ctx.rng);
-        let cands = self.slot_candidates(seg, gene, c, &sim, ctx, filter);
+        let mut cands = self.slot_candidates(seg, gene, c, &sim, ctx, filter);
+        if ctx.feasibility.is_some_and(|f| f.has_duplex()) {
+            cands.retain(|(_, mass)| *mass > 0.0);
+        }
         let id = Self::weighted_pick(&cands, ctx.rng);
 
         // "Multi-copy slot" is decided by the RAW slot length (genotype
@@ -394,6 +525,9 @@ impl SampleGenotypePass {
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         let vseg = Self::vseg(seg);
+        if ctx.feasibility.is_some_and(|f| f.has_duplex()) {
+            self.validate_finite_segment_law(c, seg, &sim, ctx)?;
+        }
         let gene_idx = ctx
             .replay_cursor
             .as_deref_mut()
@@ -454,7 +588,22 @@ impl SampleGenotypePass {
             }
         }
         let id = AlleleId::new(allele);
-        if ctx.feasibility.is_some_and(|f| f.has_p_productive())
+        if ctx.feasibility.is_some_and(|f| f.has_duplex())
+            && (self.usage_of(seg, gene) <= 0.0
+                || !slot
+                    .iter()
+                    .any(|cp| cp.allele == id && cp.copies > 0 && cp.weight > 0.0))
+        {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                address::sample_allele_vdj(seg),
+                allele as i64,
+                "genotype_choice_has_zero_natural_mass",
+            ));
+        }
+        if ctx
+            .feasibility
+            .is_some_and(|f| f.has_p_productive() || f.has_duplex())
             && !self.allele_feasible(c, seg, id, &sim, ctx)
         {
             return Err(PassError::constraint_sampling(
@@ -491,6 +640,7 @@ impl SampleGenotypePass {
         ctx: &mut PassContext,
         strict: bool,
     ) -> Result<Simulation, PassError> {
+        let strict = strict || ctx.feasibility.is_some_and(|f| f.has_duplex());
         let replaying = ctx.replay_cursor.is_some();
         let c = if replaying {
             let recorded = ctx
@@ -500,6 +650,15 @@ impl SampleGenotypePass {
                 .expect_haplotype(ChoiceAddress::SampleHaplotype)
                 .map_err(|r| PassError::replay(self.name(), r))?;
             let viable = self.viable_set(sim, ctx, strict);
+            if ctx.feasibility.is_some_and(|f| f.has_duplex()) {
+                super::sample_allele::validate_finite_weights(
+                    &viable
+                        .iter()
+                        .map(|&c| f64::from(self.genotype.chromosome_weights()[c]))
+                        .collect::<Vec<_>>(),
+                )
+                .map_err(|reason| PassError::invalid_plan_state(self.name(), reason))?;
+            }
             if !viable.contains(&(recorded as usize)) {
                 return Err(self.infeasible_error());
             }
@@ -512,6 +671,15 @@ impl SampleGenotypePass {
             let viable = self.viable_set(sim, ctx, strict);
             if viable.is_empty() {
                 return Err(self.infeasible_error());
+            }
+            if ctx.feasibility.is_some_and(|f| f.has_duplex()) {
+                super::sample_allele::validate_finite_weights(
+                    &viable
+                        .iter()
+                        .map(|&c| f64::from(self.genotype.chromosome_weights()[c]))
+                        .collect::<Vec<_>>(),
+                )
+                .map_err(|reason| PassError::invalid_plan_state(self.name(), reason))?;
             }
             let c = self.draw_haplotype(&viable, ctx.rng);
             ctx.trace.record_choice(
@@ -572,6 +740,35 @@ impl Pass for SampleGenotypePass {
         s
     }
 
+    fn sampling_law_signature(&self) -> String {
+        let mut signature = self.parameter_signature();
+        for segment in self.segments() {
+            signature.push_str(&format!(
+                "|usage.{segment:?}={:?}",
+                self.usage(segment)
+                    .iter()
+                    .map(|(id, weight)| (id.index(), weight.to_bits()))
+                    .collect::<Vec<_>>()
+            ));
+            for chromosome in 0..2 {
+                let hap = self.genotype.haplotype(chromosome);
+                for gene in hap.present_genes(segment) {
+                    // The legacy identity sorts copies, but CDF traversal uses
+                    // their authored order. Bind it for seed rerun as well.
+                    signature.push_str(&format!(
+                        "|cdf.h{chromosome}.{segment:?}.g{}={:?}",
+                        gene.index(),
+                        hap.slot(segment, gene)
+                            .iter()
+                            .map(|cp| (cp.allele.index(), cp.copies, cp.weight.to_bits()))
+                            .collect::<Vec<_>>()
+                    ));
+                }
+            }
+        }
+        signature
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         // Permissive: viability is presence-based (feasibility advisory),
         // so a genotype with >=1 complete haplotype (guaranteed by the
@@ -607,13 +804,34 @@ impl Pass for SampleGenotypePass {
     }
 
     fn compile_facts(&self) -> Vec<PassCompileFact> {
-        self.segments()
+        let mut facts: Vec<_> = self
+            .segments()
             .into_iter()
             .map(|seg| PassCompileFact::AlleleSampleSupport {
                 segment: seg,
                 support: AlleleIdSupport::from_weighted_pairs(Some(self.union_support(seg))),
             })
-            .collect()
+            .collect();
+        if self.d_required {
+            let groups = (0..2)
+                .filter(|&c| self.genotype.chromosome_weights()[c] > 0.0)
+                .filter_map(|c| {
+                    let support = self.positive_allele_support(c);
+                    let group = std::array::from_fn(|i| {
+                        support
+                            .iter()
+                            .find(|(segment, _)| {
+                                *segment == [Segment::V, Segment::D, Segment::J][i]
+                            })
+                            .map(|(_, ids)| ids.clone())
+                            .unwrap_or_default()
+                    });
+                    group.iter().all(|ids| !ids.is_empty()).then_some(group)
+                })
+                .collect();
+            facts.push(PassCompileFact::JointAlleleSupport { groups });
+        }
+        facts
     }
 }
 

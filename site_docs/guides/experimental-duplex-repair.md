@@ -3,8 +3,8 @@
 `GenAIRR.experimental.DuplexRepair` is an explicitly authored local experiment
 for two complete coding-end hairpins. The Rust kernel represents both strands
 and preserves their separate origins. `CoupledDuplexRepair` extends this to two
-successive joins sharing one D molecule. These experimental APIs do not yet feed
-the standard AIRR experiment pipeline.
+successive joins sharing one D molecule. A finite reference-bound authored
+model can feed the normal `Experiment` pipeline as described below.
 
 ```python
 from GenAIRR.experimental import DuplexRepair
@@ -250,9 +250,9 @@ observation = project_duplex_simulation(outcome.final_simulation(), reference)
 export_duplex_projection(observation, "duplex-observation.json")
 ```
 
-This is an experimental native continuation API. The normal `Experiment` DSL,
-finite-history sampling and family simulation integration remain later steps.
-It adds no external tools or dependencies.
+This is an experimental native continuation API. The finite-history
+`Experiment` integration below provides ordinary generation and replay;
+family simulation remains a later step. It adds no external tools or dependencies.
 
 Supported continuations are the existing uniform and S5F mutation, PCR and
 quality substitution, N masking, structural indel, terminal loss and read
@@ -298,9 +298,114 @@ landmarks, query links and their coordinates remain coding oriented. The
 projector verifies the immutable repair snapshot, full edit and query replay,
 source assignments, coverage and structural partition before emitting metadata.
 Unknown legacy P lengths remain missing. Use this nullable projector and its
-JSON/TSV exporter: the legacy AIRR builder/validator, family exporters and durable
-trace-file route reject duplex states until their contracts can preserve this
-provenance. The stored repair script can still be replayed independently.
+JSON/TSV exporter, or normal nullable `Outcome`/`SimulationResult` record
+exports. Family exporters and durable traces from externally supplied seeds
+still reject these combinations. Source-backed experiment traces below bind
+the generating model and support ordinary replay. The stored repair script
+can also be replayed independently.
+
+### Finite authored histories in Experiment
+
+`DuplexRepairModel` pins a finite set of named histories to exact reference
+content and evidence. `Experiment.recombine(duplex_repair=model)` checks all
+naturally selectable positive histories before any draw, including source
+coverage, physical validity and compatibility with the native execution layout.
+It raises an error for an unsupported active row and never retries another
+history to hide that limitation. Explicit allele restrictions narrow the
+requested source contexts; genotype eligibility remains chromosome linked.
+
+```python
+from GenAIRR import Experiment, RefDataConfig
+from GenAIRR.experimental import DuplexHistory, DuplexRepairModel
+
+refs = RefDataConfig.vdj()
+refs.add_v_allele("V*01", "V", b"AAATGT", anchor=3)
+refs.add_d_allele("D*01", "D", b"CCC")
+refs.add_j_allele("J*01", "J", b"TTTAAA", anchor=0)
+
+blunt_vd = blunt("vd", 6)
+restored_vd = (
+    DuplexJoin("vd").open("left", offset=0).open("right", offset=0)
+    .resect("left", "top", count=1).synapse(right_start=6)
+    .fill("top").ligate()
+)
+first = CoupledDuplexRepair("AAATGT", "CCC", "TTTAAA").join(blunt_vd).join(blunt("dj", 3))
+second = CoupledDuplexRepair("AAATGT", "CCC", "TTTAAA").join(restored_vd).join(blunt("dj", 3))
+model = DuplexRepairModel.bind(
+    refs,
+    [DuplexHistory("blunt", first, "V*01", "D*01", "J*01", weight=1),
+     DuplexHistory("restored", second, "V*01", "D*01", "J*01", weight=3)],
+    reference_ends_are_coding_ends=True,
+)
+compiled = (
+    Experiment.on(refs).recombine(duplex_repair=model)
+    .mutate(model="uniform", count=2).end_loss_3prime(length=1)
+    .productive_only().compile()
+)
+result = compiled.run_records(n=5, seed=42, strict=True, validate_records=True)
+result.to_tsv("duplex-experiment.tsv")
+outcome = compiled.run(seed=42, strict=True)[0]
+trace = compiled.simulator.trace_file_from(outcome, 42)
+replayed = compiled.simulator.replay_from_trace_file(trace, strict=True)
+assert outcome.airr_record(refs, sequence_id="same") == replayed.airr_record(refs, sequence_id="same")
+```
+
+These short references are geometry/annotation controls, so their supplied
+coding boundaries are explicitly asserted. The weights describe a 1:3 choice
+between the two authored histories; they are not measured repair frequencies.
+Their final DNA is identical, but the histories and physical ancestry remain
+distinct. Models serialize with `to_dict`/`to_json` and reconstruct with
+`DuplexRepairModel.from_dict`; row order and unique IDs are preserved.
+
+The named law is `finite_authored_history_local_conditioning_v1`. Histories are
+weighted within the selected V/D/J/orientation context. Under
+`productive_only`, only definitely productive rows remain eligible. Earlier
+allele/gene/chromosome/orientation choices retain their natural relative weights
+among feasible continuations; repair success fractions never multiply those
+weights. This is sequential local conditioning, rather than global conditioning
+of the entire joint law. Downstream edits use the same duplex productivity
+assessment, and every successful productive emission remains `True`.
+
+In a phased genotype, each eligible gene keeps its natural usage times total
+positive carried-copy dosage. The later copy draw is conditioned within that
+gene. A failed copy therefore cannot reduce an otherwise eligible gene's
+upstream weight.
+
+Use `.invert_d(prob=...)` to select D orientation; provide positive history
+coverage for every orientation with nonzero natural probability. Zero-weight
+rows are disabled and cannot supply required context coverage. An all-zero
+active context is invalid. Missing context rows raise a compilation error.
+
+The authored model owns both junctions. Explicit legacy NP-length arguments,
+`.trim(...)` (including `enabled=False`), and original-end processing conflict
+with this mode. Default cartridge trim/P/NP assembly is bypassed; allele-usage
+weights remain upstream. VJ, family expansion, receptor revision, contamination,
+paired-end read windows and arbitrary custom contracts require separate
+adapters. They are rejected before generation, including zero-probability
+configurations of unsupported passes.
+
+Compilation has explicit `max_preflight_operations` and
+`max_preflight_bases` limits. Operations include reachable-context checks,
+authored transitions and inspected source weights, including distinct
+productivity-filtered flat supports and natural genotype masses; bases reserve
+the active scripts' declared allocation
+budgets. Exhaustion is a resource error, not empty biological support. Binary64
+weight normalization rejects numerical loss of positive support rather than
+silently dropping a row. These controls carry no enzyme kinetics.
+
+Ordinary result and stream exports preserve nullable values and full ancestry.
+`duplex_repair.selection` describes the selected authored row;
+`duplex_repair.current_paths` contains current native alignment paths. Strict
+TSV converts only AIRR fields and keeps this extension as one JSON cell.
+DataFrames retain nullable integer and boolean columns. `validate_records`
+checks actual records and typed nested provenance. Generated fields, including
+`duplex_repair`, cannot be overwritten by custom metadata.
+
+Source-backed durable traces bind references, model content, the complete
+upstream sampling law and active policy/contracts. Replay checks positive
+support in the recorded context and executes the same kernel without a new
+history draw. External-seed `run_from` traces still require an initial-snapshot
+format; clone-family integration and measured calibration remain later steps.
 
 ### Bounded substrate contract
 

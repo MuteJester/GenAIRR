@@ -416,3 +416,28 @@ fn exact_indel_support_preserves_the_restored_duplex_landmark() {
     assert_eq!(assess(final_state, &cfg).productive, Some(true));
     assert!(productive().verify(final_state, Some(&cfg)).is_ok());
 }
+
+#[test]
+fn nullable_record_oracle_uses_certificates_and_observed_reference_end_independently() {
+    let (cfg, sim) = restored_fixture();
+    let inserted = sim.with_indel_inserted(
+        15,
+        Nucleotide::synthetic(b'A', Segment::J, flag::INDEL_INSERTED),
+    );
+    let clipped = clip(inserted, &cfg, crate::passes::LossEnd::Three, 1);
+    for state in [&sim, &clipped] {
+        let mut record = crate::duplex_repair::observation::project_duplex_simulation(state, &cfg)
+            .unwrap()["record"]
+            .clone();
+        assert!(crate::airr_record::validate_duplex_productivity(&record, state, &cfg).is_empty());
+        // The independent oracle must not depend on an apparent original
+        // identity placed in the nucleotide cache.
+        let no_cache = without_cached_restoration(state);
+        assert!(
+            crate::airr_record::validate_duplex_productivity(&record, &no_cache, &cfg).is_empty()
+        );
+        record["productive"] = serde_json::json!(false);
+        let issues = crate::airr_record::validate_duplex_productivity(&record, state, &cfg);
+        assert_eq!(issues.len(), 1);
+    }
+}

@@ -1,0 +1,365 @@
+{
+  "schema": "duplex_experiment_sweep_v1",
+  "extension_sha256": "6e45f13f74a170caa8f9fb861192350659586b315812deb2701fc0a9ad1909d4",
+  "counts": {
+    "records": 6144,
+    "plans": 12
+  },
+  "errors": 0,
+  "records_per_plan": 512,
+  "checks": [
+    "independent exact PRNG/weighted-choice arithmetic",
+    "local conditioning hierarchy",
+    "generating calls and canonical inverted D",
+    "literal query, body alignment and NP intervals",
+    "same-DNA histories remain distinct",
+    "repair resection separate from downstream counters"
+  ],
+  "scope": "authored 15/16/18-base controls; no empirical biochemical rates",
+  "plans": [
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "productive_only": false,
+      "inversion_probability": 0.0,
+      "selected_rows": {
+        "0-0-False-blunt": 7,
+        "0-0-False-restore": 15,
+        "0-0-False-triplet": 6,
+        "0-0-False-frame_shift": 14,
+        "0-1-False-blunt": 9,
+        "0-1-False-restore": 25,
+        "0-1-False-triplet": 12,
+        "0-1-False-frame_shift": 40,
+        "1-0-False-blunt": 6,
+        "1-0-False-restore": 31,
+        "1-0-False-triplet": 17,
+        "1-0-False-frame_shift": 58,
+        "1-1-False-blunt": 19,
+        "1-1-False-restore": 83,
+        "1-1-False-triplet": 60,
+        "1-1-False-frame_shift": 110
+      }
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "productive_only": false,
+      "inversion_probability": 0.37,
+      "selected_rows": {
+        "0-0-False-blunt": 5,
+        "0-0-False-restore": 9,
+        "0-0-False-triplet": 3,
+        "0-0-False-frame_shift": 9,
+        "0-0-True-blunt": 2,
+        "0-0-True-restore": 6,
+        "0-0-True-triplet": 3,
+        "0-0-True-frame_shift": 5,
+        "0-1-False-blunt": 6,
+        "0-1-False-restore": 17,
+        "0-1-False-triplet": 10,
+        "0-1-False-frame_shift": 30,
+        "0-1-True-blunt": 3,
+        "0-1-True-restore": 8,
+        "0-1-True-triplet": 2,
+        "0-1-True-frame_shift": 10,
+        "1-0-False-blunt": 2,
+        "1-0-False-restore": 20,
+        "1-0-False-triplet": 11,
+        "1-0-False-frame_shift": 35,
+        "1-0-True-blunt": 4,
+        "1-0-True-restore": 11,
+        "1-0-True-triplet": 6,
+        "1-0-True-frame_shift": 23,
+        "1-1-False-blunt": 13,
+        "1-1-False-restore": 54,
+        "1-1-False-triplet": 47,
+        "1-1-False-frame_shift": 64,
+        "1-1-True-blunt": 6,
+        "1-1-True-restore": 29,
+        "1-1-True-triplet": 13,
+        "1-1-True-frame_shift": 46
+      }
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "productive_only": false,
+      "inversion_probability": 1.0,
+      "selected_rows": {
+        "0-0-True-blunt": 7,
+        "0-0-True-restore": 15,
+        "0-0-True-triplet": 6,
+        "0-0-True-frame_shift": 14,
+        "0-1-True-blunt": 9,
+        "0-1-True-restore": 25,
+        "0-1-True-triplet": 12,
+        "0-1-True-frame_shift": 40,
+        "1-0-True-blunt": 6,
+        "1-0-True-restore": 31,
+        "1-0-True-triplet": 17,
+        "1-0-True-frame_shift": 58,
+        "1-1-True-blunt": 19,
+        "1-1-True-restore": 83,
+        "1-1-True-triplet": 60,
+        "1-1-True-frame_shift": 110
+      }
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "productive_only": true,
+      "inversion_probability": 0.0,
+      "selected_rows": {
+        "0-0-False-blunt": 11,
+        "0-0-False-restore": 20,
+        "0-0-False-triplet": 11,
+        "0-1-False-blunt": 14,
+        "0-1-False-restore": 40,
+        "0-1-False-triplet": 32,
+        "1-0-False-blunt": 12,
+        "1-0-False-restore": 51,
+        "1-0-False-triplet": 49,
+        "1-1-False-blunt": 33,
+        "1-1-False-restore": 145,
+        "1-1-False-triplet": 94
+      }
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "productive_only": true,
+      "inversion_probability": 0.37,
+      "selected_rows": {
+        "0-0-False-blunt": 7,
+        "0-0-False-restore": 13,
+        "0-0-False-triplet": 6,
+        "0-0-True-blunt": 4,
+        "0-0-True-restore": 7,
+        "0-0-True-triplet": 5,
+        "0-1-False-blunt": 10,
+        "0-1-False-restore": 27,
+        "0-1-False-triplet": 26,
+        "0-1-True-blunt": 4,
+        "0-1-True-restore": 13,
+        "0-1-True-triplet": 6,
+        "1-0-False-blunt": 7,
+        "1-0-False-restore": 32,
+        "1-0-False-triplet": 29,
+        "1-0-True-blunt": 5,
+        "1-0-True-restore": 19,
+        "1-0-True-triplet": 20,
+        "1-1-False-blunt": 25,
+        "1-1-False-restore": 98,
+        "1-1-False-triplet": 55,
+        "1-1-True-blunt": 8,
+        "1-1-True-restore": 47,
+        "1-1-True-triplet": 39
+      }
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "productive_only": true,
+      "inversion_probability": 1.0,
+      "selected_rows": {
+        "0-0-True-blunt": 11,
+        "0-0-True-restore": 20,
+        "0-0-True-triplet": 11,
+        "0-1-True-blunt": 14,
+        "0-1-True-restore": 40,
+        "0-1-True-triplet": 32,
+        "1-0-True-blunt": 12,
+        "1-0-True-restore": 51,
+        "1-0-True-triplet": 49,
+        "1-1-True-blunt": 33,
+        "1-1-True-restore": 145,
+        "1-1-True-triplet": 94
+      }
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "productive_only": false,
+      "inversion_probability": 0.0,
+      "selected_rows": {
+        "0-0-False-blunt": 7,
+        "0-0-False-restore": 15,
+        "0-0-False-triplet": 6,
+        "0-0-False-frame_shift": 14,
+        "0-1-False-blunt": 9,
+        "0-1-False-restore": 25,
+        "0-1-False-triplet": 12,
+        "0-1-False-frame_shift": 40,
+        "1-0-False-blunt": 6,
+        "1-0-False-restore": 31,
+        "1-0-False-triplet": 17,
+        "1-0-False-frame_shift": 58,
+        "1-1-False-blunt": 19,
+        "1-1-False-restore": 83,
+        "1-1-False-triplet": 60,
+        "1-1-False-frame_shift": 110
+      }
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "productive_only": false,
+      "inversion_probability": 0.37,
+      "selected_rows": {
+        "0-0-False-blunt": 5,
+        "0-0-False-restore": 9,
+        "0-0-False-triplet": 3,
+        "0-0-False-frame_shift": 9,
+        "0-0-True-blunt": 2,
+        "0-0-True-restore": 6,
+        "0-0-True-triplet": 3,
+        "0-0-True-frame_shift": 5,
+        "0-1-False-blunt": 6,
+        "0-1-False-restore": 17,
+        "0-1-False-triplet": 10,
+        "0-1-False-frame_shift": 30,
+        "0-1-True-blunt": 3,
+        "0-1-True-restore": 8,
+        "0-1-True-triplet": 2,
+        "0-1-True-frame_shift": 10,
+        "1-0-False-blunt": 2,
+        "1-0-False-restore": 20,
+        "1-0-False-triplet": 11,
+        "1-0-False-frame_shift": 35,
+        "1-0-True-blunt": 4,
+        "1-0-True-restore": 11,
+        "1-0-True-triplet": 6,
+        "1-0-True-frame_shift": 23,
+        "1-1-False-blunt": 13,
+        "1-1-False-restore": 54,
+        "1-1-False-triplet": 47,
+        "1-1-False-frame_shift": 64,
+        "1-1-True-blunt": 6,
+        "1-1-True-restore": 29,
+        "1-1-True-triplet": 13,
+        "1-1-True-frame_shift": 46
+      }
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "productive_only": false,
+      "inversion_probability": 1.0,
+      "selected_rows": {
+        "0-0-True-blunt": 7,
+        "0-0-True-restore": 15,
+        "0-0-True-triplet": 6,
+        "0-0-True-frame_shift": 14,
+        "0-1-True-blunt": 9,
+        "0-1-True-restore": 25,
+        "0-1-True-triplet": 12,
+        "0-1-True-frame_shift": 40,
+        "1-0-True-blunt": 6,
+        "1-0-True-restore": 31,
+        "1-0-True-triplet": 17,
+        "1-0-True-frame_shift": 58,
+        "1-1-True-blunt": 19,
+        "1-1-True-restore": 83,
+        "1-1-True-triplet": 60,
+        "1-1-True-frame_shift": 110
+      }
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "productive_only": true,
+      "inversion_probability": 0.0,
+      "selected_rows": {
+        "0-0-False-blunt": 11,
+        "0-0-False-restore": 20,
+        "0-0-False-triplet": 11,
+        "0-1-False-blunt": 14,
+        "0-1-False-restore": 40,
+        "0-1-False-triplet": 32,
+        "1-0-False-blunt": 12,
+        "1-0-False-restore": 51,
+        "1-0-False-triplet": 49,
+        "1-1-False-blunt": 33,
+        "1-1-False-restore": 145,
+        "1-1-False-triplet": 94
+      }
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "productive_only": true,
+      "inversion_probability": 0.37,
+      "selected_rows": {
+        "0-0-False-blunt": 7,
+        "0-0-False-restore": 13,
+        "0-0-False-triplet": 6,
+        "0-0-True-blunt": 4,
+        "0-0-True-restore": 7,
+        "0-0-True-triplet": 5,
+        "0-1-False-blunt": 10,
+        "0-1-False-restore": 27,
+        "0-1-False-triplet": 26,
+        "0-1-True-blunt": 4,
+        "0-1-True-restore": 13,
+        "0-1-True-triplet": 6,
+        "1-0-False-blunt": 7,
+        "1-0-False-restore": 32,
+        "1-0-False-triplet": 29,
+        "1-0-True-blunt": 5,
+        "1-0-True-restore": 19,
+        "1-0-True-triplet": 20,
+        "1-1-False-blunt": 25,
+        "1-1-False-restore": 98,
+        "1-1-False-triplet": 55,
+        "1-1-True-blunt": 8,
+        "1-1-True-restore": 47,
+        "1-1-True-triplet": 39
+      }
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "productive_only": true,
+      "inversion_probability": 1.0,
+      "selected_rows": {
+        "0-0-True-blunt": 11,
+        "0-0-True-restore": 20,
+        "0-0-True-triplet": 11,
+        "0-1-True-blunt": 14,
+        "0-1-True-restore": 40,
+        "0-1-True-triplet": 32,
+        "1-0-True-blunt": 12,
+        "1-0-True-restore": 51,
+        "1-0-True-triplet": 49,
+        "1-1-True-blunt": 33,
+        "1-1-True-restore": 145,
+        "1-1-True-triplet": 94
+      }
+    }
+  ]
+}

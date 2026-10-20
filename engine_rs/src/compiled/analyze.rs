@@ -53,6 +53,10 @@ impl<T> Located<T> {
 #[derive(Default)]
 pub(super) struct CompileFactIndex {
     pub(super) allele_supports: HashMap<Segment, Located<AlleleIdSupport>>,
+    pub(super) allele_sample_passes: HashMap<Segment, Vec<usize>>,
+    pub(super) joint_allele_supports: Vec<Located<Vec<[Vec<crate::refdata::AlleleId>; 3]>>>,
+    pub(super) finite_duplex_sources:
+        Vec<Located<std::sync::Arc<crate::duplex_repair::model::FiniteDuplexModel>>>,
     pub(super) trim_supports: HashMap<(Segment, TrimEnd), Located<IntegerSupport>>,
     pub(super) np_length_supports: HashMap<Segment, Located<IntegerSupport>>,
     pub(super) p_length_supports: Vec<(PEnd, Located<IntegerSupport>)>,
@@ -116,7 +120,19 @@ impl CompileFactIndex {
         errors: &mut Vec<CompileError>,
     ) {
         match fact {
+            PassCompileFact::JointAlleleSupport { groups } => {
+                self.joint_allele_supports
+                    .push(Located::new(groups, pass_index, pass_name));
+            }
+            PassCompileFact::FiniteDuplexSource { model } => {
+                self.finite_duplex_sources
+                    .push(Located::new(model, pass_index, pass_name));
+            }
             PassCompileFact::AlleleSampleSupport { segment, support } => {
+                self.allele_sample_passes
+                    .entry(segment)
+                    .or_default()
+                    .push(pass_index);
                 let located = Located::new(support, pass_index, pass_name);
                 validate_allele_support(segment, &located, refdata, errors);
                 self.allele_supports.insert(segment, located);
@@ -665,13 +681,17 @@ pub(super) fn analyze_plan(
         })
         .unwrap_or_default();
 
-    validate_trim_geometry(refdata, &fact_index, &mut errors);
-    validate_coding_end_geometry(refdata, &fact_index, &mut errors);
-    validate_contract_preconditions(contracts, refdata, &fact_index, &mut errors);
-    let feasibility = if errors.is_empty() {
-        build_feasibility_context(contracts, refdata, &fact_index)
+    let feasibility = if !fact_index.finite_duplex_sources.is_empty() {
+        super::duplex_feasibility::build(plan, refdata, contracts, &fact_index, &mut errors)
     } else {
-        None
+        validate_trim_geometry(refdata, &fact_index, &mut errors);
+        validate_coding_end_geometry(refdata, &fact_index, &mut errors);
+        validate_contract_preconditions(contracts, refdata, &fact_index, &mut errors);
+        if errors.is_empty() {
+            build_feasibility_context(contracts, refdata, &fact_index)
+        } else {
+            None
+        }
     };
 
     (

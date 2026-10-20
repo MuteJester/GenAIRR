@@ -138,6 +138,77 @@ impl<'idx> SimulationBuilder<'idx> {
         &self.simulation
     }
 
+    /// Atomically assemble a preflighted duplex founder into an unassembled
+    /// sampled context. Preserve the sampled donor restrictions and haplotype.
+    /// Validation precedes every mutation/event; source publication occurs only
+    /// after the owning pass successfully seals this builder.
+    pub(crate) fn install_duplex_seed(&mut self, seed: &Simulation) -> Result<(), String> {
+        let current = &self.simulation;
+        if !current.pool.is_empty()
+            || !current.sequence.regions.is_empty()
+            || current.duplex_provenance.is_some()
+            || current.coding_end_provenance.is_some()
+            || current.mutation_count != 0
+            || current.mutation_burden != 0.0
+        {
+            return Err("duplex source requires an unassembled, unmodified VDJ context".into());
+        }
+        let provenance = seed
+            .duplex_provenance
+            .as_ref()
+            .ok_or("duplex source seed lacks founder evidence")?;
+        provenance.validate_initial_pool(seed.pool.as_slice())?;
+        let mut assignments = Vec::new();
+        for segment in [Segment::V, Segment::D, Segment::J] {
+            let old = current
+                .assignments
+                .get(segment)
+                .ok_or("duplex source requires all VDJ assignments")?;
+            let mut expected = crate::assignment::AlleleInstance::new(old.allele_id);
+            expected.orientation = old.orientation;
+            expected.haplotype = old.haplotype;
+            if *old != expected {
+                return Err(
+                    "duplex source cannot follow trim, P emission, revision, or read loss".into(),
+                );
+            }
+            let mut new = *seed
+                .assignments
+                .get(segment)
+                .ok_or("duplex source seed lacks a generating assignment")?;
+            let binding = provenance
+                .founder
+                .bindings
+                .for_segment(segment)
+                .ok_or("duplex source seed lacks a source binding")?;
+            if old.allele_id != new.allele_id
+                || old.orientation != new.orientation
+                || new.allele_id.index() != binding.allele_id
+                || new.orientation.is_reverse()
+                    != (segment == Segment::D && provenance.founder.bindings.d_inverted)
+                || current
+                    .live_call_alleles(segment)
+                    .is_some_and(|allowed| !allowed.contains(&new.allele_id))
+            {
+                return Err("duplex source seed differs from the sampled donor context".into());
+            }
+            new.haplotype = old.haplotype;
+            assignments.push((segment, new));
+        }
+        // The same complete snapshot is validated before installation above.
+        for (segment, assignment) in assignments {
+            self.assign_allele(segment, assignment);
+        }
+        for nucleotide in seed.pool.as_slice() {
+            self.push_nucleotide(*nucleotide);
+        }
+        for region in &seed.sequence.regions {
+            self.add_region(region.clone());
+        }
+        self.attach_duplex_provenance(provenance.clone())?;
+        Ok(())
+    }
+
     /// Install complete founder evidence only after the query and assignments exist.
     pub(crate) fn attach_duplex_provenance(
         &mut self,

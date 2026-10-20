@@ -47,8 +47,8 @@ pub use coding_end_provenance::{CodingEndChoice, CodingEndPOrigin, CodingEndProv
 pub use coordinates::{PoolRange, RefRange};
 pub use duplex_provenance::{
     DuplexAttemptStage, DuplexAttemptSummary, DuplexBodyClaim, DuplexEdit, DuplexEditAction,
-    DuplexFounder, DuplexMetric, DuplexPMetrics, DuplexProvenance, DuplexQueryLink,
-    DuplexRemovalCause, DuplexRemovedLink,
+    DuplexFounder, DuplexHistorySelection, DuplexMetric, DuplexPMetrics, DuplexProvenance,
+    DuplexQueryLink, DuplexRemovalCause, DuplexRemovedLink,
 };
 pub use handle::{NucHandle, RegionHandle};
 pub use nucleotide::{complement_base, encode_base, flag, GermlinePos, NucFlags, Nucleotide};

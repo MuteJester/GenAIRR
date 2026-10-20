@@ -40,6 +40,12 @@ pub enum CompileErrorKind {
         contract_name: String,
         reason: String,
     },
+    /// Explicit finite-model preflight work bound; never biological zero support.
+    ResourceLimit {
+        resource: String,
+        required: u64,
+        limit: u64,
+    },
     /// Reference data failed structural validation (empty required
     /// pools, malformed bytes, anchor mismatches, etc.). Carries the
     /// full [`RefDataValidationErrors`] so consumers see every
@@ -123,6 +129,9 @@ impl fmt::Display for CompileErrors {
                 } => write!(
                     f,
                     "; {location} has unsupported contract combination for {contract_name}: {reason}",
+                )?,
+                CompileErrorKind::ResourceLimit { resource, required, limit } => write!(
+                    f, "; {location} exceeded {resource} resource limit: required {required}, limit {limit}"
                 )?,
                 CompileErrorKind::RefDataValidation { errors } => {
                     // Delegate to `RefDataValidationErrors::Display`

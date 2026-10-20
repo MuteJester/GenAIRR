@@ -28,7 +28,7 @@ def fixture():
 
 
 @pytest.mark.parametrize("strict", [False, True])
-def test_duplex_unknown_p_requires_nullable_projector_and_refuses_legacy_trace(strict):
+def test_duplex_unknown_p_uses_nullable_record_dispatch_and_refuses_external_seed_trace(strict):
     refdata, seed = fixture()
     compiled = ge.PassPlan().compile(refdata=refdata, strict=strict)
     outcome = compiled.run_from(seed, 7)
@@ -36,9 +36,10 @@ def test_duplex_unknown_p_requires_nullable_projector_and_refuses_legacy_trace(s
     assert projected["record"]["sequence"] == "AAATGTCCCTTTAAA"
     assert projected["record"]["p_v_3_length"] is None
     assert projected["record"]["p_d_5_length"] is None
-    for method in (outcome.airr_record, outcome.validate_record):
-        with pytest.raises(ValueError, match="project_duplex_simulation"):
-            method(refdata)
+    record = outcome.airr_record(refdata)
+    assert record["p_v_3_length"] is None
+    assert record["duplex_repair"]["current_paths"] == projected["paths"]
+    assert outcome.validate_record(refdata) == []
     with pytest.raises(ValueError, match="initial repair snapshot"):
         compiled.trace_file_from(outcome, 7)
 

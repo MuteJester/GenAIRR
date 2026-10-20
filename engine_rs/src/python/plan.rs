@@ -557,6 +557,17 @@ impl PyPassPlan {
         Ok(())
     }
 
+    /// Add one finite authored duplex source; references bind at compile time.
+    fn push_duplex_repair_source(&mut self, model_json: &str) -> PyResult<()> {
+        let model: crate::duplex_repair::model::FiniteDuplexModel =
+            serde_json::from_str(model_json)
+                .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        let pass = crate::passes::DuplexRecombinePass::new(std::sync::Arc::new(model))
+            .map_err(PyValueError::new_err)?;
+        self.inner_mut()?.push(Box::new(pass));
+        Ok(())
+    }
+
     /// Emit deterministic P bases retained by an earlier processing outcome.
     fn push_emit_coding_end_p(&mut self, end: &str) -> PyResult<()> {
         let end = parse_p_end(end)?;

@@ -56,6 +56,23 @@ pub struct DuplexBodyClaim {
     pub support_ids: Vec<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DuplexHistorySelection {
+    pub model_digest: String,
+    pub history_id: String,
+    pub row_index: usize,
+    #[serde(rename = "natural_weight", serialize_with = "serialize_weight_bits")]
+    pub natural_weight_bits: u64,
+    pub conditioning_law: String,
+}
+
+fn serialize_weight_bits<S: serde::Serializer>(
+    bits: &u64,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_f64(f64::from_bits(*bits))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DuplexFounder {
     pub annotated: Arc<AnnotatedCoupledProduct>,
@@ -64,6 +81,7 @@ pub struct DuplexFounder {
     /// provides the body evidence. The importer separately gates layout.
     pub body_claims: Vec<Vec<DuplexBodyClaim>>,
     pub p_metrics: DuplexPMetrics,
+    pub selection: Option<DuplexHistorySelection>,
 }
 
 impl DuplexFounder {
@@ -108,6 +126,7 @@ impl DuplexFounder {
             bindings,
             body_claims,
             p_metrics: DuplexPMetrics::default(),
+            selection: None,
         })
     }
 

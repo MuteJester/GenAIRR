@@ -12,6 +12,7 @@ use crate::refdata::{Allele, ChainType};
 use crate::trace::ChoiceValue;
 
 mod coding_end_processing;
+mod finite_duplex;
 
 /// Compile a unit-test fixture with refdata validation deliberately
 /// skipped. Many internal fixtures use synthetic V/J alleles with

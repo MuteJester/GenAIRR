@@ -28,6 +28,8 @@
 //! - **v3** (legacy): parameterized pass signatures protect distribution and
 //!   sampler settings, in addition to pass names.
 //! - **v4** (current): requires `productivity_policy` and `active_contracts`.
+//!   Finite duplex source plans bind their own policy and complete upstream
+//!   sampling-law signatures; they cannot use legacy signature fallbacks.
 //!   Reference admission, annotation semantics and constrained execution are
 //!   distinct parts of the reproducibility context.
 //!
@@ -278,11 +280,38 @@ impl From<serde_json::Error> for TraceFileError {
 /// [`TraceFile::validate_against`]; see also
 /// [`pass_plan_signature_names_only`].
 pub fn pass_plan_signature(plan: &PassPlan) -> String {
+    let complete_law = duplex_source(plan).is_some();
     plan.passes()
         .iter()
-        .map(|p| format!("{}({})", p.name(), p.parameter_signature()))
+        .map(|p| {
+            format!(
+                "{}({})",
+                p.name(),
+                if complete_law {
+                    p.sampling_law_signature()
+                } else {
+                    p.parameter_signature()
+                }
+            )
+        })
         .collect::<Vec<_>>()
         .join("|")
+}
+
+/// Concrete capability, never inferred from a user-defined pass name.
+pub(crate) fn duplex_source(plan: &PassPlan) -> Option<&crate::passes::DuplexRecombinePass> {
+    plan.passes().iter().find_map(|pass| {
+        let any: &dyn std::any::Any = pass.as_ref();
+        any.downcast_ref::<crate::passes::DuplexRecombinePass>()
+    })
+}
+
+pub(crate) fn plan_productivity_policy(plan: &PassPlan) -> &'static str {
+    if duplex_source(plan).is_some() {
+        crate::productivity::DUPLEX_POLICY
+    } else {
+        crate::productivity::POLICY
+    }
 }
 
 /// Legacy v1/v2 plan signature shape — pass names joined by `|`.
@@ -493,7 +522,7 @@ impl TraceFile {
             refdata_signature: refdata_signature(refdata),
             address_schema_version: crate::address::ADDRESS_SCHEMA_VERSION,
             refdata_content_hash: Some(refdata_content_hash(refdata)),
-            productivity_policy: Some(crate::productivity::POLICY.to_string()),
+            productivity_policy: Some(plan_productivity_policy(plan).to_string()),
             active_contracts: Some(Vec::new()),
             trace,
         }
@@ -569,7 +598,10 @@ impl TraceFile {
 
     fn validate_annotation_policy(&self) -> Result<(), TraceFileError> {
         if (self.schema_version >= 4 || self.productivity_policy.is_some())
-            && self.productivity_policy.as_deref() != Some(crate::productivity::POLICY)
+            && !matches!(
+                self.productivity_policy.as_deref(),
+                Some(crate::productivity::POLICY | crate::productivity::DUPLEX_POLICY)
+            )
         {
             return Err(TraceFileError::ProductivityPolicyMismatch {
                 got: self.productivity_policy.clone(),
@@ -619,6 +651,32 @@ impl TraceFile {
             });
         }
         self.validate_annotation_policy()?;
+        let expected_policy = plan_productivity_policy(plan);
+        if self
+            .productivity_policy
+            .as_deref()
+            .is_some_and(|p| p != expected_policy)
+            || (expected_policy == crate::productivity::DUPLEX_POLICY && self.schema_version < 4)
+        {
+            return Err(TraceFileError::ProductivityPolicyMismatch {
+                got: self.productivity_policy.clone(),
+                expected: expected_policy.into(),
+            });
+        }
+        if expected_policy == crate::productivity::DUPLEX_POLICY {
+            if self.refdata_content_hash.is_none() {
+                return Err(TraceFileError::RefdataContentHashMismatch {
+                    expected: refdata_content_hash(refdata),
+                    got: "missing".into(),
+                });
+            }
+            if self.address_schema_version != crate::address::ADDRESS_SCHEMA_VERSION {
+                return Err(TraceFileError::AddressSchemaVersionMismatch {
+                    expected: crate::address::ADDRESS_SCHEMA_VERSION,
+                    got: self.address_schema_version,
+                });
+            }
+        }
         // v1/v2 traces recorded the legacy names-only plan
         // signature; rebuild the comparator in the same format so
         // existing fixtures replay byte-identically. v3+ writers

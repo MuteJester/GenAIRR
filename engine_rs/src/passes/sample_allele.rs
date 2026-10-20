@@ -9,6 +9,29 @@ use crate::pass::{AlleleIdSupport, Pass, PassCompileFact, PassContext, PassEffec
 use crate::refdata::AlleleId;
 use crate::trace::ChoiceValue;
 
+/// Match the unscaled, authored-order arithmetic used by the existing local
+/// categorical sampler. A positive atom must retain a nonzero CDF interval.
+pub(crate) fn validate_finite_weights(weights: &[f64]) -> Result<(), String> {
+    if weights.is_empty() || weights.iter().any(|w| !w.is_finite() || *w <= 0.0) {
+        return Err("finite duplex source weights require nonempty finite positive support".into());
+    }
+    let total: f64 = weights.iter().sum();
+    if !total.is_finite() || total <= 0.0 {
+        return Err("finite duplex source numerical total weight overflow".into());
+    }
+    let mut cumulative = 0.0;
+    for &weight in weights {
+        let next = cumulative + weight;
+        if next <= cumulative {
+            return Err(
+                "finite duplex source positive mass is lost at CDF numerical resolution".into(),
+            );
+        }
+        cumulative = next;
+    }
+    Ok(())
+}
+
 /// Sample one allele from a pool distribution and assign it to the
 /// simulation's V / D / J slot.
 ///
@@ -59,6 +82,45 @@ impl SampleAllelePass {
     /// Inspect the configured segment.
     pub fn segment(&self) -> Segment {
         self.segment
+    }
+
+    pub(crate) fn finite_law_support(&self) -> Option<Vec<(AlleleId, f64)>> {
+        self.distribution.support()
+    }
+
+    fn finite_candidates(
+        &self,
+        sim: &Simulation,
+        ctx: &PassContext,
+    ) -> Result<Vec<(AlleleId, f64)>, PassError> {
+        let support = self.distribution.support().ok_or_else(|| {
+            self.constraint_sampling_error(FilteredSampleError::SupportUnavailable)
+        })?;
+        let candidates: Vec<_> = support
+            .into_iter()
+            .filter(|(id, _)| {
+                ctx.feasibility.is_some_and(|feasibility| {
+                    feasibility.admits(
+                        ctx.pass_index,
+                        sim,
+                        ctx.refdata,
+                        self.address(),
+                        &ChoiceValue::AlleleId(id.index()),
+                    )
+                })
+            })
+            .collect();
+        if candidates.is_empty() {
+            return Err(self.constraint_sampling_error(FilteredSampleError::EmptyAdmissibleSupport));
+        }
+        validate_finite_weights(
+            &candidates
+                .iter()
+                .map(|(_, weight)| *weight)
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|reason| PassError::invalid_plan_state(self.name(), reason))?;
+        Ok(candidates)
     }
 
     /// The hierarchical-string address (D3) at which this pass
@@ -120,27 +182,45 @@ impl SampleAllelePass {
         let contracts = ctx.contracts;
         let feasibility = ctx.feasibility;
         let pass_index = ctx.pass_index;
+        let duplex = feasibility.is_some_and(|f| f.has_duplex());
+
+        if duplex {
+            // Validate and draw from this exact materialized masked support.
+            // No new law: preserve the ordinary sampler's order and arithmetic.
+            let candidates = self.finite_candidates(sim, ctx)?;
+            let total: f64 = candidates.iter().map(|(_, weight)| *weight).sum();
+            let target = ctx.rng.next_f64() * total;
+            let mut cumulative = 0.0;
+            for &(id, weight) in &candidates {
+                cumulative += weight;
+                if target < cumulative {
+                    return Ok(id);
+                }
+            }
+            return Ok(candidates.last().expect("nonempty support checked").0);
+        }
 
         if contracts.is_some() || feasibility.is_some() {
             match sample_filtered_result(ctx.rng, self.distribution.as_ref(), |candidate| {
                 let choice = ChoiceValue::AlleleId(candidate.index());
-                let contract_ok = contracts.map_or(true, |contracts| {
-                    contracts
-                        .admits_typed(
-                            sim,
-                            refdata,
-                            ChoiceContext::none().with_address(self.choice_address()),
-                            &choice,
-                        )
-                        .is_ok()
-                });
+                let contract_ok = duplex
+                    || contracts.map_or(true, |contracts| {
+                        contracts
+                            .admits_typed(
+                                sim,
+                                refdata,
+                                ChoiceContext::none().with_address(self.choice_address()),
+                                &choice,
+                            )
+                            .is_ok()
+                    });
                 let feasible_ok = feasibility.map_or(true, |feasibility| {
                     feasibility.admits(pass_index, sim, refdata, self.address(), &choice)
                 });
                 contract_ok && feasible_ok
             }) {
                 Ok(value) => return Ok(value),
-                Err(reason) if strict => {
+                Err(reason) if strict || duplex => {
                     return Err(self.constraint_sampling_error(reason));
                 }
                 // v3.0 documented exception: see method-level doc
@@ -255,6 +335,19 @@ impl SampleAllelePass {
     ) -> Result<(), PassError> {
         let allele_id = AlleleId::new(id_index);
         let choice = ChoiceValue::AlleleId(id_index);
+        if ctx.feasibility.is_some_and(|f| f.has_duplex())
+            && !self
+                .finite_candidates(sim, ctx)?
+                .iter()
+                .any(|(id, _)| *id == allele_id)
+        {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                self.address(),
+                id_index as i64,
+                "feasibility_rejected",
+            ));
+        }
 
         if let Some(refdata) = ctx.refdata {
             if refdata.get(self.segment, allele_id).is_none() {
@@ -280,7 +373,10 @@ impl SampleAllelePass {
             }
         }
 
-        if let Some(contracts) = ctx.contracts {
+        if let Some(contracts) = ctx
+            .contracts
+            .filter(|_| !ctx.feasibility.is_some_and(|f| f.has_duplex()))
+        {
             contracts
                 .admits_typed(
                     sim,
@@ -288,19 +384,11 @@ impl SampleAllelePass {
                     ChoiceContext::none().with_address(self.choice_address()),
                     &choice,
                 )
-                .map_err(|violation| {
-                    PassError::contract_violation(self.name(), vec![violation])
-                })?;
+                .map_err(|violation| PassError::contract_violation(self.name(), vec![violation]))?;
         }
 
         if let Some(feasibility) = ctx.feasibility {
-            if !feasibility.admits(
-                ctx.pass_index,
-                sim,
-                ctx.refdata,
-                self.address(),
-                &choice,
-            ) {
+            if !feasibility.admits(ctx.pass_index, sim, ctx.refdata, self.address(), &choice) {
                 return Err(PassError::invalid_distribution_output(
                     self.name(),
                     self.address(),
@@ -331,6 +419,19 @@ impl Pass for SampleAllelePass {
         // `name()` (`sample_allele.v` / `.d` / `.j`), so no
         // additional parameter signature is needed.
         String::new()
+    }
+
+    fn sampling_law_signature(&self) -> String {
+        match self.distribution.support() {
+            Some(pairs) => format!(
+                "allele_mass_v1:{:?}",
+                pairs
+                    .into_iter()
+                    .map(|(id, weight)| (id.index(), weight.to_bits()))
+                    .collect::<Vec<_>>()
+            ),
+            None => "allele_mass_v1:unavailable".into(),
+        }
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -684,12 +785,10 @@ mod tests {
         // Pool of 3 V alleles; replay recorded id 1; matching
         // refdata. Should land cleanly with the trace re-emitted.
         let pool = make_test_pool(3, Segment::V);
-        let pass =
-            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let pass = SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
         let rd = refdata_with_v_pool(3);
 
-        let (result, trace) =
-            run_replay(&pass, Simulation::new(), 1, Some(&rd), None);
+        let (result, trace) = run_replay(&pass, Simulation::new(), 1, Some(&rd), None);
         let sim = result.expect("happy-path replay must succeed");
 
         assert_eq!(
@@ -710,8 +809,7 @@ mod tests {
     fn replay_rejects_id_missing_from_refdata() {
         // Recorded id 5; refdata only has 3 alleles → MissingAllele.
         let pool = make_test_pool(3, Segment::V);
-        let pass =
-            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let pass = SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
         let rd = refdata_with_v_pool(3);
 
         let (result, _) = run_replay(&pass, Simulation::new(), 5, Some(&rd), None);
@@ -736,8 +834,7 @@ mod tests {
         // the distribution can't have drawn it — the recorded value
         // didn't come from this plan's natural draw.
         let pool = make_test_pool(3, Segment::V);
-        let pass =
-            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let pass = SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
         let rd = refdata_with_v_pool(10); // wider refdata so MissingAllele isn't first
 
         let (result, _) = run_replay(&pass, Simulation::new(), 7, Some(&rd), None);
@@ -789,13 +886,11 @@ mod tests {
         }
 
         let pool = make_test_pool(3, Segment::V);
-        let pass =
-            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let pass = SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
         let rd = refdata_with_v_pool(3);
         let contracts = ContractSet::new().with(Box::new(RejectAlleleId1));
 
-        let (result, _) =
-            run_replay(&pass, Simulation::new(), 1, Some(&rd), Some(&contracts));
+        let (result, _) = run_replay(&pass, Simulation::new(), 1, Some(&rd), Some(&contracts));
         match result.unwrap_err() {
             PassError::ContractViolation {
                 pass_name,
@@ -808,8 +903,7 @@ mod tests {
             other => panic!("expected ContractViolation, got {other:?}"),
         }
         // Sanity: a valid id under the same contract still lands.
-        let (ok_result, _) =
-            run_replay(&pass, Simulation::new(), 0, Some(&rd), Some(&contracts));
+        let (ok_result, _) = run_replay(&pass, Simulation::new(), 0, Some(&rd), Some(&contracts));
         let _ = ok_result.expect("id 0 should pass the contract and apply");
         // And we know we used the choice_address — match the
         // generate_np pattern: the address is the canonical one.

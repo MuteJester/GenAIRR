@@ -41,12 +41,23 @@ def _to_airr_strict(rec: Dict[str, Any]) -> Dict[str, Any]:
     silently ignored.
     """
     converted = dict(rec)
+    duplex = rec.get("duplex_repair")
+    paths = duplex.get("current_paths") if isinstance(duplex, dict) else None
     # Native records store per-segment operation runs. AIRR CIGARs
     # additionally locate those runs in the full query and reference.
     for segment in ("v", "d", "j"):
         cigar = rec.get(f"{segment}_cigar")
         query_start = rec.get(f"{segment}_sequence_start")
         reference_start = rec.get(f"{segment}_germline_start")
+        if isinstance(duplex, dict):
+            if not isinstance(paths, dict):
+                raise ValueError("duplex AIRR export requires current_paths with oriented reference offsets")
+            path = paths.get(segment, {})
+            cigar = path.get("cigar")
+            query_start = path.get("query_start")
+            if query_start is None:
+                query_start = path.get("query_boundary")
+            reference_start = path.get("oriented_reference_start")
         if cigar and isinstance(query_start, int) and isinstance(reference_start, int):
             core = re.sub(r"^(?:\d+S)?(?:\d+N)?", "", cigar, count=1)
             prefix = (f"{query_start}S" if query_start else "")
@@ -226,6 +237,9 @@ class _ResultExport:
     def to_dataframe(self, *, airr_strict: bool = False):
         """Return a :class:`pandas.DataFrame` with one row per record.
 
+        Duplex records use pandas nullable integer, boolean and float columns
+        for generated scalars; unknown values are never coerced to zero/False.
+
         ``airr_strict=True`` converts all 0-based half-open coord
         ``*_start`` fields to the AIRR-spec 1-based-inclusive form
         (``*_end`` fields are unchanged). Useful when handing the
@@ -249,7 +263,23 @@ class _ResultExport:
             if airr_strict
             else self._records
         )
-        return pd.DataFrame(records, columns=self._column_order())
+        frame = pd.DataFrame(records, columns=self._column_order())
+        if any(isinstance(r.get("duplex_repair"), dict) for r in records):
+            # Nullable extension scalars remain unknown rather than becoming
+            # zero/False; integral coordinates must not become float64.
+            booleans = {"productive", "vj_in_frame", "stop_codon", "rev_comp", "d_inverted",
+                        "is_contaminant", "receptor_revision_applied"}
+            floats = {"mutation_rate", "v_identity", "d_identity", "j_identity"}
+            integers = {
+                name for name in _DEFAULT_COLUMN_ORDER
+                if name.startswith("n_") or name.endswith(("_start", "_end", "_length"))
+                or "_trim_" in name
+            } | {"sequence_length", "insert_size", "p_v_3_length", "p_d_5_length",
+                 "p_d_3_length", "p_j_5_length"}
+            for dtype, columns in (("boolean", booleans), ("Float64", floats), ("Int64", integers)):
+                for column in columns.intersection(frame.columns):
+                    frame[column] = pd.array(frame[column], dtype=dtype)
+        return frame
 
     def to_tsv(self, path: str, *, airr_strict: bool = True) -> None:
         """Write AIRR TSV with 1-based coordinates and T/F booleans. The
@@ -530,6 +560,10 @@ class _ResultExport:
                 if isinstance(row.get("coding_end_processing"), dict):
                     row["coding_end_processing"] = json.dumps(
                         row["coding_end_processing"], sort_keys=True, separators=(",", ":")
+                    )
+                if isinstance(row.get("duplex_repair"), dict):
+                    row["duplex_repair"] = json.dumps(
+                        row["duplex_repair"], sort_keys=True, separators=(",", ":"), allow_nan=False
                     )
                 if isinstance(row.get("productivity_reasons"), list):
                     row["productivity_reasons"] = json.dumps(

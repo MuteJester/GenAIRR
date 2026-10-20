@@ -79,6 +79,11 @@ def _describe_recombine_step(step: "_RecombineStep", chain_type: str) -> str:
     if weighted_segs:
         parts.append(f"custom {'/'.join(weighted_segs)} allele weights")
 
+    if step.duplex_repair_json is not None:
+        import json
+        rows = json.loads(step.duplex_repair_json)["rows"]
+        parts.append(f"coupled duplex repair ({len(rows)} authored histories; locally conditioned history weights)")
+        return "V(D)J recombination: " + "; ".join(parts)
     if step.coding_end_mode is not None:
         end_bits = []
         for label, outcomes, column in (

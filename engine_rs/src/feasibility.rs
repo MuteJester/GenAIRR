@@ -16,7 +16,9 @@ use crate::ir::{Segment, Simulation};
 use crate::refdata::{AlleleId, RefDataConfig};
 use crate::trace::ChoiceValue;
 
+mod duplex;
 mod p_productive;
+pub(crate) use duplex::DuplexCompletionFeasibility;
 pub(crate) use p_productive::{
     NpCompletionDomain, PProductiveFeasibility, SegmentCompletionDomain,
 };
@@ -28,6 +30,7 @@ pub struct FeasibilityContext {
     coding_segments: Vec<CodingSegmentFeasibility>,
     p_productive: Option<PProductiveFeasibility>,
     coding_end_geometry: Vec<CodingEndGeometry>,
+    duplex: Option<DuplexCompletionFeasibility>,
 }
 
 impl FeasibilityContext {
@@ -45,6 +48,7 @@ impl FeasibilityContext {
             && self.coding_segments.is_empty()
             && self.p_productive.is_none()
             && self.coding_end_geometry.is_empty()
+            && self.duplex.is_none()
     }
 
     pub(crate) fn with_p_productive(mut self, feasibility: PProductiveFeasibility) -> Self {
@@ -54,6 +58,33 @@ impl FeasibilityContext {
 
     pub(crate) fn has_p_productive(&self) -> bool {
         self.p_productive.is_some()
+    }
+
+    pub(crate) fn with_duplex(mut self, feasibility: DuplexCompletionFeasibility) -> Self {
+        self.duplex = Some(feasibility);
+        self
+    }
+
+    pub(crate) fn has_duplex(&self) -> bool {
+        self.duplex.is_some()
+    }
+
+    pub(crate) fn owns_duplex_source_pass(&self, pass_index: usize) -> bool {
+        self.duplex
+            .as_ref()
+            .is_some_and(|d| d.owns_source_pass(pass_index))
+    }
+
+    pub(crate) fn owns_duplex_generation_pass(&self, pass_index: usize) -> bool {
+        self.duplex
+            .as_ref()
+            .is_some_and(|d| d.owns_source_pass(pass_index) || d.repair_pass == pass_index)
+    }
+
+    pub(crate) fn duplex_history_rows(
+        &self,
+    ) -> Option<&[crate::duplex_repair::model::PreparedDuplexHistory]> {
+        self.duplex.as_ref().map(|d| d.rows.as_slice())
     }
 
     pub(crate) fn has_coding_end_geometry(&self) -> bool {
@@ -86,6 +117,10 @@ impl FeasibilityContext {
                     allowed_alleles,
                 )
             })
+            && self
+                .duplex
+                .as_ref()
+                .is_none_or(|d| d.admits(pass_index, sim, address, candidate, allowed_alleles))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -121,6 +156,13 @@ impl FeasibilityContext {
         address: &str,
         candidate: &ChoiceValue,
     ) -> bool {
+        if self
+            .duplex
+            .as_ref()
+            .is_some_and(|d| !d.admits(pass_index, sim, address, candidate, &[]))
+        {
+            return false;
+        }
         if self
             .coding_end_geometry
             .iter()

@@ -2,9 +2,9 @@
 
 The kernels resolve authored local joins and coupled successive V-D/D-J joins.
 Standalone reference-bound projection preserves both strand origins and exposes
-nullable AIRR metadata. These APIs remain separate from normal Experiment
-execution. Histories carry no fitted rates and start from supplied coding-end
-hairpins.
+nullable AIRR metadata. Finite reference-bound histories can also be selected
+by Experiment.recombine(duplex_repair=model). Histories carry no fitted rates
+and start from supplied coding-end hairpins.
 """
 from __future__ import annotations
 
@@ -14,16 +14,18 @@ from dataclasses import dataclass, replace
 from . import _engine
 
 from ._duplex_projection_export import export_duplex_projection
+from ._duplex_model import DuplexHistory, DuplexRepairModel
 
-__all__ = ["DuplexRepair", "DuplexJoin", "CoupledDuplexRepair", "export_duplex_projection", "project_duplex_simulation"]
+__all__ = ["DuplexHistory", "DuplexRepairModel", "DuplexRepair", "DuplexJoin", "CoupledDuplexRepair", "export_duplex_projection", "project_duplex_simulation"]
 
 
 def project_duplex_simulation(simulation, refdata):
     """Project a duplex-backed persistent simulation after audited edits.
 
     The founder duplex is preserved separately from the observed query.
-    Normal legacy AIRR exporters cannot express this model's unknown P values;
-    use this projector followed by ``export_duplex_projection`` instead.
+    This projector returns the full nullable envelope. Normal Experiment
+    records use the same nullable metadata; ``export_duplex_projection`` can
+    also export this standalone envelope directly.
     """
     if not isinstance(simulation, _engine.Simulation):
         raise TypeError("project_duplex_simulation requires a GenAIRR Simulation")

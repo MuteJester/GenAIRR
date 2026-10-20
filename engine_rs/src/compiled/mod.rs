@@ -562,6 +562,7 @@ impl OwnedCompiledSimulator {
 mod analyze;
 use analyze::analyze_plan;
 
+mod duplex_feasibility;
 mod feasibility_builder;
 
 fn sample_allele_address(segment: Segment) -> &'static str {

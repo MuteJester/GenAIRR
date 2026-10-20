@@ -281,6 +281,31 @@ def _push_genotype_recombine(genotype, step, plan, refdata, *, d_required):
     )
 
 
+def _lower_duplex_recombine(step, plan, refdata, *, invert_d_prob, receptor_revision_prob, genotype):
+    import json
+    if refdata.chain_type != "vdj":
+        raise ValueError("duplex repair requires VDJ reference data")
+    if receptor_revision_prob is not None:
+        raise ValueError("receptor revision is unsupported with duplex repair")
+    model = json.loads(step.duplex_repair_json)
+    if model["reference_content_hash"] != refdata.content_hash():
+        raise ValueError("duplex model is incompatible with final reference content/evidence")
+    if genotype is not None:
+        _push_genotype_recombine(genotype, step, plan, refdata, d_required=True)
+    else:
+        for segment in ("v", "d", "j"):
+            locked = getattr(step, f"locks_{segment}")
+            weights = getattr(step, f"weights_{segment}")
+            plan.push_sample_allele(
+                segment.upper(), refdata,
+                allowed_ids=None if locked is None else list(locked),
+                weights=None if weights is None else list(weights),
+            )
+    if invert_d_prob is not None:
+        plan.push_invert_d(invert_d_prob)
+    plan.push_duplex_repair_source(step.duplex_repair_json)
+
+
 def _lower_recombine(
     step: _RecombineStep,
     plan: "_engine.PassPlan",
@@ -292,6 +317,11 @@ def _lower_recombine(
     genotype=None,
 ) -> None:
     chain = refdata.chain_type
+    if step.duplex_repair_json is not None:
+        return _lower_duplex_recombine(
+            step, plan, refdata, invert_d_prob=invert_d_prob,
+            receptor_revision_prob=receptor_revision_prob, genotype=genotype,
+        )
     process_ends = step.coding_end_mode is not None
     if step.coding_end_model_reference_hashes and refdata.content_hash() not in step.coding_end_model_reference_hashes:
         raise ValueError("coding-end model is incompatible with the final compiled reference content hash")

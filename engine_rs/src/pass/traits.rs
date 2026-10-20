@@ -41,6 +41,13 @@ pub trait Pass: std::any::Any {
         String::new()
     }
 
+    /// Complete natural sampling law for plans that explicitly require it.
+    /// Legacy plan signatures remain unchanged; finite duplex histories bind
+    /// upstream allele/genotype probabilities as well as repair row weights.
+    fn sampling_law_signature(&self) -> String {
+        self.parameter_signature()
+    }
+
     /// Apply this pass to `sim`, returning the next IR revision.
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation;
 

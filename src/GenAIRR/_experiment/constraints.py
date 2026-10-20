@@ -33,6 +33,7 @@ class _ConstraintsMixin:
 
         reserved = set(_DEFAULT_COLUMN_ORDER) | {
             "coding_end_processing",
+            "duplex_repair", "sequence_length",
             "productivity_policy", "productivity_scope", "productivity_reasons",
             "p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length",
             "truth_v_call", "truth_d_call", "truth_j_call", "clone_id",
@@ -67,7 +68,9 @@ class _ConstraintsMixin:
         no stop in complete observed coding codons. It predicts sequence
         acceptance, not expression, folding, or receptor function. The
         returned ``productivity_policy`` and ``productivity_scope`` identify
-        this interpretation. Reference admission overrides do not change it.
+        this interpretation. Finite duplex repair explicitly selects
+        ``duplex_observed_vdj_v1``, which also accepts certified in-place
+        restored landmarks and evaluates their actual current codons. Reference admission overrides do not change it.
 
         Unknown landmarks or phase and ambiguity that could hide a stop
         cannot satisfy this bundle. Terminal clipping can remain accepted

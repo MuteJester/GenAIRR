@@ -470,6 +470,8 @@ pub enum ChoiceAddress {
     },
     /// Stable row index in an authored original-coding-end outcome table.
     CodingEndOutcome(VdjSegment),
+    /// Stable authored row index in a finite duplex repair model.
+    DuplexRepairHistory,
     /// Haplotype (0/1): the chromosome drawn once per rearrangement by
     /// `SampleHaplotypePass` for a phased genotype. V/D/J read it back.
     SampleHaplotype,
@@ -559,6 +561,7 @@ impl fmt::Display for ChoiceAddress {
             Self::CodingEndOutcome(segment) => {
                 write!(f, "end_processing.v1.{}.outcome", segment.suffix())
             }
+            Self::DuplexRepairHistory => f.write_str("duplex_repair.v1.history"),
             Self::SampleHaplotype => f.write_str(SAMPLE_HAPLOTYPE),
             Self::SampleGene(segment) => write!(f, "sample_gene.{}", segment.suffix()),
             Self::SampleAlleleInSlot(segment) => {
@@ -646,6 +649,7 @@ fn parse_choice_address(address: &str) -> Option<ChoiceAddress> {
         P_D3_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::D3 }),
         P_J5_LENGTH => Some(ChoiceAddress::PLength { end: PEnd::J5 }),
         "end_processing.v1.v.outcome" => Some(ChoiceAddress::CodingEndOutcome(VdjSegment::V)),
+        "duplex_repair.v1.history" => Some(ChoiceAddress::DuplexRepairHistory),
         "end_processing.v1.d.outcome" => Some(ChoiceAddress::CodingEndOutcome(VdjSegment::D)),
         "end_processing.v1.j.outcome" => Some(ChoiceAddress::CodingEndOutcome(VdjSegment::J)),
         SAMPLE_HAPLOTYPE => Some(ChoiceAddress::SampleHaplotype),
@@ -794,6 +798,8 @@ pub enum ChoiceAddressPattern {
     },
     /// Singleton mirror of [`ChoiceAddress::CodingEndOutcome`].
     CodingEndOutcome(VdjSegment),
+    /// Singleton mirror of [`ChoiceAddress::DuplexRepairHistory`].
+    DuplexRepairHistory,
     /// Singleton-family mirror of [`ChoiceAddress::SampleHaplotype`].
     /// Declared by `SampleHaplotypePass`.
     SampleHaplotype,
@@ -850,6 +856,7 @@ impl fmt::Display for ChoiceAddressPattern {
             Self::PairedEndInsertSize => f.write_str(PAIRED_END_INSERT_SIZE),
             Self::PLength { end } => ChoiceAddress::PLength { end }.fmt(f),
             Self::CodingEndOutcome(segment) => ChoiceAddress::CodingEndOutcome(segment).fmt(f),
+            Self::DuplexRepairHistory => ChoiceAddress::DuplexRepairHistory.fmt(f),
             Self::SampleHaplotype => f.write_str(SAMPLE_HAPLOTYPE),
             Self::SampleGene(segment) => ChoiceAddress::SampleGene(segment).fmt(f),
             Self::SampleAlleleInSlot(segment) => ChoiceAddress::SampleAlleleInSlot(segment).fmt(f),
@@ -952,6 +959,7 @@ fn parse_choice_address_pattern(address: &str) -> Option<ChoiceAddressPattern> {
         "end_processing.v1.v.outcome" => {
             Some(ChoiceAddressPattern::CodingEndOutcome(VdjSegment::V))
         }
+        "duplex_repair.v1.history" => Some(ChoiceAddressPattern::DuplexRepairHistory),
         "end_processing.v1.d.outcome" => {
             Some(ChoiceAddressPattern::CodingEndOutcome(VdjSegment::D))
         }

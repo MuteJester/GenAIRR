@@ -64,6 +64,38 @@ struct Landmark {
     reason: &'static str,
 }
 
+/// Independent reading of certified placements. Do not use the production
+/// SequenceView or landmark helpers: a synthetic cache entry alone is not
+/// evidence that the founder's reference body was restored.
+fn placed_reference(sim: &Simulation, segment: Segment, position: usize) -> Option<usize> {
+    if let Some(p) = &sim.duplex_provenance {
+        let crate::ir::DuplexQueryLink::FounderColumn(column) = p.links.get(position)? else {
+            return None;
+        };
+        let source = match segment {
+            Segment::V => crate::duplex_repair::Substrate::V,
+            Segment::D => crate::duplex_repair::Substrate::D,
+            Segment::J => crate::duplex_repair::Substrate::J,
+            _ => return None,
+        };
+        let mut claims = p
+            .founder
+            .body_claims
+            .get(*column)?
+            .iter()
+            .filter(|c| c.segment == source);
+        let coordinate = claims.next()?.reference_position;
+        return claims
+            .all(|c| c.reference_position == coordinate)
+            .then_some(coordinate);
+    }
+    let n = sim.pool.as_slice().get(position)?;
+    (n.segment == segment)
+        .then(|| n.germline_pos.get())
+        .flatten()
+        .map(usize::from)
+}
+
 fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Landmark {
     let mut out = Landmark {
         ready: false,
@@ -131,10 +163,7 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
         return out;
     }
     let pool = sim.pool.as_slice();
-    out.position = (begin..end).find(|&p| {
-        pool.get(p)
-            .is_some_and(|n| n.segment == segment && n.germline_pos.get() == Some(a as u16))
-    });
+    out.position = (begin..end).find(|&p| placed_reference(sim, segment, p) == Some(a));
     let Some(p) = out.position else {
         out.accepted = Some(false);
         out.reason = "anchor_removed";
@@ -147,10 +176,7 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
             out.reason = "anchor_not_observed";
             return out;
         };
-        if p + offset >= end
-            || n.segment != segment
-            || n.germline_pos.get() != Some((a + offset) as u16)
-        {
+        if p + offset >= end || placed_reference(sim, segment, p + offset) != Some(a + offset) {
             out.accepted = Some(false);
             out.reason = "anchor_provenance_disrupted";
             return out;
@@ -228,21 +254,26 @@ pub(super) fn derive(sim: &Simulation, refdata: &RefDataConfig) -> Oracle {
         let jr = jr.filter(|r| !r.is_empty())?;
         let inst = sim.assignments.get(Segment::J)?;
         let allele = refdata.get(Segment::J, inst.allele_id)?;
-        let reference_end = allele
-            .seq
-            .len()
-            .checked_sub(inst.trim_3 as usize + inst.observation_loss_3 as usize)?;
+        let reference_end = if sim.duplex_provenance.is_some() {
+            let retained = allele.seq.len().checked_sub(inst.trim_3 as usize)?;
+            let observed = inst
+                .observed_ref_end
+                .map(|x| x as usize)
+                .unwrap_or(retained);
+            (observed <= retained).then_some(observed)?
+        } else {
+            allele
+                .seq
+                .len()
+                .checked_sub(inst.trim_3 as usize + inst.observation_loss_3 as usize)?
+        };
         let end = jr.end.index() as usize;
         if (reference_end + 3 - jp) % 3 != (end + 3 - phase) % 3 {
             return Some(false);
         }
-        let (p, g) = (jr.start.index() as usize..end).rev().find_map(|p| {
-            let n = pool.get(p)?;
-            if n.segment != Segment::J {
-                return None;
-            }
-            n.germline_pos.get().map(|g| (p, g as usize))
-        })?;
+        let (p, g) = (jr.start.index() as usize..end)
+            .rev()
+            .find_map(|p| placed_reference(sim, Segment::J, p).map(|g| (p, g)))?;
         Some((g + 3 - jp) % 3 == (p + 3 - phase) % 3 && (end - p - 1) % 3 == 0)
     })();
     let predicates = [v.accepted, j.accepted, frame, stop.map(|s| !s), tail];

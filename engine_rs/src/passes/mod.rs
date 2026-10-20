@@ -21,6 +21,7 @@ pub mod assemble_segment;
 pub mod coding_end_processing;
 pub mod corrupt;
 pub(crate) mod count_source;
+pub mod duplex_recombine;
 pub mod echo;
 pub mod generate_np;
 pub mod invert_d;
@@ -44,6 +45,7 @@ pub use corrupt::{
     ContaminantPass, EndLossPass, IndelPass, LossEnd, NCorruptionPass, PCRErrorPass,
     QualityErrorPass, RevCompPass,
 };
+pub use duplex_recombine::DuplexRecombinePass;
 pub use echo::EchoPass;
 pub use generate_np::GenerateNPPass;
 pub use invert_d::InvertDPass;

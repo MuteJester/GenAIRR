@@ -409,6 +409,11 @@ pub fn project_duplex_simulation(
         &query,
     ))
     .map_err(|e| e.to_string())?;
+    let identity = if let Some(selection) = &p.founder.selection {
+        serde_json::to_vec(&(identity, selection)).map_err(|e| e.to_string())?
+    } else {
+        identity
+    };
     record.insert(
         "sequence_id".into(),
         json!(format!("duplex-observation:{:x}", Sha256::digest(identity))),
@@ -418,12 +423,15 @@ pub fn project_duplex_simulation(
         "coordinate_system":"zero_based_coding_oriented","links":p.links,"removed":p.removed,
         "edits":p.edits,"attempt_stages":p.attempt_stages,"rev_comp":p.rev_comp,"insertion_identity_scope":"observation_branch_local"});
     record["duplex_repair"]["observation"] = observation;
+    if p.founder.selection.is_some() {
+        record["duplex_repair"]["selection"] = json!(p.founder.selection);
+    }
     record["duplex_repair"]["founder_column_body_claims"] = json!(founder_analysis.column_claims);
     record["duplex_repair"]["body_claims_timepoint"] = json!("current_observation");
     record["duplex_repair"]["availability"] = json!(availability);
     value["availability"] = json!(availability);
     value["capabilities"]["persistent_simulation"] = json!(true);
-    value["capabilities"]["experiment_integration"] = json!(false);
+    value["capabilities"]["experiment_integration"] = json!(p.founder.selection.is_some());
     Ok(value)
 }
 

@@ -63,15 +63,23 @@ class _RecombinationMixin:
     def recombine(
         self,
         *,
+        duplex_repair=None,
         np1_lengths: Optional[Iterable[Tuple[int, float]]] = None,
         np2_lengths: Optional[Iterable[Tuple[int, float]]] = None,
         v_allele_weights: Optional[Dict[str, float]] = None,
         d_allele_weights: Optional[Dict[str, float]] = None,
         j_allele_weights: Optional[Dict[str, float]] = None,
     ) -> "Experiment":
-        """Append a standard V(D)J recombination step.
+        """Append V(D)J recombination, optionally using authored duplex repair.
 
-        Compiles to:
+        ``duplex_repair`` accepts a reference-bound ``DuplexRepairModel``.
+        It owns both junctions and excludes explicit legacy NP/trim/P settings.
+        All selectable histories are checked at compilation before sampling;
+        productive history weights are conditioned locally within the selected
+        allele/orientation context. Automatic cartridge junction defaults are
+        bypassed, while upstream allele usage and genotype eligibility remain.
+
+        Standard mode compiles to:
         - **VJ:** sample V → sample J → (trim V_3, J_5) → assemble V
           → generate NP1 → assemble J.
         - **VDJ:** sample V → sample D → sample J → (trim V_3, D_5,
@@ -111,6 +119,14 @@ class _RecombinationMixin:
         ``ValueError`` for unknown allele names or non-positive
         weights.
         """
+        if duplex_repair is not None:
+            from .duplex import append_duplex_recombine
+            return append_duplex_recombine(
+                self, duplex_repair, np1_lengths=np1_lengths, np2_lengths=np2_lengths,
+                v_allele_weights=v_allele_weights, d_allele_weights=d_allele_weights,
+                j_allele_weights=j_allele_weights,
+            )
+
         # Explicit allele weights conflict with an attached genotype:
         # the genotype owns allele presence + within-gene expression, and
         # the phased lowering ignores recombine-step weights. Reject the
@@ -255,6 +271,7 @@ class _RecombinationMixin:
             p_d_5_lengths=p_d_5_lengths,
             p_d_3_lengths=p_d_3_lengths,
             p_j_5_lengths=p_j_5_lengths,
+            np_lengths_overridden=np1_lengths is not None or np2_lengths is not None,
         )
         self._steps.append(step)
         return self
@@ -320,6 +337,8 @@ class _RecombinationMixin:
             )
 
         prior: _RecombineStep = self._steps[rec_idx]  # type: ignore[assignment]
+        if prior.duplex_repair_json is not None:
+            raise ValueError("explicit trim() and duplex_repair are mutually exclusive")
         if prior.coding_end_mode is not None:
             raise ValueError(
                 "trim() and process_coding_ends() are mutually exclusive; "
@@ -416,6 +435,8 @@ class _RecombinationMixin:
                 "process_coding_ends() must precede mutation, corruption, and clonal-fork steps"
             )
         prior = self._steps[rec_idx]
+        if prior.duplex_repair_json is not None:
+            raise ValueError("process_coding_ends() and duplex_repair are mutually exclusive")
         if prior.trim_overridden:
             raise ValueError("process_coding_ends() and explicit trim() are mutually exclusive")
         if prior.coding_end_mode is not None:

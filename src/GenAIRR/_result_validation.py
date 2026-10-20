@@ -9,6 +9,21 @@ from typing import Any, Dict, List
 from ._result_common import _inject_truth_columns
 
 
+def _same_generated_value(reported, expected):
+    """Compare nested generated provenance without bool/int coercion."""
+    if type(reported) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return reported.keys() == expected.keys() and all(
+            _same_generated_value(reported[key], value) for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(reported) == len(expected) and all(
+            _same_generated_value(a, b) for a, b in zip(reported, expected)
+        )
+    return reported == expected
+
+
 class ValidationReport:
     """Aggregate report from :meth:`SimulationResult.validate_records`.
 
@@ -259,7 +274,7 @@ class _ResultValidation:
                         "kind": "RecordFieldMissing", "field": field,
                         "expected": value,
                     })
-                elif type(record[field]) is not type(value) or record[field] != value:
+                elif not _same_generated_value(record[field], value):
                     issues.append({
                         "kind": "RecordFieldMismatch", "field": field,
                         "reported": record[field], "expected": value,

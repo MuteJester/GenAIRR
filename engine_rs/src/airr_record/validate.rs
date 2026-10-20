@@ -25,6 +25,54 @@ mod productivity_oracle;
 mod region_invariants;
 mod structural;
 
+/// Independent biological postconditions for the nullable duplex record.
+/// The caller separately validates the repair, observation ledger and layout.
+pub(crate) fn validate_duplex_productivity(
+    record: &serde_json::Value,
+    sim: &crate::ir::Simulation,
+    refdata: &RefDataConfig,
+) -> Vec<RecordValidationIssue> {
+    use serde_json::json;
+    let expected = productivity_oracle::derive(sim, refdata);
+    let sequence: Vec<_> = sim.pool.as_slice().iter().map(|n| n.base).collect();
+    let junction = expected
+        .junction
+        .map(|(a, b)| String::from_utf8_lossy(&sequence[a..b]).into_owned());
+    let aa = junction.as_deref().map(crate::codon::translate_seq);
+    [
+        ("productive", json!(expected.productive)),
+        ("vj_in_frame", json!(expected.frame)),
+        ("stop_codon", json!(expected.stop)),
+        ("junction", json!(junction)),
+        ("junction_aa", json!(aa)),
+        ("junction_start", json!(expected.junction.map(|(a, _)| a))),
+        ("junction_end", json!(expected.junction.map(|(_, b)| b))),
+        (
+            "junction_length",
+            json!(expected.junction.map(|(a, b)| b - a)),
+        ),
+        (
+            "productivity_policy",
+            json!(crate::productivity::DUPLEX_POLICY),
+        ),
+        ("productivity_scope", json!(crate::productivity::SCOPE)),
+        ("productivity_reasons", json!(expected.reasons)),
+    ]
+    .into_iter()
+    .filter_map(|(field, value)| {
+        (record.get(field) != Some(&value)).then(|| {
+            RecordValidationIssue::ProductivityAssessmentMismatch {
+                field: field.into(),
+                reported: record
+                    .get(field)
+                    .map_or_else(|| "missing".into(), ToString::to_string),
+                expected: value.to_string(),
+            }
+        })
+    })
+    .collect()
+}
+
 /// One reported issue. Variants are stable identifiers; downstream
 /// CI / dashboards can pattern-match on them.
 #[derive(Clone, Debug, PartialEq)]

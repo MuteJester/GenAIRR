@@ -7,9 +7,10 @@ pub const MODEL: &str = "experimental_duplex_repair_v1";
 pub mod bindings;
 mod coupled;
 mod evidence;
+pub mod model;
+pub mod observation;
 pub mod projection;
 pub mod seed;
-pub mod observation;
 pub use coupled::{
     repair_coupled, repair_coupled_annotated, CoupledOrigin, CoupledProduct, JoinName, JoinScript,
     LigationSeam, Substrate, COUPLED_MODEL,

@@ -74,7 +74,10 @@ impl InvertDPass {
         // Mirrors `RevCompPass`: when a cursor is attached, the
         // RNG is bypassed entirely (the run is deterministic
         // against the trace).
-        let productive = ctx.feasibility.filter(|f| f.has_p_productive());
+        let productive = ctx
+            .feasibility
+            .filter(|f| f.has_p_productive() || f.has_duplex());
+        let duplex = ctx.feasibility.is_some_and(|f| f.has_duplex());
         let replaying = ctx.replay_cursor.is_some();
         let pass_index = ctx.pass_index;
         let refdata = ctx.refdata;
@@ -91,16 +94,17 @@ impl InvertDPass {
             in_support
                 && productive
                     .is_none_or(|f| f.admits(pass_index, sim, refdata, &choice_name, &choice))
-                && contracts.is_none_or(|contracts| {
-                    contracts
-                        .admits_typed(
-                            sim,
-                            refdata,
-                            ChoiceContext::none().with_address(choice_address),
-                            &choice,
-                        )
-                        .is_ok()
-                })
+                && (duplex
+                    || contracts.is_none_or(|contracts| {
+                        contracts
+                            .admits_typed(
+                                sim,
+                                refdata,
+                                ChoiceContext::none().with_address(choice_address),
+                                &choice,
+                            )
+                            .is_ok()
+                    }))
         };
         let inverted = if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
             cursor

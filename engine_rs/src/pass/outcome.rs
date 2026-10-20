@@ -25,6 +25,7 @@ impl Outcome {
             || parent.assignments != initial.assignments
             || parent.live_call_support != initial.live_call_support
             || parent.coding_end_provenance != initial.coding_end_provenance
+            || parent.duplex_provenance != initial.duplex_provenance
             || parent.mutation_count != initial.mutation_count
             || parent.mutation_burden != initial.mutation_burden
         {

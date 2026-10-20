@@ -22,11 +22,33 @@ use super::trace::PyTrace;
 #[pyclass(name = "Outcome", module = "GenAIRR._engine", frozen)]
 pub struct PyOutcome {
     pub(crate) inner: Outcome,
+    pub(crate) duplex_execution: Option<std::sync::Arc<DuplexExecutionBinding>>,
+}
+
+/// Trusted Python execution context; computed once per compiled duplex plan.
+/// This is separate from editable trace JSON and deliberately absent on
+/// external-state continuations or synthesized/merged outcomes.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DuplexExecutionBinding {
+    pub plan_signature: String,
+    pub reference_hash: String,
+    pub active_contracts: Vec<String>,
 }
 
 impl PyOutcome {
     pub(crate) fn new(inner: Outcome) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            duplex_execution: None,
+        }
+    }
+
+    pub(crate) fn with_duplex_execution(
+        mut self,
+        binding: Option<std::sync::Arc<DuplexExecutionBinding>>,
+    ) -> Self {
+        self.duplex_execution = binding;
+        self
     }
 }
 
@@ -37,8 +59,8 @@ pub(crate) fn has_duplex_provenance(outcome: &Outcome) -> bool {
         .any(|simulation| simulation.duplex_provenance.is_some())
 }
 
-/// The legacy record has nonnullable P/NP fields. Until that entire schema
-/// supports partial duplex metadata, never silently serialize unknown as zero.
+/// Guard legacy-only family/lineage paths. Ordinary Outcome records dispatch
+/// to the nullable duplex projector without entering the legacy Rust schema.
 pub(crate) fn require_legacy_airr_outcome(outcome: &Outcome) -> PyResult<()> {
     if has_duplex_provenance(outcome) {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -46,6 +68,26 @@ pub(crate) fn require_legacy_airr_outcome(outcome: &Outcome) -> PyResult<()> {
         ));
     }
     Ok(())
+}
+
+fn duplex_record(
+    outcome: &Outcome,
+    refdata: &crate::refdata::RefDataConfig,
+    sequence_id: &str,
+) -> PyResult<serde_json::Value> {
+    let mut envelope = crate::duplex_repair::observation::project_duplex_simulation(
+        outcome.final_simulation(),
+        refdata,
+    )
+    .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    let paths = envelope["paths"].take();
+    let mut record = envelope["record"].take();
+    record["sequence_id"] = serde_json::json!(sequence_id);
+    // A normal Result exports records without the outer projection envelope.
+    // Preserve the current oriented alignment paths with their declared native
+    // coordinate convention so inverted D CIGAR offsets remain recoverable.
+    record["duplex_repair"]["current_paths"] = paths;
+    Ok(record)
 }
 
 /// Preserve ancestor mutation and recombination provenance when a clonal
@@ -141,6 +183,8 @@ impl PyOutcome {
     /// time.
     ///
     /// `sequence_id` defaults to an empty string when omitted.
+    /// Duplex-backed outcomes retain unknown values as `None` and include
+    /// complete founder/observation provenance under `duplex_repair`.
     #[pyo3(signature = (refdata, *, sequence_id = ""))]
     fn airr_record<'py>(
         &self,
@@ -148,7 +192,14 @@ impl PyOutcome {
         refdata: &PyRefDataConfig,
         sequence_id: &str,
     ) -> PyResult<Bound<'py, PyDict>> {
-        require_legacy_airr_outcome(&self.inner)?;
+        if has_duplex_provenance(&self.inner) {
+            let record = duplex_record(&self.inner, refdata.inner(), sequence_id)?;
+            let dict = PyDict::new_bound(py);
+            for (key, value) in record.as_object().expect("duplex record is an object") {
+                dict.set_item(key, json_value_to_py(py, value)?)?;
+            }
+            return Ok(dict);
+        }
         let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
         airr_record_to_pydict(py, &rec)
     }
@@ -173,7 +224,17 @@ impl PyOutcome {
         sequence_id: &str,
     ) -> PyResult<Vec<Bound<'py, PyDict>>> {
         use crate::airr_record::validate_airr_record;
-        require_legacy_airr_outcome(&self.inner)?;
+        if has_duplex_provenance(&self.inner) {
+            let record = duplex_record(&self.inner, refdata.inner(), sequence_id)?;
+            return crate::airr_record::validate_duplex_productivity(
+                &record,
+                self.inner.final_simulation(),
+                refdata.inner(),
+            )
+            .into_iter()
+            .map(|i| issue_to_pydict(py, i))
+            .collect();
+        }
         let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
         let issues = validate_airr_record(&rec, &self.inner, refdata.inner());
         issues.into_iter().map(|i| issue_to_pydict(py, i)).collect()

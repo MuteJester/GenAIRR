@@ -121,6 +121,11 @@ class _RecombineStep:
     coding_end_outcomes_d: Optional[Tuple[Tuple[int, int, float], ...]] = None
     coding_end_outcomes_j: Optional[Tuple[Tuple[int, int, float], ...]] = None
     coding_end_model_reference_hashes: Tuple[str, ...] = ()
+    # Canonical finite authored repair model. Presence gives one atomic owner
+    # of both junctions, replacing automatic trim/P/NP assembly defaults.
+    duplex_repair_json: Optional[str] = None
+    # Capture explicit intent before empirical/default normalization.
+    np_lengths_overridden: bool = False
 
 
 @dataclass(frozen=True)

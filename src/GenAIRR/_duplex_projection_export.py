@@ -28,7 +28,13 @@ def export_duplex_projection(projection, path, *, format="json", airr_strict=Tru
         destination.write_text(payload, encoding="utf-8")
         return
     source = projection["record"]
+    # The common Result exporter also requires oriented paths for duplex
+    # records. Keep the caller's envelope immutable.
+    source = dict(source)
+    source["duplex_repair"] = dict(source["duplex_repair"])
+    source["duplex_repair"]["current_paths"] = projection["paths"]
     row = _to_airr_strict(source) if airr_strict else dict(source)
+    row["duplex_repair"] = projection["record"]["duplex_repair"]
     if airr_strict:
         # Canonical D bounds remain forward coordinates; its CIGAR traverses
         # the oriented reference. Asymmetric inversion needs that offset.

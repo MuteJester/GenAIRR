@@ -27,7 +27,7 @@ use crate::trace::{ChoiceRecord, Trace};
 /// Concrete implementations whose current edits preserve the duplex
 /// observation map. A matching name/effect declaration is insufficient:
 /// arbitrary custom passes have not established that capability.
-fn duplex_pass_supported(pass: &dyn crate::pass::Pass) -> bool {
+pub(super) fn duplex_pass_supported(pass: &dyn crate::pass::Pass) -> bool {
     use crate::passes::{
         EndLossPass, IndelPass, NCorruptionPass, PCRErrorPass, QualityErrorPass, RevCompPass,
         S5FMutationPass, UniformMutationPass,
@@ -207,6 +207,33 @@ pub(crate) fn execute_transactional(
     if let Err(error) = validate_duplex_continuation(inputs, &revisions[0]) {
         return Err(abort(error, revisions, pass_names, trace, events));
     }
+    if inputs.feasibility.is_some_and(|f| f.has_duplex()) {
+        let initial = &revisions[0];
+        if !initial.pool.is_empty()
+            || !initial.sequence.regions.is_empty()
+            || [
+                crate::ir::Segment::V,
+                crate::ir::Segment::D,
+                crate::ir::Segment::J,
+            ]
+            .into_iter()
+            .any(|segment| initial.assignments.has(segment))
+            || initial.coding_end_provenance.is_some()
+            || initial.mutation_count != 0
+            || initial.mutation_burden != 0.0
+        {
+            return Err(abort(
+                PassError::invalid_plan_state(
+                    "duplex.recombine",
+                    "finite duplex generation requires a fresh empty initial simulation",
+                ),
+                revisions,
+                pass_names,
+                trace,
+                events,
+            ));
+        }
+    }
 
     for node in inputs.sorted_order {
         let pass = &inputs.plan.passes()[node.index()];
@@ -283,6 +310,9 @@ pub(crate) fn execute_transactional(
             || productive_assignment
             || p_productive_recombination
             || structural_assembly
+            || inputs
+                .feasibility
+                .is_some_and(|f| f.owns_duplex_generation_pass(pass_index))
         {
             ExecutionPolicy::Strict
         } else {
@@ -310,7 +340,11 @@ pub(crate) fn execute_transactional(
             next = hook.apply(next, &compile_effects, &simulation_events, hook_ctx);
         }
 
-        if inputs.policy == ExecutionPolicy::Strict {
+        if inputs.policy == ExecutionPolicy::Strict
+            && !inputs
+                .feasibility
+                .is_some_and(|f| f.owns_duplex_source_pass(pass_index))
+        {
             if let Some(contracts) = inputs.contracts {
                 if let Err(violations) = contracts.verify(&next, inputs.refdata) {
                     return Err(abort(

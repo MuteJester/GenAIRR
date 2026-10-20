@@ -69,6 +69,15 @@ pub struct NpBaseSupport {
 /// Typed facts exposed by passes for semantic compile-time analysis.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PassCompileFact {
+    /// Exact naturally reachable source groups, preserving chromosome linkage.
+    /// Each group is a positive-mass complete V/D/J haplotype support.
+    JointAlleleSupport {
+        groups: Vec<[Vec<AlleleId>; 3]>,
+    },
+    /// An atomic source constructed from a finite authored repair vocabulary.
+    FiniteDuplexSource {
+        model: std::sync::Arc<crate::duplex_repair::model::FiniteDuplexModel>,
+    },
     AlleleSampleSupport {
         segment: Segment,
         support: AlleleIdSupport,
