@@ -39,17 +39,14 @@
 //! - [`SimulationEvent::IndelInserted`]
 //! - [`SimulationEvent::IndelDeleted`]
 //!
-//! Seven variants are **reserved for future emission** — they have
-//! a home in the enum with full payloads so consumers can match
-//! exhaustively, but no builder method emits them yet. Each one
-//! describes a real consequence (not a marker); when its emitting
-//! code path is migrated, it carries the data a downstream sink
-//! needs to react without having to re-read the simulation:
+//! Other variants preserve assignments, regions and observation provenance.
+//! Their payloads let downstream consumers distinguish molecular edits from
+//! missing read coverage without reinterpreting sequence bytes:
 //!
 //! - [`SimulationEvent::BaseDeleted`] — end-loss / primer-trim
 //!   removal of a base. Semantically distinct from `IndelDeleted`
 //!   (different biological provenance) even though the underlying
-//!   IR primitive is the same today.
+//!   pool-coordinate shift is the same.
 //! - [`SimulationEvent::AssignmentChanged`] — V/D/J allele
 //!   assignment installed or replaced, carrying both the prior
 //!   instance (if any) and the new one.
@@ -101,9 +98,19 @@ use crate::assignment::{AlleleInstance, TrimEnd};
 
 /// One typed state-change event emitted by the simulation builder.
 ///
-/// See the module docs for the four-emitted / five-reserved split.
+/// See the module docs for the typed consequence stream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SimulationEvent {
+    /// A sampled PCR/quality count, even when no substitution can apply.
+    DuplexAttemptStageRecorded {
+        summary: super::DuplexAttemptSummary,
+    },
+    /// Atomic installation of validated founder ancestry.
+    DuplexProvenanceInstalled {
+        provenance: std::sync::Arc<super::DuplexProvenance>,
+    },
+    /// Context for subsequent descendant edits; absent means unattributed.
+    DuplexEditContextRecorded { source_pass: Option<String> },
     /// A retained-outcome choice, without any invented microscopic history.
     CodingEndChoiceRecorded { choice: super::CodingEndChoice },
     /// An emitted P base's immutable template ancestry and initial position.
@@ -128,10 +135,8 @@ pub enum SimulationEvent {
         segment: Segment,
         germline_pos: Option<u16>,
     },
-    /// **Reserved for future emission.** End-loss / primer-trim
-    /// removal of a base. Today the underlying IR primitive is the
-    /// same as `IndelDeleted`; this variant is scaffolding for the
-    /// future separation when end-loss gains its own event path.
+    /// Observation loss in a duplex descendant, rather than a structural deletion.
+    /// Legacy simulations retain their historical IndelDeleted event stream.
     BaseDeleted { at: u32, removed_base: u8 },
     /// A nucleotide was inserted into the pool at position `at`;
     /// every handle `>= at` shifts up by 1.

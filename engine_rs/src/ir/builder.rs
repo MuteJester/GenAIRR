@@ -46,6 +46,7 @@ use crate::contract::JunctionStopState;
 use crate::live_call::dirty_signal_observer::DirtySignalObserver;
 use crate::live_call::walker_observer::{SealedWalkerState, WalkerObserverState};
 use crate::live_call::SegmentRefIndex;
+use std::sync::Arc;
 
 /// Mutable, by-value owner of an in-progress `Simulation` whose pool
 /// supports cheap per-base append. See the module docs for the design
@@ -68,6 +69,7 @@ use crate::live_call::SegmentRefIndex;
 /// the admit-mask migration; only the typed sinks remain.
 pub struct SimulationBuilder<'idx> {
     simulation: Simulation,
+    duplex_edit_context: Option<String>,
     /// Recorder sink for the typed event stream — `Some` when a
     /// caller has opted in via [`Self::attach_event_log_observer`].
     /// Drained at seal time via
@@ -94,6 +96,7 @@ impl<'idx> SimulationBuilder<'idx> {
     pub fn from_simulation(sim: Simulation) -> Self {
         let mut builder = Self {
             simulation: sim,
+            duplex_edit_context: None,
             event_log_sink: None,
             dirty_signal_sink: None,
             walker_sinks: Vec::new(),
@@ -133,6 +136,59 @@ impl<'idx> SimulationBuilder<'idx> {
     /// up to this point.
     pub fn peek(&self) -> &Simulation {
         &self.simulation
+    }
+
+    /// Install complete founder evidence only after the query and assignments exist.
+    pub(crate) fn attach_duplex_provenance(
+        &mut self,
+        provenance: Arc<super::DuplexProvenance>,
+    ) -> Result<(), String> {
+        for segment in [Segment::V, Segment::D, Segment::J] {
+            let binding = provenance.founder.bindings.for_segment(segment).unwrap();
+            let assignment = self
+                .simulation
+                .assignments
+                .get(segment)
+                .ok_or("duplex installation requires all generating assignments")?;
+            if assignment.allele_id.index() != binding.allele_id
+                || assignment.orientation.is_reverse()
+                    != (segment == Segment::D && provenance.founder.bindings.d_inverted)
+            {
+                return Err("duplex installation assignment differs from founder binding".into());
+            }
+        }
+        let next = self.simulation.with_duplex_provenance(provenance.clone())?;
+        self.broadcast_event(SimulationEvent::DuplexProvenanceInstalled { provenance });
+        self.simulation = next;
+        Ok(())
+    }
+
+    pub(crate) fn set_duplex_edit_context(&mut self, source_pass: Option<&str>) {
+        self.duplex_edit_context = source_pass.map(str::to_owned);
+        if self.simulation.duplex_provenance.is_some() {
+            self.broadcast_event(SimulationEvent::DuplexEditContextRecorded {
+                source_pass: self.duplex_edit_context.clone(),
+            });
+        }
+    }
+
+    pub(crate) fn record_duplex_attempt_stage(
+        &mut self,
+        stage: super::DuplexAttemptStage,
+        sampled_attempts: u32,
+    ) {
+        if let Some(p) = &self.simulation.duplex_provenance {
+            let next = p.with_attempt_stage(stage, sampled_attempts);
+            let summary = next.attempt_stages.last().unwrap().clone();
+            self.broadcast_event(SimulationEvent::DuplexAttemptStageRecorded { summary });
+            self.simulation.duplex_provenance = Some(Arc::new(next));
+        }
+    }
+
+    fn tag_duplex_edit(&mut self) {
+        if let Some(p) = &mut self.simulation.duplex_provenance {
+            Arc::make_mut(p).set_last_edit_source(self.duplex_edit_context.as_deref());
+        }
     }
 
     /// Attach a streaming live-call walker observer for one segment's
@@ -204,6 +260,10 @@ impl<'idx> SimulationBuilder<'idx> {
         // refcount==1 path on every iteration. The returned handle
         // equals the one we computed above (Pool::push uses pool.len()
         // before the push to mint the handle, same as we did).
+        if let Some(p) = &self.simulation.duplex_provenance {
+            self.simulation.duplex_provenance = Some(Arc::new(p.with_inserted(handle.index(), n)));
+            self.tag_duplex_edit();
+        }
         self.simulation.pool.push(n)
     }
 
@@ -322,6 +382,7 @@ impl<'idx> SimulationBuilder<'idx> {
         // path; consumers compute on demand. The persistent layer's
         // recompute would be wasted work.
         self.simulation = self.simulation.with_indel_inserted(at, n);
+        self.tag_duplex_edit();
     }
 
     /// Delete the nucleotide at position `at`, shifting every existing
@@ -340,6 +401,22 @@ impl<'idx> SimulationBuilder<'idx> {
             segment: removed.segment,
         });
         self.simulation = self.simulation.with_indel_deleted(at);
+        self.tag_duplex_edit();
+        Some(removed)
+    }
+
+    /// Explicit observation loss preserves a cause distinct from a structural indel.
+    pub(crate) fn delete_observation_base(&mut self, at: u32) -> Option<Nucleotide> {
+        if self.simulation.duplex_provenance.is_none() {
+            return self.delete_indel(at);
+        }
+        let removed = *self.simulation.pool.get(NucHandle::new(at))?;
+        self.broadcast_event(SimulationEvent::BaseDeleted {
+            at,
+            removed_base: removed.base,
+        });
+        self.simulation = self.simulation.with_observation_deleted(at);
+        self.tag_duplex_edit();
         Some(removed)
     }
 
@@ -492,6 +569,7 @@ impl<'idx> SimulationBuilder<'idx> {
             bytes_delta,
         });
         self.simulation = new_sim;
+        self.tag_duplex_edit();
         // Pool was structurally rewritten; re-establish the unique
         // ownership prepayment so subsequent push_nucleotide /
         // change_base_in_place calls stay on the refcount==1 fast
@@ -539,6 +617,11 @@ impl<'idx> SimulationBuilder<'idx> {
     #[allow(dead_code)]
     pub(crate) fn record_reverse_complement_flag(&mut self, applied: bool) {
         self.broadcast_event(SimulationEvent::ReverseComplementFlagRecorded { applied });
+        if let Some(p) = &self.simulation.duplex_provenance {
+            let mut next = p.with_reverse_complement(applied);
+            next.set_last_edit_source(Some(crate::address::CORRUPT_REV_COMP));
+            self.simulation.duplex_provenance = Some(Arc::new(next));
+        }
     }
 
     /// Update the orientation of the assigned `segment` allele and
@@ -659,6 +742,11 @@ impl<'idx> SimulationBuilder<'idx> {
             germline_pos: old.germline_pos.get(),
         });
 
+        if let Some(p) = &self.simulation.duplex_provenance {
+            self.simulation.duplex_provenance =
+                Some(Arc::new(p.with_substitution(handle.index(), old, new_base)));
+            self.tag_duplex_edit();
+        }
         let prev = self.simulation.pool.change_base_in_place(handle, new_base);
         debug_assert_eq!(
             prev.base, old.base,

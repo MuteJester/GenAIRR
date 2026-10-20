@@ -184,7 +184,7 @@ pub(super) fn projected_call_name(
 
 /// Evidence-based re-calls remain available separately from the standard
 /// generating calls and alignment reference.
-pub(super) fn recalled_call_name(
+pub(crate) fn recalled_call_name(
     refdata: &RefDataConfig,
     sim: &Simulation,
     segment: Segment,

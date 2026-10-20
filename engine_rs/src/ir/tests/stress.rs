@@ -59,6 +59,7 @@ fn stress_persistent_ir_under_random_mutation() {
         mutation_burden: 0.0,
         live_call_support: None,
         coding_end_provenance: None,
+        duplex_provenance: None,
     };
 
     // Property check at revision 0.
@@ -100,6 +101,7 @@ fn stress_persistent_ir_under_random_mutation() {
             mutation_burden: prev.mutation_burden,
             live_call_support: prev.live_call_support.clone(),
             coding_end_provenance: prev.coding_end_provenance.clone(),
+            duplex_provenance: prev.duplex_provenance.clone(),
         });
     }
 

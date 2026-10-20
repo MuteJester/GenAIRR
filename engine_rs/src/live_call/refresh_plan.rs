@@ -131,7 +131,8 @@ impl LiveCallRefreshPlan {
                     }
                 }
                 SimulationEvent::IndelInserted { .. }
-                | SimulationEvent::IndelDeleted { .. } => {
+                | SimulationEvent::IndelDeleted { .. }
+                | SimulationEvent::BaseDeleted { .. } => {
                     if !structural_emitted {
                         steps.push(LiveCallRefreshStep::AllStructural);
                         structural_emitted = true;
@@ -149,7 +150,7 @@ impl LiveCallRefreshPlan {
                 // byte would re-refresh redundantly.
                 SimulationEvent::BasePushed { .. } => {}
                 // Assignments, trims, mutation-count, rev-comp,
-                // base-deletes (reserved), region-replaced
+                // region-replaced
                 // (reserved) — none of these invalidate live-call
                 // evidence on their own. AssignmentChanged in
                 // particular is upstream of assembly: the actual
@@ -158,8 +159,10 @@ impl LiveCallRefreshPlan {
                 SimulationEvent::AssignmentChanged { .. }
                 | SimulationEvent::CodingEndChoiceRecorded { .. }
                 | SimulationEvent::CodingEndPOriginRecorded { .. }
+                | SimulationEvent::DuplexProvenanceInstalled { .. }
+                | SimulationEvent::DuplexEditContextRecorded { .. }
+            | SimulationEvent::DuplexAttemptStageRecorded { .. }
                 | SimulationEvent::TrimChanged { .. }
-                | SimulationEvent::BaseDeleted { .. }
                 | SimulationEvent::RegionReplaced { .. }
                 // PRegionAdded sits between assembled segments,
                 // shifts pool positions of later regions but never

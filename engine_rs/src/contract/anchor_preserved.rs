@@ -70,6 +70,17 @@ impl AnchorPreserved {
         self.segment
     }
 
+    fn require_supported_policy(&self, sim: &Simulation) -> Result<(), ContractViolation> {
+        if !self.canonical_class && sim.duplex_provenance.is_some() {
+            return Err(ContractViolation::new(
+                self.name(),
+                "preservation-only AnchorPreserved is unsupported for duplex ancestry; \
+                 use the restoration-aware productive bundle",
+            ));
+        }
+        Ok(())
+    }
+
     fn name_for(segment: Segment) -> &'static str {
         match segment {
             Segment::V => "anchor_preserved.v",
@@ -167,6 +178,7 @@ impl Contract for AnchorPreserved {
         sim: &Simulation,
         refdata: Option<&RefDataConfig>,
     ) -> Result<(), ContractViolation> {
+        self.require_supported_policy(sim)?;
         // No allele yet → vacuously satisfied.
         let inst = match sim.assignments.get(self.segment) {
             None => return Ok(()),
@@ -257,6 +269,7 @@ impl Contract for AnchorPreserved {
         context: ChoiceContext<'_>,
         candidate: &ChoiceValue,
     ) -> Result<(), ContractViolation> {
+        self.require_supported_policy(sim)?;
         let address = context.address_string().unwrap_or_default();
         if let Some(refdata) = refdata {
             match context.address {
@@ -302,6 +315,9 @@ impl Contract for AnchorPreserved {
         refdata: Option<&RefDataConfig>,
         site: NucHandle,
     ) -> super::BaseMask {
+        if self.require_supported_policy(sim).is_err() {
+            return super::BaseMask::EMPTY;
+        }
         self.admissible_bases_at_impl(sim, refdata, site)
     }
 
@@ -346,6 +362,9 @@ impl Contract for AnchorPreserved {
         site: u32,
         kind: super::IndelKindHint,
     ) -> super::IndelEventClass {
+        if self.require_supported_policy(sim).is_err() {
+            return super::IndelEventClass::Forbidden;
+        }
         self.admissible_indel_class_at_impl(sim, refdata, site, kind)
     }
 
@@ -373,6 +392,9 @@ impl Contract for AnchorPreserved {
         target: super::TrimTarget,
         requested_max: u32,
     ) -> super::LengthSupport {
+        if self.require_supported_policy(sim).is_err() {
+            return super::LengthSupport::Empty;
+        }
         self.admissible_trim_lengths_impl(sim, refdata, target, requested_max)
     }
 
@@ -390,6 +412,9 @@ impl Contract for AnchorPreserved {
         site: NucHandle,
         byte: u8,
     ) -> bool {
+        if self.require_supported_policy(sim).is_err() {
+            return false;
+        }
         self.admits_fixed_base_at_impl(sim, refdata, site, byte)
     }
 }

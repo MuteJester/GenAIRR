@@ -41,7 +41,7 @@ fn lowercase_base(base: u8) -> u8 {
 /// errors do not change downstream amino-acid translation.
 ///
 /// Trace addresses (D3):
-/// - `corrupt.quality.count` — total errors applied
+/// - `corrupt.quality.count` — sampled sequencing error attempts
 /// - `corrupt.quality.error_site[i]` — pool position of the i-th error
 /// - `corrupt.quality.error_base[i]` — *lowercase* destination base
 pub struct QualityErrorPass {
@@ -95,7 +95,7 @@ impl QualityErrorPass {
             strict,
         )?;
 
-        if pool_len == 0 || count == 0 {
+        if (pool_len == 0 || count == 0) && sim.duplex_provenance.is_none() {
             return Ok(sim.clone());
         }
 
@@ -108,6 +108,10 @@ impl QualityErrorPass {
         // `Contract::admits_fixed_base_at`). The TX still owns
         // observer attach, trace recording, and the seal protocol.
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
+        tx.record_duplex_attempt_stage(crate::ir::DuplexAttemptStage::Quality, count);
+        if pool_len == 0 || count == 0 {
+            return tx.commit();
+        }
 
         for i in 0..count {
             tx.substitute_position_constrained(

@@ -206,9 +206,9 @@ physical events and query contributions after both joins have separate counts.
 The legacy P, NP, trim and retained-outcome fitters reject duplex provenance;
 they cannot reinterpret these new histories as their old scalar models.
 
-`capabilities.simulation_seed` reports compatibility with the planned single
-segment layout; it does not install a simulation. `experiment_integration`
-is currently false. Native projection verifies the snapshot and its evidence
+`capabilities.simulation_seed` reports whether the bound product can enter
+the native single-segment execution IR, including its coordinate limits.
+`experiment_integration` is currently false. Native projection verifies the snapshot and its evidence
 by exact deterministic replay before returning a record.
 
 Productivity uses the explicit `duplex_observed_vdj_v1` policy. It accepts
@@ -224,6 +224,83 @@ exports one AIRR record, converts its interval coordinates, and serializes the
 ancestry extension as one JSON cell. Nested repair/provenance coordinates
 retain their declared systems. Inverted D retains canonical forward reference
 bounds; its CIGAR uses the oriented reference offset.
+
+### Persistent native seeds and observations
+
+A representable completed script can now create a persistent native simulation.
+The bound references, immutable repair snapshot and certified body placements
+travel with that simulation through audited native continuations:
+
+```python
+from GenAIRR import _engine
+from GenAIRR.experimental import project_duplex_simulation
+
+seed = script.seed(
+    reference, v_call="V*01", d_call="D*01", j_call="J*01",
+    reference_ends_are_coding_ends=True,
+)
+plan = _engine.PassPlan()
+plan.push_mutate_uniform([(1, 1.0)])
+plan.push_corrupt_3prime_loss([(1, 1.0)])
+compiled = plan.compile(
+    refdata=reference, strict=True, allow_curatable_refdata=True,
+)
+outcome = compiled.run_from(seed, 123)
+observation = project_duplex_simulation(outcome.final_simulation(), reference)
+export_duplex_projection(observation, "duplex-observation.json")
+```
+
+This is an experimental native continuation API. The normal `Experiment` DSL,
+finite-history sampling and family simulation integration remain later steps.
+It adds no external tools or dependencies.
+
+Supported continuations are the existing uniform and S5F mutation, PCR and
+quality substitution, N masking, structural indel, terminal loss and read
+reverse-complement passes. Every pass in a continuation is checked before any
+pass runs, including unsupported suffixes. Source resampling, trimming,
+new P/NP generation, contamination, echo, paired-end windowing and custom
+passes are rejected explicitly. An empty continuation is valid. References
+must match the founder binding; generating alleles and net repair trims cannot
+be replaced. Legacy preservation-only `AnchorPreserved` is rejected; productive
+contracts use the named duplex policy and current certified landmarks.
+
+`record.duplex_repair.product`, its physical ledger, operation evidence and
+repair counts always describe the founder after the two joins. They are never
+rewritten by downstream mutation or read loss. The `observation` extension
+records current query links, cumulative edits, removal causes and sampled
+PCR/quality stages. A founder-column link describes ancestry after copying;
+it does not assert that descendants contain the founder's physical atoms.
+Inserted observation identities are local to an observation branch. Independent
+branches require their observation identity when comparing insertion links.
+
+Current alignments use generating alleles and certified body coordinates.
+Re-calls, when computed by the native continuation, appear only in separate
+`recalled_v_call`, `recalled_d_call` and `recalled_j_call` fields. A structural
+deletion remains a reference-consuming `D`; clipping reduces observed reference
+coverage. Complete structural deletion can retain a deletion-only gene path
+without inventing query interval endpoints. The path's `query_boundary` locates
+that zero-width placement for strict CIGAR export. NP amino acids include only
+complete codons inside the tract in the current molecule's coding frame.
+Unknown phase gives a missing amino-acid value.
+
+Mutation burden retains each stage's input molecule denominator even after
+read loss. Mechanism counts accumulate over the observation's history. In
+particular, `n_pcr_errors` and `n_quality_errors` count sampled attempts;
+`duplex_repair.applied_error_substitutions` separately counts applied
+substitutions. Attempt summaries include zero-effect and empty-query stages.
+These cumulative counts remain available across successive continuations,
+whereas a single legacy trace is not a complete descendant history. Low-level
+unattributed edits make mechanism counters unavailable instead of assigning
+a biological cause.
+
+Reverse-complement output changes `record.sequence` and `rev_comp`; alignments,
+landmarks, query links and their coordinates remain coding oriented. The
+projector verifies the immutable repair snapshot, full edit and query replay,
+source assignments, coverage and structural partition before emitting metadata.
+Unknown legacy P lengths remain missing. Use this nullable projector and its
+JSON/TSV exporter: the legacy AIRR builder/validator, family exporters and durable
+trace-file route reject duplex states until their contracts can preserve this
+provenance. The stored repair script can still be replayed independently.
 
 ### Bounded substrate contract
 

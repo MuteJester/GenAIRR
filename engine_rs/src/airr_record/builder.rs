@@ -12,15 +12,49 @@ use super::trace_fields::{trace_bool_choice, trace_int_choice};
 use super::walk::walk_alignment_columns;
 use super::AirrRecord;
 
+const DUPLEX_UNSUPPORTED: &str =
+    "legacy AIRR records cannot represent unknown duplex P/NP metadata; use the duplex projection API";
+
+/// Checked legacy-record boundary. Duplex descendants require the separate
+/// nullable duplex projector, even when their sequence layout is representable.
+pub fn try_build_airr_record(
+    outcome: &Outcome,
+    refdata: &RefDataConfig,
+    sequence_id: &str,
+) -> Result<AirrRecord, String> {
+    if outcome
+        .revisions
+        .iter()
+        .any(|simulation| simulation.duplex_provenance.is_some())
+    {
+        return Err(DUPLEX_UNSUPPORTED.into());
+    }
+    Ok(build_airr_record(outcome, refdata, sequence_id))
+}
+
 /// Build an AIRR record from an outcome + refdata.
 ///
 /// `sequence_id` is set on the record verbatim; pass an empty
 /// string for unset.
+///
+/// # Panics
+///
+/// The legacy schema cannot represent duplex uncertainty. Call
+/// [`try_build_airr_record`] at fallible boundaries, or use the duplex
+/// projector for duplex outcomes. This legacy entrypoint fails closed rather
+/// than substituting zero for an unknown count.
 pub fn build_airr_record(
     outcome: &Outcome,
     refdata: &RefDataConfig,
     sequence_id: &str,
 ) -> AirrRecord {
+    assert!(
+        outcome
+            .revisions
+            .iter()
+            .all(|simulation| simulation.duplex_provenance.is_none()),
+        "{DUPLEX_UNSUPPORTED}"
+    );
     let sim = outcome.final_simulation();
     let trace = &outcome.trace;
 

@@ -194,6 +194,11 @@ impl PyCompiledSimulator {
     /// attached (trace files require both signatures to round-trip
     /// safely).
     fn trace_file_from(&self, outcome: &PyOutcome, seed: u64) -> PyResult<PyTraceFile> {
+        if super::outcome::has_duplex_provenance(&outcome.inner) {
+            return Err(PyValueError::new_err(
+                "duplex continuation trace files are unsupported: the legacy trace schema does not bind the initial repair snapshot; retain the authored repair script and project_duplex_simulation output instead",
+            ));
+        }
         let refdata = self.inner.refdata().ok_or_else(|| {
             PyValueError::new_err(
                 "trace_file_from: simulator has no refdata; trace files require both \

@@ -43,7 +43,7 @@ impl AnchorPreserved {
             None => return Ok(()),
         };
 
-        self.require_anchor_retained(allele, inst.trim_5, inst.trim_3)?;
+        self.require_live_anchor_retained(sim, refdata, allele, inst.trim_5, inst.trim_3)?;
         let Some(anchor_pool_start) = self.anchor_pool_start(sim, allele, anchor, inst.trim_5)?
         else {
             return Ok(());

@@ -611,7 +611,7 @@ impl SimulationEventSink for WalkerObserverState<'_> {
             SimulationEvent::IndelInserted { at, .. } => {
                 self.on_indel_inserted(at);
             }
-            SimulationEvent::IndelDeleted { at, .. } => {
+            SimulationEvent::IndelDeleted { at, .. } | SimulationEvent::BaseDeleted { at, .. } => {
                 self.on_indel_deleted(at);
             }
             // Reserved (non-pool) variants describe sidecar state
@@ -621,9 +621,11 @@ impl SimulationEventSink for WalkerObserverState<'_> {
             // inert here: Slice B wires a fresh-rebuild path via a
             // dedicated `LiveCallRefreshStep`, not an incremental
             // walker update.
-            SimulationEvent::BaseDeleted { .. }
-            | SimulationEvent::CodingEndChoiceRecorded { .. }
+            SimulationEvent::CodingEndChoiceRecorded { .. }
             | SimulationEvent::CodingEndPOriginRecorded { .. }
+            | SimulationEvent::DuplexProvenanceInstalled { .. }
+            | SimulationEvent::DuplexEditContextRecorded { .. }
+            | SimulationEvent::DuplexAttemptStageRecorded { .. }
             | SimulationEvent::AssignmentChanged { .. }
             | SimulationEvent::TrimChanged { .. }
             | SimulationEvent::RegionAdded { .. }

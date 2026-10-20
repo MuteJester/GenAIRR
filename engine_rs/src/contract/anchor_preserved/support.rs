@@ -33,7 +33,7 @@ impl AnchorPreserved {
         // support report the broken invariant; base masks stay
         // unconstrained.
         if self
-            .require_anchor_retained(allele, inst.trim_5, inst.trim_3)
+            .require_live_anchor_retained(sim, refdata, allele, inst.trim_5, inst.trim_3)
             .is_err()
         {
             return BaseMask::UNCONSTRAINED;
@@ -92,7 +92,7 @@ impl AnchorPreserved {
             return IndelEventClass::FrameNeutral;
         };
         if self
-            .require_anchor_retained(allele, inst.trim_5, inst.trim_3)
+            .require_live_anchor_retained(sim, refdata, allele, inst.trim_5, inst.trim_3)
             .is_err()
         {
             return IndelEventClass::FrameNeutral;
@@ -183,7 +183,7 @@ impl AnchorPreserved {
             return true;
         };
         if self
-            .require_anchor_retained(allele, inst.trim_5, inst.trim_3)
+            .require_live_anchor_retained(sim, refdata, allele, inst.trim_5, inst.trim_3)
             .is_err()
         {
             return true;

@@ -100,6 +100,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         if ctx.event_log_sink.is_some() {
             builder.attach_event_log_observer();
         }
+        builder.set_duplex_edit_context(Some(pass_name));
         Self {
             builder,
             ctx,
@@ -108,6 +109,15 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             input_pool_len: sim.pool.len(),
             strict,
         }
+    }
+
+    /// Preserve sampled attempts separately from applied substitution events.
+    pub(crate) fn record_duplex_attempt_stage(
+        &mut self,
+        stage: crate::ir::DuplexAttemptStage,
+        count: u32,
+    ) {
+        self.builder.record_duplex_attempt_stage(stage, count);
     }
 
     /// Read-only snapshot of the in-progress simulation. Sees every

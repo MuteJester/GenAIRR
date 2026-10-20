@@ -30,6 +30,24 @@ impl PyOutcome {
     }
 }
 
+pub(crate) fn has_duplex_provenance(outcome: &Outcome) -> bool {
+    outcome
+        .revisions
+        .iter()
+        .any(|simulation| simulation.duplex_provenance.is_some())
+}
+
+/// The legacy record has nonnullable P/NP fields. Until that entire schema
+/// supports partial duplex metadata, never silently serialize unknown as zero.
+pub(crate) fn require_legacy_airr_outcome(outcome: &Outcome) -> PyResult<()> {
+    if has_duplex_provenance(outcome) {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "legacy AIRR record/validation does not support duplex provenance; use GenAIRR.experimental.project_duplex_simulation(outcome.final_simulation(), refdata)",
+        ));
+    }
+    Ok(())
+}
+
 /// Preserve ancestor mutation and recombination provenance when a clonal
 /// descendant was produced with run_from(parent.final_simulation()).
 #[pyfunction]
@@ -130,6 +148,7 @@ impl PyOutcome {
         refdata: &PyRefDataConfig,
         sequence_id: &str,
     ) -> PyResult<Bound<'py, PyDict>> {
+        require_legacy_airr_outcome(&self.inner)?;
         let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
         airr_record_to_pydict(py, &rec)
     }
@@ -154,6 +173,7 @@ impl PyOutcome {
         sequence_id: &str,
     ) -> PyResult<Vec<Bound<'py, PyDict>>> {
         use crate::airr_record::validate_airr_record;
+        require_legacy_airr_outcome(&self.inner)?;
         let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
         let issues = validate_airr_record(&rec, &self.inner, refdata.inner());
         issues.into_iter().map(|i| issue_to_pydict(py, i)).collect()

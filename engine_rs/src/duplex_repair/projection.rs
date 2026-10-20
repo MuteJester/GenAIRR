@@ -11,30 +11,32 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 pub const PROJECTION_MODEL: &str = "duplex_airr_projection_v1";
-pub const PRODUCTIVITY_POLICY: &str = "duplex_observed_vdj_v1";
+pub const PRODUCTIVITY_POLICY: &str = crate::productivity::DUPLEX_POLICY;
 
 #[derive(Clone, Debug, Serialize)]
-struct BodyPoint {
-    query_position: usize,
-    reference_position: usize,
-    support_ids: Vec<u64>,
+pub(super) struct BodyPoint {
+    pub(super) query_position: usize,
+    pub(super) reference_position: usize,
+    pub(super) support_ids: Vec<u64>,
 }
 
-#[derive(Debug, Serialize)]
-struct Path {
-    available: bool,
-    reason: Option<&'static str>,
-    body: Vec<BodyPoint>,
-    query_start: Option<usize>,
-    query_end: Option<usize>,
-    reference_start: Option<usize>,
-    reference_end: Option<usize>,
-    oriented_reference_start: Option<usize>,
-    oriented_reference_end: Option<usize>,
-    cigar: Option<String>,
-    sequence_alignment: Option<String>,
-    germline_alignment: Option<String>,
-    identity: Option<f64>,
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct Path {
+    pub(super) available: bool,
+    pub(super) reason: Option<&'static str>,
+    pub(super) body: Vec<BodyPoint>,
+    pub(super) query_start: Option<usize>,
+    pub(super) query_end: Option<usize>,
+    pub(super) reference_start: Option<usize>,
+    pub(super) reference_end: Option<usize>,
+    pub(super) oriented_reference_start: Option<usize>,
+    pub(super) oriented_reference_end: Option<usize>,
+    pub(super) cigar: Option<String>,
+    pub(super) sequence_alignment: Option<String>,
+    pub(super) germline_alignment: Option<String>,
+    pub(super) identity: Option<f64>,
+    #[serde(rename = "query_boundary", skip_serializing_if = "Option::is_none")]
+    pub(super) empty_query_boundary: Option<usize>,
 }
 
 fn label(segment: Substrate) -> &'static str {
@@ -66,6 +68,15 @@ fn translated(sequence: &[u8], phase: usize) -> String {
         .map(|c| translate_codon(c[0], c[1], c[2]) as char)
         .collect()
 }
+/// Translate only complete coding-frame codons wholly inside an interval.
+pub(super) fn translate_interval(query: &[u8], start: usize, end: usize, phase: usize) -> String {
+    let first = start + (phase + 3 - start % 3) % 3;
+    if first >= end {
+        return String::new();
+    }
+    translated(&query[first..end], 0)
+}
+
 fn push_run(runs: &mut Vec<(usize, char)>, op: char) {
     if let Some((n, previous)) = runs.last_mut() {
         if *previous == op {
@@ -91,6 +102,7 @@ fn build_path(body: Vec<BodyPoint>, reference: &[u8], query: &[u8], inverted: bo
         sequence_alignment: None,
         germline_alignment: None,
         identity: None,
+        empty_query_boundary: None,
     };
     if path.body.is_empty() {
         path.reason = Some("body_absent_after_repair");
@@ -285,7 +297,7 @@ fn assess(
     query: &[u8],
     record: &mut Map<String, Value>,
     availability: &mut Map<String, Value>,
-) {
+) -> Option<usize> {
     let v = landmark(&paths[0], Substrate::V, bindings, query);
     let j = landmark(&paths[2], Substrate::J, bindings, query);
     let junction = v
@@ -402,15 +414,83 @@ fn assess(
         json!(frame.map(|p| translated(query, p))),
         "coding_phase_unresolved",
     );
+    frame
 }
 
 /// Project a complete coupled repair snapshot using exact bound generating
 /// alleles. Valid overlapping products produce partial records, not errors.
-pub fn project_coupled(
+pub(super) struct ProjectionAnalysis {
+    pub(super) paths: [Path; 3],
+    pub(super) column_claims: Vec<Value>,
+    pub(super) overlaps: Vec<Value>,
+    pub(super) layout_reasons: BTreeSet<String>,
+}
+
+/// Limits of the current execution IR, separate from whether a complete
+/// standalone alignment exists. This is shared with the atomic seed importer.
+pub(super) fn seed_capability_reasons(
+    paths: &[Path; 3],
+    layout_reasons: &BTreeSet<String>,
+    bindings: &DuplexReferenceBindings,
+    query_len: usize,
+) -> BTreeSet<String> {
+    let mut reasons = layout_reasons.clone();
+    if query_len > u32::MAX as usize {
+        reasons.insert("query_length_outside_native_handle_range".into());
+    }
+    for (source, path) in [Substrate::V, Substrate::D, Substrate::J]
+        .into_iter()
+        .zip(paths)
+    {
+        let prefix = label(source);
+        if [path.query_start, path.query_end, path.empty_query_boundary]
+            .into_iter()
+            .flatten()
+            .any(|q| q > u32::MAX as usize)
+            || path
+                .body
+                .iter()
+                .any(|p| p.query_position > u32::MAX as usize)
+        {
+            reasons.insert(format!(
+                "{prefix}:query_coordinate_outside_native_handle_range"
+            ));
+        }
+        // u16::MAX is reserved by GermlinePos::NONE, not a usable coordinate.
+        if path
+            .body
+            .iter()
+            .any(|p| p.reference_position >= u16::MAX as usize)
+        {
+            reasons.insert(format!(
+                "{prefix}:body_reference_coordinate_outside_native_ir"
+            ));
+        }
+        if path.reference_start.is_some_and(|g| g > u16::MAX as usize) {
+            reasons.insert(format!("{prefix}:trim_5_outside_native_ir"));
+        }
+        if let Some(end) = path.reference_end {
+            match bindings
+                .for_substrate(source)
+                .sequence
+                .len()
+                .checked_sub(end)
+            {
+                Some(trim) if trim <= u16::MAX as usize => {}
+                _ => {
+                    reasons.insert(format!("{prefix}:trim_3_outside_native_ir"));
+                }
+            }
+        }
+    }
+    reasons
+}
+
+pub(super) fn analyze_coupled(
     annotated: &AnnotatedCoupledProduct,
     bindings: &DuplexReferenceBindings,
     refdata: &RefDataConfig,
-) -> Result<Value, String> {
+) -> Result<ProjectionAnalysis, String> {
     let product = &annotated.product;
     bindings.validate(product, refdata)?;
     verify_snapshot(annotated)?;
@@ -503,7 +583,46 @@ pub fn project_coupled(
     {
         layout_reasons.insert("outer_nonbody_query_columns".to_string());
     }
+    Ok(ProjectionAnalysis {
+        paths,
+        column_claims,
+        overlaps,
+        layout_reasons,
+    })
+}
+
+pub fn project_coupled(
+    annotated: &AnnotatedCoupledProduct,
+    bindings: &DuplexReferenceBindings,
+    refdata: &RefDataConfig,
+) -> Result<Value, String> {
+    let analysis = analyze_coupled(annotated, bindings, refdata)?;
+    render_projection(
+        annotated,
+        bindings,
+        refdata,
+        annotated.product.sequence.as_bytes(),
+        analysis,
+    )
+}
+
+pub(super) fn render_projection(
+    annotated: &AnnotatedCoupledProduct,
+    bindings: &DuplexReferenceBindings,
+    refdata: &RefDataConfig,
+    query: &[u8],
+    analysis: ProjectionAnalysis,
+) -> Result<Value, String> {
+    let ProjectionAnalysis {
+        paths,
+        column_claims,
+        overlaps,
+        layout_reasons,
+    } = analysis;
+    let product = &annotated.product;
+    let substrates = [Substrate::V, Substrate::D, Substrate::J];
     let representable = layout_reasons.is_empty();
+    let seed_reasons = seed_capability_reasons(&paths, &layout_reasons, bindings, query.len());
     let mut record = Map::new();
     let mut availability = Map::new();
     // Replayed history has the same stable identity; distinct generating
@@ -514,7 +633,7 @@ pub fn project_coupled(
         "sequence_id".into(),
         json!(format!("duplex:{:x}", Sha256::digest(identity))),
     );
-    record.insert("sequence".into(), json!(product.sequence));
+    record.insert("sequence".into(), json!(String::from_utf8_lossy(query)));
     record.insert("sequence_length".into(), json!(query.len()));
     record.insert("rev_comp".into(), json!(false));
     record.insert("d_inverted".into(), json!(product.d_inverted));
@@ -565,9 +684,9 @@ pub fn project_coupled(
     for (i, path) in paths.iter().enumerate() {
         let l = label(substrates[i]);
         if representable {
-            let start = path.query_start.unwrap();
-            let gap = &product.sequence[cursor..start];
-            aligned_query.push_str(gap);
+            let start = path.query_start.or(path.empty_query_boundary).unwrap();
+            let gap = &query[cursor..start];
+            aligned_query.push_str(&String::from_utf8_lossy(gap));
             aligned_reference.push_str(&"N".repeat(gap.len()));
             d_mask.push_str(&"N".repeat(gap.len()));
             record.insert(format!("{l}_alignment_start"), json!(aligned_query.len()));
@@ -580,7 +699,7 @@ pub fn project_coupled(
                 d_mask.push_str(ra);
             }
             record.insert(format!("{l}_alignment_end"), json!(aligned_query.len()));
-            cursor = path.query_end.unwrap();
+            cursor = path.query_end.or(path.empty_query_boundary).unwrap();
         } else {
             for suffix in ["alignment_start", "alignment_end"] {
                 set(
@@ -610,17 +729,27 @@ pub fn project_coupled(
             "combined_layout_unrepresentable",
         );
     }
+    let frame = assess(&paths, bindings, query, &mut record, &mut availability);
     for (i, np) in ["np1", "np2"].iter().enumerate() {
-        let tract = paths[i]
+        let bounds = paths[i]
             .query_end
-            .zip(paths[i + 1].query_start)
-            .map(|(a, b)| if a <= b { &product.sequence[a..b] } else { "" });
+            .or(paths[i].empty_query_boundary)
+            .zip(
+                paths[i + 1]
+                    .query_start
+                    .or(paths[i + 1].empty_query_boundary),
+            )
+            .map(|(a, b)| (a, b.max(a)));
+        let tract =
+            bounds.map(|(a, b)| std::str::from_utf8(&query[a..b]).expect("ASCII coding query"));
         for (field, value) in [
             (np.to_string(), json!(tract)),
             (format!("{np}_length"), json!(tract.map(str::len))),
             (
                 format!("{np}_aa"),
-                json!(tract.map(|s| translated(s.as_bytes(), 0))),
+                json!(bounds
+                    .zip(frame)
+                    .map(|((a, b), phase)| translate_interval(query, a, b, phase))),
             ),
         ] {
             set(
@@ -628,7 +757,11 @@ pub fn project_coupled(
                 &mut availability,
                 &field,
                 value,
-                "junction_boundary_unresolved",
+                if field.ends_with("_aa") && bounds.is_some() {
+                    "coding_phase_unresolved"
+                } else {
+                    "junction_boundary_unresolved"
+                },
             );
         }
     }
@@ -641,7 +774,6 @@ pub fn project_coupled(
             "legacy_p_emission_not_defined_for_duplex",
         );
     }
-    assess(&paths, bindings, query, &mut record, &mut availability);
     // Repair is not SHM, PCR damage or a later polymerase indel.
     for field in [
         "n_mutations",
@@ -675,8 +807,8 @@ pub fn project_coupled(
         "untemplated_additions":product.ledger.iter().filter(|b| b.kind=="n_addition").count(),
         "templated_synthesis":product.ledger.iter().filter(|b| b.kind=="templated_synthesis").count(),
         "hairpin_transfer_events":annotated.evidence.events.iter().filter(|e| matches!(e,RepairEvidenceEvent::Transferred{..})).count(),
-        "retained_nucleotides":2*query.len()},
-        "founder_query":{"timepoint":"after_both_joins","strand":"top","columns":query.len(),"placement_roles":roles}});
+        "retained_nucleotides":2*product.sequence.len()},
+        "founder_query":{"timepoint":"after_both_joins","strand":"top","columns":product.sequence.len(),"placement_roles":roles}});
     record.insert("duplex_repair".into(), json!({"model":"duplex_provenance_v1",
         "projection_policy":PROJECTION_MODEL,"coordinate_system":"zero_based_coding_oriented",
         "bindings":bindings,"product":product,"evidence":annotated.evidence,
@@ -690,8 +822,8 @@ pub fn project_coupled(
     }
     Ok(
         json!({"model":PROJECTION_MODEL,"record":record,"paths":path_json,
-        "availability":availability,"capabilities":{"simulation_seed":representable,
-            "experiment_integration":false,"reasons":layout_reasons}}),
+        "availability":availability,"capabilities":{"simulation_seed":seed_reasons.is_empty(),
+            "experiment_integration":false,"reasons":seed_reasons}}),
     )
 }
 

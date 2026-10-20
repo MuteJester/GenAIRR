@@ -63,6 +63,9 @@ impl PySimulation {
     /// Position-in-source-allele for the nucleotide at the given
     /// pool index. Returns `None` for synthetic nucleotides (NP /
     /// indel-inserted) that have no germline provenance.
+    /// For duplex seeds this is certified alignment placement, potentially
+    /// supported by the opposite strand; it is not physical birth ancestry.
+    /// The duplex projector exports chemical origins separately.
     fn germline_position(&self, index: u32) -> Option<u16> {
         let n = self.inner.pool.get(NucHandle::new(index))?;
         n.germline_pos.get()

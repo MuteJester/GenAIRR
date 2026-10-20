@@ -163,6 +163,11 @@ pub(crate) fn simulate_lineage(
 ) -> PyResult<PyLineageTree> {
     use pyo3::exceptions::PyValueError;
 
+    if founder.inner.duplex_provenance.is_some() {
+        return Err(PyValueError::new_err(
+            "duplex family simulation is not supported yet; use explicit run_from continuations and project_duplex_simulation",
+        ));
+    }
     if mutability.len() != 1024 {
         return Err(PyValueError::new_err(format!(
             "simulate_lineage: mutability must have 1024 entries, got {}",
@@ -317,6 +322,7 @@ impl PyFamilyOutcome {
         let mut results = Vec::new();
         for (node_id, outcome) in self.node_outcomes.iter().enumerate() {
             let Some(outcome) = outcome else { continue };
+            super::outcome::require_legacy_airr_outcome(outcome)?;
             let sequence_id = format!("node{}", node_id);
             let rec = build_airr_record(outcome, refdata.inner(), &sequence_id);
             let dict = airr_record_to_pydict(py, &rec)?;
@@ -438,6 +444,11 @@ pub(crate) fn simulate_family_outcomes(
 ) -> PyResult<PyFamilyOutcome> {
     use pyo3::exceptions::PyValueError;
 
+    if super::outcome::has_duplex_provenance(&founder.inner) {
+        return Err(PyValueError::new_err(
+            "duplex family simulation is not supported yet; use explicit run_from continuations and project_duplex_simulation",
+        ));
+    }
     if mutability.len() != 1024 {
         return Err(PyValueError::new_err(format!(
             "simulate_family_outcomes: mutability must have 1024 entries, got {}",

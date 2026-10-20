@@ -300,7 +300,12 @@ impl IndelPass {
     ) -> Result<Reservoir, PassError> {
         let index = EditIndex::new(initial);
         let view = index.view();
-        let fast = refdata.is_some() && standard_productive_bundle(contracts);
+        // EditView currently indexes the legacy nucleotide cache. A duplex
+        // molecule instead needs its persistent certified-placement map,
+        // updated by each materialized hypothetical event.
+        let fast = initial.duplex_provenance.is_none()
+            && refdata.is_some()
+            && standard_productive_bundle(contracts);
         let mut reservoir = Reservoir::new();
         if count == 0 {
             work.visit()?;
@@ -444,8 +449,10 @@ impl IndelPass {
             restart_probes: self.sampling_options.rejection_attempts > 0,
             accepted_probe: None,
         };
-        let index = (ctx.refdata.is_some() && standard_productive_bundle(contracts))
-            .then(|| EditIndex::new(sim));
+        let index = (sim.duplex_provenance.is_none()
+            && ctx.refdata.is_some()
+            && standard_productive_bundle(contracts))
+        .then(|| EditIndex::new(sim));
         if count > 0 {
             // Each attempt is complete and starts at the same input. A failed
             // candidate does not alter the root or redraw the requested count.

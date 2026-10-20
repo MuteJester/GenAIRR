@@ -15,7 +15,21 @@ from . import _engine
 
 from ._duplex_projection_export import export_duplex_projection
 
-__all__ = ["DuplexRepair", "DuplexJoin", "CoupledDuplexRepair", "export_duplex_projection"]
+__all__ = ["DuplexRepair", "DuplexJoin", "CoupledDuplexRepair", "export_duplex_projection", "project_duplex_simulation"]
+
+
+def project_duplex_simulation(simulation, refdata):
+    """Project a duplex-backed persistent simulation after audited edits.
+
+    The founder duplex is preserved separately from the observed query.
+    Normal legacy AIRR exporters cannot express this model's unknown P values;
+    use this projector followed by ``export_duplex_projection`` instead.
+    """
+    if not isinstance(simulation, _engine.Simulation):
+        raise TypeError("project_duplex_simulation requires a GenAIRR Simulation")
+    if not isinstance(refdata, _engine.RefDataConfig):
+        raise TypeError("project_duplex_simulation requires a GenAIRR RefDataConfig")
+    return json.loads(_engine.project_duplex_simulation(simulation, refdata))
 
 
 def _nonnegative(value, name):
@@ -245,6 +259,28 @@ class CoupledDuplexRepair:
             d_inverted=self.d_inverted,
             reference_ends_are_coding_ends=reference_ends_are_coding_ends,
             max_operations=self.max_operations, max_bases=self.max_bases))
+
+    def seed(self, refdata, *, v_call, d_call, j_call,
+             reference_ends_are_coding_ends=False):
+        """Install an admissible founder as a persistent native Simulation.
+
+        Overlapping/nonmonotone layouts remain available through ``project``
+        but cannot enter the current single-segment execution representation.
+        Audited native continuation passes preserve founder ancestry; source
+        rewrites and unsupported legacy output channels are explicitly gated.
+        """
+        if not isinstance(refdata, _engine.RefDataConfig):
+            raise TypeError("seed() requires a GenAIRR RefDataConfig")
+        if type(reference_ends_are_coding_ends) is not bool:
+            raise ValueError("reference_ends_are_coding_ends must be a boolean")
+        for name, value in (("v_call", v_call), ("d_call", d_call), ("j_call", j_call)):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} must be a nonempty generating allele name")
+        return _engine.coupled_duplex_seed(
+            self.v, self.d, self.j, self.joins_json, refdata,
+            v_call=v_call, d_call=d_call, j_call=j_call,
+            d_inverted=self.d_inverted, reference_ends_are_coding_ends=reference_ends_are_coding_ends,
+            max_operations=self.max_operations, max_bases=self.max_bases)
 
     def to_dict(self):
         return {"model": "experimental_coupled_duplex_repair_v1", "v": self.v,

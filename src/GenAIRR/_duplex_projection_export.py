@@ -36,6 +36,8 @@ def export_duplex_projection(projection, path, *, format="json", airr_strict=Tru
             aligned = projection["paths"].get(segment, {})
             cigar = aligned.get("cigar")
             q = aligned.get("query_start")
+            if q is None:
+                q = aligned.get("query_boundary")
             g = aligned.get("oriented_reference_start")
             if cigar is not None and q is not None and g is not None:
                 row[f"{segment}_cigar"] = (f"{q}S" if q else "") + (f"{g}N" if g else "") + cigar

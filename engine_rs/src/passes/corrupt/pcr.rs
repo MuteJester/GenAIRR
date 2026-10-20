@@ -33,7 +33,7 @@ use crate::trace::ChoiceValue;
 /// replacement exists.
 ///
 /// Trace addresses (D3):
-/// - `corrupt.pcr.count` — total PCR errors applied
+/// - `corrupt.pcr.count` — sampled PCR error attempts
 /// - `corrupt.pcr.error_site[i]` — pool position of the i-th error
 /// - `corrupt.pcr.error_base[i]` — replacement base at the i-th error
 pub struct PCRErrorPass {
@@ -87,11 +87,15 @@ impl PCRErrorPass {
             strict,
         )?;
 
-        if pool_len == 0 || count == 0 {
+        if (pool_len == 0 || count == 0) && sim.duplex_provenance.is_none() {
             return Ok(sim.clone());
         }
 
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
+        tx.record_duplex_attempt_stage(crate::ir::DuplexAttemptStage::Pcr, count);
+        if pool_len == 0 || count == 0 {
+            return tx.commit();
+        }
 
         for i in 0..count {
             tx.substitute_position_constrained(

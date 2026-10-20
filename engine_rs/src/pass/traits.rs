@@ -3,8 +3,10 @@ use crate::ir::Simulation;
 
 use super::{PassCompileFact, PassContext, PassEffect, PassError, PassRequirement};
 
-/// A single step in the simulation pipeline.
-pub trait Pass {
+/// A single step in the simulation pipeline. Stored passes are owned/static;
+/// `Any` permits capability checks on their concrete implementation rather
+/// than trusting a user-provided name or effect declaration.
+pub trait Pass: std::any::Any {
     /// Stable, human-readable identifier for this pass.
     fn name(&self) -> &str;
 

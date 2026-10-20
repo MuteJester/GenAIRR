@@ -156,3 +156,83 @@ fn snapshot_and_certificate_tampering_are_errors_not_partial_annotations() {
         .unwrap_err()
         .contains("exact replay"));
 }
+
+fn small_analysis_fixture() -> (
+    RefDataConfig,
+    AnnotatedCoupledProduct,
+    DuplexReferenceBindings,
+    ProjectionAnalysis,
+) {
+    let r = data("AAATGT", "CCC", "TTTAAA", Some(3));
+    let b = DuplexReferenceBindings::new(
+        &r,
+        ["V*01", "D*01", "J*01"],
+        ["AAATGT", "CCC", "TTTAAA"],
+        false,
+        true,
+    )
+    .unwrap();
+    let p = repair_coupled_annotated(
+        "AAATGT",
+        "CCC",
+        "TTTAAA",
+        false,
+        &[blunt(JoinName::VD, 6), blunt(JoinName::DJ, 3)],
+        256,
+        1000,
+    )
+    .unwrap();
+    let a = analyze_coupled(&p, &b, &r).unwrap();
+    (r, p, b, a)
+}
+
+#[test]
+fn seed_coordinate_limits_include_sentinel_trims_and_query_handles() {
+    let (_, p, mut b, mut a) = small_analysis_fixture();
+    let reasons = |a: &ProjectionAnalysis, b: &DuplexReferenceBindings, n| {
+        seed_capability_reasons(&a.paths, &a.layout_reasons, b, n)
+    };
+    assert!(reasons(&a, &b, p.product.sequence.len()).is_empty());
+    a.paths[0].body[0].reference_position = u16::MAX as usize - 1;
+    assert!(reasons(&a, &b, p.product.sequence.len()).is_empty());
+    a.paths[0].body[0].reference_position = u16::MAX as usize;
+    assert!(reasons(&a, &b, p.product.sequence.len())
+        .contains("v:body_reference_coordinate_outside_native_ir"));
+    a.paths[0].body[0].reference_position = 0;
+    a.paths[0].reference_start = Some(u16::MAX as usize);
+    assert!(reasons(&a, &b, p.product.sequence.len()).is_empty());
+    a.paths[0].reference_start = Some(u16::MAX as usize + 1);
+    assert!(reasons(&a, &b, p.product.sequence.len()).contains("v:trim_5_outside_native_ir"));
+    a.paths[0].reference_start = Some(0);
+    // Only the reference string grows (~64 KiB), never a full physical ledger.
+    b.v.sequence = "A".repeat(u16::MAX as usize + 6);
+    assert!(reasons(&a, &b, p.product.sequence.len()).is_empty());
+    b.v.sequence.push('A');
+    assert!(reasons(&a, &b, p.product.sequence.len()).contains("v:trim_3_outside_native_ir"));
+    if usize::BITS > 32 {
+        let outside = u32::MAX as usize + 1;
+        assert!(reasons(&a, &b, outside).contains("query_length_outside_native_handle_range"));
+        a.paths[1].query_end = Some(outside);
+        assert!(reasons(&a, &b, p.product.sequence.len())
+            .contains("d:query_coordinate_outside_native_handle_range"));
+    }
+}
+
+#[test]
+fn seed_range_unavailability_does_not_null_a_standalone_alignment() {
+    let (r, p, b, mut a) = small_analysis_fixture();
+    // Exercise the rendering boundary with an already computed typed path.
+    // The production analyzer validates physical placement independently;
+    // this check isolates range capability from alignment availability.
+    a.paths[0].body[0].reference_position = u16::MAX as usize;
+    let output = render_projection(&p, &b, &r, p.product.sequence.as_bytes(), a).unwrap();
+    assert_eq!(output["capabilities"]["simulation_seed"], false);
+    assert!(output["capabilities"]["reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|x| x == "v:body_reference_coordinate_outside_native_ir"));
+    assert_eq!(output["record"]["sequence_alignment"], p.product.sequence);
+    assert_eq!(output["record"]["germline_alignment"], p.product.sequence);
+    assert_eq!(output["record"]["v_cigar"], "6M");
+}

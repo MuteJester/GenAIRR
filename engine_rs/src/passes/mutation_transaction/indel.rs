@@ -215,7 +215,11 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             }
         }
         if let Some(contracts) = self.ctx.contracts {
-            let mut post_sim = self.builder.peek().with_indel_deleted(at);
+            let mut post_sim = if observed_loss_end.is_some() {
+                self.builder.peek().with_observation_deleted(at)
+            } else {
+                self.builder.peek().with_indel_deleted(at)
+            };
             for &(segment, inst) in &observed_loss {
                 post_sim = post_sim.with_allele_assigned(segment, inst);
             }
@@ -235,7 +239,12 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                 return Ok(false);
             }
         }
-        self.builder.delete_indel(at).ok_or_else(|| {
+        let removed = if observed_loss_end.is_some() {
+            self.builder.delete_observation_base(at)
+        } else {
+            self.builder.delete_indel(at)
+        };
+        removed.ok_or_else(|| {
             PassError::invalid_plan_state(
                 self.pass_name.to_string(),
                 format!(

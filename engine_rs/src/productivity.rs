@@ -9,6 +9,7 @@ use crate::ir::{NucHandle, Nucleotide, Segment, Simulation};
 use crate::refdata::{Allele, AlleleId, AnchorEvidenceStatus, RefDataConfig};
 
 pub const POLICY: &str = "canonical_observed_vdj_v1";
+pub const DUPLEX_POLICY: &str = "duplex_observed_vdj_v1";
 pub const SCOPE: &str = "observed_coding_span";
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -30,21 +31,35 @@ pub trait SequenceView {
     fn nucleotide(&self, position: usize) -> Option<Nucleotide>;
     fn region(&self, segment: Segment) -> Option<(usize, usize)>;
     fn assignment(&self, segment: Segment) -> Option<AlleleInstance>;
+    /// The landmark-placement policy carried by this observed molecule.
+    /// Temporary adapters must preserve this value or decline the fast path.
+    fn productivity_policy(&self) -> &'static str {
+        POLICY
+    }
+    /// Certified reference placement, independent of the physical identity
+    /// of the query nucleotide. Legacy molecules retain their existing
+    /// nucleotide provenance rule; duplex molecules consult their sidecar.
+    fn body_reference_position(&self, segment: Segment, position: usize) -> Option<u16> {
+        let n = self.nucleotide(position)?;
+        (n.segment == segment)
+            .then(|| n.germline_pos.get())
+            .flatten()
+    }
     fn germline_position(&self, segment: Segment, germline: u16) -> Option<usize> {
         let (start, end) = self.region(segment)?;
-        (start..end).find(|&p| {
-            self.nucleotide(p)
-                .is_some_and(|n| n.segment == segment && n.germline_pos.get() == Some(germline))
-        })
+        (start..end).find(|&p| self.body_reference_position(segment, p) == Some(germline))
     }
     fn last_germline(&self, segment: Segment) -> Option<(usize, u16)> {
         let (start, end) = self.region(segment)?;
-        (start..end).rev().find_map(|p| {
-            let n = self.nucleotide(p)?;
-            (n.segment == segment)
-                .then(|| n.germline_pos.get().map(|g| (p, g)))
-                .flatten()
-        })
+        (start..end)
+            .rev()
+            .find_map(|p| self.body_reference_position(segment, p).map(|g| (p, g)))
+    }
+    /// Reference endpoint used to assess the observed J tail. Legacy
+    /// molecules retain their historical query-loss accounting.
+    fn j_reference_end_for_phase(&self, reference_len: usize) -> Option<usize> {
+        let inst = self.assignment(Segment::J)?;
+        reference_len.checked_sub(usize::from(inst.trim_3) + inst.observation_loss_3 as usize)
     }
     /// Whether any complete codon is definitely a stop. Unknown means a
     /// possible stop or no complete codon, not evidence of a stop-free span.
@@ -83,6 +98,44 @@ impl SequenceView for Simulation {
     fn assignment(&self, segment: Segment) -> Option<AlleleInstance> {
         self.assignments.get(segment).copied()
     }
+    fn productivity_policy(&self) -> &'static str {
+        if self.duplex_provenance.is_some() {
+            DUPLEX_POLICY
+        } else {
+            POLICY
+        }
+    }
+    fn body_reference_position(&self, segment: Segment, position: usize) -> Option<u16> {
+        if let Some(duplex) = &self.duplex_provenance {
+            return duplex
+                .body_reference_position(segment, position)
+                .and_then(|g| u16::try_from(g).ok());
+        }
+        let n = self.nucleotide(position)?;
+        (n.segment == segment)
+            .then(|| n.germline_pos.get())
+            .flatten()
+    }
+    fn j_reference_end_for_phase(&self, reference_len: usize) -> Option<usize> {
+        let inst = self.assignment(Segment::J)?;
+        if self.duplex_provenance.is_some() {
+            // Duplex observation coverage is validated against the removal
+            // ledger. Clipping an inserted suffix consumes no reference;
+            // clipping past an earlier deletion can consume several reference
+            // positions. Neither operation is described by a query-base count.
+            let retained_end = reference_len.checked_sub(usize::from(inst.trim_3))?;
+            let observed_end = inst
+                .observed_ref_end
+                .map(|p| p as usize)
+                .unwrap_or(retained_end);
+            return (observed_end <= retained_end).then_some(observed_end);
+        }
+        reference_len.checked_sub(usize::from(inst.trim_3) + inst.observation_loss_3 as usize)
+    }
+}
+
+pub fn policy_name(view: &impl SequenceView) -> &'static str {
+    view.productivity_policy()
 }
 
 fn base_mask(base: u8) -> u8 {
@@ -342,8 +395,10 @@ pub fn anchor(
             return unknown("anchor_not_observed");
         };
         if p + offset >= end
-            || n.segment != segment
-            || n.germline_pos.get().map(usize::from) != Some(a + offset)
+            || view
+                .body_reference_position(segment, p + offset)
+                .map(usize::from)
+                != Some(a + offset)
         {
             return AnchorAssessment {
                 accepted: Some(false),
@@ -377,10 +432,7 @@ pub fn j_tail(
     if start == end {
         return None;
     }
-    let reference_end = allele
-        .seq
-        .len()
-        .checked_sub(usize::from(inst.trim_3) + inst.observation_loss_3 as usize)?;
+    let reference_end = view.j_reference_end_for_phase(allele.seq.len())?;
     if (reference_end + 3 - native_phase) % 3 != (end + 3 - frame.phase) % 3 {
         return Some(false);
     }
@@ -464,6 +516,9 @@ pub fn assess(view: &impl SequenceView, refdata: &RefDataConfig) -> Productivity
         reasons,
     }
 }
+
+#[cfg(test)]
+mod duplex_tests;
 
 #[cfg(test)]
 mod tests {

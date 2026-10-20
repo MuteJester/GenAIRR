@@ -24,6 +24,129 @@ use crate::replay::TraceCursor;
 use crate::rng::Rng;
 use crate::trace::{ChoiceRecord, Trace};
 
+/// Concrete implementations whose current edits preserve the duplex
+/// observation map. A matching name/effect declaration is insufficient:
+/// arbitrary custom passes have not established that capability.
+fn duplex_pass_supported(pass: &dyn crate::pass::Pass) -> bool {
+    use crate::passes::{
+        EndLossPass, IndelPass, NCorruptionPass, PCRErrorPass, QualityErrorPass, RevCompPass,
+        S5FMutationPass, UniformMutationPass,
+    };
+    use std::any::TypeId;
+    [
+        TypeId::of::<UniformMutationPass>(),
+        TypeId::of::<S5FMutationPass>(),
+        TypeId::of::<PCRErrorPass>(),
+        TypeId::of::<QualityErrorPass>(),
+        TypeId::of::<NCorruptionPass>(),
+        TypeId::of::<IndelPass>(),
+        TypeId::of::<EndLossPass>(),
+        TypeId::of::<RevCompPass>(),
+    ]
+    .contains(&pass.type_id())
+}
+
+fn validate_duplex_continuation(
+    inputs: ExecutionInputs<'_>,
+    initial: &Simulation,
+) -> Result<(), PassError> {
+    let Some(provenance) = &initial.duplex_provenance else {
+        return Ok(());
+    };
+    let fail = |reason: String| PassError::invalid_plan_state("duplex.continuation", reason);
+    let refdata = inputs
+        .refdata
+        .ok_or_else(|| fail("duplex continuation requires the bound reference data".into()))?;
+    provenance
+        .founder
+        .bindings
+        .validate(&provenance.founder.annotated.product, refdata)
+        .map_err(fail)?;
+    provenance
+        .validate_pool(initial.pool.as_slice())
+        .map_err(fail)?;
+    crate::duplex_repair::observation::layout::validate_layout(initial).map_err(fail)?;
+    for (substrate, segment) in [
+        (crate::duplex_repair::Substrate::V, crate::ir::Segment::V),
+        (crate::duplex_repair::Substrate::D, crate::ir::Segment::D),
+        (crate::duplex_repair::Substrate::J, crate::ir::Segment::J),
+    ] {
+        let assignment = initial.assignments.get(segment).ok_or_else(|| {
+            fail(format!(
+                "duplex generating assignment missing for {segment:?}"
+            ))
+        })?;
+        let source = provenance.founder.bindings.for_substrate(substrate);
+        let positions: Vec<_> = provenance
+            .founder
+            .body_claims
+            .iter()
+            .flatten()
+            .filter(|claim| claim.segment == substrate)
+            .map(|claim| claim.reference_position)
+            .collect();
+        let first = positions
+            .iter()
+            .copied()
+            .min()
+            .ok_or_else(|| fail(format!("duplex founder body missing for {segment:?}")))?;
+        let retained_end = positions
+            .iter()
+            .copied()
+            .max()
+            .unwrap()
+            .checked_add(1)
+            .ok_or_else(|| {
+                fail(format!(
+                    "duplex reference coordinate overflow for {segment:?}"
+                ))
+            })?;
+        let three = source
+            .canonical_end
+            .checked_sub(retained_end)
+            .ok_or_else(|| {
+                fail(format!(
+                    "duplex founder body exceeds reference for {segment:?}"
+                ))
+            })?;
+        let reverse = segment == crate::ir::Segment::D && provenance.founder.bindings.d_inverted;
+        if assignment.allele_id != provenance.founder.bindings.allele_id(substrate)
+            || assignment.orientation.is_reverse() != reverse
+            || usize::from(assignment.trim_5) != first
+            || usize::from(assignment.trim_3) != three
+        {
+            return Err(fail(format!(
+                "duplex generating assignment, orientation or founder trims changed for {segment:?}"
+            )));
+        }
+    }
+    if inputs.contracts.is_some_and(|contracts| {
+        contracts.iter().any(|contract| {
+            matches!(
+                contract.kind(),
+                crate::contract::ContractKind::AnchorPreserved { .. }
+            )
+        })
+    }) {
+        return Err(fail(
+            "legacy AnchorPreserved is unsupported for duplex placements; use the duplex productive policy"
+                .into(),
+        ));
+    }
+    // Preflight every step, including unsupported suffixes, before executing
+    // any part of a continuation. Empty plans are the supported no-op.
+    for node in inputs.sorted_order {
+        let pass = inputs.plan.passes()[node.index()].as_ref();
+        if !duplex_pass_supported(pass) {
+            return Err(PassError::invalid_plan_state(
+                pass.name(),
+                "pass is unsupported for a duplex seed; only audited substitution, SHM, indel, end-loss and reverse-complement passes may continue it",
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Copy, Clone)]
 pub(crate) struct ExecutionInputs<'a> {
     pub(crate) plan: &'a PassPlan,
@@ -80,6 +203,10 @@ pub(crate) fn execute_transactional(
     let mut events: Vec<EventRecord> = Vec::with_capacity(inputs.plan.len());
 
     revisions.push(initial);
+
+    if let Err(error) = validate_duplex_continuation(inputs, &revisions[0]) {
+        return Err(abort(error, revisions, pass_names, trace, events));
+    }
 
     for node in inputs.sorted_order {
         let pass = &inputs.plan.passes()[node.index()];
@@ -257,7 +384,9 @@ pub(crate) fn execute_transactional(
                 PassError::contract_violation(
                     "productive.final",
                     vec![crate::contract::ContractViolation::new(
-                        crate::productivity::POLICY,
+                        revisions.last().map_or(crate::productivity::POLICY, |sim| {
+                            crate::productivity::policy_name(sim)
+                        }),
                         format!("final observed-span assessment is not accepted: {reason}"),
                     )],
                 ),
@@ -293,3 +422,6 @@ fn abort(
         },
     }
 }
+
+#[cfg(test)]
+mod duplex_tests;

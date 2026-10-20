@@ -16,6 +16,14 @@ pub(crate) struct CodingFrame {
 }
 
 pub(crate) fn anchor_position(sim: &Simulation, region: &Region, anchor: u32) -> Option<u32> {
+    if sim.duplex_provenance.is_some() {
+        use crate::productivity::SequenceView;
+        return (region.start.index()..region.end.index()).find(|&p| {
+            sim.body_reference_position(region.segment, p as usize)
+                .map(u32::from)
+                == Some(anchor)
+        });
+    }
     (region.start.index()..region.end.index()).find(|&p| {
         sim.pool
             .get(NucHandle::new(p))

@@ -32,6 +32,8 @@ pub struct Simulation {
     /// Optional retained-outcome choices and persistent P-base ancestry.
     /// Ordinary simulations pay no allocation for this opt-in model.
     pub coding_end_provenance: Option<Arc<super::CodingEndProvenance>>,
+    /// Optional immutable repair founder and persistent descendant observation map.
+    pub duplex_provenance: Option<Arc<super::DuplexProvenance>>,
 
     /// V/D/J live-call evidence and its monotonic version chain.
     /// Writers: `with_assembled_segment_live_call`,
@@ -57,6 +59,19 @@ pub struct Simulation {
 }
 
 impl Simulation {
+    pub fn with_duplex_provenance(
+        &self,
+        provenance: Arc<super::DuplexProvenance>,
+    ) -> Result<Self, String> {
+        if self.duplex_provenance.is_some() {
+            return Err("duplex founder ancestry is already installed".into());
+        }
+        provenance.validate_initial_pool(self.pool.as_slice())?;
+        let mut next = self.clone();
+        next.duplex_provenance = Some(provenance);
+        Ok(next)
+    }
+
     pub fn coding_end_choice(&self, segment: Segment) -> Option<&super::CodingEndChoice> {
         self.coding_end_provenance
             .as_ref()?
@@ -125,6 +140,7 @@ impl Simulation {
             mutation_burden: 0.0,
             live_call_support: None,
             coding_end_provenance: None,
+            duplex_provenance: None,
         }
     }
 
@@ -140,6 +156,7 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -155,6 +172,7 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -170,6 +188,7 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -186,6 +205,10 @@ impl Simulation {
                   explicitly with `let (next, _) = ...` if it isn't needed."]
     pub fn with_nucleotide_pushed(&self, n: Nucleotide) -> (Self, NucHandle) {
         let (pool, h) = self.pool.with_pushed(n);
+        let duplex_provenance = self
+            .duplex_provenance
+            .as_ref()
+            .map(|p| Arc::new(p.with_inserted(h.index(), n)));
         (
             Self {
                 pool,
@@ -197,6 +220,7 @@ impl Simulation {
                 mutation_burden: self.mutation_burden,
                 live_call_support: self.live_call_support.clone(),
                 coding_end_provenance: self.coding_end_provenance.clone(),
+                duplex_provenance,
             },
             h,
         )
@@ -208,6 +232,14 @@ impl Simulation {
         iter: I,
     ) -> (Self, std::ops::Range<u32>) {
         let (pool, range) = self.pool.with_pushed_many(iter);
+        let duplex_provenance = self.duplex_provenance.as_ref().map(|p| {
+            Arc::new(p.with_replacement(
+                range.start,
+                range.start,
+                &pool.as_slice()[range.start as usize..range.end as usize],
+                super::DuplexRemovalCause::Replacement,
+            ))
+        });
         (
             Self {
                 pool,
@@ -219,6 +251,7 @@ impl Simulation {
                 mutation_burden: self.mutation_burden,
                 live_call_support: self.live_call_support.clone(),
                 coding_end_provenance: self.coding_end_provenance.clone(),
+                duplex_provenance,
             },
             range,
         )
@@ -236,6 +269,18 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.as_ref().map(|p| {
+                Arc::new(
+                    p.with_substitution(
+                        handle.index(),
+                        *self
+                            .pool
+                            .get(handle)
+                            .expect("nucleotide handle outside pool"),
+                        new_n.base,
+                    ),
+                )
+            }),
         }
     }
 
@@ -251,6 +296,18 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.as_ref().map(|p| {
+                Arc::new(
+                    p.with_substitution(
+                        handle.index(),
+                        *self
+                            .pool
+                            .get(handle)
+                            .expect("nucleotide handle outside pool"),
+                        new_base,
+                    ),
+                )
+            }),
         }
     }
 
@@ -266,6 +323,7 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -294,6 +352,7 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -313,6 +372,7 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -328,6 +388,7 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -354,6 +415,7 @@ impl Simulation {
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
             coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -364,7 +426,11 @@ impl Simulation {
     /// demand via [`crate::ir::compute_codon_rail`].
     pub fn with_indel_inserted(&self, at: u32, n: Nucleotide) -> Self {
         let new_pool = self.pool.with_inserted(at, n);
-        let adjusted = self.sequence.with_indel_adjusted(at, 1);
+        let adjusted = if self.duplex_provenance.is_some() {
+            duplex_sequence_after_insertion(&self.sequence, at, n.segment)
+        } else {
+            self.sequence.with_indel_adjusted(at, 1)
+        };
         Self {
             pool: new_pool,
             sequence: Arc::new(adjusted),
@@ -374,6 +440,10 @@ impl Simulation {
             mutation_count: self.mutation_count,
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
+            duplex_provenance: self
+                .duplex_provenance
+                .as_ref()
+                .map(|p| Arc::new(p.with_inserted(at, n))),
             coding_end_provenance: self
                 .coding_end_provenance
                 .as_ref()
@@ -464,6 +534,14 @@ impl Simulation {
             mutation_count: self.mutation_count,
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
+            duplex_provenance: self.duplex_provenance.as_ref().map(|p| {
+                Arc::new(p.with_replacement(
+                    old_range.start,
+                    old_range.end,
+                    &replacement,
+                    super::DuplexRemovalCause::Replacement,
+                ))
+            }),
             coding_end_provenance: self.coding_end_provenance.as_ref().map(|p| {
                 Arc::new(p.shifted_for_replacement(old_range.start, old_range.end, new_len))
             }),
@@ -476,6 +554,15 @@ impl Simulation {
     /// `at` removed. Same range-shift semantics as
     /// [`Self::with_indel_inserted`].
     pub fn with_indel_deleted(&self, at: u32) -> Self {
+        self.with_query_deleted(at, super::DuplexRemovalCause::StructuralDeletion)
+    }
+
+    /// Explicit missing read coverage, distinct from a structural deletion.
+    pub fn with_observation_deleted(&self, at: u32) -> Self {
+        self.with_query_deleted(at, super::DuplexRemovalCause::ObservationLoss)
+    }
+
+    fn with_query_deleted(&self, at: u32, cause: super::DuplexRemovalCause) -> Self {
         let new_pool = self.pool.with_deleted(at);
         let adjusted = self.sequence.with_indel_adjusted(at, -1);
         Self {
@@ -487,10 +574,59 @@ impl Simulation {
             mutation_count: self.mutation_count,
             mutation_burden: self.mutation_burden,
             live_call_support: self.live_call_support.clone(),
+            duplex_provenance: self.duplex_provenance.as_ref().map(|p| {
+                Arc::new(
+                    p.with_removed(
+                        at,
+                        *self
+                            .pool
+                            .get(NucHandle::new(at))
+                            .expect("deletion outside pool"),
+                        cause,
+                    ),
+                )
+            }),
             coding_end_provenance: self
                 .coding_end_provenance
                 .as_ref()
                 .map(|p| Arc::new(p.shifted_for_replacement(at, at + 1, 0))),
         }
     }
+}
+
+/// A duplex observation has an explicit partition, including zero-width
+/// sources. Keep its declared insertion owner even at the outer query edge
+/// or when every source has become empty. Ordinary IR range semantics stay
+/// unchanged.
+fn duplex_sequence_after_insertion(sequence: &Sequence, at: u32, segment: Segment) -> Sequence {
+    let Some(owner) = sequence.regions.iter().position(|region| {
+        region.segment == segment && region.start.index() <= at && at <= region.end.index()
+    }) else {
+        // Invalid low-level owners remain detectable by the layout validator.
+        return sequence.with_indel_adjusted(at, 1);
+    };
+    Sequence {
+        regions: sequence
+            .regions
+            .iter()
+            .enumerate()
+            .map(|(index, region)| {
+                let start = region.start.index();
+                let end = region.end.index();
+                let (start, end) = if index == owner {
+                    (start, end + 1)
+                } else if at < start || (at == start && index > owner) {
+                    (start + 1, end + 1)
+                } else {
+                    (start, end)
+                };
+                Region {
+                    start: NucHandle::new(start),
+                    end: NucHandle::new(end),
+                    ..region.clone()
+                }
+            })
+            .collect(),
+    }
+    .with_frame_phases_recomputed()
 }

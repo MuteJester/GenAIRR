@@ -85,10 +85,7 @@ impl EffectHook for LiveCallRefreshHook {
                     if all_segments_refreshed {
                         continue;
                     }
-                    for &segment in Segment::assignable() {
-                        sim = with_assembled_segment_live_call(&sim, reference_index, segment);
-                    }
-                    sim = drain_dirty_windows(sim);
+                    sim = refresh_live_calls(sim, reference_index);
                     all_segments_refreshed = true;
                 }
             }
@@ -112,7 +109,20 @@ pub fn refresh_live_calls(
     reference_index: &ReferenceMatchIndex,
 ) -> Simulation {
     for &segment in Segment::assignable() {
-        sim = with_assembled_segment_live_call(&sim, reference_index, segment);
+        if sim.duplex_provenance.is_some() {
+            // Duplex insertion ownership can extend a terminal or empty region.
+            // The legacy half-open observer may have staged its old boundary;
+            // rebuilding from current regions is authoritative and also clears
+            // that stale staged slot when the new call is committed.
+            let version = sim.segment_calls.version.saturating_add(1);
+            if let Some(call) =
+                super::assembled_segment_live_call(&sim, reference_index, segment, version)
+            {
+                sim = sim.with_segment_calls(sim.segment_calls.with_segment_call(call));
+            }
+        } else {
+            sim = with_assembled_segment_live_call(&sim, reference_index, segment);
+        }
     }
     drain_dirty_windows(sim)
 }
@@ -528,5 +538,100 @@ mod tests {
         // The final pool reflects the *second* replacement; the
         // refreshed call must match it.
         assert_segment_calls_match_oracle(&refreshed, &reference_index);
+    }
+
+    fn duplex_seed() -> (Simulation, ReferenceMatchIndex) {
+        use crate::duplex_repair::{
+            bindings::DuplexReferenceBindings, repair_coupled_annotated, seed::seed_from_coupled,
+            JoinName, JoinScript, RepairOperation, Side,
+        };
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        for (segment, name, bases, anchor) in [
+            (Segment::V, "V*01", "AAATGT", Some(3)),
+            (Segment::D, "D*01", "ACT", None),
+            (Segment::J, "J*01", "TTTAAA", Some(0)),
+        ] {
+            let mut a = allele(name, bases.as_bytes());
+            a.segment = segment;
+            a.anchor = anchor;
+            match segment {
+                Segment::V => cfg.v_pool.push(a),
+                Segment::D => cfg.d_pool.push(a),
+                Segment::J => cfg.j_pool.push(a),
+                _ => unreachable!(),
+            };
+        }
+        let scripts: Vec<_> = [(JoinName::VD, 6), (JoinName::DJ, 3)]
+            .into_iter()
+            .map(|(join, right_start)| JoinScript {
+                join,
+                operations: vec![
+                    RepairOperation::Open {
+                        side: Side::Left,
+                        offset: 0,
+                    },
+                    RepairOperation::Open {
+                        side: Side::Right,
+                        offset: 0,
+                    },
+                    RepairOperation::Synapse { right_start },
+                    RepairOperation::Ligate {},
+                ],
+            })
+            .collect();
+        let product =
+            repair_coupled_annotated("AAATGT", "ACT", "TTTAAA", false, &scripts, 256, 1000)
+                .unwrap();
+        let bindings = DuplexReferenceBindings::new(
+            &cfg,
+            ["V*01", "D*01", "J*01"],
+            ["AAATGT", "ACT", "TTTAAA"],
+            false,
+            true,
+        )
+        .unwrap();
+        let sim = seed_from_coupled(product, bindings, &cfg).unwrap();
+        (sim, ReferenceMatchIndex::build(&cfg))
+    }
+
+    #[test]
+    fn duplex_structural_refresh_discards_staged_terminal_and_empty_region_bounds() {
+        use crate::ir::NucFlags;
+        let (initial, index) = duplex_seed();
+        for fully_deleted in [false, true] {
+            let mut before = refresh_live_calls(initial.clone(), &index);
+            if fully_deleted {
+                while !before.pool.is_empty() {
+                    before = before.with_indel_deleted(0);
+                }
+                before = refresh_live_calls(before, &index);
+            }
+            let mut builder = SimulationBuilder::from_simulation(before.clone());
+            builder.attach_standard_mutation_observers(Some(&index));
+            builder.attach_event_log_observer();
+            let at = before.pool.len() as u32;
+            let segment = if fully_deleted {
+                Segment::V
+            } else {
+                Segment::J
+            };
+            builder.insert_indel(at, Nucleotide::synthetic(b'A', segment, NucFlags::empty()));
+            let events = builder.seal_event_log_observer();
+            let staged = builder.seal_with_committed_live_calls(&index);
+            let refreshed = LiveCallRefreshHook::new().apply(
+                staged.clone(),
+                &[],
+                &events,
+                HookContext {
+                    reference_index: Some(&index),
+                },
+            );
+            assert_segment_calls_match_oracle(&refreshed, &index);
+            for s in Segment::assignable() {
+                assert!(!refreshed.segment_calls.has_staged(*s));
+            }
+            // Explicit continuation refresh must also ignore stale stages.
+            assert_segment_calls_match_oracle(&refresh_live_calls(staged, &index), &index);
+        }
     }
 }
