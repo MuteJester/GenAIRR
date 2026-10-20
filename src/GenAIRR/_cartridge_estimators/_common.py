@@ -1,5 +1,4 @@
-"""Shared module-level helpers for the cartridge estimators (behavior-
-preserving). Moved verbatim from the original single-file module."""
+"""Shared cartridge-estimator input checks and record helpers."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,10 +7,23 @@ from typing import Any, Dict, List
 _NP_CANONICAL_BASES = ("A", "C", "G", "T")
 
 
+def _reject_duplex_provenance(records: List[Dict[str, Any]], *, estimator: str) -> None:
+    """Legacy end models cannot infer microscopic histories from projections."""
+    for row_index, row in enumerate(records):
+        if row.get("duplex_repair") not in (None, ""):
+            raise ValueError(
+                f"{estimator}: row {row_index} has duplex repair provenance; "
+                "this estimator requires its original scalar provenance contract. "
+                "Unknown P is not zero and combined NP is not untemplated N; "
+                "duplex histories require a history-aware fitting model."
+            )
+
+
 def _reject_nonzero_p_provenance(
     records: List[Dict[str, Any]], *, estimator: str,
 ) -> None:
     """Prevent combined AIRR N/P measurements from becoming an N-only model."""
+    _reject_duplex_provenance(records, estimator=estimator)
     columns = ("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length")
     for row_index, row in enumerate(records):
         for column in columns:

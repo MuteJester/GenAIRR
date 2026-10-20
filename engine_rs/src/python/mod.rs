@@ -78,6 +78,10 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         duplex_repair::coupled_duplex_repair,
         m
     )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        duplex_repair::coupled_duplex_projection,
+        m
+    )?)?;
     runner::register(m)?;
     Ok(())
 }

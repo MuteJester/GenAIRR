@@ -49,6 +49,8 @@ def _rows(values, segment):
 
 
 def _choices(record, segments):
+    if record.get("duplex_repair") not in (None, ""):
+        raise ValueError("duplex repair histories require a history-aware fitting model")
     metadata = record.get("coding_end_processing")
     if isinstance(metadata, str):
         try:

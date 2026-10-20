@@ -1,10 +1,9 @@
-"""Trim-distribution estimator sub-mixin (behavior-preserving). The
-estimator method is moved verbatim from the original single-file module."""
+"""Trim estimation under the existing end-outcome provenance contract."""
 from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ._common import _load_rearrangements
+from ._common import _load_rearrangements, _reject_duplex_provenance
 from ..reference_models import (
     EmpiricalDistributionSpec,
     ReferenceEmpiricalModels,
@@ -118,6 +117,7 @@ class _TrimEstimatorMixin:
         )
 
         records, source_label = _load_rearrangements(rearrangements)
+        _reject_duplex_provenance(records, estimator="estimate_trim_distributions")
         chain_has_d = self._chain_type.has_d
         active_keys = TRIM_KEYS if chain_has_d else TRIM_KEYS_VJ
 

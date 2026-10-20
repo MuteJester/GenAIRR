@@ -159,6 +159,46 @@ pub fn repair_coupled(
     max_operations: usize,
     max_bases: usize,
 ) -> Result<CoupledProduct, String> {
+    repair_coupled_impl(v, d, j, d_inverted, joins, max_operations, max_bases, None)
+}
+
+/// Run the same physical executor with optional operation and body evidence.
+pub fn repair_coupled_annotated(
+    v: &str,
+    d: &str,
+    j: &str,
+    d_inverted: bool,
+    joins: &[JoinScript],
+    max_operations: usize,
+    max_bases: usize,
+) -> Result<AnnotatedCoupledProduct, String> {
+    let mut observer = EvidenceObserver::new(d_inverted);
+    let product = repair_coupled_impl(
+        v,
+        d,
+        j,
+        d_inverted,
+        joins,
+        max_operations,
+        max_bases,
+        Some(&mut observer),
+    )?;
+    Ok(AnnotatedCoupledProduct {
+        product,
+        evidence: observer.finish(),
+    })
+}
+
+fn repair_coupled_impl(
+    v: &str,
+    d: &str,
+    j: &str,
+    d_inverted: bool,
+    joins: &[JoinScript],
+    max_operations: usize,
+    max_bases: usize,
+    mut observer: Option<&mut EvidenceObserver>,
+) -> Result<CoupledProduct, String> {
     let v = dna(v)?;
     let d = dna(d)?;
     let j = dna(j)?;
@@ -215,8 +255,25 @@ pub fn repair_coupled(
         (Substrate::D, d.len()),
         (Substrate::J, j.len()),
     ]);
+    if let Some(o) = observer.as_mut() {
+        for component in components.iter().flatten() {
+            let frame = *component
+                .origins
+                .keys()
+                .next()
+                .ok_or("missing component frame")?;
+            for (strand, bases) in [
+                (Strand::Top, &component.end.top),
+                (Strand::Bottom, &component.end.bottom),
+            ] {
+                for (p, base) in bases {
+                    o.initialize(base, frame, strand.clone(), *p)?;
+                }
+            }
+        }
+    }
     let mut removed = Vec::new();
-    for script in joins {
+    for (ordinal, script) in joins.iter().enumerate() {
         let (left, right) = match script.join {
             JoinName::VD => (Substrate::V, Substrate::D),
             JoinName::DJ => (Substrate::D, Substrate::J),
@@ -236,6 +293,16 @@ pub fn repair_coupled(
         let mut r = components[ri].take().ok_or("missing right component")?;
         l.expose(left, lengths[&left])?;
         r.expose(right, lengths[&right])?;
+        let mut observer_ref: Option<&mut dyn OperationObserver> = None;
+        if let Some(o) = observer.as_mut() {
+            o.begin_join(
+                ordinal,
+                script.join,
+                *l.origins.keys().next().ok_or("missing left frame")?,
+                *r.origins.keys().next().ok_or("missing right frame")?,
+            );
+            observer_ref = Some(&mut **o);
+        }
         let geometry = execute_join(
             &mut l.end,
             &mut r.end,
@@ -244,6 +311,7 @@ pub fn repair_coupled(
             &mut removed,
             &mut ledger,
             max_bases,
+            observer_ref,
         )?;
         r.translate_ancestry(geometry.right_translation)?;
         l.end.top.extend(r.end.top);

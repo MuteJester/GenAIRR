@@ -155,6 +155,76 @@ original strands of all three references and every newly synthesized base;
 removal refunds none. Partial, incompatible, over-budget or unresolved products
 raise errors and export no completed sequence.
 
+### Standalone AIRR projection
+
+Completed coupled scripts can produce a reference-bound AIRR record and
+detailed ancestry with `script.project(...)`. Supply the actual generating
+allele names and a `RefDataConfig`; all three substrates must match those
+whole canonical alleles. Names are never inferred from sequence similarity.
+This standalone adapter remains separate from `Experiment`.
+
+The following uses deliberately short synthetic references as a geometry
+control. Its explicit coding-end assertion is appropriate to these authored
+substrates; it does not certify biological reference annotations.
+
+```python
+from GenAIRR import RefDataConfig
+from GenAIRR.experimental import export_duplex_projection
+
+reference = RefDataConfig.vdj()
+reference.add_v_allele("V*01", "V", b"ACG")
+reference.add_d_allele("D*01", "D", b"AAT")
+reference.add_j_allele("J*01", "J", b"TCC")
+
+projection = script.project(
+    reference, v_call="V*01", d_call="D*01", j_call="J*01",
+    reference_ends_are_coding_ends=True,
+)
+assert projection["record"]["sequence"] == "ACGATTTCC"
+assert projection["record"]["d_germline_start"] == 0
+export_duplex_projection(projection, "duplex.json")
+export_duplex_projection(projection, "duplex.tsv", format="tsv")
+```
+
+Unknown junction-facing boundary evidence requires the explicit assertion.
+A known partial boundary cannot be overridden. Landmark and phase readiness
+remain separate from boundary admission.
+
+`record` contains the ordinary fields and a reserved `duplex_repair` extension
+with both strands, operation events, placement certificates and the original
+repair ledger. `paths` contains independent per-gene alignments. The query is
+the coding-oriented top strand; a body position supported on either paired
+strand can justify its alignment. Synthesized restoration stays chemically
+synthetic, while a transferred hairpin base loses its former body placement.
+
+A valid V-body/D-body overlap retains both gene paths. The combined alignment
+and its relative coordinates remain missing, with reasons in `availability`;
+the adapter never chooses one owner to hide the overlap. Empty NP intervals
+have length zero. Unknown values remain `None`. Existing P scalars remain
+missing because this kernel has no equivalent legacy P-emission contract;
+physical events and query contributions after both joins have separate counts.
+The legacy P, NP, trim and retained-outcome fitters reject duplex provenance;
+they cannot reinterpret these new histories as their old scalar models.
+
+`capabilities.simulation_seed` reports compatibility with the planned single
+segment layout; it does not install a simulation. `experiment_integration`
+is currently false. Native projection verifies the snapshot and its evidence
+by exact deterministic replay before returning a record.
+
+Productivity uses the explicit `duplex_observed_vdj_v1` policy. It accepts
+certified in-place landmarks restored by synthesis and evaluates their actual
+codons. A matching Cys or Phe/Trp elsewhere cannot substitute for a lost
+landmark. A verified rejected residue can establish `False` even when coding
+phase is unknown. A defined junction keeps its translation on nonproductive
+products. This predicts sequence-level acceptance in the observed coding span,
+not expression or receptor function.
+
+JSON exports retain the complete envelope in native coordinates. Strict TSV
+exports one AIRR record, converts its interval coordinates, and serializes the
+ancestry extension as one JSON cell. Nested repair/provenance coordinates
+retain their declared systems. Inverted D retains canonical forward reference
+bounds; its CIGAR uses the oriented reference offset.
+
 ### Bounded substrate contract
 
 The input supplies three coding duplexes and four junction-facing hairpins.

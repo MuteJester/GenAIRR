@@ -4,11 +4,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const MODEL: &str = "experimental_duplex_repair_v1";
+pub mod bindings;
 mod coupled;
+mod evidence;
+pub mod projection;
 pub use coupled::{
-    repair_coupled, CoupledOrigin, CoupledProduct, JoinName, JoinScript, LigationSeam, Substrate,
-    COUPLED_MODEL,
+    repair_coupled, repair_coupled_annotated, CoupledOrigin, CoupledProduct, JoinName, JoinScript,
+    LigationSeam, Substrate, COUPLED_MODEL,
 };
+pub use evidence::{
+    AnnotatedCoupledProduct, CodingEnd, CoupledEvidence, OperationId, PhysicalLocation,
+    PhysicalTip, Placement, PlacementRole, RepairEvidenceEvent,
+};
+use evidence::{EvidenceObserver, OperationObserver};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -190,7 +198,12 @@ impl<O: Clone> End<O> {
         Ok(())
     }
 
-    fn open(&mut self, side: &Side, offset: usize) -> Result<(), String> {
+    fn open(
+        &mut self,
+        side: &Side,
+        offset: usize,
+        observer: &mut Option<&mut dyn OperationObserver>,
+    ) -> Result<(), String> {
         if self.opened {
             return Err("a hairpin may be opened only once".into());
         }
@@ -278,10 +291,16 @@ impl<O: Clone> End<O> {
             match side {
                 Side::Left => {
                     let base = self.bottom.remove(&p).ok_or("missing hairpin substrate")?;
+                    if let Some(o) = observer.as_mut() {
+                        o.transfer(side, base.id, p, q)?;
+                    }
                     self.top.insert(q, base);
                 }
                 Side::Right => {
                     let base = self.top.remove(&p).ok_or("missing hairpin substrate")?;
+                    if let Some(o) = observer.as_mut() {
+                        o.transfer(side, base.id, p, q)?;
+                    }
                     self.bottom.insert(q, base);
                 }
             }
@@ -295,6 +314,7 @@ impl<O: Clone> End<O> {
         strand: &Strand,
         count: usize,
         removed: &mut Vec<Base<O>>,
+        observer: &mut Option<&mut dyn OperationObserver>,
     ) -> Result<(), String> {
         if !self.opened {
             return Err("resection requires an opened coding end".into());
@@ -322,7 +342,11 @@ impl<O: Clone> End<O> {
                 Side::Left => target.pop_last(),
                 Side::Right => target.pop_first(),
             };
-            removed.push(item.unwrap().1);
+            let (at, base) = item.unwrap();
+            if let Some(o) = observer.as_mut() {
+                o.remove(side, strand, base.id, at)?;
+            }
+            removed.push(base);
         }
         Ok(())
     }
@@ -332,6 +356,7 @@ impl<O: Clone> End<O> {
         sequence: &str,
         next: &mut u64,
         ledger: &mut Vec<Base<O>>,
+        observer: &mut Option<&mut dyn OperationObserver>,
     ) -> Result<(), String> {
         if !self.opened {
             return Err("TdT extension requires an opened 3-prime terminus".into());
@@ -354,6 +379,13 @@ impl<O: Clone> End<O> {
                 original: None,
                 template_id: None,
             };
+            if let Some(o) = observer.as_mut() {
+                let strand = match side {
+                    Side::Left => Strand::Top,
+                    Side::Right => Strand::Bottom,
+                };
+                o.create(side, &strand, id, position, None)?;
+            }
             ledger.push(base.clone());
             target.insert(position, base);
             position = position.checked_add(step).ok_or("coordinate overflow")?;
@@ -421,6 +453,7 @@ pub fn repair(
         &mut removed,
         &mut ledger,
         max_bases,
+        None,
     )?;
     l.top.extend(r.top);
     l.bottom.extend(r.bottom);
@@ -457,12 +490,16 @@ fn execute_join<O: Clone>(
     removed: &mut Vec<Base<O>>,
     ledger: &mut Vec<Base<O>>,
     max_bases: usize,
+    mut observer: Option<&mut dyn OperationObserver>,
 ) -> Result<JoinedGeometry, String> {
     let mut shift = None;
     let mut sealed = false;
-    for operation in history {
+    for (ordinal, operation) in history.iter().enumerate() {
         if sealed {
             return Err("no operation may follow complete ligation".into());
+        }
+        if let Some(o) = observer.as_mut() {
+            o.start(ordinal, operation)?;
         }
         match operation {
             RepairOperation::Open { side, offset } => {
@@ -473,7 +510,7 @@ fn execute_join<O: Clone>(
                     Side::Left => &mut *l,
                     Side::Right => &mut *r,
                 }
-                .open(side, *offset)?;
+                .open(side, *offset, &mut observer)?;
             }
             RepairOperation::Resect {
                 side,
@@ -487,7 +524,7 @@ fn execute_join<O: Clone>(
                     Side::Left => &mut *l,
                     Side::Right => &mut *r,
                 }
-                .resect(side, strand, *count, removed)?;
+                .resect(side, strand, *count, removed, &mut observer)?;
             }
             RepairOperation::AddN { side, sequence } => {
                 if shift.is_some() {
@@ -503,7 +540,7 @@ fn execute_join<O: Clone>(
                     Side::Left => &mut *l,
                     Side::Right => &mut *r,
                 }
-                .add_n(side, sequence, next, ledger)?;
+                .add_n(side, sequence, next, ledger, &mut observer)?;
             }
             RepairOperation::Synapse { right_start } => {
                 if shift.is_some() || !l.opened || !r.opened {
@@ -518,6 +555,16 @@ fn execute_join<O: Clone>(
                     .and_then(|p| p.checked_sub(r.original_start))
                     .ok_or("coordinate overflow")?;
                 r.translate(translation)?;
+                if let Some(o) = observer.as_mut() {
+                    o.translate(
+                        translation,
+                        r.top
+                            .values()
+                            .chain(r.bottom.values())
+                            .map(|b| b.id)
+                            .collect(),
+                    )?;
+                }
                 let (_, lt) = bounds(&l.top)?;
                 let (rt, _) = bounds(&r.top)?;
                 let (_, lb) = bounds(&l.bottom)?;
@@ -589,6 +636,13 @@ fn execute_join<O: Clone>(
                         original: None,
                         template_id: Some(template.id),
                     };
+                    if let Some(o) = observer.as_mut() {
+                        let side = match strand {
+                            Strand::Top => Side::Left,
+                            Strand::Bottom => Side::Right,
+                        };
+                        o.create(&side, strand, base.id, p, Some(template.id))?;
+                    }
                     ledger.push(base.clone());
                     additions.push((p, base));
                     *next += 1;
@@ -613,6 +667,9 @@ fn execute_join<O: Clone>(
                     );
                 }
                 sealed = true;
+                if let Some(o) = observer.as_mut() {
+                    o.ligate(bounds(&l.top)?.1, bounds(&l.bottom)?.1)?;
+                }
             }
         }
     }
