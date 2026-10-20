@@ -1,0 +1,102 @@
+{
+  "baseline_commit": "f066b44d4a3b58a579893de345d6a353a7ca7a35",
+  "branch": "fix/biological-metadata-correctness",
+  "commands": [
+    ".venv/bin/maturin develop --release",
+    "cargo test --manifest-path engine_rs/Cargo.toml -q",
+    "cargo test --release --manifest-path engine_rs/Cargo.toml -q",
+    ".venv/bin/python -m pytest -q tests/test_coupled_duplex_repair.py tests/test_experimental_duplex_repair.py tests/test_coding_end_models.py",
+    ".venv/bin/python -m pytest -q tests/test_performance_budgets.py",
+    ".venv/bin/python -m tools.metadata_biology_audit.coupled_duplex_sweep --output sweep.json",
+    ".venv/bin/python -m mkdocs build --strict"
+  ],
+  "date": "2026-10-20",
+  "exhaustive_sweep": {
+    "accepted": 17408,
+    "artifact": "audit-docs/coupled_duplex_sweep_2026_10_20.json",
+    "cases": 32768,
+    "errors": 0,
+    "incompatible_rejected": 15360,
+    "independent_audit_log": "/tmp/genairr_coupled_independent_audit.log",
+    "sha256": "8f2964b0dbe5bbfa500ea8cbc3d67aa0f79b26d315cb424c56bae070620a1671"
+  },
+  "extension": {
+    "build_log": "/tmp/genairr_coupled_release_build.log",
+    "path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+    "sha256": "a59585ffc7e20db37e858d3ec1be13484b12d4367453afcd04cc72421187a302"
+  },
+  "local_model_unchanged": "experimental_duplex_repair_v1",
+  "model": "experimental_coupled_duplex_repair_v1",
+  "public_api": [
+    "GenAIRR.experimental.CoupledDuplexRepair",
+    "GenAIRR.experimental.DuplexJoin"
+  ],
+  "schema": "coupled_duplex_verification_v1",
+  "scope": {
+    "cumulative_budgets": true,
+    "d_inversion": true,
+    "external_simulator_or_inference_dependencies_added": false,
+    "fitted_biochemical_rates": false,
+    "flap_mismatch_repair": false,
+    "join_orders": [
+      [
+        "vd",
+        "dj"
+      ],
+      [
+        "dj",
+        "vd"
+      ]
+    ],
+    "one_global_ledger": true,
+    "protected_previous_ligation_bonds": true,
+    "rag_cleavage_chronology": false,
+    "standard_airr_integration": false,
+    "substrates": "supplied coding duplexes and four junction-facing hairpins"
+  },
+  "source_sha256": {
+    "engine_rs/src/duplex_repair.rs": "551e9de94f18b5b80103a5844c9251f8a21fde1b2624768ae0d1a948aae1bc10",
+    "engine_rs/src/duplex_repair/coupled.rs": "14e65f9600d8f6bd8a29169f9190e388a0ddc7e4b50729d1257e4d8f07e672ae",
+    "engine_rs/src/duplex_repair/coupled/tests.rs": "f1f96776698c995c7654b4759d1ed1a12641fd72ffb629ad0fc4cacc446c579c",
+    "engine_rs/src/python/duplex_repair.rs": "99eb65c444a263b3f18c1e17e453c15fdbfa8ff46706cfa52b5edbcbf8c4629f",
+    "engine_rs/src/python/mod.rs": "a860d4d915d21a8e9ff9da3687cc4631bf95c70eac861be6d5d937050cdcb276",
+    "src/GenAIRR/experimental.py": "edab4971a85b5089874fc7e246e8b37e7792f59eb2def1fc15cef6f4dfcbb060",
+    "tests/test_coupled_duplex_repair.py": "fed26a28c7ad55c34d9da11279ed2ebb896d5808dba1dd0a6c6e4ee826b907d0",
+    "tools/metadata_biology_audit/coupled_duplex_sweep.py": "94120b843be4151fb1995730d932ed84e2bf74dae2a36a84657fee0d2df6ecee"
+  },
+  "tests": {
+    "exhaustive_inner_python_histories": 1280,
+    "focused_python": {
+      "calibration": 19,
+      "coupled": 29,
+      "existing_local": 19,
+      "log": "/tmp/genairr_coupled_focused_python.log",
+      "passed": 67
+    },
+    "performance": {
+      "budgets_changed": false,
+      "log": "/tmp/genairr_coupled_performance.log",
+      "passed": 8
+    },
+    "prior_checkpoint_full_python": {
+      "passed": 2765,
+      "rerun_for_this_slice": false
+    },
+    "rust_debug": {
+      "failed": 0,
+      "ignored": 3,
+      "log": "/tmp/genairr_coupled_rust_debug.log",
+      "passed": 1530
+    },
+    "rust_release": {
+      "failed": 0,
+      "ignored": 3,
+      "log": "/tmp/genairr_coupled_rust_release.log",
+      "passed": 1529
+    },
+    "strict_mkdocs": {
+      "log": "/tmp/genairr_coupled_docs.log",
+      "passed": true
+    }
+  }
+}

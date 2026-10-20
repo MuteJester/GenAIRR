@@ -74,6 +74,10 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<trace_file::PyTraceFile>()?;
     contract::register(m)?;
     m.add_function(pyo3::wrap_pyfunction!(duplex_repair::duplex_repair, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        duplex_repair::coupled_duplex_repair,
+        m
+    )?)?;
     runner::register(m)?;
     Ok(())
 }

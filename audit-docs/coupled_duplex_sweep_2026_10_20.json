@@ -1,0 +1,39 @@
+{
+  "schema": "coupled_duplex_sweep_v1",
+  "model": "experimental_coupled_duplex_repair_v1",
+  "extension_sha256": "a59585ffc7e20db37e858d3ec1be13484b12d4367453afcd04cc72421187a302",
+  "substrate_length": 2,
+  "substrate_triples": 4096,
+  "d_orientations": 2,
+  "join_orders": [
+    [
+      "vd",
+      "dj"
+    ],
+    [
+      "dj",
+      "vd"
+    ]
+  ],
+  "opening_offsets": [
+    0,
+    1
+  ],
+  "accepted": {
+    "offset_0": 16384,
+    "offset_1": 1024
+  },
+  "incompatible_rejected": {
+    "offset_1": 15360
+  },
+  "errors": 0,
+  "checks": [
+    "literal product and complementary strand",
+    "canonical source nucleotide identities",
+    "single allocation of each D original",
+    "no creation during opening",
+    "stable canonical IDs under inversion",
+    "commutation for independent compatible fixtures"
+  ],
+  "scope": "deterministic short-substrate controls, not empirical repair frequencies"
+}

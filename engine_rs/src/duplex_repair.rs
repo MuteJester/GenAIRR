@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const MODEL: &str = "experimental_duplex_repair_v1";
+mod coupled;
+pub use coupled::{
+    repair_coupled, CoupledOrigin, CoupledProduct, JoinName, JoinScript, LigationSeam, Substrate,
+    COUPLED_MODEL,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -51,27 +56,31 @@ pub struct Origin {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct Base {
+pub struct Base<O = Origin> {
     pub id: u64,
     pub base: char,
     pub kind: String,
-    pub original: Option<Origin>,
+    pub original: Option<O>,
     pub template_id: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
-struct End {
-    top: BTreeMap<i64, Base>,
-    bottom: BTreeMap<i64, Base>,
+struct End<O = Origin> {
+    top: BTreeMap<i64, Base<O>>,
+    bottom: BTreeMap<i64, Base<O>>,
     length: usize,
+    original_start: i64,
     opened: bool,
+    /// The previous ligation's two strand boundaries. Operations at the other
+    /// end must retain both bases adjacent to those bonds in this local model.
+    barrier: Option<(i64, i64)>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct Column {
+pub struct Column<O = Origin> {
     pub position: i64,
-    pub top: Base,
-    pub bottom: Base,
+    pub top: Base<O>,
+    pub bottom: Base<O>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -109,7 +118,7 @@ fn dna(sequence: &str) -> Result<String, String> {
     }
     Ok(sequence.to_ascii_uppercase())
 }
-fn bounds(strand: &BTreeMap<i64, Base>) -> Result<(i64, i64), String> {
+fn bounds<O>(strand: &BTreeMap<i64, Base<O>>) -> Result<(i64, i64), String> {
     let first = *strand
         .first_key_value()
         .ok_or("a required strand is empty")?
@@ -120,7 +129,7 @@ fn bounds(strand: &BTreeMap<i64, Base>) -> Result<(i64, i64), String> {
         .0
         .checked_add(1)
         .ok_or("coordinate overflow")?;
-    if end - first != strand.len() as i64 {
+    if end.checked_sub(first) != Some(strand.len() as i64) {
         return Err("strand has an unresolved internal gap".into());
     }
     Ok((first, end))
@@ -157,33 +166,123 @@ impl End {
             top,
             bottom,
             length: sequence.len(),
+            original_start: 0,
             opened: false,
+            barrier: None,
         }
     }
+}
+
+impl<O: Clone> End<O> {
+    fn check_barrier(&self, side: &Side, strand: &Strand, p: i64) -> Result<(), String> {
+        if let Some((top, bottom)) = self.barrier {
+            let boundary = match strand {
+                Strand::Top => top,
+                Strand::Bottom => bottom,
+            };
+            if match side {
+                Side::Left => p <= boundary,
+                Side::Right => p >= boundary - 1,
+            } {
+                return Err("processing across a previous ligation seam is unsupported".into());
+            }
+        }
+        Ok(())
+    }
+
     fn open(&mut self, side: &Side, offset: usize) -> Result<(), String> {
         if self.opened {
             return Err("a hairpin may be opened only once".into());
         }
-        if offset >= self.length {
+        if self.barrier.is_none() && offset >= self.length {
             return Err(
                 "opening must retain a paired stem and remain inside the original coding end"
                     .into(),
             );
         }
-        // Nicking transfers actual original bases across the hairpin turn.
-        // It creates neither nucleotides nor a fictitious polymerase product.
+        let original_end = self
+            .original_start
+            .checked_add(self.length as i64)
+            .ok_or("coordinate overflow")?;
+        let (top_start, top_end) = bounds(&self.top)?;
+        let (bottom_start, bottom_end) = bounds(&self.bottom)?;
+        let source_len = match side {
+            Side::Left => self.bottom.len(),
+            Side::Right => self.top.len(),
+        };
+        if offset >= source_len {
+            return Err("opening must retain an actual paired component stem".into());
+        }
+        if match side {
+            Side::Left => top_end != original_end || bottom_end != original_end,
+            Side::Right => top_start != self.original_start || bottom_start != self.original_start,
+        } {
+            return Err("the original hairpin turn is no longer present at this terminus".into());
+        }
+        if let Some((top_seam, bottom_seam)) = self.barrier {
+            let cuts_seam = match side {
+                Side::Left => original_end - offset as i64 <= bottom_seam,
+                Side::Right => self.original_start + offset as i64 >= top_seam,
+            };
+            if cuts_seam {
+                return Err("opening at or across a previous ligation seam is unsupported".into());
+            }
+        }
+        // Opening moves the actual extant material, which can include synthesis
+        // from a previous join. It never recreates a deleted reference base.
+        let mut transfers = Vec::with_capacity(offset);
         match side {
             Side::Left => {
                 for i in 0..offset {
-                    let p = self.length - 1 - i;
-                    let base = self.bottom.remove(&(p as i64)).unwrap();
-                    self.top.insert((self.length + i) as i64, base);
+                    let p = original_end - 1 - i as i64;
+                    let q = original_end
+                        .checked_add(i as i64)
+                        .ok_or("coordinate overflow")?;
+                    self.check_barrier(side, &Strand::Bottom, p)?;
+                    if !self.bottom.contains_key(&p) || self.top.contains_key(&q) {
+                        return Err("hairpin opening lacks its required current substrate".into());
+                    }
+                    transfers.push((p, q));
                 }
             }
             Side::Right => {
                 for i in 0..offset {
-                    let base = self.top.remove(&(i as i64)).unwrap();
-                    self.bottom.insert(-1 - i as i64, base);
+                    let p = self
+                        .original_start
+                        .checked_add(i as i64)
+                        .ok_or("coordinate overflow")?;
+                    let q = self
+                        .original_start
+                        .checked_sub(1 + i as i64)
+                        .ok_or("coordinate overflow")?;
+                    self.check_barrier(side, &Strand::Top, p)?;
+                    if !self.top.contains_key(&p) || self.bottom.contains_key(&q) {
+                        return Err("hairpin opening lacks its required current substrate".into());
+                    }
+                    transfers.push((p, q));
+                }
+            }
+        }
+        let paired_start = match side {
+            Side::Left => top_start.max(bottom_start),
+            Side::Right => (self.original_start + offset as i64).max(bottom_start),
+        };
+        let paired_end = match side {
+            Side::Left => (original_end - offset as i64).min(top_end),
+            Side::Right => top_end.min(bottom_end),
+        };
+        if paired_start >= paired_end {
+            return Err("opening must retain an actual paired component stem".into());
+        }
+        for (p, q) in transfers {
+            match side {
+                Side::Left => {
+                    let base = self.bottom.remove(&p).ok_or("missing hairpin substrate")?;
+                    self.top.insert(q, base);
+                }
+                Side::Right => {
+                    let base = self.top.remove(&p).ok_or("missing hairpin substrate")?;
+                    self.bottom.insert(q, base);
                 }
             }
         }
@@ -195,18 +294,29 @@ impl End {
         side: &Side,
         strand: &Strand,
         count: usize,
-        removed: &mut Vec<Base>,
+        removed: &mut Vec<Base<O>>,
     ) -> Result<(), String> {
         if !self.opened {
             return Err("resection requires an opened coding end".into());
         }
         let target = match strand {
-            Strand::Top => &mut self.top,
-            Strand::Bottom => &mut self.bottom,
+            Strand::Top => &self.top,
+            Strand::Bottom => &self.bottom,
         };
         if count >= target.len() {
             return Err("resection must retain a strand primer/stem in this model".into());
         }
+        let positions: Vec<_> = match side {
+            Side::Left => target.keys().rev().take(count).copied().collect(),
+            Side::Right => target.keys().take(count).copied().collect(),
+        };
+        for p in positions {
+            self.check_barrier(side, strand, p)?;
+        }
+        let target = match strand {
+            Strand::Top => &mut self.top,
+            Strand::Bottom => &mut self.bottom,
+        };
         for _ in 0..count {
             let item = match side {
                 Side::Left => target.pop_last(),
@@ -216,7 +326,13 @@ impl End {
         }
         Ok(())
     }
-    fn add_n(&mut self, side: &Side, sequence: &str, next: &mut u64) -> Result<(), String> {
+    fn add_n(
+        &mut self,
+        side: &Side,
+        sequence: &str,
+        next: &mut u64,
+        ledger: &mut Vec<Base<O>>,
+    ) -> Result<(), String> {
         if !self.opened {
             return Err("TdT extension requires an opened 3-prime terminus".into());
         }
@@ -231,17 +347,40 @@ impl End {
         for base in sequence.chars() {
             let id = *next;
             *next += 1;
-            target.insert(
-                position,
-                Base {
-                    id,
-                    base,
-                    kind: "n_addition".into(),
-                    original: None,
-                    template_id: None,
-                },
-            );
-            position += step;
+            let base = Base {
+                id,
+                base,
+                kind: "n_addition".into(),
+                original: None,
+                template_id: None,
+            };
+            ledger.push(base.clone());
+            target.insert(position, base);
+            position = position.checked_add(step).ok_or("coordinate overflow")?;
+        }
+        Ok(())
+    }
+
+    fn translate(&mut self, shift: i64) -> Result<(), String> {
+        for target in [&mut self.top, &mut self.bottom] {
+            *target = std::mem::take(target)
+                .into_iter()
+                .map(|(p, b)| {
+                    p.checked_add(shift)
+                        .map(|p| (p, b))
+                        .ok_or_else(|| "coordinate overflow".to_string())
+                })
+                .collect::<Result<_, _>>()?;
+        }
+        self.original_start = self
+            .original_start
+            .checked_add(shift)
+            .ok_or("coordinate overflow")?;
+        if let Some((top, bottom)) = self.barrier {
+            self.barrier = Some((
+                top.checked_add(shift).ok_or("coordinate overflow")?,
+                bottom.checked_add(shift).ok_or("coordinate overflow")?,
+            ));
         }
         Ok(())
     }
@@ -273,6 +412,52 @@ pub fn repair(
     let mut l = End::new(&left, Side::Left, &mut next);
     let mut r = End::new(&right, Side::Right, &mut next);
     let mut removed = Vec::new();
+    let mut ledger = Vec::new();
+    execute_join(
+        &mut l,
+        &mut r,
+        history,
+        &mut next,
+        &mut removed,
+        &mut ledger,
+        max_bases,
+    )?;
+    l.top.extend(r.top);
+    l.bottom.extend(r.bottom);
+    let columns = paired_columns(l.top, l.bottom)?;
+    let sequence = columns.iter().map(|c| c.top.base).collect();
+    let complementary_sequence = columns.iter().rev().map(|c| c.bottom.base).collect();
+    Ok(RepairProduct {
+        model: MODEL.into(),
+        top_direction: "5_to_3".into(),
+        bottom_direction: "3_to_5".into(),
+        sequence,
+        complementary_sequence,
+        columns,
+        removed,
+        history: history.to_vec(),
+        left_reference: left,
+        right_reference: right,
+    })
+}
+
+struct JoinedGeometry {
+    right_translation: i64,
+    top_seam: i64,
+    bottom_seam: i64,
+}
+
+/// Execute one local join on existing physical components. Original coordinates
+/// and nucleotide identities survive; only the right component is translated.
+fn execute_join<O: Clone>(
+    l: &mut End<O>,
+    r: &mut End<O>,
+    history: &[RepairOperation],
+    next: &mut u64,
+    removed: &mut Vec<Base<O>>,
+    ledger: &mut Vec<Base<O>>,
+    max_bases: usize,
+) -> Result<JoinedGeometry, String> {
     let mut shift = None;
     let mut sealed = false;
     for operation in history {
@@ -285,8 +470,8 @@ pub fn repair(
                     return Err("opening must precede synapsis".into());
                 }
                 match side {
-                    Side::Left => &mut l,
-                    Side::Right => &mut r,
+                    Side::Left => &mut *l,
+                    Side::Right => &mut *r,
                 }
                 .open(side, *offset)?;
             }
@@ -299,23 +484,26 @@ pub fn repair(
                     return Err("this model requires resection before synapsis".into());
                 }
                 match side {
-                    Side::Left => &mut l,
-                    Side::Right => &mut r,
+                    Side::Left => &mut *l,
+                    Side::Right => &mut *r,
                 }
-                .resect(side, strand, *count, &mut removed)?;
+                .resect(side, strand, *count, removed)?;
             }
             RepairOperation::AddN { side, sequence } => {
                 if shift.is_some() {
                     return Err("this model requires TdT extension before synapsis".into());
                 }
-                if next as usize + sequence.len() > max_bases {
+                if (*next as usize)
+                    .checked_add(sequence.len())
+                    .is_none_or(|n| n > max_bases)
+                {
                     return Err("repair base budget exceeded".into());
                 }
                 match side {
-                    Side::Left => &mut l,
-                    Side::Right => &mut r,
+                    Side::Left => &mut *l,
+                    Side::Right => &mut *r,
                 }
-                .add_n(side, sequence, &mut next)?;
+                .add_n(side, sequence, next, ledger)?;
             }
             RepairOperation::Synapse { right_start } => {
                 if shift.is_some() || !l.opened || !r.opened {
@@ -324,12 +512,12 @@ pub fn repair(
                 if right_start.unsigned_abs() > max_bases as u64 {
                     return Err("synapsis coordinate exceeds local repair budget".into());
                 }
-                for target in [&mut r.top, &mut r.bottom] {
-                    *target = std::mem::take(target)
-                        .into_iter()
-                        .map(|(p, b)| (p + right_start, b))
-                        .collect();
-                }
+                let translation = l
+                    .original_start
+                    .checked_add(*right_start)
+                    .and_then(|p| p.checked_sub(r.original_start))
+                    .ok_or("coordinate overflow")?;
+                r.translate(translation)?;
                 let (_, lt) = bounds(&l.top)?;
                 let (rt, _) = bounds(&r.top)?;
                 let (_, lb) = bounds(&l.bottom)?;
@@ -350,7 +538,7 @@ pub fn repair(
                         }
                     }
                 }
-                shift = Some(*right_start);
+                shift = Some(translation);
             }
             RepairOperation::Fill { strand } => {
                 if shift.is_none() {
@@ -382,7 +570,10 @@ pub fn repair(
                             .into(),
                     );
                 }
-                if next as usize + (end - begin) as usize > max_bases {
+                if (*next as usize)
+                    .checked_add((end - begin) as usize)
+                    .is_none_or(|n| n > max_bases)
+                {
                     return Err("repair base budget exceeded".into());
                 }
                 let mut additions = Vec::new();
@@ -391,17 +582,16 @@ pub fn repair(
                         Strand::Top => l.bottom.get(&p).or_else(|| r.bottom.get(&p)),
                         Strand::Bottom => l.top.get(&p).or_else(|| r.top.get(&p)),
                     }.ok_or("a gap lacks a continuous opposing template; no fictitious fill-in is allowed")?;
-                    additions.push((
-                        p,
-                        Base {
-                            id: next,
-                            base: complement(template.base),
-                            kind: "templated_synthesis".into(),
-                            original: None,
-                            template_id: Some(template.id),
-                        },
-                    ));
-                    next += 1;
+                    let base = Base {
+                        id: *next,
+                        base: complement(template.base),
+                        kind: "templated_synthesis".into(),
+                        original: None,
+                        template_id: Some(template.id),
+                    };
+                    ledger.push(base.clone());
+                    additions.push((p, base));
+                    *next += 1;
                 }
                 // Top grows rightward from the left 3' primer; bottom grows
                 // leftward from the right 3' primer. A recessed 5' end never
@@ -429,15 +619,23 @@ pub fn repair(
     if !sealed {
         return Err("repair history has no complete double-strand ligation".into());
     }
-    l.top.extend(r.top);
-    l.bottom.extend(r.bottom);
-    if bounds(&l.top)? != bounds(&l.bottom)? {
+    Ok(JoinedGeometry {
+        right_translation: shift.ok_or("missing synapsis")?,
+        top_seam: bounds(&l.top)?.1,
+        bottom_seam: bounds(&l.bottom)?.1,
+    })
+}
+
+fn paired_columns<O>(
+    top: BTreeMap<i64, Base<O>>,
+    mut bottom: BTreeMap<i64, Base<O>>,
+) -> Result<Vec<Column<O>>, String> {
+    if bounds(&top)? != bounds(&bottom)? {
         return Err("completed duplex has unequal strand boundaries".into());
     }
-    let mut columns = Vec::with_capacity(l.top.len());
-    for (position, top) in l.top {
-        let bottom = l
-            .bottom
+    let mut columns = Vec::with_capacity(top.len());
+    for (position, top) in top {
+        let bottom = bottom
             .remove(&position)
             .ok_or("completed duplex has an unpaired base")?;
         if complement(top.base) != bottom.base {
@@ -449,20 +647,7 @@ pub fn repair(
             bottom,
         });
     }
-    let sequence = columns.iter().map(|c| c.top.base).collect();
-    let complementary_sequence = columns.iter().rev().map(|c| c.bottom.base).collect();
-    Ok(RepairProduct {
-        model: MODEL.into(),
-        top_direction: "5_to_3".into(),
-        bottom_direction: "3_to_5".into(),
-        sequence,
-        complementary_sequence,
-        columns,
-        removed,
-        history: history.to_vec(),
-        left_reference: left,
-        right_reference: right,
-    })
+    Ok(columns)
 }
 
 #[cfg(test)]

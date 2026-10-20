@@ -1,5 +1,10 @@
 # Productivity, indels and coding-end repair implementation
 
+This checkpoint was subsequently committed as `f066b44`. The
+[coupled D repair follow-up](coupled_duplex_implementation_2026_10_20.md) extends
+the experimental local kernel; the verification below describes the preceding
+checkpoint.
+
 Implemented on `fix/biological-metadata-correctness`, following the
 [approved plan](productivity_indel_and_repair_plan_2026_10_20.md). The baseline
 commit is `1ededa676e8904430f7ea0bdcf03092de4888a41`; the changes remain in the

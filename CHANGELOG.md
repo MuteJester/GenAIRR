@@ -6,6 +6,9 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- Experimental `CoupledDuplexRepair` and `DuplexJoin` scripts for successive
+  V-D/D-J joins on one shared two-strand D substrate, including inversion,
+  canonical source ancestry, a global nucleotide ledger and cumulative budgets.
 - `CodingEndOutcomeModel` with joint D outcomes, compatible-reference identities,
   generating-history estimation, held-out scoring and finite compatible-history
   likelihood fitting. Calibration records its source and sampling assumptions.
