@@ -11,9 +11,7 @@ use pyo3::prelude::*;
 use crate::compiled::{CompileOptions, CompiledSimulator, ExecutionPolicy, OwnedCompiledSimulator};
 use crate::contract::ContractSet;
 use crate::refdata::RefDataConfig;
-use crate::trace_file::{
-    pass_plan_signature, pass_plan_signature_names_only, refdata_signature, TraceFile,
-};
+use crate::trace_file::TraceFile;
 
 use super::contract::pass_error_to_pyerr;
 use super::outcome::PyOutcome;
@@ -139,11 +137,10 @@ impl PyCompiledSimulator {
     /// value to the trace (e.g. indel `site = -1` NoOp, NP length `0`,
     /// NP base `N`, trim `0`) or skips the slot.
     ///
-    /// **Strict semantics apply only to fresh sampling.** Trace replay
-    /// via [`Self::replay_from_trace_file`] consumes recorded values
-    /// verbatim and does not re-validate them against the contract
-    /// bundle — even with `strict=True`. See that method's docstring
-    /// for details.
+    /// Productive initial assignment and P-aware recombination raise on
+    /// empty support even in permissive mode. Replay consumes recorded
+    /// proposals without replacement draws; migrated passes validate their
+    /// admissibility. See [`Self::replay_from_trace_file`] for details.
     #[pyo3(signature = (seed, *, strict=None))]
     fn run(&self, seed: u64, strict: Option<bool>) -> PyResult<PyOutcome> {
         let policy = policy_from_strict_override(self.inner.policy(), strict);
@@ -203,12 +200,13 @@ impl PyCompiledSimulator {
                  plan and refdata signatures to round-trip",
             )
         })?;
-        let tf = TraceFile::build(
+        let mut tf = TraceFile::build(
             self.inner.plan(),
             refdata,
             seed,
             outcome.inner.trace.clone(),
         );
+        tf.active_contracts = Some(self.active_contracts());
         Ok(PyTraceFile::new(tf))
     }
 
@@ -228,26 +226,14 @@ impl PyCompiledSimulator {
     /// the cursor grows; once every site is migrated, the engine is
     /// **deterministic in trace**, independent of RNG implementation.
     ///
-    /// **The `strict` flag has limited effect on replay.** Replay
-    /// consumes each recorded value as a proposal at its sampling
-    /// slot and validates *address consistency* and *value-kind
-    /// consistency* with the live plan — but does NOT re-run the
-    /// contract bundle's admissibility check against the recorded
-    /// value. As a consequence:
-    ///
-    /// - A trace recorded by a permissive run that hit empty support
-    ///   and wrote a sentinel value (indel `site = -1`, NP length `0`,
-    ///   NP base `N`, trim `0`) **replays cleanly under `strict=True`**
-    ///   — the sentinel is consumed verbatim, the original outcome
-    ///   reproduces, and no `StrictSamplingError` fires. This is by
-    ///   design: replay's contract is "rebuild this exact outcome,"
-    ///   not "re-execute the sampler with these inputs."
-    /// - To get strict-mode-on-fresh-sampling semantics, call
-    ///   [`Self::run`] with `strict=True` and the trace's original
-    ///   seed instead.
-    ///
-    /// See `docs/productive_failure_mode_audit.md` §5 / §6.2 for the
-    /// failure matrix and the rationale behind this divergence.
+    /// Recorded choices are proposals: each migrated pass checks address,
+    /// value kind and its supported replay rules. P-aware productive
+    /// recombination additionally requires positive natural support and a
+    /// productive completion for P/N lengths, N bases and D orientation,
+    /// regardless of `strict`. Invalid proposals raise without resampling.
+    /// Existing no-op/sentinel traces remain valid only where the relevant
+    /// pass's replay policy permits that sentinel. To rerun fresh sampling
+    /// from the original seed instead, use [`Self::rerun_from_trace_file`].
     ///
     /// Raises `ValueError` on signature mismatch *or* on a
     /// cursor-vs-plan disagreement raised by a migrated pass
@@ -259,55 +245,17 @@ impl PyCompiledSimulator {
         trace_file: &PyTraceFile,
         strict: Option<bool>,
     ) -> PyResult<PyOutcome> {
-        // Signature checks reuse the same flow as rerun_from_trace_file.
-        // v1/v2 fixtures recorded the legacy names-only signature; compare
-        // like-for-like by rebuilding the live plan in the matching shape.
-        // v3+ fixtures embed each pass's compile-time parameter digest, so
-        // the live plan is rendered through `pass_plan_signature`.
-        let live_plan_sig = if trace_file.inner.schema_version < 3 {
-            pass_plan_signature_names_only(self.inner.plan())
-        } else {
-            pass_plan_signature(self.inner.plan())
-        };
-        if live_plan_sig != trace_file.inner.pass_plan_signature {
-            return Err(PyValueError::new_err(format!(
-                "replay_from_trace_file: pass plan signature mismatch.\n  \
-                 expected: {}\n  got:      {}",
-                trace_file.inner.pass_plan_signature, live_plan_sig,
-            )));
-        }
         let refdata = self.inner.refdata().ok_or_else(|| {
-            PyValueError::new_err(
-                "replay_from_trace_file: simulator has no refdata; cannot \
-                 verify refdata signature against the trace file",
-            )
+            PyValueError::new_err("replay_from_trace_file: simulator has no refdata")
         })?;
-        let live_refdata_sig = refdata_signature(refdata);
-        if live_refdata_sig != trace_file.inner.refdata_signature {
-            return Err(PyValueError::new_err(format!(
-                "replay_from_trace_file: refdata signature mismatch.\n  \
-                 expected: {}\n  got:      {}",
-                trace_file.inner.refdata_signature, live_refdata_sig,
-            )));
-        }
-        // Content-hash gate (v2+ traces). Catches cartridge differences
-        // the structural signature can't see — e.g. identical pool
-        // sizes but different rules, identity, or curation provenance.
-        // v1 traces (which lack the field) are accepted without this
-        // check; the signature alone is the contract there.
-        if let Some(recorded_hash) = trace_file.inner.refdata_content_hash.as_ref() {
-            let live_hash =
-                crate::trace_file::refdata_content_hash(refdata);
-            if live_hash != *recorded_hash {
-                return Err(PyValueError::new_err(format!(
-                    "replay_from_trace_file: refdata content hash mismatch.\n  \
-                     expected: {}\n  got:      {}\n  \
-                     hint: trace was produced against a different cartridge \
-                     (rules / identity / curation may differ).",
-                    recorded_hash, live_hash,
-                )));
-            }
-        }
+        trace_file
+            .inner
+            .validate_for_replay(self.inner.plan(), refdata)
+            .map_err(|e| PyValueError::new_err(format!("replay_from_trace_file: {e}")))?;
+        trace_file
+            .inner
+            .validate_contracts(self.inner.contracts())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         let policy = policy_from_strict_override(self.inner.policy(), strict);
         let outcome = self
@@ -347,36 +295,17 @@ impl PyCompiledSimulator {
         trace_file: &PyTraceFile,
         strict: Option<bool>,
     ) -> PyResult<PyOutcome> {
-        // Signature checks: plan always, refdata when present.
-        // Same v1/v2 vs v3 comparator-shape discipline as
-        // `replay_from_trace_file` — see that method for the
-        // schema-version-aware rationale.
-        let live_plan_sig = if trace_file.inner.schema_version < 3 {
-            pass_plan_signature_names_only(self.inner.plan())
-        } else {
-            pass_plan_signature(self.inner.plan())
-        };
-        if live_plan_sig != trace_file.inner.pass_plan_signature {
-            return Err(PyValueError::new_err(format!(
-                "rerun_from_trace_file: pass plan signature mismatch.\n  \
-                 expected: {}\n  got:      {}",
-                trace_file.inner.pass_plan_signature, live_plan_sig,
-            )));
-        }
         let refdata = self.inner.refdata().ok_or_else(|| {
-            PyValueError::new_err(
-                "rerun_from_trace_file: simulator has no refdata; cannot \
-                 verify refdata signature against the trace file",
-            )
+            PyValueError::new_err("rerun_from_trace_file: simulator has no refdata")
         })?;
-        let live_refdata_sig = refdata_signature(refdata);
-        if live_refdata_sig != trace_file.inner.refdata_signature {
-            return Err(PyValueError::new_err(format!(
-                "rerun_from_trace_file: refdata signature mismatch.\n  \
-                 expected: {}\n  got:      {}",
-                trace_file.inner.refdata_signature, live_refdata_sig,
-            )));
-        }
+        trace_file
+            .inner
+            .validate_against(self.inner.plan(), refdata)
+            .map_err(|e| PyValueError::new_err(format!("rerun_from_trace_file: {e}")))?;
+        trace_file
+            .inner
+            .validate_contracts(self.inner.contracts())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         let policy = policy_from_strict_override(self.inner.policy(), strict);
         let outcome = self

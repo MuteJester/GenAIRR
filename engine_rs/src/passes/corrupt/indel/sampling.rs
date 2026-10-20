@@ -6,29 +6,38 @@ use super::event::IndelEvent;
 use super::IndelPass;
 
 impl IndelPass {
-    /// Normalize the configured insertion-base distribution's
-    /// support into a `(base, weight)` list with weights summing
-    /// to 1. Used by [`Self::sample_admissible_tuple`] when
-    /// computing per-event natural weights for the mod-3 DP.
-    pub(super) fn base_support(&self) -> Result<Vec<(u8, f64)>, FilteredSampleError> {
+    /// Positive support in log probability space. Zero-weight entries are not
+    /// possible events; finite extreme weights must not disappear by underflow.
+    pub(super) fn base_log_support(&self) -> Result<Vec<(u8, f64)>, FilteredSampleError> {
         let support = self
             .base_dist
             .support()
             .ok_or(FilteredSampleError::SupportUnavailable)?;
-        let total: f64 = support.iter().map(|(_, weight)| *weight).sum();
-        if support.is_empty() || !total.is_finite() || total <= 0.0 {
+        if support.iter().any(|(_, w)| !w.is_finite() || *w < 0.0) {
             return Err(FilteredSampleError::InvalidFilteredSupport);
         }
-        if support
-            .iter()
-            .any(|(_, weight)| !weight.is_finite() || *weight <= 0.0)
-        {
+        let mut combined = std::collections::BTreeMap::<u8, Vec<f64>>::new();
+        for (base, weight) in support {
+            if weight > 0.0 {
+                combined.entry(base).or_default().push(weight.ln());
+            }
+        }
+        if combined.is_empty() {
             return Err(FilteredSampleError::InvalidFilteredSupport);
         }
-        Ok(support
+        let sum_logs = |values: &[f64]| {
+            let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            max + values.iter().map(|x| (*x - max).exp()).sum::<f64>().ln()
+        };
+        let mut support: Vec<_> = combined
             .into_iter()
-            .map(|(base, weight)| (base, weight / total))
-            .collect())
+            .map(|(base, weights)| (base, sum_logs(&weights)))
+            .collect();
+        let total = sum_logs(&support.iter().map(|(_, w)| *w).collect::<Vec<_>>());
+        for (_, log_weight) in &mut support {
+            *log_weight -= total;
+        }
+        Ok(support)
     }
 
     /// Unconstrained per-step indel draw, used by the no-contracts

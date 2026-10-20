@@ -166,56 +166,64 @@ fn run_plan_with_record(
 // ──────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "test-scaffolding gap: DeleteAtPass calls sim.with_indel_deleted \
-            directly, bypassing SimulationBuilder's event emission. \
-            DirtySignalObserver never sees the deletion → LiveCallRefreshHook \
-            doesn't widen the v_call. Production deletion paths route through \
-            MutationTransaction and work correctly (see Python \
-            tests/test_allele_call_provenance.py::test_n_substitution_at_distinguishing_position_widens_tie_set \
-            for the production-path widening pin). Fixing requires routing \
-            this test scaffolding through SimulationBuilder."]
 fn deletion_of_distinguishing_base_widens_v_call() {
-    // Sample v01 truth (`AAACCCGGGTTT`). v_call starts as
-    // {v01*01, v01*02} (alias pair). Delete pool position 9 (germline
-    // pos 9 = 'T'). The remaining tail at pool 9-10 is now 'TT' (was
-    // 'TTT'). For each allele's score at pos 9-11:
-    //   v01: pool[9..]='TT', allele[9..]='TTT' → only pos 10/11
-    //     accessed → 2 matches
-    //   v02: allele suffix 'AAA' — no matches in the truncated
-    //     comparison window
-    //   v03: allele suffix 'CCC' — no matches
-    // So v01* (truth) stays; v02/v03 stay out. The test verifies
-    // the IR doesn't crash and the call set stays valid.
-    //
-    // For a clearer "widening" demonstration we delete one entry
-    // of v01's distinguishing TTT triplet (pos 11) — v01 then
-    // scores 11/12 (one missing), but v02/v03 still don't score
-    // any tail matches. To get genuine widening with this fixture
-    // we'd need v02/v03 to share a suffix bit; they don't, so
-    // we instead assert the truth survives ANY single-byte
-    // deletion in the distinguishing tail.
+    use genairr_engine::address::ChoiceAddress;
+    use genairr_engine::airr_record::validate_airr_record;
+    use genairr_engine::trace::ChoiceValue;
+
+    // Remove GTT at canonical positions 12..15, preserving the shared
+    // framework and Cys. All four alleles then explain the surviving V bases.
     let cfg = common::vj_ambiguous_refdata();
     let mut plan = vj_truth_plan(&cfg, "v01*01", "j01*01");
-    // Delete all three distinguishing tail bytes — afterwards the
-    // assembled V is exactly the 9-byte shared prefix, identical
-    // for all four V alleles → v_call widens to all four.
-    plan.push(Box::new(DeleteAtPass::new(9)));
-    plan.push(Box::new(DeleteAtPass::new(9)));
-    plan.push(Box::new(DeleteAtPass::new(9)));
-    let (sim, _rec) = run_plan_with_record(&cfg, plan, 0);
-
-    let v_calls = common::v_call_names(&sim, &cfg);
+    let baseline = {
+        let compiled =
+            CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+                .unwrap();
+        compiled.run_one(0).unwrap()
+    };
     assert_eq!(
-        v_calls,
-        vec![
-            "v01*01".to_string(),
-            "v01*02".to_string(),
-            "v02*01".to_string(),
-            "v03*01".to_string(),
-        ],
-        "deleting the entire distinguishing tail widens v_call to all 4 alleles; got {:?}",
-        v_calls,
+        common::v_call_names(baseline.final_simulation(), &cfg),
+        vec!["v01*01", "v01*02"]
     );
+    let mut trace = baseline.trace.clone();
+    trace.record_choice(ChoiceAddress::CorruptIndelCount, ChoiceValue::Int(3));
+    for i in 0..3 {
+        trace.record_choice(ChoiceAddress::CorruptIndelKind(i), ChoiceValue::Bool(false));
+        trace.record_choice(ChoiceAddress::CorruptIndelSite(i), ChoiceValue::Int(12));
+    }
+    plan.push(Box::new(IndelPass::new(
+        Box::new(EmpiricalLengthDist::from_pairs(vec![(3, 1.0)])),
+        0.0,
+        Box::new(UniformBase),
+    )));
+    let compiled =
+        genairr_engine::compiled::OwnedCompiledSimulator::compile(plan, Some(cfg.clone()), None, ExecutionPolicy::Permissive).unwrap();
+    // The actual production IndelPass owns transactional edits and events;
+    // this integration test does not bypass observer notifications.
+    let outcome = compiled
+        .replay_from_trace_records(trace.choices(), 0, ExecutionPolicy::Strict)
+        .unwrap();
+    let sim = outcome.final_simulation();
+    let rec = build_airr_record(&outcome, &cfg, "deleted");
+    assert_eq!(
+        common::v_call_names(sim, &cfg),
+        vec!["v01*01", "v01*02", "v02*01", "v03*01"]
+    );
+    assert_eq!(rec.recalled_v_call, "v01*01,v01*02,v02*01,v03*01");
+    assert_eq!(rec.v_call, "v01*01");
+    assert_eq!(
+        sim.assignments.get(Segment::V),
+        baseline.final_simulation().assignments.get(Segment::V)
+    );
+    assert_eq!(rec.v_sequence_end, Some(12));
+    assert_eq!(rec.v_germline_end, Some(15));
+    assert_eq!(rec.v_cigar, "12M3D");
+    assert_eq!(rec.sequence, "AAACCCGGGTGTTTTAAACCC");
+    assert!(rec.sequence_alignment.starts_with("AAACCCGGGTGT---"));
+    assert!(rec.germline_alignment.starts_with("AAACCCGGGTGTGTT"));
+    assert_eq!(rec.n_indels, 3);
+    assert!((rec.v_identity.unwrap() - 0.8).abs() < 1e-12);
+    assert!(validate_airr_record(&rec, &outcome, &cfg).is_empty());
 }
 
 #[test]

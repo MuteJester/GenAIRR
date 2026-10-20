@@ -62,8 +62,8 @@ fn s5f_mutation_permissive_empty_support_skips_slot_without_extra_rng_or_fallbac
     // RNG consumed past the candidate filter), NOT fall through to
     // the unconstrained kernel-row sampler.
     let (cfg, sim) = s5f_productive_vj_fixture();
-    // `s5f_stop_filter_kernel(false)` targets the TACAA context at
-    // site 2; the only candidate base is `A` which creates a TAA
+    // `s5f_stop_filter_kernel(false)` targets the TGCAA context at
+    // site 2; the only candidate base is `A` which creates a TGA
     // stop. Under `productive()` the mask zeroes site 2's `A` bit,
     // leaving the filtered support empty.
     let contracts = crate::contract::productive();

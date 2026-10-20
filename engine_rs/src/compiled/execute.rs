@@ -16,7 +16,9 @@ use crate::event::{EventRecord, StateSummary, TraceSpan};
 use crate::feasibility::FeasibilityContext;
 use crate::ir::{Simulation, SimulationEvent};
 use crate::live_call::ReferenceMatchIndex;
-use crate::pass::{EffectHook, HookContext, NodeId, Outcome, PassContext, PassError, PassPlan};
+use crate::pass::{
+    EffectHook, HookContext, NodeId, Outcome, PassContext, PassEffect, PassError, PassPlan,
+};
 use crate::refdata::RefDataConfig;
 use crate::replay::TraceCursor;
 use crate::rng::Rng;
@@ -124,19 +126,48 @@ pub(crate) fn execute_transactional(
         // structured diagnostic. With `replay_records: Some(_)` set,
         // every pass goes through `execute_checked` so any
         // `PassError::Replay` propagates cleanly.
-        let effective_policy = if inputs.replay_records.is_some() {
+        // Productive initial allele/genotype selection must also
+        // surface empty support instead of falling back to a coding
+        // stop. Later revision passes retain their own no-op policy.
+        let productive_assignment = inputs.contracts.is_some_and(|contracts| {
+            contracts.contains_kind(crate::contract::ContractKind::CodingSequenceIntegrity)
+                && (pass.name().starts_with("sample_allele.") || pass.name() == "sample_genotype")
+        });
+        // A P-aware recombination must never replace an impossible authored
+        // choice with a zero-length/N sentinel outside its declared support.
+        let p_productive_recombination = inputs
+            .feasibility
+            .is_some_and(|f| f.has_p_productive() || f.has_coding_end_geometry())
+            && (pass.name().starts_with("sample_allele.")
+                || pass.name() == "sample_genotype"
+                || pass.name().starts_with("trim.")
+                || pass.name().starts_with("p_addition.")
+                || pass.name().starts_with("end_processing.")
+                || pass.name().starts_with("emit_coding_end_p.")
+                || pass.name().starts_with("generate_np.")
+                || pass.name() == crate::address::INVERT_D);
+        // Invalid retained slices are structural errors, including when
+        // permissive sampling is requested. Assembly's checked path preserves
+        // the sampled trims and reports the error instead of asserting.
+        let structural_assembly = compile_effects
+            .iter()
+            .any(|effect| matches!(effect, PassEffect::AssembleSegment(_)));
+        let effective_policy = if inputs.replay_records.is_some()
+            || productive_assignment
+            || p_productive_recombination
+            || structural_assembly
+        {
             ExecutionPolicy::Strict
         } else {
             inputs.policy
         };
-        let mut next = match effective_policy {
-            ExecutionPolicy::Permissive => pass.execute(prev, &mut ctx),
-            ExecutionPolicy::Strict => match pass.execute_checked(prev, &mut ctx) {
-                Ok(next) => next,
-                Err(error) => {
-                    return Err(abort(error, revisions, pass_names, trace, events));
-                }
-            },
+        let mut next = match pass.execute_with_policy(
+            prev,
+            &mut ctx,
+            effective_policy == ExecutionPolicy::Strict,
+        ) {
+            Ok(next) => next,
+            Err(error) => return Err(abort(error, revisions, pass_names, trace, events)),
         };
         drop(ctx);
 
@@ -209,6 +240,34 @@ pub(crate) fn execute_transactional(
         }
     }
 
+    if inputs
+        .contracts
+        .is_some_and(ContractSet::requires_productive_emission)
+    {
+        let assessment = inputs.refdata.and_then(|r| {
+            revisions
+                .last()
+                .map(|sim| crate::productivity::assess(sim, r))
+        });
+        if assessment.as_ref().and_then(|a| a.productive) != Some(true) {
+            let reason = assessment
+                .map(|a| a.reasons.join(","))
+                .unwrap_or_else(|| "reference_missing".into());
+            return Err(abort(
+                PassError::contract_violation(
+                    "productive.final",
+                    vec![crate::contract::ContractViolation::new(
+                        crate::productivity::POLICY,
+                        format!("final observed-span assessment is not accepted: {reason}"),
+                    )],
+                ),
+                revisions,
+                pass_names,
+                trace,
+                events,
+            ));
+        }
+    }
     Ok(Outcome {
         revisions,
         pass_names,

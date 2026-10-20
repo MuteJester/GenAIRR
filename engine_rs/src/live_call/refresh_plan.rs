@@ -156,6 +156,8 @@ impl LiveCallRefreshPlan {
                 // refresh happens when the AssembleSegment pass
                 // emits its RegionAdded later in the plan.
                 SimulationEvent::AssignmentChanged { .. }
+                | SimulationEvent::CodingEndChoiceRecorded { .. }
+                | SimulationEvent::CodingEndPOriginRecorded { .. }
                 | SimulationEvent::TrimChanged { .. }
                 | SimulationEvent::BaseDeleted { .. }
                 | SimulationEvent::RegionReplaced { .. }
@@ -449,8 +451,7 @@ mod tests {
 
     #[test]
     fn reverse_complement_flag_does_not_trigger_refresh() {
-        let events =
-            vec![SimulationEvent::ReverseComplementFlagRecorded { applied: true }];
+        let events = vec![SimulationEvent::ReverseComplementFlagRecorded { applied: true }];
         assert!(LiveCallRefreshPlan::from_events(&events).is_empty());
     }
 
@@ -558,10 +559,7 @@ mod tests {
         // RegionAdded(seg). The derived plan equals the hook's
         // AssembleSegment(seg) arm output.
         for (seg, expected) in [
-            (
-                Segment::V,
-                vec![LiveCallRefreshStep::Segment(Segment::V)],
-            ),
+            (Segment::V, vec![LiveCallRefreshStep::Segment(Segment::V)]),
             (
                 Segment::D,
                 vec![
@@ -578,8 +576,7 @@ mod tests {
                 ],
             ),
         ] {
-            let mut events: Vec<SimulationEvent> =
-                (0..6).map(|i| base_pushed(i, seg)).collect();
+            let mut events: Vec<SimulationEvent> = (0..6).map(|i| base_pushed(i, seg)).collect();
             events.push(region_added(seg, 0, 6));
             assert_eq!(
                 LiveCallRefreshPlan::from_events(&events).steps,

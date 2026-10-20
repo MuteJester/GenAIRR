@@ -13,10 +13,10 @@ mod execution;
 mod np_base_generator;
 mod sampling;
 
+use np_base_generator::DistributionNpGenerator;
 pub use np_base_generator::{
     CategoricalNpGenerator, MarkovBaseGenerator, NpBaseGenerator, UniformNpGenerator,
 };
-use np_base_generator::DistributionNpGenerator;
 
 /// Generate one NP (non-template) region — a stretch of bases
 /// interpolated between adjacent V/D/J segments by the TdT enzyme
@@ -49,8 +49,8 @@ use np_base_generator::DistributionNpGenerator;
 ///    (`Nucleotide::synthetic(base, np_segment, N_NUC)`) onto the
 ///    pool.
 /// 4. Construct `Region(np_segment, [start, start+L))` with
-///    `frame_phase = 0` (cross-region frame chaining is C.8's
-///    responsibility). No codon-rail data is stored on the region;
+///    `frame_phase = start % 3`, including upstream P additions.
+///    No codon-rail data is stored on the region;
 ///    callers that need translation call
 ///    [`crate::ir::compute_codon_rail`] on demand.
 /// 5. Append the region to the sequence.
@@ -187,10 +187,16 @@ impl Pass for GenerateNPPass {
     }
 
     fn compile_facts(&self) -> Vec<PassCompileFact> {
-        vec![PassCompileFact::NpLengthSupport {
-            segment: self.np_segment,
-            support: IntegerSupport::from_weighted_pairs(self.length_dist.support()),
-        }]
+        vec![
+            PassCompileFact::NpLengthSupport {
+                segment: self.np_segment,
+                support: IntegerSupport::from_weighted_pairs(self.length_dist.support()),
+            },
+            PassCompileFact::NpBaseSupport {
+                segment: self.np_segment,
+                support: self.base_generator.compile_support(),
+            },
+        ]
     }
 }
 
@@ -203,6 +209,112 @@ mod tests {
     use crate::pass::{PassError, PassPlan};
     use crate::passes::EchoPass;
     use crate::trace::ChoiceValue;
+
+    #[test]
+    fn productive_p_completion_keeps_custom_np_admission_rules() {
+        use crate::address::{ChoiceAddress, PEnd};
+        use crate::compiled::{CompiledSimulator, ExecutionPolicy};
+        use crate::contract::{productive, ChoiceContext, Contract, ContractViolation};
+        use crate::dist::AllelePoolDist;
+        use crate::passes::{AssembleSegmentPass, PAdditionPass, SampleAllelePass};
+        use crate::refdata::{Allele, ChainType, RefDataConfig};
+
+        struct OnlyC;
+        impl Contract for OnlyC {
+            fn name(&self) -> &str {
+                "only_c_in_np"
+            }
+            fn verify(
+                &self,
+                sim: &Simulation,
+                _: Option<&RefDataConfig>,
+            ) -> Result<(), ContractViolation> {
+                if sim
+                    .pool
+                    .as_slice()
+                    .iter()
+                    .any(|n| n.segment == Segment::Np1 && n.base != b'C')
+                {
+                    Err(ContractViolation::new(self.name(), "N base must be C"))
+                } else {
+                    Ok(())
+                }
+            }
+            fn admits_typed(
+                &self,
+                _: &Simulation,
+                _: Option<&RefDataConfig>,
+                context: ChoiceContext<'_>,
+                candidate: &ChoiceValue,
+            ) -> Result<(), ContractViolation> {
+                if matches!(context.address, Some(ChoiceAddress::NpBase { .. }))
+                    && !matches!(candidate, ChoiceValue::Base(b'C'))
+                {
+                    Err(ContractViolation::new(self.name(), "N base must be C"))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        let _ = cfg.v_pool.push(Allele {
+            name: "v*01".into(),
+            gene: "v".into(),
+            segment: Segment::V,
+            seq: b"AAACCCTGT".to_vec(),
+            anchor: Some(6),
+            functional_status: None,
+            subregions: Vec::new(),
+        });
+        let _ = cfg.j_pool.push(Allele {
+            name: "j*01".into(),
+            gene: "j".into(),
+            segment: Segment::J,
+            seq: b"TTTGGG".to_vec(),
+            anchor: Some(0),
+            functional_status: None,
+            subregions: Vec::new(),
+        });
+        let mut plan = PassPlan::new();
+        for (segment, pool) in [(Segment::V, &cfg.v_pool), (Segment::J, &cfg.j_pool)] {
+            plan.push(Box::new(SampleAllelePass::new(
+                segment,
+                Box::new(AllelePoolDist::uniform(pool)),
+            )));
+        }
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+        plan.push(Box::new(PAdditionPass::new(
+            PEnd::V3,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
+        )));
+        plan.push(Box::new(GenerateNPPass::new(
+            Segment::Np1,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(2, 1.0)])),
+            Box::new(UniformBase),
+        )));
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
+        let contracts = productive().with(Box::new(OnlyC));
+        let compiled = CompiledSimulator::compile(
+            &plan,
+            Some(&cfg),
+            Some(&contracts),
+            ExecutionPolicy::Permissive,
+        )
+        .unwrap();
+        for seed in 0..8 {
+            let outcome = compiled.run_one(seed).unwrap();
+            let sim = outcome.final_simulation();
+            let np: Vec<u8> = sim
+                .pool
+                .as_slice()
+                .iter()
+                .filter(|n| n.segment == Segment::Np1)
+                .map(|n| n.base)
+                .collect();
+            assert_eq!(np, b"CC");
+            contracts.verify(sim, Some(&cfg)).unwrap();
+        }
+    }
 
     #[test]
     #[should_panic(expected = "np_segment must be Np1 or Np2")]
@@ -439,8 +551,8 @@ mod tests {
 
     use crate::address::{ChoiceAddress, NpSegment};
     use crate::assignment::AlleleInstance;
-    use crate::contract::{productive, ProductiveJunctionFrame};
     use crate::contract::ContractSet;
+    use crate::contract::{productive, ProductiveJunctionFrame};
     use crate::ir::{Nucleotide, Region, Segment};
     use crate::pass::PassContext;
     use crate::refdata::{Allele, AlleleId, ChainType, RefDataConfig};
@@ -611,11 +723,8 @@ mod tests {
         let mut sim = Simulation::new();
         // Push V[0..3] = TGT.
         for (i, b) in b"TGT".iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
-                *b,
-                i as u16,
-                Segment::V,
-            ));
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
         sim = sim.with_region_added(Region::new(
@@ -831,8 +940,7 @@ mod tests {
             ),
         ];
         let (cfg, sim) = np_stop_filter_fixture();
-        let (result, _, _) =
-            run_np_replay(&pass, sim, records, Some(&contracts), Some(&cfg));
+        let (result, _, _) = run_np_replay(&pass, sim, records, Some(&contracts), Some(&cfg));
         match result.unwrap_err() {
             PassError::ConstraintSampling { address, .. } => {
                 assert_eq!(address, "np.np1.bases[0]");

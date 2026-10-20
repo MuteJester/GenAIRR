@@ -1,0 +1,1474 @@
+{
+  "audit_method": "genairr_native_structural_and_anchor_validation_v1",
+  "cartridges": {
+    "ALPACA_IGH_IMGT": {
+      "artifact_sha256": "sha256:fa57153fbd09c1b499027a88f34eca67a8a318ee40074b0b20a604f1529163b3",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "3db537191512c553c1baef6dfabd556d877e45148087ee980ebc038ba581a523",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "CAT_IGK_IMGT": {
+      "artifact_sha256": "sha256:007fc422d8f11bf91544ce4587fd4743f30f983b7ca8dfb2a534cffd593c9743",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "3cc1fa774716bb5d0e64de68368268ac926d8f03668da52a006c831b33be86ae",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "CAT_IGL_IMGT": {
+      "artifact_sha256": "sha256:e0c0be2b017a2e7866283c21374926148bddbb86457282bfe3dd6590756bc467",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "c3fa1bab5eade233fa8cf7058eb604f459a2439420f51ab28971a07567d5777e",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "CAT_TCRA_IMGT": {
+      "artifact_sha256": "sha256:7848ccf6089b1a6c6a3654c5d5d276ef54ff0170e762074c59d018f84abde96a",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 55,
+      "dataconfig_checksum": "9af34e13f1b0999a02c340b5513eac7ae23b23aabd267d049f3a224d235119ed",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 7,
+        "VAnchorNotCys": 48
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "CAT_TCRB_IMGT": {
+      "artifact_sha256": "sha256:5d8a335d9fbf5b526ef0e7ee7ee3ff0c0a4c10fed18339c0d7908df4f777d84c",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "1f0974e10b0cbdffcaed841eebfe8232f02212830c1194a4588b63faf52df61c",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "CAT_TCRD_IMGT": {
+      "artifact_sha256": "sha256:cc26ac872eae9c6c9f5c3ffac40cbf8a9dc735dde14fad37df8ad0d98be8b7b6",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "cdac074e69105e6a4e556bc5b96559411701174b0bc65574ae0727a2cd8ab06c",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "CAT_TCRG_IMGT": {
+      "artifact_sha256": "sha256:fad99c0a4784d5cbef15f2ba2a5ebe3e0ff2e1b3f09f6c298d6a2423f62f40ac",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "224780f7b8e3992a3f2ad37801abd0f97d9cb50ad556c3e58b8166da3c3fe846",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "CHICKEN_IGH_IMGT": {
+      "artifact_sha256": "sha256:f5717ada5bf8e7666687b6e6b722ba455194b763838b7bf3c9e6fb8c0fd6fe57",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "fe20c3b194d80854a13f676b4498ba2f7629952948008b762c722274303be208",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "CHICKEN_IGL_IMGT": {
+      "artifact_sha256": "sha256:45963c4578868e66720b0327be0e19cb3a429bde3bf3f3a8af36a56360fbb2d7",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 3,
+      "dataconfig_checksum": "f50a859e30843f05b93934b2cf60210975fe1f142e95f06e6153dc296b2a74df",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 3
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "COW_IGH_IMGT": {
+      "artifact_sha256": "sha256:bdded5c0337759b67b530dd0040ab1453db5f4683e95fdf1f3d278638da50f19",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 12,
+      "dataconfig_checksum": "cccfcaaef804ac26f33253de463b9ad1961b1803ccf05ca670718d3d27ed2117",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 12
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "COW_IGK_IMGT": {
+      "artifact_sha256": "sha256:8685b84491c7e4230bd1d60e2e4f051719493fbb204f0e3d6583ac1cf6c5e295",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "dd203d7a00360ab34503fada2c60153ea33e453b4739e320593d33e9105cf779",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "COW_IGL_IMGT": {
+      "artifact_sha256": "sha256:49c980ec7f4e860a32233d843dda2e62367042f577576cf509080df6db9d72d8",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 5,
+      "dataconfig_checksum": "33054b37f59f4304315850aca19f8c1bdd855d75fdb5d00458661048117dcfc2",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2,
+        "VAnchorNotCys": 3
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "COW_TCRA_IMGT": {
+      "artifact_sha256": "sha256:8a98de1f1093c3e60bad4a6127ae28b073c34e6f467a44f3afb6e1d131d81ac2",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 6,
+      "dataconfig_checksum": "27ea4a8d288b90a4d59f8f4af7e2e1f66089b041fe84b3fd2a08ee0ef3ae9721",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 5,
+        "VAnchorNotCys": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "COW_TCRB_IMGT": {
+      "artifact_sha256": "sha256:535c025619b175e91bd73d881851b4e678c97af0102632a8a31637308b70e79f",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 72,
+      "dataconfig_checksum": "02f4ce5011c7dc9f981b64ed009a444723d259042a000146decad8d78a93650f",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 72
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "COW_TCRD_IMGT": {
+      "artifact_sha256": "sha256:fd6492cfaf6e44227471f3ab01ba3d2cbfa95396dd7b9a5572787efb4bf00917",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 64,
+      "dataconfig_checksum": "8884d69f7d748ff6512fccca0603582236440f4517ab2377c585391ceefdbc9d",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 63
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "COW_TCRG_IMGT": {
+      "artifact_sha256": "sha256:65424fa64c11c9cc08dfe6ef4c9c03c445114ad3e1e8dd4e43cfafc9893557a7",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 19,
+      "dataconfig_checksum": "a289a45b94bf404a5cb42317548bd7e090603e0f81b23a1b295b77cd3dde864e",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 4,
+        "VAnchorNotCys": 15
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "CYNOMOLGUS_IGH_IMGT": {
+      "artifact_sha256": "sha256:d2624b6e28cf81498b71ceabc6a1e8e6bf0331d5e993795233e87fc6a95615f8",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 66,
+      "dataconfig_checksum": "edf4809cb9569fb35e84ca8d83e33f1851751983f8e685b8438d9f33197df1a2",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 66
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "CYNOMOLGUS_TCRB_IMGT": {
+      "artifact_sha256": "sha256:3830cd6c108289f72e2ae87ca79c6edb18c2f5a4cdc08deca9f2ac7f132c74b7",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "d48f98835436ec282d927a7057dd979753d9eee77343baac42f56e8aaca2ecd4",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "DOG_IGH_IMGT": {
+      "artifact_sha256": "sha256:720e539631ba3a5f58df31f500a6663981a16335e4e4d39d9ca7b6ff56b9cf21",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "7690885afe6702a6725ebd8e9ca1eef960a19f6c5bb69efd5f06320a81398806",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "DOG_IGK_IMGT": {
+      "artifact_sha256": "sha256:49a1269c1dcce9d08270c8d64ab98811a6b9fac7337da292d68fdb2de90ef405",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "7ba829c27e0213b52d6990841c10f2c25db2268fd820f092f9440ed61b8b34c9",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "DOG_IGL_IMGT": {
+      "artifact_sha256": "sha256:72d762860905736f68658cbe4dcb0fcb0409d1d1bea9eb03cb0e5c65c5096dcd",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 86,
+      "dataconfig_checksum": "777d811e9e0c8f8d2e7e3974aac5d5fae4bebcae550979ce6923a4c13161dc9f",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 86
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "DOG_TCRA_IMGT": {
+      "artifact_sha256": "sha256:6d4b4f760051ac9df355769d7a42a5a9c7ede6767ba16a383824feabc3f62f37",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 41,
+      "dataconfig_checksum": "702d8bbc719ad2731dc5a933e15e18b7568f5f93385f106a7d851aae3c183abe",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 6,
+        "VAnchorNotCys": 35
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "DOG_TCRB_IMGT": {
+      "artifact_sha256": "sha256:f72bd9b6083c6eaa183bccc41e858f12ca763e9fa9c381d1dd8fe46057abf3be",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 24,
+      "dataconfig_checksum": "e6e53b4418dce6a21a60616597a9473e5dd172f20504c3d1d84a9ef0c015e0f9",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 23
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "DOG_TCRD_IMGT": {
+      "artifact_sha256": "sha256:b7051d07b224657a00060e32a171517bcf8b9af0cf16c7cc762d36732dfdd6b4",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "1e1b712d7bb4387758214caaed97a333e82f7465a1fc9140c9848ff579c25fcc",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "DOG_TCRG_IMGT": {
+      "artifact_sha256": "sha256:bf5db8d8ab9b7c680ea31be88916b496f40a3dd29b4c69ff33b316d1e45c5b22",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 3,
+      "dataconfig_checksum": "927058fc952ba9f435af7efe2348cb0202c7700ac24c306358aeef3d910343d4",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 3
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "DROMEDARY_IGK_IMGT": {
+      "artifact_sha256": "sha256:b59a55310d5aa6898c0816951c7f7e3f8e7ae919c094079bb0a8f56e5a3c4bb3",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "416092b701e7aeeeb913260a1fb2f81d3ac3645f74e9c018519d34e2a9a16d98",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "DROMEDARY_TCRB_IMGT": {
+      "artifact_sha256": "sha256:b2b0445dca58bf35fb47f378790bd6984766e7e971f0af00d967cd9f3cbf4353",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "9f8c4ea7752240d39af16c3996c0daaedd760da0efea2e56beb9f234fa249fa0",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "DROMEDARY_TCRG_IMGT": {
+      "artifact_sha256": "sha256:08eae64b4d9d10da43b24eb87a8b69b198677afd1f0798f3472d1ba79ddbf5bb",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "7d60f1e3cb5b77b3dff5ec182f685dbb81de5b019978d89a6e598b865362c600",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "FERRET_IGH_IMGT": {
+      "artifact_sha256": "sha256:3077ae73255aa855adc6b59271355b94e5b4573f99f73bec363a86327121bd4c",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "69bac04b523e09cc12e0c833a0edbda61af42240b6da2b05b885d541fe1f70bf",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "FERRET_IGK_IMGT": {
+      "artifact_sha256": "sha256:1e1cf5ad6ac6c799df9b7336400b6d8ae47affd5d2c72915faed1626e4b9215e",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 44,
+      "dataconfig_checksum": "d9814d82a14285ccf7d6078855eefffef14f60f94679ac27e980c0b3adb9824f",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 43
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "FERRET_IGL_IMGT": {
+      "artifact_sha256": "sha256:cf887939f2b4bb43f1cc792f2ca84b09fb04ad9ba3d5958a93e322f1391d973e",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 44,
+      "dataconfig_checksum": "0c7315353d25a8d608bea4dca21b3b84b1246a89db40645c4150349d2a9b71fa",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 43
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "FERRET_TCRA_IMGT": {
+      "artifact_sha256": "sha256:9088a5014f5f4ae358986b16320675ec14341f5f13de827d2ce926468ddcc917",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 67,
+      "dataconfig_checksum": "88706e1385395e3b21836fa396b0f420c35bee9364c5b9d170a6a093e982251e",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 6,
+        "VAnchorNotCys": 61
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "FERRET_TCRB_IMGT": {
+      "artifact_sha256": "sha256:f3a118b8971c4bbf46fa6d5588828ee78be20fc64f6ddf8037c40421410f0f04",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "5fd8e8d6cc34566514160ffa176e4ec1b6b4de510745591846e8b641392522d5",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "FERRET_TCRD_IMGT": {
+      "artifact_sha256": "sha256:5eb5411b95f18bafe151d5382315d7966c367230365fe225b03eaaa69a9e8046",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "f20a56719c59d044fcaab8532980c4b46626863272967de4cde5f2a26a5e75fe",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "FERRET_TCRG_IMGT": {
+      "artifact_sha256": "sha256:b374efd23239bf6ac20e900b20760d17eb7fb0362068f3044212f20d28bdb6c8",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 5,
+      "dataconfig_checksum": "425e4c25c771e268f2ce4d551e507714ebbfbe055034b2db3698a8ca08eeb281",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 5
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "GOAT_IGK_IMGT": {
+      "artifact_sha256": "sha256:0f643e74aea7a43e401646f71c80ff01cb50e980df231c2b4977790d57f5f6ed",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "b0095c6cbe90b6de986e6c213a102ac3a3208a800cbc2caeef0373e19ee6b7fe",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "GOAT_IGL_IMGT": {
+      "artifact_sha256": "sha256:f47a3bdf4aa91bf93d129ad7387cebf169ea3874b9d756223f70df3cd6a77ef7",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "9becb3bf63730ba9b1c6318177db78069e42e288ac3bf5e8021b9957da4bb117",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "GORILLA_IGH_IMGT": {
+      "artifact_sha256": "sha256:a9d45d8e462acdb09e43cfeb92f7a17c89be5c3e255d5d36491aa1a38e28baf6",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "7f8ce0152491946e5e9b5b81f52943f4fabe7e61a55b42c67f8a28e228136c50",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "GORILLA_IGK_IMGT": {
+      "artifact_sha256": "sha256:cce960cb792eec3e2e7df8dbb9eb03d3f8574de5a0fe10309e691a55c2744f8a",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "1515f22492169880c7ebaae3c65f356453aaa3b82b2c16fa4c95dad6e17f5fa9",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "GORILLA_IGL_IMGT": {
+      "artifact_sha256": "sha256:2e7312f351a5b2f9a71e9098310fa1d3ecbbde835d66314b19c2ec3457e40f0f",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 5,
+      "dataconfig_checksum": "bcb495dc51acd7d0124425a9fea5c4a8d03af57e0df9e4e02442d70c81b291a2",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 5
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "GORILLA_TCRA_IMGT": {
+      "artifact_sha256": "sha256:8eed50ea6e8c810cc96fd383bdacd5e5659d6cc4b9232aea1b1b8065aca6c2d1",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 84,
+      "dataconfig_checksum": "bb4a8635dd3a58f0a69c682b34c124c0e489098cf6d3cee3b328e8d591ab6dde",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 8,
+        "VAnchorNotCys": 76
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "GORILLA_TCRB_IMGT": {
+      "artifact_sha256": "sha256:dc6dad56c3f3391262c16bad2df6b11e60c618dd794df9e694e3e76164d4f97e",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "3e149f81f3a41e830065bbbd53eb719bc8d81fb213cfa762a77c8bdad590784b",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "GORILLA_TCRD_IMGT": {
+      "artifact_sha256": "sha256:60890c53d453afdc476289caa195d4a46ed9df863bc647b19fc7d8a75d516970",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "4304857f088d8e0cd9a6b7f7a342119d83c5a4dfab98c01bca84bf6d11a2cc17",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "GORILLA_TCRG_IMGT": {
+      "artifact_sha256": "sha256:47aa466379a555ca8a020b446c4ad0cef8ccaa190bf5a0ef4505edcdbb92b4a5",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 19,
+      "dataconfig_checksum": "e7210923a7dd34da881e8a0d645a754446b4e6c5ec2a270a74aa3bdb5ddc2770",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 3,
+        "VAnchorNotCys": 16
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "HORSE_IGH_IMGT": {
+      "artifact_sha256": "sha256:f32ed5af5a602bc4d1a927eee198d4992508e36ac4e44125b7b4418b6d4a436b",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 35,
+      "dataconfig_checksum": "857bd0373200d7e740b6931dab8373148af0111f5c4b46e0baee1cc3a7506e47",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 34
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "HORSE_IGK_IMGT": {
+      "artifact_sha256": "sha256:69f90fdf5e17276899e29de18c94830986709acacf6af19786cc0582a1da4649",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "6a551d919c6298a4bf748b51e1d2df83e9fbd77ad96c699c7324f53e665454d5",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "HUMAN_IGH_EXTENDED": {
+      "artifact_sha256": "sha256:1231d6831093607f9267e75454f26a9c2e235fea9bb8623e416a83680b3f6b60",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "d643e0a8f907c46fe9d1ab7d36192a996635e64ad64d65432229a85eab93df28",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "HUMAN_IGH_IMGT": {
+      "artifact_sha256": "sha256:93ddac52d4eb0f955d11a484df9624c44d97dcc1d7a22e7fd8a10d517d6af031",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "000e84735c5a3da22b48b0cb79370d6a3ec6a84380d2a756285188c27774bcab",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "HUMAN_IGH_OGRDB": {
+      "artifact_sha256": "sha256:5452960a4b87c83092232bea49a2238dd28be3a4440f389e63b83d08248dd2a9",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "a66c87e1564177b09371ade7b859783845afb72118b8a6a0cc0bcc80b8ea2da4",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "HUMAN_IGK_IMGT": {
+      "artifact_sha256": "sha256:f91f5af2eac7f45d89b6a5352e0118291644b79a4fa68a11e421383ba1ed52bd",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "99da59c9b932238b76da6f2c4c0c3fb6b068d6306752970562ed90a39e9fbc74",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 2
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "HUMAN_IGK_OGRDB": {
+      "artifact_sha256": "sha256:3229ca496e5a0dcb41a8a07daeecf965f43b3873ebe63a1b5c0563bf7047b1b1",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "153ef18742318d883d9f134cece38679cfa7f73f20fd3a488d8eebedfbc47367",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "HUMAN_IGL_IMGT": {
+      "artifact_sha256": "sha256:2eec052ec4d70296efc5c9e3d287b3a951bdb73185769042142a3bc9c8949aa6",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "faffbf28779ec29a55c888dd0e919239d7e05dbf96056a36645aeb67a965080e",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "HUMAN_IGL_OGRDB": {
+      "artifact_sha256": "sha256:bdaff844834402b58d4bff85c71822429bca8c43afea23610864fb261f513089",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "cb044b0b0a2aaf7abbfe5cdac196882d31a78f99143d75b7840c2fde5faed356",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "HUMAN_TCRA_IMGT": {
+      "artifact_sha256": "sha256:f5ac94d1ff360b602f58f95a5dece2e861ce03311177e706a9f9de1e3bd988c0",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 6,
+      "dataconfig_checksum": "ae400cf56ab175b7eb388a5527c524f28c119b3b45522617750c54b665239b2b",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 6
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "HUMAN_TCRB_IMGT": {
+      "artifact_sha256": "sha256:0f42aa53aa4b875e37c0fec4e8b29e539bb9e49eb7cead7cac97548c63f5560e",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 6,
+      "dataconfig_checksum": "94c4349480fc82176ecc64a094c28ecba2c20b1362124ade9c15af292714f328",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2,
+        "VAnchorNotCys": 4
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "HUMAN_TCRD_IMGT": {
+      "artifact_sha256": "sha256:687adada9e9f65bdf4c96573e5fec3a81964c8d040d8ac82f1f99256c820bd8f",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "3368a731266a3785a5d825d93c6a0c710fe0c097df4fa801647b70c877e32346",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "HUMAN_TCRG_IMGT": {
+      "artifact_sha256": "sha256:7793e82d216d0b7c075292cfaac03e0eb965dda47e52f57e779454f86839b574",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "e2a928d75695ff986f9c4f8e64c6a67ed33f661a37900d364de495bc88a4aff3",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_C57BL6J_IGH_IMGT": {
+      "artifact_sha256": "sha256:74dcf191f0068d7b848a8242f8fb9ae474f6213d414be47a06647d67b0fc1b25",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "9fc589583ccb8868f119424478135230ae501fb180973a5cb6a1c1d8c81633b7",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 2
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_C57BL6J_IGK_IMGT": {
+      "artifact_sha256": "sha256:bcea5020d9cfe95aca278d250420fe554c6656d1dcdb22af8ed19661f2a7ace5",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "c8f4cf2faad719758fe32f802d259f4ec7c986a2322e30f4caa02a52325ea70c",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_C57BL6J_IGL_IMGT": {
+      "artifact_sha256": "sha256:ff1741fec0c28739006a313a6856b2448871eeabc8e9100304a79201c2771ca3",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "4f8b8e5647d6882c23e9e0d7f7a505b4638e9301b1883f2935eaa63895675f5f",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_C57BL6J_TCRA_IMGT": {
+      "artifact_sha256": "sha256:d595d66aa017e070827dfa76f99a192a30450591db7d88499fe4589aa364a836",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 115,
+      "dataconfig_checksum": "72c40bbe959dd5cb8d0d5419764c04a581740d4df43c427bd843f730b5b7f891",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 7,
+        "VAnchorNotCys": 108
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_C57BL6J_TCRB_IMGT": {
+      "artifact_sha256": "sha256:b5ff30157910185abe91be2574fe40863c556cc02f7cd8eaee32ec34b885bd62",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "4cd776a74f9e04950ae77c6efaefdf5280d4c23d82b219ecdfdf9d1e273b3c02",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_C57BL6J_TCRD_IMGT": {
+      "artifact_sha256": "sha256:7839a55c72c7f3763102703ca9e190d2077363c723c618bc6f1d1d17d28a0547",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 14,
+      "dataconfig_checksum": "2c6577ec0f02fb27928a2c3650ac05c821151c0f640455bb5d3a8d57e87f877e",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 14
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_C57BL6J_TCRG_IMGT": {
+      "artifact_sha256": "sha256:f261b1db9b1b18f647cbcc84a3fb0bfb72c4ab3090cb91cc94d45599359b7b56",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 4,
+      "dataconfig_checksum": "71ec16c69f45075dc29e5fec2996d3bad2168be57f65410547823954a25b156e",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 4
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_IGH_IMGT": {
+      "artifact_sha256": "sha256:e7f2a628a573cf00cf42758a757e98a8926786bba47f6cdf45ed284bd078132d",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 10,
+      "dataconfig_checksum": "a1eb4f26755a0fb6df6d6812ac33f93540c9888fa30880f004f5124f460418e2",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 10
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_IGK_IMGT": {
+      "artifact_sha256": "sha256:d64ee9e174d00531094e10a18c54856dbf08aafd1f9ca1c7b2cb593433134f90",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 4,
+      "dataconfig_checksum": "8d6fc1e5fc169160b756bea93ba932fad0712e2c9ad4460fda8e18caf7793e5a",
+      "fatal_issue_count": 3,
+      "issue_counts": {
+        "DuplicateAlleleName": 2,
+        "InvalidAlleleByte": 1,
+        "JAnchorUnexpectedAa": 2,
+        "VAnchorNotCys": 2
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_IGL_IMGT": {
+      "artifact_sha256": "sha256:b203fd0a76340a21ba4f0a48d7b949881aac7a1a0c99d2c0816fc018d93885ce",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "74a482968fb12e4383182ee986886a91da4e91fa67426c204bf69b61b6601222",
+      "fatal_issue_count": 3,
+      "issue_counts": {
+        "DuplicateAlleleName": 3,
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_TCRA_IMGT": {
+      "artifact_sha256": "sha256:b9cca2d9de3bdfcc326b72e1d3d6c8124da71b9922157a4e3b68bfccf90f452d",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 205,
+      "dataconfig_checksum": "ea38e1471461c030dc3493006b3366f5e61e11f97f1da6fa675e7d25e9b0135b",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 8,
+        "VAnchorNotCys": 197
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_TCRB_IMGT": {
+      "artifact_sha256": "sha256:ca08e89093c0c8054a2038f3b601909dd5f7fdab98fd69eaeaadadec492fb04a",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "32d3be39609888b14ae790f71e28c349c7396a9d8aa6649ef4159383412ff244",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_TCRD_IMGT": {
+      "artifact_sha256": "sha256:80883345136e277946433eca73497590a1e225f203aba43d7df79f948c8441a1",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 28,
+      "dataconfig_checksum": "67926f6e8ccf416f6d77cd355a20d232b87652b414da7f0fbce67ad6e104b3a2",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 28
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "MOUSE_TCRG_IMGT": {
+      "artifact_sha256": "sha256:21a5e6cec125c034a44de979713ae7f29bb59339d9a0246cc2d3298e7b9190bc",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 4,
+      "dataconfig_checksum": "2efc63833d46cba6beec0c2febc268c182cd0912f33a03e7f711dafdd5e6be94",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 4
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "PIG_IGH_IMGT": {
+      "artifact_sha256": "sha256:1ee1edf986b459f30dc2c066d4813e3ae25791765e9de10e762733bf2be617a3",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "72ca0c86300f0d694920c2a5f54ae3f257b06af4e0668bbe2d1d063a0473dc6a",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "PIG_IGK_IMGT": {
+      "artifact_sha256": "sha256:ad3a1e9e9b30bfe222b2d66fc883eb9996c4b601d17048cb6119dbfbbb7ef41d",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "d4aecd03a2aaf27e295240d001e54d816174c531f52f725ea9581ac21e373165",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "PIG_IGL_IMGT": {
+      "artifact_sha256": "sha256:7e057c1daf6cccc56de037c959ad1f12f91845f5d591e2092f80621ac7dae5b5",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 3,
+      "dataconfig_checksum": "1cf9138850fd7b1ac13f9d988641975c31663a276db80e06431efc0d11412a8e",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 3
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "PIG_TCRB_IMGT": {
+      "artifact_sha256": "sha256:0ebfa3f60bae9e6c2725440f1c32e1ae4beb0267b69c7e67eccd36f24363d275",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 27,
+      "dataconfig_checksum": "1f54bbeb4933490fbdab8d0f1c7beebc659b85d69d23186ea5253e69316a9a76",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 27
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "PIG_TCRG_IMGT": {
+      "artifact_sha256": "sha256:1cc080caf3f330612e302836856fb30f361be3c05eb7d28d99cc190c84928819",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 11,
+      "dataconfig_checksum": "14d4ce054d56bda75d8938ffce855ac7a9d5357ac32a31ba6e476e83d09722ff",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2,
+        "VAnchorNotCys": 9
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "PLATYPUS_IGH_IMGT": {
+      "artifact_sha256": "sha256:ef0ecf4062fe518312ffdd51b16dd2f1fe52461156d374c5e50df977bce15a72",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 36,
+      "dataconfig_checksum": "48536c2352ee4e8af767e5e6e79632372e249d3906d81f2eab7f17f0c711c7e5",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 36
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RABBIT_IGH_IMGT": {
+      "artifact_sha256": "sha256:bf136d9c841f26fef6cceb0f5df30a16092199515ba7c7da30a5ea916ec57989",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "abcf2058c3a5848dae91ac992dfabdf54aa727c76df455d7a401dfd41b52dee3",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "RABBIT_IGK_IMGT": {
+      "artifact_sha256": "sha256:3ae829964818dd1b0ecebadd7a4fa56fd138dd0c2b7dd35de9a490e53f165401",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 6,
+      "dataconfig_checksum": "ca1926d84b83b0d84e47ba59fc43197c10a266e73af94e589b50e6ab0efc5fd2",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 6
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RABBIT_IGL_IMGT": {
+      "artifact_sha256": "sha256:fff4dd46193fd5c75044943095316f4708e4e2a3b7258775bf7b5a00abc5d96e",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "ff43cf57dba82488549512f9ef971bf4efead55cac3e579f5019c8297b0757da",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RABBIT_TCRA_IMGT": {
+      "artifact_sha256": "sha256:4279a92ce2f8f01468e1bea0cf51f8eb85e191d45fef733c8ae2ff67e17d55e8",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 8,
+      "dataconfig_checksum": "95c354fafe1adb48061441a8a0f05fa2cd612fdf9c92a9332ec492cafd99dee2",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 8
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RABBIT_TCRB_IMGT": {
+      "artifact_sha256": "sha256:ecaf34504512eda8a0714899c8f39329155ddc923711178c0982215e42afb394",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "6f76000de71f6e34e95da5f947b4d772e88537db252f10b6b20db7e85674cd5a",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "RABBIT_TCRD_IMGT": {
+      "artifact_sha256": "sha256:dbaae3644b271ca26ba225c97dd4b22a5c6e8ca1ce9e1a57148148c01fda5b76",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "f41f0dfb8611fbaa9d0b02087a807044f216b42ab9e1cbde5efeb6e43d8e08e1",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "RABBIT_TCRG_IMGT": {
+      "artifact_sha256": "sha256:f596c72a7342bf295f3205a25d7d440a8b310740898e687231da8150601faa59",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "6600807b026a9e0c9b716e2abdbf74b5222ca502dc8afc3ffe15287af6be9e84",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "RAT_IGH_IMGT": {
+      "artifact_sha256": "sha256:7e55ea29ed394a1d343a3b3363c4e7e3f40ba0e6d8eceb37a0b41a1bd8f6409e",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 151,
+      "dataconfig_checksum": "62ade9024f1a2c60067110f0dd39b27f20f25de592d5f84a771cca8cf41919c8",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 151
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RAT_IGK_IMGT": {
+      "artifact_sha256": "sha256:2100c81c9e3fa8837018f37b6ddb03d9e57bf4afc3dae74241e5e626b8be0c8e",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "657c0f1bb9e41ba584a888923ac53124c24edfa991dfa44c3aefb2a078f2aa74",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RAT_IGL_IMGT": {
+      "artifact_sha256": "sha256:29573630c64730b5b70cd30349b6561ef958f994a064d4bb725213ea44a484ba",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "833df634e5bc5a9577f5df4fb12cc2bd3bc07474af63889a6c60e12360aa0902",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RHESUS_IGH_IMGT": {
+      "artifact_sha256": "sha256:7cbc958db33e80efa8fa7a88decd4100f5d179c08599ee0ddb3ba7c5fcecb7f7",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 125,
+      "dataconfig_checksum": "79f26f489c1ffa427fb1e42dabb3913055851cbde77097331046898b62b640f8",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 125
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RHESUS_IGK_IMGT": {
+      "artifact_sha256": "sha256:9df891354d8dae33ec8c06092b66cd1d0b91c21b0b53574532dc19b20883bdd9",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 134,
+      "dataconfig_checksum": "1b38b2d3df91c66f7d64771ec31c23fcecfd97597a903ebda9b08400c52b531b",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 134
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RHESUS_IGL_IMGT": {
+      "artifact_sha256": "sha256:f180b073564683f35c1a92e2392cdc259e96e4222929ce30e849896d774526f0",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 114,
+      "dataconfig_checksum": "90de92d04735eca49297a3672feb5a4636aff4980662ad4b6e9af2273d596e64",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 113
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RHESUS_TCRA_IMGT": {
+      "artifact_sha256": "sha256:8b39b15b6a80558e8e2c542ceddb222c73d5d68ac60edbae099d8ed59ecfac09",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 81,
+      "dataconfig_checksum": "ed2b043a46b79ad206be62ede720ea3c432007cfa1cb7c944eab696a1a8a9804",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 9,
+        "VAnchorNotCys": 72
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RHESUS_TCRB_IMGT": {
+      "artifact_sha256": "sha256:c028a443a76971cfdab277a4988bbcdfec8a6089a89f6e76f59118985b5f0306",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 111,
+      "dataconfig_checksum": "894d775fe5133e9780adf79ee30ad564eb5ae13340296167bd00d87842c850ae",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2,
+        "VAnchorNotCys": 109
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "RHESUS_TCRD_IMGT": {
+      "artifact_sha256": "sha256:35eeb0f876806e8eae9b62e709b22b225ab51936140a9d1c4861626391c9e9ef",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "c8f8026fdc02d034ab9cc5e4f571bab01d39e914b26db4801158408e801189ff",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "RHESUS_TCRG_IMGT": {
+      "artifact_sha256": "sha256:e3c729fc55a1334b5bdb693780b460e04fc9124be3980d730ba847c22bc937ee",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 8,
+      "dataconfig_checksum": "244f01ee6e6ba4d93d237f5c03f4623214ee692356bf7f3a53743d662549d143",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2,
+        "VAnchorNotCys": 6
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "SALMON_IGH_IMGT": {
+      "artifact_sha256": "sha256:40f0794c9a93ee40d0fef69ab7c02743263f0c57f7c27f12661b1322bda97316",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 84,
+      "dataconfig_checksum": "2cff502689e59cd73a901fa2489e1c9afcd6b97342c5978d335aa7c2949329ff",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 84
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "SHEEP_IGH_IMGT": {
+      "artifact_sha256": "sha256:87d751176f09019cc1cfaddff9421578dd6f1afb37434953335a7f36d1674b06",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "99aa9050e9d0b594c80f9cb1f781a334ebf4ea31d10a8b45f86744fabe90ec52",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "SHEEP_IGK_IMGT": {
+      "artifact_sha256": "sha256:a50bd7524d442c513cc91618f067eddbd2bfcab513970575d738bfb54b5a6c6e",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 0,
+      "dataconfig_checksum": "efa4f04554e08b41f1447ae5db02a3b3e0d0ba737508cc04308062b845e617d8",
+      "fatal_issue_count": 0,
+      "issue_counts": {},
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "structurally_valid_evidence_unresolved"
+    },
+    "SHEEP_IGL_IMGT": {
+      "artifact_sha256": "sha256:9172d197d418768e84cbea5dcc70667169e2c7b76f3b45cc2f07798232e2bcbb",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 1,
+      "dataconfig_checksum": "482ccc617fe0083f6452cce1dac5f997ff42dd46a39496ee903f79f23bd48a16",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "SHEEP_TCRA_IMGT": {
+      "artifact_sha256": "sha256:ed8998d24e819dccb2a9ac8d2532cb0f00cfe36b6573ecdc02cdab45399f4ae1",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 178,
+      "dataconfig_checksum": "797285036214fe4db14d5dc5022c1bcf96510eb0151b82c407a2a93fe41eec01",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 10,
+        "VAnchorNotCys": 168
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "SHEEP_TCRB_IMGT": {
+      "artifact_sha256": "sha256:b65f8090603247ef5340c60dbe3e00c5a1a01b0fdcec55fc572cd0cf480e8d50",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 2,
+      "dataconfig_checksum": "6a49d4ee85796973d1d7477ec38ad91a15277f416f2a7c512ea2d61efc05d4d1",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 1
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "SHEEP_TCRD_IMGT": {
+      "artifact_sha256": "sha256:4a9ef08ded62f35f74e72b412f17899a110868d994decd941b6fddef0a446a80",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 77,
+      "dataconfig_checksum": "19479e5d6e2bd002ec6464a3ac6facec31994d95582de33f4a7970bcdb3a7ff3",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 1,
+        "VAnchorNotCys": 76
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "TROUT_IGH_IMGT": {
+      "artifact_sha256": "sha256:0451122c388d3ddebfdd7746539063fe7060e345672e6a26dabf68a846011c65",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 111,
+      "dataconfig_checksum": "46ba16520c23072be861a0517d6694c792105415e48b44e328a7d8e37ec37a3a",
+      "fatal_issue_count": 41,
+      "issue_counts": {
+        "DuplicateAlleleName": 41,
+        "VAnchorNotCys": 111
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "TROUT_TCRB_IMGT": {
+      "artifact_sha256": "sha256:a9e5afcb654627086d1041f095aaa06e277241c7faca7b448caa81db576e4c94",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 177,
+      "dataconfig_checksum": "600d2e0ad2ecfe6ec85d3e14b483ab289ce79a373ec07589063a7eebae03e63b",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2,
+        "VAnchorNotCys": 175
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "ZEBRAFISH_IGH_IMGT": {
+      "artifact_sha256": "sha256:c67050e3d6ba325fe56ed40caed4f38a7461179f06280bf22e1cf3d06ba06bb5",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 27,
+      "dataconfig_checksum": "1716b8a4d2ac7c71c9e7dc6f9b24a1906c3ba82fbece4af8c83171cbdec3f2c0",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "VAnchorNotCys": 27
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "ZEBRAFISH_TCRA_IMGT": {
+      "artifact_sha256": "sha256:e6b042d9b2d643bc5bcb97f37d8c72ba137d2afe868a5b9b1efa3ce5d4ff4528",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 281,
+      "dataconfig_checksum": "0b828961d913ffac71763e07cbf9683fa664815d3e9f8a904baebe699eb0e7c9",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 17,
+        "VAnchorNotCys": 264
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    },
+    "ZEBRAFISH_TCRD_IMGT": {
+      "artifact_sha256": "sha256:d206bc9d13104922813f4997cd560ce9e57156d5db7bdc3b990a3d3b27d896b1",
+      "coding_boundary_evidence": "unknown",
+      "correction": "none; source-backed curation required",
+      "curatable_issue_count": 8,
+      "dataconfig_checksum": "bfe0dfe52c07d5cf8fcaed218517765d4d84b110454a924dfda293ea682f3e9f",
+      "fatal_issue_count": 0,
+      "issue_counts": {
+        "JAnchorUnexpectedAa": 2,
+        "VAnchorNotCys": 6
+      },
+      "landmark_evidence": "legacy_coordinates_not_independently_verified",
+      "source_evidence": "authoritative_source_snapshot_not_bundled",
+      "status": "quarantined"
+    }
+  },
+  "quarantine_policy": "Default strict compilation rejects every reported issue. allow_curatable_refdata() explicitly permits curatable diagnostic catalogues only; fatal structural errors remain blocked.",
+  "schema_version": 1,
+  "scope": "Provided catalogue bytes and declared rules; no empirical calibration or genomic-boundary certification"
+}

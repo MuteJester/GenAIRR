@@ -6,19 +6,22 @@ use pyo3::types::PyDict;
 
 use crate::airr_record::build_airr_record;
 use crate::event::{EventRecord, StateSummary, TraceSpan};
-use crate::ir::{NucHandle, SimulationEvent};
 use crate::ir::Simulation;
+use crate::ir::{NucHandle, SimulationEvent};
+use crate::lineage::affinity::make_mature_target;
 use crate::lineage::export::{to_fasta, to_newick, to_node_table_tsv};
 use crate::lineage::tree::{LineageNode, LineageTree};
-use crate::lineage::{simulate_family, simulate_family_sims, simulate_family_with_affinity, sim_to_aa, AffinityModel, BranchingParams};
-use crate::lineage::affinity::make_mature_target;
+use crate::lineage::{
+    sim_to_aa, simulate_family, simulate_family_sims, simulate_family_with_affinity, AffinityModel,
+    BranchingParams,
+};
 use crate::live_call::{refresh_live_calls, ReferenceMatchIndex};
 use crate::pass::{Outcome, PassCompileEffect};
-use crate::rng::Rng;
 use crate::passes::S5FMutationPass;
+use crate::rng::Rng;
 use crate::s5f::S5FKernel;
 
-use super::outcome::{PyOutcome, airr_record_to_pydict};
+use super::outcome::{airr_record_to_pydict, PyOutcome};
 use super::refdata::PyRefDataConfig;
 use super::simulation::PySimulation;
 
@@ -191,7 +194,9 @@ pub(crate) fn simulate_lineage(
         return Err(PyValueError::new_err("simulate_lineage: n_max must be > 0"));
     }
     if n_sample == 0 {
-        return Err(PyValueError::new_err("simulate_lineage: n_sample must be > 0"));
+        return Err(PyValueError::new_err(
+            "simulate_lineage: n_sample must be > 0",
+        ));
     }
     if !(lambda_base.is_finite() && lambda_base >= 0.0) {
         return Err(PyValueError::new_err(format!(
@@ -363,7 +368,6 @@ fn synthesize_shm_event_record(sim: &Simulation) -> (EventRecord, u32) {
     (record, net)
 }
 
-
 /// Merge a per-node lineage `Outcome` with a corruption `Outcome` that was
 /// run *from* the lineage node's final simulation.
 ///
@@ -384,11 +388,16 @@ fn synthesize_shm_event_record(sim: &Simulation) -> (EventRecord, u32) {
 /// corruption events / trace.
 #[pyfunction]
 pub(crate) fn merge_lineage_corruption(base: &PyOutcome, corruption: &PyOutcome) -> PyOutcome {
+    let trace_offset = base.inner.trace.len();
     let mut trace = base.inner.trace.clone();
     trace.append_delta(corruption.inner.trace.clone());
 
     let mut events = base.inner.events.clone();
-    events.extend(corruption.inner.events.iter().cloned());
+    events.extend(corruption.inner.events.iter().cloned().map(|mut event| {
+        event.trace_span.start += trace_offset;
+        event.trace_span.end += trace_offset;
+        event
+    }));
 
     PyOutcome::new(Outcome {
         revisions: corruption.inner.revisions.clone(),
@@ -405,7 +414,7 @@ pub(crate) fn merge_lineage_corruption(base: &PyOutcome, corruption: &PyOutcome)
 #[pyo3(signature = (
     founder, refdata, mutability, substitution, rate,
     lambda_base, lambda_mut, max_generations, n_max, n_sample, seed,
-    selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5
+    selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5, respect=None, strict=false
 ))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn simulate_family_outcomes(
@@ -424,6 +433,8 @@ pub(crate) fn simulate_family_outcomes(
     beta: f64,
     target_aa: Option<String>,
     mature_substitutions: u32,
+    respect: Option<&super::contract::PyContractSet>,
+    strict: bool,
 ) -> PyResult<PyFamilyOutcome> {
     use pyo3::exceptions::PyValueError;
 
@@ -455,10 +466,14 @@ pub(crate) fn simulate_family_outcomes(
         ));
     }
     if n_max == 0 {
-        return Err(PyValueError::new_err("simulate_family_outcomes: n_max must be > 0"));
+        return Err(PyValueError::new_err(
+            "simulate_family_outcomes: n_max must be > 0",
+        ));
     }
     if n_sample == 0 {
-        return Err(PyValueError::new_err("simulate_family_outcomes: n_sample must be > 0"));
+        return Err(PyValueError::new_err(
+            "simulate_family_outcomes: n_sample must be > 0",
+        ));
     }
     if !(lambda_base.is_finite() && lambda_base >= 0.0) {
         return Err(PyValueError::new_err(format!(
@@ -513,18 +528,41 @@ pub(crate) fn simulate_family_outcomes(
             }
         };
         let weights = vec![1.0; founder_aa.len()];
-        Some(AffinityModel::new(target, weights, beta, selection_strength, &founder_aa))
+        Some(AffinityModel::new(
+            target,
+            weights,
+            beta,
+            selection_strength,
+            &founder_aa,
+        ))
     };
 
-    let (tree, sims) = simulate_family_sims(&founder_sim, &params, &mutator, model.as_ref());
+    let (tree, sims) = if respect.is_some() || strict {
+        let context = crate::lineage::branching::LineageMutationContext {
+            refdata: refdata.inner(),
+            contracts: respect.map(|c| c.inner()),
+            strict,
+        };
+        crate::lineage::family::simulate_family_sims_with_context(
+            &founder_sim,
+            &params,
+            &mutator,
+            model.as_ref(),
+            &context,
+        )
+        .map_err(super::contract::pass_error_to_pyerr)?
+    } else {
+        simulate_family_sims(&founder_sim, &params, &mutator, model.as_ref())
+    };
 
     // The branching loop mutates child sims with a bare `Pass::execute`
     // (no `LiveCallRefreshHook`), so each node sim's `segment_calls`
     // sidecar still reflects the FOUNDER's alignment, not its own
     // mutated pool. Recompute the V/D/J live calls from each observed
     // node's pool before building its Outcome; otherwise the
-    // synthesized record carries stale v/d/j calls and validate_record
-    // false-fails with AlleleCallTieSetMismatch under heavy SHM.
+    // synthesized record carries stale recalled_v/d/j_call fields and
+    // validate_record false-fails with RecalledAlleleCallMismatch under
+    // heavy SHM.
     let reference_index = ReferenceMatchIndex::build(refdata.inner());
 
     let node_outcomes: Vec<Option<Outcome>> = tree
@@ -543,7 +581,12 @@ pub(crate) fn simulate_family_outcomes(
                 // mutation_count so the NMutationsMismatch validator
                 // check passes.
                 let (event_record, net) = synthesize_shm_event_record(s);
-                let s2 = s.with_mutation_count(net);
+                let burden = if s.pool.is_empty() {
+                    0.0
+                } else {
+                    net as f64 / s.pool.len() as f64
+                };
+                let s2 = s.with_mutation_count(net).with_mutation_burden(burden);
                 Some(Outcome {
                     revisions: vec![s2],
                     pass_names: Vec::new(),
@@ -556,7 +599,10 @@ pub(crate) fn simulate_family_outcomes(
         })
         .collect();
 
-    Ok(PyFamilyOutcome { tree, node_outcomes })
+    Ok(PyFamilyOutcome {
+        tree,
+        node_outcomes,
+    })
 }
 
 /// Draw `n_clones` clone sizes (>=1) from a heavy-tailed distribution, with a
@@ -577,7 +623,9 @@ pub(crate) fn sample_clone_sizes(
 ) -> PyResult<Vec<u32>> {
     use pyo3::exceptions::PyValueError;
     if max_size == 0 {
-        return Err(PyValueError::new_err("sample_clone_sizes: max_size must be > 0"));
+        return Err(PyValueError::new_err(
+            "sample_clone_sizes: max_size must be > 0",
+        ));
     }
     if !(unexpanded_fraction.is_finite() && (0.0..=1.0).contains(&unexpanded_fraction)) {
         return Err(PyValueError::new_err(
@@ -591,7 +639,10 @@ pub(crate) fn sample_clone_sizes(
                     "sample_clone_sizes: power_law exponent must be finite and > 0",
                 ));
             }
-            crate::lineage::CloneSizeDist::PowerLaw { exponent, x_max: max_size }
+            crate::lineage::CloneSizeDist::PowerLaw {
+                exponent,
+                x_max: max_size,
+            }
         }
         "lognormal" => {
             if !(mu.is_finite() && sigma.is_finite() && sigma >= 0.0) {
@@ -599,7 +650,11 @@ pub(crate) fn sample_clone_sizes(
                     "sample_clone_sizes: lognormal mu/sigma must be finite and sigma >= 0",
                 ));
             }
-            crate::lineage::CloneSizeDist::LogNormal { mu, sigma, x_max: max_size }
+            crate::lineage::CloneSizeDist::LogNormal {
+                mu,
+                sigma,
+                x_max: max_size,
+            }
         }
         other => {
             return Err(PyValueError::new_err(format!(
@@ -608,5 +663,10 @@ pub(crate) fn sample_clone_sizes(
         }
     };
     let mut rng = crate::rng::Rng::new(seed);
-    Ok(crate::lineage::sample_repertoire_sizes(&mut rng, n_clones, &dist, unexpanded_fraction))
+    Ok(crate::lineage::sample_repertoire_sizes(
+        &mut rng,
+        n_clones,
+        &dist,
+        unexpanded_fraction,
+    ))
 }

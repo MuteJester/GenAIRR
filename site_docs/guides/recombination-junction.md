@@ -48,6 +48,108 @@ Five records each go through one recombination pass - sample
 alleles, trim, fill NP regions, assemble. No SHM, no PCR errors,
 no end-loss. Every field above is recombination's output.
 
+## Processing original coding ends (opt in)
+
+`process_coding_ends()` models the net outcome of processing the original
+junction-facing coding ends. Supply a finite distribution of signed outcomes
+for each end:
+
+| Outcome | Meaning |
+|---|---|
+| Positive `d` | Remove `d` original reference bases; retain no P extension at that end |
+| Zero | Preserve the original end without a P extension |
+| Negative `-p` | Preserve the original reference end and retain `p` palindromic bases templated from that original tip |
+
+The following small synthetic example declares complete coding ends and fixed
+outcomes. Its weights are demonstration inputs, not fitted biological defaults.
+
+```python
+import GenAIRR as ga
+from GenAIRR import _engine
+
+reference = _engine.RefDataConfig.vj()
+reference.add_v_allele("V-demo*01", "V-demo", b"AAACCCTGT", anchor=6)
+reference.add_j_allele("J-demo*01", "J-demo", b"TTTGGG", anchor=0)
+
+experiment = (
+    ga.Experiment.on(reference)
+    .recombine(np1_lengths=[(0, 1.0)])
+    .process_coding_ends(
+        v_3=[(-1, 1.0)],
+        j_5=[(-2, 1.0)],
+        reference_ends_are_coding_ends=True,
+    )
+)
+record = experiment.run_records(n=1, seed=1)[0]
+# V + P(V3) + P(J5) + J = AAACCCTGT + A + AA + TTTGGG
+assert record["junction_aa"] == "CKF"
+```
+
+Passing `reference_ends_are_coding_ends=True` explicitly confirms that the
+provided junction-facing allele boundaries are complete biological coding
+ends. GenAIRR cannot establish this from a truncated reference sequence.
+Omitted end distributions are fixed at zero. They do not inherit empirical
+trim or P distributions. N-addition length and base models remain configured
+by `recombine()` and the cartridge.
+
+Configure processing after `recombine()` and before mutation, corruption, or
+a clonal fork. It replaces automatic cartridge trim/P settings and rejects
+an explicit `trim()` call in either order, including `trim(enabled=False)`.
+Repeated processing configuration is rejected. VJ chains reject `d_5` and
+`d_3`, even when their outcomes are zero.
+
+For VDJ chains, the independent `d_5` and `d_3` inputs are combined into a
+finite joint outcome table using products of their weights. Those ends refer
+to the canonical reference orientation. D inversion reverses the processed
+segment and its retained extensions; the physical D5/D3 P counters can
+therefore swap relative to the canonical outcomes. Joint deletions must fit
+the original allele and extensions must have enough original template.
+
+With `productive_only()`, candidate outcomes retain their supplied relative
+weights among choices with a feasible productive completion. Subsequent N
+and orientation choices use the same completion-support rule. This is
+sequential restriction to feasible support; it is not exact sampling from the
+unconstrained model conditioned on productivity, which would require weighting
+by the probability mass of every future completion. Impossible support raises
+an error rather than substituting zero P.
+
+Records from this mode include a `coding_end_processing` dictionary. Its
+`choices` describe canonical signed outcomes and generating alleles;
+`retained_p_at_join` and `observed_p` distinguish emitted extensions from
+surviving observed P bases. `p_origins` records original template positions,
+assembled ends and current query positions; removed bases retain their origin
+entry with a null query position. These query coordinates use the coding
+orientation. Standard AIRR NP fields continue to combine intervening N and P.
+`recombination_complete` is true after V, J and any assigned D have been
+assembled; it remains true after later observation loss. On partial native
+outcomes this flag is false, and `retained_p_at_join` contains provisional
+emitted-to-date counts, not a claim that joining has completed.
+
+CSV and TSV exports serialize `coding_end_processing` as one JSON cell;
+use `json.loads(row["coding_end_processing"])` after reading the table.
+The nested dictionary declares `coordinate_system="zero_based_coding_oriented"`.
+Its template and query positions remain zero-based and coding-oriented,
+including in strict AIRR TSV exports and reverse-strand observations. AIRR
+conversion of the standard top-level coordinate columns does not alter these
+nested extension coordinates. Python records and DataFrames retain the
+dictionary value.
+
+The existing empirical NP plane is still interpreted as N-only input to the
+sampler. Activating this mode does not prove that a cartridge's historical NP
+estimates excluded P. Training combined AIRR NP lengths or strings as N and
+then adding retained P would count those bases twice. Current NP estimators
+reject explicit nonzero P provenance; missing P fields do not establish that
+the training data were N-only. This mode does not infer a new N model or
+calibrate end-processing weights from repertoire records.
+
+This is an effective model of retained terminal outcomes, compatible with the
+negative-deletion representation used by probabilistic repertoire models.
+It does not infer or claim to simulate exact Artemis nick positions,
+strand-specific resection, fill-in timing, or microhomology-mediated joining.
+The signed weights are supplied by the caller; no universal biochemical
+calibration is assumed. Pipelines that omit this method retain the existing
+trim/P model and seeded behaviour.
+
 ## VJ vs VDJ chains
 
 GenAIRR splits loci into two shapes:
@@ -77,42 +179,20 @@ the impossible shape before the engine gets the chance.
 
 ## Allele calls and ambiguity
 
-Each call (`v_call` / `d_call` / `j_call`) is either a single
-allele name or a comma-separated **tie set** when an independent
-walker can't disambiguate between alleles from the assembled
-sequence alone:
+`v_call`, `d_call`, and `j_call` identify the final generating alleles and
+provide the reference frame for all alignment metadata. Post-mutation
+inference is retained separately:
 
 ```python
-rec["v_call"]   # 'IGHVF1-G1*01,IGHVF1-G1*02'  ← tie set: two alleles equally consistent
+rec["v_call"]           # 'IGHVF1-G1*01' — generating allele
+rec["recalled_v_call"]  # may be a different allele or comma-separated tie
 ```
 
-Two facts to know about call provenance:
-
-- **The truth allele lives at position 0 of the tie set.** When
-  GenAIRR projects an AIRR record, the truth allele (the one the
-  engine actually sampled) is placed first if it's in the tie
-  set. Consumers that want a single canonical call read
-  `rec["v_call"].split(",", 1)[0]`.
-- **The calls are evidence-derived, not handed out.** The engine
-  knows what it sampled, but the AIRR projection runs an
-  independent walker over the assembled sequence and reports
-  what *that walker* would conclude. Under high SHM or short
-  trims the walker can genuinely lose the truth allele from the
-  tie set - that's not a bug, it's the alignment evidence being
-  ambiguous.
-
-When you want the original sampled allele explicitly, opt into
-provenance exposure:
-
-```python
-result = exp.run_records(n=5, seed=1, expose_provenance=True)
-rec = result[0]
-rec["truth_v_call"], rec["truth_d_call"], rec["truth_j_call"]
-```
-
-`truth_*_call` is single-valued (no tie sets) and carries the
-allele the engine sampled regardless of what the walker would
-report.
+Re-calls put the generating allele first only when it belongs to the tied
+set; otherwise names follow allele-ID order. A re-call never moves a true
+junction boundary or changes the reference used to represent an indel.
+`expose_provenance=True` retains the `truth_*_call` compatibility aliases,
+which equal the standard generating calls.
 
 ### Controlling the allele universe
 
@@ -197,34 +277,43 @@ and the AIRR fields where realised state lands. Quick summary
 here:
 
 - **N additions** - random bases sampled from the cartridge's
-  `np_lengths` + `np_bases` planes. Realised on `np1` /
-  `np1_length`, `np2` / `np2_length` (VDJ only).
+  `np_lengths` + `np_bases` planes. The final `np1` / `np2`
+  intervals combine intervening N and P bases between alignments.
 - **P additions** - deterministic palindromic bases derived from
   each coding end. Realised lengths on `p_v_3_length` /
   `p_d_5_length` / `p_d_3_length` / `p_j_5_length`.
 
-Crucially: `np1` and `np2` strings are P-clean. The structural
-NP region span excludes P bases by construction, so
-`len(rec["np1"]) == rec["np1_length"]` on every record. Don't
-re-derive lengths by string counting - they may include neither
-P nor NP attribution as you'd expect.
+`np1` and `np2` follow the final segment alignment bounds, so
+`len(rec["np1"]) == rec["np1_length"]` and likewise for NP2.
+They include P bases remaining in those gaps. The P-length fields
+instead preserve emitted recombination history, including bases
+later removed by read loss.
 
 ## Productivity
 
-`productive` is a triad with four predicates that must all hold:
+When the required coding and junction evidence is present,
+`productive` requires all of these checks:
 
 | Predicate | Check |
 |---|---|
-| `vj_in_frame` | `junction_length % 3 == 0` |
-| (no junction stop) | No `*` in `junction_aa` (only meaningful when in-frame) |
-| V Cys preserved | The V Cys anchor is the right amino acid after recombination |
-| J W/F preserved | The J W-or-F anchor is the right amino acid after recombination |
+| `vj_in_frame` | Junction length is a multiple of three and its V anchor starts in the retained V coding frame |
+| J-tail frame | The observed J tail and endpoint retain the coding phase, accounting for terminal read loss |
+| No coding stop | No stop codon in the complete observed V(D)J coding span, including outside the junction |
+| Canonical V landmark | The original three landmark bases remain adjacent and encode Cys |
+| Canonical J landmark | The original three landmark bases remain adjacent and encode Phe or Trp |
 
-`productive == True` iff all four hold. When `productive == False`,
-the issue payload from `validate_records` names which predicate
-fired - `OutOfFrame`, `JunctionStopCodon`, `VAnchorAaChanged`,
-or `JAnchorAaChanged`. The four flags on the record decompose the
-verdict so you can debug a non-productive storm without re-running.
+The versioned policy is `canonical_observed_vdj_v1`, with scope
+`observed_coding_span`. All checks must be accepted for `True`. A known defect
+produces `False`; otherwise unresolved required evidence produces `None`.
+Ambiguous codons are evaluated over their possible canonical resolutions:
+`NNN` can hide a stop, `GCN` cannot, and `TAR` is definitely stop.
+`productivity_reasons` gives stable diagnostic codes.
+
+Invalid reference annotations never supply a guessed coding frame. Independent
+phase evidence can support a stop assessment even when a landmark is unknown.
+Terminal clipping retains an observed-span prediction if all required landmarks
+and phase remain; absent required landmarks yield unknown. The policy does not
+predict expression, folding, or functionality outside that observed span.
 
 ### Constrained sampling
 
@@ -240,19 +329,21 @@ result = (
 )
 ```
 
-This isn't a retry loop. The engine *narrows the sample space*
-at recombination time - trims, NP bases, NP lengths, P lengths
-are all proposed against an admissible-only mask. The engine
-never proposes a candidate that would break productivity, so
-every record carries `productive: True` by construction.
+The engine narrows the sample space
+at recombination time - allele choices, trims, N bases, and N/P lengths
+are checked against the active productivity constraints. Admissible
+choices preserve the coding frame, stop-free coding span, and anchors.
+Fixed and mixed nonzero P lengths are supported. Their deterministic
+bases and future D orientation enter the completion check alongside
+N-addition choices. Original local weights are renormalized over
+candidates that leave a productive completion.
 
-When productivity can't be satisfied at a given site (rare -
-usually means an unsatisfiable plan, like a cartridge whose
-trim distribution leaves no in-frame option), default
-permissive mode falls back to unconstrained sampling and the
-record may end up non-productive. Pass `strict=True` to
-`run_records(...)` to surface this as `StrictSamplingError`
-instead.
+If no valid initial productive assignment or P-aware completion
+exists, execution raises an error even in permissive mode. Requested
+P additions are not silently replaced with zero. Other later steps
+can use their declared no-op or sentinel behavior when no admissible edit exists.
+Pass `strict=True` to `run_records(...)` to surface sampling
+failures rather than those permissive fallbacks.
 
 ## Reading recombination outputs
 
@@ -260,8 +351,9 @@ Every recombination-produced field on the record dict, organised
 by concern:
 
 ```python
-# Allele calls (tie sets when ambiguous)
+# Generating alleles and separate inferred calls
 rec["v_call"], rec["d_call"], rec["j_call"]
+rec["recalled_v_call"], rec["recalled_d_call"], rec["recalled_j_call"]
 rec["truth_v_call"], rec["truth_d_call"], rec["truth_j_call"]  # only with expose_provenance=True
 rec["locus"]                                                    # derived
 
@@ -291,10 +383,17 @@ rec["v_cigar"]                      # M/I/D ops only
 rec["sequence"], rec["sequence_aa"]
 ```
 
-CIGAR strings only emit canonical M / I / D / S / N / P / X / = ops
-no soft-clips. Coordinates are 0-based exclusive end by default;
-pass `airr_strict=True` to TSV/CSV/DataFrame exports for the
-AIRR-C 1-based-inclusive convention.
+Python record CIGARs contain local `M` / `I` / `D` runs, and
+coordinates are 0-based with exclusive ends. TSV defaults to
+`airr_strict=True`: biological coordinates become 1-based inclusive,
+CIGARs gain leading query `S` and reference `N` offsets when nonzero,
+and booleans are written as `T` / `F`. CSV and DataFrame exports
+default to `airr_strict=False`; strict DataFrames retain booleans.
+
+Biological query coordinates refer to the coding-oriented sequence.
+For `rev_comp=True`, reverse-complement the observed `sequence` before
+using these coordinates to slice it. Paired-read windows always
+index the observed `sequence` and remain 0-based, half-open.
 
 ## Common mistakes
 
@@ -317,19 +416,14 @@ for schema stability, but they all carry their empty/zero
 defaults. Code that reads them shouldn't branch on `chain_type`;
 it should just see the empty/zero shape.
 
-**Assuming one allele call when tie sets are possible.** Every
-call (`v_call`, `d_call`, `j_call`) can be a comma-separated
-list. The first entry is the truth allele when present in the
-tie set; consumers that want one canonical name read
-`call.split(",", 1)[0]`. If you split downstream code on a
-single-call assumption, high-SHM datasets will surface tie sets
-and your join will be silently wrong.
+**Treating re-calls as generating truth.** Standard calls name the generating
+alleles. Split `recalled_*_call` on commas when analyzing inferred ambiguity;
+its first entry need not be the generating allele.
 
 **Treating `productive` as one boolean without checking
-components.** When `productive == False`, the four decomposition
-flags (`vj_in_frame`, `stop_codon`, V Cys preserved, J W/F
-preserved) name exactly which predicate fired. The validator's
-issue payload also exposes them. Reading only `productive`
+components.** When `productive == False`, inspect `vj_in_frame`,
+`stop_codon`, the J tail, and the conserved anchor amino acids.
+A validation mismatch can also carry a decision reason. Reading only `productive`
 hides why a record failed; checking the components lets you
 debug a non-productive storm in one pass.
 

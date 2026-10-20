@@ -59,29 +59,53 @@ pub fn simulate_family_sims(
     (tree, sims)
 }
 
+/// Fallible contract-aware counterpart used by productive lineage experiments.
+pub fn simulate_family_sims_with_context(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    affinity: Option<&AffinityModel>,
+    context: &super::branching::LineageMutationContext<'_>,
+) -> Result<(LineageTree, Vec<Simulation>), crate::pass::PassError> {
+    let (mut tree, sims, live) = super::branching::grow_lineage_retaining_sims_with_context(
+        founder, params, mutator, affinity, context,
+    )?;
+    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    sample_and_collapse(&mut tree, &live, params.n_sample, &mut sample_rng);
+    Ok((tree, sims))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dist::{EmpiricalLengthDist, UniformBase};
-    use crate::ir::{Nucleotide, NucHandle, Region, Segment, Simulation};
+    use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
     use crate::lineage::BranchingParams;
     use crate::passes::UniformMutationPass;
 
     fn founder() -> Simulation {
         let mut sim = Simulation::new();
         for (i, b) in b"AAAAAAAA".iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(
-                Nucleotide::germline(*b, i as u16, Segment::V));
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
-        sim.with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(8)))
+        sim.with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(8),
+        ))
     }
 
     #[test]
     fn simulate_family_returns_valid_sampled_tree() {
         let params = BranchingParams {
-            lambda_base: 1.5, lambda_mut: 0.0, max_generations: 6,
-            n_max: 300, n_sample: 20, seed: 2024,
+            lambda_base: 1.5,
+            lambda_mut: 0.0,
+            max_generations: 6,
+            n_max: 300,
+            n_sample: 20,
+            seed: 2024,
         };
         let mutator = UniformMutationPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
@@ -89,15 +113,23 @@ mod tests {
         );
         let tree = simulate_family(&founder(), &params, &mutator);
 
-        assert!(tree.validate().is_ok(), "invalid tree: {:?}", tree.validate());
+        assert!(
+            tree.validate().is_ok(),
+            "invalid tree: {:?}",
+            tree.validate()
+        );
         let total_abundance: u32 = tree.nodes.iter().map(|n| n.abundance).sum();
         // abundance equals n_sample unless the family went extinct early
         assert!(total_abundance == params.n_sample || total_abundance == 0);
 
-        let tree2 = simulate_family(&founder(), &params,
+        let tree2 = simulate_family(
+            &founder(),
+            &params,
             &UniformMutationPass::new(
                 Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
-                Box::new(UniformBase)));
+                Box::new(UniformBase),
+            ),
+        );
         assert_eq!(tree.len(), tree2.len());
     }
 
@@ -106,8 +138,12 @@ mod tests {
         // lambda_base = 0 => founder never divides => the living final population
         // is empty (extinct). An extinct clone must NOT be sampled: no observed node.
         let params = BranchingParams {
-            lambda_base: 0.0, lambda_mut: 0.0, max_generations: 6,
-            n_max: 300, n_sample: 20, seed: 2024,
+            lambda_base: 0.0,
+            lambda_mut: 0.0,
+            max_generations: 6,
+            n_max: 300,
+            n_sample: 20,
+            seed: 2024,
         };
         let mutator = UniformMutationPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
@@ -127,15 +163,21 @@ mod tests {
         // living generation (the maximum generation reached) — never an
         // early-terminal/dead cell that drew 0 offspring at a lower generation.
         // A single founder can go extinct, so scan seeds for one that grows.
-        let mutator = || UniformMutationPass::new(
-            Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
-            Box::new(UniformBase),
-        );
+        let mutator = || {
+            UniformMutationPass::new(
+                Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
+                Box::new(UniformBase),
+            )
+        };
         let mut grew = false;
         for seed in 0..50u64 {
             let params = BranchingParams {
-                lambda_base: 1.6, lambda_mut: 0.0, max_generations: 6,
-                n_max: 300, n_sample: 20, seed,
+                lambda_base: 1.6,
+                lambda_mut: 0.0,
+                max_generations: 6,
+                n_max: 300,
+                n_sample: 20,
+                seed,
             };
             let (tree, _sims) = simulate_family_sims(&founder(), &params, &mutator(), None);
             let observed: Vec<&_> = tree.nodes.iter().filter(|n| n.observed).collect();
@@ -158,8 +200,12 @@ mod tests {
     #[test]
     fn simulate_family_sims_arena_length_matches_tree_and_observed_nodes_have_nonempty_pool() {
         let params = BranchingParams {
-            lambda_base: 1.5, lambda_mut: 0.0, max_generations: 6,
-            n_max: 300, n_sample: 20, seed: 9999,
+            lambda_base: 1.5,
+            lambda_mut: 0.0,
+            max_generations: 6,
+            n_max: 300,
+            n_sample: 20,
+            seed: 9999,
         };
         let mutator = UniformMutationPass::new(
             Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
@@ -168,14 +214,22 @@ mod tests {
         let (tree, sims) = simulate_family_sims(&founder(), &params, &mutator, None);
 
         // Arena length must equal tree length (one entry per node).
-        assert_eq!(sims.len(), tree.len(),
-            "arena len {} != tree len {}", sims.len(), tree.len());
+        assert_eq!(
+            sims.len(),
+            tree.len(),
+            "arena len {} != tree len {}",
+            sims.len(),
+            tree.len()
+        );
 
         // Every observed node's sim must have a non-empty pool.
         for node in tree.nodes.iter().filter(|n| n.observed) {
             let sim = &sims[node.id as usize];
-            assert!(!sim.pool.is_empty(),
-                "observed node {} has empty pool", node.id);
+            assert!(
+                !sim.pool.is_empty(),
+                "observed node {} has empty pool",
+                node.id
+            );
         }
     }
 }

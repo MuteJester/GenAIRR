@@ -292,6 +292,16 @@ def _lower_recombine(
     genotype=None,
 ) -> None:
     chain = refdata.chain_type
+    process_ends = step.coding_end_mode is not None
+    if step.coding_end_model_reference_hashes and refdata.content_hash() not in step.coding_end_model_reference_hashes:
+        raise ValueError("coding-end model is incompatible with the final compiled reference content hash")
+
+    def process(segment, outcomes):
+        plan.push_process_coding_ends(
+            segment, list(outcomes),
+            reference_ends_are_coding_ends=step.reference_ends_are_coding_ends,
+        )
+
     np1 = list(step.np1_lengths)
     np2 = list(step.np2_lengths)
     # Typed NP base distributions (Slice — Typed NP base model).
@@ -353,12 +363,18 @@ def _lower_recombine(
         else:
             plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
             plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
-        if step.trim_v_3:
-            plan.push_trim("V", "3", list(step.trim_v_3))
-        if step.trim_j_5:
-            plan.push_trim("J", "5", list(step.trim_j_5))
+        if process_ends:
+            process("V", step.coding_end_outcomes_v)
+            process("J", step.coding_end_outcomes_j)
+        else:
+            if step.trim_v_3:
+                plan.push_trim("V", "3", list(step.trim_v_3))
+            if step.trim_j_5:
+                plan.push_trim("J", "5", list(step.trim_j_5))
         plan.push_assemble("V")
-        if p_v_3 is not None:
+        if process_ends:
+            plan.push_emit_coding_end_p("V_3")
+        elif p_v_3 is not None:
             plan.push_p_addition("V_3", p_v_3)
         plan.push_generate_np(
             "NP1",
@@ -366,7 +382,9 @@ def _lower_recombine(
             base_pairs=np1_base_pairs,
             markov_transitions=np1_markov_transitions,
         )
-        if p_j_5 is not None:
+        if process_ends:
+            plan.push_emit_coding_end_p("J_5")
+        elif p_j_5 is not None:
             plan.push_p_addition("J_5", p_j_5)
         plan.push_assemble("J")
     elif chain == "vdj":
@@ -376,16 +394,23 @@ def _lower_recombine(
             plan.push_sample_allele("V", refdata, allowed_ids=v_ids, weights=v_weights)
             plan.push_sample_allele("D", refdata, allowed_ids=d_ids, weights=d_weights)
             plan.push_sample_allele("J", refdata, allowed_ids=j_ids, weights=j_weights)
-        if step.trim_v_3:
-            plan.push_trim("V", "3", list(step.trim_v_3))
-        if step.trim_d_5:
-            plan.push_trim("D", "5", list(step.trim_d_5))
-        if step.trim_d_3:
-            plan.push_trim("D", "3", list(step.trim_d_3))
-        if step.trim_j_5:
-            plan.push_trim("J", "5", list(step.trim_j_5))
+        if process_ends:
+            process("V", step.coding_end_outcomes_v)
+            process("D", step.coding_end_outcomes_d)
+            process("J", step.coding_end_outcomes_j)
+        else:
+            if step.trim_v_3:
+                plan.push_trim("V", "3", list(step.trim_v_3))
+            if step.trim_d_5:
+                plan.push_trim("D", "5", list(step.trim_d_5))
+            if step.trim_d_3:
+                plan.push_trim("D", "3", list(step.trim_d_3))
+            if step.trim_j_5:
+                plan.push_trim("J", "5", list(step.trim_j_5))
         plan.push_assemble("V")
-        if p_v_3 is not None:
+        if process_ends:
+            plan.push_emit_coding_end_p("V_3")
+        elif p_v_3 is not None:
             plan.push_p_addition("V_3", p_v_3)
         plan.push_generate_np(
             "NP1",
@@ -405,10 +430,14 @@ def _lower_recombine(
         # `docs/p_nucleotide_design.md` §9.3.)
         if invert_d_prob is not None:
             plan.push_invert_d(invert_d_prob)
-        if p_d_5 is not None:
+        if process_ends:
+            plan.push_emit_coding_end_p("D_5")
+        elif p_d_5 is not None:
             plan.push_p_addition("D_5", p_d_5)
         plan.push_assemble("D")
-        if p_d_3 is not None:
+        if process_ends:
+            plan.push_emit_coding_end_p("D_3")
+        elif p_d_3 is not None:
             plan.push_p_addition("D_3", p_d_3)
         plan.push_generate_np(
             "NP2",
@@ -416,7 +445,9 @@ def _lower_recombine(
             base_pairs=np2_base_pairs,
             markov_transitions=np2_markov_transitions,
         )
-        if p_j_5 is not None:
+        if process_ends:
+            plan.push_emit_coding_end_p("J_5")
+        elif p_j_5 is not None:
             plan.push_p_addition("J_5", p_j_5)
         plan.push_assemble("J")
         # Receptor revision rewrites the V slice **after** initial
@@ -516,7 +547,10 @@ def _lower_corrupt(step: _CorruptStep, plan: "_engine.PassPlan") -> None:
             plan.push_corrupt_quality(list(step.count_pairs or ()))
     elif step.kind == _CORRUPT_KIND_INDEL:
         plan.push_corrupt_indel(
-            list(step.count_pairs or ()), insertion_prob=step.insertion_prob
+            list(step.count_pairs or ()), insertion_prob=step.insertion_prob,
+            rejection_attempts=step.rejection_attempts,
+            exact_node_budget=step.exact_node_budget,
+            legacy_replay_sentinels=step.legacy_replay_sentinels,
         )
     elif step.kind == _CORRUPT_KIND_CONTAMINANT:
         plan.push_corrupt_contaminant(step.apply_prob)

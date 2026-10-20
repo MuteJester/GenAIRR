@@ -33,7 +33,7 @@ use genairr_engine::trace::ChoiceValue;
 // Test fixtures: synthetic VJ and VDJ refdata
 // ──────────────────────────────────────────────────────────────────
 
-/// Synthetic VJ chain: V "AAACCCGGG" (anchor 6), J "TTTAAA" (anchor 0).
+/// Synthetic VJ chain: V "AAACCCTGT" (anchor 6), J "TTTAAA" (anchor 0).
 /// V_anchor_to_end = 3bp, J_anchor_to_W3 = 3bp → fixed junction = 6.
 /// NP1 must satisfy (6 + NP1) % 3 == 0 → NP1 % 3 == 0.
 fn make_vj_refdata() -> RefDataConfig {
@@ -41,7 +41,7 @@ fn make_vj_refdata() -> RefDataConfig {
     let _ = cfg.v_pool.push(Allele {
         name: "v_test*01".into(),
         gene: "v_test".into(),
-        seq: b"AAACCCGGG".to_vec(),
+        seq: b"AAACCCTGT".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
         functional_status: None,
@@ -61,7 +61,7 @@ fn make_vj_refdata() -> RefDataConfig {
 
 /// VJ fixture where the first NP1 base can complete either a stop codon
 /// or a safe codon:
-/// - V = "GGGTA", anchor 0. Positions 3..4 are "TA".
+/// - V = "TGTTA", anchor 0. Positions 3..4 are "TA".
 /// - NP1 length = 1.
 /// - Candidate NP1 base 'A' creates "TAA" (stop); candidate 'C'
 ///   creates "TAC" (safe).
@@ -71,7 +71,7 @@ fn make_vj_np_stop_filter_refdata() -> RefDataConfig {
     let _ = cfg.v_pool.push(Allele {
         name: "v_stop_filter*01".into(),
         gene: "v_stop_filter".into(),
-        seq: b"GGGTA".to_vec(),
+        seq: b"TGTTA".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
         functional_status: None,
@@ -91,7 +91,7 @@ fn make_vj_np_stop_filter_refdata() -> RefDataConfig {
 
 /// VDJ fixture where the NP1 base can force a stop with the future D
 /// prefix:
-/// - V = "GGG", anchor 0.
+/// - V = "TGT", anchor 0.
 /// - NP1 length = 1.
 /// - D starts "AA...".
 /// - Candidate NP1 base 'T' creates "TAA" using the first two D bases.
@@ -102,7 +102,7 @@ fn make_vdj_np1_future_d_stop_refdata() -> RefDataConfig {
     let _ = cfg.v_pool.push(Allele {
         name: "v_future_d_stop*01".into(),
         gene: "v_future_d_stop".into(),
-        seq: b"GGG".to_vec(),
+        seq: b"TGT".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
         functional_status: None,
@@ -159,7 +159,7 @@ impl Distribution for FutureDStopOrSafeBaseDist {
     }
 }
 
-/// Synthetic VDJ chain: V "AAACCCGGG" (anchor 6), D "TTTTTT"
+/// Synthetic VDJ chain: V "AAACCCTGT" (anchor 6), D "TTTTTT"
 /// (anchorless, 6bp), J "TTTAAA" (anchor 0).
 /// At NP2 sampling time: V (3 from anchor to end) + NP1 + D (6) +
 /// NP2 + J (3 from start to W+3) = junction. NP1 is free; NP2
@@ -169,7 +169,7 @@ fn make_vdj_refdata() -> RefDataConfig {
     let _ = cfg.v_pool.push(Allele {
         name: "v_test*01".into(),
         gene: "v_test".into(),
-        seq: b"AAACCCGGG".to_vec(),
+        seq: b"AAACCCTGT".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
         functional_status: None,

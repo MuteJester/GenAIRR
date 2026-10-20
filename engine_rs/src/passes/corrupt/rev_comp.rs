@@ -4,8 +4,8 @@
 //! antisense strand. With probability `apply_prob` this pass records
 //! a Boolean flag in the trace; downstream record-builders (the AIRR
 //! Rearrangement projection in `airr_record.rs`) then flip the
-//! `sequence` and per-segment sequence-coord fields, leaving
-//! alignment / germline / CIGAR fields in forward orientation per
+//! observed `sequence`, leaving all coding-strand annotations in
+//! forward orientation per
 //! the AIRR Rearrangement spec.
 //!
 //! The pass itself does NOT mutate the IR. Subsequent passes (if

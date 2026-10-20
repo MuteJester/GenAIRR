@@ -204,6 +204,8 @@ nav:
       - Sample only productive sequences: guides/productive.md
       - Biology map: guides/biology-map.md
       - Recombination + junction biology: guides/recombination-junction.md
+      - Retained coding end calibration: guides/coding-end-calibration.md
+      - Experimental duplex repair: guides/experimental-duplex-repair.md
       - D inversion + receptor revision: guides/recombination-editing.md
       - Clonal simulation overview: guides/clonal-families.md
       - Clonal lineage trees: guides/clonal-lineage.md
@@ -218,6 +220,7 @@ nav:
       - Paired-end reads and FASTQ: guides/paired-end-fastq.md
   - Reference Cartridge Authoring:
       - cartridges/index.md
+      - Reference evidence and quarantine: cartridges/reference-evidence.md
       - Build a reference cartridge: guides/build-reference-cartridge.md
       - Estimate models from data: guides/estimate-cartridge-models.md
       - Inspect manifest + build report: guides/cartridge-manifest-report.md

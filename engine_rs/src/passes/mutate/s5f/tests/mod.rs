@@ -29,7 +29,7 @@ fn s5f_zero_kernel() -> S5FKernel {
 
 fn s5f_stop_filter_kernel(include_safe_base: bool) -> S5FKernel {
     let context =
-        S5FKernel::encode_context(b'T', b'A', b'C', b'A', b'A').expect("canonical context");
+        S5FKernel::encode_context(b'T', b'G', b'C', b'A', b'A').expect("canonical context");
     let mut mutability = vec![0.0; S5F_NUM_CONTEXTS];
     mutability[context as usize] = 1.0;
 
@@ -57,7 +57,7 @@ fn s5f_productive_vj_fixture() -> (RefDataConfig, Simulation) {
     let _ = cfg.v_pool.push(Allele {
         name: "v_s5f*01".into(),
         gene: "v_s5f".into(),
-        seq: b"TACAAA".to_vec(),
+        seq: b"TGCAAA".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
         functional_status: None,
@@ -74,7 +74,7 @@ fn s5f_productive_vj_fixture() -> (RefDataConfig, Simulation) {
     });
 
     let mut sim = Simulation::new();
-    for (i, &b) in b"TACAAA".iter().enumerate() {
+    for (i, &b) in b"TGCAAA".iter().enumerate() {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
         sim = next;
     }

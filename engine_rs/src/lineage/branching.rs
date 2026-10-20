@@ -1,7 +1,9 @@
 //! Generation-synchronous clonal branching loop.
 
+use crate::contract::{ContractSet, ContractViolation};
 use crate::ir::Simulation;
-use crate::pass::{Pass, PassContext};
+use crate::pass::{Pass, PassContext, PassError};
+use crate::refdata::RefDataConfig;
 use crate::rng::Rng;
 use crate::trace::Trace;
 
@@ -35,9 +37,47 @@ fn genotype_of(sim: &Simulation) -> Vec<u8> {
     sim.pool.as_slice().iter().map(|n| n.base).collect()
 }
 
-/// Apply one division's mutations: run `mutator` against `parent` with a fresh,
-/// deterministic per-division RNG seeded by `child_seed`. Returns the mutated child.
-fn mutate_child(parent: &Simulation, mutator: &dyn Pass, child_seed: u64) -> Simulation {
+/// Execution context inherited by every division. It conditions mutation
+/// support directly; sampled children are never repaired or post-filtered.
+pub struct LineageMutationContext<'a> {
+    pub refdata: &'a RefDataConfig,
+    pub contracts: Option<&'a ContractSet>,
+    pub strict: bool,
+}
+
+fn require_productive(
+    sim: &Simulation,
+    context: Option<&LineageMutationContext<'_>>,
+) -> Result<(), PassError> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    if context
+        .contracts
+        .is_some_and(ContractSet::requires_productive_emission)
+    {
+        let assessment = crate::productivity::assess(sim, context.refdata);
+        if assessment.productive != Some(true) {
+            return Err(PassError::contract_violation(
+                "lineage.productive",
+                vec![ContractViolation::new(
+                    crate::productivity::POLICY,
+                    assessment.reasons.join(","),
+                )],
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Apply one division using the same context and execution policy as the
+/// founder. The unconstrained path preserves the previous RNG/call sequence.
+fn mutate_child(
+    parent: &Simulation,
+    mutator: &dyn Pass,
+    child_seed: u64,
+    context: Option<&LineageMutationContext<'_>>,
+) -> Result<Simulation, PassError> {
     let mut trace = Trace::new();
     let mut rng = Rng::new(child_seed);
     let mut ctx = PassContext {
@@ -45,13 +85,27 @@ fn mutate_child(parent: &Simulation, mutator: &dyn Pass, child_seed: u64) -> Sim
         trace: &mut trace,
         rng: &mut rng,
         pass_index: 0,
-        refdata: None,
-        contracts: None,
+        refdata: context.map(|c| c.refdata),
+        contracts: context.and_then(|c| c.contracts),
         feasibility: None,
         reference_index: None,
         event_log_sink: None,
     };
-    mutator.execute(parent, &mut ctx)
+    let child = match context {
+        Some(context) => mutator.execute_with_policy(parent, &mut ctx, context.strict)?,
+        None => mutator.execute(parent, &mut ctx),
+    };
+    if let Some(context) = context.filter(|c| c.strict) {
+        if let Some(contracts) = context.contracts {
+            contracts
+                .verify(&child, Some(context.refdata))
+                .map_err(|violations| {
+                    PassError::contract_violation("lineage.mutation", violations)
+                })?;
+        }
+    }
+    require_productive(&child, context)?;
+    Ok(child)
 }
 
 /// Core generation-synchronous growth. With `mutator = None`, children are exact
@@ -70,7 +124,9 @@ fn grow_core(
     params: &BranchingParams,
     mutator: Option<&dyn Pass>,
     affinity: Option<&AffinityModel>,
-) -> (LineageTree, usize, Vec<Simulation>, Vec<u32>) {
+    context: Option<&LineageMutationContext<'_>>,
+) -> Result<(LineageTree, usize, Vec<Simulation>, Vec<u32>), PassError> {
+    require_productive(founder, context)?;
     let mut nodes: Vec<LineageNode> = Vec::new();
     let mut sims: Vec<Simulation> = Vec::new();
     let mut rng = Rng::new(params.seed);
@@ -120,13 +176,11 @@ fn grow_core(
                 let child_sim = match mutator {
                     Some(m) => {
                         let child_seed = rng.next_u64();
-                        mutate_child(&sims[parent_id as usize], m, child_seed)
+                        mutate_child(&sims[parent_id as usize], m, child_seed, context)?
                     }
                     None => sims[parent_id as usize].clone(),
                 };
-                let muts = child_sim
-                    .mutation_count
-                    .saturating_sub(parent_mut_count);
+                let muts = child_sim.mutation_count.saturating_sub(parent_mut_count);
                 let child_affinity = affinity
                     .map(|m| m.affinity_value(&sim_to_aa(&child_sim)))
                     .unwrap_or(0.0);
@@ -155,7 +209,7 @@ fn grow_core(
     // completed generation's offspring (ran to max_generations) or empty (the
     // population went extinct — every live cell drew 0 offspring). This is the
     // living population sampling must draw from.
-    (LineageTree { nodes }, peak_live, sims, live)
+    Ok((LineageTree { nodes }, peak_live, sims, live))
 }
 
 /// Grow a full clonal lineage with per-division mutation via `mutator`.
@@ -165,13 +219,17 @@ pub fn grow_lineage(
     params: &BranchingParams,
     mutator: &dyn Pass,
 ) -> LineageTree {
-    grow_core(founder, params, Some(mutator), None).0
+    grow_core(founder, params, Some(mutator), None, None)
+        .expect("unconstrained lineage")
+        .0
 }
 
 /// Grow the lineage TOPOLOGY only (children are exact clones of their parent
 /// `Simulation`; no mutation — a later task layers mutation on top).
 pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageTree {
-    grow_core(founder, params, None, None).0
+    grow_core(founder, params, None, None, None)
+        .expect("unconstrained lineage")
+        .0
 }
 
 /// Like `grow_topology`, but also returns the final living node ids (cells alive
@@ -181,7 +239,8 @@ pub fn grow_topology_with_live(
     founder: &Simulation,
     params: &BranchingParams,
 ) -> (LineageTree, Vec<u32>) {
-    let (tree, _peak, _sims, live) = grow_core(founder, params, None, None);
+    let (tree, _peak, _sims, live) =
+        grow_core(founder, params, None, None, None).expect("unconstrained lineage");
     (tree, live)
 }
 
@@ -193,7 +252,9 @@ pub fn grow_lineage_with_affinity(
     mutator: &dyn Pass,
     model: &AffinityModel,
 ) -> LineageTree {
-    grow_core(founder, params, Some(mutator), Some(model)).0
+    grow_core(founder, params, Some(mutator), Some(model), None)
+        .expect("unconstrained lineage")
+        .0
 }
 
 /// Grow + mutate a lineage and ALSO return the per-node `Simulation` arena
@@ -206,27 +267,43 @@ pub fn grow_lineage_retaining_sims(
     mutator: &dyn Pass,
     affinity: Option<&AffinityModel>,
 ) -> (LineageTree, Vec<Simulation>, Vec<u32>) {
-    let (tree, _peak, sims, live) = grow_core(founder, params, Some(mutator), affinity);
+    let (tree, _peak, sims, live) =
+        grow_core(founder, params, Some(mutator), affinity, None).expect("unconstrained lineage");
     (tree, sims, live)
+}
+
+pub fn grow_lineage_retaining_sims_with_context(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    affinity: Option<&AffinityModel>,
+    context: &LineageMutationContext<'_>,
+) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>), PassError> {
+    let (tree, _peak, sims, live) =
+        grow_core(founder, params, Some(mutator), affinity, Some(context))?;
+    Ok((tree, sims, live))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dist::{EmpiricalLengthDist, UniformBase};
-    use crate::ir::{Nucleotide, NucHandle, Region, Segment, Simulation};
+    use crate::ir::{NucHandle, Nucleotide, Region, Segment, Simulation};
     use crate::passes::UniformMutationPass;
 
     /// Minimal founder: a 4-base V region "AAAA".
     fn founder() -> Simulation {
         let mut sim = Simulation::new();
         for (i, b) in b"AAAA".iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(
-                Nucleotide::germline(*b, i as u16, Segment::V),
-            );
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
-        sim.with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(4)))
+        sim.with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(4),
+        ))
     }
 
     fn neutral_params() -> BranchingParams {
@@ -241,9 +318,64 @@ mod tests {
     }
 
     #[test]
+    fn lineage_divisions_inherit_productive_support_and_final_guarantee() {
+        use crate::contract::test_support::{
+            make_assembled_sim_from_refdata, make_vj_with_anchor_codons,
+        };
+        let cfg = make_vj_with_anchor_codons(b"TGT", b"TGG");
+        let founder = make_assembled_sim_from_refdata(&cfg);
+        let mutator = UniformMutationPass::new(
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(15, 1.0)])),
+            Box::new(UniformBase),
+        );
+        let contracts = crate::contract::productive();
+        let params = BranchingParams {
+            lambda_base: 2.0,
+            max_generations: 3,
+            n_max: 40,
+            n_sample: 20,
+            seed: 7,
+            lambda_mut: 0.0,
+        };
+        for strict in [false, true] {
+            let context = LineageMutationContext {
+                refdata: &cfg,
+                contracts: Some(&contracts),
+                strict,
+            };
+            let (tree, sims, _) = grow_lineage_retaining_sims_with_context(
+                &founder, &params, &mutator, None, &context,
+            )
+            .unwrap();
+            assert!(tree.nodes.len() > 1);
+            assert!(sims
+                .iter()
+                .all(|s| crate::productivity::assess(s, &cfg).productive == Some(true)));
+            assert!(sims.iter().skip(1).any(|s| s.mutation_count > 0));
+        }
+        // Supplying reference context alone must not change the unconstrained law.
+        let (_, old, _) = grow_lineage_retaining_sims(&founder, &params, &mutator, None);
+        let context = LineageMutationContext {
+            refdata: &cfg,
+            contracts: None,
+            strict: false,
+        };
+        let (_, new, _) =
+            grow_lineage_retaining_sims_with_context(&founder, &params, &mutator, None, &context)
+                .unwrap();
+        assert_eq!(old.len(), new.len());
+        for (a, b) in old.iter().zip(&new) {
+            assert_eq!(a.pool.as_slice(), b.pool.as_slice());
+        }
+    }
+
+    #[test]
     fn grows_root_and_children_with_monotonic_generations() {
         let tree = grow_topology(&founder(), &neutral_params());
-        assert_eq!(tree.nodes.iter().filter(|n| n.parent_id.is_none()).count(), 1);
+        assert_eq!(
+            tree.nodes.iter().filter(|n| n.parent_id.is_none()).count(),
+            1
+        );
         let root = tree.root();
         assert_eq!(root.id, 0);
         assert_eq!(root.generation, 0);
@@ -271,21 +403,27 @@ mod tests {
     #[test]
     fn carrying_capacity_bounds_live_population() {
         let params = BranchingParams {
-            lambda_base: 4.0,      // would explode unbounded
+            lambda_base: 4.0, // would explode unbounded
             lambda_mut: 0.0,
             max_generations: 40,
             n_max: 200,
             n_sample: 10,
             seed: 7,
         };
-        let (_tree, peak_live, _sims, _live) = grow_core(&founder(), &params, None, None);
+        let (_tree, peak_live, _sims, _live) =
+            grow_core(&founder(), &params, None, None, None).unwrap();
         // hard cap: live population never exceeds n_max
-        assert!(peak_live <= params.n_max as usize,
-            "peak live {peak_live} exceeded n_max {}", params.n_max);
+        assert!(
+            peak_live <= params.n_max as usize,
+            "peak live {peak_live} exceeded n_max {}",
+            params.n_max
+        );
         // damping plateau (equilibrium ~ (1 - 1/lambda_base) * n_max = 150) is
         // comfortably above half capacity — confirms it grew, not died early
-        assert!(peak_live > (params.n_max as usize) / 2,
-            "peak live {peak_live} did not approach capacity");
+        assert!(
+            peak_live > (params.n_max as usize) / 2,
+            "peak live {peak_live} did not approach capacity"
+        );
     }
 
     #[test]
@@ -293,9 +431,16 @@ mod tests {
         // lambda_base = 0 => the founder draws 0 offspring => after generation 1
         // the live set is empty and the loop breaks. The final living population
         // is empty (the clone went extinct).
-        let params = BranchingParams { lambda_base: 0.0, ..neutral_params() };
+        let params = BranchingParams {
+            lambda_base: 0.0,
+            ..neutral_params()
+        };
         let (_tree, live) = grow_topology_with_live(&founder(), &params);
-        assert!(live.is_empty(), "expected extinct (empty) final-live set, got {:?}", live);
+        assert!(
+            live.is_empty(),
+            "expected extinct (empty) final-live set, got {:?}",
+            live
+        );
     }
 
     #[test]
@@ -306,7 +451,10 @@ mod tests {
         // for one that grows (the invariant under test is about non-extinct runs).
         let mut grew = false;
         for seed in 0..50u64 {
-            let params = BranchingParams { seed, ..neutral_params() };
+            let params = BranchingParams {
+                seed,
+                ..neutral_params()
+            };
             let (tree, live) = grow_topology_with_live(&founder(), &params);
             if live.is_empty() {
                 continue; // extinct for this seed; try another
@@ -314,8 +462,11 @@ mod tests {
             grew = true;
             let max_gen = tree.nodes.iter().map(|n| n.generation).max().unwrap();
             for &id in &live {
-                assert_eq!(tree.get(id).unwrap().generation, max_gen,
-                    "final-live node {id} not at max generation {max_gen} (seed {seed})");
+                assert_eq!(
+                    tree.get(id).unwrap().generation,
+                    max_gen,
+                    "final-live node {id} not at max generation {max_gen} (seed {seed})"
+                );
             }
         }
         assert!(grew, "no seed in 0..50 produced a surviving family");
@@ -332,8 +483,12 @@ mod tests {
     #[test]
     fn children_accumulate_mutations_and_branch_lengths() {
         let params = BranchingParams {
-            lambda_base: 1.2, lambda_mut: 0.0, max_generations: 4,
-            n_max: 500, n_sample: 10, seed: 11,
+            lambda_base: 1.2,
+            lambda_mut: 0.0,
+            max_generations: 4,
+            n_max: 500,
+            n_sample: 10,
+            seed: 11,
         };
         let mutator = two_mut_mutator();
         let tree = grow_lineage(&founder(), &params, &mutator);
@@ -359,8 +514,12 @@ mod tests {
     #[test]
     fn mutated_growth_is_deterministic() {
         let params = BranchingParams {
-            lambda_base: 1.2, lambda_mut: 0.0, max_generations: 4,
-            n_max: 500, n_sample: 10, seed: 11,
+            lambda_base: 1.2,
+            lambda_mut: 0.0,
+            max_generations: 4,
+            n_max: 500,
+            n_sample: 10,
+            seed: 11,
         };
         let a = grow_lineage(&founder(), &params, &two_mut_mutator());
         let b = grow_lineage(&founder(), &params, &two_mut_mutator());
@@ -378,11 +537,22 @@ mod tests {
         let founder_aa = sim_to_aa(&f);
         let w = vec![1.0; founder_aa.len().max(1)];
         let model = AffinityModel::new(b"W".to_vec(), w, 1.0, 1.0, &founder_aa);
-        let params = BranchingParams { lambda_base:1.2, lambda_mut:0.0, max_generations:4, n_max:500, n_sample:10, seed:11 };
+        let params = BranchingParams {
+            lambda_base: 1.2,
+            lambda_mut: 0.0,
+            max_generations: 4,
+            n_max: 500,
+            n_sample: 10,
+            seed: 11,
+        };
         let tree = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &model);
         assert!((tree.root().affinity - model.affinity_value(&founder_aa)).abs() < 1e-9);
         for n in &tree.nodes {
-            assert!(n.affinity > 0.0 && n.affinity <= 1.0 + 1e-9, "affinity out of range: {}", n.affinity);
+            assert!(
+                n.affinity > 0.0 && n.affinity <= 1.0 + 1e-9,
+                "affinity out of range: {}",
+                n.affinity
+            );
         }
     }
 
@@ -394,7 +564,14 @@ mod tests {
         let w = vec![1.0; founder_aa.len().max(1)];
         // selection_strength = 0 => fitness identically 1 => identical topology/genotypes to neutral
         let model = AffinityModel::new(b"W".to_vec(), w, 1.0, 0.0, &founder_aa);
-        let params = BranchingParams { lambda_base:1.2, lambda_mut:0.0, max_generations:4, n_max:500, n_sample:10, seed:11 };
+        let params = BranchingParams {
+            lambda_base: 1.2,
+            lambda_mut: 0.0,
+            max_generations: 4,
+            n_max: 500,
+            n_sample: 10,
+            seed: 11,
+        };
         let with_aff = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &model);
         let neutral = grow_lineage(&f, &params, &two_mut_mutator());
         assert_eq!(with_aff.len(), neutral.len());
@@ -411,8 +588,23 @@ mod tests {
         use crate::lineage::affinity::{sim_to_aa, AffinityModel};
         let f = founder();
         let founder_aa = sim_to_aa(&f);
-        let mk = || AffinityModel::new(b"W".to_vec(), vec![1.0; founder_aa.len().max(1)], 1.0, 2.0, &founder_aa);
-        let params = BranchingParams { lambda_base:1.5, lambda_mut:0.0, max_generations:5, n_max:500, n_sample:10, seed:21 };
+        let mk = || {
+            AffinityModel::new(
+                b"W".to_vec(),
+                vec![1.0; founder_aa.len().max(1)],
+                1.0,
+                2.0,
+                &founder_aa,
+            )
+        };
+        let params = BranchingParams {
+            lambda_base: 1.5,
+            lambda_mut: 0.0,
+            max_generations: 5,
+            n_max: 500,
+            n_sample: 10,
+            seed: 21,
+        };
         let a = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &mk());
         let b = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &mk());
         assert_eq!(a.len(), b.len());

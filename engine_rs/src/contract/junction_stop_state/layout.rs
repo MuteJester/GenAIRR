@@ -1,4 +1,4 @@
-use crate::ir::{translate_codon, NucHandle, Segment, Simulation, AMINO_STOP};
+use crate::ir::{NucHandle, Segment, Simulation};
 use crate::refdata::{Allele, RefDataConfig};
 
 use super::model::{JunctionSlot, SlotSource, StaticViolation};
@@ -164,7 +164,7 @@ pub(super) fn precompute_static_violation(
             let b0 = fixed_bytes[i0 as usize];
             let b1 = fixed_bytes[i1 as usize];
             let b2 = fixed_bytes[i2 as usize];
-            if translate_codon(b0, b1, b2) == AMINO_STOP {
+            if crate::productivity::codon_stop([b0, b1, b2]) != Some(false) {
                 return Some(StaticViolation {
                     offset: off as u32,
                     codon: [b0, b1, b2],

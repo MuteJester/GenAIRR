@@ -1,10 +1,9 @@
-"""Serialization/export surface for SimulationResult, extracted verbatim as
-a mixin (behavior-preserving). SimulationResult inherits these methods; self
-resolves via MRO.
-"""
+"""Serialization/export surface for SimulationResult, including AIRR conversion."""
 from __future__ import annotations
 
 import csv
+import json
+import re
 from typing import Any, Dict, List
 
 
@@ -31,8 +30,10 @@ _AIRR_STRICT_START_FIELDS = (
 
 
 def _to_airr_strict(rec: Dict[str, Any]) -> Dict[str, Any]:
-    """Return a copy of ``rec`` with every coord ``*_start`` field
-    converted from 0-based half-open to 1-based-inclusive. ``*_end``
+    """Return an AIRR-coordinate copy with full-query CIGAR placement.
+
+    Every coord ``*_start`` field is converted from 0-based half-open
+    to 1-based-inclusive. ``*_end``
     fields are unchanged because the Python half-open end already
     equals the 1-based-inclusive end (e.g. ``[0, 5)`` ↔ ``[1, 5]``).
 
@@ -40,6 +41,17 @@ def _to_airr_strict(rec: Dict[str, Any]) -> Dict[str, Any]:
     silently ignored.
     """
     converted = dict(rec)
+    # Native records store per-segment operation runs. AIRR CIGARs
+    # additionally locate those runs in the full query and reference.
+    for segment in ("v", "d", "j"):
+        cigar = rec.get(f"{segment}_cigar")
+        query_start = rec.get(f"{segment}_sequence_start")
+        reference_start = rec.get(f"{segment}_germline_start")
+        if cigar and isinstance(query_start, int) and isinstance(reference_start, int):
+            core = re.sub(r"^(?:\d+S)?(?:\d+N)?", "", cigar, count=1)
+            prefix = (f"{query_start}S" if query_start else "")
+            prefix += f"{reference_start}N" if reference_start else ""
+            converted[f"{segment}_cigar"] = prefix + core
     for field in _AIRR_STRICT_START_FIELDS:
         val = converted.get(field)
         if isinstance(val, int):
@@ -99,6 +111,11 @@ _DEFAULT_COLUMN_ORDER = [
     "j_trim_5",
     "j_trim_3",
     "c_call",
+    # Evidence-based post-mutation re-calls; standard calls identify
+    # the generating alleles used by the truth alignments.
+    "recalled_v_call",
+    "recalled_d_call",
+    "recalled_j_call",
     # Junction
     "junction",
     "junction_aa",
@@ -116,6 +133,9 @@ _DEFAULT_COLUMN_ORDER = [
     "productive",
     "vj_in_frame",
     "stop_codon",
+    "productivity_policy",
+    "productivity_scope",
+    "productivity_reasons",
     # SHM + corruption (non-AIRR; GenAIRR additions)
     "n_mutations",
     "mutation_rate",
@@ -197,8 +217,7 @@ _DEFAULT_COLUMN_ORDER = [
 class _ResultExport:
     """Serialization/export mixin for :class:`SimulationResult`.
 
-    Behavior-preserving extraction: every method resolves ``self``
-    (``self._records`` etc.) via the MRO of the concrete
+    Every method resolves ``self`` (``self._records`` etc.) via the MRO of the concrete
     :class:`SimulationResult` that inherits this mixin.
     """
 
@@ -232,12 +251,13 @@ class _ResultExport:
         )
         return pd.DataFrame(records, columns=self._column_order())
 
-    def to_tsv(self, path: str, *, airr_strict: bool = False) -> None:
-        """Write the records as AIRR-style TSV (tab-separated). The
+    def to_tsv(self, path: str, *, airr_strict: bool = True) -> None:
+        """Write AIRR TSV with 1-based coordinates and T/F booleans. The
         header row uses :data:`_DEFAULT_COLUMN_ORDER`.
 
-        ``airr_strict=True`` converts coord ``*_start`` fields to
-        1-based-inclusive (AIRR spec).
+        The default ``airr_strict=True`` also adds CIGAR placement
+        offsets. Pass ``airr_strict=False`` for the legacy Python-style
+        zero-based TSV representation.
         """
         self._write_delimited(path, "\t", airr_strict=airr_strict)
 
@@ -505,4 +525,19 @@ class _ResultExport:
                 # Replace ``None`` with empty string so CSV columns
                 # don't carry literal ``"None"`` strings.
                 row = {k: ("" if v is None else v) for k, v in source.items()}
+                # The optional ancestry extension carries its own explicit
+                # coordinate convention, preserved inside a JSON cell.
+                if isinstance(row.get("coding_end_processing"), dict):
+                    row["coding_end_processing"] = json.dumps(
+                        row["coding_end_processing"], sort_keys=True, separators=(",", ":")
+                    )
+                if isinstance(row.get("productivity_reasons"), list):
+                    row["productivity_reasons"] = json.dumps(
+                        row["productivity_reasons"], separators=(",", ":")
+                    )
+                if airr_strict:
+                    row = {
+                        key: ("T" if value else "F") if isinstance(value, bool) else value
+                        for key, value in row.items()
+                    }
                 writer.writerow(row)

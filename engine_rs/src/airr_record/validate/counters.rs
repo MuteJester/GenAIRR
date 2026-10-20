@@ -22,6 +22,39 @@ pub(super) fn check_counters(
             sim_count: sim.mutation_count as i64,
         });
     }
+    // Start with inherited SHM from a run_from boundary, then independently
+    // integrate the actual substitutions using each pass's input length.
+    let mut burden = outcome
+        .revisions
+        .first()
+        .map_or(0.0, |initial| initial.mutation_burden);
+    for event in outcome.events() {
+        if event.pass_name != crate::address::MUTATE_UNIFORM
+            && event.pass_name != crate::address::MUTATE_S5F
+        {
+            continue;
+        }
+        let applied = event
+            .simulation_events
+            .iter()
+            .filter(|event| matches!(event, SimulationEvent::BaseChanged { .. }))
+            .count();
+        // Lineage outputs carry a synthesized net-difference summary with
+        // no sampled count choice. It replaces ancestral event history rather
+        // than adding another mutation stage to the node's inherited burden.
+        if event.trace_span.is_empty() {
+            burden = 0.0;
+        }
+        if event.pre.pool_len > 0 {
+            burden += applied as f64 / event.pre.pool_len as f64;
+        }
+    }
+    if !record.mutation_rate.is_finite() || (record.mutation_rate - burden).abs() > 1e-12 {
+        issues.push(RecordValidationIssue::MutationRateMismatch {
+            reported: record.mutation_rate,
+            recomputed: burden,
+        });
+    }
 
     // n_pcr_errors / n_quality_errors from trace.
     let trace_int = |addr: ChoiceAddress| -> i64 {
@@ -138,21 +171,11 @@ pub(super) fn check_counters(
                     })
                 });
                 match label {
-                    Some(crate::refdata::VSubregionLabel::Fwr1) => {
-                        shm_by_subregion[0] += 1
-                    }
-                    Some(crate::refdata::VSubregionLabel::Cdr1) => {
-                        shm_by_subregion[1] += 1
-                    }
-                    Some(crate::refdata::VSubregionLabel::Fwr2) => {
-                        shm_by_subregion[2] += 1
-                    }
-                    Some(crate::refdata::VSubregionLabel::Cdr2) => {
-                        shm_by_subregion[3] += 1
-                    }
-                    Some(crate::refdata::VSubregionLabel::Fwr3) => {
-                        shm_by_subregion[4] += 1
-                    }
+                    Some(crate::refdata::VSubregionLabel::Fwr1) => shm_by_subregion[0] += 1,
+                    Some(crate::refdata::VSubregionLabel::Cdr1) => shm_by_subregion[1] += 1,
+                    Some(crate::refdata::VSubregionLabel::Fwr2) => shm_by_subregion[2] += 1,
+                    Some(crate::refdata::VSubregionLabel::Cdr2) => shm_by_subregion[3] += 1,
+                    Some(crate::refdata::VSubregionLabel::Fwr3) => shm_by_subregion[4] += 1,
                     None => shm_v_unannotated += 1,
                 }
             }
@@ -161,8 +184,7 @@ pub(super) fn check_counters(
     let expected_v = shm_by_segment[Segment::V as usize];
     let expected_d = shm_by_segment[Segment::D as usize];
     let expected_j = shm_by_segment[Segment::J as usize];
-    let expected_np = shm_by_segment[Segment::Np1 as usize]
-        + shm_by_segment[Segment::Np2 as usize];
+    let expected_np = shm_by_segment[Segment::Np1 as usize] + shm_by_segment[Segment::Np2 as usize];
     if record.n_v_mutations != expected_v {
         issues.push(RecordValidationIssue::NVMutationsMismatch {
             reported: record.n_v_mutations,
@@ -249,21 +271,15 @@ pub(super) fn check_counters(
         .saturating_add(record.n_fwr3_mutations)
         .saturating_add(record.n_v_unannotated_mutations);
     if record.n_v_mutations != sum_of_subregion_buckets {
-        issues.push(
-            RecordValidationIssue::VSubregionMutationCountSumMismatch {
-                reported_v_total: record.n_v_mutations,
-                sum_of_subregion_buckets,
-            },
-        );
+        issues.push(RecordValidationIssue::VSubregionMutationCountSumMismatch {
+            reported_v_total: record.n_v_mutations,
+            sum_of_subregion_buckets,
+        });
     }
 
-    // Per-end P-nucleotide length counters (Slice —
-    // P-nucleotide v1). Independent event-ledger recompute:
-    // walk `PRegionAdded { end, region }` events from the
-    // matching `p_addition.*` passes and sum `region.len()`
-    // per end. Catches downstream consumers that tamper with
-    // the four `p_*_length` fields (record edits, fork-
-    // patched builders, deserialised dicts).
+    // Persistent assignment totals include P additions inherited from a
+    // clonal founder. This outcome's ledger records newly emitted P bytes;
+    // retain it as a fallback for synthetic outcomes without stamped totals.
     let mut p_v_3_recompute = 0i64;
     let mut p_d_5_recompute = 0i64;
     let mut p_d_3_recompute = 0i64;
@@ -287,6 +303,16 @@ pub(super) fn check_counters(
                 }
             }
         }
+    }
+    if let Some(inst) = sim.assignments.get(Segment::V) {
+        p_v_3_recompute = p_v_3_recompute.max(inst.p_length_3 as i64);
+    }
+    if let Some(inst) = sim.assignments.get(Segment::D) {
+        p_d_5_recompute = p_d_5_recompute.max(inst.p_length_5 as i64);
+        p_d_3_recompute = p_d_3_recompute.max(inst.p_length_3 as i64);
+    }
+    if let Some(inst) = sim.assignments.get(Segment::J) {
+        p_j_5_recompute = p_j_5_recompute.max(inst.p_length_5 as i64);
     }
     if record.p_v_3_length != p_v_3_recompute {
         issues.push(RecordValidationIssue::PLengthMismatch {

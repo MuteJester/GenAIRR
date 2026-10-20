@@ -17,9 +17,11 @@ use crate::refdata::RefDataConfig;
 use super::record::AirrRecord;
 
 mod allele_oracle;
+mod coding_end;
 mod counters;
 mod junction;
 mod paired_end;
+mod productivity_oracle;
 mod region_invariants;
 mod structural;
 
@@ -27,6 +29,15 @@ mod structural;
 /// CI / dashboards can pattern-match on them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RecordValidationIssue {
+    ProductivityAssessmentMismatch {
+        field: String,
+        reported: String,
+        expected: String,
+    },
+    CodingEndProcessingMismatch {
+        field: String,
+        reason: String,
+    },
     // ── C1: Structural record invariants ────────────────────────
     SequenceLengthMismatch {
         reported: i64,
@@ -61,6 +72,10 @@ pub enum RecordValidationIssue {
         reported: i64,
         sim_count: i64,
     },
+    MutationRateMismatch {
+        reported: f64,
+        recomputed: f64,
+    },
     NPcrErrorsMismatch {
         reported: i64,
         trace_count: i64,
@@ -84,10 +99,22 @@ pub enum RecordValidationIssue {
     /// `SimulationEvent::BaseChanged` by carried segment. NP1+NP2
     /// roll into the NP bucket. See
     /// `docs/mutation_provenance_audit.md`.
-    NVMutationsMismatch { reported: i64, event_count: i64 },
-    NDMutationsMismatch { reported: i64, event_count: i64 },
-    NJMutationsMismatch { reported: i64, event_count: i64 },
-    NNpMutationsMismatch { reported: i64, event_count: i64 },
+    NVMutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    NDMutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    NJMutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    NNpMutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
     /// Sum-invariant cross-check: the four per-segment SHM
     /// counters must add up to `n_mutations`. Fires when a
     /// downstream record's reported fields drift from this
@@ -108,12 +135,30 @@ pub enum RecordValidationIssue {
     /// record's reported per-subregion fields drift from the
     /// event-derived ground truth. Mirrors the per-segment
     /// `N{V,D,J,Np}MutationsMismatch` shape.
-    NFwr1MutationsMismatch { reported: i64, event_count: i64 },
-    NCdr1MutationsMismatch { reported: i64, event_count: i64 },
-    NFwr2MutationsMismatch { reported: i64, event_count: i64 },
-    NCdr2MutationsMismatch { reported: i64, event_count: i64 },
-    NFwr3MutationsMismatch { reported: i64, event_count: i64 },
-    NVUnannotatedMutationsMismatch { reported: i64, event_count: i64 },
+    NFwr1MutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    NCdr1MutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    NFwr2MutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    NCdr2MutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    NFwr3MutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    NVUnannotatedMutationsMismatch {
+        reported: i64,
+        event_count: i64,
+    },
     /// Sum-invariant cross-check for the V-subregion partition:
     /// the five per-subregion buckets plus the unannotated
     /// bucket must add up to `n_v_mutations`. Fires when a
@@ -126,11 +171,10 @@ pub enum RecordValidationIssue {
     },
     /// Per-end P-nucleotide length (`p_v_3_length` /
     /// `p_d_5_length` / `p_d_3_length` / `p_j_5_length`)
-    /// disagrees with the recompute from the event ledger.
-    /// `end` discriminates which side fired; the validator
-    /// recomputes by summing `region.len()` over
-    /// `PRegionAdded { end, region }` events emitted by the
-    /// matching `p_addition.*` pass. Slice — P-nucleotide v1.
+    /// disagrees with persistent assignment provenance (with a
+    /// PRegionAdded event fallback for synthetic outcomes).
+    /// `event_count` retains its public name for compatibility;
+    /// the expected count also includes inherited founder additions.
     PLengthMismatch {
         end: crate::address::PEnd,
         reported: i64,
@@ -211,6 +255,11 @@ pub enum RecordValidationIssue {
         expected_first: String,
         reason: AlleleOrderReason,
     },
+    RecalledAlleleCallMismatch {
+        segment: Segment,
+        reported: String,
+        recomputed: String,
+    },
 
     // ── C5: Region / live-call structural invariants ───────────
     MultipleRegionsForSegment {
@@ -230,7 +279,6 @@ pub enum RecordValidationIssue {
     // The other four are reserved scaffolding for Slice B/C,
     // where projection logic provides values the validator can
     // re-derive and compare against.
-
     /// A record carries `read_layout == ""` (no paired-end
     /// projection requested) but one of the eight paired-end
     /// fields is set to a non-default value. The `reported`
@@ -240,7 +288,9 @@ pub enum RecordValidationIssue {
     /// future v2 variant that wants to attach the actual
     /// default representation can extend the payload without
     /// breaking string consumers.
-    PairedEndFieldWithoutLayout { field: PairedEndField },
+    PairedEndFieldWithoutLayout {
+        field: PairedEndField,
+    },
     /// Reserved for Slice B: an R1/R2 window's `[start, end)`
     /// range falls outside `[0, sequence_length]` or is
     /// inverted. Not fired in Slice A.
@@ -261,11 +311,17 @@ pub enum RecordValidationIssue {
     /// Reserved for Slice B/C: `insert_size` disagrees with the
     /// window geometry (audit §8 pins
     /// `insert_size == r2_end`). Not fired in Slice A.
-    ReadInsertSizeMismatch { reported: i64, expected: i64 },
+    ReadInsertSizeMismatch {
+        reported: i64,
+        expected: i64,
+    },
     /// Reserved for Slice B/C: `read_layout` carries an
     /// unsupported value (not `""` / `"paired_end"` /
     /// `"single_end"`). Not fired in Slice A.
-    ReadLayoutMismatch { reported: String, expected: String },
+    ReadLayoutMismatch {
+        reported: String,
+        expected: String,
+    },
 }
 
 /// Which paired-end field tripped a structured issue. Used by
@@ -323,6 +379,7 @@ impl PairedEndRead {
 pub enum ProductiveDecidedBy {
     OutOfFrame,
     JunctionStopCodon,
+    CodingStopCodon,
     VAnchorAaChanged,
     JAnchorAaChanged,
     InFrameAndAnchorsPreserved,
@@ -347,6 +404,7 @@ pub fn validate_airr_record(
 
     structural::check_structural(record, sim, &mut issues);
     counters::check_counters(record, outcome, refdata, &mut issues);
+    coding_end::check(record, sim, refdata, &mut issues);
     junction::check_junction(record, sim, refdata, &mut issues);
     allele_oracle::check_allele_oracle(record, outcome, refdata, &mut issues);
     region_invariants::check_region_and_hypothesis_invariants(sim, &mut issues);

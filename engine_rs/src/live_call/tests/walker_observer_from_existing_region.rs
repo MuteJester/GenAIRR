@@ -170,3 +170,67 @@ fn rebuild_empty_region_yields_unresolved() {
         ),
     }
 }
+
+#[test]
+fn inverted_d_observer_extensions_use_canonical_trim_end_budgets() {
+    use crate::assignment::{AlleleInstance, SegmentOrientation};
+    use crate::ir::{complement_base, flag};
+    use crate::live_call::{assembled_segment_live_call, ReferenceMatchIndex};
+    use crate::refdata::{AlleleId, ChainType, RefDataConfig};
+
+    // The structural D bytes tie. A single adjacent NP byte separates
+    // the candidates, but its legal budget is on the opposite canonical
+    // allele end under inversion. Exercise both asymmetric trim choices.
+    for (trim_5, trim_3, truth, sibling, np_segment) in [
+        (0, 1, b"GGGGGT", b"GGGGGA", Segment::Np1),
+        (1, 0, b"TGGGGG", b"AGGGGG", Segment::Np2),
+    ] {
+        let mut refdata = RefDataConfig::empty(ChainType::Vdj);
+        let _ = refdata.d_pool.push(allele(Segment::D, "d*01", truth));
+        let _ = refdata.d_pool.push(allele(Segment::D, "d*02", sibling));
+        let index = ReferenceMatchIndex::build(&refdata);
+        let seg_index = index.get(Segment::D).unwrap();
+        let mut builder = SimulationBuilder::from_simulation(Simulation::new());
+        if np_segment == Segment::Np1 {
+            builder.push_nucleotide(Nucleotide::synthetic(b'A', np_segment, flag::N_NUC));
+        }
+        let start = u32::from(np_segment == Segment::Np1);
+        for pos in (trim_5..6 - trim_3).rev() {
+            builder.push_nucleotide(Nucleotide::germline(
+                complement_base(truth[pos as usize]),
+                pos,
+                Segment::D,
+            ));
+        }
+        if np_segment == Segment::Np2 {
+            builder.push_nucleotide(Nucleotide::synthetic(b'A', np_segment, flag::N_NUC));
+        }
+        let region = Region::new(Segment::D, NucHandle::new(start), NucHandle::new(start + 5));
+        let np_start = if np_segment == Segment::Np1 { 0 } else { 5 };
+        let sim = builder
+            .seal()
+            .with_region_added(region.clone())
+            .with_region_added(Region::new(
+                np_segment,
+                NucHandle::new(np_start),
+                NucHandle::new(np_start + 1),
+            ))
+            .with_allele_assigned(
+                Segment::D,
+                AlleleInstance::new(AlleleId::new(0))
+                    .with_trim_5(trim_5)
+                    .with_trim_3(trim_3)
+                    .with_orientation(SegmentOrientation::ReverseComplement),
+            );
+
+        let observer = WalkerObserverState::from_existing_region(seg_index, &sim, &region)
+            .seal(region.end.index())
+            .into_live_call(&sim, seg_index, 1);
+        let fresh = assembled_segment_live_call(&sim, &index, Segment::D, 1).unwrap();
+        assert_eq!(fresh.allele_call.to_ids(), vec![AlleleId::new(0)]);
+        assert_eq!(observer.allele_call, fresh.allele_call);
+        assert_eq!(observer.hypotheses, fresh.hypotheses);
+        assert_eq!(observer.boundary_summary, fresh.boundary_summary);
+        assert_eq!(observer.confidence, fresh.confidence);
+    }
+}

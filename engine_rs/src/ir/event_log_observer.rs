@@ -105,6 +105,18 @@ pub(crate) fn replay_events(start: Simulation, events: &[SimulationEvent]) -> Si
 #[cfg(test)]
 fn replay_one(builder: &mut SimulationBuilder, event: &SimulationEvent) {
     match event {
+        SimulationEvent::CodingEndChoiceRecorded { choice } => {
+            builder.record_coding_end_choice(
+                choice.segment,
+                choice.allele_id,
+                choice.five,
+                choice.three,
+                choice.outcome_index,
+            );
+        }
+        SimulationEvent::CodingEndPOriginRecorded { origin } => {
+            builder.record_coding_end_p_origin(origin.clone());
+        }
         SimulationEvent::BasePushed {
             handle: _,
             base,
@@ -130,9 +142,7 @@ fn replay_one(builder: &mut SimulationBuilder, event: &SimulationEvent) {
             builder.push_nucleotide(n);
         }
         SimulationEvent::BaseChanged {
-            handle,
-            new_base,
-            ..
+            handle, new_base, ..
         } => {
             // segment / germline_pos / old_base are unchanged by
             // `change_base`; replay only needs the target handle

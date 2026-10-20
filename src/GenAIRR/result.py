@@ -85,12 +85,10 @@ class SimulationResult(_ResultExport, _ResultValidation):
         unique per-row identifier out of the box.
 
         ``expose_provenance=True`` adds ``truth_v_call``,
-        ``truth_d_call``, ``truth_j_call`` columns containing the
-        *originally-sampled* allele names — distinct from the
-        evidence-driven ``v_call`` / ``d_call`` / ``j_call`` fields,
-        which reflect what an aligner would see. Pair them at the
-        Python level to compute aligner-vs-truth accuracy without a
-        side truth file.
+        ``truth_d_call``, and ``truth_j_call`` compatibility aliases
+        for the standard generating calls. Post-mutation inference
+        is always available separately as ``recalled_*_call``.
+
         """
         from ._airr_record import outcome_to_airr_record
 

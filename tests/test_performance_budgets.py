@@ -50,17 +50,24 @@ def _vj() -> "ge.RefDataConfig":
     return cfg
 
 
-def _vdj() -> "ge.RefDataConfig":
+def _vdj(*, canonical=False) -> "ge.RefDataConfig":
+    # Productive benchmarks need usable original landmarks. Keep the exact
+    # lengths, coordinates and flanks; replace only the two declared codons.
+    v = b"GAGGTGCAGCTGGTGGAGTCTGGGGGAGGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTC"
+    j = b"TACTACTACGGTATGGACGTCTGGGGCCAAGGGACCACGGTCACCGTCTCCTCAG"
+    if canonical:
+        v = v[:78] + b"TGT" + v[81:]
+        j = j[:8] + b"TGG" + j[11:]
     cfg = ge.RefDataConfig.vdj()
     cfg.add_v_allele(
         "v1*01", "v1",
-        b"GAGGTGCAGCTGGTGGAGTCTGGGGGAGGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTC",
+        v,
         anchor=78,
     )
     cfg.add_d_allele("d1*01", "d1", b"GGGTATAGCAGCAGCTGGTAC")
     cfg.add_j_allele(
         "j1*01", "j1",
-        b"TACTACTACGGTATGGACGTCTGGGGCCAAGGGACCACGGTCACCGTCTCCTCAG",
+        j,
         anchor=8,
     )
     return cfg
@@ -77,9 +84,9 @@ def _vj_recombine() -> "ga.Experiment":
     )
 
 
-def _vdj_recombine() -> "ga.Experiment":
+def _vdj_recombine(*, canonical=False) -> "ga.Experiment":
     return (
-        ga.Experiment.on(_vdj()).allow_curatable_refdata()
+        ga.Experiment.on(_vdj(canonical=canonical)).allow_curatable_refdata()
         .recombine(
             np1_lengths=[(L, 1.0) for L in range(20)],
             np2_lengths=[(L, 1.0) for L in range(20)],
@@ -93,9 +100,9 @@ def _vdj_recombine() -> "ga.Experiment":
     )
 
 
-def _vdj_full_stack() -> "ga.Experiment":
+def _vdj_full_stack(*, canonical=False) -> "ga.Experiment":
     return (
-        _vdj_recombine()
+        _vdj_recombine(canonical=canonical)
         .mutate(rate=0.01)
         .pcr_amplify(rate=0.001)
         .sequencing_errors(rate=0.001)
@@ -172,7 +179,7 @@ def test_w3_vdj_productive_full_stack_budget() -> None:
 
     Regressions in NP-base admit mask, S5F per-site filtering,
     or indel DP retry budget would land here first."""
-    exp = _vdj_full_stack().productive_only()
+    exp = _vdj_full_stack(canonical=True).productive_only()
     wall = _measure(exp, n=1000, label="W3")
     assert wall < 2.0, (
         f"W3 (VDJ productive full stack) took {wall*1000:.0f}ms for 1000 records, "
@@ -224,14 +231,14 @@ def test_w5_vdj_high_shm_budget() -> None:
 
 def test_w6_vdj_indel_heavy_productive_budget() -> None:
     """W6: polymerase_indels(count=(0,5)) + productive_only.
-    Exercises the indel DP tuple sampler + the
-    POST_EVENT_RETRY_BUDGET=16 fallback path.
+    Exercises complete natural-history proposals and bounded exact search
+    with independent restart probes after the initial rejection phase.
     Baseline ~0.124 ms/rec; budget 1.0s for 1000 records (~8.1×).
 
     Regression that makes contract-rejection retries more frequent
     (or each retry more expensive) would land here."""
     exp = (
-        _vdj_recombine()
+        _vdj_recombine(canonical=True)
         .polymerase_indels(count=(0, 5), insertion_prob=0.5)
         .productive_only()
     )
@@ -258,7 +265,7 @@ def test_w7_replay_is_substantially_faster_than_fresh() -> None:
 
     Run on the W3 plan (productive full stack) because that's
     where replay's contract-skip win is largest."""
-    exp = _vdj_full_stack().productive_only()
+    exp = _vdj_full_stack(canonical=True).productive_only()
     compiled = exp.compile(allow_curatable_refdata=True)
 
     N = 500  # smaller than W3 to keep total test time low
@@ -304,7 +311,7 @@ def test_w8_airr_projection_is_negligible_vs_simulation() -> None:
     the junction for every dict access) would land here."""
     from GenAIRR._airr_record import outcome_to_airr_record
 
-    exp = _vdj_full_stack().productive_only()
+    exp = _vdj_full_stack(canonical=True).productive_only()
     compiled = exp.compile(allow_curatable_refdata=True)
     _time_simulation_loop(compiled, WARMUP)
 

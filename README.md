@@ -60,7 +60,8 @@ rec = result[0]
 rec["sequence"]             # 'gaggtgcagctggtggagtctgggggaggc...' (nucleotide)
 rec["sequence_aa"]          # 'EVQLVESGGGLVQPGGSLRLSCSAS...'      (translated)
 rec["locus"]                # 'IGH'
-rec["v_call"]               # 'IGHVF10-G38*04'   (comma-separated if the call ties)
+rec["v_call"]               # 'IGHVF10-G38*04'   (generating allele)
+rec["recalled_v_call"]      # post-mutation inference; comma-separated when tied
 rec["d_call"]               # 'IGHD2-15*01'
 rec["j_call"]               # 'IGHJ2*01'
 rec["junction_aa"]          # 'CVKDDGNRGYCSGGSCYGRCCALDYWYFDLW'
@@ -76,6 +77,13 @@ result.to_fastq("sequences.fastq")     # FASTQ with illumina-shaped quality scor
 df = result.to_dataframe()             # one row per record, AIRR columns
 ```
 
+Python record coordinates are zero-based and half-open. `to_tsv()` converts
+them to AIRR's one-based closed intervals, adds CIGAR placement offsets and
+writes booleans as `T`/`F`. Use `to_tsv(..., airr_strict=False)` for the legacy
+Python-style TSV. With `rev_comp=True`, biological annotations index the
+coding-oriented reverse complement of `sequence`; paired-read windows index
+the emitted `sequence` directly.
+
 For paired-end sequencing pipelines, add `.paired_end(...)` to the experiment and export to two synchronized FASTQ files:
 
 ```python
@@ -90,7 +98,7 @@ result.to_paired_fastq("reads_R1.fastq", "reads_R2.fastq")
 
 Headers use the AIRR record's `sequence_id` with the universally-portable `/1` and `/2` suffix (`@seq0/1` and `@seq0/2`) — no `|`-pipe metadata that some aligners (STAR < 2.7) split on. R1 / R2 sequences are written verbatim from the AIRR `r1_sequence` / `r2_sequence` fields (R2 is already reverse-complemented at projection time; the writer does NOT apply a second flip). Default `overwrite=False` refuses to clobber existing files; pass `overwrite=True` to replace. Quality strings use the same pluggable models as `to_fastq` — `quality="illumina"` (default trapezoid shape, applied per read) or `quality="constant"` with `q=...`. See [`docs/fastq_export_design.md`](audit-docs/fastq_export_design.md).
 
-`Experiment.on(...)` accepts **a config-name string** (e.g. `"human_igh"`, `"mouse_tcrb"`), **a `DataConfig`** loaded from the bundled species pickles, or **a `RefDataConfig`** for [custom reference data](#custom-reference-data). `.productive_only()` is the constraint-aware bundle — covered in the next section. Drop it to allow non-productive sequences (~30% of records will then have stop codons in the junction).
+`Experiment.on(...)` accepts **a config-name string** (e.g. `"human_igh"`, `"mouse_tcrb"`), **a `DataConfig`** loaded from the bundled species pickles, or **a `RefDataConfig`** for [custom reference data](#custom-reference-data). `.productive_only()` is the constraint-aware bundle — covered in the next section. Drop it to sample without the productivity constraint; records then report true, false, or unresolved productivity according to their observed evidence.
 
 > See the full walkthrough in the docs: [Quick Start](https://mutejester.github.io/GenAIRR/lesson-1.html) · [Interpreting Results](https://mutejester.github.io/GenAIRR/concept-airr-record.html)
 
@@ -209,7 +217,7 @@ Other feature flags worth knowing:
 
 ## Constraint-aware sampling
 
-GenAIRR's signature feature is **constraint-aware sampling**: contracts that prune the candidate distribution at sample time, not retries after the fact. The canonical bundle is `productive()` (in-frame junction + no stop codons + V/J anchors preserved):
+GenAIRR's signature feature is **constraint-aware sampling**: contracts that prune the candidate distribution at sample time, not retries after the fact. The canonical bundle is `productive()` (preserved coding frame, no stops across the observed coding sequence, and intact V/J anchors):
 
 ```python
 import GenAIRR as ga
@@ -225,11 +233,26 @@ result = (
 assert all(rec["productive"] for rec in result)
 ```
 
+The named policy is `canonical_observed_vdj_v1`, scoped to the observed coding
+span. It requires V Cys and J Phe/Trp original landmarks, consistent frame, and
+definitely stop-free complete codons. Missing evidence or possible hidden stops
+remain nullable in unconstrained records. Reference admission exceptions never
+change this policy. Both execution modes require an accepted final assessment;
+this is a sequence-level prediction, not a claim of receptor function.
+
+`.productive_only()` supports fixed and mixed nonzero P-nucleotide lengths.
+The engine keeps a candidate only when the remaining allele, trim, N/P, and
+D-orientation choices can complete a productive sequence. It renormalizes the
+original weights among those candidates at each draw. Fixed P lengths are
+preserved; impossible support raises an error even in permissive mode instead
+of dropping requested additions. This conditions each local draw, rather than
+sampling from a globally conditioned joint probability law.
+
 > Docs: [Productive sequences](https://mutejester.github.io/GenAIRR/guide-productive.html)
 
 ### Strict vs permissive mode
 
-By default, if a contract can't admit any candidate at a sampling step the runtime falls back to unconstrained sampling and the run continues. Pass `strict=True` to surface the failure as an exception instead — useful for catching unsatisfiable plans early during development:
+Initial allele/genotype assignment and P-aware productive completion fail explicitly when no admissible support exists, including in permissive mode. Other passes can use their documented no-op or sentinel behavior; `strict=True` surfaces those sampling failures as exceptions:
 
 ```python
 import GenAIRR as ga
@@ -342,8 +365,8 @@ for batch in range(10):
 | `result[i]` | `dict` | The i-th AIRR record. Standard 0-based indexing + slicing. |
 | `for rec in result:` | iterates `dict`s | Records in `[seed, seed+1, …, seed+n-1]` order. |
 | `result.records` | `list[dict]` | The underlying list. Mutate-through is fine. |
-| `result.to_tsv(path, *, airr_strict=False)` | — | AIRR-format TSV. `airr_strict=True` converts coordinates to 1-based-inclusive per spec. |
-| `result.to_csv(path, *, airr_strict=False)` | — | Comma-separated. Same options as `to_tsv`. |
+| `result.to_tsv(path, *, airr_strict=True)` | — | TSV with 1-based closed biological coordinates, CIGAR placement offsets, and `T` / `F` booleans. |
+| `result.to_csv(path, *, airr_strict=False)` | — | Comma-separated; keeps Python record conventions unless `airr_strict=True`. |
 | `result.to_fasta(path, *, prefix="seq")` | — | FASTA. Headers include `v_call` and `j_call`. |
 | `result.to_fastq(path, *, quality="illumina", **kw)` | — | FASTQ. Quality models: `"illumina"` (smoothed trapezoid) or `"constant"`. |
 | `result.to_dataframe(*, airr_strict=False)` | `pandas.DataFrame` | One row per record. Requires pandas (`pip install GenAIRR[all]`). |
@@ -356,11 +379,12 @@ Each record dict has 50+ AIRR fields. The most commonly used:
 | `sequence` | `'gaggtgcagctggtg…'` | Assembled nucleotide sequence (uppercase + lowercase corruption markers). |
 | `sequence_aa` | `'EVQLVESGGG…'` | Codon-rail translation. Stops emit `*`, ambiguous codons emit `X`. |
 | `locus` | `'IGH'` | Locus code derived from `v_call` / `j_call`. |
-| `v_call` / `d_call` / `j_call` | `'IGHV3-23*01'` | Gene calls. Comma-separated tie set when the evidence walker can't disambiguate. |
+| `v_call` / `d_call` / `j_call` | `'IGHV3-23*01'` | Generating alleles used by the truth alignments. |
+| `recalled_v_call` / `recalled_d_call` / `recalled_j_call` | `'IGHV3-23*01,IGHV3-23*02'` | Post-mutation inferred calls, including ties. |
 | `junction` / `junction_aa` | `'TGC…GAC'` / `'CAR…D'` | Junction nucleotide + AA. AA includes the V Cys (anchor) through J W/F+3. |
 | `productive` | `True` / `False` / `None` | In-frame junction AND no stop codons AND anchors preserved. `None` when undefined (e.g. junction not present). |
-| `v_identity` / `d_identity` / `j_identity` | `0.987` | Match rate over each segment's CIGAR M/D ops. |
-| `v_cigar` / `d_cigar` / `j_cigar` | `'17D279M'` | CIGAR strings. Only M/I/D ops are emitted — no soft-clips. |
+| `v_identity` / `d_identity` / `j_identity` | `0.987` | Fraction from 0 to 1: matching bases divided by alignment columns, including gaps. |
+| `v_cigar` / `d_cigar` / `j_cigar` | `'17D279M'` | Local per-segment M/I/D runs in Python dicts; strict exports add leading query `S` and reference `N` offsets when nonzero. |
 | `n_mutations` / `n_pcr_errors` / `n_quality_errors` / `n_indels` | `4` / `0` / `2` / `1` | Per-record error counts from the trace. |
 
 The full schema (plus the `*_sequence_start/end`, `*_alignment_start/end`, `*_germline_start/end` coordinate fields, `vj_in_frame`, `stop_codon`, `rev_comp`, and others) is documented at [Interpreting Results](https://mutejester.github.io/GenAIRR/concept-airr-record.html).
@@ -483,6 +507,20 @@ Both rows must cover every canonical from-base — the Python validator rejects 
 **Legacy `NP_transitions` / `NP_first_bases` are NOT auto-lifted yet.** The bundled cartridges still carry those dicts as documented orphan fields, and the manifest reports `legacy_fallback=False`. Authors who want Markov today populate `ReferenceEmpiricalModels.np_bases` explicitly; an opt-in auto-lift slice is a separate cartridge-migration decision. See [`docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md) and [`docs/junction_n_addition_audit.md`](audit-docs/junction_n_addition_audit.md) for the full design.
 
 ### Templated P-nucleotide (palindromic) additions
+
+For an opt-in model tied to the **original coding tips**, configure
+`.process_coding_ends(v_3=[(-1, 1.0)], reference_ends_are_coding_ends=True)`
+after `.recombine()`. Positive signed outcomes delete reference bases,
+negative outcomes retain original-tip P extensions, and omitted ends are
+fixed at zero. This replaces automatic trim/P settings and cannot be combined
+with an explicit `.trim()` call. The boundary confirmation requires complete
+junction-facing coding ends in the reference. These are caller-supplied net
+outcome probabilities, not calibrated hairpin-opening probabilities.
+See [original coding-end processing](site_docs/guides/recombination-junction.md#processing-original-coding-ends-opt-in)
+for VDJ orientation, provenance, and productive-sampling semantics.
+
+The existing cartridge P model below remains available when
+`process_coding_ends()` is not configured.
 
 Cartridges can also author **per-end P-nucleotide length distributions** via `ReferenceEmpiricalModels.p_nucleotide_lengths`, keyed by junction side label (`"V_3"`, `"D_5"`, `"D_3"`, `"J_5"`). P-bases are **templated palindromic complements** of the source allele's post-trim coding flank — only the per-end length is sampled; the bytes themselves derive deterministically from `(allele, trim, orientation, length)` via `complement_base`. The four ends interleave with NP1 / NP2 in pool order between V/D and D/J coding bases:
 

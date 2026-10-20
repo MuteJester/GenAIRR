@@ -42,14 +42,11 @@ fn admits_fixed_base_at_safe_base_is_admitted() {
 }
 
 #[test]
-fn admits_fixed_base_at_non_canonical_byte_does_not_produce_stop() {
-    // Non-canonical bytes (`N`, IUPAC ambiguities) translate to `X`,
-    // not a stop. The contract has no opinion → admitted. (Any
-    // additional restriction on `N` writes is a different
-    // contract's concern, not this one.)
+fn admits_fixed_base_at_ambiguity_that_can_hide_a_stop_is_rejected() {
     let (cfg, sim) = fixture();
     let c = NoStopCodonInJunction::new();
-    assert!(c.admits_fixed_base_at(&sim, Some(&cfg), NucHandle::new(8), b'N'));
+    assert!(!c.admits_fixed_base_at(&sim, Some(&cfg), NucHandle::new(8), b'N'));
+    assert!(c.admits_fixed_base_at(&sim, Some(&cfg), NucHandle::new(8), b'Y'));
 }
 
 #[test]

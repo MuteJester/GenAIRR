@@ -483,8 +483,8 @@ fn anchor_lookup_via_germline_pos_survives_insertion_before_anchor() {
     // Insert a synthetic 'C' at pool position 3 (inside V, BEFORE
     // the Cys anchor at pool 6). The anchor's germline_pos=6 now
     // sits at pool index 7. The anchor lookup must follow:
-    // `junction_start` shifts from 6 → 7, but `junction_aa` still
-    // starts with 'C' (anchor codon recovered via germline_pos).
+    // `junction_start` shifts from 6 → 7. Its nucleotide anchor survives,
+    // but the insertion has displaced it from the original coding frame.
     let cfg = productive_vj_refdata();
     let v_id = common::allele_id_by_name(&cfg, Segment::V, "Vp*01");
     let j_id = common::allele_id_by_name(&cfg, Segment::J, "Jp*01");
@@ -502,9 +502,7 @@ fn anchor_lookup_via_germline_pos_survives_insertion_before_anchor() {
         "junction must still start with the V Cys codon, got {:?}",
         rec.junction,
     );
-    assert!(
-        rec.junction_aa.starts_with('C'),
-        "junction_aa must still begin with Cys after pre-anchor insertion; junction_aa={:?}",
-        rec.junction_aa,
-    );
+    assert_eq!(rec.junction_aa, "CKKW");
+    assert_eq!(rec.vj_in_frame, Some(false));
+    assert_eq!(rec.productive, Some(false));
 }

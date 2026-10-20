@@ -63,8 +63,8 @@ hide:
       <span class="demo-node-kicker">4. projection</span>
       <strong>AIRR dict / DataFrame row</strong>
       <div class="demo-record-lanes">
-        <div><b>observed</b><code>v_call</code> <code>junction_aa</code></div>
-        <div><b>truth</b><code>truth_v_call</code> <code>productive</code></div>
+        <div><b>observed</b><code>recalled_v_call</code> <code>junction_aa</code></div>
+        <div><b>origin</b><code>v_call</code> <code>truth_v_call</code></div>
         <div><b>counters</b><code>n_mutations</code> <code>n_v_mutations</code></div>
       </div>
     </section>

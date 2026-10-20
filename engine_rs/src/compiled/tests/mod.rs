@@ -11,6 +11,8 @@ use crate::passes::{AssembleSegmentPass, GenerateNPPass, SampleAllelePass, TrimP
 use crate::refdata::{Allele, ChainType};
 use crate::trace::ChoiceValue;
 
+mod coding_end_processing;
+
 /// Compile a unit-test fixture with refdata validation deliberately
 /// skipped. Many internal fixtures use synthetic V/J alleles with
 /// non-biological anchor codons (e.g. `GGG` for V instead of `TGT`)
@@ -103,7 +105,7 @@ fn vj_refdata_with_runtime_j_residue() -> (RefDataConfig, AlleleId, AlleleId) {
     let _ = cfg.v_pool.push(Allele {
         name: "v*01".into(),
         gene: "v".into(),
-        seq: b"AAACCCGGG".to_vec(),
+        seq: b"AAACCCTGT".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
         functional_status: None,
@@ -121,7 +123,7 @@ fn vj_refdata_with_runtime_j_residue() -> (RefDataConfig, AlleleId, AlleleId) {
     let j_bad = cfg.j_pool.push(Allele {
         name: "j_bad*01".into(),
         gene: "j_bad".into(),
-        seq: b"TTTAAA".to_vec(),
+        seq: b"ATTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(1),
         functional_status: None,
@@ -260,4 +262,5 @@ pub(super) mod indels;
 mod j_extensions;
 pub(super) mod live_call_edits;
 mod overlaps;
+mod trim_geometry;
 mod v_extensions;

@@ -107,6 +107,24 @@ pub struct AlleleInstance {
     pub allele_id: AlleleId,
     pub trim_5: u16,
     pub trim_3: u16,
+    /// Total P nucleotides emitted at the assembled 5' / 3' coding
+    /// ends. These are recombination provenance, retained after read
+    /// truncation and clonal forks; D inversion does not swap them.
+    pub p_length_5: u32,
+    pub p_length_3: u32,
+    /// Observed 5' coding bases removed by terminal read loss. This
+    /// changes observed coding phase, unlike an internal deletion,
+    /// and is deliberately distinct from recombination trim_5.
+    pub observation_loss_5: u32,
+    /// Observed 3' coding bases removed by terminal read loss. The
+    /// J endpoint phase must distinguish this from a terminal indel.
+    pub observation_loss_3: u32,
+    /// Forward-reference bounds remaining observable after explicit read
+    /// clipping. Unlike the query-base loss counters, these track actual
+    /// germline positions and therefore remain exact across indels and D
+    /// inversion. `None` leaves that end at its recombination boundary.
+    pub observed_ref_start: Option<u32>,
+    pub observed_ref_end: Option<u32>,
     pub orientation: SegmentOrientation,
     /// Pre-revision allele id when receptor revision applied; `None`
     /// when revision did not run on this slot. Preserves the
@@ -135,6 +153,12 @@ impl AlleleInstance {
             allele_id,
             trim_5: 0,
             trim_3: 0,
+            p_length_5: 0,
+            p_length_3: 0,
+            observation_loss_5: 0,
+            observation_loss_3: 0,
+            observed_ref_start: None,
+            observed_ref_end: None,
             orientation: SegmentOrientation::Forward,
             receptor_revision_original_id: None,
             haplotype: None,
@@ -155,11 +179,24 @@ impl AlleleInstance {
         Self { trim_3, ..self }
     }
 
+    #[must_use]
+    pub fn with_p_length_5(self, p_length_5: u32) -> Self {
+        Self { p_length_5, ..self }
+    }
+
+    #[must_use]
+    pub fn with_p_length_3(self, p_length_3: u32) -> Self {
+        Self { p_length_3, ..self }
+    }
+
     /// Return a new instance with `orientation` updated; receiver
     /// unchanged. Mirror of [`Self::with_trim_5`] / [`Self::with_trim_3`].
     #[must_use]
     pub fn with_orientation(self, orientation: SegmentOrientation) -> Self {
-        Self { orientation, ..self }
+        Self {
+            orientation,
+            ..self
+        }
     }
 
     /// Return a new instance with the receptor-revision pre-revision
@@ -304,11 +341,7 @@ impl AlleleAssignments {
     /// no instance is currently assigned to that segment, with the
     /// same wording as the trim setters so a caller misusing the
     /// API sees a uniform diagnostic.
-    pub fn with_orientation(
-        &self,
-        segment: Segment,
-        orientation: SegmentOrientation,
-    ) -> Self {
+    pub fn with_orientation(&self, segment: Segment, orientation: SegmentOrientation) -> Self {
         self.with_updated(segment, |inst| inst.with_orientation(orientation))
     }
 }
@@ -618,8 +651,7 @@ mod tests {
         let base = AlleleAssignments::new()
             .with_assigned(Segment::D, AlleleInstance::new(AlleleId::new(5)));
         let branch_a = base.with_orientation(Segment::D, SegmentOrientation::Forward);
-        let branch_b =
-            base.with_orientation(Segment::D, SegmentOrientation::ReverseComplement);
+        let branch_b = base.with_orientation(Segment::D, SegmentOrientation::ReverseComplement);
 
         // Base unchanged.
         assert_eq!(

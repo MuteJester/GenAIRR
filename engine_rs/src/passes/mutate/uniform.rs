@@ -198,8 +198,7 @@ impl Pass for UniformMutationPass {
 
     fn parameter_signature(&self) -> String {
         use crate::passes::paramsig::{
-            fmt_byte_dist, fmt_count_source, fmt_segment_rates,
-            fmt_v_subregion_rates, join_parts,
+            fmt_byte_dist, fmt_count_source, fmt_segment_rates, fmt_v_subregion_rates, join_parts,
         };
         join_parts([
             fmt_count_source(&self.count_source),
@@ -683,34 +682,27 @@ mod tests {
                 .value,
             ChoiceValue::Base(b'A')
         );
-        let violations = productive()
-            .verify(unconstrained.final_simulation(), Some(&cfg))
-            .unwrap_err();
-        assert!(violations
-            .iter()
-            .any(|v| v.contract_name == "no_stop_codon_in_junction"));
+        // Conditioning also changes site weights, so the same seed need
+        // not choose the same unconstrained site. Independently evaluate the
+        // rejected target-2 candidate: TGC -> TGA is a coding stop.
+        let (_, baseline) = make_substitution_productive_vj_fixture();
+        let stopped = baseline.with_base_changed(NucHandle::new(2), b'A');
+        assert_eq!(
+            crate::productivity::assess(&stopped, &cfg).stop_codon,
+            Some(true)
+        );
     }
 
-    /// Custom base distribution that draws uniformly but does NOT
-    /// expose `support()`. Used to exercise the
-    /// constrain-before-propose helper's behavior when the
-    /// distribution can't be enumerated — under v3.0 that path must
-    /// either skip (permissive) or error (strict), never fall
-    /// through to the reject-after-propose loop.
+    /// A sampler without enumerable support must never trigger an unfiltered
+    /// mutation fallback under active contracts.
     #[derive(Clone, Debug)]
     struct NoSupportBaseDist;
-
     impl Distribution for NoSupportBaseDist {
         type Output = u8;
-
         fn sample(&self, rng: &mut crate::rng::Rng) -> u8 {
             const BASES: [u8; 4] = [b'A', b'C', b'G', b'T'];
             BASES[rng.range_u32(4) as usize]
         }
-
-        // Deliberately no `support()` override — returns `None` via
-        // the trait default. This is the architectural escape hatch
-        // we are pinning down.
     }
 
     #[test]

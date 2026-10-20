@@ -20,8 +20,8 @@ The eight methods you'll reach for in real pipelines:
 | `.validate_families()` | Clonal family consistency gate (groups by `clone_id`) |
 | `.validate_families_with_parents(refdata=None)` | Parent-aware family validator |
 | `.to_dataframe(*, airr_strict=False)` | Return a pandas DataFrame with canonical AIRR columns |
-| `.to_tsv(path, *, airr_strict=False)` | Write AIRR-style TSV with the canonical header |
-| `.to_csv(path, *, airr_strict=False)` | Write CSV (sibling of `to_tsv`) |
+| `.to_tsv(path, *, airr_strict=True)` | Write TSV with AIRR coordinates, CIGAR placement offsets, and `T` / `F` booleans |
+| `.to_csv(path, *, airr_strict=False)` | Write CSV with Python record conventions by default |
 | `.to_fasta(path, *, prefix="seq")` | Write assembled sequences as FASTA |
 | `.to_fastq(...)` / `.to_paired_fastq(...)` | Write FASTQ; paired-end requires `read_layout="paired_end"` |
 
@@ -29,6 +29,16 @@ The eight methods you'll reach for in real pipelines:
 `clone_id` and `duplicate_count`. `clonal_lineage` returns
 `SimulationResultWithLineages`, a subclass that adds `.lineage_trees`.
 Legacy `expand_clones` returns `SimulationResult` with `.parents`.
+
+Record dicts, default CSV, and default DataFrames use 0-based,
+half-open biological coordinates and local per-segment CIGARs.
+`airr_strict=True` converts biological coordinates to 1-based closed
+intervals and prefixes CIGARs with query/reference offsets. Boolean
+conversion to `T` / `F` applies to strict TSV/CSV, not DataFrames.
+For reverse-strand records, biological query coordinates index the
+coding-oriented reverse complement of `sequence`; paired-read
+windows always index the observed `sequence` using 0-based,
+half-open intervals.
 
 ### FASTQ exports (prose only)
 

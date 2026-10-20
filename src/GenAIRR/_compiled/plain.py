@@ -149,12 +149,10 @@ class CompiledExperiment:
         base class** — catching only one will miss the other. See
         ``docs/productive_failure_mode_audit.md`` §6.1.
 
-        **Strict semantics apply only to fresh sampling.** Trace
-        replay via :meth:`CompiledExperiment.replay_from_trace_file`
-        consumes the recorded values verbatim and does NOT
-        re-evaluate contract admissibility — a permissive sentinel
-        trace replays cleanly even under ``strict=True``. See that
-        method's docstring.
+        Replay consumes recorded choices without replacement draws and
+        validates their configured support and final contracts. Historical
+        traces requiring compatibility handling must request it explicitly;
+        strict mode never waives the final productive assessment.
 
         Raises ``ValueError`` for ``n < 1``.
         """

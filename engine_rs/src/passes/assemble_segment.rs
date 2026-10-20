@@ -16,7 +16,7 @@ mod execution;
 /// and `trim_3` from the end, and pushes the retained bases as
 /// germline-derived nucleotides into the pool. Then constructs a
 /// `Region` for the segment with `frame_phase` chained from the
-/// cumulative length of all prior regions. No codon-rail data is
+/// cumulative length of the prior pool, including P additions. No codon-rail data is
 /// stored on the region — callers that need translation call
 /// [`crate::ir::compute_codon_rail`] against the post-assembly pool.
 ///
@@ -34,12 +34,10 @@ mod execution;
 /// - `trim_5 + trim_3 <= allele.len()` (panics otherwise — caller
 ///   bug, asserted defensively).
 ///
-/// **Frame phase:** computed as `(cumulative prior region length)
-/// % 3`. This anchors the codon frame at the start of the *first*
-/// region. Real biology anchors at the V Cys; that anchor-aware
-/// offset is a future refinement. The raw cumulative-length-mod-3
-/// is correct as long as the user isn't reading frame-relative
-/// properties yet.
+/// **Frame phase:** computed as `(cumulative prior pool length)
+/// % 3` for the region's pool-relative codon rail. Biological AIRR
+/// translation and productivity use the separate retained V coding
+/// origin, including allele phase and terminal coverage loss.
 pub struct AssembleSegmentPass {
     segment: Segment,
 }
@@ -160,9 +158,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "PassContext.refdata is None")]
+    #[should_panic(expected = "MissingRefData")]
     fn assemble_segment_pass_panics_without_refdata() {
-        // Use plain `execute` (refdata = None) — should panic.
+        // The test-only infallible wrapper panics on the structured error.
         let mut plan = PassPlan::new();
         let v_pool = make_test_pool(1, Segment::V);
         plan.push(Box::new(SampleAllelePass::new(
@@ -191,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "no allele assigned")]
+    #[should_panic(expected = "MissingAssignment")]
     fn assemble_segment_pass_panics_without_allele_assignment() {
         let refdata = make_test_refdata();
         let mut plan = PassPlan::new();
@@ -225,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "exceeds allele length")]
+    #[should_panic(expected = "trim_exceeds_allele_length")]
     fn assemble_segment_pass_panics_when_trim_exceeds_length() {
         let refdata = make_test_refdata();
         // V is 9 bases. Trim 5 + 3 = 8, leaves 1 base — fine.
@@ -429,6 +427,77 @@ mod tests {
     }
 
     #[test]
+    fn np_and_germline_codon_phases_include_unregioned_p_additions() {
+        use crate::address::PEnd;
+        use crate::dist::UniformBase;
+        use crate::ir::{compute_codon_rail, flag, Nucleotide};
+        use crate::passes::{GenerateNPPass, PAdditionPass};
+
+        let refdata = make_test_refdata();
+        let mut plan = PassPlan::new();
+        for (segment, pool) in [(Segment::V, &refdata.v_pool), (Segment::J, &refdata.j_pool)] {
+            plan.push(Box::new(SampleAllelePass::new(
+                segment,
+                Box::new(AllelePoolDist::uniform(pool)),
+            )));
+        }
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+        plan.push(Box::new(PAdditionPass::new(
+            PEnd::V3,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
+        )));
+        plan.push(Box::new(GenerateNPPass::new(
+            Segment::Np1,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(3, 1.0)])),
+            Box::new(UniformBase),
+        )));
+        plan.push(Box::new(PAdditionPass::new(
+            PEnd::J5,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
+        )));
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
+        let outcome = PassRuntime::execute_with_refdata(&plan, Simulation::new(), 0, &refdata);
+        let sim = outcome.final_simulation();
+        let np = sim
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == Segment::Np1)
+            .unwrap();
+        let j = sim
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == Segment::J)
+            .unwrap();
+        assert_eq!((np.start.index(), np.frame_phase), (10, 1));
+        assert_eq!((j.start.index(), j.frame_phase), (14, 2));
+        // J=GGGCCC starts at pool 14: the sole complete pool-frame
+        // codon inside it is GGC at position 15, rather than GGG/CCC.
+        assert_eq!(compute_codon_rail(j, &sim.pool).amino_acids, b"G");
+
+        let changed = sim.with_indel_inserted(
+            2,
+            Nucleotide::synthetic(b'A', Segment::V, flag::INDEL_INSERTED),
+        );
+        let np = changed
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == Segment::Np1)
+            .unwrap();
+        let j = changed
+            .sequence
+            .regions
+            .iter()
+            .find(|r| r.segment == Segment::J)
+            .unwrap();
+        assert_eq!((np.start.index(), np.frame_phase), (11, 2));
+        assert_eq!((j.start.index(), j.frame_phase), (15, 0));
+        assert_eq!(compute_codon_rail(j, &changed.pool).amino_acids, b"GP");
+    }
+
+    #[test]
     fn assemble_segment_pass_does_not_record_to_trace() {
         // Determinism contract for transform passes: no trace
         // entries.
@@ -488,10 +557,8 @@ mod tests {
 
         let refdata = make_test_refdata();
         // Pre-assign V allele 0 (zero trims via `AlleleInstance::new`).
-        let sim = Simulation::new().with_allele_assigned(
-            Segment::V,
-            AlleleInstance::new(AlleleId::new(0)),
-        );
+        let sim = Simulation::new()
+            .with_allele_assigned(Segment::V, AlleleInstance::new(AlleleId::new(0)));
 
         let pass = AssembleSegmentPass::new(Segment::V);
         let mut trace = Trace::new();
@@ -705,7 +772,11 @@ mod tests {
             .with_allele_orientation(Segment::D, SegmentOrientation::ReverseComplement);
         let after = run_assemble_against_sim(sim, Segment::D, &refdata);
 
-        assert_eq!(after.pool.len(), 5, "post-trim slice is 8 - 1 - 2 = 5 bases");
+        assert_eq!(
+            after.pool.len(),
+            5,
+            "post-trim slice is 8 - 1 - 2 = 5 bases"
+        );
         let expected_bases = b"TAACG";
         let expected_germline_pos = [5u16, 4, 3, 2, 1];
         for i in 0..5 {
@@ -872,16 +943,14 @@ mod tests {
         let refdata = make_test_refdata();
         // Forward (default) path — control.
         let default_inst = AlleleInstance::new(AlleleId::new(0));
-        let sim_forward = Simulation::new()
-            .with_allele_assigned(Segment::D, default_inst);
+        let sim_forward = Simulation::new().with_allele_assigned(Segment::D, default_inst);
         let after_forward = run_assemble_against_sim(sim_forward, Segment::D, &refdata);
 
         // Forward with explicit Forward orientation — must match
         // the implicit-Forward control byte-for-byte.
-        let explicit_inst = AlleleInstance::new(AlleleId::new(0))
-            .with_orientation(SegmentOrientation::Forward);
-        let sim_explicit = Simulation::new()
-            .with_allele_assigned(Segment::D, explicit_inst);
+        let explicit_inst =
+            AlleleInstance::new(AlleleId::new(0)).with_orientation(SegmentOrientation::Forward);
+        let sim_explicit = Simulation::new().with_allele_assigned(Segment::D, explicit_inst);
         let after_explicit = run_assemble_against_sim(sim_explicit, Segment::D, &refdata);
 
         assert_eq!(after_forward.pool.len(), after_explicit.pool.len());

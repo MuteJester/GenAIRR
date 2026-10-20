@@ -1,468 +1,616 @@
-//! v3.0 tuple sampler for the indel pass.
-//!
-//! ## Why a tuple sampler
-//!
-//! Per the architectural rule, contracts narrow the action space
-//! before the pass proposes. The
-//! [`ProductiveJunctionFrame`](crate::contract::ProductiveJunctionFrame)
-//! contract requires the junction length to stay divisible by 3 —
-//! every single indel in or around the junction changes that
-//! length by ±1, so **no single-event indel is admissible** under
-//! the productive bundle. Indels in productive immune repertoires
-//! come in compensating tuples (e.g. one insertion + one deletion).
-//!
-//! ## How
-//!
-//! The sampler:
-//! 1. At each step `k`, **rebuilds** a mod-3 reachability DP from
-//!    the per-step delta-mass distribution of the *current
-//!    working sim*. `dp[m][r]` is the mass of `m`-step
-//!    continuations whose frame-delta sum is `≡ r (mod 3)`.
-//! 2. Samples one event per step using **continuation weighting**:
-//!    each candidate's effective weight is the product of its
-//!    natural per-event weight and the DP mass of valid
-//!    `count − k − 1`-step completions from the new accumulated
-//!    delta.
-//! 3. After all `count` events are sampled hypothetically, runs
-//!    [`ContractSet::admits_post_event`] on the assembled
-//!    post-state against the full bundle. The DP handles **frame
-//!    only**; this final check catches non-frame violations the
-//!    bundle still enforces (e.g.
-//!    [`NoStopCodonInJunction`](crate::contract::NoStopCodonInJunction)
-//!    when an inserted base completes a stop codon).
-//! 4. On post-event rejection, the tuple is resampled up to
-//!    [`POST_EVENT_RETRY_BUDGET`] times. On success the tuple is
-//!    applied through the [`MutationTransaction`]. If every retry
-//!    fails (or some step had no admissible candidates),
-//!    permissive mode collapses the entire batch to `NoOp`
-//!    records (the count slot exists in the trace but no
-//!    structural change happens) and strict mode surfaces
-//!    `PassError::ConstraintSampling`. **The retry budget reduces
-//!    strict false-errors when valid support exists but the first
-//!    sample missed it; it does NOT prove the support is empty
-//!    when exhausted** — that's a residual approximation of the
-//!    sampler.
-//!
-//! ## Per-step DP recompute
-//!
-//! Continuation mass at step `k` is computed from a DP seeded by
-//! the per-step delta-mass profile of the **current working sim**
-//! at step `k`, not step 0. This matches the v3.0 invariant: the
-//! continuation weight reflects the natural distribution at the
-//! step where the candidate is being evaluated. A candidate whose
-//! commit would change the future per-step support carries the
-//! same multiplier as siblings with the same mod-3 delta — the
-//! approximation `mass(step k+1) ≈ mass(step k+2) ≈ ...` is the
-//! only remaining bias and it's controlled (the per-step mass
-//! profile changes by ±1 site per commit; for biological count
-//! values of ≤ ~6 the residual error is negligible). True
-//! per-candidate DP would seed from the *post-event* sim of each
-//! candidate; for count ≤ 6 the cost is bearable but the
-//! information gain is small and we defer that refinement.
-
+//! Natural sequential indel histories conditioned on the complete final
+//! contract. Complete independent proposals precede a bounded exact search,
+//! optimized for counts <= 2. Exhaustion never means that biological support
+//! is empty.
 use crate::address;
-use crate::contract::{ChoiceContext, ContractSet, IndelEventClass, IndelKindHint};
-use crate::dist::FilteredSampleError;
-use crate::ir::{flag, NucHandle, Nucleotide, Simulation};
+use crate::contract::{ChoiceContext, ContractKind, ContractSet};
+use crate::ir::{flag, NucHandle, Nucleotide, Segment, Simulation};
 use crate::pass::{Pass, PassContext, PassError};
+use crate::productivity::SequenceView;
 use crate::refdata::RefDataConfig;
+use crate::rng::Rng;
 
+use super::edit_view::{EditIndex, EditView};
 use super::event::IndelEvent;
 use super::IndelPass;
 
-/// Maximum number of tuple-sampling attempts before falling back
-/// to no-op (permissive) / surfacing an error (strict). Each
-/// attempt is one full `count`-step sequential sample + one
-/// final `admits_post_event` check. The budget **reduces strict
-/// false-errors** when valid bundle support exists but the first
-/// draw missed it (cross-event no-stop interactions, which the
-/// mod-3 DP doesn't model); it does **not** prove the support is
-/// empty when exhausted. A truly exhaustive strict guarantee
-/// would require a proper rejection-sampling bound or
-/// enumeration — out of scope for v3.0.
-const POST_EVENT_RETRY_BUDGET: u32 = 16;
+pub(super) const SAMPLER_MODEL: &str = "natural_sequential_v1";
 
-/// A per-event candidate evaluated against the bundle's
-/// indel-class composition. `delta` ∈ {−1, 0, +1}.
 #[derive(Clone, Copy, Debug)]
-struct TupleCandidate {
+pub struct IndelSamplingOptions {
+    /// Complete independent proposals before the exact fallback.
+    pub rejection_attempts: u32,
+    /// Maximum fallback work nodes, including exhaustive nodes and restart-probe edits.
+    pub exact_node_budget: u64,
+    /// Explicit compatibility for historical all-NoOp permissive traces.
+    pub legacy_replay_sentinels: bool,
+}
+
+impl Default for IndelSamplingOptions {
+    fn default() -> Self {
+        Self {
+            rejection_attempts: 256,
+            exact_node_budget: 20_000_000,
+            legacy_replay_sentinels: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct SamplingReport {
+    pub strategy: &'static str,
+    pub attempts: u64,
+    pub explored_states: u64,
+}
+
+pub(super) struct TupleSample {
+    /// None is used only after a complete proof of empty support.
+    pub events: Option<Vec<IndelEvent>>,
+    pub report: SamplingReport,
+}
+
+#[derive(Clone, Copy)]
+struct WeightedEvent {
     event: IndelEvent,
-    delta: i32,
-    natural_weight: f64,
+    log_weight: f64,
 }
 
-/// Outcome of a single tuple-sampling attempt.
-enum TupleSampleOutcome {
-    /// A frame-balanced tuple was sampled and the assembled
-    /// post-state satisfies the bundle's full admit check.
-    Accepted(Vec<IndelEvent>),
-    /// Some step had no admissible candidates (or the
-    /// `tuple_candidates` enumeration returned `Err`). Permissive
-    /// no-op; nothing to retry.
-    Empty,
-    /// A frame-balanced tuple was sampled, but the assembled
-    /// post-state failed the bundle's `admits_post_event` check
-    /// (cross-event interaction the mod-3 DP can't model). Caller
-    /// should retry up to [`POST_EVENT_RETRY_BUDGET`] times.
-    PostEventRejected,
+/// Stable weighted reservoir. Reachability is represented by `selected`, not
+/// by a floating-point sum that could underflow to zero.
+struct Reservoir {
+    log_mass: f64,
+    selected: Option<Vec<IndelEvent>>,
+}
+impl Reservoir {
+    fn new() -> Self {
+        Self {
+            log_mass: f64::NEG_INFINITY,
+            selected: None,
+        }
+    }
+    fn add(&mut self, events: &[IndelEvent], log_weight: f64, rng: &mut Rng) {
+        debug_assert!(log_weight.is_finite());
+        if self.selected.is_none() {
+            self.log_mass = log_weight;
+            self.selected = Some(events.to_vec());
+            return;
+        }
+        let high = self.log_mass.max(log_weight);
+        let low = self.log_mass.min(log_weight);
+        let total = high + (low - high).exp().ln_1p();
+        if rng.next_f64() < (log_weight - total).exp() {
+            self.selected = Some(events.to_vec());
+        }
+        self.log_mass = total;
+    }
 }
 
-/// Triangle of mod-3 reachability masses. `dp[m][r]` is the mass
-/// of m-step continuations whose frame-delta sum is `r (mod 3)`.
-type Mod3Dp = Vec<[f64; 3]>;
+struct Work {
+    count: u32,
+    attempts: u64,
+    states: u64,
+    limit: u64,
+    /// Count only exhaustive nodes for the deterministic restart schedule.
+    search_nodes: u64,
+    restart_probes: bool,
+    accepted_probe: Option<Vec<IndelEvent>>,
+}
+impl Work {
+    fn visit(&mut self) -> Result<(), PassError> {
+        if self.states >= self.limit {
+            return Err(PassError::sampling_budget_exceeded(
+                address::CORRUPT_INDEL,
+                address::ChoiceAddress::CorruptIndelCount.to_string(),
+                self.count,
+                self.attempts,
+                self.states,
+                self.limit,
+                "natural_sequential_exact_search",
+            ));
+        }
+        self.states += 1;
+        Ok(())
+    }
+}
+
+pub(super) fn tuple_admitted(
+    initial: &Simulation,
+    final_state: &Simulation,
+    contracts: &ContractSet,
+    refdata: Option<&RefDataConfig>,
+    count: u32,
+) -> bool {
+    contracts
+        .admits_post_event(
+            initial,
+            final_state,
+            refdata,
+            ChoiceContext::indel_insertion(count.saturating_sub(1), count, NucHandle::new(0)),
+        )
+        .is_ok()
+        && (!contracts.requires_productive_emission()
+            || refdata.is_some_and(|cfg| {
+                crate::productivity::assess(final_state, cfg).productive == Some(true)
+            }))
+}
+
+fn standard_productive_bundle(contracts: &ContractSet) -> bool {
+    let kinds = [
+        ContractKind::ProductiveJunctionFrame,
+        ContractKind::NoStopCodonInJunction,
+        ContractKind::CodingSequenceIntegrity,
+        ContractKind::CanonicalAnchor {
+            segment: Segment::V,
+        },
+        ContractKind::CanonicalAnchor {
+            segment: Segment::J,
+        },
+    ];
+    contracts.len() == kinds.len() && kinds.into_iter().all(|kind| contracts.contains_kind(kind))
+}
 
 impl IndelPass {
-    /// Sample a frame-balanced tuple of length `count`, then run
-    /// the bundle's full post-event validator on the assembled
-    /// post-state. Returns `Some(events)` when a valid tuple was
-    /// found, `None` when permissive mode skipped the entire
-    /// batch. Strict-mode failures bubble out as `PassError`.
-    ///
-    /// On post-event rejection (cross-event interactions that the
-    /// mod-3 DP doesn't model — e.g. an insertion completing a
-    /// `TAA` codon under [`NoStopCodonInJunction`]), the tuple is
-    /// resampled up to [`POST_EVENT_RETRY_BUDGET`] times before
-    /// declaring the sample-space exhausted. The retry budget
-    /// prevents a strict-mode false-error when the bundle support
-    /// is non-empty but the first sample happened to land on a
-    /// cross-event violator.
+    fn proposal_with_view<const CAPACITY: usize>(
+        &self,
+        index: &EditIndex<'_>,
+        count: u32,
+        bases: &[(u8, f64)],
+        rng: &mut Rng,
+        cfg: &RefDataConfig,
+    ) -> Option<Vec<IndelEvent>> {
+        let mut state = index.view_with_capacity::<CAPACITY>();
+        let mut events = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            let event = self.natural_proposal(state.len(), bases, rng);
+            state = state.edited(event);
+            events.push(event);
+        }
+        (crate::productivity::assess(&state, cfg).productive == Some(true)).then_some(events)
+    }
+
+    /// Each proposal starts at the unchanged root and consumes exactly the
+    /// same natural draws, independent of the representation used to assess it.
+    #[allow(clippy::too_many_arguments)]
+    fn independent_proposal(
+        &self,
+        initial: &Simulation,
+        index: Option<&EditIndex<'_>>,
+        contracts: &ContractSet,
+        refdata: Option<&RefDataConfig>,
+        count: u32,
+        bases: &[(u8, f64)],
+        rng: &mut Rng,
+    ) -> Option<Vec<IndelEvent>> {
+        if let Some(index) = index {
+            if count <= 2 {
+                return self.proposal_with_view::<5>(index, count, bases, rng, refdata.unwrap());
+            }
+            if count <= 64 {
+                return self.proposal_with_view::<129>(index, count, bases, rng, refdata.unwrap());
+            }
+        }
+        let mut state = initial.clone();
+        let mut events = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            let event = self.natural_proposal(state.pool.len(), bases, rng);
+            state = apply_event_hypothetical(&state, event);
+            events.push(event);
+        }
+        tuple_admitted(initial, &state, contracts, refdata, count).then_some(events)
+    }
+
+    /// Draw the same normalized natural law that exact enumeration uses.
+    /// In particular, do not delegate to a categorical sampler whose finite
+    /// raw weights may overflow when summed.
+    fn natural_proposal(&self, length: usize, bases: &[(u8, f64)], rng: &mut Rng) -> IndelEvent {
+        if rng.next_f64() < self.insertion_prob {
+            let site = if length == 0 {
+                0
+            } else {
+                rng.range_u32(length as u32 + 1)
+            };
+            let draw = rng.next_f64();
+            let mut cumulative = 0.0;
+            let mut base = bases.last().expect("positive insertion support checked").0;
+            for &(candidate, log_weight) in bases {
+                cumulative += log_weight.exp();
+                if draw < cumulative {
+                    base = candidate;
+                    break;
+                }
+            }
+            IndelEvent::Insertion { site, base }
+        } else {
+            IndelEvent::Deletion {
+                site: if length == 0 {
+                    None
+                } else {
+                    Some(rng.range_u32(length as u32))
+                },
+            }
+        }
+    }
+
+    fn natural_events(&self, length: usize, bases: &[(u8, f64)]) -> Vec<WeightedEvent> {
+        let mut events = Vec::new();
+        if self.insertion_prob > 0.0 {
+            let log_site = self.insertion_prob.ln() - ((length + 1) as f64).ln();
+            for site in 0..=length {
+                for &(base, log_base) in bases {
+                    events.push(WeightedEvent {
+                        event: IndelEvent::Insertion {
+                            site: site as u32,
+                            base,
+                        },
+                        log_weight: log_site + log_base,
+                    });
+                }
+            }
+        }
+        if self.insertion_prob < 1.0 {
+            let log_kind = (-self.insertion_prob).ln_1p();
+            if length == 0 {
+                events.push(WeightedEvent {
+                    event: IndelEvent::Deletion { site: None },
+                    log_weight: log_kind,
+                });
+            } else {
+                let log_site = log_kind - (length as f64).ln();
+                for site in 0..length {
+                    events.push(WeightedEvent {
+                        event: IndelEvent::Deletion {
+                            site: Some(site as u32),
+                        },
+                        log_weight: log_site,
+                    });
+                }
+            }
+        }
+        events
+    }
+
+    fn view_admitted(
+        &self,
+        initial: &Simulation,
+        view: &EditView<'_>,
+        events: &[IndelEvent],
+        contracts: &ContractSet,
+        refdata: Option<&RefDataConfig>,
+        fast: bool,
+    ) -> bool {
+        if fast {
+            return crate::productivity::assess(view, refdata.unwrap()).productive == Some(true);
+        }
+        let mut state = initial.clone();
+        for &event in events {
+            state = apply_event_hypothetical(&state, event);
+        }
+        tuple_admitted(initial, &state, contracts, refdata, events.len() as u32)
+    }
+
+    fn exact_short(
+        &self,
+        initial: &Simulation,
+        contracts: &ContractSet,
+        refdata: Option<&RefDataConfig>,
+        count: u32,
+        bases: &[(u8, f64)],
+        rng: &mut Rng,
+        work: &mut Work,
+    ) -> Result<Reservoir, PassError> {
+        let index = EditIndex::new(initial);
+        let view = index.view();
+        let fast = refdata.is_some() && standard_productive_bundle(contracts);
+        let mut reservoir = Reservoir::new();
+        if count == 0 {
+            work.visit()?;
+            if tuple_admitted(initial, initial, contracts, refdata, 0) {
+                reservoir.add(&[], 0.0, rng);
+            }
+            return Ok(reservoir);
+        }
+        for first in self.natural_events(view.len(), bases) {
+            work.visit()?;
+            let after_first = view.edited(first.event);
+            if count == 1 {
+                if self.view_admitted(
+                    initial,
+                    &after_first,
+                    &[first.event],
+                    contracts,
+                    refdata,
+                    fast,
+                ) {
+                    reservoir.add(&[first.event], first.log_weight, rng);
+                }
+                continue;
+            }
+            for second in self.natural_events(after_first.len(), bases) {
+                work.visit()?;
+                let events = [first.event, second.event];
+                let after_second = after_first.edited(second.event);
+                if self.view_admitted(initial, &after_second, &events, contracts, refdata, fast) {
+                    reservoir.add(&events, first.log_weight + second.log_weight, rng);
+                }
+            }
+        }
+        Ok(reservoir)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn exact_deeper(
+        &self,
+        initial: &Simulation,
+        state: &Simulation,
+        contracts: &ContractSet,
+        refdata: Option<&RefDataConfig>,
+        remaining: u32,
+        bases: &[(u8, f64)],
+        events: &mut Vec<IndelEvent>,
+        log_weight: f64,
+        rng: &mut Rng,
+        work: &mut Work,
+        reservoir: &mut Reservoir,
+        index: Option<&EditIndex<'_>>,
+    ) -> Result<(), PassError> {
+        work.visit()?;
+        work.search_nodes += 1;
+        // Exhaustive traversal has enormous branching for realistic receptors.
+        // Independent restart probes can finish promptly without sampling the
+        // incomplete reservoir. Their schedule depends only on visited search
+        // nodes, never on which histories entered that reservoir.
+        if work.restart_probes
+            && work.search_nodes % 16 == 0
+            && work.limit - work.states >= u64::from(work.count)
+        {
+            for _ in 0..work.count {
+                work.visit()?;
+            }
+            work.attempts += 1;
+            work.accepted_probe = self
+                .independent_proposal(initial, index, contracts, refdata, work.count, bases, rng);
+            if work.accepted_probe.is_some() {
+                return Ok(());
+            }
+        }
+        if remaining == 0 {
+            if tuple_admitted(initial, state, contracts, refdata, work.count) {
+                reservoir.add(events, log_weight, rng);
+            }
+            return Ok(());
+        }
+        for candidate in self.natural_events(state.pool.len(), bases) {
+            let next = apply_event_hypothetical(state, candidate.event);
+            events.push(candidate.event);
+            self.exact_deeper(
+                initial,
+                &next,
+                contracts,
+                refdata,
+                remaining - 1,
+                bases,
+                events,
+                log_weight + candidate.log_weight,
+                rng,
+                work,
+                reservoir,
+                index,
+            )?;
+            events.pop();
+            if work.accepted_probe.is_some() {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn sample_admissible_tuple(
         &self,
         sim: &Simulation,
         ctx: &mut PassContext,
         count: u32,
-        strict: bool,
-    ) -> Result<Option<Vec<IndelEvent>>, PassError> {
-        let contracts = match ctx.contracts {
-            Some(c) => c,
-            None => return Ok(None),
+    ) -> Result<TupleSample, PassError> {
+        let contracts = ctx
+            .contracts
+            .expect("constrained sampler requires contracts");
+        if count > 4096 {
+            return Err(PassError::sampling_budget_exceeded(
+                self.name(),
+                address::ChoiceAddress::CorruptIndelCount.to_string(),
+                count,
+                0,
+                0,
+                self.sampling_options.exact_node_budget,
+                "tuple_length_limit_4096",
+            ));
+        }
+        let bases = if self.insertion_prob > 0.0 {
+            self.base_log_support().map_err(|reason| {
+                PassError::constraint_sampling(
+                    self.name(),
+                    address::ChoiceAddress::CorruptIndelCount.to_string(),
+                    reason,
+                )
+            })?
+        } else {
+            Vec::new()
         };
-        let refdata = ctx.refdata;
-
-        for _attempt in 0..POST_EVENT_RETRY_BUDGET {
-            match self.sample_one_tuple(sim, ctx, contracts, refdata, count, strict)? {
-                TupleSampleOutcome::Accepted(events) => return Ok(Some(events)),
-                TupleSampleOutcome::Empty => return Ok(None),
-                TupleSampleOutcome::PostEventRejected => {
-                    // Cross-event interaction (typically a stop
-                    // codon introduced by an inserted base) — the
-                    // mod-3 DP doesn't model this. Resample.
-                    continue;
+        let mut work = Work {
+            count,
+            attempts: 0,
+            states: 0,
+            limit: self.sampling_options.exact_node_budget,
+            search_nodes: 0,
+            restart_probes: self.sampling_options.rejection_attempts > 0,
+            accepted_probe: None,
+        };
+        let index = (ctx.refdata.is_some() && standard_productive_bundle(contracts))
+            .then(|| EditIndex::new(sim));
+        if count > 0 {
+            // Each attempt is complete and starts at the same input. A failed
+            // candidate does not alter the root or redraw the requested count.
+            for _ in 0..self.sampling_options.rejection_attempts {
+                work.attempts += 1;
+                if let Some(events) = self.independent_proposal(
+                    sim,
+                    index.as_ref(),
+                    contracts,
+                    ctx.refdata,
+                    count,
+                    &bases,
+                    ctx.rng,
+                ) {
+                    return Ok(TupleSample {
+                        events: Some(events),
+                        report: SamplingReport {
+                            strategy: "independent_tuple_rejection",
+                            attempts: work.attempts,
+                            explored_states: 0,
+                        },
+                    });
                 }
             }
         }
-
-        // Budget exhausted. In strict mode this surfaces as
-        // a constraint-sampling error; in permissive mode we
-        // accept the architectural reality that the bundle's
-        // *full* support couldn't be exercised within the budget
-        // and collapse to no-op.
-        if strict {
-            return Err(PassError::constraint_sampling(
-                self.name(),
-                address::ChoiceAddress::CorruptIndelSite(count.saturating_sub(1)).to_string(),
-                FilteredSampleError::EmptyAdmissibleSupport,
-            ));
-        }
-        Ok(None)
+        let reservoir = if count <= 2 {
+            self.exact_short(
+                sim,
+                contracts,
+                ctx.refdata,
+                count,
+                &bases,
+                ctx.rng,
+                &mut work,
+            )?
+        } else {
+            // The stack depth is itself a deterministic resource limit. No
+            // partial sample is returned if exhaustive completion is too deep.
+            if count > 64 {
+                return Err(PassError::sampling_budget_exceeded(
+                    self.name(),
+                    address::ChoiceAddress::CorruptIndelCount.to_string(),
+                    count,
+                    work.attempts,
+                    0,
+                    work.limit,
+                    "exact_search_depth_limit",
+                ));
+            }
+            let mut reservoir = Reservoir::new();
+            self.exact_deeper(
+                sim,
+                sim,
+                contracts,
+                ctx.refdata,
+                count,
+                &bases,
+                &mut Vec::new(),
+                0.0,
+                ctx.rng,
+                &mut work,
+                &mut reservoir,
+                index.as_ref(),
+            )?;
+            if let Some(events) = work.accepted_probe.take() {
+                return Ok(TupleSample {
+                    events: Some(events),
+                    report: SamplingReport {
+                        strategy: "exact_search_independent_probe",
+                        attempts: work.attempts,
+                        explored_states: work.states,
+                    },
+                });
+            }
+            reservoir
+        };
+        Ok(TupleSample {
+            events: reservoir.selected,
+            report: SamplingReport {
+                strategy: if count <= 2 {
+                    "exact_short_tuple"
+                } else {
+                    "exact_fallback"
+                },
+                attempts: work.attempts,
+                explored_states: work.states,
+            },
+        })
     }
 
-    /// Inner workhorse: sample a single tuple attempt. Returns
-    /// `PostEventRejected` when the assembled tuple fails the
-    /// bundle's `admits_post_event` check (the caller retries).
-    fn sample_one_tuple(
+    /// Replay validation for the historical all-no-op encoding in new-model
+    /// traces: permit it only after a complete proof of empty support.
+    pub(super) fn prove_empty_support(
         &self,
         sim: &Simulation,
-        ctx: &mut PassContext,
         contracts: &ContractSet,
         refdata: Option<&RefDataConfig>,
         count: u32,
-        strict: bool,
-    ) -> Result<TupleSampleOutcome, PassError> {
-        let mut events: Vec<IndelEvent> = Vec::with_capacity(count as usize);
-        let mut working = sim.clone();
-        let mut accumulated_mod3: i32 = 0;
-
-        for k in 0..count {
-            let remaining = (count - k - 1) as usize;
-
-            // **Per-step DP recompute**: the continuation mass at
-            // step k reflects the per-step delta-mass profile of
-            // the *current* working sim. Stationarity across
-            // remaining steps is the only residual approximation;
-            // tied to the v3.0 invariant for sequential conditional
-            // sampling with continuation weighting.
-            let candidates = match self.tuple_candidates(&working, contracts, refdata) {
-                Ok(cs) => cs,
-                Err(reason) if strict => {
-                    return Err(PassError::constraint_sampling(
-                        self.name(),
-                        address::ChoiceAddress::CorruptIndelSite(k).to_string(),
-                        reason,
-                    ));
-                }
-                Err(_) => Vec::new(),
-            };
-            let mass = step_mass(&candidates);
-            let dp = compute_mod3_dp(remaining as u32, mass);
-
-            // Effective weight at step k = natural × continuation
-            // mass for the remaining-step target. `dp[remaining]`
-            // is the mass vector over `count-k-1` remaining steps.
-            let weighted: Vec<(IndelEvent, i32, f64)> = candidates
-                .into_iter()
-                .filter_map(|c| {
-                    let after = accumulated_mod3 + c.delta;
-                    let needed = (-after).rem_euclid(3) as usize;
-                    let cont = dp[remaining][needed];
-                    let eff = c.natural_weight * cont;
-                    if eff.is_finite() && eff > 0.0 {
-                        Some((c.event, c.delta, eff))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if weighted.is_empty() {
-                if strict {
-                    return Err(PassError::constraint_sampling(
-                        self.name(),
-                        address::ChoiceAddress::CorruptIndelSite(k).to_string(),
-                        FilteredSampleError::EmptyAdmissibleSupport,
-                    ));
-                }
-                return Ok(TupleSampleOutcome::Empty);
+    ) -> Result<(bool, u64), PassError> {
+        let bases = if self.insertion_prob > 0.0 {
+            self.base_log_support().map_err(|reason| {
+                PassError::constraint_sampling(
+                    self.name(),
+                    address::ChoiceAddress::CorruptIndelCount.to_string(),
+                    reason,
+                )
+            })?
+        } else {
+            Vec::new()
+        };
+        let mut work = Work {
+            count,
+            attempts: 0,
+            states: 0,
+            limit: self.sampling_options.exact_node_budget,
+            search_nodes: 0,
+            restart_probes: false,
+            accepted_probe: None,
+        };
+        let mut rng = Rng::new(0);
+        let reservoir = if count <= 2 {
+            self.exact_short(sim, contracts, refdata, count, &bases, &mut rng, &mut work)?
+        } else {
+            if count > 64 {
+                return Err(PassError::sampling_budget_exceeded(
+                    self.name(),
+                    address::ChoiceAddress::CorruptIndelCount.to_string(),
+                    count,
+                    0,
+                    0,
+                    work.limit,
+                    "exact_search_depth_limit",
+                ));
             }
-
-            let total: f64 = weighted.iter().map(|(_, _, w)| *w).sum();
-            if !total.is_finite() || total <= 0.0 {
-                if strict {
-                    return Err(PassError::constraint_sampling(
-                        self.name(),
-                        address::ChoiceAddress::CorruptIndelSite(k).to_string(),
-                        FilteredSampleError::InvalidFilteredSupport,
-                    ));
-                }
-                return Ok(TupleSampleOutcome::Empty);
-            }
-            let r = ctx.rng.next_f64() * total;
-            let mut cum = 0.0;
-            let mut chosen_event = weighted.last().expect("non-empty checked above").0;
-            let mut chosen_delta = weighted.last().expect("non-empty checked above").1;
-            for &(event, delta, w) in &weighted {
-                cum += w;
-                if r < cum {
-                    chosen_event = event;
-                    chosen_delta = delta;
-                    break;
-                }
-            }
-
-            // Hypothetically apply to a local working sim — final
-            // commit through the TX is deferred until after the
-            // full post-event validator.
-            working = apply_event_hypothetical(&working, chosen_event);
-            events.push(chosen_event);
-            accumulated_mod3 = (accumulated_mod3 + chosen_delta).rem_euclid(3);
-        }
-
-        // Final post-event validator: the DP handled frame only.
-        // The bundle's `admits_post_event` aggregates every other
-        // contract's verdict on the assembled post-state (stops in
-        // the junction, anchor preservation against actual bytes,
-        // etc.). On rejection we signal the caller to retry — the
-        // first sampled tuple may have hit a cross-event
-        // interaction (e.g. a stop introduced by an inserted base)
-        // even though *other* frame-balanced tuples in the support
-        // satisfy the bundle.
-        let validator_context =
-            ChoiceContext::indel_insertion(count.saturating_sub(1), count, NucHandle::new(0));
-        if contracts
-            .admits_post_event(sim, &working, refdata, validator_context)
-            .is_err()
-        {
-            return Ok(TupleSampleOutcome::PostEventRejected);
-        }
-
-        Ok(TupleSampleOutcome::Accepted(events))
-    }
-
-    /// Enumerate per-event candidates with their bundle-composed
-    /// indel class + natural per-event weight. `Forbidden`
-    /// candidates are filtered out.
-    fn tuple_candidates(
-        &self,
-        sim: &Simulation,
-        contracts: &ContractSet,
-        refdata: Option<&RefDataConfig>,
-    ) -> Result<Vec<TupleCandidate>, FilteredSampleError> {
-        let pool_len = sim.pool.len() as u32;
-        let mut candidates: Vec<TupleCandidate> = Vec::new();
-
-        if self.insertion_prob > 0.0 {
-            let base_support = self.base_support()?;
-            let per_site = self.insertion_prob / (pool_len + 1) as f64;
-            for site in 0..=pool_len {
-                let class = contracts.admissible_indel_class_at(
-                    sim,
-                    refdata,
-                    site,
-                    IndelKindHint::Insertion,
-                );
-                if matches!(class, IndelEventClass::Forbidden) {
-                    continue;
-                }
-                let delta = class.frame_delta().unwrap_or(0) as i32;
-                for &(base, base_w) in &base_support {
-                    candidates.push(TupleCandidate {
-                        event: IndelEvent::Insertion { site, base },
-                        delta,
-                        natural_weight: per_site * base_w,
-                    });
-                }
-            }
-        }
-
-        let deletion_prob = 1.0 - self.insertion_prob;
-        if deletion_prob > 0.0 {
-            if pool_len == 0 {
-                // Pool-empty deletion is a no-op; classification is
-                // FrameNeutral by definition (nothing to remove).
-                candidates.push(TupleCandidate {
-                    event: IndelEvent::Deletion { site: None },
-                    delta: 0,
-                    natural_weight: deletion_prob,
-                });
-            } else {
-                let per_site = deletion_prob / pool_len as f64;
-                for site in 0..pool_len {
-                    let class = contracts.admissible_indel_class_at(
-                        sim,
-                        refdata,
-                        site,
-                        IndelKindHint::Deletion,
-                    );
-                    if matches!(class, IndelEventClass::Forbidden) {
-                        continue;
-                    }
-                    let delta = class.frame_delta().unwrap_or(0) as i32;
-                    candidates.push(TupleCandidate {
-                        event: IndelEvent::Deletion { site: Some(site) },
-                        delta,
-                        natural_weight: per_site,
-                    });
-                }
-            }
-        }
-
-        Ok(candidates)
+            let mut reservoir = Reservoir::new();
+            self.exact_deeper(
+                sim,
+                sim,
+                contracts,
+                refdata,
+                count,
+                &bases,
+                &mut Vec::new(),
+                0.0,
+                &mut rng,
+                &mut work,
+                &mut reservoir,
+                None,
+            )?;
+            reservoir
+        };
+        Ok((reservoir.selected.is_none(), work.states))
     }
 }
 
-/// Aggregate per-delta mass from a candidate set. Returns an array
-/// `[mass(d=0), mass(d=+1), mass(d=−1)]` keyed by `delta.rem_euclid(3)`
-/// → `[0, 1, 2]`. Unnormalized — the DP propagates the mass
-/// proportionally.
-fn step_mass(candidates: &[TupleCandidate]) -> [f64; 3] {
-    let mut mass = [0.0f64; 3];
-    for c in candidates {
-        let r = c.delta.rem_euclid(3) as usize;
-        mass[r] += c.natural_weight;
-    }
-    mass
-}
-
-/// `dp[m][r]` = mass of m-step continuations whose frame-delta
-/// sum is `r (mod 3)`. Rebuilt at each step of
-/// [`IndelPass::sample_one_tuple`] from the per-step delta-mass
-/// profile of the current working sim — the only stationarity
-/// assumed is that the next `m` remaining steps share the
-/// **current step's** mass profile (a strictly better
-/// approximation than freezing the profile at step 0).
-fn compute_mod3_dp(count: u32, per_step_mass: [f64; 3]) -> Mod3Dp {
-    let count = count as usize;
-    let mut dp = vec![[0.0f64; 3]; count + 1];
-    // Base case: 0 steps to go ⇒ only the "already at 0" target
-    // has mass 1 (multiplicative identity).
-    dp[0][0] = 1.0;
-    for m in 1..=count {
-        for r in 0..3 {
-            // dp[m][r] = sum_{d=0..3} per_step_mass[d] * dp[m-1][(r - d) mod 3]
-            let mut acc = 0.0f64;
-            for d in 0..3 {
-                let prev_r = ((r as i32 - d as i32).rem_euclid(3)) as usize;
-                acc += per_step_mass[d] * dp[m - 1][prev_r];
-            }
-            dp[m][r] = acc;
-        }
-    }
-    dp
-}
-
-/// Apply an indel event to a sim without going through the TX.
-/// Used by the tuple sampler to build a hypothetical chain.
-/// `pub(super)` so the replay-mode validator in `replay.rs` can
-/// build the same hypothetical post-state and run `admits_post_event`
-/// against it before committing through the TX.
 pub(super) fn apply_event_hypothetical(sim: &Simulation, event: IndelEvent) -> Simulation {
     match event {
         IndelEvent::Insertion { site, base } => {
             let segment = IndelPass::insertion_segment(sim, site);
-            let nuc = Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED);
-            sim.with_indel_inserted(site, nuc)
+            sim.with_indel_inserted(
+                site,
+                Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED),
+            )
         }
         IndelEvent::Deletion { site: Some(site) } => sim.with_indel_deleted(site),
         IndelEvent::Deletion { site: None } | IndelEvent::NoOp => sim.clone(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mod3_dp_base_case_is_identity() {
-        // 0 steps to go: only target 0 has mass 1.
-        let dp = compute_mod3_dp(0, [1.0, 0.0, 0.0]);
-        assert_eq!(dp[0], [1.0, 0.0, 0.0]);
-    }
-
-    #[test]
-    fn mod3_dp_one_step_neutral_only_keeps_target_zero() {
-        // Per-step delta is always 0 (mass concentrated at d=0).
-        // After m steps, only target 0 has nonzero mass.
-        let dp = compute_mod3_dp(5, [1.0, 0.0, 0.0]);
-        for m in 0..=5 {
-            assert!(dp[m][0] > 0.0);
-            assert_eq!(dp[m][1], 0.0);
-            assert_eq!(dp[m][2], 0.0);
-        }
-    }
-
-    #[test]
-    fn mod3_dp_two_steps_with_balanced_pm1_can_return_to_zero() {
-        // Per-step mass: equal probability on +1 and -1. With 2
-        // steps, P(sum ≡ 0) > 0 (via +1 then -1 or vice versa).
-        let dp = compute_mod3_dp(2, [0.0, 0.5, 0.5]);
-        assert!(dp[2][0] > 0.0);
-    }
-
-    #[test]
-    fn mod3_dp_three_steps_with_only_plus_one_reaches_zero() {
-        // Three +1 steps land at 3 ≡ 0 (mod 3).
-        let dp = compute_mod3_dp(3, [0.0, 1.0, 0.0]);
-        assert!(dp[3][0] > 0.0);
-        // But 1 or 2 steps of +1 cannot land at 0.
-        assert_eq!(dp[1][0], 0.0);
-        assert_eq!(dp[2][0], 0.0);
-    }
-
-    #[test]
-    fn mod3_dp_one_step_only_plus_one_lands_at_one() {
-        let dp = compute_mod3_dp(1, [0.0, 1.0, 0.0]);
-        assert_eq!(dp[1][0], 0.0);
-        assert_eq!(dp[1][1], 1.0);
-        assert_eq!(dp[1][2], 0.0);
     }
 }

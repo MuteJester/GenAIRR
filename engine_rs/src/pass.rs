@@ -21,7 +21,7 @@ pub use hook::{EffectHook, HookContext};
 pub use metadata::{PassCompileEffect, PassEffect, PassRequirement};
 pub use outcome::Outcome;
 pub use schedule::{NodeId, Schedule, ScheduleError};
-pub use support::{AlleleIdSupport, IntegerSupport, PassCompileFact};
+pub use support::{AlleleIdSupport, IntegerSupport, NpBaseSupport, PassCompileFact};
 pub use traits::Pass;
 
 /// Test-only execution helpers. Hidden from rustdoc and intentionally

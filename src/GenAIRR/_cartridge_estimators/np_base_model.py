@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ._common import _NP_CANONICAL_BASES, _load_rearrangements
+from ._common import (
+    _NP_CANONICAL_BASES, _load_rearrangements, _reject_nonzero_p_provenance,
+)
 from ..reference_models import (
     NP_KEYS,
     NpBaseModelSpec,
@@ -57,11 +59,16 @@ class _NpBaseModelEstimatorMixin:
           contribution is skipped).
 
         Columns deliberately ignored: ``junction`` (audit
-        §1.2), ``p_v_3_length`` / ``p_d_5_length`` /
-        ``p_d_3_length`` / ``p_j_5_length`` (separate
-        P-nucleotide biology), ``np1_length`` /
+        §1.2), ``np1_length`` /
         ``np2_length`` (length-only — owned by
         :meth:`estimate_np_length_distributions`).
+
+        AIRR NP strings include both N and P nucleotides, whereas
+        this model controls N additions separately from P additions.
+        Any explicitly nonzero ``p_*_length`` provenance therefore
+        raises ``ValueError`` before estimation. Missing or zero P
+        fields remain accepted. P counts alone cannot safely identify
+        N-only strings after sequence transformations.
 
         Per-row validation is **field-local**: a malformed
         or missing value in one NP column drops only that
@@ -136,6 +143,9 @@ class _NpBaseModelEstimatorMixin:
         )
 
         records, source_label = _load_rearrangements(rearrangements)
+        _reject_nonzero_p_provenance(
+            records, estimator="estimate_np_base_model",
+        )
         chain_has_d = self._chain_type.has_d
         active_keys = ("NP1", "NP2") if chain_has_d else ("NP1",)
 

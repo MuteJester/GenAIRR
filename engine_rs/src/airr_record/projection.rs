@@ -1,4 +1,4 @@
-use crate::ir::{Region, Segment, Simulation};
+use crate::ir::{complement_base, Segment, Simulation};
 use crate::live_call::SegmentLiveCall;
 use crate::refdata::{Allele, RefDataConfig};
 
@@ -12,196 +12,185 @@ fn lookup_name(
         .unwrap_or_default()
 }
 
-/// pick the canonical allele id for AIRR projection on
-/// a V/D/J segment. The first allele in the live-call's narrowed
-/// `allele_call` set wins; fall back to the originally-sampled
-/// allele (provenance) when the live layer is absent or the call
-/// is `Unsupported` (empty candidate set).
-///
-/// This is the seam through which `germline_alignment` becomes
-/// evidence-driven: when SHM mutations narrow the live call to a
-/// different allele than the one originally sampled, the column
-/// walker emits *that* allele's bytes (matching the `*_call` field
-/// the record reports) instead of the historical provenance bytes.
+/// Standard AIRR alignment fields describe the generating assignment.
+/// Mutational evidence can change a re-call, but cannot change the origin
+/// reference frame carried by the nucleotide pool's germline coordinates.
 pub(super) fn projected_allele_id(
     sim: &Simulation,
     segment: Segment,
 ) -> Option<crate::refdata::AlleleId> {
-    // The sampled allele from recombination - used both as the
-    // fallback when no live-call exists and as a preference among
-    // alleles tied in the live-call's score-and-tie set. Several
-    // alleles may share the same per-position score (the live-call
-    // honestly reports the ambiguity in `v_call`) but for downstream
-    // projection (germline_alignment, identity, CIGAR) we prefer the
-    // truth allele when it sits inside the tie-set: it's the only
-    // allele whose germline bytes really do match the pool bases. If
-    // the truth isn't in the tie-set (mutations have shifted evidence
-    // toward a different allele), fall back to the first tied id -
-    // that's the genuine aligner-drift case the divergence narrative
-    // captures.
-    let truth_id = match segment {
-        Segment::V => sim
-            .assignments
-            .get(Segment::V)
-            .copied()
-            .map(|i| i.allele_id),
-        Segment::D => sim
-            .assignments
-            .get(Segment::D)
-            .copied()
-            .map(|i| i.allele_id),
-        Segment::J => sim
-            .assignments
-            .get(Segment::J)
-            .copied()
-            .map(|i| i.allele_id),
-        _ => None,
-    };
-    if let Some(call) = sim.segment_calls.get(segment) {
-        if let Some(tid) = truth_id {
-            if call.allele_call.contains(tid) {
-                return Some(tid);
-            }
+    sim.assignments
+        .get(segment)
+        .map(|instance| instance.allele_id)
+}
+
+/// The generating reference in the segment's assembled orientation.
+///
+/// Germline coordinates always refer to the forward reference; only traversal
+/// order and rendered bases change for inverted D segments.
+pub(super) struct ProjectedReference<'a> {
+    pub seq: &'a [u8],
+    pub reverse: bool,
+    observed_start: Option<usize>,
+    observed_end: Option<usize>,
+}
+
+impl ProjectedReference<'_> {
+    pub fn oriented_position(&self, reference_pos: usize) -> Option<usize> {
+        if reference_pos >= self.seq.len() {
+            return None;
         }
-        if let Some(id) = call.allele_call.iter_ids().next() {
-            return Some(id);
+        Some(if self.reverse {
+            self.seq.len() - 1 - reference_pos
+        } else {
+            reference_pos
+        })
+    }
+
+    pub fn reference_position(&self, oriented_pos: usize) -> usize {
+        if self.reverse {
+            self.seq.len() - 1 - oriented_pos
+        } else {
+            oriented_pos
         }
     }
-    truth_id
+
+    pub fn base(&self, reference_pos: usize) -> Option<u8> {
+        self.seq.get(reference_pos).map(|&base| {
+            if self.reverse {
+                complement_base(base)
+            } else {
+                base
+            }
+        })
+    }
+
+    /// Reference interval retained by the generating recombination.
+    pub fn structural_bounds(&self, trim_5: i64, trim_3: i64) -> (usize, usize) {
+        let end = self
+            .seq
+            .len()
+            .saturating_sub(trim_3.max(0) as usize)
+            .min(self.seq.len());
+        ((trim_5.max(0) as usize).min(end), end)
+    }
+
+    /// Reference interval covered by this observation. Explicit clipping
+    /// removes reference coverage; structural deletions within the remaining
+    /// interval still contribute deletion columns.
+    pub fn observed_bounds(&self, trim_5: i64, trim_3: i64) -> (usize, usize) {
+        let (start, end) = self.structural_bounds(trim_5, trim_3);
+        let end = end.min(self.observed_end.unwrap_or(end));
+        (
+            start.max(self.observed_start.unwrap_or(start)).min(end),
+            end,
+        )
+    }
+}
+
+pub(super) fn projected_reference<'a>(
+    sim: &Simulation,
+    refdata: &'a RefDataConfig,
+    segment: Segment,
+) -> Option<ProjectedReference<'a>> {
+    let allele = refdata.get(segment, projected_allele_id(sim, segment)?)?;
+    let reverse = segment == Segment::D
+        && sim
+            .assignments
+            .get(segment)
+            .map(|instance| instance.orientation.is_reverse())
+            .unwrap_or(false);
+    Some(ProjectedReference {
+        seq: &allele.seq,
+        reverse,
+        observed_start: sim
+            .assignments
+            .get(segment)
+            .and_then(|instance| instance.observed_ref_start)
+            .map(|n| n as usize),
+        observed_end: sim
+            .assignments
+            .get(segment)
+            .and_then(|instance| instance.observed_ref_end)
+            .map(|n| n as usize),
+    })
+}
+
+/// Emit a structural segment's alignment columns in query order.
+///
+/// The shared traversal keeps CIGAR/identity/range calculation and string
+/// rendering on the same reference. Coordinates in each emitted column are
+/// `(pool_position, forward_reference_position)`; a missing position denotes an
+/// insertion/deletion gap. Reference bounds and bases come from the same
+/// generating allele as the pool's germline coordinates.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn visit_structural_alignment(
+    sim: &Simulation,
+    reference: &ProjectedReference<'_>,
+    pool_start: usize,
+    pool_end: usize,
+    trim_5: i64,
+    trim_3: i64,
+    mut emit: impl FnMut(Option<usize>, Option<usize>, u8, u8),
+) {
+    let len = reference.seq.len();
+    let (start, end) = reference.observed_bounds(trim_5, trim_3);
+    let (start, end) = if reference.reverse {
+        (len - end, len - start)
+    } else {
+        (start, end)
+    };
+    let mut expected = start.min(len);
+
+    for pool_pos in pool_start..pool_end {
+        let nucleotide = &sim.pool.as_slice()[pool_pos];
+        let position = nucleotide
+            .germline_pos
+            .get()
+            .and_then(|position| reference.oriented_position(position as usize));
+        let Some(position) = position else {
+            emit(Some(pool_pos), None, nucleotide.base, b'-');
+            continue;
+        };
+        while expected < position {
+            let ref_pos = reference.reference_position(expected);
+            emit(None, Some(ref_pos), b'-', reference.base(ref_pos).unwrap());
+            expected += 1;
+        }
+        let ref_pos = reference.reference_position(position);
+        emit(
+            Some(pool_pos),
+            Some(ref_pos),
+            nucleotide.base,
+            reference.base(ref_pos).unwrap(),
+        );
+        expected = position + 1;
+    }
+    while expected < end {
+        let ref_pos = reference.reference_position(expected);
+        emit(None, Some(ref_pos), b'-', reference.base(ref_pos).unwrap());
+        expected += 1;
+    }
 }
 
 pub(super) fn projected_call_name(
+    refdata: &RefDataConfig,
+    _sim: &Simulation,
+    segment: Segment,
+    origin_id: Option<crate::refdata::AlleleId>,
+) -> String {
+    lookup_name(refdata, segment, origin_id)
+}
+
+/// Evidence-based re-calls remain available separately from the standard
+/// generating calls and alignment reference.
+pub(super) fn recalled_call_name(
     refdata: &RefDataConfig,
     sim: &Simulation,
     segment: Segment,
     origin_id: Option<crate::refdata::AlleleId>,
 ) -> String {
-    // When the truth allele is inside the tie-set, list it FIRST in
-    // the comma-separated `v_call` string. This keeps the first
-    // allele in `v_call` aligned with `projected_allele_id`'s
-    // truth-preference, so downstream consumers that read
-    // `v_call.split(",")[0]` see the same allele that
-    // `germline_alignment`, `v_identity`, and `v_cigar` are computed
-    // against.
-    live_call_name(refdata, sim.segment_calls.get(segment), segment, origin_id)
-        .unwrap_or_else(|| lookup_name(refdata, segment, origin_id))
-}
-
-/// Figure out which V/D/J segment (if any) has an extension
-/// hypothesis that claims this NP pool position.
-///
-/// Returns `Some((segment, germline_byte))` when an adjacent V/D/J
-/// live-call hypothesis extended past its structural region into
-/// `pool_pos`. The germline byte comes from the segment's source
-/// allele at the inferred reference position. Returns `None` when
-/// no V/D/J claim exists - the position stays an NP column with `N`
-/// in `germline_alignment`.
-///
-/// Tie-breaking when both V (right extension) and D (left extension)
-/// claim the same NP1 position: V wins. Same for D vs J on NP2.
-/// This matches the natural V->D->J order and is deterministic.
-pub(super) fn np_claim_owner(
-    sim: &Simulation,
-    refdata: &RefDataConfig,
-    pool_pos: usize,
-) -> Option<(Segment, u8, u32)> {
-    for &seg in Segment::assignable() {
-        if let Some(claim) = check_segment_claim(sim, refdata, seg, pool_pos) {
-            return Some(claim);
-        }
-    }
-    None
-}
-
-/// build the AIRR `np1` / `np2` string from an NP
-/// structural region by skipping any pool position that has been
-/// claimed by a V/D/J live-call extension. The resulting string is
-/// the "true" non-templated insertion as the evidence layer sees it.
-/// pool-position bounds (`[start, end)`) of the contiguous unclaimed
-/// interior of an NP region - the bytes that neither V's right
-/// extension nor the adjacent segment's left extension claimed. Returns
-/// `None` when every position in the region was claimed.
-///
-/// Used by `np1_aa` / `np2_aa` to slice `sequence_aa` at the codon
-/// positions inside the unclaimed span, keeping the AA fields aligned
-/// with `np_length` (which also counts only unclaimed bytes).
-pub(super) fn unclaimed_np_bounds(
-    sim: &Simulation,
-    refdata: &RefDataConfig,
-    region: &Region,
-) -> Option<(usize, usize)> {
-    let r_start = region.start.index() as usize;
-    let r_end = region.end.index() as usize;
-    let mut first: Option<usize> = None;
-    let mut last: Option<usize> = None;
-    for i in r_start..r_end {
-        if np_claim_owner(sim, refdata, i).is_none() {
-            if first.is_none() {
-                first = Some(i);
-            }
-            last = Some(i);
-        }
-    }
-    match (first, last) {
-        (Some(s), Some(e)) => Some((s, e + 1)),
-        _ => None,
-    }
-}
-
-pub(super) fn unclaimed_np_string(
-    sim: &Simulation,
-    refdata: &RefDataConfig,
-    sequence: &str,
-    region: &Region,
-) -> (String, i64) {
-    let bytes = sequence.as_bytes();
-    let r_start = region.start.index() as usize;
-    let r_end = region.end.index() as usize;
-    let mut out = String::with_capacity(r_end.saturating_sub(r_start));
-    for i in r_start..r_end.min(bytes.len()) {
-        if np_claim_owner(sim, refdata, i).is_none() {
-            out.push(bytes[i] as char);
-        }
-    }
-    let len = out.len() as i64;
-    (out, len)
-}
-
-fn check_segment_claim(
-    sim: &Simulation,
-    refdata: &RefDataConfig,
-    seg: Segment,
-    pool_pos: usize,
-) -> Option<(Segment, u8, u32)> {
-    let call = sim.segment_calls.get(seg)?;
-    let h = call.hypotheses.first()?;
-    // NP-claim germline byte comes from the projected
-    // allele (live-call's first allele, fallback to provenance) so
-    // it matches `*_call`. See `projected_allele_id` for rationale.
-    let allele_id = projected_allele_id(sim, seg)?;
-    let allele = refdata.get(seg, allele_id)?;
-    let region = sim.sequence.regions.iter().find(|r| r.segment == seg)?;
-    let r_start = region.start.index() as usize;
-    let r_end = region.end.index() as usize;
-    let h_seq_start = h.seq_start as usize;
-    let h_seq_end = h.seq_end as usize;
-    // Position must be inside the live span...
-    if pool_pos < h_seq_start || pool_pos >= h_seq_end {
-        return None;
-    }
-    // ...and OUTSIDE the structural region (i.e. extension territory).
-    if pool_pos >= r_start && pool_pos < r_end {
-        return None;
-    }
-    // Linear interpolation: at `h.seq_start + k` the walker matched
-    // ref pos `h.ref_start + k`. NP regions don't carry indels, so
-    // the offset is monotonic.
-    let offset = pool_pos - h_seq_start;
-    let ref_pos = h.ref_start as usize + offset;
-    if ref_pos >= allele.seq.len() {
-        return None;
-    }
-    Some((seg, allele.seq[ref_pos], ref_pos as u32))
+    live_call_name(refdata, sim.segment_calls.get(segment), segment, origin_id).unwrap_or_default()
 }
 
 fn live_call_name(
@@ -213,10 +202,8 @@ fn live_call_name(
     let call = call?;
     // Order the tie-set so the truth allele appears first when it is
     // a member. The remaining alleles follow in iter_ids() (ascending
-    // bitset) order. The first comma-separated entry of the resulting
-    // string therefore matches `projected_allele_id`'s pick, which is
-    // what `germline_alignment`, identity, and CIGAR are computed
-    // against.
+    // bitset) order. These are evidence-based calls, not alignment
+    // reference choices.
     let truth_in_tie = truth_id
         .map(|tid| call.allele_call.contains(tid))
         .unwrap_or(false);
@@ -234,13 +221,9 @@ fn live_call_name(
         .into_iter()
         .filter_map(|id| refdata.get(segment, id).map(|allele| allele.name.clone()))
         .collect();
-    // Defensive fallback: under the score-and-tie caller, the bitset
-    // should always have at least one allele (max=0 returns the full
-    // pool). An empty bitset only arises today when an upstream
-    // constructor builds an unsupported live-call directly. Treat
-    // that as "no evidence-based call available" so projected_call_name's
-    // unwrap_or_else fires and v_call falls back to the truth assignment,
-    // staying consistent with projected_allele_id's existing fallback.
+    // An observed all-zero-score call still contains the supported-pool tie.
+    // An absent/unsupported call has no inference to export; generating
+    // identity is already available separately in the standard call.
     if names.is_empty() {
         return None;
     }

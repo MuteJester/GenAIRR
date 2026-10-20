@@ -32,16 +32,16 @@ from GenAIRR import CompiledExperiment, Experiment
 # ──────────────────────────────────────────────────────────────────
 
 
-def _vj_refdata() -> ge.RefDataConfig:
+def _vj_refdata(*, canonical=False) -> ge.RefDataConfig:
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT" if canonical else b"AAACCCGGG", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
     return cfg
 
 
-def _vdj_refdata() -> ge.RefDataConfig:
+def _vdj_refdata(*, canonical=False) -> ge.RefDataConfig:
     cfg = ge.RefDataConfig.vdj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT" if canonical else b"AAACCCGGG", anchor=6)
     cfg.add_d_allele("d1*01", "d1", b"TTTTTT")
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
     return cfg
@@ -350,7 +350,7 @@ def test_run_produces_distinct_outcomes_across_iterations():
 
 
 def test_compiled_experiment_can_be_run_multiple_times():
-    compiled = Experiment.on(_vj_refdata()).allow_curatable_refdata().recombine().compile(allow_curatable_refdata=True)
+    compiled = Experiment.on(_vj_refdata(canonical=True)).allow_curatable_refdata().recombine().compile(allow_curatable_refdata=True)
     a = compiled.run(n=2, seed=0)
     b = compiled.run(n=2, seed=10)
     # Different seeds → different outcomes. Same plan instance
@@ -375,24 +375,25 @@ def test_productive_is_reexported_from_top_level():
     assert GenAIRR.productive is ge.productive
 
 
-def test_productive_returns_contract_set_with_four_named_contracts():
+def test_productive_returns_contract_set_with_five_named_contracts():
     cs = ge.productive()
     assert isinstance(cs, ge.ContractSet)
-    assert len(cs) == 4
+    assert len(cs) == 5
     assert not cs.is_empty()
     names = cs.names()
     assert names == [
         "productive_junction_frame",
         "no_stop_codon_in_junction",
-        "anchor_preserved.v",
-        "anchor_preserved.j",
+        "canonical_anchor.v1.v",
+        "canonical_anchor.v1.j",
+        "coding_sequence_integrity",
     ]
 
 
 def test_contract_set_repr_includes_count_and_names():
     r = repr(ge.productive())
     assert "ContractSet" in r
-    assert "len=4" in r
+    assert "len=5" in r
     assert "productive_junction_frame" in r
 
 
@@ -416,7 +417,7 @@ def test_productive_only_constrains_np1_length_to_in_frame():
     # so junction = 6 + NP1. Productive frame ⇒ NP1 % 3 == 0.
     # Filter NP1 length distribution to {0..6} uniform; with productive
     # active every NP1 length must be in {0, 3, 6}.
-    cfg = _vj_refdata()
+    cfg = _vj_refdata(canonical=True)
     outcomes = (
         Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only().run(n=20, seed=0)
     )
@@ -442,7 +443,7 @@ def test_run_unconstrained_produces_some_out_of_frame_np1():
 def test_productive_only_is_idempotent():
     # Calling .productive_only() twice is the same as once — the
     # bundle is added at most once to the contract list.
-    cfg = _vj_refdata()
+    cfg = _vj_refdata(canonical=True)
     a = (
         Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only().run(n=2, seed=0)
     )
@@ -460,7 +461,7 @@ def test_productive_only_is_idempotent():
 def test_productive_only_is_order_independent_in_the_chain():
     # Whether productive_only() is called before or after recombine()
     # / mutate(), the compiled simulator is structurally equal.
-    cfg = _vj_refdata()
+    cfg = _vj_refdata(canonical=True)
     a = (
         Experiment.on(cfg).allow_curatable_refdata()
         .recombine()
@@ -481,13 +482,14 @@ def test_productive_only_is_order_independent_in_the_chain():
 
 def test_compiled_experiment_carries_productive_bundle():
     # Contracts are captured at compile time and reused by run().
-    cfg = _vj_refdata()
+    cfg = _vj_refdata(canonical=True)
     compiled = Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only().compile(allow_curatable_refdata=True)
     assert compiled.active_contracts == (
         "productive_junction_frame",
         "no_stop_codon_in_junction",
-        "anchor_preserved.v",
-        "anchor_preserved.j",
+        "canonical_anchor.v1.v",
+        "canonical_anchor.v1.j",
+        "coding_sequence_integrity",
     )
     a = compiled.run(n=3, seed=0)
     for o in a:
@@ -495,7 +497,7 @@ def test_compiled_experiment_carries_productive_bundle():
 
 
 def test_run_with_productive_only_is_deterministic_under_same_seed():
-    cfg = _vj_refdata()
+    cfg = _vj_refdata(canonical=True)
     exp = Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only()
     a = exp.run(n=5, seed=0xCAFE)
     b = exp.run(n=5, seed=0xCAFE)
@@ -513,7 +515,7 @@ def _vj_refdata_with_restrictive_np1(*, np1_lengths):
     fully under our control. Used by the strict-mode tests so we can
     construct deliberately-unsatisfiable scenarios.
     """
-    cfg = _vj_refdata()
+    cfg = _vj_refdata(canonical=True)
     plan = ge.PassPlan()
     plan.push_sample_allele("V", cfg)
     plan.push_sample_allele("J", cfg)
@@ -532,9 +534,9 @@ def _vj_refdata_with_runtime_frame_residue():
     relying on a later strict runtime failure.
     """
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
     cfg.add_j_allele("j_good*01", "j_good", b"TTTAAA", anchor=0)
-    cfg.add_j_allele("j_bad*01", "j_bad", b"TTTAAA", anchor=1)
+    cfg.add_j_allele("j_bad*01", "j_bad", b"ATTTAAA", anchor=1)
     plan = ge.PassPlan()
     plan.push_sample_allele("V", cfg)
     plan.push_sample_allele("J", cfg)
@@ -573,7 +575,7 @@ def test_strict_sampling_error_is_exposed_at_top_level():
 
 
 def test_strict_with_satisfiable_contract_succeeds():
-    cfg = _vj_refdata()
+    cfg = _vj_refdata(canonical=True)
     out = (
         Experiment.on(cfg).allow_curatable_refdata()
         .recombine()
@@ -587,7 +589,7 @@ def test_productive_compile_rejects_unsatisfiable_length_distribution():
     # NP1 distribution {1, 2} has no in-frame mass for this VJ fixture.
     # This is now a build-time D7 failure, independent of strict mode.
     cfg, plan = _vj_refdata_with_restrictive_np1(np1_lengths=[(1, 1.0), (2, 1.0)])
-    with pytest.raises(ValueError, match="NP1 length support has no in-frame mass"):
+    with pytest.raises(ValueError, match="supports have no productive completion"):
         ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True, allow_curatable_refdata=True)
 
 
@@ -611,7 +613,7 @@ def test_compiled_feasibility_filters_runtime_frame_residue():
 
 
 def test_strict_mode_passes_through_compiled_experiment_run():
-    cfg = _vj_refdata()
+    cfg = _vj_refdata(canonical=True)
     compiled = Experiment.on(cfg).allow_curatable_refdata().recombine().productive_only().compile(allow_curatable_refdata=True)
     # Satisfiable: succeeds.
     out = compiled.run(n=2, seed=0, strict=True)
@@ -635,7 +637,19 @@ def test_strict_without_respect_runs_permissively():
 def test_strict_sampling_error_args_form_three_tuple():
     # Public contract: StrictSamplingError.args is always a 3-tuple
     # so callers can destructure deterministically.
-    cfg, plan = _vj_refdata_with_stop_in_v_anchor()
+    # References and joining support are valid, so compilation succeeds.
+    # One structural deletion cannot preserve the two three-base anchors;
+    # the complete event support is empty and fails at runtime.
+    cfg = ge.RefDataConfig.vj()
+    cfg.add_v_allele("v*01", "v", b"TGT", anchor=0)
+    cfg.add_j_allele("j*01", "j", b"TGG", anchor=0)
+    plan = ge.PassPlan()
+    plan.push_sample_allele("V", cfg)
+    plan.push_sample_allele("J", cfg)
+    plan.push_assemble("V")
+    plan.push_generate_np("NP1", [(0, 1.0)])
+    plan.push_assemble("J")
+    plan.push_corrupt_indel([(1, 1.0)], insertion_prob=0.0)
     with pytest.raises(ge.StrictSamplingError) as err:
         ge.run(plan, seed=0, refdata=cfg, respect=ge.productive(), strict=True, allow_curatable_refdata=True)
     exc = err.value
@@ -2616,7 +2630,7 @@ def test_to_tsv_includes_new_h1_columns(tmp_path):
 
     for i, row in enumerate(rows):
         assert row["sequence_id"] == f"seq{i}"
-        assert row["rev_comp"] == "False"
+        assert row["rev_comp"] == "F"
         assert row["locus"] == "IGH"
         assert row["c_call"] == ""
         assert "junction" in row  # new name
@@ -3136,9 +3150,12 @@ def test_alignment_invariants_under_full_corruption_stack():
         .mutate(count=15)
         .pcr_amplify(count=5)
         .sequencing_errors(count=8)
-        .polymerase_indels(count=4, insertion_prob=0.5)
+        .polymerase_indels(count=4, insertion_prob=0.5, rejection_attempts=4096)
     )
+    # This stress case requests four edits after heavy mutation. Allocate more
+    # complete proposals; exhausted work must not become an unnoticed no-op.
     result = exp.productive_only().run_records(n=200, seed=0)
+    assert all(rec["n_indels"] == 4 for rec in result)
     failures = [
         (i, _alignment_invariants_hold(rec))
         for i, rec in enumerate(result)
@@ -3859,7 +3876,7 @@ def test_to_tsv_passes_airr_validation_with_contamination(tmp_path):
 
 
 def test_airr_strict_increments_start_fields_only(tmp_path):
-    # Default mode keeps coords 0-based half-open. ``airr_strict=True``
+    # Explicit legacy mode keeps coords 0-based half-open. ``airr_strict=True``
     # bumps every ``*_start`` field by 1 (giving 1-based-inclusive).
     # The ``*_end`` fields are left unchanged because Python's
     # half-open ``end`` already equals the 1-based-inclusive ``end``.
@@ -3868,7 +3885,7 @@ def test_airr_strict_increments_start_fields_only(tmp_path):
     result = _human_igh_exp().run_records(n=2, seed=42)
     py_path = tmp_path / "py.tsv"
     strict_path = tmp_path / "strict.tsv"
-    result.to_tsv(str(py_path))
+    result.to_tsv(str(py_path), airr_strict=False)
     result.to_tsv(str(strict_path), airr_strict=True)
 
     with open(py_path) as fh:
@@ -3999,9 +4016,9 @@ def test_to_airr_strict_helper_does_not_mutate_input():
     assert rec == snapshot
 
 
-def test_airr_strict_default_is_false():
+def test_airr_strict_tsv_default_is_true():
     # Sanity: ``to_tsv`` without the flag should produce the same
-    # output as ``airr_strict=False``.
+    # output as ``airr_strict=True``.
     import tempfile, os, csv as _csv
 
     result = _human_igh_exp().run_records(n=1, seed=0)
@@ -4009,7 +4026,7 @@ def test_airr_strict_default_is_false():
         a = os.path.join(tmp, "a.tsv")
         b = os.path.join(tmp, "b.tsv")
         result.to_tsv(a)
-        result.to_tsv(b, airr_strict=False)
+        result.to_tsv(b, airr_strict=True)
         with open(a) as fh:
             ra = list(_csv.DictReader(fh, delimiter="\t"))
         with open(b) as fh:
@@ -4040,8 +4057,7 @@ def _reverse_complement(s: str) -> str:
 
 def test_5prime_loss_drops_leading_bases():
     # Fixed-length 5' loss: every record's sequence is shorter by
-    # exactly the requested amount, and the V segment's CIGAR starts
-    # with that many `D` ops (the lost ref positions).
+    # exactly the requested amount. Reference coverage moves with the read.
     base = ga.Experiment.on("human_igh").recombine()
     lost = ga.Experiment.on("human_igh").recombine().primer_trim_5prime(length=15)
     base_recs = list(base.run_records(n=10, seed=0))
@@ -4051,8 +4067,10 @@ def test_5prime_loss_drops_leading_bases():
         assert lr["sequence_length"] == fwd["sequence_length"] - 15, (
             f"len={lr['sequence_length']} vs {fwd['sequence_length']} - 15"
         )
-        # V's CIGAR begins with `15D` (the lost prefix of V).
-        assert lr["v_cigar"].startswith("15D"), f"v_cigar={lr['v_cigar']!r}"
+        assert lr["sequence"] == fwd["sequence"][15:]
+        assert lr["v_germline_start"] == fwd["v_germline_start"] + 15
+        assert "D" not in lr["v_cigar"]
+        assert lr["v_identity"] == 1.0
 
 
 def test_3prime_loss_drops_trailing_bases():
@@ -4060,8 +4078,10 @@ def test_3prime_loss_drops_trailing_bases():
     lost = ga.Experiment.on("human_igh").recombine().primer_trim_3prime(length=10)
     for fwd, lr in zip(base.run_records(n=10, seed=0), lost.run_records(n=10, seed=0)):
         assert lr["sequence_length"] == fwd["sequence_length"] - 10
-        # J's CIGAR ends with `10D` (the lost suffix of J).
-        assert lr["j_cigar"].endswith("10D"), f"j_cigar={lr['j_cigar']!r}"
+        assert lr["sequence"] == fwd["sequence"][:-10]
+        assert lr["j_germline_end"] == fwd["j_germline_end"] - 10
+        assert "D" not in lr["j_cigar"]
+        assert lr["j_identity"] == 1.0
 
 
 def test_loss_zero_is_no_op():
@@ -4078,10 +4098,8 @@ def test_loss_zero_is_no_op():
 
 
 def test_loss_preserves_alignment_invariants():
-    # 5'/3' loss extends the CIGAR with leading/trailing `D` ops.
-    # The H.3 alignment-string invariants (sa.replace('-')==seq, etc.)
-    # should still hold — the column walker accounts for the extra
-    # D ops in the trailing-D-fill loop.
+    # Clipping shortens coverage while the alignment still preserves query
+    # order and the observed M/I spans.
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
@@ -4124,26 +4142,19 @@ def test_rev_comp_flips_sequence_and_flag():
         assert rc["sequence"] == _reverse_complement(fwd["sequence"])
 
 
-def test_rev_comp_flips_per_segment_sequence_coords():
-    # When the sequence is flipped, V (at the forward 5' end) ends up
-    # at the antisense 3' end. So new_v_sequence_start = seq_len -
-    # old_v_sequence_end, and the v slice of the new sequence equals
-    # the reverse-complement of the old v slice.
+def test_rev_comp_preserves_coding_oriented_sequence_coords():
+    # AIRR coordinates refer to the coding-oriented reverse complement
+    # of sequence when rev_comp is true.
     base = ga.Experiment.on("human_igh").recombine()
     flipped = ga.Experiment.on("human_igh").recombine().random_strand_orientation(prob=1.0)
     for fwd, rc in zip(base.run_records(n=20, seed=0), flipped.run_records(n=20, seed=0)):
-        seq_len = fwd["sequence_length"]
         for seg in ("v", "d", "j"):
             fs, fe = fwd[f"{seg}_sequence_start"], fwd[f"{seg}_sequence_end"]
             if fs is None:
                 continue
             rs, re = rc[f"{seg}_sequence_start"], rc[f"{seg}_sequence_end"]
-            assert rs == seq_len - fe, f"{seg}_sequence_start: {rs} vs {seq_len - fe}"
-            assert re == seq_len - fs, f"{seg}_sequence_end: {re} vs {seq_len - fs}"
-            # The slice of the flipped sequence at the new coords
-            # equals the reverse-complement of the forward segment's
-            # sequence slice.
-            assert rc["sequence"][rs:re] == _reverse_complement(fwd["sequence"][fs:fe])
+            assert (rs, re) == (fs, fe)
+            assert _reverse_complement(rc["sequence"])[rs:re] == fwd["sequence"][fs:fe]
 
 
 def test_rev_comp_keeps_alignment_strings_in_forward_orientation():

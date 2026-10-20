@@ -93,6 +93,8 @@ impl SimulationEventSink for DirtySignalObserver {
             // reserved (non-pool) variants describe sidecar state
             // that doesn't dirty pool positions.
             SimulationEvent::BasePushed { .. }
+            | SimulationEvent::CodingEndChoiceRecorded { .. }
+            | SimulationEvent::CodingEndPOriginRecorded { .. }
             | SimulationEvent::BaseDeleted { .. }
             | SimulationEvent::AssignmentChanged { .. }
             | SimulationEvent::TrimChanged { .. }
@@ -110,7 +112,9 @@ impl SimulationEventSink for DirtySignalObserver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{flag, NucFlags, NucHandle, Nucleotide, Segment, Simulation, SimulationBuilder};
+    use crate::ir::{
+        flag, NucFlags, NucHandle, Nucleotide, Segment, Simulation, SimulationBuilder,
+    };
 
     fn base_pushed(handle: u32, base: u8) -> SimulationEvent {
         SimulationEvent::BasePushed {

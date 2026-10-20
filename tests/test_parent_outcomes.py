@@ -18,8 +18,8 @@ Spec coverage (from the user brief):
 1. Clonal result exposes ``parents`` with one parent per clone.
 2. Every clonal record carries ``parent_id``.
 3. ``record["parent_id"]`` indexes a real parent outcome.
-4. Parent outcome has the pre-branch trace; child trace remains
-   descendant-only and is not inflated.
+4. Parent outcome has the pre-branch trace; each child includes that
+   prefix once, followed by its own descendant choices.
 5. Non-clonal result keeps ``parents is None`` and ``parent_id``
    absent from records.
 6. Existing ``validate_families()`` still passes and does not
@@ -29,8 +29,7 @@ Spec coverage (from the user brief):
 
 Out of scope here (per the spec): no parent-aware family
 validator, no Rust-side ``Outcome.parent_id`` field, no
-``ClonalFamily`` aggregate, no clonal trace-file format, no
-change to descendant trace semantics.
+``ClonalFamily`` aggregate, no clonal trace-file format.
 """
 from __future__ import annotations
 
@@ -141,7 +140,7 @@ def test_parent_id_matches_clone_id_today() -> None:
 def test_record_parent_id_indexes_a_real_parent_outcome() -> None:
     """For every record, ``result.parents[record["parent_id"]]`` is
     a real ``Outcome`` whose ``final_simulation()`` matches the
-    descendant's initial IR (``revision(0)``) on the shared
+    descendant's fork-boundary revision on the shared
     recombination state (V/D/J allele ids, pool length, regions).
     This is the audit's §2 boundary-handoff invariant — Slice 2
     makes it observable; this test proves it through the new API."""
@@ -154,16 +153,17 @@ def test_record_parent_id_indexes_a_real_parent_outcome() -> None:
         parent = result.parents[rec["parent_id"]]
         descendant = result.outcomes[i]
         parent_sim = parent.final_simulation()
-        desc_initial = descendant.revision(0)
+        desc_initial = descendant.revision(parent.revision_count() - 1)
         assert desc_initial.v_allele_id() == parent_sim.v_allele_id()
         assert desc_initial.d_allele_id() == parent_sim.d_allele_id()
         assert desc_initial.j_allele_id() == parent_sim.j_allele_id()
         assert len(desc_initial) == len(parent_sim)
         assert desc_initial.region_count() == parent_sim.region_count()
+        assert desc_initial.bases() == parent_sim.bases()
 
 
 # ──────────────────────────────────────────────────────────────────
-# Spec 4 — Parent has pre-branch trace; descendant trace not inflated
+# Spec 4 — Parent has pre-branch trace; descendant includes it once
 # ──────────────────────────────────────────────────────────────────
 
 
@@ -195,20 +195,16 @@ def test_parent_outcome_carries_pre_branch_trace() -> None:
             )
 
 
-def test_descendant_trace_remains_descendant_only_not_inflated() -> None:
-    """Slice 2 must NOT lift parent trace events onto descendants.
-    Each descendant's ``trace()`` and ``event_count()`` continue to
-    reflect only post-fork passes — strictly less than a non-clonal
-    ``recombine + same post-fork plan`` run from a fresh IR.
-
-    This is the audit's §11 backwards-compat guarantee: descendant
-    trace semantics unchanged."""
+def test_descendant_trace_contains_parent_prefix_once_and_its_own_mutations() -> None:
+    """Complete history has the same shape as a full recombine/SHM run,
+    with the actual shared parent choices followed by child mutations."""
     clonal_result = _make_clonal(
         n_clones=1, per_clone=2, with_mutate=True
     ).run_records(seed=0)
     assert clonal_result.outcomes is not None
-    desc_event_counts = [o.event_count() for o in clonal_result.outcomes]
-    desc_trace_lens = [len(o.trace()) for o in clonal_result.outcomes]
+    assert clonal_result.parents is not None
+    parent = clonal_result.parents[0]
+    parent_choices = [(c.address, c.value) for c in parent.trace().choices()]
 
     non_clonal = (
         ga.Experiment.on("human_igh").recombine().mutate(count=5).compile()
@@ -217,26 +213,23 @@ def test_descendant_trace_remains_descendant_only_not_inflated() -> None:
     non_clonal_event_count = non_clonal_outcome.event_count()
     non_clonal_trace_len = len(non_clonal_outcome.trace())
 
-    for de in desc_event_counts:
-        assert de < non_clonal_event_count, (
-            f"descendant event_count ({de}) >= non-clonal "
-            f"({non_clonal_event_count}); parent events leaked onto "
-            "descendants — Slice 2 contract violated."
-        )
-    for dt in desc_trace_lens:
-        assert dt < non_clonal_trace_len, (
-            f"descendant trace_len ({dt}) >= non-clonal "
-            f"({non_clonal_trace_len}); parent trace leaked onto "
-            "descendants."
-        )
+    for descendant in clonal_result.outcomes:
+        choices = [(c.address, c.value) for c in descendant.trace().choices()]
+        assert choices[:len(parent_choices)] == parent_choices
+        suffix = choices[len(parent_choices):]
+        assert suffix
+        assert all(address.startswith("mutate.s5f.") for address, _ in suffix)
+        assert descendant.event_count() == parent.event_count() + 1
+        assert descendant.event_count() == non_clonal_event_count
+        assert len(choices) == non_clonal_trace_len
+        assert descendant.pass_names() == parent.pass_names() + ["mutate.s5f"]
 
 
-def test_parent_trace_not_duplicated_per_descendant() -> None:
+def test_parent_accessor_keeps_one_shared_outcome_per_clone() -> None:
     """One parent ``Outcome`` per clone — not one per descendant.
     With ``per_clone=20`` and ``n_clones=2``, ``len(.parents) == 2``
-    (not ``40``). Confirms the audit's §4 "Candidate B"
-    no-duplication property: parents are stored once, not per-
-    descendant."""
+    (not ``40``). The parent accessor shares one object even though
+    descendant outcomes also retain its provenance as a prefix."""
     result = _make_clonal(n_clones=2, per_clone=20).run_records(seed=0)
     assert result.parents is not None
     assert len(result.parents) == 2

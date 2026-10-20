@@ -15,7 +15,8 @@ class _ConstraintsMixin:
         immcantation pipelines all expect them populated. Custom
         keys are also accepted and pass through unchanged.
 
-        Subsequent ``with_metadata()`` calls **merge** with the
+        Generated sequence/annotation fields are reserved and cannot
+        be overwritten. Subsequent ``with_metadata()`` calls **merge** with the
         prior set (per-key replacement). Pass ``key=None`` to clear
         a single key. Values are stored as-is and serialised via
         the standard CSV/TSV writers; non-string values are
@@ -28,6 +29,23 @@ class _ConstraintsMixin:
                             repertoire_id="R-001-IGH")
              .recombine().mutate(count=8))
         """
+        from .._result_export import _DEFAULT_COLUMN_ORDER
+
+        reserved = set(_DEFAULT_COLUMN_ORDER) | {
+            "coding_end_processing",
+            "productivity_policy", "productivity_scope", "productivity_reasons",
+            "p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length",
+            "truth_v_call", "truth_d_call", "truth_j_call", "clone_id",
+            "parent_id", "duplicate_count", "lineage_node_id", "lineage_parent_id",
+            "lineage_generation", "lineage_abundance", "lineage_affinity",
+            "lineage_mutations_from_parent",
+            "r1_sequence", "r2_sequence",
+        }
+        collisions = reserved.intersection(fields)
+        if collisions:
+            raise ValueError(
+                f"with_metadata: reserved generated fields cannot be overwritten: {sorted(collisions)}"
+            )
         for key, value in fields.items():
             if not isinstance(key, str):
                 raise TypeError(
@@ -41,48 +59,37 @@ class _ConstraintsMixin:
         return self
 
     def productive_only(self) -> "Experiment":
-        """Require every emitted record to be a productive sequence.
+        """Require accepted final observed coding spans under the versioned policy.
 
-        Attaches the canonical productive-sequence contract bundle to
-        the experiment: junction frame in-register, no stop codons in
-        the junction, and V/J anchor amino acids preserved. The bundle
-        is enforced during recombination, mutation, and corruption
-        passes by narrowing each pass's action support before
-        sampling. If a constrained support is empty, permissive
-        execution uses the pass's explicit no-op / sentinel behavior;
-        use ``strict=True`` at run time to raise instead.
+        ``canonical_observed_vdj_v1`` requires original V/J landmark
+        provenance, V Cys and J Phe/Trp residue classes, joining in the
+        retained V coding frame, a consistent J-tail frame, and definitely
+        no stop in complete observed coding codons. It predicts sequence
+        acceptance, not expression, folding, or receptor function. The
+        returned ``productivity_policy`` and ``productivity_scope`` identify
+        this interpretation. Reference admission overrides do not change it.
 
-        **Failure surfaces** (see
-        ``docs/productive_failure_mode_audit.md`` for the full matrix):
+        Unknown landmarks or phase and ambiguity that could hide a stop
+        cannot satisfy this bundle. Terminal clipping can remain accepted
+        when the required landmarks and coding evidence remain observed.
+        Every successful emission has ``productive is True`` in strict and
+        permissive mode; a final unresolved/failed assessment raises instead
+        of emitting a mislabeled record. There is no retry/post-filter loop.
 
-        - *Compile-time precondition* — when a sampling distribution
-          is statically impossible under the bundle (e.g. every NP1
-          length violates frame), :meth:`compile` raises
-          ``ValueError`` regardless of the ``strict`` flag.
-        - *Runtime fresh strict* (``run(..., strict=True)``) — when
-          dynamic state makes a sampler's admissible support empty,
-          raises :class:`GenAIRR._engine.StrictSamplingError` with
-          structured ``(pass_name, address, reason)`` args.
-        - *Runtime fresh permissive* (``strict=False``, default) —
-          the pass records its declared sentinel (indel ``site=-1``,
-          NP length ``0``, NP base ``N``, trim ``0``) or skips the
-          slot; the record continues.
-        - *Trace replay* (``replay_from_trace_file``) — consumes
-          recorded values verbatim, does not re-evaluate
-          admissibility. A permissive-sentinel trace replays cleanly
-          even with ``strict=True``.
+        Sampling narrows each pass's support before drawing. Fixed and mixed
+        P lengths and original-end processing use feasible future completion
+        support. Draw weights are locally renormalized; this is not a claim
+        of a globally productivity-conditioned joint probability model.
+        Impossible initial/P-aware support raises even in permissive mode.
+        Other passes may use documented no-op behavior if that preserves an
+        accepted final record. Strict mode reports their empty supports.
+        Replay consumes recorded choices without replacement draws and must
+        satisfy the same final assessment.
 
-        **Order-independent.** This method is a constraint declaration,
-        not a pipeline step — it can be called anywhere in the chain
-        and the result is identical. Convention is to place it last
-        (right before ``run_records()``) so the constraint reads as a
-        post-hoc requirement on the emitted records.
-
-        TCR refdata accepts the call but raises ``ValueError`` at
-        :meth:`compile` time because TCRs don't have somatic
-        hypermutation and the productive bundle's anchor checks
-        assume BCR semantics. Catch this early at the builder if it
-        matters to you.
+        This is an order-independent constraint declaration for BCR and TCR
+        chains. Exact preservation of the reference anchor residue is a
+        separate native ``AnchorPreserved`` contract; the default J class
+        permits Phe/Trp changes at the same original landmark.
 
         Example::
 

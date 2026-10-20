@@ -1,11 +1,11 @@
 """Release-tier composition tests for the P-nucleotide v1 slice.
 
 Confirms the slice composes with the rest of the release stack
-(productive IGH, D inversion, receptor revision, SHM,
+(IGH, D inversion, receptor revision, SHM,
 corruption, AIRR projection, validator, cache parity) and
 preserves three load-bearing invariants:
 
-- **Records validate clean under the full stack.** Productive
+- **Records validate clean under the full stack.**
   IGH with all four P-ends configured + ``invert_d`` + optional
   receptor revision + SHM + corruption produces records whose
   AIRR projection passes
@@ -26,6 +26,8 @@ preserves three load-bearing invariants:
   the audit guaranteed.
 
 Companion to [`docs/p_nucleotide_design.md`](../docs/p_nucleotide_design.md).
+Productive composition is checked against an independent genetic-code table,
+alignment arithmetic, combined NP intervals, and actual P emission.
 """
 from __future__ import annotations
 
@@ -40,6 +42,7 @@ from GenAIRR.reference_models import (
     EmpiricalDistributionSpec,
     ReferenceEmpiricalModels,
 )
+from ._p_productive_support import assert_productive_record
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -89,11 +92,11 @@ _FOUR_END_RELEASE_LENGTHS = {
 
 
 # ──────────────────────────────────────────────────────────────────
-# 1. Productive IGH full stack: validate_records + cache parity
+# 1. IGH full stack: validate_records + cache parity
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_productive_igh_full_stack_with_p_addition_validates_and_parity_holds() -> None:
+def test_igh_full_stack_with_p_addition_validates_and_parity_holds() -> None:
     """Two-layer integrity check under the full release stack:
 
     - Layer 1 (downstream contract): ``validate_records``
@@ -107,7 +110,7 @@ def test_productive_igh_full_stack_with_p_addition_validates_and_parity_holds() 
       ``P_NUC`` flag; they do not shift segment regions and
       must NOT invalidate cached calls.
 
-    Pipeline: productive IGH with all four P-ends + D
+    Pipeline: IGH with all four P-ends + D
     inversion + receptor revision + SHM + polymerase indels +
     primer trim. At least one record must carry a non-zero
     P field across the batch — otherwise the test isn't
@@ -117,19 +120,21 @@ def test_productive_igh_full_stack_with_p_addition_validates_and_parity_holds() 
     exp = (
         ga.Experiment.on(cfg)
         .recombine()
-        .productive_only()
         .invert_d(prob=0.3)
         .receptor_revision(prob=0.2)
         .mutate(rate=0.01)
         .polymerase_indels(count=1)
         .primer_trim_3prime(length=(1, 2))
+        .productive_only()
     )
     refdata = exp.refdata
-    result = exp.run_records(n=40, seed=4242)
+    result = exp.run_records(n=40, seed=4242, expose_provenance=True)
+    for record in result:
+        assert_productive_record(record, cfg)
 
     report = result.validate_records(refdata)
     assert report, (
-        f"projection layer (validator) failed under productive IGH + "
+        f"projection layer (validator) failed under IGH + "
         f"P-addition full stack: {report.summary()}"
     )
 
@@ -164,7 +169,7 @@ def test_replay_round_trip_under_forced_d_inversion_preserves_sequence_and_p_len
     """Forces ``invert_d(prob=1.0)`` so every record exercises
     the IR-critical ``invert_d → p_addition.D_5 → assemble.D``
     lowering order. Replay round-trip via
-    ``rerun_from_trace_file`` must reproduce ``sequence`` and
+    ``replay_from_trace_file`` must reproduce ``sequence`` and
     all four ``p_*_length`` fields byte-for-byte across
     multiple seeds.
 
@@ -175,14 +180,14 @@ def test_replay_round_trip_under_forced_d_inversion_preserves_sequence_and_p_len
     `invert_d` commit before `p_addition.D_5` would produce
     different sequences on replay and fail this gate."""
     cfg = _cartridge_with_p_lengths(_FOUR_END_RELEASE_LENGTHS)
-    exp = ga.Experiment.on(cfg).recombine().productive_only().invert_d(prob=1.0)
+    exp = ga.Experiment.on(cfg).recombine().invert_d(prob=1.0).productive_only()
     refdata = exp.refdata
     compiled = exp.compile()
     seen_d_5_nonzero = False
     for seed in range(8):
-        fresh = compiled.simulator.run(seed=seed)
+        fresh = compiled.simulator.run(seed=seed, strict=True)
         tf = compiled.simulator.trace_file_from(fresh, seed=seed)
-        replayed = compiled.simulator.rerun_from_trace_file(tf)
+        replayed = compiled.simulator.replay_from_trace_file(tf, strict=True)
 
         fr = outcome_to_airr_record(fresh, refdata, sequence_id=f"fresh-{seed}")
         rr = outcome_to_airr_record(replayed, refdata, sequence_id=f"replay-{seed}")
@@ -204,11 +209,31 @@ def test_replay_round_trip_under_forced_d_inversion_preserves_sequence_and_p_len
         )
         if fr["p_d_5_length"] > 0:
             seen_d_5_nonzero = True
+        assert_productive_record(fr, cfg)
     # Across 8 seeds at least one D_5 P-extension fires.
     assert seen_d_5_nonzero, (
         "no seed in [0..8) produced a non-zero p_d_5_length — the "
         "IR-critical post-inversion D_5 path isn't actually exercised"
     )
+
+
+@pytest.mark.parametrize("preset,has_d", [("HUMAN_IGK_OGRDB", False), ("HUMAN_IGH_OGRDB", True)])
+@pytest.mark.parametrize("strict", [False, True])
+def test_builtin_productive_p_sweep_with_forced_positive_lengths(preset, has_d, strict):
+    lengths = {"V_3": 1, "J_5": 2}
+    if has_d:
+        lengths.update({"D_5": 1, "D_3": 2})
+    cfg = _cartridge_with_p_lengths(
+        {end: EmpiricalDistributionSpec([(length, 1.0)]) for end, length in lengths.items()},
+        preset=preset,
+    )
+    exp = ga.Experiment.on(cfg).recombine().productive_only()
+    result = exp.run_records(n=64, seed=731, strict=strict, expose_provenance=True)
+    for record in result:
+        for end, length in lengths.items():
+            assert record[f"p_{end.lower()}_length"] == length
+        assert_productive_record(record, cfg)
+    assert result.validate_records(exp.refdata).ok
 
 
 # ──────────────────────────────────────────────────────────────────

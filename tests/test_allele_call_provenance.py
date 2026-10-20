@@ -1,9 +1,10 @@
 """Allele-call disambiguation golden tests.
 
 Companion to [docs/allele_call_audit.md](../docs/allele_call_audit.md).
-Pins **current** behaviour of the live-call walker on the AIRR
-projection under evidence-changing mechanisms (SHM, PCR errors,
-sequencing errors, N substitution).
+Pins the live walker's evidence-based `recalled_*_call` fields under
+SHM, PCR errors, sequencing errors, and N substitution. Standard
+`v_call`/`d_call`/`j_call` and alignment fields keep the generating
+assignment, verified separately on every record.
 
 Fixture design notes:
 
@@ -84,7 +85,11 @@ def _baseline_vj_experiment(cfg) -> "ga.Experiment":
 def _record(exp: "ga.Experiment", seed: int = 0, **kwargs) -> dict:
     result = exp.run_records(n=1, seed=seed, expose_provenance=True, **kwargs)
     assert len(result.records) == 1
-    return result.records[0]
+    record = result.records[0]
+    for segment in ("v", "d", "j"):
+        assert record[f"{segment}_call"] == record[f"truth_{segment}_call"]
+    assert result.validate_records(exp.refdata).ok
+    return record
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -94,7 +99,7 @@ def _record(exp: "ga.Experiment", seed: int = 0, **kwargs) -> dict:
 
 def test_identical_v_alleles_produce_csv_tie_with_truth_first() -> None:
     """Two literally identical V alleles → walker can't
-    distinguish them → tie-set contains both. AIRR `v_call` is
+    distinguish them → tie-set contains both. AIRR `recalled_v_call` is
     the CSV with the truth allele first (`projected_call_name`
     convention)."""
     exp = _baseline_vj_experiment(_two_v_identical())
@@ -103,7 +108,7 @@ def test_identical_v_alleles_produce_csv_tie_with_truth_first() -> None:
     for seed in range(8):
         rec = _record(exp, seed=seed)
         truth = rec["truth_v_call"]
-        csv = rec["v_call"].split(",")
+        csv = rec["recalled_v_call"].split(",")
         assert len(csv) == 2
         assert set(csv) == {"v1*01", "v1*02"}
         assert csv[0] == truth, (
@@ -123,8 +128,8 @@ def test_distinguishing_alleles_resolve_to_truth_without_mutation() -> None:
     exp = _baseline_vj_experiment(_two_v_one_distinguishing())
     for seed in range(8):
         rec = _record(exp, seed=seed)
-        assert rec["v_call"] == rec["truth_v_call"], (
-            f"seed {seed}: v_call {rec['v_call']!r} should resolve to "
+        assert rec["recalled_v_call"] == rec["truth_v_call"], (
+            f"seed {seed}: recalled_v_call {rec['recalled_v_call']!r} should resolve to "
             f"truth {rec['truth_v_call']!r} when no evidence shift"
         )
         # Identity against the projected (==truth) allele is perfect.
@@ -143,8 +148,8 @@ def test_shm_at_distinguishing_position_can_switch_call_away_from_truth() -> Non
 
     Seed=24 with `mutate(rate=0.1)` and locked truth=v1*01
     produces sequence 'AACCTCGGG' (T at pos 4, matching v2*01's
-    germline). v_call flips to 'v2*01' while truth_v_call stays
-    'v1*01' — the truth survives only in the provenance field."""
+    germline). recalled_v_call flips to 'v2*01' while truth_v_call stays
+    'v1*01'; the standard v_call and alignment remain generating."""
     exp = (
         _baseline_vj_experiment(_two_v_one_distinguishing())
         .restrict_alleles(v="v1*01")
@@ -152,7 +157,7 @@ def test_shm_at_distinguishing_position_can_switch_call_away_from_truth() -> Non
     )
     rec = _record(exp, seed=24)
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["v_call"] == "v2*01"  # singleton, not CSV
+    assert rec["recalled_v_call"] == "v2*01"  # singleton, not CSV
     # The mutated sequence has T at the distinguishing position.
     assert rec["sequence"][4] == "T"
     # SHM increments n_mutations only.
@@ -167,7 +172,7 @@ def test_shm_at_non_distinguishing_position_preserves_call() -> None:
     position still resolves the call to truth.
 
     Seed=6 with `mutate(rate=0.1)` produces a single mutation
-    leaving position 4 unchanged → v_call still equals truth."""
+    leaving position 4 unchanged → recalled_v_call still equals truth."""
     exp = (
         _baseline_vj_experiment(_two_v_one_distinguishing())
         .restrict_alleles(v="v1*01")
@@ -175,7 +180,7 @@ def test_shm_at_non_distinguishing_position_preserves_call() -> None:
     )
     rec = _record(exp, seed=6)
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["v_call"] == "v1*01"  # call preserved
+    assert rec["recalled_v_call"] == "v1*01"  # call preserved
     assert rec["sequence"][4] == "C"  # distinguishing position unchanged
     assert rec["n_mutations"] == 1
 
@@ -200,7 +205,7 @@ def test_pcr_error_at_distinguishing_position_switches_call() -> None:
     )
     rec = _record(exp, seed=39)
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["v_call"] == "v2*01"
+    assert rec["recalled_v_call"] == "v2*01"
     assert rec["sequence"][4] == "T"
     # PCR increments n_pcr_errors only — n_mutations stays zero.
     assert rec["n_pcr_errors"] > 0
@@ -216,7 +221,7 @@ def test_sequencing_error_lowercase_letter_is_not_a_wildcard() -> None:
     it.
 
     Seed=39 + `sequencing_errors(rate=0.1)` produces a lowercase
-    't' at pos 4 → v_call = 'v2*01' (singleton), confirming the
+    't' at pos 4 → recalled_v_call = 'v2*01' (singleton), confirming the
     walker did NOT treat the lowercase letter as N (which would
     have widened to 'v1*01,v2*01')."""
     exp = (
@@ -226,7 +231,7 @@ def test_sequencing_error_lowercase_letter_is_not_a_wildcard() -> None:
     )
     rec = _record(exp, seed=39)
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["v_call"] == "v2*01"  # singleton — NOT widened
+    assert rec["recalled_v_call"] == "v2*01"  # singleton — NOT widened
     assert rec["sequence"][4] == "t"  # lowercase preserved in output
     assert rec["n_quality_errors"] > 0
     assert rec["n_mutations"] == 0
@@ -245,7 +250,7 @@ def test_n_substitution_at_distinguishing_position_widens_tie_set() -> None:
     point behind.
 
     Seed=0 + `ambiguous_base_calls(count=1)` places N at position
-    4 → v_call widens from {v1*01} to {v1*01, v2*01}, with truth
+    4 → recalled_v_call widens from {v1*01} to {v1*01, v2*01}, with truth
     listed first per the projection convention."""
     exp = (
         _baseline_vj_experiment(_two_v_one_distinguishing())
@@ -255,7 +260,7 @@ def test_n_substitution_at_distinguishing_position_widens_tie_set() -> None:
     rec = _record(exp, seed=0)
     assert rec["sequence"][4] == "N"
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["v_call"] == "v1*01,v2*01"  # truth first, widened
+    assert rec["recalled_v_call"] == "v1*01,v2*01"  # truth first, widened
 
 
 def test_n_substitution_at_non_distinguishing_position_preserves_call() -> None:
@@ -265,7 +270,7 @@ def test_n_substitution_at_non_distinguishing_position_preserves_call() -> None:
     singleton-truth.
 
     Seed=4 + `ambiguous_base_calls(count=1)` places N at position
-    8 (non-distinguishing) → v_call still equals truth."""
+    8 (non-distinguishing) → recalled_v_call still equals truth."""
     exp = (
         _baseline_vj_experiment(_two_v_one_distinguishing())
         .restrict_alleles(v="v1*01")
@@ -273,7 +278,7 @@ def test_n_substitution_at_non_distinguishing_position_preserves_call() -> None:
     )
     rec = _record(exp, seed=4)
     assert rec["sequence"][8] == "N"
-    assert rec["v_call"] == "v1*01"  # unchanged
+    assert rec["recalled_v_call"] == "v1*01"  # unchanged
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -297,8 +302,8 @@ def test_three_allele_prefix_widening_keeps_truth_first() -> None:
     rec = _record(exp, seed=0)
     assert rec["sequence"][4] == "N"
     assert rec["truth_v_call"] == "v_A*01"
-    assert rec["v_call"] == "v_A*01,v_B*01"  # v_C excluded
-    assert "v_C*01" not in rec["v_call"]
+    assert rec["recalled_v_call"] == "v_A*01,v_B*01"  # v_C excluded
+    assert "v_C*01" not in rec["recalled_v_call"]
 
 
 def test_three_allele_suffix_widening_keeps_truth_first() -> None:
@@ -311,8 +316,8 @@ def test_three_allele_suffix_widening_keeps_truth_first() -> None:
     )
     rec = _record(exp, seed=4)
     assert rec["sequence"][8] == "N"
-    assert rec["v_call"] == "v_A*01,v_C*01"
-    assert "v_B*01" not in rec["v_call"]
+    assert rec["recalled_v_call"] == "v_A*01,v_C*01"
+    assert "v_B*01" not in rec["recalled_v_call"]
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -320,12 +325,8 @@ def test_three_allele_suffix_widening_keeps_truth_first() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_truth_v_call_decoupled_from_v_call_under_call_flip() -> None:
-    """The audit's load-bearing fact: under any evidence-changing
-    mechanism that flips the call, `truth_v_call` (when
-    `expose_provenance=True`) preserves the originally-sampled
-    allele. Users who treat `v_call` as truth without checking
-    `truth_v_call` will silently lose the recombination identity."""
+def test_recalled_v_call_can_differ_while_standard_call_keeps_truth() -> None:
+    """Evidence-based inference changes without replacing generative origin."""
     # SHM flip
     rec_shm = _record(
         _baseline_vj_experiment(_two_v_one_distinguishing())
@@ -333,7 +334,7 @@ def test_truth_v_call_decoupled_from_v_call_under_call_flip() -> None:
         .mutate(rate=0.1),
         seed=24,
     )
-    assert rec_shm["v_call"] != rec_shm["truth_v_call"]
+    assert rec_shm["recalled_v_call"] != rec_shm["truth_v_call"]
     assert rec_shm["truth_v_call"] == "v1*01"
 
     # PCR flip — same property, different mechanism
@@ -343,32 +344,23 @@ def test_truth_v_call_decoupled_from_v_call_under_call_flip() -> None:
         .pcr_amplify(rate=0.1),
         seed=39,
     )
-    assert rec_pcr["v_call"] != rec_pcr["truth_v_call"]
+    assert rec_pcr["recalled_v_call"] != rec_pcr["truth_v_call"]
     assert rec_pcr["truth_v_call"] == "v1*01"
 
 
-def test_v_identity_is_computed_against_projected_allele_not_truth() -> None:
-    """When the call flips away from truth, `v_identity` is the
-    similarity of the assembled pool to the **projected
-    (first-in-CSV)** allele's germline — not to the truth
-    allele. So a high `v_identity` can coexist with `v_call !=
-    truth_v_call`.
-
-    Seed=24 SHM-flip example: ~5 mutations against truth (v1*01)
-    produce sequence 'AACCTCGGG'. Identity vs v2*01 (the
-    projected call) is 8/9 ≈ 0.888. Identity vs truth v1*01
-    would be 7/9 ≈ 0.777. The reported `v_identity` is the
-    former."""
+def test_v_identity_uses_generating_reference_when_recalled_allele_changes() -> None:
+    """AACCTCGGG has 7/9 matches to generating AAACCCGGG, despite
+    the inferred alternative AAACTCGGG having 8/9 matches."""
     rec = _record(
         _baseline_vj_experiment(_two_v_one_distinguishing())
         .restrict_alleles(v="v1*01")
         .mutate(rate=0.1),
         seed=24,
     )
-    assert rec["v_call"] == "v2*01"
-    # AACCTCGGG vs AAACTCGGG (v2*01) → matches at all except pos 2
-    # (C vs A). That's 8/9 ≈ 0.888.
-    assert rec["v_identity"] == pytest.approx(8 / 9, abs=1e-9)
+    assert rec["recalled_v_call"] == "v2*01"
+    assert rec["v_call"] == "v1*01"
+    assert rec["germline_alignment"][:9] == "AAACCCGGG"
+    assert rec["v_identity"] == pytest.approx(7 / 9, abs=1e-9)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -417,7 +409,7 @@ def test_per_mechanism_counters_dont_cross_contaminate() -> None:
 
 def test_vdj_d_call_resolves_to_truth_without_mutation() -> None:
     """The same disambiguation rules apply to the D segment in
-    VDJ refdata. Without mutation, d_call equals truth_d_call."""
+    VDJ refdata. Without mutation, recalled_d_call equals truth_d_call."""
     cfg = _vdj_two_d_one_distinguishing()
     exp = (
         ga.Experiment.on(cfg).allow_curatable_refdata()
@@ -426,7 +418,7 @@ def test_vdj_d_call_resolves_to_truth_without_mutation() -> None:
     )
     for seed in range(6):
         rec = _record(exp, seed=seed)
-        assert rec["d_call"] == rec["truth_d_call"]
+        assert rec["recalled_d_call"] == rec["truth_d_call"]
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -463,7 +455,7 @@ def test_replay_reproduces_call_set_and_identity_and_counters(
     configure, seed
 ) -> None:
     """Trace replay reproduces every evidence-derived AIRR field
-    exactly: v_call (including CSV order), v_identity, v_cigar,
+    exactly: recalled_v_call (including CSV order), v_identity, v_cigar,
     truth_v_call, and the per-mechanism counters. The audit
     depends on this: if replay diverged, the live-call walker
     would have hidden RNG state outside the trace."""
@@ -484,6 +476,11 @@ def test_replay_reproduces_call_set_and_identity_and_counters(
     fields = [
         "sequence",
         "v_call",
+        "d_call",
+        "j_call",
+        "recalled_v_call",
+        "recalled_d_call",
+        "recalled_j_call",
         "v_identity",
         "v_cigar",
         "v_germline_start",
@@ -512,7 +509,7 @@ def test_replay_reproduces_call_set_and_identity_and_counters(
 def test_drift_pinned_no_call_count_field_on_airr_record() -> None:
     """Audit §6.1: no `v_call_count` / `d_call_count` /
     `j_call_count` denormalised counter today. Users count via
-    `len(v_call.split(","))`. Pin absence so a future field
+    `len(recalled_v_call.split(","))`. Pin absence so a future field
     addition signals the schema change."""
     rec = _record(
         _baseline_vj_experiment(_two_v_identical()),
@@ -528,16 +525,16 @@ def test_drift_pinned_no_call_count_field_on_airr_record() -> None:
 def test_drift_pinned_no_call_is_truthful_field_on_airr_record() -> None:
     """Audit §6.2: no `v_call_is_truthful` / etc. denormalised
     truthfulness boolean today. Users compare
-    `v_call.split(',')[0] != truth_v_call` manually. Pin absence."""
+    `recalled_v_call.split(',')[0] != truth_v_call` manually. Pin absence."""
     rec = _record(
         _baseline_vj_experiment(_two_v_one_distinguishing())
         .restrict_alleles(v="v1*01")
         .mutate(rate=0.1),
         seed=24,
     )
-    # The flip has happened (v_call != truth_v_call), but no field
+    # The flip has happened (recalled_v_call != truth_v_call), but no field
     # exposes that boolean directly.
-    assert rec["v_call"] != rec["truth_v_call"]
+    assert rec["recalled_v_call"] != rec["truth_v_call"]
     for field in (
         "v_call_is_truthful",
         "d_call_is_truthful",
@@ -547,9 +544,7 @@ def test_drift_pinned_no_call_is_truthful_field_on_airr_record() -> None:
 
 
 def test_drift_pinned_no_v_identity_to_truth_field() -> None:
-    """Audit §6.3: `v_identity` is against the projected (called)
-    allele. No separate `v_identity_to_truth` field today. Pin
-    absence so a future fix flips this."""
+    """Standard v_identity already measures the generating reference."""
     rec = _record(
         _baseline_vj_experiment(_two_v_one_distinguishing())
         .restrict_alleles(v="v1*01")
@@ -559,3 +554,4 @@ def test_drift_pinned_no_v_identity_to_truth_field() -> None:
     assert "v_identity_to_truth" not in rec
     assert "d_identity_to_truth" not in rec
     assert "j_identity_to_truth" not in rec
+    assert rec["v_identity"] == pytest.approx(7 / 9)

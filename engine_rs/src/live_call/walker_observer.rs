@@ -45,8 +45,9 @@
 //! existing test corpus.
 
 use super::reference_index::SegmentRefIndex;
+use super::support::best_supported_alleles;
 use super::walker::extensions::{walk_left_extension, walk_right_extension, ExtensionWalkState};
-use super::{AlleleBitSet, EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentLiveCall};
+use super::{EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentLiveCall};
 use crate::ir::{
     GermlinePos, NucFlags, NucHandle, Nucleotide, PoolRange, Region, Segment, Simulation,
     SimulationEvent, SimulationEventSink,
@@ -374,10 +375,11 @@ impl<'idx> WalkerObserverState<'idx> {
         // `compatible_alleles_at_oriented` pre-complements the
         // observed byte under `ReverseComplement` so inverted D bytes
         // score against the original allele coordinates.
-        let Some(evidence) = self
-            .segment_index
-            .compatible_alleles_at_oriented(ref_pos as usize, nucleotide.base, self.orientation)
-        else {
+        let Some(evidence) = self.segment_index.compatible_alleles_at_oriented(
+            ref_pos as usize,
+            nucleotide.base,
+            self.orientation,
+        ) else {
             return;
         };
         let scores = &mut self.scores;
@@ -456,12 +458,7 @@ impl<'idx> WalkerObserverState<'idx> {
     /// `None` — those are indel-inserted bases with no allele
     /// evidence (matches the `on_base_pushed` skip at
     /// walker.rs:66-68).
-    pub(crate) fn on_base_changed(
-        &mut self,
-        _handle: NucHandle,
-        old_n: &Nucleotide,
-        new_base: u8,
-    ) {
+    pub(crate) fn on_base_changed(&mut self, _handle: NucHandle, old_n: &Nucleotide, new_base: u8) {
         if self.malformed {
             return;
         }
@@ -477,10 +474,11 @@ impl<'idx> WalkerObserverState<'idx> {
 
         // Decrement scores for alleles that matched the OLD base
         // at this ref_pos.
-        if let Some(old_evidence) = self
-            .segment_index
-            .compatible_alleles_at_oriented(ref_pos as usize, old_n.base, self.orientation)
-        {
+        if let Some(old_evidence) = self.segment_index.compatible_alleles_at_oriented(
+            ref_pos as usize,
+            old_n.base,
+            self.orientation,
+        ) {
             let scores = &mut self.scores;
             old_evidence.allele_ids.for_each_id(|id| {
                 let slot = &mut scores[id.as_usize()];
@@ -495,10 +493,11 @@ impl<'idx> WalkerObserverState<'idx> {
 
         // Increment scores for alleles that match the NEW base at
         // this ref_pos.
-        if let Some(new_evidence) = self
-            .segment_index
-            .compatible_alleles_at_oriented(ref_pos as usize, new_base, self.orientation)
-        {
+        if let Some(new_evidence) = self.segment_index.compatible_alleles_at_oriented(
+            ref_pos as usize,
+            new_base,
+            self.orientation,
+        ) {
             let scores = &mut self.scores;
             new_evidence.allele_ids.for_each_id(|id| {
                 let slot = &mut scores[id.as_usize()];
@@ -623,6 +622,8 @@ impl SimulationEventSink for WalkerObserverState<'_> {
             // dedicated `LiveCallRefreshStep`, not an incremental
             // walker update.
             SimulationEvent::BaseDeleted { .. }
+            | SimulationEvent::CodingEndChoiceRecorded { .. }
+            | SimulationEvent::CodingEndPOriginRecorded { .. }
             | SimulationEvent::AssignmentChanged { .. }
             | SimulationEvent::TrimChanged { .. }
             | SimulationEvent::RegionAdded { .. }
@@ -659,7 +660,7 @@ impl ResolvedWalkerState {
     /// resolved state. Mirrors walker.rs:185-227 byte-for-byte.
     pub(crate) fn into_segment_live_call(
         mut self,
-        segment_index: &SegmentRefIndex,
+        allowed_alleles: Option<&[AlleleId]>,
         evidence_version: u64,
     ) -> SegmentLiveCall {
         if self.wildcard_matches > 0 {
@@ -672,18 +673,7 @@ impl ResolvedWalkerState {
         // maximum share the call. If no allele matched any position
         // (max_score == 0), every allele is equally consistent with the
         // absence of evidence — return the full pool. (walker.rs:189-209)
-        let max_score = self.scores.iter().copied().max().unwrap_or(0);
-        let allele_call = if max_score == 0 {
-            segment_index.all_alleles.clone()
-        } else {
-            let mut bitset = AlleleBitSet::empty(self.allele_universe_len);
-            for (idx, &score) in self.scores.iter().enumerate() {
-                if score == max_score {
-                    bitset.insert(AlleleId::new(idx as u32));
-                }
-            }
-            bitset
-        };
+        let allele_call = best_supported_alleles(&self.scores, allowed_alleles);
 
         let hypothesis = PlacementHypothesis::new(
             self.segment,
@@ -786,15 +776,11 @@ impl SealedWalkerState {
             } => SegmentLiveCall::unresolved(segment, allele_universe_len),
             SealedWalkerState::Resolved(mut resolved) => {
                 let seg = resolved.segment;
-                // Trim-bounded extension caps. Mirrors walker.rs:129-130.
-                let trim_cap_5 = sim_in_progress
-                    .assignments
-                    .get(seg)
-                    .map(|a| a.trim_5 as u32);
-                let trim_cap_3 = sim_in_progress
-                    .assignments
-                    .get(seg)
-                    .map(|a| a.trim_3 as u32);
+                let (left_cap, right_cap) = super::walker::extensions::extension_trim_caps(
+                    sim_in_progress,
+                    seg,
+                    resolved.orientation,
+                );
 
                 // Construct a *synthetic* in-progress region matching
                 // the bases the observer just saw. It's not added to
@@ -813,7 +799,7 @@ impl SealedWalkerState {
                         sim_in_progress,
                         segment_index,
                         np_region,
-                        trim_cap_5,
+                        left_cap,
                         &mut state,
                     );
                 }
@@ -823,12 +809,15 @@ impl SealedWalkerState {
                         sim_in_progress,
                         segment_index,
                         np_region,
-                        trim_cap_3,
+                        right_cap,
                         &mut state,
                     );
                 }
 
-                resolved.into_segment_live_call(segment_index, evidence_version)
+                resolved.into_segment_live_call(
+                    sim_in_progress.live_call_alleles(seg),
+                    evidence_version,
+                )
             }
         }
     }

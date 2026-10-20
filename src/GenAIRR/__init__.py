@@ -50,6 +50,7 @@ from .reference_models import (
 )
 from .reference_rules import AnchorRuleSpec, ReferenceRulesSpec
 from .cartridge_builder import CartridgeBuildReport, ReferenceCartridgeBuilder
+from .coding_end_models import CodingEndOutcomeModel
 
 # Reproducibility helpers.
 from .seed import get_seed, reset_seed, set_seed
@@ -115,6 +116,7 @@ __all__ = [
     "AlleleUsageSpec",
     # Reference cartridge authoring (builder facade)
     "ReferenceCartridgeBuilder",
+    "CodingEndOutcomeModel",
     "CartridgeBuildReport",
     "HUMAN_IGH_OGRDB",
     "HUMAN_IGH_EXTENDED",

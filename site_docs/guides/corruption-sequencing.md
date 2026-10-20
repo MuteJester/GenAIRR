@@ -125,7 +125,8 @@ analysis:
 - **Allele-call walkers handle `N` as a wildcard.** The GenAIRR
   walker classifies `N` as matching any canonical reference base
   (per the standard convention), so an N-injected record can still
-  produce a meaningful `v_call`. Tie sets may widen.
+  produce a meaningful `recalled_v_call`. Its tie set may widen;
+  the standard `v_call` retains the generating allele.
 - **Junction translation produces `X` codons.** An `N`-containing
   codon translates to `X`; `junction_aa` and `sequence_aa` may
   carry `X` characters. The `productive` predicate still evaluates

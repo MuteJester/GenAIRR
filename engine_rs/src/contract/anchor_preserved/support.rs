@@ -97,23 +97,20 @@ impl AnchorPreserved {
         {
             return IndelEventClass::FrameNeutral;
         }
-        let region = match sim
-            .sequence
-            .regions
-            .iter()
-            .find(|r| r.segment == self.segment)
-        {
-            Some(r) => r,
-            None => return IndelEventClass::FrameNeutral,
+        let anchor_pool = match self.anchor_pool_start(sim, allele, anchor, inst.trim_5) {
+            Ok(Some(position)) => position,
+            _ => return IndelEventClass::FrameNeutral,
         };
-        let region_start = region.start.index();
-        let trim_5 = inst.trim_5 as u32;
-        let anchor_pool = region_start + (anchor - trim_5);
         let anchor_end = anchor_pool + 3;
-        if site >= region_start && site < anchor_end {
+        let disrupts_codon = match kind {
+            // Inserting immediately before the first anchor base shifts the
+            // intact codon. Only inserting between its bases breaks it.
+            IndelKindHint::Insertion => site > anchor_pool && site < anchor_end,
+            IndelKindHint::Deletion => site >= anchor_pool && site < anchor_end,
+        };
+        if disrupts_codon {
             IndelEventClass::Forbidden
         } else {
-            let _ = kind;
             IndelEventClass::FrameNeutral
         }
     }

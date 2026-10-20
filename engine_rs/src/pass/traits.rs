@@ -51,6 +51,22 @@ pub trait Pass {
         Ok(self.execute(sim, ctx))
     }
 
+    /// Fallible dispatch in either execution mode. A permissive policy may
+    /// permit a declared no-op, but must not turn resource/numerical failures
+    /// into panics or successful biological events.
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        if strict {
+            self.execute_checked(sim, ctx)
+        } else {
+            Ok(self.execute(sim, ctx))
+        }
+    }
+
     /// Address specs for the random choices this pass intends to make.
     fn declared_choices(&self) -> Vec<String> {
         self.declared_choice_patterns()

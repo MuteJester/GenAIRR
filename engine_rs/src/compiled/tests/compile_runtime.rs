@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn compiled_simulator_collects_report_metadata() {
-    let cfg = vj_refdata();
+    let cfg = vj_refdata_with_runtime_j_residue().0;
     let plan = vj_plan(&cfg);
     let contracts = crate::contract::productive();
     let compiled =
@@ -30,8 +30,9 @@ fn compiled_simulator_collects_report_metadata() {
         vec![
             "productive_junction_frame",
             "no_stop_codon_in_junction",
-            "anchor_preserved.v",
-            "anchor_preserved.j",
+            "canonical_anchor.v1.v",
+            "canonical_anchor.v1.j",
+            "coding_sequence_integrity",
         ]
     );
 }
@@ -40,8 +41,9 @@ fn compiled_simulator_collects_report_metadata() {
 fn compiled_simulators_own_reference_match_index_when_refdata_exists() {
     let cfg = vj_refdata();
     let plan = vj_plan(&cfg);
-    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-        .expect("plan should compile");
+    let compiled =
+        super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+            .expect("plan should compile");
 
     let index = compiled
         .reference_index()
@@ -57,8 +59,9 @@ fn compiled_simulators_own_reference_match_index_when_refdata_exists() {
         }]
     );
 
-    let owned = super::compile_test_fixture_owned(plan, Some(cfg), None, ExecutionPolicy::Permissive)
-        .expect("owned compile should also build the index");
+    let owned =
+        super::compile_test_fixture_owned(plan, Some(cfg), None, ExecutionPolicy::Permissive)
+            .expect("owned compile should also build the index");
     assert!(owned.reference_index().is_some());
 
     let empty_plan = PassPlan::new();
@@ -102,8 +105,9 @@ fn compiled_assembly_initializes_exact_live_call_from_current_region() {
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
 
-    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-        .expect("plan should compile");
+    let compiled =
+        super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+            .expect("plan should compile");
     let outcome = compiled.run_one(0).expect("run should succeed");
     let final_sim = outcome.final_simulation();
     let v_call = final_sim
@@ -137,7 +141,7 @@ fn compiled_assembly_initializes_exact_live_call_from_current_region() {
 }
 
 #[test]
-fn compiled_v_three_prime_trim_widens_live_and_airr_call() {
+fn compiled_v_three_prime_trim_widens_recall_but_preserves_generating_call() {
     let mut cfg = RefDataConfig::empty(ChainType::Vdj);
     let shared_prefix = b"AAACCCGGGTTT";
     let suffixes: [&[u8]; 5] = [
@@ -177,8 +181,9 @@ fn compiled_v_three_prime_trim_widens_live_and_airr_call() {
     )));
     plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
 
-    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-        .expect("trim-before-assembly plan should compile");
+    let compiled =
+        super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+            .expect("trim-before-assembly plan should compile");
     let outcome = compiled.run_one(0).expect("run should succeed");
     let final_sim = outcome.final_simulation();
     let v_call = final_sim
@@ -202,8 +207,9 @@ fn compiled_v_three_prime_trim_widens_live_and_airr_call() {
     );
 
     let rec = build_airr_record(&outcome, &cfg, "trim-ambiguity");
+    assert_eq!(rec.v_call, "IGHVtrim*01");
     assert_eq!(
-        rec.v_call,
+        rec.recalled_v_call,
         "IGHVtrim*01,IGHVtrim*02,IGHVtrim*03,IGHVtrim*04,IGHVtrim*05"
     );
 }
@@ -227,8 +233,9 @@ fn compiled_simulator_auto_reorders_trim_pushed_after_assemble() {
         Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
     )));
 
-    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-        .expect("scheduler must auto-fix misordered trim/assemble");
+    let compiled =
+        super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+            .expect("scheduler must auto-fix misordered trim/assemble");
 
     // Report's pass_names() reads execution order from the topo-sort;
     // trim should appear before assemble even though it was pushed
@@ -288,11 +295,11 @@ fn compiled_simulator_rejects_negative_np_length_support() {
     let cfg = vj_refdata();
     let plan = vj_plan_with_np_lengths(&cfg, vec![(-1, 1.0), (0, 1.0)]);
 
-    let err = match super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-    {
-        Ok(_) => panic!("negative NP length support should fail at compile time"),
-        Err(err) => err,
-    };
+    let err =
+        match super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive) {
+            Ok(_) => panic!("negative NP length support should fail at compile time"),
+            Err(err) => err,
+        };
 
     assert!(err.errors.iter().any(|e| matches!(
         &e.kind,
@@ -341,7 +348,7 @@ fn compiled_simulator_rejects_productive_when_v_support_has_no_anchor() {
             contract_name,
             reason,
         } if contract_name == "productive_junction_frame"
-            && reason.contains("V sample support has no alleles with valid anchors")
+            && reason.contains("no productive completion")
     )));
 }
 
@@ -367,7 +374,7 @@ fn compiled_simulator_rejects_productive_without_in_frame_np_mass() {
             contract_name,
             reason,
         } if contract_name == "productive_junction_frame"
-            && reason.contains("NP1 length support has no in-frame mass")
+            && reason.contains("no productive completion")
     )));
 }
 
@@ -377,7 +384,7 @@ fn productive_runtime_filters_anchorless_v_allele_candidates() {
     let _ = cfg.v_pool.push(Allele {
         name: "v_anchorless*01".into(),
         gene: "v_anchorless".into(),
-        seq: b"AAACCCGGG".to_vec(),
+        seq: b"AAACCCTGT".to_vec(),
         segment: Segment::V,
         anchor: None,
         functional_status: None,
@@ -386,7 +393,7 @@ fn productive_runtime_filters_anchorless_v_allele_candidates() {
     let anchored_v = cfg.v_pool.push(Allele {
         name: "v_anchored*01".into(),
         gene: "v_anchored".into(),
-        seq: b"AAACCCGGG".to_vec(),
+        seq: b"AAACCCTGT".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
         functional_status: None,
@@ -464,7 +471,7 @@ fn vj_productive_feasibility_respects_future_trim_support() {
     let _ = cfg.v_pool.push(Allele {
         name: "v*01".into(),
         gene: "v".into(),
-        seq: b"AAACCCGGGAAA".to_vec(),
+        seq: b"AAACCCTGTAAA".to_vec(),
         segment: Segment::V,
         anchor: Some(6),
         functional_status: None,
@@ -482,7 +489,7 @@ fn vj_productive_feasibility_respects_future_trim_support() {
     let j_needs_future_v_trim = cfg.j_pool.push(Allele {
         name: "j_future_trim*01".into(),
         gene: "j_future_trim".into(),
-        seq: b"TTTAAA".to_vec(),
+        seq: b"ATTTAAA".to_vec(),
         segment: Segment::J,
         anchor: Some(1),
         functional_status: None,
@@ -609,8 +616,9 @@ fn vj_productive_feasibility_filters_upstream_known_stop() {
 fn compiled_run_one_matches_direct_runtime_for_valid_plan() {
     let cfg = vj_refdata();
     let plan = vj_plan(&cfg);
-    let compiled = super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
-        .expect("plan should compile");
+    let compiled =
+        super::compile_test_fixture(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+            .expect("plan should compile");
 
     let direct = PassRuntime::execute_with_refdata(&plan, Simulation::new(), 42, &cfg);
     let via_compiled = compiled.run_one(42).expect("run should succeed");
@@ -624,6 +632,206 @@ fn compiled_run_one_matches_direct_runtime_for_valid_plan() {
         direct.final_simulation().pool.as_slice(),
         via_compiled.final_simulation().pool.as_slice()
     );
+}
+
+fn coding_stop_refdata(include_clean: bool, has_d: bool) -> RefDataConfig {
+    let mut cfg = RefDataConfig::empty(if has_d { ChainType::Vdj } else { ChainType::Vj });
+    let mut sequences: Vec<&[u8]> = vec![b"TAACCCTGT"];
+    if include_clean {
+        sequences.push(b"AAACCCTGT");
+    }
+    for (index, seq) in sequences.into_iter().enumerate() {
+        let _ = cfg.v_pool.push(Allele {
+            name: format!("v{index}*01"),
+            gene: format!("v{index}"),
+            seq: seq.to_vec(),
+            segment: Segment::V,
+            anchor: Some(6),
+            functional_status: None,
+            subregions: Vec::new(),
+        });
+    }
+    let _ = cfg.j_pool.push(Allele {
+        name: "j*01".into(),
+        gene: "j".into(),
+        seq: b"TGGAAA".to_vec(),
+        segment: Segment::J,
+        anchor: Some(0),
+        functional_status: None,
+        subregions: Vec::new(),
+    });
+    if has_d {
+        let _ = cfg.d_pool.push(Allele {
+            name: "d*01".into(),
+            gene: "d".into(),
+            seq: b"CCC".to_vec(),
+            segment: Segment::D,
+            anchor: None,
+            functional_status: None,
+            subregions: Vec::new(),
+        });
+    }
+    cfg
+}
+
+fn coding_stop_plan(cfg: &RefDataConfig, trim_v5: bool) -> PassPlan {
+    let mut plan = PassPlan::new();
+    for (segment, pool) in [(Segment::V, &cfg.v_pool), (Segment::J, &cfg.j_pool)] {
+        plan.push(Box::new(SampleAllelePass::new(
+            segment,
+            Box::new(AllelePoolDist::uniform(pool)),
+        )));
+    }
+    if !cfg.d_pool.is_empty() {
+        plan.push(Box::new(SampleAllelePass::new(
+            Segment::D,
+            Box::new(AllelePoolDist::uniform(&cfg.d_pool)),
+        )));
+    }
+    if trim_v5 {
+        plan.push(Box::new(TrimPass::new(
+            Segment::V,
+            TrimEnd::Five,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(3, 1.0)])),
+        )));
+    }
+    plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+    plan.push(Box::new(GenerateNPPass::new(
+        Segment::Np1,
+        Box::new(EmpiricalLengthDist::from_pairs(vec![(0, 1.0)])),
+        Box::new(UniformBase),
+    )));
+    if !cfg.d_pool.is_empty() {
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::D)));
+        plan.push(Box::new(GenerateNPPass::new(
+            Segment::Np2,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(0, 1.0)])),
+            Box::new(UniformBase),
+        )));
+    }
+    plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
+    plan
+}
+
+#[test]
+fn productive_filters_germline_stops_before_sampling_for_vj_and_vdj() {
+    for has_d in [false, true] {
+        let cfg = coding_stop_refdata(true, has_d);
+        let plan = coding_stop_plan(&cfg, false);
+        let contracts = crate::contract::productive();
+        let compiled = super::compile_test_fixture(
+            &plan,
+            Some(&cfg),
+            Some(&contracts),
+            ExecutionPolicy::Permissive,
+        )
+        .unwrap();
+        for seed in 0..32 {
+            let outcome = compiled.run_one(seed).unwrap();
+            assert_eq!(
+                outcome
+                    .final_simulation()
+                    .assignments
+                    .get(Segment::V)
+                    .unwrap()
+                    .allele_id,
+                AlleleId::new(1)
+            );
+            contracts
+                .verify(outcome.final_simulation(), Some(&cfg))
+                .unwrap();
+        }
+    }
+}
+
+#[test]
+fn productive_rejects_all_stop_support_at_compile_time() {
+    let cfg = coding_stop_refdata(false, true);
+    let plan = coding_stop_plan(&cfg, false);
+    let contracts = crate::contract::productive();
+    let error = match super::compile_test_fixture(
+        &plan,
+        Some(&cfg),
+        Some(&contracts),
+        ExecutionPolicy::Permissive,
+    ) {
+        Ok(_) => panic!("all-stop reference support must fail before sampling"),
+        Err(error) => error,
+    };
+    assert!(format!("{error:?}").contains("coding_sequence_integrity"));
+}
+
+#[test]
+fn productive_reference_filter_respects_future_stop_removing_trim() {
+    let cfg = coding_stop_refdata(false, false);
+    let plan = coding_stop_plan(&cfg, true);
+    let contracts = crate::contract::productive();
+    let compiled =
+        super::compile_test_fixture(&plan, Some(&cfg), Some(&contracts), ExecutionPolicy::Strict)
+            .expect("the configured V 5-prime trim removes the reference stop");
+    let outcome = compiled.run_one(42).unwrap();
+    contracts
+        .verify(outcome.final_simulation(), Some(&cfg))
+        .unwrap();
+}
+
+#[test]
+fn productive_accepts_fixed_and_mixed_p_with_compensating_n_support() {
+    use crate::address::PEnd;
+    use crate::passes::PAdditionPass;
+
+    let cfg = coding_stop_refdata(true, false);
+    let contracts = crate::contract::productive();
+    for lengths in [vec![0], vec![1], vec![0, 1]] {
+        let mut plan = PassPlan::new();
+        for (segment, pool) in [(Segment::V, &cfg.v_pool), (Segment::J, &cfg.j_pool)] {
+            plan.push(Box::new(SampleAllelePass::new(
+                segment,
+                Box::new(AllelePoolDist::uniform(pool)),
+            )));
+        }
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+        plan.push(Box::new(PAdditionPass::new(
+            PEnd::V3,
+            Box::new(EmpiricalLengthDist::from_pairs(
+                lengths.iter().map(|&length| (length, 1.0)),
+            )),
+        )));
+        plan.push(Box::new(GenerateNPPass::new(
+            Segment::Np1,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(0, 1.0), (2, 1.0)])),
+            Box::new(UniformBase),
+        )));
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::J)));
+        for policy in [ExecutionPolicy::Permissive, ExecutionPolicy::Strict] {
+            let compiled = super::compile_test_fixture(&plan, Some(&cfg), Some(&contracts), policy)
+                .expect("declared P and N supports jointly admit productive completions");
+            let mut observed = std::collections::HashSet::new();
+            for seed in 0..32 {
+                let outcome = compiled.run_one(seed).unwrap();
+                contracts
+                    .verify(outcome.final_simulation(), Some(&cfg))
+                    .unwrap();
+                let p = outcome
+                    .final_simulation()
+                    .assignments
+                    .get(Segment::V)
+                    .unwrap()
+                    .p_length_3;
+                assert!(lengths.contains(&(p as i64)));
+                observed.insert(p as i64);
+                let np = outcome
+                    .final_simulation()
+                    .sequence
+                    .regions
+                    .iter()
+                    .find(|r| r.segment == Segment::Np1)
+                    .unwrap();
+                assert_eq!(np.len(), if p == 0 { 0 } else { 2 });
+            }
+            assert!(lengths.iter().all(|length| observed.contains(length)));
+        }
+    }
 }
 
 #[test]
@@ -973,11 +1181,15 @@ mod refdata_validation_gate {
         let cfg = malformed_vj_cfg();
         let plan = vj_minimal_plan(&cfg);
 
-        let err =
-            match CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive) {
-                Ok(_) => panic!("malformed refdata must fail compile gate"),
-                Err(err) => err,
-            };
+        let err = match CompiledSimulator::compile(
+            &plan,
+            Some(&cfg),
+            None,
+            ExecutionPolicy::Permissive,
+        ) {
+            Ok(_) => panic!("malformed refdata must fail compile gate"),
+            Err(err) => err,
+        };
 
         // Aggregated form: one CompileError carrying every issue.
         assert_eq!(err.errors.len(), 1, "expected one aggregated error");
@@ -990,19 +1202,21 @@ mod refdata_validation_gate {
             "expected several issues, got {}: {issues:?}",
             issues.len()
         );
-        let kinds_seen = |pred: fn(&RefDataValidationIssue) -> bool| {
-            issues.iter().any(pred)
-        };
+        let kinds_seen = |pred: fn(&RefDataValidationIssue) -> bool| issues.iter().any(pred);
         assert!(
             kinds_seen(|i| matches!(i, RefDataValidationIssue::VAnchorNotCys { .. })),
             "V Cys violation should be among issues: {issues:?}"
         );
         assert!(
-            kinds_seen(|i| matches!(i, RefDataValidationIssue::MissingAnchor { segment, .. } if matches!(segment, Segment::V))),
+            kinds_seen(
+                |i| matches!(i, RefDataValidationIssue::MissingAnchor { segment, .. } if matches!(segment, Segment::V))
+            ),
             "missing V anchor should be among issues: {issues:?}"
         );
         assert!(
-            kinds_seen(|i| matches!(i, RefDataValidationIssue::DuplicateAlleleName { segment, name } if matches!(segment, Segment::J) && name == "IGKJ1*01")),
+            kinds_seen(
+                |i| matches!(i, RefDataValidationIssue::DuplicateAlleleName { segment, name } if matches!(segment, Segment::J) && name == "IGKJ1*01")
+            ),
             "J duplicate name should be among issues: {issues:?}"
         );
     }
@@ -1041,11 +1255,15 @@ mod refdata_validation_gate {
             Box::new(EmpiricalLengthDist::from_pairs(vec![(1, 1.0)])),
         )));
 
-        let err =
-            match CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive) {
-                Ok(_) => panic!("invalid refdata + bad pass order must fail"),
-                Err(err) => err,
-            };
+        let err = match CompiledSimulator::compile(
+            &plan,
+            Some(&cfg),
+            None,
+            ExecutionPolicy::Permissive,
+        ) {
+            Ok(_) => panic!("invalid refdata + bad pass order must fail"),
+            Err(err) => err,
+        };
 
         // The aggregated refdata error must be the ONLY error
         // surfaced; schedule analysis never runs.
@@ -1155,7 +1373,10 @@ mod refdata_validation_gate {
         let aid = crate::refdata::AlleleId::new(0);
         // Fatal.
         assert_eq!(
-            RefDataValidationIssue::EmptyRequiredPool { segment: Segment::V }.severity(),
+            RefDataValidationIssue::EmptyRequiredPool {
+                segment: Segment::V
+            }
+            .severity(),
             RefDataIssueSeverity::Fatal
         );
         assert_eq!(

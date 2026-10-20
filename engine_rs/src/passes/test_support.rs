@@ -68,16 +68,16 @@ impl Distribution for StopOnlyMutationBaseDist {
 
 /// VJ fixture used by the substitution-style pass tests
 /// (uniform-mutation, PCR error, contaminant). The pool already
-/// holds `TAC` (V) + `TGG` (J) so position 2's neighbours are
-/// `T A · T G G`. With anchors at V[0] and J[0], the junction is
-/// `[0, 6)` and codon 0 (`TAC`) becomes `TAA` if position 2 is
+/// holds `TGC` (V) + `TGG` (J) so position 2's neighbours are
+/// `T G · T G G`. With anchors at V[0] and J[0], the junction is
+/// `[0, 6)` and codon 0 (`TGC`) becomes `TGA` if position 2 is
 /// substituted to `A` — the perfect stop-codon filter probe.
 pub(crate) fn make_substitution_productive_vj_fixture() -> (RefDataConfig, Simulation) {
     let mut cfg = RefDataConfig::empty(ChainType::Vj);
     let _ = cfg.v_pool.push(Allele {
         name: "v_mut*01".into(),
         gene: "v_mut".into(),
-        seq: b"TAC".to_vec(),
+        seq: b"TGC".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
         functional_status: None,
@@ -94,7 +94,7 @@ pub(crate) fn make_substitution_productive_vj_fixture() -> (RefDataConfig, Simul
     });
 
     let mut sim = Simulation::new();
-    for (i, &b) in b"TAC".iter().enumerate() {
+    for (i, &b) in b"TGC".iter().enumerate() {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
         sim = next;
     }
@@ -115,9 +115,9 @@ pub(crate) fn make_substitution_productive_vj_fixture() -> (RefDataConfig, Simul
     (cfg, sim)
 }
 
-/// VJ fixture where every junction position has a single-base anchor
-/// mask (V = TGG / W, J = TGG / W). Under a base distribution whose
-/// support is disjoint from `{T, G}` (for example `{A}`), every site
+/// VJ fixture where every junction position has a canonical anchor
+/// mask (V = TGT / C, J = TGG / W). Under a base distribution whose
+/// support is disjoint from `{T, G, C}` (for example `{A}`), every site
 /// admits zero mass. Substitution-style passes use this to exercise
 /// strict-mode `EmptyAdmissibleSupport` without each test module
 /// carrying its own copy of the setup.
@@ -126,7 +126,7 @@ pub(crate) fn make_fully_locked_vj_fixture() -> (RefDataConfig, Simulation) {
     let _ = cfg.v_pool.push(Allele {
         name: "v_lock*01".into(),
         gene: "v_lock".into(),
-        seq: b"TGG".to_vec(),
+        seq: b"TGT".to_vec(),
         segment: Segment::V,
         anchor: Some(0),
         functional_status: None,
@@ -143,7 +143,7 @@ pub(crate) fn make_fully_locked_vj_fixture() -> (RefDataConfig, Simulation) {
     });
 
     let mut sim = Simulation::new();
-    for (i, &b) in b"TGG".iter().enumerate() {
+    for (i, &b) in b"TGT".iter().enumerate() {
         let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
         sim = next;
     }
@@ -294,11 +294,8 @@ pub(crate) fn run_pass_with_replay_records(
 /// Assert at least one event in `events` matches `predicate`.
 /// Failure messages dump the full captured stream so the test
 /// reporter shows what *was* emitted alongside what was expected.
-pub(crate) fn assert_event_matching<F>(
-    events: &[SimulationEvent],
-    predicate: F,
-    description: &str,
-) where
+pub(crate) fn assert_event_matching<F>(events: &[SimulationEvent], predicate: F, description: &str)
+where
     F: Fn(&SimulationEvent) -> bool,
 {
     assert!(
@@ -409,8 +406,7 @@ mod helper_tests {
         // emits exactly one `AssignmentChanged`. Use the helper to
         // capture and inspect.
         let pool = make_test_pool(1, Segment::V);
-        let pass =
-            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let pass = SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
         let cfg = vj_refdata_one_allele_each();
 
         let capture =
@@ -430,8 +426,7 @@ mod helper_tests {
         // The strict replay path validates the recorded value
         // against refdata + support; success returns the new sim.
         let pool = make_test_pool(1, Segment::V);
-        let pass =
-            SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
+        let pass = SampleAllelePass::new(Segment::V, Box::new(AllelePoolDist::uniform(&pool)));
         let cfg = vj_refdata_one_allele_each();
         let records = vec![ChoiceRecord::new(
             ChoiceAddress::SampleAllele(crate::address::VdjSegment::V).to_string(),
@@ -473,7 +468,12 @@ mod helper_tests {
         let events = vec![SimulationEvent::ReverseComplementFlagRecorded { applied: true }];
         assert_event_matching(
             &events,
-            |e| matches!(e, SimulationEvent::ReverseComplementFlagRecorded { applied: true }),
+            |e| {
+                matches!(
+                    e,
+                    SimulationEvent::ReverseComplementFlagRecorded { applied: true }
+                )
+            },
             "rev-comp applied",
         );
     }
@@ -484,7 +484,12 @@ mod helper_tests {
         let events = vec![SimulationEvent::ReverseComplementFlagRecorded { applied: false }];
         assert_event_matching(
             &events,
-            |e| matches!(e, SimulationEvent::ReverseComplementFlagRecorded { applied: true }),
+            |e| {
+                matches!(
+                    e,
+                    SimulationEvent::ReverseComplementFlagRecorded { applied: true }
+                )
+            },
             "rev-comp applied (true)",
         );
     }

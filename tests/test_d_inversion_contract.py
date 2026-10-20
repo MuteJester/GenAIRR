@@ -259,8 +259,8 @@ def test_pin_design_anchor_preserved_d_compiles_but_is_not_in_productive() -> No
     if D ever joins, the design's "productive_only unaffected by
     inversion" claim needs revisiting."""
     names = list(ge.productive().names())
-    assert "anchor_preserved.v" in names
-    assert "anchor_preserved.j" in names
+    assert "canonical_anchor.v1.v" in names
+    assert "canonical_anchor.v1.j" in names
     assert "anchor_preserved.d" not in names
 
 

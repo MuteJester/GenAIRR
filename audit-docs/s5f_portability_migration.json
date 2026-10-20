@@ -1,0 +1,23 @@
+{
+  "models": [
+    {
+      "file": "HH_S5F_60_META.pkl",
+      "original_sha256": "f9ab70a0613dabe2d2f42d072c427af7c0969bbd818f37e3f37512eec35babdc",
+      "portable_sha256": "5eba1f47d713e5cd7214b0e49fe69a45e1e8bd43962550bafce9346912c9cf6c",
+      "kernel_f64_le_sha256": "98968f4e8cba274b7d33f407f8f2914f89a6692926082b36358951b1c04f3a6c",
+      "kernel_values": 5120,
+      "numeric_change": false,
+      "format": "pickle protocol 4; tuple of builtin string-keyed float dictionaries"
+    },
+    {
+      "file": "HH_S5F_Opposite_META.pkl",
+      "original_sha256": "e54d8a72d93a1bb493ca85b4dfa47cc43e82526640f62393a1ffbdf92a9427ec",
+      "portable_sha256": "99ff8b2db28bc7c5a0eed11807989dc651d8d4bfdcd710113df0ae4b4693c52d",
+      "kernel_f64_le_sha256": "fea14f87e9e11383d343870c36477aa50b7e3046038064370d65740f4fd66545",
+      "kernel_values": 5120,
+      "numeric_change": false,
+      "format": "pickle protocol 4; tuple of builtin string-keyed float dictionaries"
+    }
+  ],
+  "verification": "All 5120 flattened kernel float64 values per model have identical little-endian IEEE 754 bytes before and after migration."
+}

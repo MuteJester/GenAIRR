@@ -1,17 +1,12 @@
-use crate::address::{self, ChoiceAddress, PrimeEnd, VdjSegment};
-use crate::assignment::TrimEnd;
+use crate::address::{self, ChoiceAddress, PrimeEnd};
 use crate::codon::translate_seq;
 use crate::ir::{Segment, SimulationEvent};
 use crate::pass::Outcome;
 use crate::refdata::RefDataConfig;
 
-use super::junction::{
-    aa_slice_for_region, anchor_amino_acid_preserved, anchor_pool_position, junction_has_stop,
-};
+use super::junction::aa_slice_for_region;
 use super::locus::{derive_locus, locus_from_refdata};
-use super::projection::{
-    lookup_allele, projected_call_name, unclaimed_np_bounds, unclaimed_np_string,
-};
+use super::projection::{projected_call_name, recalled_call_name};
 use super::sequence::{apply_rev_comp_projection, bytes_to_string, pool_bases};
 use super::trace_fields::{trace_bool_choice, trace_int_choice};
 use super::walk::walk_alignment_columns;
@@ -30,6 +25,14 @@ pub fn build_airr_record(
     let trace = &outcome.trace;
 
     let mut rec = AirrRecord::default();
+    let assessment = crate::productivity::assess(sim, refdata);
+    rec.productivity_policy = crate::productivity::POLICY.into();
+    rec.productivity_scope = crate::productivity::SCOPE.into();
+    rec.productivity_reasons = assessment.reasons.iter().map(|r| (*r).into()).collect();
+    rec.productive = assessment.productive;
+    rec.vj_in_frame = assessment.vj_in_frame;
+    rec.stop_codon = assessment.stop_codon;
+    rec.coding_end_processing = super::coding_end::project(sim, refdata);
     rec.sequence_id = sequence_id.to_string();
     rec.rev_comp = false;
     rec.c_call = String::new();
@@ -72,43 +75,22 @@ pub fn build_airr_record(
         String::new()
     };
 
-    if rec.sequence.is_empty() {
-        // Pre-recombine sim: nothing else to fill in.
-        return rec;
+    // Assignments are the current biological state: they survive a clonal
+    // fork and receptor revision updates their trims. A descendant trace
+    // can omit the founding recombination, and an original trim choice
+    // does not describe a replacement allele.
+    if let Some(inst) = sim.assignments.get(Segment::V) {
+        rec.v_trim_5 = inst.trim_5 as i64;
+        rec.v_trim_3 = inst.trim_3 as i64;
     }
-
-    // Trim values from trace. Our DSL records v_3, d_5, d_3, j_5;
-    // v_5 and j_3 stay 0.
-    rec.v_trim_5 = 0;
-    rec.v_trim_3 = trace_int_choice(
-        trace,
-        ChoiceAddress::Trim {
-            segment: VdjSegment::V,
-            end: TrimEnd::Three,
-        },
-    );
-    rec.d_trim_5 = trace_int_choice(
-        trace,
-        ChoiceAddress::Trim {
-            segment: VdjSegment::D,
-            end: TrimEnd::Five,
-        },
-    );
-    rec.d_trim_3 = trace_int_choice(
-        trace,
-        ChoiceAddress::Trim {
-            segment: VdjSegment::D,
-            end: TrimEnd::Three,
-        },
-    );
-    rec.j_trim_5 = trace_int_choice(
-        trace,
-        ChoiceAddress::Trim {
-            segment: VdjSegment::J,
-            end: TrimEnd::Five,
-        },
-    );
-    rec.j_trim_3 = 0;
+    if let Some(inst) = sim.assignments.get(Segment::D) {
+        rec.d_trim_5 = inst.trim_5 as i64;
+        rec.d_trim_3 = inst.trim_3 as i64;
+    }
+    if let Some(inst) = sim.assignments.get(Segment::J) {
+        rec.j_trim_5 = inst.trim_5 as i64;
+        rec.j_trim_3 = inst.trim_3 as i64;
+    }
 
     // Calls + locus.
     let v_id = sim
@@ -130,14 +112,13 @@ pub fn build_airr_record(
     rec.v_call = projected_call_name(refdata, sim, Segment::V, v_id);
     rec.d_call = projected_call_name(refdata, sim, Segment::D, d_id);
     rec.j_call = projected_call_name(refdata, sim, Segment::J, j_id);
+    rec.recalled_v_call = recalled_call_name(refdata, sim, Segment::V, v_id);
+    rec.recalled_d_call = recalled_call_name(refdata, sim, Segment::D, d_id);
+    rec.recalled_j_call = recalled_call_name(refdata, sim, Segment::J, j_id);
     rec.locus = derive_locus(&rec.v_call, &rec.j_call, &rec.d_call);
     if rec.locus.is_empty() {
-        // Under heavy corruption the live-call layer can wipe every
-        // V/D/J call (no allele supports the mutated sequence),
-        // leaving `derive_locus` with nothing to parse. Fall back
-        // to the refdata's pool - any allele name gives us a locus
-        // prefix, which is still meaningful AIRR output (the chain
-        // didn't change, only the call evidence is absent).
+        // Synthetic references need not use locus-prefixed allele names.
+        // Infer a locus from the cartridge when assignments cannot name one.
         rec.locus = locus_from_refdata(refdata);
     }
 
@@ -157,24 +138,8 @@ pub fn build_airr_record(
         .regions
         .iter()
         .find(|r| r.segment == Segment::J);
-    let np1_region = sim
-        .sequence
-        .regions
-        .iter()
-        .find(|r| r.segment == Segment::Np1);
-    let np2_region = sim
-        .sequence
-        .regions
-        .iter()
-        .find(|r| r.segment == Segment::Np2);
-
-    // sequence coords come from the column-walker's
-    // pool-range output, which honours the same overlap-resolution
-    // rule the column relabel uses. The fallback is the structural
-    // region (raw RefDataConfig runs, no live calls). Note: the
-    // walker output itself is computed below; placeholder values
-    // from the structural region are written here and then refined
-    // post-walk to keep the data flow obvious.
+    // Initialize query spans from structural regions, then use the alignment
+    // walker's actual observed spans below. Re-calls do not move these bounds.
     if let Some(r) = v_region {
         rec.v_sequence_start = Some(r.start.index() as i64);
         rec.v_sequence_end = Some(r.end.index() as i64);
@@ -188,32 +153,13 @@ pub fn build_airr_record(
         rec.j_sequence_end = Some(r.end.index() as i64);
     }
 
-    // NP region nucleotide strings.
-    //
-    // when a V/D/J live-call extension claims one or more
-    // NP positions (e.g. NP1[0..3] reabsorbed back into V), those
-    // positions are no longer "non-templated" - they belong to a
-    // segment. The AIRR `np1` / `np2` strings drop them.
-    if let Some(r) = np1_region {
-        let (s, n) = unclaimed_np_string(sim, refdata, &rec.sequence, r);
-        rec.np1 = s;
-        rec.np1_length = n;
-    }
-    if let Some(r) = np2_region {
-        let (s, n) = unclaimed_np_string(sim, refdata, &rec.sequence, r);
-        rec.np2 = s;
-        rec.np2_length = n;
-    }
-
     // Mutation + corruption counters. `n_mutations` reads from
     // `Simulation.mutation_count`, stashed by the S5F / Uniform
     // passes at seal time.
     rec.n_mutations = sim.mutation_count as i64;
-    rec.mutation_rate = if rec.sequence_length > 0 {
-        rec.n_mutations as f64 / rec.sequence_length as f64
-    } else {
-        0.0
-    };
+    // Each mutation stage records its own input molecule length. Later read
+    // loss must not inflate this cumulative event burden.
+    rec.mutation_rate = sim.mutation_burden;
     rec.n_pcr_errors = trace_int_choice(trace, ChoiceAddress::CorruptPcrCount);
     rec.n_quality_errors = trace_int_choice(trace, ChoiceAddress::CorruptQualityCount);
     // Count realized structural indels from the event ledger, not the
@@ -293,9 +239,7 @@ pub fn build_airr_record(
         .and_then(|inst| refdata.v_pool.get(inst.allele_id))
         .map(|allele| allele.subregions.as_slice());
     for record in outcome.events() {
-        if record.pass_name != address::MUTATE_UNIFORM
-            && record.pass_name != address::MUTATE_S5F
-        {
+        if record.pass_name != address::MUTATE_UNIFORM && record.pass_name != address::MUTATE_S5F {
             continue;
         }
         for ev in &record.simulation_events {
@@ -321,28 +265,16 @@ pub fn build_airr_record(
                     let label = v_subregions.and_then(|subs| {
                         germline_pos.and_then(|pos| {
                             subs.iter()
-                                .find(|s| {
-                                    s.start <= pos && pos < s.end
-                                })
+                                .find(|s| s.start <= pos && pos < s.end)
                                 .map(|s| s.label)
                         })
                     });
                     match label {
-                        Some(crate::refdata::VSubregionLabel::Fwr1) => {
-                            n_fwr1_mutations += 1
-                        }
-                        Some(crate::refdata::VSubregionLabel::Cdr1) => {
-                            n_cdr1_mutations += 1
-                        }
-                        Some(crate::refdata::VSubregionLabel::Fwr2) => {
-                            n_fwr2_mutations += 1
-                        }
-                        Some(crate::refdata::VSubregionLabel::Cdr2) => {
-                            n_cdr2_mutations += 1
-                        }
-                        Some(crate::refdata::VSubregionLabel::Fwr3) => {
-                            n_fwr3_mutations += 1
-                        }
+                        Some(crate::refdata::VSubregionLabel::Fwr1) => n_fwr1_mutations += 1,
+                        Some(crate::refdata::VSubregionLabel::Cdr1) => n_cdr1_mutations += 1,
+                        Some(crate::refdata::VSubregionLabel::Fwr2) => n_fwr2_mutations += 1,
+                        Some(crate::refdata::VSubregionLabel::Cdr2) => n_cdr2_mutations += 1,
+                        Some(crate::refdata::VSubregionLabel::Fwr3) => n_fwr3_mutations += 1,
                         None => n_v_unannotated_mutations += 1,
                     }
                 }
@@ -363,13 +295,9 @@ pub fn build_airr_record(
     rec.n_fwr3_mutations = n_fwr3_mutations;
     rec.n_v_unannotated_mutations = n_v_unannotated_mutations;
 
-    // Per-end P-nucleotide length counters (Slice — P-nucleotide
-    // v1). Walk the event ledger for `PRegionAdded` events and
-    // sum `region.len()` per `end`. Symmetric with the
-    // per-segment indel / mutation walks above. The pass-name
-    // filter selects the four `p_addition.*` passes by the
-    // canonical name constants. Records from cartridges with
-    // no P-plane authored carry zeros (no events emitted).
+    // Persistent P-addition provenance survives clonal forks even when the
+    // descendant ledger contains only observation passes. Retain the event
+    // fallback for synthetic outcomes with an event but no stamped assignment.
     let mut p_v_3_length = 0i64;
     let mut p_d_5_length = 0i64;
     let mut p_d_3_length = 0i64;
@@ -394,6 +322,16 @@ pub fn build_airr_record(
             }
         }
     }
+    if let Some(inst) = sim.assignments.get(Segment::V) {
+        p_v_3_length = p_v_3_length.max(inst.p_length_3 as i64);
+    }
+    if let Some(inst) = sim.assignments.get(Segment::D) {
+        p_d_5_length = p_d_5_length.max(inst.p_length_5 as i64);
+        p_d_3_length = p_d_3_length.max(inst.p_length_3 as i64);
+    }
+    if let Some(inst) = sim.assignments.get(Segment::J) {
+        p_j_5_length = p_j_5_length.max(inst.p_length_5 as i64);
+    }
     rec.p_v_3_length = p_v_3_length;
     rec.p_d_5_length = p_d_5_length;
     rec.p_d_3_length = p_d_3_length;
@@ -404,113 +342,32 @@ pub fn build_airr_record(
     // `j_trim_5/3`; carries the *realized* (post-clamp) byte count
     // the `EndLossPass` recorded. Defaults to 0 when no end-loss
     // pass ran. See `docs/primer_trim_end_loss_audit.md`.
-    rec.end_loss_5_length =
-        trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Five));
-    rec.end_loss_3_length =
-        trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Three));
+    rec.end_loss_5_length = trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Five));
+    rec.end_loss_3_length = trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Three));
     rec.is_contaminant = trace_bool_choice(trace, ChoiceAddress::CorruptContaminantApplied);
+    // Empty observations can result from complete end loss after
+    // recombination. Keep their realized counters and assignments.
+    if rec.sequence.is_empty() {
+        rec.rev_comp = trace_bool_choice(trace, ChoiceAddress::CorruptRevCompApplied);
+        return rec;
+    }
     // `rec.d_inverted` / `rec.receptor_revision_applied` /
     // `rec.original_v_call` are populated earlier (before the
     // pre-recombine early return) — `d_inverted` is sim-level
     // metadata and the receptor-revision fields are trace-sourced;
     // neither needs the pool to be assembled to read its value.
 
-    // Junction window: permissive semantics - compute as long as
-    // both V/J anchors and regions exist, even when ``j_trim_5 >
-    // j_anchor`` (which the strict `compute_junction` rejects).
-    // Accept possibly-unphysical coordinates here; the
-    // AnchorPreserved contract is the place to enforce strictness.
-    //
-    // anchor pool positions come from a `germline_pos`
-    // scan over each segment's structural region rather than from
-    // a `region.start + anchor` arithmetic offset. The scan finds
-    // the actual pool position of the anchor codon's first base,
-    // which is correct under indel passes (insertions / deletions
-    // between region.start and the anchor shift the offset, but
-    // each surviving germline node still carries its original
-    // `germline_pos`).
-    let v_anchor = lookup_allele(refdata, Segment::V, v_id).and_then(|a| a.anchor);
-    let j_anchor = lookup_allele(refdata, Segment::J, j_id).and_then(|a| a.anchor);
-    if let (Some(vr), Some(jr), Some(va), Some(ja)) = (v_region, j_region, v_anchor, j_anchor) {
-        let v_anchor_pool = anchor_pool_position(sim, vr, va as u32);
-        let j_anchor_pool = anchor_pool_position(sim, jr, ja as u32);
-        if let (Some(vap), Some(jap)) = (v_anchor_pool, j_anchor_pool) {
-            let v_anchor_in_pool: i64 = vap as i64;
-            let j_anchor_in_pool: i64 = jap as i64;
-            if j_anchor_in_pool + 3 > v_anchor_in_pool {
-                let jstart = v_anchor_in_pool;
-                let jend = j_anchor_in_pool + 3;
-                // Slice into the assembled sequence using saturating
-                // bounds - Python's slicing collapses out-of-range
-                // negatives gracefully; we mirror that behaviour by
-                // clamping to [0, sequence_length].
-                let seq_len = rec.sequence_length;
-                let safe_start = jstart.clamp(0, seq_len) as usize;
-                let safe_end = jend.clamp(0, seq_len) as usize;
-                let junction_nt: &str = if safe_end > safe_start {
-                    &rec.sequence[safe_start..safe_end]
-                } else {
-                    ""
-                };
-                rec.junction = junction_nt.to_string();
-                rec.junction_start = Some(jstart);
-                rec.junction_end = Some(jend);
-                // Length is the explicit nt length the Python builder
-                // emitted, equal to len(junction_nt) (after slicing).
-                rec.junction_length = Some(junction_nt.len() as i64);
-                let in_frame = junction_nt.len() % 3 == 0;
-                rec.vj_in_frame = Some(in_frame);
-                if in_frame {
-                    let has_stop = junction_has_stop(junction_nt);
-                    let anchors_preserved = anchor_amino_acid_preserved(
-                        sim,
-                        refdata,
-                        Segment::V,
-                        vr,
-                        v_id,
-                        rec.v_trim_5,
-                    ) && anchor_amino_acid_preserved(
-                        sim,
-                        refdata,
-                        Segment::J,
-                        jr,
-                        j_id,
-                        rec.j_trim_5,
-                    );
-                    rec.stop_codon = Some(has_stop);
-                    rec.junction_aa = translate_seq(junction_nt);
-                    rec.productive = Some(!has_stop && anchors_preserved);
-                } else {
-                    rec.stop_codon = Some(false);
-                    rec.junction_aa = String::new();
-                    rec.productive = Some(false);
-                }
-            }
-        }
+    // Translate using trusted coding-phase evidence; landmark uncertainty
+    // must not invent a frame or a canonical junction window.
+    if let Some(frame) = assessment.frame {
+        rec.sequence_aa = translate_seq(&rec.sequence[frame.phase.min(rec.sequence.len())..]);
     }
-
-    // sequence_aa / np_aa: V-anchor reading frame.
-    //
-    // `np1_aa` / `np2_aa` cover only the *unclaimed* span of the NP
-    // region - the contiguous interior left after V's right-extension
-    // and (for NP1) D's left-extension claim adjacent positions as
-    // their own segment. Translating that span via `aa_slice_for_region`
-    // gives an in-frame slice of `sequence_aa`, keeping `np2_aa`
-    // consistent with both `np2_length` (unclaimed byte count) and
-    // the codon-aligned position of NP inside the full sequence.
-    if let Some(jstart) = rec.junction_start {
-        let frame_offset = (jstart % 3) as usize;
-        rec.sequence_aa = translate_seq(&rec.sequence[frame_offset..]);
-        if let Some(r) = np1_region {
-            if let Some((s, e)) = unclaimed_np_bounds(sim, refdata, r) {
-                rec.np1_aa = aa_slice_for_region(s, e, frame_offset, &rec.sequence_aa);
-            }
-        }
-        if let Some(r) = np2_region {
-            if let Some((s, e)) = unclaimed_np_bounds(sim, refdata, r) {
-                rec.np2_aa = aa_slice_for_region(s, e, frame_offset, &rec.sequence_aa);
-            }
-        }
+    if let Some((start, end)) = assessment.junction {
+        rec.junction = rec.sequence[start..end].to_string();
+        rec.junction_aa = translate_seq(&rec.junction);
+        rec.junction_start = Some(start as i64);
+        rec.junction_end = Some(end as i64);
+        rec.junction_length = Some((end - start) as i64);
     }
 
     // Single column walk: renders sequence_alignment, germline_alignment,
@@ -534,10 +391,8 @@ pub fn build_airr_record(
     rec.j_alignment_start = walk.align_ranges[2].map(|(s, _)| s);
     rec.j_alignment_end = walk.align_ranges[2].map(|(_, e)| e);
 
-    // refine sequence coords from the walker output.
-    // The walker resolved any overlap between V/D/J live-call
-    // hypotheses, so its `seq_ranges` reflects each segment's
-    // *effective* span - guaranteeing CIGAR M+I+D == seq_len + D_ops.
+    // Refine query coordinates from the generating-reference walk.
+    // Each segment's M+I span equals its observed query span.
     if let Some((s, e)) = walk.seq_ranges[0] {
         rec.v_sequence_start = Some(s);
         rec.v_sequence_end = Some(e);
@@ -551,6 +406,42 @@ pub fn build_airr_record(
         rec.j_sequence_end = Some(e);
     }
 
+    // AIRR NP fields describe the combined N/P interval between the final
+    // segment alignments. P bases have no structural NP region, so deriving
+    // these strings from NP regions alone silently drops their contribution.
+    // Generating boundaries preserve sampled NP bases even when they happen
+    // to match adjacent trimmed germline sequence.
+    let np1_bounds = np_interval(
+        rec.v_sequence_end,
+        if refdata.chain_type.has_d() {
+            rec.d_sequence_start
+        } else {
+            rec.j_sequence_start
+        },
+        rec.sequence.len(),
+    );
+    let np2_bounds = if refdata.chain_type.has_d() {
+        np_interval(rec.d_sequence_end, rec.j_sequence_start, rec.sequence.len())
+    } else {
+        None
+    };
+    if let Some((start, end)) = np1_bounds {
+        rec.np1 = rec.sequence[start..end].to_string();
+        rec.np1_length = (end - start) as i64;
+    }
+    if let Some((start, end)) = np2_bounds {
+        rec.np2 = rec.sequence[start..end].to_string();
+        rec.np2_length = (end - start) as i64;
+    }
+    if let Some(frame) = crate::coding::coding_frame(sim, refdata) {
+        if let Some((start, end)) = np1_bounds {
+            rec.np1_aa = aa_slice_for_region(start, end, frame.phase, &rec.sequence_aa);
+        }
+        if let Some((start, end)) = np2_bounds {
+            rec.np2_aa = aa_slice_for_region(start, end, frame.phase, &rec.sequence_aa);
+        }
+    }
+
     // Germline coord pairs.
     //
     // read from the column walker's `ref_ranges` output
@@ -561,63 +452,50 @@ pub fn build_airr_record(
     // what the column walker actually claims when an adjacent segment
     // wins an NP-position tiebreak).
     //
-    // Fall back to the structural trim-derived range when there is
-    // no allele assigned (raw RefDataConfig runs).
+    // Partial-state outcomes can have an assignment but no alignment
+    // columns. Their fallback must obey the same observed coverage bounds;
+    // a completely clipped segment has no germline alignment interval.
     if let Some((g_start, g_end)) = walk.ref_ranges[0] {
         rec.v_germline_start = Some(g_start);
         rec.v_germline_end = Some(g_end);
-    } else if let Some(allele) = lookup_allele(refdata, Segment::V, v_id) {
-        // Trim-only fallback for partial-state outcomes where the
-        // walker couldn't compute `ref_ranges[V]` (e.g. no V
-        // region present, allele assigned for projection only).
-        //
-        // **End-loss interaction.** The walker encodes a 5'
-        // end-loss as `D` (deletion) ops at the start of V's
-        // CIGAR — those positions are "covered by the
-        // alignment" in the AIRR sense even though they were
-        // removed from the read. The walker therefore reports
-        // `v_germline_start = v_trim_5` regardless of end-loss.
-        // This fallback matches that semantic intentionally: a
-        // shift-by-end-loss formulation would diverge from the
-        // walker and break AIRR-tool parity.
-        rec.v_germline_start = Some(rec.v_trim_5);
-        rec.v_germline_end = Some(allele.seq.len() as i64 - rec.v_trim_3);
+    } else if let Some(reference) = super::projection::projected_reference(sim, refdata, Segment::V)
+    {
+        let (start, end) = reference.observed_bounds(rec.v_trim_5, rec.v_trim_3);
+        if start < end {
+            rec.v_germline_start = Some(start as i64);
+            rec.v_germline_end = Some(end as i64);
+        }
     }
     if let Some((g_start, g_end)) = walk.ref_ranges[1] {
         rec.d_germline_start = Some(g_start);
         rec.d_germline_end = Some(g_end);
-    } else if let Some(allele) = lookup_allele(refdata, Segment::D, d_id) {
-        rec.d_germline_start = Some(rec.d_trim_5);
-        rec.d_germline_end = Some(allele.seq.len() as i64 - rec.d_trim_3);
+    } else if let Some(reference) = super::projection::projected_reference(sim, refdata, Segment::D)
+    {
+        let (start, end) = reference.observed_bounds(rec.d_trim_5, rec.d_trim_3);
+        if start < end {
+            rec.d_germline_start = Some(start as i64);
+            rec.d_germline_end = Some(end as i64);
+        }
     }
     if let Some((g_start, g_end)) = walk.ref_ranges[2] {
         rec.j_germline_start = Some(g_start);
         rec.j_germline_end = Some(g_end);
-    } else if let Some(allele) = lookup_allele(refdata, Segment::J, j_id) {
-        // Mirror of the V fallback: walker encodes 3' end-loss as
-        // trailing `D` ops, keeping `j_germline_end` at
-        // `allele_len - j_trim_3`. Fallback matches.
-        rec.j_germline_start = Some(rec.j_trim_5);
-        rec.j_germline_end = Some(allele.seq.len() as i64 - rec.j_trim_3);
+    } else if let Some(reference) = super::projection::projected_reference(sim, refdata, Segment::J)
+    {
+        let (start, end) = reference.observed_bounds(rec.j_trim_5, rec.j_trim_3);
+        if start < end {
+            rec.j_germline_start = Some(start as i64);
+            rec.j_germline_end = Some(end as i64);
+        }
     }
 
     rec.v_identity = walk.identities[0];
     rec.d_identity = walk.identities[1];
     rec.j_identity = walk.identities[2];
 
-    // reverse-complement projection. The RevCompPass
-    // records `corrupt.rev_comp.applied` in the trace without
-    // touching the IR (subsequent passes still see the forward
-    // sequence). Here, *after* the forward record is fully built,
-    // we flip the antisense-orientation fields per AIRR spec:
-    //   - `sequence`, `np1`, `np2`, `junction` -> reverse complement
-    //   - `*_sequence_start/end`, `junction_start/end` -> flipped
-    //     so they index into the new (antisense) sequence
-    //   - `*_aa` (sequence_aa, junction_aa, np1_aa, np2_aa) ->
-    //     re-translated from the flipped strings
-    //   - `sequence_alignment`, `germline_alignment`, CIGAR,
-    //     `*_alignment_start/end`, `*_germline_start/end`,
-    //     identity -> unchanged (forward orientation per spec)
+    // RevCompPass records the observation strand without touching the IR.
+    // Only the emitted sequence flips; biological annotations continue to
+    // index its coding-oriented reverse complement, as AIRR requires.
     if trace_bool_choice(trace, ChoiceAddress::CorruptRevCompApplied) {
         apply_rev_comp_projection(&mut rec);
     }
@@ -635,6 +513,19 @@ pub fn build_airr_record(
     apply_paired_end_projection_from_trace(&mut rec, trace);
 
     rec
+}
+
+/// A non-overlapping inter-segment interval in the emitted sequence.
+/// Missing alignments do not establish an NP interval, and overlapping
+/// segment hypotheses have no intervening nucleotides.
+fn np_interval(
+    left_end: Option<i64>,
+    right_start: Option<i64>,
+    sequence_len: usize,
+) -> Option<(usize, usize)> {
+    let start = usize::try_from(left_end?).ok()?;
+    let end = usize::try_from(right_start?).ok()?;
+    (start <= end && end <= sequence_len).then_some((start, end))
 }
 
 /// Read the three paired-end trace records and apply the

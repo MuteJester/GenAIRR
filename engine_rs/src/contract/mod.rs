@@ -39,6 +39,7 @@ use crate::trace::ChoiceValue;
 pub mod admissible_set;
 pub(crate) mod admit_mask_observer;
 pub mod anchor_preserved;
+pub mod coding_sequence_integrity;
 pub mod junction_stop_state;
 pub mod no_stop_codon_in_junction;
 pub mod productive_junction_frame;
@@ -55,6 +56,7 @@ pub use admissible_set::{
 pub(crate) mod test_support;
 
 pub use anchor_preserved::AnchorPreserved;
+pub use coding_sequence_integrity::CodingSequenceIntegrity;
 pub use junction_stop_state::JunctionStopState;
 pub use no_stop_codon_in_junction::NoStopCodonInJunction;
 pub use productive_junction_frame::ProductiveJunctionFrame;
@@ -283,9 +285,11 @@ impl Default for ChoiceContext<'_> {
 /// validation does not depend on parsing names.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ContractKind {
+    CodingSequenceIntegrity,
     ProductiveJunctionFrame,
     NoStopCodonInJunction,
     AnchorPreserved { segment: Segment },
+    CanonicalAnchor { segment: Segment },
     Custom,
 }
 
@@ -504,18 +508,22 @@ pub trait Contract {
 ///
 /// 1. `ProductiveJunctionFrame` — junction length divisible by 3
 /// 2. `NoStopCodonInJunction` — no stops inside the junction
-/// 3. `AnchorPreserved::V` — V Cys codon retained after V trim
-/// 4. `AnchorPreserved::J` — J W/F codon retained after J trim
+/// 3. Canonical V anchor — original landmark retained and encoding Cys
+/// 4. Canonical J anchor — original landmark retained and encoding Phe/Trp
 ///
-/// All four must hold for a sequence to be considered productive
-/// in the standard biological sense. The DSL `respect=[productive()]`
+/// 5. `CodingSequenceIntegrity` — no coding stops outside the junction and
+///    no displacement of the V coding origin or J terminal reading frame.
+///
+/// All five implement `canonical_observed_vdj_v1`, a sequence-level policy
+/// on the observed coding span, not a claim of receptor function. The DSL `respect=[productive()]`
 /// compiles to this bundle internally.
 pub fn productive() -> ContractSet {
     ContractSet::new()
         .with(Box::new(ProductiveJunctionFrame::new()))
         .with(Box::new(NoStopCodonInJunction::new()))
-        .with(Box::new(AnchorPreserved::new(Segment::V)))
-        .with(Box::new(AnchorPreserved::new(Segment::J)))
+        .with(Box::new(AnchorPreserved::canonical(Segment::V)))
+        .with(Box::new(AnchorPreserved::canonical(Segment::J)))
+        .with(Box::new(CodingSequenceIntegrity))
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -539,20 +547,21 @@ mod tests {
     // ── productive() bundle tests (D.5) ────────────────────────────
 
     #[test]
-    fn productive_bundle_contains_four_contracts() {
+    fn productive_bundle_contains_five_contracts() {
         let s = productive();
-        assert_eq!(s.len(), 4);
+        assert_eq!(s.len(), 5);
         let names: Vec<&str> = s.iter().map(|c| c.name()).collect();
         assert!(names.contains(&"productive_junction_frame"));
         assert!(names.contains(&"no_stop_codon_in_junction"));
-        assert!(names.contains(&"anchor_preserved.v"));
-        assert!(names.contains(&"anchor_preserved.j"));
+        assert!(names.contains(&"canonical_anchor.v1.v"));
+        assert!(names.contains(&"canonical_anchor.v1.j"));
+        assert!(names.contains(&"coding_sequence_integrity"));
     }
 
     #[test]
     fn productive_bundle_verifies_clean_sim() {
-        // V anchor codon GGG (Gly), J anchor codon TTT (Phe). In-frame.
-        let cfg = make_vj_with_anchor_codons(b"GGG", b"TTT");
+        // V anchor codon TGT (Cys), J anchor codon TTT (Phe). In-frame.
+        let cfg = make_vj_with_anchor_codons(b"TGT", b"TTT");
         let sim = make_assembled_sim_from_refdata(&cfg);
 
         assert!(productive().verify(&sim, Some(&cfg)).is_ok());

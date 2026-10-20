@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-20",
+  "branch": "fix/biological-metadata-correctness",
+  "model": "original_coding_end_v1",
+  "external_dependencies_added": false,
+  "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+  "extension_sha256": "0a364e94191e001517166c07dea8d9343d8ee01abdb16586a6ac7f86f985de25",
+  "python": {
+    "passed": 2636,
+    "deselected": 8,
+    "summary": "2636 passed, 8 deselected, 169 warnings in 461.40s (0:07:41)",
+    "log": "/tmp/genairr_original_end_python_final.log"
+  },
+  "rust": {
+    "debug": {
+      "passed": 1479,
+      "ignored": 4,
+      "log": "/tmp/genairr_original_end_rust_debug.log"
+    },
+    "release": {
+      "passed": 1478,
+      "ignored": 4,
+      "log": "/tmp/genairr_original_end_rust_release.log"
+    }
+  },
+  "stress": {
+    "records": 660,
+    "validated_profiles": 22,
+    "metadata_errors": 0,
+    "guarded_rejections": 6,
+    "artifact": "original_coding_end_stress_2026_10_20.json"
+  },
+  "scope": "Finite original-end retained outcomes, ancestry, coordinates, support and replay; not calibrated biochemical kinetics. Guarded rejections and invalid-reference override/strict indel limits are explicit in the companion reports.",
+  "known_limits": "original_end_existing_limits_2026_10_20.md",
+  "format_pin_adjustment": "Initial full run: 2,634 passed and two whitespace-sensitive source assertions failed. Those assertions now accept rustfmt whitespace; all 2,636 tests pass in the final full rerun."
+}

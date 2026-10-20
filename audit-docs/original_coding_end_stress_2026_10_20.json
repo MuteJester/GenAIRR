@@ -1,0 +1,204 @@
+{
+  "seed": 20261020,
+  "records": 660,
+  "errors": 0,
+  "profiles": [
+    {
+      "config": "human_igh",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_igh",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_igk",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_igk",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_igl",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_igl",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_tcra",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_tcra",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_tcrb",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_tcrb",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_tcrd",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_tcrd",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_tcrg",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "human_tcrg",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "mouse_igh",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "mouse_igh",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "mouse_tcra",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "mouse_tcrb",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "mouse_tcrb",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "mouse_tcrd",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "mouse_tcrd",
+      "productive": true,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    },
+    {
+      "config": "mouse_tcrg",
+      "productive": false,
+      "records": 30,
+      "errors": 0,
+      "replay_equal": true
+    }
+  ],
+  "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+  "guarded_rejections": [
+    {
+      "config": "mouse_igk",
+      "productive": false,
+      "status": "reference_rejected",
+      "reason": "plan compilation failed; 7 refdata validation issue(s) (3 fatal, 4 curatable):\n  - [fatal] V allele 3 byte at position 224 is 0x79 ('y'); allowed: A/C/G/T/N (case-insensitive)\n  - [fatal] duplicate allele name 'IGKV10-94*01' in V pool\n  - [fatal] duplicate allele name 'IGKV10-96*01' in V pool\n  - [curatable] V allele 52 anchor codon 'gaa' translates to 'E' (expected C)\n  - [curatable] V allele 53 anchor codon 'gaa' translates to 'E' (expected C)\n  - [curatable] J allele 5 anchor codon 'aat' translates to 'N' (expected one of \"F\")\n  - [curatable] J allele 6 anchor codon 'aac' translates to 'N' (expected one of \"F\")\n"
+    },
+    {
+      "config": "mouse_igk",
+      "productive": true,
+      "status": "reference_rejected",
+      "reason": "plan compilation failed; 7 refdata validation issue(s) (3 fatal, 4 curatable):\n  - [fatal] V allele 3 byte at position 224 is 0x79 ('y'); allowed: A/C/G/T/N (case-insensitive)\n  - [fatal] duplicate allele name 'IGKV10-94*01' in V pool\n  - [fatal] duplicate allele name 'IGKV10-96*01' in V pool\n  - [curatable] V allele 52 anchor codon 'gaa' translates to 'E' (expected C)\n  - [curatable] V allele 53 anchor codon 'gaa' translates to 'E' (expected C)\n  - [curatable] J allele 5 anchor codon 'aat' translates to 'N' (expected one of \"F\")\n  - [curatable] J allele 6 anchor codon 'aac' translates to 'N' (expected one of \"F\")\n"
+    },
+    {
+      "config": "mouse_igl",
+      "productive": false,
+      "status": "reference_rejected",
+      "reason": "plan compilation failed; 4 refdata validation issue(s) (3 fatal, 1 curatable):\n  - [fatal] duplicate allele name 'IGLV2*01' in V pool\n  - [fatal] duplicate allele name 'IGLV3*01' in V pool\n  - [curatable] J allele 2 anchor codon 'agc' translates to 'S' (expected one of \"F\")\n  - [fatal] duplicate allele name 'IGLJ4*01' in J pool\n"
+    },
+    {
+      "config": "mouse_igl",
+      "productive": true,
+      "status": "reference_rejected",
+      "reason": "plan compilation failed; 4 refdata validation issue(s) (3 fatal, 1 curatable):\n  - [fatal] duplicate allele name 'IGLV2*01' in V pool\n  - [fatal] duplicate allele name 'IGLV3*01' in V pool\n  - [curatable] J allele 2 anchor codon 'agc' translates to 'S' (expected one of \"F\")\n  - [fatal] duplicate allele name 'IGLJ4*01' in J pool\n"
+    },
+    {
+      "config": "mouse_tcra",
+      "productive": true,
+      "status": "productive_support_rejected",
+      "reason": "plan compilation failed; contract productive_junction_frame precondition failed: declared allele, trim, N and P supports have no productive completion"
+    },
+    {
+      "config": "mouse_tcrg",
+      "productive": true,
+      "status": "productive_support_rejected",
+      "reason": "plan compilation failed; contract productive_junction_frame precondition failed: declared allele, trim, N and P supports have no productive completion"
+    }
+  ],
+  "reference_policy": "allow curatable reference annotations; productive support still requires valid retained anchors and coding sequence",
+  "mutation_profiles": "IGH/IGK/IGL use SHM; unconstrained TCR profiles use sequencing errors; constrained TCR profiles have no SHM",
+  "extension_sha256": "0a364e94191e001517166c07dea8d9343d8ee01abdb16586a6ac7f86f985de25",
+  "scope": "authored outcome distributions; metadata and replay correctness, not empirical frequency validation"
+}

@@ -14,6 +14,16 @@ pub enum PassError {
         address: String,
         reason: FilteredSampleError,
     },
+    /// A bounded search stopped without proving support empty.
+    SamplingBudgetExceeded {
+        pass_name: String,
+        address: String,
+        requested_count: u32,
+        attempts: u64,
+        explored_states: u64,
+        state_budget: u64,
+        strategy: String,
+    },
     /// A pass that requires reference data was run without it.
     MissingRefData { pass_name: String },
     /// A pass requires an allele assignment that is absent.
@@ -50,6 +60,26 @@ pub enum PassError {
 }
 
 impl PassError {
+    pub fn sampling_budget_exceeded(
+        pass_name: impl Into<String>,
+        address: impl Into<String>,
+        requested_count: u32,
+        attempts: u64,
+        explored_states: u64,
+        state_budget: u64,
+        strategy: impl Into<String>,
+    ) -> Self {
+        Self::SamplingBudgetExceeded {
+            pass_name: pass_name.into(),
+            address: address.into(),
+            requested_count,
+            attempts,
+            explored_states,
+            state_budget,
+            strategy: strategy.into(),
+        }
+    }
+
     pub fn constraint_sampling(
         pass_name: impl Into<String>,
         address: impl Into<String>,
@@ -123,6 +153,7 @@ impl PassError {
 
     pub fn pass_name(&self) -> &str {
         match self {
+            Self::SamplingBudgetExceeded { pass_name, .. } => pass_name,
             Self::ConstraintSampling { pass_name, .. } => pass_name,
             Self::MissingRefData { pass_name } => pass_name,
             Self::MissingAssignment { pass_name, .. } => pass_name,
@@ -136,6 +167,7 @@ impl PassError {
 
     pub fn address(&self) -> &str {
         match self {
+            Self::SamplingBudgetExceeded { address, .. } => address,
             Self::ConstraintSampling { address, .. } => address,
             Self::InvalidDistributionOutput { address, .. } => address,
             Self::MissingRefData { .. }
@@ -189,6 +221,15 @@ impl fmt::Display for PassError {
                     pass_name, address, detail
                 )
             }
+            Self::SamplingBudgetExceeded {
+                pass_name, address, requested_count, attempts, explored_states,
+                state_budget, strategy,
+            } => write!(
+                f,
+                "{pass_name} exhausted {strategy} at {address}: requested_count={requested_count}, \
+                 attempts={attempts}, explored_states={explored_states}, state_budget={state_budget}; \
+                 admissible support remains unresolved"
+            ),
             Self::MissingRefData { pass_name } => {
                 write!(
                     f,

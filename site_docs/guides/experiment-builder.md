@@ -83,6 +83,7 @@ pass actually does:
 | Stage | Methods | Effect |
 |---|---|---|
 | **Recombination** | `.recombine()` | Sample alleles, trim, fill NP1/NP2, assemble |
+| **Original-end processing** | `.process_coding_ends(..., reference_ends_are_coding_ends=True)` | Replace automatic trim/P with explicit signed net outcomes at complete original coding ends |
 | **Recombination-stage mechanisms** | `.invert_d(prob=...)`, `.receptor_revision(prob=...)` | D in reverse-complement orientation; post-recombine V replacement |
 | **Constraints** | `.productive_only()`, `.restrict_alleles(v=[...], d=[...], j=[...])` | Constrain the sample space (productive triad; allele subsetting) |
 | **Biological mutation** | `.mutate(model="s5f"\|"uniform", rate=..., segment_rates={...}, v_subregion_rates={...})` | Somatic hypermutation per descendant |
@@ -91,12 +92,18 @@ pass actually does:
 | **Read layout** | `.paired_end(r1_length=..., r2_length=..., insert_size=...)`, `.random_strand_orientation(prob=...)` | R1/R2 windows; strand flips |
 | **Bookkeeping** | `.with_metadata(experiment_id=..., tissue=...)`, `.contaminate(prob=...)` | Stamp user fields onto every record; inject background contaminants |
 
-**Junction mechanisms (P and N additions) are NOT separate Experiment
-methods.** They're driven by the cartridge's empirical models plane
+By default, junction additions are driven by the cartridge's empirical models plane
 `ReferenceEmpiricalModels.np_lengths` / `np_bases` /
 `p_nucleotide_lengths`. Authoring those values on your cartridge
 controls how much N is added and what bases get drawn; the
 `.recombine()` pass consumes them automatically.
+
+The opt-in `.process_coding_ends(...)` model replaces automatic trim/P settings
+with explicit signed terminal outcomes. It requires confirmation that the
+reference boundaries are complete coding ends and cannot be combined with an
+explicit `.trim()` call. N models remain independently configured.
+See [original coding-end processing](recombination-junction.md#processing-original-coding-ends-opt-in)
+for the probability and provenance contracts.
 
 ## Order matters
 
@@ -188,51 +195,36 @@ the API reference page has the formal signatures.
 
 ## How `productive_only()` works
 
-`.productive_only()` is **constraint-aware sampling, not
-reject-and-retry**. Most simulators build a sequence first and
-check it afterwards; if it's broken they discard and resample.
-That's slow, statistically biased toward weakly-constrained
-edges of the distribution, and offers no way to reason about
-*which* draws are admissible. GenAIRR inverts the order: at
-every draw point the engine consults the active contract bundle
-and only candidates that keep it intact stay in the support.
+`.productive_only()` narrows candidate support before sampling and requires a
+final accepted `canonical_observed_vdj_v1` assessment. The scope is the observed
+coding span, with V Cys/J Phe-or-Trp original landmarks, a consistent coding
+frame through the J tail, and definitely stop-free complete coding codons.
+See [nullable productivity metadata](../concepts/airr-record.md#junction-and-productivity)
+for missing evidence, ambiguity, and terminal clipping.
 
-`productive_only()` registers four predicates as the contract
-bundle:
+The bundle combines canonical V and J landmark predicates,
+`ProductiveJunctionFrame`, `NoStopCodonInJunction`, and
+`CodingSequenceIntegrity`. Mutation and corruption choices are constrained too.
+Reference validation exceptions do not override these biological predicates.
 
-| Predicate | What it enforces | Where it fires |
-|---|---|---|
-| **AnchorPreserved (V)** | V's conserved Cysteine codon survives the 3′ V trim | At V-trim sampling |
-| **AnchorPreserved (J)** | J's conserved Trp (heavy / κ / TR) or Phe (λ) codon survives the 5′ J trim | At J-trim sampling |
-| **ProductiveJunctionFrame** | Junction length (Cys-codon start through anchor-codon end) is divisible by 3 | At NP-region length sampling |
-| **NoStopCodonInJunction** | No `TAA` / `TAG` / `TGA` codon in the assembled junction | At NP base-draw sampling |
-
-Bases the engine touches that the contracts don't gate (mutation
-events, all corruption passes) can still degrade the result
-downstream - that's the intentional split. Heavy SHM or 5′ / 3′
-loss can still produce a non-productive *observed* sequence;
-the recombination-time identity stays productive.
+Each feasible draw retains its natural relative weights within the admissible
+support. Future-completion checks establish possibility, not completion
+probability, so local conditioning is not a claim of globally conditioned
+joint probabilities. Structural-indel sampling documents its own complete-tuple
+law and computational budget.
 
 ### Strict mode on empty support
 
-Some configurations are over-constrained - a particular allele
-pair may have no admissible NP length that keeps the junction
-in-frame. The `strict=` flag on `run_records(...)` picks the
-behaviour:
+Both modes guarantee `productive is True` for every successful emission.
+Statically impossible support fails compilation. At runtime, strict mode
+reports empty supports; permissive mode can use a pass's documented no-op only
+when the final sequence remains accepted. Missing landmarks, ambiguous stops,
+or invalid final frames cannot be silently emitted. Initial assignment and
+P-aware completion failures raise in either mode. The final assertion is an
+error guard, with no retry or post-filter loop.
 
-- **`strict=False` (default)** - fall back to the unconstrained
-  distribution at that single draw and continue. Records can
-  contain rare non-productive sequences when the constraint
-  couldn't be satisfied.
-- **`strict=True`** - raise `StrictSamplingError(pass_name,
-  address, reason)` and stop. Use this for training datasets,
-  validation runs, and formal benchmarks where 100 % contract
-  compliance is required.
-
-`StrictSamplingError` is **not** a `ValueError` subclass; catch
-it explicitly. See the
-[Validation hub](../validation/index.md#strict-vs-permissive)
-for the recovery pattern.
+`StrictSamplingError` is separate from `ValueError`; see the
+[Validation hub](../validation/index.md#strict-vs-permissive) for diagnostics.
 
 ## Validation and reproducibility
 

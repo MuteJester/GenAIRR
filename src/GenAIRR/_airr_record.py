@@ -592,7 +592,7 @@ def _legacy_outcome_to_airr_record(
             junction_length = len(junction_nt)
             vj_in_frame = junction_length % 3 == 0
             stop_codon = _has_stop(junction_nt) if vj_in_frame else False
-            junction_aa = _translate_seq(junction_nt) if vj_in_frame else ""
+            junction_aa = _translate_seq(junction_nt)
 
     productive: Optional[bool] = None
     if vj_in_frame is not None and stop_codon is not None:
@@ -736,8 +736,9 @@ def _legacy_outcome_to_airr_record(
         "is_contaminant": _trace_bool(outcome, "corrupt.contaminant.applied", False),
     }
 
-    seq_len = record["sequence_length"]
-    record["mutation_rate"] = (
-        record["n_mutations"] / seq_len if seq_len > 0 else 0.0
-    )
+    # Mutation-stage exposure lengths and inherited history are persistent
+    # native provenance; the shortened final read cannot reconstruct them.
+    native = outcome.airr_record(refdata, sequence_id=record["sequence_id"])
+    record["n_mutations"] = native["n_mutations"]
+    record["mutation_rate"] = native["mutation_rate"]
     return record

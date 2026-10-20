@@ -133,7 +133,7 @@ record dicts plus the underlying `Outcome` objects.
 | **List-like access** | `len(result)`, `result[i]`, `result[a:b]`, `for rec in result:` | One AIRR dict per element |
 | **Underlying state** | `.records`, `.outcomes`, `.parents`, `.lineage_trees` | `outcomes` is `None` when built from records only; `parents` exists only for legacy `expand_clones`; `lineage_trees` exists on lineage results |
 | **Validation** | `.validate_records(refdata)`, `.validate_families()`, `.validate_families_with_parents(refdata)` | See [Validation hub](../validation/index.md) |
-| **Export** | `.to_tsv(path, *, airr_strict=False)`, `.to_csv(path, *, airr_strict=False)`, `.to_fasta(path, *, prefix="seq")`, `.to_fastq(path, *, quality="illumina", **kw)`, `.to_paired_fastq(r1, r2, *, quality="illumina", overwrite=False, **kw)`, `.to_dataframe(*, airr_strict=False)` | See [Export the results](../getting-started/export-results.md) |
+| **Export** | `.to_tsv(path, *, airr_strict=True)`, `.to_csv(path, *, airr_strict=False)`, `.to_fasta(path, *, prefix="seq")`, `.to_fastq(path, *, quality="illumina", **kw)`, `.to_paired_fastq(r1, r2, *, quality="illumina", overwrite=False, **kw)`, `.to_dataframe(*, airr_strict=False)` | TSV defaults to AIRR coordinate/CIGAR conversion and `T` / `F` booleans; see [Export the results](../getting-started/export-results.md) |
 | **Construction** | `SimulationResult.from_outcomes(outcomes, refdata, *, id_prefix="seq", expose_provenance=False)` | Build a result from Rust `Outcome` objects + refdata; `expose_provenance=True` injects `truth_*_call` columns |
 
 ## Reports and exceptions

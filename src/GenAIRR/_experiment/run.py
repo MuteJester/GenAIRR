@@ -161,12 +161,10 @@ class _RunMixin:
         be omitted; passing ``n`` explicitly is allowed only if it
         matches that product.
 
-        ``expose_provenance=True`` appends ``truth_v_call``,
-        ``truth_d_call``, ``truth_j_call`` columns containing the
-        originally-sampled allele names — distinct from the
-        evidence-driven ``v_call`` / ``d_call`` / ``j_call`` fields
-        an aligner would produce. Useful for benchmarking aligners
-        against ground truth without keeping a side truth file.
+        ``expose_provenance=True`` adds ``truth_v_call``,
+        ``truth_d_call``, and ``truth_j_call`` compatibility aliases
+        for the standard generating calls. Post-mutation inference
+        is always available separately as ``recalled_*_call``.
 
         ``strict`` semantics match :meth:`run` — strict-mode applies
         only to **fresh sampling**. Trace replay
@@ -240,6 +238,10 @@ class _RunMixin:
         if self._metadata:
             for rec in result.records:
                 for key, value in self._metadata.items():
+                    if key in rec:
+                        raise ValueError(
+                            f"with_metadata: reserved generated field {key!r} cannot be overwritten"
+                        )
                     rec[key] = value
         return result
 

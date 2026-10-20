@@ -76,7 +76,7 @@ fn anchor_preserved_zero_trims_and_anchor_in_range_passes() {
 }
 
 #[test]
-fn anchor_preserved_rejects_live_anchor_provenance_shift_after_indel() {
+fn anchor_preserved_tracks_intact_codon_shift_after_indel() {
     let cfg = make_vj_with_anchor_codons(b"GGG", b"TTT");
     let sim = make_assembled_sim_from_refdata(&cfg);
     let shifted = sim.with_indel_inserted(
@@ -84,16 +84,12 @@ fn anchor_preserved_rejects_live_anchor_provenance_shift_after_indel() {
         Nucleotide::synthetic(b'A', Segment::V, flag::INDEL_INSERTED),
     );
 
-    let err = AnchorPreserved::new(Segment::V)
+    AnchorPreserved::new(Segment::V)
         .verify(&shifted, Some(&cfg))
-        .unwrap_err();
-
-    assert_eq!(err.contract_name, "anchor_preserved.v");
-    assert!(
-        err.reason.contains("provenance mismatch"),
-        "reason should mention live provenance mismatch, got: {}",
-        err.reason
-    );
+        .expect("the three anchor-provenance bases remain intact");
+    assert!(crate::contract::productive()
+        .verify(&shifted, Some(&cfg))
+        .is_err());
 }
 
 #[test]
@@ -362,8 +358,12 @@ mod admits_fixed {
         for site in 6..9u32 {
             assert_eq!(
                 c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Insertion,),
-                IndelEventClass::Forbidden,
-                "insertion at site {} should be Forbidden",
+                if site == 6 {
+                    IndelEventClass::FrameNeutral
+                } else {
+                    IndelEventClass::Forbidden
+                },
+                "only an insertion between anchor bases disrupts the codon at site {}",
                 site
             );
             assert_eq!(
@@ -376,19 +376,19 @@ mod admits_fixed {
     }
 
     #[test]
-    fn admissible_indel_class_inside_region_before_anchor_is_forbidden() {
-        // Indels at sites in [region.start, anchor_codon_end)
-        // shift the anchor codon's bytes → Forbidden.
+    fn admissible_indel_class_before_anchor_preserves_intact_codon() {
+        // Shifting an intact anchor is distinct from destroying its codon;
+        // productive frame protection is a separate contract.
         let (cfg, sim) = fixture();
         let c = AnchorPreserved::new(Segment::V);
         for site in 0..6u32 {
             assert_eq!(
                 c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Insertion,),
-                IndelEventClass::Forbidden,
+                IndelEventClass::FrameNeutral,
             );
             assert_eq!(
                 c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Deletion,),
-                IndelEventClass::Forbidden,
+                IndelEventClass::FrameNeutral,
             );
         }
     }

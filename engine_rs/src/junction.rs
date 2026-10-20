@@ -118,19 +118,10 @@ pub fn compute_junction(sim: &Simulation, refdata: &RefDataConfig) -> Option<Jun
         .iter()
         .find(|r| r.segment == Segment::J)?;
 
-    // Map allele-coordinate anchors into pool coordinates.
-    //
-    //   v_anchor_in_trimmed_v = v_anchor - v_trim_5
-    //   v_anchor_in_pool       = v_region.start + above
-    //
-    //   j_anchor_in_trimmed_j  = j_anchor - j_trim_5
-    //   j_anchor_in_pool       = j_region.start + above
-    //
-    // The j_region.start uses the assembled J's pool position, so
-    // the chain of intervening regions (NP1, D, NP2) is implicitly
-    // accounted for.
-    let v_anchor_in_pool = v_region.start.index() + (v_anchor - v_trim_5);
-    let j_anchor_in_pool = j_region.start.index() + (j_anchor - j_trim_5);
+    // Surviving germline provenance maps anchors after terminal coverage loss
+    // and structural indels. Region-start arithmetic alone cannot do this.
+    let v_anchor_in_pool = crate::coding::anchor_position(sim, v_region, v_anchor)?;
+    let j_anchor_in_pool = crate::coding::anchor_position(sim, j_region, j_anchor)?;
 
     let start = NucHandle::new(v_anchor_in_pool);
     let end = NucHandle::new(j_anchor_in_pool + 3);
@@ -204,8 +195,11 @@ mod tests {
             sim = next;
         }
         for i in 0..v_len {
-            let (next, _) =
-                sim.with_nucleotide_pushed(Nucleotide::germline(b'A', i as u16, Segment::V));
+            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
+                b'A',
+                i as u16 + v_inst.trim_5,
+                Segment::V,
+            ));
             sim = next;
         }
 
@@ -219,8 +213,11 @@ mod tests {
             sim = next;
         }
         for i in 0..j_len {
-            let (next, _) =
-                sim.with_nucleotide_pushed(Nucleotide::germline(b'T', i as u16, Segment::J));
+            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
+                b'T',
+                i as u16 + j_inst.trim_5,
+                Segment::J,
+            ));
             sim = next;
         }
 

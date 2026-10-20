@@ -8,8 +8,8 @@ Pin set:
 - ``pin_scaffold_*`` — live surfaces the new estimator
   reuses verbatim:
   - Rust `AirrRecord` exposing `np1` / `np2` String fields.
-  - `projection.rs::unclaimed_np_string` walking the
-    structural NP region only.
+  - AIRR NP fields describing the interval between resolved
+    segment alignments, including P nucleotides.
   - `result.py` canonical column order including both.
   - `ReferenceEmpiricalModels.np_bases` typed plane.
   - `NpBaseModelSpec` supporting `uniform` /
@@ -27,7 +27,7 @@ Pin set:
 - ``pin_present_*`` — **the critical stop-and-report
   verification**: `len(np1) == np1_length` and
   `len(np2) == np2_length` even under a max-P plane.
-  P-bytes are NOT contaminating the AIRR strings.
+  These are combined N/P intervals; they are not pure TdT N strings.
 - ``pin_present_*`` — Markov wired end-to-end (the
   spec docstring's "deferred" claim is stale).
 - ``pin_present_*`` — plan signature folds NP base model
@@ -37,9 +37,8 @@ Pin set:
   slice closes (`estimate_np_base_model` method, `kind`
   / `pseudocount` kwarg surface, sibling class).
 
-**Pre-flight verdict (audit §7): clean-yes.** Both
-anticipated tricky points (P-contamination, Markov
-status) resolved cleanly at audit time.
+The original estimator audit assumed P-free NP strings. The biological
+metadata correction supersedes that assumption: AIRR NP intervals include P.
 """
 from __future__ import annotations
 
@@ -77,21 +76,19 @@ def test_pin_scaffold_airr_record_carries_np1_and_np2_string_fields() -> None:
     assert "pub np2: String" in src
 
 
-def test_pin_scaffold_unclaimed_np_string_walks_structural_region_only() -> None:
-    """`projection.rs::unclaimed_np_string` walks
-    `region.start..region.end` over the STRUCTURAL NP
-    region. By construction, the range excludes P-byte
-    ranges (P bytes don't add to `sim.sequence.regions`).
-    Pinned at source so a future refactor that
-    accidentally widens the walk surfaces here."""
-    src = (
-        _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "projection.rs"
-    ).read_text(encoding="utf-8")
-    assert "pub(super) fn unclaimed_np_string(" in src
-    # The walk iterates region.start..region.end of the supplied region.
-    assert "let r_start = region.start.index()" in src
-    assert "let r_end = region.end.index()" in src
-    assert "for i in r_start..r_end" in src
+def test_pin_scaffold_np_strings_follow_resolved_alignment_boundaries() -> None:
+    """NP strings include precisely the unaligned interval after indels."""
+    result = (
+        ga.Experiment.on("human_igh").recombine()
+        .polymerase_indels(count=2).run_records(n=20, seed=42)
+    )
+    for row in result:
+        for index, left, right in ((1, "v", "d"), (2, "d", "j")):
+            start = row[f"{left}_sequence_end"]
+            end = row[f"{right}_sequence_start"]
+            expected = row["sequence"][start:end] if end >= start else ""
+            assert row[f"np{index}"] == expected
+            assert row[f"np{index}_length"] == len(expected)
 
 
 def test_pin_scaffold_result_column_order_includes_np1_and_np2_strings() -> None:
@@ -211,24 +208,12 @@ def test_pin_scaffold_engine_generate_np_pass_folds_base_payload_into_signature(
 
 
 # ──────────────────────────────────────────────────────────────────
-# D. pin_present_* — STOP-AND-REPORT: P-byte contamination check
+# D. pin_present_* — combined N/P interval lengths
 # ──────────────────────────────────────────────────────────────────
 
 
 def test_pin_present_np1_length_matches_len_np1_string_under_max_p_plane() -> None:
-    """**The critical P-cross-contamination gate.**
-
-    With a max-P plane authored (3 P-bytes at each of 4
-    ends, 12 P-bytes per record), `len(rec["np1"])` MUST
-    equal `rec["np1_length"]` and `len(rec["np2"])` MUST
-    equal `rec["np2_length"]` on every record. If P-bytes
-    leaked into the AIRR strings, the lengths would
-    diverge.
-
-    The estimator's plan to use `rec["np1"]` / `rec["np2"]`
-    verbatim as P-clean A/C/G/T streams depends on this
-    invariant. If it breaks, the implementation slice must
-    STOP AND REPORT and add P-aware filtering."""
+    """Combined N/P strings and lengths must agree under nonzero P addition."""
     cfg = copy.deepcopy(ga.HUMAN_IGH_OGRDB)
     cfg.reference_models = ReferenceEmpiricalModels(
         p_nucleotide_lengths={
@@ -253,14 +238,11 @@ def test_pin_present_np1_length_matches_len_np1_string_under_max_p_plane() -> No
     )
     assert np1_mismatch == 0, (
         f"len(np1) != np1_length on {np1_mismatch}/50 records under a "
-        f"max-P plane — P-bytes are NOW contaminating the np1 string. "
-        f"STOP AND REPORT before implementing the estimator; the slice "
-        f"must add P-aware filtering."
+        f"max-P plane"
     )
     assert np2_mismatch == 0, (
         f"len(np2) != np2_length on {np2_mismatch}/50 records under a "
-        f"max-P plane — P-bytes are NOW contaminating the np2 string. "
-        f"STOP AND REPORT."
+        f"max-P plane"
     )
 
 

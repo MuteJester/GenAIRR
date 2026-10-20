@@ -1,14 +1,11 @@
 //! C4: Allele-call oracle.
 //!
-//! Independent reimplementation of the walker's max-match-count
-//! tie-set selection. We walk the segment's region bytes, count
-//! matches per allele, and pick the alleles at the max score.
-//! Then we re-derive the projected CSV order (truth first if in
-//! tie-set, otherwise ascending allele id).
+//! Standard calls must name the final generating assignment. Evidence-based
+//! recalled calls are independently re-scored from the observed segment bytes,
+//! with truth-first ordering only when the source remains in the tie set.
 
 use super::*;
 
-use crate::address::VdjSegment;
 use crate::ir::Segment;
 use crate::live_call::scoring::{
     allele_pool_for_segment, score_alleles_with_extensions, tie_set_ids_at_max_score,
@@ -21,19 +18,33 @@ pub(super) fn check_allele_oracle(
     issues: &mut Vec<RecordValidationIssue>,
 ) {
     let sim = outcome.final_simulation();
-    if record.rev_comp {
-        // Rev-comp flips the sequence; the allele call was computed
-        // pre-flip. Skip the oracle here; the rev-comp audit covers
-        // it with dedicated tests.
-        return;
-    }
-    for (segment, vdj, reported_call) in [
-        (Segment::V, VdjSegment::V, &record.v_call),
-        (Segment::D, VdjSegment::D, &record.d_call),
-        (Segment::J, VdjSegment::J, &record.j_call),
+    for (segment, reported_call, recalled_call) in [
+        (Segment::V, &record.v_call, &record.recalled_v_call),
+        (Segment::D, &record.d_call, &record.recalled_d_call),
+        (Segment::J, &record.j_call, &record.recalled_j_call),
     ] {
-        let _ = vdj;
-        oracle_check_segment(sim, refdata, segment, reported_call, issues);
+        let expected = sim
+            .assignments
+            .get(segment)
+            .and_then(|a| allele_pool_for_segment(refdata, segment)?.get(a.allele_id.as_usize()))
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        if *reported_call != expected {
+            issues.push(RecordValidationIssue::AlleleCallTieSetMismatch {
+                segment,
+                reported: reported_call
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
+                recomputed: if expected.is_empty() {
+                    vec![]
+                } else {
+                    vec![expected]
+                },
+            });
+        }
+        oracle_check_segment(sim, refdata, segment, recalled_call, issues);
     }
 }
 
@@ -44,12 +55,24 @@ fn oracle_check_segment(
     reported_call: &str,
     issues: &mut Vec<RecordValidationIssue>,
 ) {
-    let Some(region) = sim
-        .sequence
-        .regions
-        .iter()
-        .find(|r| r.segment == segment)
-    else {
+    // Direct/native partial outcomes may omit inference entirely. Missing
+    // inference must export an empty field, rather than a generating fallback.
+    // Cache parity is checked separately against a fresh walk when requested.
+    if sim
+        .segment_calls
+        .get(segment)
+        .map_or(true, |call| call.allele_call.is_empty())
+    {
+        if !reported_call.is_empty() {
+            issues.push(RecordValidationIssue::RecalledAlleleCallMismatch {
+                segment,
+                reported: reported_call.to_owned(),
+                recomputed: String::new(),
+            });
+        }
+        return;
+    }
+    let Some(region) = sim.sequence.regions.iter().find(|r| r.segment == segment) else {
         return;
     };
     let Some(allele_pool) = allele_pool_for_segment(refdata, segment) else {
@@ -78,7 +101,7 @@ fn oracle_check_segment(
     // caps. Mirrors `live_call::walker::call_from_region` so the
     // oracle and the walker agree on the tie-set under arbitrary
     // trim.
-    let scores = score_alleles_with_extensions(
+    let mut scores = score_alleles_with_extensions(
         sim,
         segment,
         allele_pool,
@@ -87,6 +110,13 @@ fn oracle_check_segment(
         trim_3_cap,
         orientation,
     );
+    if let Some(allowed) = sim.live_call_alleles(segment) {
+        for (id, score) in scores.iter_mut().enumerate() {
+            if !allowed.iter().any(|a| a.as_usize() == id) {
+                *score = 0;
+            }
+        }
+    }
     let tied_ids = tie_set_ids_at_max_score(&scores);
     if tied_ids.is_empty() {
         return; // No germline evidence; oracle abstains.
@@ -112,48 +142,13 @@ fn oracle_check_segment(
         .iter()
         .map(|&i| allele_pool[i].name.clone())
         .collect();
-    let reported_names: Vec<String> = reported_call
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
-
-    // Tie-set equality (order-insensitive).
-    let mut reported_sorted = reported_names.clone();
-    reported_sorted.sort();
-    let mut expected_sorted = expected_names.clone();
-    expected_sorted.sort();
-    if reported_sorted != expected_sorted {
-        issues.push(RecordValidationIssue::AlleleCallTieSetMismatch {
+    let recomputed = expected_names.join(",");
+    if reported_call != recomputed {
+        issues.push(RecordValidationIssue::RecalledAlleleCallMismatch {
             segment,
-            reported: reported_names.clone(),
-            recomputed: expected_names.clone(),
+            reported: reported_call.to_string(),
+            recomputed,
         });
-        return; // Order check is meaningless if the sets differ.
-    }
-
-    // Order check: first element must match expected_order's first.
-    if let (Some(reported_first), Some(expected_first)) =
-        (reported_names.first(), expected_names.first())
-    {
-        if reported_first != expected_first {
-            let reason = if truth_idx.is_some()
-                && expected_order
-                    .first()
-                    .map(|&i| i == truth_idx.unwrap())
-                    .unwrap_or(false)
-            {
-                AlleleOrderReason::TruthFirstIfInTieSet
-            } else {
-                AlleleOrderReason::AscendingAlleleIdOtherwise
-            };
-            issues.push(RecordValidationIssue::AlleleCallOrderMismatch {
-                segment,
-                reported_first: reported_first.clone(),
-                expected_first: expected_first.clone(),
-                reason,
-            });
-        }
     }
 }
 

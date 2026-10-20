@@ -122,9 +122,7 @@ impl<'de> Deserialize<'de> for ChoiceValue {
             }
             ChoiceValueWire::Bases(s) => {
                 if !s.is_ascii() {
-                    return Err(serde::de::Error::custom(
-                        "ChoiceValue::Bases must be ASCII",
-                    ));
+                    return Err(serde::de::Error::custom("ChoiceValue::Bases must be ASCII"));
                 }
                 ChoiceValue::Bases(s.into_bytes())
             }
@@ -167,9 +165,27 @@ impl ChoiceRecord {
 /// is delivered to the caller (via the `History` API in B.2 or via
 /// `with_history=True` in the public `.run()` from D9) and dropped
 /// otherwise.
+/// Non-biological accounting for a bounded sampler. It is separate from
+/// random choices: work counts and replay strategy are not molecular events.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SamplingDiagnostic {
+    pub pass_name: String,
+    pub model: String,
+    pub strategy: String,
+    pub status: String,
+    pub requested_count: u32,
+    pub applied_count: u32,
+    pub attempts: u64,
+    pub explored_states: u64,
+    /// Number of choices preceding this diagnostic in the complete trace.
+    pub choice_offset: usize,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Trace {
     choices: Vec<ChoiceRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    diagnostics: Vec<SamplingDiagnostic>,
 }
 
 impl Trace {
@@ -184,6 +200,7 @@ impl Trace {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             choices: Vec::with_capacity(cap),
+            diagnostics: Vec::new(),
         }
     }
 
@@ -222,7 +239,21 @@ impl Trace {
     /// execution fences does it move that delta into the run trace.
     /// This keeps trace/history/state commits aligned.
     pub fn append_delta(&mut self, mut delta: Trace) {
+        let offset = self.choices.len();
+        for diagnostic in &mut delta.diagnostics {
+            diagnostic.choice_offset += offset;
+        }
         self.choices.append(&mut delta.choices);
+        self.diagnostics.append(&mut delta.diagnostics);
+    }
+
+    pub fn record_sampling_diagnostic(&mut self, mut diagnostic: SamplingDiagnostic) {
+        diagnostic.choice_offset = self.choices.len();
+        self.diagnostics.push(diagnostic);
+    }
+
+    pub fn diagnostics(&self) -> &[SamplingDiagnostic] {
+        &self.diagnostics
     }
 
     /// All recorded choices in chronological order.
@@ -275,6 +306,36 @@ mod tests {
     use super::*;
     use crate::address::{ChoiceAddress, NpSegment, VdjSegment};
     use crate::assignment::TrimEnd;
+
+    #[test]
+    fn sampling_diagnostics_serialize_and_rebase_once_across_continuations() {
+        let mut root = Trace::new();
+        root.record("root", ChoiceValue::Int(0));
+        let mut delta = Trace::new();
+        delta.record("count", ChoiceValue::Int(1));
+        delta.record_sampling_diagnostic(SamplingDiagnostic {
+            pass_name: "corrupt.indel".into(),
+            model: "natural_sequential_v1".into(),
+            strategy: "exact_short_tuple".into(),
+            status: "completed".into(),
+            requested_count: 1,
+            applied_count: 1,
+            attempts: 0,
+            explored_states: 12,
+            choice_offset: 999,
+        });
+        root.append_delta(delta);
+        assert_eq!(root.diagnostics()[0].choice_offset, 2);
+        let round_trip: Trace =
+            serde_json::from_str(&serde_json::to_string(&root).unwrap()).unwrap();
+        assert_eq!(round_trip.diagnostics(), root.diagnostics());
+        let mut ancestor = Trace::new();
+        ancestor.record("ancestor", ChoiceValue::Int(1));
+        ancestor.append_delta(round_trip);
+        assert_eq!(ancestor.diagnostics()[0].choice_offset, 3);
+        let old: Trace = serde_json::from_str(r#"{"choices":[]}"#).unwrap();
+        assert!(old.diagnostics().is_empty());
+    }
 
     #[test]
     fn trace_starts_empty() {

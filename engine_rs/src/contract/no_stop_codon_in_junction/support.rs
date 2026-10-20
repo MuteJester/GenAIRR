@@ -1,5 +1,5 @@
 use crate::contract::BaseMask;
-use crate::ir::{translate_codon, NucHandle, Simulation, AMINO_STOP};
+use crate::ir::{NucHandle, Simulation};
 use crate::junction::compute_junction;
 use crate::refdata::RefDataConfig;
 
@@ -41,7 +41,7 @@ impl NoStopCodonInJunction {
                 let b3 =
                     pool_base_with_candidate(sim, NucHandle::new(pos + 2), site, candidate_base);
                 if let (Some(b1), Some(b2), Some(b3)) = (b1, b2, b3) {
-                    if translate_codon(b1, b2, b3) == AMINO_STOP {
+                    if crate::productivity::codon_stop([b1, b2, b3]) != Some(false) {
                         admissible = false;
                         break;
                     }
@@ -86,7 +86,7 @@ impl NoStopCodonInJunction {
             let b2 = pool_base_with_candidate(sim, NucHandle::new(pos + 1), site, byte);
             let b3 = pool_base_with_candidate(sim, NucHandle::new(pos + 2), site, byte);
             if let (Some(b1), Some(b2), Some(b3)) = (b1, b2, b3) {
-                if translate_codon(b1, b2, b3) == AMINO_STOP {
+                if crate::productivity::codon_stop([b1, b2, b3]) != Some(false) {
                     return false;
                 }
             }

@@ -27,6 +27,7 @@
 //! preserving the public persistent API.
 
 pub(crate) mod builder;
+mod coding_end_provenance;
 pub(crate) mod coordinates;
 pub(crate) mod event_log_observer;
 mod handle;
@@ -41,6 +42,7 @@ mod simulation;
 
 pub use crate::codon::{translate_codon, AMINO_AMBIGUOUS, AMINO_STOP};
 pub use builder::SimulationBuilder;
+pub use coding_end_provenance::{CodingEndChoice, CodingEndPOrigin, CodingEndProvenance};
 pub use coordinates::{PoolRange, RefRange};
 pub use handle::{NucHandle, RegionHandle};
 pub use nucleotide::{complement_base, encode_base, flag, GermlinePos, NucFlags, Nucleotide};

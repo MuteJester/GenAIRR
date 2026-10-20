@@ -1,25 +1,18 @@
 """Reference cartridge authoring API.
 
 Public surface for constructing a :class:`~GenAIRR.DataConfig` from
-FASTA inputs with an auditable build trail. v1 ships the facade
-and report infrastructure; statistical estimators
-(:meth:`estimate_allele_usage`, :meth:`estimate_trim_distributions`,
-:meth:`estimate_np_length_distributions`,
-:meth:`estimate_np_base_model`,
-:meth:`estimate_p_nucleotide_lengths`, :meth:`estimate_shm_rates`)
-are deferred to a follow-up slice and are explicitly absent from
-this module — users hit `AttributeError` if they try to call them,
-which the audit
-[`docs/reference_cartridge_authoring_audit.md`](../../docs/reference_cartridge_authoring_audit.md)
-§11 documents as the intentional v1 boundary.
+FASTA inputs with an auditable build trail. Native landmark resolution and
+optional sequence-bound reference evidence are separate from empirical-model
+estimation. Existing estimator stages attach explicit fitted model planes;
+structural catalogue validation alone never establishes empirical calibration.
 
 The v1 contract:
 
 - :class:`ReferenceCartridgeBuilder` is the only public class.
 - :meth:`ReferenceCartridgeBuilder.from_fasta` is the only
   constructor.
-- :meth:`infer_identity` / :meth:`infer_v_subregions` /
-  :meth:`with_rules` / :meth:`with_models` are the only stages.
+- Identity, reference-evidence, subregion, rule, model and estimator stages
+  record their inputs and limitations in the build report.
 - :meth:`build` returns a plain :class:`~GenAIRR.DataConfig` —
   drop-in replaceable with the 106 bundled cartridges.
 - :meth:`report` returns a :class:`CartridgeBuildReport` whose
@@ -40,45 +33,12 @@ from typing import Any, Dict, IO, List, Optional, Union
 from .alleles.allele import DAllele, JAllele, VAllele
 
 
-class _SafeAnchorMixin:
-    """`_find_anchor` shim that degrades gracefully when the
-    ``GenAIRR._native._anchor`` C resolver isn't available.
-
-    The bundled cartridges' alleles are pickled with anchors
-    already populated, so the C resolver is only needed when
-    constructing fresh alleles from FASTA — which is exactly
-    what the builder does. Some development environments (and
-    minimal CI installs) don't ship the native module; in
-    those, we want :class:`ReferenceCartridgeBuilder` to still
-    succeed with `anchor = None` and a warning in the report.
-
-    Mixin precedence: the mixin's ``_find_anchor`` is called
-    first; it delegates to ``super()._find_anchor()`` and
-    catches :class:`ImportError`. Any other exception bubbles.
-    """
-
-    def _find_anchor(self):  # type: ignore[override]
-        try:
-            return super()._find_anchor()  # type: ignore[misc]
-        except ImportError:
-            self.anchor = None
-            self.anchor_meta = None
-            return None
+class _BuilderVAllele(VAllele):
+    """Builder-compatible pickle name; uses the shared native resolver."""
 
 
-class _BuilderVAllele(_SafeAnchorMixin, VAllele):
-    """V allele used by :class:`ReferenceCartridgeBuilder`.
-
-    Identical to :class:`~GenAIRR.alleles.allele.VAllele` in
-    every respect except that ``_find_anchor`` degrades
-    gracefully when the native C resolver isn't built (see
-    :class:`_SafeAnchorMixin`).
-    """
-
-
-class _BuilderJAllele(_SafeAnchorMixin, JAllele):
-    """J allele used by :class:`ReferenceCartridgeBuilder` —
-    same shape as the V variant."""
+class _BuilderJAllele(JAllele):
+    """Builder-compatible pickle name; uses the shared native resolver."""
 
 
 class _BuilderDAllele(DAllele):
@@ -391,6 +351,33 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
     # Identity / annotations / programmable surfaces
     # ──────────────────────────────────────────────────────────
 
+    def with_reference_evidence(self, evidence_by_allele: dict, *, anchors: Optional[dict] = None) -> "ReferenceCartridgeBuilder":
+        """Attach explicit schema-v1 evidence documents keyed by allele name.
+
+        Each document must bind to the exact ungapped sequence SHA-256. It
+        may supply an independently evidenced coding phase and per-end
+        complete/partial/unknown status. ``anchors`` optionally supplies
+        source-backed zero-based landmark coordinates for named alleles. These are author claims, not inferred
+        from sequence length. Native validation rejects stale/inconsistent
+        evidence at the bridge; source/method/notes preserve its justification.
+        """
+        import copy
+        alleles = {a.name: a for bucket in (self._v_alleles, self._d_alleles, self._j_alleles)
+                   for group in bucket.values() for a in group}
+        unknown = (set(evidence_by_allele) | set(anchors or {})) - set(alleles)
+        if unknown:
+            raise ValueError(f"evidence supplied for absent alleles: {sorted(unknown)}")
+        for name, anchor in (anchors or {}).items():
+            if anchor is not None and (not isinstance(anchor, int) or isinstance(anchor, bool) or anchor < 0):
+                raise ValueError(f"anchor for {name} must be a nonnegative integer or None")
+            alleles[name].anchor = anchor
+        for name, evidence in evidence_by_allele.items():
+            if not isinstance(evidence, dict):
+                raise TypeError(f"reference evidence for {name} must be a dict")
+            alleles[name].reference_evidence = copy.deepcopy(evidence)
+        self._report.stages.append({"stage": "with_reference_evidence", "inputs": {"alleles": sorted(evidence_by_allele)}, "inferred": {}, "warnings": []})
+        return self
+
     def infer_identity(
         self,
         *,
@@ -435,7 +422,7 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
 
         self._name = cartridge_name
         self._metadata = ConfigInfo(
-            species=species_enum or Species.HUMAN,
+            species=species_enum,
             chain_type=chain,
             reference_set=reference_set or "user-supplied",
             last_updated=date.today(),
@@ -757,14 +744,11 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
                 f"D alleles, but none were parsed — verify d_fasta input"
             )
 
-        # Fill in a default ConfigInfo if infer_identity was never
-        # called. The default uses HUMAN / "user-supplied" so the
-        # cartridge survives downstream consumers that read
-        # `metadata.species` without an `is None` guard. The
-        # build-report stage entry surfaces the omission.
+        # Missing identity remains unknown; never silently label an
+        # unannotated or non-human catalogue as human.
         if self._metadata is None:
             self._metadata = ConfigInfo(
-                species=Species.HUMAN,
+                species=None,
                 chain_type=self._chain_type,
                 reference_set="user-supplied",
                 last_updated=date.today(),
@@ -772,7 +756,7 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
             )
             self._report.warnings.append(
                 "infer_identity() was not called — cartridge metadata "
-                "defaults to HUMAN species + 'user-supplied' reference_set"
+                "species remains unknown; reference_set is 'user-supplied'"
             )
 
         cfg = DataConfig(
@@ -786,6 +770,19 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
             reference_models=self._reference_models,
             genotype_priors=self._genotype_priors,
         )
+        cfg.checksum_scheme = "pickle4_roundtrip_v2"
+
+        # Structural evidence failures must surface during authoring. Missing
+        # or unresolved landmarks remain explicit report findings and can be
+        # inspected without claiming this is a functional reference catalogue.
+        from ._refdata_resolver import dataconfig_to_refdata
+        native = dataconfig_to_refdata(cfg)
+        native.validate_with_mode(mode="allow_curatable")
+        unresolved = native.validate()
+        if unresolved:
+            self._report.warnings.append(
+                f"annotation_incomplete: {len(unresolved)} native validation findings; strict compilation will reject this catalogue"
+            )
         # Pull a manifest snapshot + checksum. The manifest call
         # runs before verify_integrity so the report carries the
         # final state even when integrity blows up.
@@ -903,6 +900,11 @@ def _parse_segment_fasta(
                 allele = allele_cls(
                     name=name, gapped_sequence=gapped, length=len(gapped)
                 )
+                from ._reference_annotations import annotate_fasta_header
+                annotate_fasta_header(allele, raw_header, segment)
+
+            except ImportError:
+                raise
             except Exception as exc:
                 rejected.append(
                     {

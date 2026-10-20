@@ -11,7 +11,7 @@ implicit renormalization via inverse-CDF.
 All tests use Monte Carlo with N=4000 deterministic seeds and a 5σ
 tolerance, matching the Rust-side oracle tests'
 (`indel_pass_count_1_under_productive_matches_exact_enumeration`,
-`indel_pass_count_2_matches_exact_continuation_weighting`)
+`indel_pass_count_2_matches_exact_natural_sequential_weighting`)
 precedent.
 
 5σ for a Bernoulli proportion at p, N:
@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from dataclasses import dataclass
+
+import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
@@ -76,6 +79,131 @@ def _int_value(choice_value) -> int:
 
 def _bool_value(choice_value) -> bool:
     return "true" in str(choice_value).lower()
+
+
+def _vj_indel_oracle() -> "ge.RefDataConfig":
+    """The deterministic 12-base fixture used by the Rust indel oracles."""
+    cfg = ge.RefDataConfig.vj()
+    cfg.add_v_allele("v_dp*01", "v_dp", b"TGTGGG", anchor=0)
+    cfg.add_j_allele("j_dp*01", "j_dp", b"TGGAAA", anchor=0)
+    return cfg
+
+
+@dataclass(frozen=True)
+class _IndelState:
+    """Small independent molecule model; origins label the 12 reference bases."""
+
+    sequence: str = "TGTGGGTGGAAA"
+    origins: tuple[int | None, ...] = tuple(range(12))
+    v_end: int = 6
+    j_start: int = 6
+    j_end: int = 12
+
+    def anchors(self) -> tuple[int, int]:
+        return self.origins.index(0), self.origins.index(6)
+
+    def edit(self, site: int, base: str | None) -> "_IndelState":
+        insertion = base is not None
+        right = site if insertion else site + 1
+        return _IndelState(
+            self.sequence[:site] + (base or "") + self.sequence[right:],
+            self.origins[:site] + ((None,) if insertion else ()) + self.origins[right:],
+            self.v_end + (1 if insertion else -1) * (site < self.v_end),
+            self.j_start + (1 if insertion else -1) * (site < self.j_start),
+            self.j_end + (1 if insertion else -1) * (site < self.j_end),
+        )
+
+    def productive(self) -> bool:
+        """Check intact anchors, retained coding phase, J-tail phase, and stops.
+
+        In this untrimmed fixture the coding origin stays at zero. Appended
+        observations outside the J region do not extend its coding span.
+        There is no observation loss in this fixture: a structural deletion
+        of a terminal J base must still change the coding endpoint phase.
+        """
+        v_anchor, j_anchor = self.anchors()
+        if self.origins[v_anchor:v_anchor + 3] != (0, 1, 2):
+            return False
+        if self.origins[j_anchor:j_anchor + 3] != (6, 7, 8):
+            return False
+        if v_anchor % 3 or j_anchor % 3:
+            return False
+        if self.j_end % 3 != 12 % 3:
+            return False
+        if any(
+            self.sequence[p:p + 3] in {"TAA", "TAG", "TGA"}
+            for p in range(0, self.j_end - 2, 3)
+        ):
+            return False
+        last_j = max(
+            p for p in range(self.j_start, self.j_end)
+            if self.origins[p] is not None and self.origins[p] >= 6
+        )
+        return (
+            last_j % 3 == self.origins[last_j] % 3
+            and (self.j_end - last_j - 1) % 3 == 0
+        )
+
+
+def _indel_candidates(state: _IndelState):
+    """Enumerate the natural 50/50 kind law and junction-frame proposal classes.
+
+    Only destruction of original anchor provenance is irreversible. An
+    insertion between its bases is permitted because the next edit can undo it.
+    """
+    v_anchor, j_anchor = state.anchors()
+    length = len(state.sequence)
+    for site in range(length + 1):
+        for insertion in (True, False):
+            if not insertion and site == length:
+                continue
+            if not insertion and state.origins[site] in {0, 1, 2, 6, 7, 8}:
+                continue
+            if insertion:
+                delta = int(v_anchor < site <= j_anchor)
+                for base in "ACGT":
+                    yield True, delta, 0.5 / (length + 1) / 4, state.edit(site, base)
+            else:
+                delta = -int(v_anchor <= site < j_anchor)
+                yield False, delta, 0.5 / length, state.edit(site, None)
+
+
+def _indel_oracle(count: int):
+    """Enumerate ordered natural histories and condition on final productivity."""
+    assert count in (1, 2)
+    accepted_kind = Counter()
+    accepted_delta = Counter()
+    for insertion, delta, natural, post in _indel_candidates(_IndelState()):
+        if count == 1:
+            if post.productive():
+                accepted_kind[insertion] += natural
+                accepted_delta[delta] += natural
+            continue
+        for _, _, second_weight, final in _indel_candidates(post):
+            if final.productive():
+                weight = natural * second_weight
+                accepted_kind[insertion] += weight
+                accepted_delta[delta] += weight
+    total = sum(accepted_kind.values())
+    assert total > 0
+    return (
+        accepted_kind[True] / total,
+        {delta: accepted_delta[delta] / total for delta in (-1, 0, 1)},
+    )
+
+
+def _first_indel_events(exp: "ga.Experiment"):
+    """Yield kind/site pairs, retaining the signed NoOp site sentinel."""
+    compiled = exp.compile()
+    for seed in range(N_SEEDS):
+        choices = {
+            choice.address: choice.value
+            for choice in compiled.simulator.run(seed=seed).trace().choices()
+        }
+        yield (
+            _bool_value(choices["corrupt.indel.kind[0]"]),
+            _int_value(choices["corrupt.indel.site[0]"]),
+        )
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -205,132 +333,89 @@ def test_pcr_site_distribution_is_uniform() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────
-# D4: Indel count=1 kind distribution under productive
-#
-# The Rust oracle test
-# `indel_pass_count_1_under_productive_matches_exact_enumeration`
-# uses the same fixture and asserts the same theoretical ratio.
-# This Python reproduction confirms the Rust test's invariant
-# from the user-facing API surface.
+# D4: Indel count=1 kind distribution under the complete productive bundle
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_indel_count_1_kind_distribution_matches_rust_oracle() -> None:
-    """Audit §5 D4: under productive_only + count=1 +
-    insertion_prob=0.5 on the baseline VJ fixture, the empirical
-    Pr[kind = insertion] should match the Rust oracle theoretical
-    value of ≈ 0.5517 within 5σ.
+@pytest.mark.parametrize("rejection_attempts", [0, 256])
+def test_indel_count_1_kind_distribution_matches_rust_oracle(rejection_attempts) -> None:
+    """Use the Rust oracle's deterministic V=TGTGGG, NP=0, J=TGGAAA
+    fixture and independently enumerate complete productive support.
 
-    The oracle value is derived in the Rust test's comment from
-    exact enumeration of admissible (kind, site, base) tuples
-    weighted by per-event natural mass; the asymmetry from 0.5
-    reflects that insertion has one more admissible site than
-    deletion (end-of-pool insertion exists; end-of-pool deletion
-    doesn't)."""
+    Junction-neutral J-tail indels can still break the coding frame.
+    The nonempty finite support must produce a complete tuple under both
+    forced exhaustive search and the independent-proposal strategy.
+    """
     exp = (
-        ga.Experiment.on(_vj_basic())
-        .recombine(np1_lengths=[(3, 1.0)])
+        ga.Experiment.on(_vj_indel_oracle())
+        .recombine(np1_lengths=[(0, 1.0)])
         .trim(enabled=False)
-        .polymerase_indels(count=1, insertion_prob=0.5)
+        .polymerase_indels(count=1, insertion_prob=0.5, rejection_attempts=rejection_attempts)
         .productive_only()
     )
-    insertions = 0
-    deletions = 0
-    for choice in _collect_choices(
-        exp, N_SEEDS, lambda a: a == "corrupt.indel.kind[0]"
-    ):
-        if _bool_value(choice.value):
-            insertions += 1
-        else:
-            deletions += 1
+    counts = Counter()
+    for insertion, site in _first_indel_events(exp):
+        counts["noop" if site == -1 else insertion] += 1
+    total = counts[True] + counts[False]
+    assert total + counts["noop"] == N_SEEDS
+    assert counts["noop"] == 0
+    assert total == N_SEEDS
 
-    total = insertions + deletions
-    assert total == N_SEEDS, f"expected {N_SEEDS} kind records, got {total}"
-
-    p_ins = insertions / total
-    expected = 0.5517  # Rust oracle
-    assert _within_5sigma(p_ins, expected, total), (
-        f"Pr[insertion] = {p_ins:.4f}, expected {expected:.4f} ± 5σ "
-        f"(Rust oracle from indel_pass_count_1_under_productive_matches_exact_enumeration)"
+    expected, _ = _indel_oracle(1)
+    # Only post-pool insertion (all four bases) survives. A terminal J
+    # deletion changes the coding endpoint phase, just like an internal
+    # frameshift. Degenerate support has zero variance, so check it exactly.
+    assert expected == 1.0
+    p_ins = counts[True] / total
+    assert p_ins == expected, (
+        f"Pr[insertion] = {p_ins:.4f}, expected exactly {expected:.4f} "
+        f"from complete productive support; NoOps={counts['noop']}"
     )
 
 
 # ──────────────────────────────────────────────────────────────────
-# D5: Indel count=2 continuation weighting (the gold-standard
-# negative control)
-#
-# Without continuation weighting (the DP multiplier), the empirical
-# Pr[step_0_delta = +1] would converge to ≈ 0.2222 instead of the
-# correct ≈ 0.1353. The 5σ tolerance at N=4000 is tight enough that
-# breaking the DP multiplier WOULD fail this test.
+# D5: Indel count=2 natural sequential law conditioned on the complete tuple
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_indel_count_2_continuation_weighting_matches_rust_oracle() -> None:
-    """Audit §5 D5: under productive_only + count=2 +
-    insertion_prob=0.5, the empirical Pr[step-0 event is an
-    insertion in V/NP1/D/NP2 (FrameDelta(+1) site)] should match
-    the Rust oracle theoretical value of ≈ 0.1353 within 5σ.
+@pytest.mark.parametrize("rejection_attempts", [0, 256])
+def test_indel_count_2_natural_sequential_weighting_matches_rust_oracle(rejection_attempts) -> None:
+    """Integrate both proposals and the complete coding check independently.
 
-    **Negative control**: without continuation weighting (DP
-    multiplier in `sample_admissible_tuple`), the per-step
-    distribution would be unconstrained-natural ≈ 0.2222 — a
-    distinguishing 4σ gap at N=4000. If the DP is ever broken,
-    this test fails before the Rust oracle does.
-
-    See ``engine_rs/src/passes/corrupt/indel/tests/constraints.rs``
-    for the theoretical derivation."""
+    Compare all three first-event frame classes against an independent
+    enumeration of original-base provenance and coding-frame constraints.
+    """
     exp = (
-        ga.Experiment.on(_vj_basic())
-        .recombine(np1_lengths=[(3, 1.0)])
+        ga.Experiment.on(_vj_indel_oracle())
+        .recombine(np1_lengths=[(0, 1.0)])
         .trim(enabled=False)
-        .polymerase_indels(count=2, insertion_prob=0.5)
+        .polymerase_indels(count=2, insertion_prob=0.5, rejection_attempts=rejection_attempts)
         .productive_only()
     )
+    _, expected = _indel_oracle(2)
 
-    # Step 0 of each 2-event tuple: classify by (kind, site).
-    # FrameDelta(+1) = insertion at site in V/NP region (pool position
-    # < J_region.start = 12 on baseline fixture).
-    plus_one_count = 0
-    total = 0
-    compiled = exp.compile()
-    for seed in range(N_SEEDS):
-        outcome = compiled.simulator.run(seed=seed)
-        choices = outcome.trace().choices()
-        kind0 = None
-        site0 = None
-        for choice in choices:
-            if choice.address == "corrupt.indel.kind[0]":
-                kind0 = _bool_value(choice.value)
-            elif choice.address == "corrupt.indel.site[0]":
-                site0 = _int_value(choice.value)
-            if kind0 is not None and site0 is not None:
-                break
-        if kind0 is None or site0 is None:
+    counts = Counter()
+    noops = 0
+    for insertion, site in _first_indel_events(exp):
+        if site == -1:
+            noops += 1
             continue
-        total += 1
-        # FrameDelta(+1): insertion at site in [V_region.start=0, J_region.start=12).
-        if kind0 and 0 <= site0 < 12:
-            plus_one_count += 1
+        # Initial anchor starts are V=0 and J=6. Insertions at the
+        # J anchor start shift it; deletions use a half-open interval.
+        delta = int(0 < site <= 6) if insertion else -int(0 <= site < 6)
+        counts[delta] += 1
+    total = sum(counts.values())
+    assert total + noops == N_SEEDS
+    assert noops == 0
+    assert total == N_SEEDS
 
-    assert total >= N_SEEDS - 50, f"too many missing step-0 records: {total}"
-    p_plus_one = plus_one_count / total
-    expected = 0.1353  # Rust oracle (continuation-weighted)
-
-    assert _within_5sigma(p_plus_one, expected, total), (
-        f"Pr[step_0_delta=+1] = {p_plus_one:.4f}, "
-        f"expected {expected:.4f} ± 5σ "
-        f"(continuation-weighted; without DP would be ≈ 0.2222)"
-    )
-
-    # Negative-control bound: if the DP were missing, p_plus_one
-    # would be near 0.2222 (the unconstrained natural marginal).
-    # Confirm we're NOT there.
-    assert abs(p_plus_one - 0.2222) > 0.03, (
-        f"Pr[step_0_delta=+1] = {p_plus_one:.4f} is suspiciously close "
-        f"to the unconstrained-natural 0.2222; the DP continuation "
-        f"weighting may be missing"
-    )
+    for delta in (-1, 0, 1):
+        observed = counts[delta] / total
+        assert _within_5sigma(observed, expected[delta], total), (
+            f"Pr[step_0_delta={delta}] = {observed:.4f}, "
+            f"expected {expected[delta]:.4f} ± 5σ; "
+            f"NoOps={noops}"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────

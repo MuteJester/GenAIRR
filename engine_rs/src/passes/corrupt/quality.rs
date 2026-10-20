@@ -447,12 +447,15 @@ mod tests {
                 .value,
             ChoiceValue::Base(b'a')
         );
-        let violations = productive()
-            .verify(unconstrained.final_simulation(), Some(&cfg))
-            .unwrap_err();
-        assert!(violations
-            .iter()
-            .any(|v| v.contract_name == "no_stop_codon_in_junction"));
+        // Conditioning also changes site weights, so the same seed need
+        // not choose the same unconstrained site. Independently evaluate the
+        // rejected target-2 candidate: TGC -> TGA is a coding stop.
+        let (_, baseline) = make_substitution_productive_vj_fixture();
+        let stopped = baseline.with_base_changed(NucHandle::new(2), b'A');
+        assert_eq!(
+            crate::productivity::assess(&stopped, &cfg).stop_codon,
+            Some(true)
+        );
     }
 
     #[test]

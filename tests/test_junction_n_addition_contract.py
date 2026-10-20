@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -633,7 +634,7 @@ def test_pin_present_p_nucleotide_surface_post_v1_slice() -> None:
         _REPO_ROOT / "engine_rs" / "src" / "address.rs"
     ).read_text(encoding="utf-8")
     assert "pub enum PEnd" in address_src
-    assert "PLength { end: PEnd }" in address_src
+    assert re.search(r"PLength\s*\{\s*end:\s*PEnd\s*,?\s*\}", address_src)
     # Pass-name constants are exported.
     assert "P_ADDITION_V_3" in address_src
     assert "P_ADDITION_J_5" in address_src

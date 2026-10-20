@@ -33,7 +33,15 @@ impl AnchorPreserved {
             ));
         }
 
-        let anchor_pool_start = region.start.index() + (anchor - trim_5);
+        let anchor_pool_start =
+            crate::coding::anchor_position(sim, region, anchor).ok_or_else(|| {
+                ContractViolation::new(
+                    self.name(),
+                    format!(
+                        "anchor germline position {anchor} is absent from the observed segment"
+                    ),
+                )
+            })?;
         if anchor_pool_start + 3 > region.end.index() {
             return Err(ContractViolation::new(
                 self.name(),

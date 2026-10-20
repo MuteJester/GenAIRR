@@ -25,6 +25,14 @@ pub struct Simulation {
     /// V/D/J/C allele instances sampled for this simulation.
     pub assignments: crate::assignment::AlleleAssignments,
 
+    /// Donor genotype's immutable union of carried alleles across both
+    /// chromosomes. None leaves inference reference-wide.
+    pub live_call_support: Option<Arc<crate::live_call::LiveCallSupport>>,
+
+    /// Optional retained-outcome choices and persistent P-base ancestry.
+    /// Ordinary simulations pay no allocation for this opt-in model.
+    pub coding_end_provenance: Option<Arc<super::CodingEndProvenance>>,
+
     /// V/D/J live-call evidence and its monotonic version chain.
     /// Writers: `with_assembled_segment_live_call`,
     /// `SimulationBuilder::seal_with_committed_live_calls`. Readers:
@@ -41,9 +49,65 @@ pub struct Simulation {
     /// uniform mutation passes. Read by AIRR projection's
     /// `n_mutations` field.
     pub mutation_count: u32,
+    /// Cumulative realized SHM event burden per input-molecule nucleotide:
+    /// sum of `applied_count / input_pool_len` over mutation stages.
+    /// Observation loss and structural edits preserve earlier contributions.
+    /// Lineage projection resets this with its net-difference counter.
+    pub mutation_burden: f64,
 }
 
 impl Simulation {
+    pub fn coding_end_choice(&self, segment: Segment) -> Option<&super::CodingEndChoice> {
+        self.coding_end_provenance
+            .as_ref()?
+            .choices
+            .iter()
+            .rev()
+            .find(|choice| choice.segment == segment)
+    }
+
+    pub fn with_coding_end_choice(
+        &self,
+        segment: Segment,
+        allele_id: crate::refdata::AlleleId,
+        five: i64,
+        three: i64,
+        outcome_index: usize,
+    ) -> Self {
+        let mut next = self.clone();
+        let provenance = Arc::make_mut(
+            next.coding_end_provenance
+                .get_or_insert_with(|| Arc::new(super::CodingEndProvenance::default())),
+        );
+        provenance.choices.push(super::CodingEndChoice {
+            choice_id: provenance.choices.len(),
+            segment,
+            allele_id,
+            five,
+            three,
+            outcome_index,
+        });
+        next
+    }
+
+    pub fn live_call_alleles(&self, segment: Segment) -> Option<&[crate::refdata::AlleleId]> {
+        self.live_call_support
+            .as_ref()
+            .and_then(|support| support.alleles(segment))
+    }
+
+    pub(crate) fn with_live_call_support(
+        &self,
+        support: Arc<crate::live_call::LiveCallSupport>,
+    ) -> Self {
+        let mut next = self.clone();
+        if self.live_call_support.as_deref() != Some(support.as_ref()) {
+            next.segment_calls = Arc::new(crate::live_call::SegmentCalls::empty());
+        }
+        next.live_call_support = Some(support);
+        next
+    }
+
     /// Empty simulation.
     pub fn new() -> Self {
         Self::with_capacity(DEFAULT_POOL_CAPACITY)
@@ -58,6 +122,9 @@ impl Simulation {
             segment_calls: Arc::new(crate::live_call::SegmentCalls::empty()),
             dirty_log: Arc::new(crate::live_call::DirtyLog::empty()),
             mutation_count: 0,
+            mutation_burden: 0.0,
+            live_call_support: None,
+            coding_end_provenance: None,
         }
     }
 
@@ -70,6 +137,9 @@ impl Simulation {
             segment_calls: Arc::new(calls),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -82,6 +152,9 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: Arc::new(log),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -94,7 +167,18 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
+    }
+
+    /// Replace the SHM burden when recording a mutation stage or synthesizing
+    /// lineage net-difference provenance. This is not an observed mismatch rate.
+    pub(crate) fn with_mutation_burden(&self, burden: f64) -> Self {
+        let mut next = self.clone();
+        next.mutation_burden = burden;
+        next
     }
 
     #[must_use = "with_nucleotide_pushed returns (Simulation, NucHandle); \
@@ -110,6 +194,9 @@ impl Simulation {
                 segment_calls: self.segment_calls.clone(),
                 dirty_log: self.dirty_log.clone(),
                 mutation_count: self.mutation_count,
+                mutation_burden: self.mutation_burden,
+                live_call_support: self.live_call_support.clone(),
+                coding_end_provenance: self.coding_end_provenance.clone(),
             },
             h,
         )
@@ -129,6 +216,9 @@ impl Simulation {
                 segment_calls: self.segment_calls.clone(),
                 dirty_log: self.dirty_log.clone(),
                 mutation_count: self.mutation_count,
+                mutation_burden: self.mutation_burden,
+                live_call_support: self.live_call_support.clone(),
+                coding_end_provenance: self.coding_end_provenance.clone(),
             },
             range,
         )
@@ -143,6 +233,9 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -155,6 +248,9 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -167,6 +263,9 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -192,6 +291,9 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -208,6 +310,9 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -220,6 +325,9 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -243,6 +351,9 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
         }
     }
 
@@ -261,6 +372,12 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self
+                .coding_end_provenance
+                .as_ref()
+                .map(|p| Arc::new(p.shifted_for_replacement(at, at, 1))),
         }
     }
 
@@ -345,6 +462,11 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.as_ref().map(|p| {
+                Arc::new(p.shifted_for_replacement(old_range.start, old_range.end, new_len))
+            }),
         };
 
         (new_sim, old_region, installed_new_region)
@@ -363,6 +485,12 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self
+                .coding_end_provenance
+                .as_ref()
+                .map(|p| Arc::new(p.shifted_for_replacement(at, at + 1, 0))),
         }
     }
 }

@@ -30,6 +30,7 @@
 //! behaviour.
 
 use crate::dist::{CategoricalBase, Distribution, UniformBase};
+use crate::pass::NpBaseSupport;
 use crate::passes::paramsig::fmt_byte_dist;
 
 /// Pass-level abstraction for per-position NP base sampling.
@@ -60,6 +61,12 @@ pub trait NpBaseGenerator {
     /// vector is safe to feed into the inverse-CDF samplers.
     fn support(&self, position: usize, previous: Option<u8>) -> Vec<(u8, f64)>;
 
+    /// Exact finite first-order support used for productive N/P completion.
+    /// Arbitrary position-dependent generators must opt in explicitly.
+    fn compile_support(&self) -> Option<NpBaseSupport> {
+        None
+    }
+
     /// Deterministic per-cartridge identity string used by
     /// [`crate::passes::generate_np::GenerateNPPass::parameter_signature`].
     ///
@@ -73,6 +80,27 @@ pub trait NpBaseGenerator {
     /// string — see the doc on
     /// [`MarkovBaseGenerator::signature`] for the format.
     fn signature(&self) -> String;
+}
+
+fn canonical_support_mask(pairs: &[(u8, f64)]) -> Option<u8> {
+    let mut mask = 0;
+    for &(base, weight) in pairs {
+        if !weight.is_finite() || weight < 0.0 {
+            return None;
+        }
+        if weight > 0.0 {
+            mask |= 1 << canonical_base_index(base)?;
+        }
+    }
+    (mask != 0).then_some(mask)
+}
+
+fn independent_compile_support(pairs: &[(u8, f64)]) -> Option<NpBaseSupport> {
+    let mask = canonical_support_mask(pairs)?;
+    Some(NpBaseSupport {
+        first: mask,
+        transitions: [mask; 4],
+    })
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -111,6 +139,10 @@ impl NpBaseGenerator for DistributionNpGenerator {
     fn signature(&self) -> String {
         fmt_byte_dist(self.inner.as_ref())
     }
+
+    fn compile_support(&self) -> Option<NpBaseSupport> {
+        independent_compile_support(&self.inner.support()?)
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -148,6 +180,13 @@ impl NpBaseGenerator for UniformNpGenerator {
         // byte-identical legacy plan signatures.
         fmt_byte_dist(&UniformBase as &dyn Distribution<Output = u8>)
     }
+
+    fn compile_support(&self) -> Option<NpBaseSupport> {
+        Some(NpBaseSupport {
+            first: 0b1111,
+            transitions: [0b1111; 4],
+        })
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -179,11 +218,17 @@ impl CategoricalNpGenerator {
 
 impl NpBaseGenerator for CategoricalNpGenerator {
     fn support(&self, _position: usize, _previous: Option<u8>) -> Vec<(u8, f64)> {
-        self.inner.support().expect("CategoricalBase always exposes support")
+        self.inner
+            .support()
+            .expect("CategoricalBase always exposes support")
     }
 
     fn signature(&self) -> String {
         fmt_byte_dist(&self.inner as &dyn Distribution<Output = u8>)
+    }
+
+    fn compile_support(&self) -> Option<NpBaseSupport> {
+        independent_compile_support(&self.inner.support()?)
     }
 }
 
@@ -279,10 +324,7 @@ impl MarkovBaseGenerator {
     /// PyO3 bridge. `transitions_rows` is the four-row matrix in
     /// canonical A/C/G/T from-order; each row is a 4-element
     /// `[f64; 4]` in canonical A/C/G/T to-order.
-    pub fn from_first_and_rows(
-        first_base: Vec<f64>,
-        transitions_rows: Vec<Vec<f64>>,
-    ) -> Self {
+    pub fn from_first_and_rows(first_base: Vec<f64>, transitions_rows: Vec<Vec<f64>>) -> Self {
         assert_eq!(
             first_base.len(),
             4,
@@ -337,6 +379,15 @@ impl NpBaseGenerator for MarkovBaseGenerator {
             .collect()
     }
 
+    fn compile_support(&self) -> Option<NpBaseSupport> {
+        let first = canonical_support_mask(&self.support(0, None))?;
+        let mut transitions = [0; 4];
+        for (index, &base) in CANONICAL_BASES.iter().enumerate() {
+            transitions[index] = canonical_support_mask(&self.support(1, Some(base)))?;
+        }
+        Some(NpBaseSupport { first, transitions })
+    }
+
     /// Flat deterministic encoding covering first-base + all
     /// four transition rows in canonical A/C/G/T order. Format:
     ///
@@ -379,6 +430,53 @@ mod tests {
     use super::*;
 
     #[test]
+    fn compile_support_preserves_markov_rows_and_excludes_zero_mass() {
+        let independent = CategoricalNpGenerator::from_pairs(vec![
+            (b'A', 0.0),
+            (b'C', 3.0),
+            (b'G', 0.0),
+            (b'T', 2.0),
+        ]);
+        assert_eq!(
+            independent.compile_support(),
+            Some(NpBaseSupport {
+                first: 0b1010,
+                transitions: [0b1010; 4]
+            }),
+        );
+        let markov = MarkovBaseGenerator::from_arrays(
+            [0.0, 0.0, 0.0, 1.0],
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0, 0.0],
+            ],
+        );
+        assert_eq!(
+            markov.compile_support(),
+            Some(NpBaseSupport {
+                first: 0b1000,
+                transitions: [0b0010, 0b0100, 0b1000, 0b0001]
+            }),
+        );
+    }
+
+    #[test]
+    fn arbitrary_position_dependent_generator_requires_explicit_compile_support() {
+        struct PositionDependent;
+        impl NpBaseGenerator for PositionDependent {
+            fn support(&self, position: usize, _: Option<u8>) -> Vec<(u8, f64)> {
+                vec![(if position == 2 { b'T' } else { b'A' }, 1.0)]
+            }
+            fn signature(&self) -> String {
+                "position-dependent".into()
+            }
+        }
+        assert_eq!(PositionDependent.compile_support(), None);
+    }
+
+    #[test]
     fn uniform_np_generator_support_is_canonical_quartet() {
         let g = UniformNpGenerator::new();
         let s = g.support(0, None);
@@ -391,10 +489,7 @@ mod tests {
     #[test]
     fn uniform_np_generator_signature_matches_uniform_base_substring() {
         let g = UniformNpGenerator::new();
-        assert_eq!(
-            g.signature(),
-            "[(65:1.0),(67:1.0),(71:1.0),(84:1.0)]"
-        );
+        assert_eq!(g.signature(), "[(65:1.0),(67:1.0),(71:1.0),(84:1.0)]");
     }
 
     #[test]
@@ -407,10 +502,7 @@ mod tests {
 
     #[test]
     fn markov_generator_position_zero_returns_first_base() {
-        let g = MarkovBaseGenerator::from_arrays(
-            [0.1, 0.2, 0.3, 0.4],
-            [[1.0; 4]; 4],
-        );
+        let g = MarkovBaseGenerator::from_arrays([0.1, 0.2, 0.3, 0.4], [[1.0; 4]; 4]);
         let s = g.support(0, None);
         assert_eq!(s, vec![(b'A', 0.1), (b'C', 0.2), (b'G', 0.3), (b'T', 0.4)]);
     }
@@ -447,10 +539,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "at least one strictly positive weight")]
     fn markov_generator_rejects_zero_row() {
-        let _ = MarkovBaseGenerator::from_arrays(
-            [1.0; 4],
-            [[0.0; 4], [1.0; 4], [1.0; 4], [1.0; 4]],
-        );
+        let _ =
+            MarkovBaseGenerator::from_arrays([1.0; 4], [[0.0; 4], [1.0; 4], [1.0; 4], [1.0; 4]]);
     }
 
     #[test]

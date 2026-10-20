@@ -294,8 +294,9 @@ def test_pin_scaffold_engine_generate_np_pass_folds_length_dist_into_signature()
 def test_pin_scaffold_p_nucleotide_length_fields_distinct_from_np_length_fields() -> None:
     """The Rust AirrRecord exposes `p_v_3_length` /
     `p_d_5_length` / `p_d_3_length` / `p_j_5_length` as
-    SEPARATE fields from `np1_length` / `np2_length`. The
-    estimator MUST NOT consume `p_*_length` columns."""
+    SEPARATE fields from combined `np1_length` / `np2_length`.
+    Nonzero P provenance must prevent fitting those combined
+    lengths as an N-only model."""
     src = (
         _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "record.rs"
     ).read_text(encoding="utf-8")

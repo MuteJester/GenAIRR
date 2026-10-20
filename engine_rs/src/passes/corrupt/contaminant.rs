@@ -226,7 +226,7 @@ mod tests {
         let _ = cfg.v_pool.push(Allele {
             name: "v_contam*01".into(),
             gene: "v_contam".into(),
-            seq: b"AAA".to_vec(),
+            seq: b"TGT".to_vec(),
             segment: Segment::V,
             anchor: Some(0),
             functional_status: None,
@@ -243,7 +243,7 @@ mod tests {
         });
 
         let mut sim = Simulation::new();
-        for (i, &b) in b"AAA".iter().enumerate() {
+        for (i, &b) in b"TGT".iter().enumerate() {
             let (next, _) =
                 sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
             sim = next;
@@ -518,13 +518,9 @@ mod tests {
                 .value,
             ChoiceValue::Bool(true)
         );
-        assert_ne!(
-            constrained
-                .trace
-                .find("corrupt.contaminant.bases[0]")
-                .unwrap()
-                .value,
-            ChoiceValue::Base(b'T')
+        assert_eq!(
+            crate::productivity::assess(constrained.final_simulation(), &cfg).productive,
+            Some(true),
         );
         assert!(contracts
             .verify(constrained.final_simulation(), Some(&cfg))
@@ -568,10 +564,10 @@ mod tests {
         // reject-after-propose). Instead the site is skipped:
         // no trace record, no pool mutation.
         //
-        // Fixture pool = "AAATGG" (V anchor "AAA" / K, J anchor
+        // Fixture pool = "TGTTGG" (V anchor "TGT" / C, J anchor
         // "TGG" / W). With `StopOnlyContaminantBaseDist` (support
-        // {T}), only site 3 admits T (it's already T in the J
-        // anchor codon); sites 0..2 and 4,5 all reject T under
+        // {T}), sites 0, 2, and 3 admit T (it's already T in the J
+        // anchor codon); sites 1, 4, and 5 all reject T under
         // AnchorPreserved.
         //
         // Pre-v3.0 the permissive path would write T at every
@@ -598,7 +594,7 @@ mod tests {
                 .value,
             ChoiceValue::Bool(true)
         );
-        for i in [0u32, 1, 2, 4, 5] {
+        for i in [1u32, 4, 5] {
             assert!(
                 outcome
                     .trace
@@ -654,7 +650,7 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.pass_name(), "corrupt.contaminant");
-        assert_eq!(err.address(), "corrupt.contaminant.bases[0]");
+        assert_eq!(err.address(), "corrupt.contaminant.bases[1]");
         assert_eq!(
             err.constraint_reason(),
             Some(FilteredSampleError::EmptyAdmissibleSupport)
@@ -704,8 +700,10 @@ mod tests {
     fn contaminant_replay_consumes_recorded_bool_and_per_site_bases() {
         let sim = contaminant_test_sim(); // pool_len = 9
         let bases = b"TGCATGCAT";
-        let mut records =
-            vec![rec(ChoiceAddress::CorruptContaminantApplied, ChoiceValue::Bool(true))];
+        let mut records = vec![rec(
+            ChoiceAddress::CorruptContaminantApplied,
+            ChoiceValue::Bool(true),
+        )];
         for (i, b) in bases.iter().enumerate() {
             records.push(rec(
                 ChoiceAddress::CorruptContaminantBase(i as u32),
@@ -764,8 +762,10 @@ mod tests {
         // 2 or 5. Replay must skip those sites positionally.
         let sim = contaminant_test_sim();
         let kept_sites: Vec<u32> = vec![0, 1, 3, 4, 6, 7, 8];
-        let mut records =
-            vec![rec(ChoiceAddress::CorruptContaminantApplied, ChoiceValue::Bool(true))];
+        let mut records = vec![rec(
+            ChoiceAddress::CorruptContaminantApplied,
+            ChoiceValue::Bool(true),
+        )];
         for &i in &kept_sites {
             records.push(rec(
                 ChoiceAddress::CorruptContaminantBase(i),
@@ -807,7 +807,10 @@ mod tests {
     fn contaminant_replay_wrong_kind_base_surfaces_replay_error() {
         let sim = contaminant_test_sim();
         let records = vec![
-            rec(ChoiceAddress::CorruptContaminantApplied, ChoiceValue::Bool(true)),
+            rec(
+                ChoiceAddress::CorruptContaminantApplied,
+                ChoiceValue::Bool(true),
+            ),
             // Wrong kind for bases[0]: Int instead of Base.
             rec(
                 ChoiceAddress::CorruptContaminantBase(0),
@@ -825,15 +828,17 @@ mod tests {
 
     #[test]
     fn contaminant_replay_under_contract_rejects_inadmissible_recorded_base() {
-        // V-anchor fixture: site 0..2 = TGG (Trp). AnchorPreserved
+        // V-anchor fixture: site 0..2 = TGT (Cys). Canonical anchor policy
         // rejects any non-T at site 0 (changes the codon).
         let (cfg, sim) = make_contaminant_productive_vj_fixture();
         let contracts = productive();
         let records = vec![
-            rec(ChoiceAddress::CorruptContaminantApplied, ChoiceValue::Bool(true)),
-            // Pool is "AAATGG"; site 0 is the first A of the V
-            // anchor codon (AAA = Lys). Substituting to G changes
-            // the amino acid → AnchorPreserved.V rejects.
+            rec(
+                ChoiceAddress::CorruptContaminantApplied,
+                ChoiceValue::Bool(true),
+            ),
+            // Pool is "TGTTGG"; replacing the initial T with G
+            // changes the original V landmark to Gly and is rejected.
             rec(
                 ChoiceAddress::CorruptContaminantBase(0),
                 ChoiceValue::Base(b'G'),

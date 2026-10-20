@@ -40,6 +40,7 @@ class CompiledLineageExperiment:
         "_post_steps",
         "_dataconfig",
         "_metadata",
+        "_contracts",
     )
 
     def __init__(
@@ -51,6 +52,7 @@ class CompiledLineageExperiment:
         post_steps: Sequence[Any] = (),
         dataconfig: Optional["DataConfig"] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        contracts: Optional["_engine.ContractSet"] = None,
     ) -> None:
         self._pre = pre_simulator
         self._step = step
@@ -61,6 +63,7 @@ class CompiledLineageExperiment:
         self._post_steps: Tuple[Any, ...] = tuple(post_steps)
         self._dataconfig = dataconfig
         self._metadata = dict(metadata) if metadata else {}
+        self._contracts = contracts
 
     @property
     def refdata(self) -> "_engine.RefDataConfig":
@@ -77,7 +80,9 @@ class CompiledLineageExperiment:
         """Grow lineage trees and return per-observed-node AIRR records.
 
         Each clone is seeded at ``seed + clone_idx * 1_000_000`` so
-        independent clones are reproducible and non-overlapping.
+        independent clones are reproducible and non-overlapping. Declared
+        productivity contracts constrain each division's mutation support,
+        as well as the founder and any post-lineage observation passes.
 
         The returned :class:`SimulationResultWithLineages` carries the
         per-record ``Outcome`` that produced each AIRR record on its
@@ -151,6 +156,8 @@ class CompiledLineageExperiment:
                     beta=step.beta,
                     target_aa=step.target_aa,
                     mature_substitutions=step.mature_substitutions,
+                    respect=self._contracts,
+                    strict=strict,
                 )
                 survived = len(candidate.observed_outcomes()) > 0
                 if survived or allow_extinction:

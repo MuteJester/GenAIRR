@@ -36,6 +36,10 @@ pub enum CompileErrorKind {
         contract_name: String,
         reason: String,
     },
+    UnsupportedContractCombo {
+        contract_name: String,
+        reason: String,
+    },
     /// Reference data failed structural validation (empty required
     /// pools, malformed bytes, anchor mismatches, etc.). Carries the
     /// full [`RefDataValidationErrors`] so consumers see every
@@ -69,7 +73,9 @@ impl CompileErrors {
     /// recompile per issue.
     pub fn from_refdata_validation(errors: RefDataValidationErrors) -> Self {
         Self {
-            errors: vec![plan_scoped_error(CompileErrorKind::RefDataValidation { errors })],
+            errors: vec![plan_scoped_error(CompileErrorKind::RefDataValidation {
+                errors,
+            })],
         }
     }
 }
@@ -110,6 +116,13 @@ impl fmt::Display for CompileErrors {
                 } => write!(
                     f,
                     "; contract {contract_name} precondition failed: {reason}",
+                )?,
+                CompileErrorKind::UnsupportedContractCombo {
+                    contract_name,
+                    reason,
+                } => write!(
+                    f,
+                    "; {location} has unsupported contract combination for {contract_name}: {reason}",
                 )?,
                 CompileErrorKind::RefDataValidation { errors } => {
                     // Delegate to `RefDataValidationErrors::Display`

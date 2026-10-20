@@ -22,7 +22,7 @@
 //! the refresh anyway. Runtime consequences are the source of
 //! truth.
 
-use crate::ir::{Segment, Simulation, SimulationEvent};
+use crate::ir::{PoolRange, Segment, Simulation, SimulationEvent};
 use crate::pass::{EffectHook, HookContext, PassCompileEffect};
 
 use super::refresh_plan::{LiveCallRefreshPlan, LiveCallRefreshStep};
@@ -81,8 +81,7 @@ impl EffectHook for LiveCallRefreshHook {
                 LiveCallRefreshStep::EditedSegments => {
                     sim = refresh_segments_for_edit(sim, reference_index);
                 }
-                LiveCallRefreshStep::AllStructural
-                | LiveCallRefreshStep::SegmentReplaced(_) => {
+                LiveCallRefreshStep::AllStructural | LiveCallRefreshStep::SegmentReplaced(_) => {
                     if all_segments_refreshed {
                         continue;
                     }
@@ -148,11 +147,14 @@ fn region_overlaps_dirty(sim: &Simulation, segment: Segment, windows: &[DirtyWin
     let Some(region) = sim.sequence.regions.iter().find(|r| r.segment == segment) else {
         return false;
     };
-    let region_start = region.start.index();
-    let region_end = region.end.index();
+    // Match the builder's staging predicate exactly. In particular,
+    // an event at the right boundary must consume any call staged
+    // there; otherwise it can survive into a later structural pass
+    // with coordinates from this pass.
+    let region_range = PoolRange::new(region.start.index(), region.end.index());
     windows
         .iter()
-        .any(|w| w.start < region_end && w.end > region_start)
+        .any(|w| region_range.overlaps_dirty(PoolRange::new(w.start, w.end)))
 }
 
 /// Clear the dirty-window log so the next pass's `EditBases`
@@ -201,11 +203,8 @@ mod tests {
     fn sim_with_v_region(bases: &[u8]) -> Simulation {
         let mut sim = Simulation::new();
         for (i, &b) in bases.iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
-                b,
-                i as u16,
-                Segment::V,
-            ));
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
             sim = next;
         }
         sim.with_region_added(Region::new(
@@ -225,19 +224,12 @@ mod tests {
 
     /// Compare the hook's installed `segment_calls` against a
     /// from-scratch oracle for every assignable segment.
-    fn assert_segment_calls_match_oracle(
-        sim: &Simulation,
-        reference_index: &ReferenceMatchIndex,
-    ) {
+    fn assert_segment_calls_match_oracle(sim: &Simulation, reference_index: &ReferenceMatchIndex) {
         let evidence_version = sim.segment_calls.version.saturating_add(1);
         for &segment in Segment::assignable() {
             let cached = sim.segment_calls.get(segment).cloned();
-            let oracle = assembled_segment_live_call(
-                sim,
-                reference_index,
-                segment,
-                evidence_version,
-            );
+            let oracle =
+                assembled_segment_live_call(sim, reference_index, segment, evidence_version);
             match (&cached, &oracle) {
                 (None, None) => {}
                 (Some(c), Some(o)) => {
@@ -246,6 +238,12 @@ mod tests {
                         o.allele_call.to_ids(),
                         "segment {segment:?} allele tie-set diverges from oracle",
                     );
+                    assert_eq!(
+                        c.hypotheses, o.hypotheses,
+                        "segment {segment:?} placement evidence diverges from oracle",
+                    );
+                    assert_eq!(c.boundary_summary, o.boundary_summary);
+                    assert_eq!(c.confidence, o.confidence);
                 }
                 (cached, oracle) => panic!(
                     "segment {segment:?} call presence diverges: cached={:?} oracle={:?}",
@@ -253,6 +251,127 @@ mod tests {
                     oracle.is_some(),
                 ),
             }
+        }
+    }
+
+    fn assembled_vdj() -> (Simulation, ReferenceMatchIndex) {
+        let mut cfg = RefDataConfig::empty(ChainType::Vdj);
+        let mut sim = Simulation::new();
+        for (segment, name, bases) in [
+            (Segment::V, "V1*01", b"AACCGG".as_slice()),
+            (Segment::D, "D1*01", b"GCTA".as_slice()),
+            (Segment::J, "J1*01", b"TTAC".as_slice()),
+        ] {
+            let mut reference = allele(name, bases);
+            reference.segment = segment;
+            match segment {
+                Segment::V => cfg.v_pool.push(reference),
+                Segment::D => cfg.d_pool.push(reference),
+                Segment::J => cfg.j_pool.push(reference),
+                _ => unreachable!(),
+            };
+            let start = sim.pool.len() as u32;
+            for (pos, &base) in bases.iter().enumerate() {
+                sim = sim
+                    .with_nucleotide_pushed(Nucleotide::germline(base, pos as u16, segment))
+                    .0;
+            }
+            sim = sim.with_region_added(Region::new(
+                segment,
+                NucHandle::new(start),
+                NucHandle::new(sim.pool.len() as u32),
+            ));
+        }
+        let index = ReferenceMatchIndex::build(&cfg);
+        (refresh_live_calls(sim, &index), index)
+    }
+
+    fn no_op_mutation_pass(sim: Simulation, index: &ReferenceMatchIndex) -> Simulation {
+        let mut builder = SimulationBuilder::from_simulation(sim);
+        builder.attach_standard_mutation_observers(Some(index));
+        let sealed = builder.seal_with_committed_live_calls(index);
+        LiveCallRefreshHook::new().apply(
+            sealed,
+            &[],
+            &[],
+            HookContext {
+                reference_index: Some(index),
+            },
+        )
+    }
+
+    #[test]
+    fn no_op_mutation_pass_does_not_leave_pending_live_calls() {
+        let (sim, index) = assembled_vdj();
+        let original_calls = sim.segment_calls.clone();
+        let after = no_op_mutation_pass(sim, &index);
+        assert_eq!(after.segment_calls, original_calls);
+        for &segment in Segment::assignable() {
+            assert!(!after.segment_calls.has_staged(segment));
+        }
+    }
+
+    #[test]
+    fn boundary_base_edit_commits_every_observer_staged_call() {
+        let (sim, index) = assembled_vdj();
+        let mut builder = SimulationBuilder::from_simulation(sim);
+        builder.attach_standard_mutation_observers(Some(&index));
+        builder.attach_event_log_observer();
+        // The first J base is also at D's right boundary. The
+        // builder conservatively stages D because end deletions
+        // use the same dirty-window representation.
+        builder.change_base(NucHandle::new(10), b'C');
+        let events = builder.seal_event_log_observer();
+        let sealed = builder.seal_with_committed_live_calls(&index);
+        let refreshed = LiveCallRefreshHook::new().apply(
+            sealed,
+            &[],
+            &events,
+            HookContext {
+                reference_index: Some(&index),
+            },
+        );
+        assert_segment_calls_match_oracle(&refreshed, &index);
+        for &segment in Segment::assignable() {
+            assert!(
+                !refreshed.segment_calls.has_staged(segment),
+                "{segment:?} has a pending call that can become stale in a later pass",
+            );
+        }
+    }
+
+    #[test]
+    fn upstream_indels_after_no_op_refresh_downstream_placement_bounds() {
+        // A zero-edit PCR pass used to leave staged D/J calls behind.
+        // A later 5' loss only stages V, so the structural refresh
+        // consumed those old D/J coordinates instead of recomputing.
+        for insertion in [false, true] {
+            let (sim, index) = assembled_vdj();
+            let after_no_op = no_op_mutation_pass(sim, &index);
+            let mut builder = SimulationBuilder::from_simulation(after_no_op);
+            builder.attach_standard_mutation_observers(Some(&index));
+            builder.attach_event_log_observer();
+            for _ in 0..2 {
+                if insertion {
+                    builder.insert_indel(
+                        0,
+                        Nucleotide::synthetic(b'A', Segment::V, crate::ir::flag::INDEL_INSERTED),
+                    );
+                } else {
+                    builder.delete_indel(0).unwrap();
+                }
+            }
+            let events = builder.seal_event_log_observer();
+            let sealed = builder.seal_with_committed_live_calls(&index);
+            let refreshed = LiveCallRefreshHook::new().apply(
+                sealed,
+                &[],
+                &events,
+                HookContext {
+                    reference_index: Some(&index),
+                },
+            );
+            assert_segment_calls_match_oracle(&refreshed, &index);
         }
     }
 
@@ -358,11 +477,7 @@ mod tests {
 
         let sim = sim_with_v_region(b"AACC");
         let sim = sim.with_dirty_log(DirtyLog {
-            windows: vec![DirtyWindow::new(
-                0,
-                1,
-                DirtyReason::BaseEdited { site: 0 },
-            )],
+            windows: vec![DirtyWindow::new(0, 1, DirtyReason::BaseEdited { site: 0 })],
         });
         assert!(!sim.dirty_log.is_empty());
 

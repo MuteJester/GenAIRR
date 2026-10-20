@@ -1,17 +1,187 @@
 use super::*;
+use crate::contract::ContractSet;
+use crate::ir::flag;
+use crate::refdata::RefDataConfig;
+
+struct EnumeratedEvent {
+    insertion: bool,
+    delta: i32,
+    natural_weight: f64,
+    post: Simulation,
+}
+
+/// Independently enumerate the small fixture's uniform natural event law.
+/// Do not call the sampler's candidate enumeration: these tests must
+/// detect errors in its probability weights as well as in its support.
+fn enumerate_events(
+    sim: &Simulation,
+    _cfg: &RefDataConfig,
+    _contracts: &ContractSet,
+) -> Vec<EnumeratedEvent> {
+    let len = sim.pool.len() as u32;
+    assert!(len > 0);
+    let mut events = Vec::new();
+    for site in 0..=len {
+        for insertion in [true, false] {
+            if !insertion && site == len {
+                continue;
+            }
+            // Deleting original anchor provenance is irreversible. Inserting
+            // inside an anchor may be undone by the second event.
+            if !insertion {
+                let n = &sim.pool.as_slice()[site as usize];
+                if matches!(n.segment, Segment::V | Segment::J)
+                    && n.germline_pos.get().is_some_and(|g| g < 3)
+                {
+                    continue;
+                }
+            }
+            let anchor = |segment| {
+                let region = sim
+                    .sequence
+                    .regions
+                    .iter()
+                    .find(|r| r.segment == segment)
+                    .unwrap();
+                crate::coding::anchor_position(sim, region, 0).unwrap()
+            };
+            let (v, j) = (anchor(Segment::V), anchor(Segment::J));
+            let delta: i8 = if insertion {
+                i8::from(v < site && site <= j)
+            } else {
+                -i8::from(v <= site && site < j)
+            };
+            if insertion {
+                for base in b"ACGT" {
+                    let nuc = Nucleotide::synthetic(
+                        *base,
+                        IndelPass::insertion_segment(sim, site),
+                        flag::INDEL_INSERTED,
+                    );
+                    events.push(EnumeratedEvent {
+                        insertion,
+                        delta: i32::from(delta),
+                        natural_weight: 0.5 / f64::from(len + 1) / 4.0,
+                        post: sim.with_indel_inserted(site, nuc),
+                    });
+                }
+            } else {
+                events.push(EnumeratedEvent {
+                    insertion,
+                    delta: i32::from(delta),
+                    natural_weight: 0.5 / f64::from(len),
+                    post: sim.with_indel_deleted(site),
+                });
+            }
+        }
+    }
+    events
+}
+
+/// Exhaust the two-event proposal tree and condition on full-bundle acceptance.
+/// Every history receives the product of its natural event probabilities,
+/// evaluated on the actual intermediate molecule.
+fn exact_two_event_first_delta(
+    sim: &Simulation,
+    cfg: &RefDataConfig,
+    contracts: &ContractSet,
+) -> [f64; 3] {
+    let first_events = enumerate_events(sim, cfg, contracts);
+    let mut accepted = [0.0; 3];
+    for first in &first_events {
+        let second_events: Vec<_> = enumerate_events(&first.post, cfg, contracts)
+            .into_iter()
+            .collect();
+        for second in second_events {
+            if contracts.verify(&second.post, Some(cfg)).is_ok() {
+                accepted[first.delta.rem_euclid(3) as usize] +=
+                    first.natural_weight * second.natural_weight;
+            }
+        }
+    }
+    let total: f64 = accepted.iter().sum();
+    assert!(total > 0.0);
+    accepted.map(|weight| weight / total)
+}
+
+#[test]
+fn interleaved_independent_probes_match_complete_three_event_oracle() {
+    let (cfg, sim) = balanced_dp_distribution_fixture();
+    let contracts = productive();
+    let mut masses = [0.0; 3];
+    for first in enumerate_events(&sim, &cfg, &contracts) {
+        for second in enumerate_events(&first.post, &cfg, &contracts) {
+            for third in enumerate_events(&second.post, &cfg, &contracts) {
+                if contracts.verify(&third.post, Some(&cfg)).is_ok() {
+                    masses[first.delta.rem_euclid(3) as usize] +=
+                        first.natural_weight * second.natural_weight * third.natural_weight;
+                }
+            }
+        }
+    }
+    let total: f64 = masses.iter().sum();
+    assert!(total > 0.0);
+    let expected = masses.map(|m| m / total);
+    let mut counts = [0u32; 3];
+    let mut probes = 0;
+    let mut plan = PassPlan::new();
+    plan.push(Box::new(
+        IndelPass::new(fixed_count(3), 0.5, Box::new(UniformBase)).with_sampling_options(
+            IndelSamplingOptions {
+                rejection_attempts: 1,
+                exact_node_budget: 100_000,
+                ..Default::default()
+            },
+        ),
+    ));
+    const N: u32 = 1024;
+    for seed in 0..N {
+        let out = PassRuntime::execute_strict_with_context(
+            &plan,
+            sim.clone(),
+            u64::from(seed),
+            Some(&cfg),
+            Some(&contracts),
+        )
+        .unwrap();
+        let ChoiceValue::Bool(insertion) = out.trace.find("corrupt.indel.kind[0]").unwrap().value
+        else {
+            panic!()
+        };
+        let ChoiceValue::Int(site) = out.trace.find("corrupt.indel.site[0]").unwrap().value else {
+            panic!()
+        };
+        let delta = if insertion {
+            i32::from(0 < site && site <= 6)
+        } else {
+            -i32::from(site < 6)
+        };
+        counts[delta.rem_euclid(3) as usize] += 1;
+        let report = &out.trace.diagnostics()[0];
+        if report.strategy == "exact_search_independent_probe" {
+            probes += 1;
+            assert!(report.explored_states >= 19);
+            assert!(report.attempts > 1);
+        }
+    }
+    assert!(
+        probes > N / 2,
+        "the test must exercise independent restart acceptance"
+    );
+    for (count, probability) in counts.into_iter().zip(expected) {
+        let tolerance = 5.0 * (f64::from(N) * probability * (1.0 - probability)).sqrt();
+        assert!((f64::from(count) - f64::from(N) * probability).abs() < tolerance);
+    }
+}
 
 #[test]
 fn indel_pass_productive_filters_insertion_to_structurally_safe_site() {
-    // Under v3.0 constrain-before-propose, a single-event indel
-    // tuple under productive() must land on a FrameNeutral site
-    // outside both anchor codons. With fixture V=TAC (anchor
-    // codon at pool [0..3)) + J=TGG (anchor codon at [3..6)):
-    //   - Sites 0..3: in V region and ≤ V_anchor_end=3 → Anchor V
-    //     marks Forbidden.
-    //   - Sites 3..6: in J region and ≤ J_anchor_end=6 → Anchor J
-    //     marks Forbidden.
-    //   - Site 6: outside both regions → FrameNeutral.
-    // So the surviving sample space is {site=6} × 4 bases.
+    // With V=TGT at [0..3) and J=TGG at [3..6), insertion
+    // inside an anchor codon is forbidden. Insertion immediately
+    // before either intact anchor can pass anchor preservation,
+    // but fails the complete coding frame or junction frame.
+    // Only post-pool insertion survives the full productive bundle:
+    // {site=6} × 4 bases.
     let (cfg, sim) = make_substitution_productive_vj_fixture();
     let contracts = productive();
 
@@ -34,8 +204,7 @@ fn indel_pass_productive_filters_insertion_to_structurally_safe_site() {
         outcome.trace.find("corrupt.indel.site[0]").unwrap().value,
         ChoiceValue::Int(6)
     );
-    // The bundle holds after the tuple commits — frame preserved
-    // by the mod-3 DP, no stop introduced (post-event validator).
+    // The complete tuple preserves the coding frame and introduces no stop.
     assert!(contracts
         .verify(outcome.final_simulation(), Some(&cfg))
         .is_ok());
@@ -82,19 +251,14 @@ fn indel_pass_permissive_reduces_to_noop_when_deletions_cannot_satisfy_contracts
 
 #[test]
 fn indel_pass_tuple_sampler_balances_frame_under_productive_count_2() {
-    // count=2 with insertion_prob=0.5 gives the mod-3 DP a real
-    // tuple to balance. Insertions in junction-shifting positions
-    // are FrameDelta(+1); deletions there are FrameDelta(-1).
-    // The DP picks tuples whose net delta ≡ 0 (mod 3) — for
-    // count=2 that means either two FrameNeutral or a +1/-1 pair.
-    // Use a larger fixture so there are enough non-Forbidden
-    // sites for the +1/-1 pairing to be realizable.
+    // Two edits can compensate each other; all accepted complete tuples
+    // must satisfy the same final productive bundle.
     let (cfg, sim) = make_productive_indel_balance_fixture();
     let contracts = productive();
 
     // Run the pass under productive() at a handful of seeds to
-    // pin the architectural property: under v3.0 every tuple
-    // commits leaves the bundle satisfied.
+    // pin the architectural property: every committed tuple leaves the
+    // complete bundle satisfied.
     for seed in 0..16u64 {
         let mut plan = PassPlan::new();
         plan.push(Box::new(IndelPass::new(
@@ -121,10 +285,8 @@ fn indel_pass_tuple_sampler_balances_frame_under_productive_count_2() {
 
 #[test]
 fn indel_pass_tuple_sampler_balances_frame_under_productive_count_3() {
-    // count=3 lets the DP exercise a 3-event balance: e.g. three
-    // FrameNeutral events, or +1+1+1 (sum 3 ≡ 0 mod 3), or
-    // -1-1-1 / +1-1+0 / +1+0-1 etc. Verify the post-state always
-    // satisfies the bundle.
+    // Three edits can compensate their coding-frame effects. Intermediate
+    // frames are not the acceptance criterion; the complete state is.
     let (cfg, sim) = make_productive_indel_balance_fixture();
     let contracts = productive();
     for seed in 0..16u64 {
@@ -151,44 +313,34 @@ fn indel_pass_tuple_sampler_balances_frame_under_productive_count_3() {
     }
 }
 
-/// Distribution-invariant test: exact enumeration oracle vs
-/// empirical sample frequencies on a small fixture.
-///
-/// Fixture: V allele "TGTGGG" (anchor 0 → codon TGT = Cys), J
-/// allele "TGGAAA" (anchor 0 → codon TGG = Trp). Pool = V[0..6)
-/// + J[6..12), junction = [0..9) (length 9, in-frame). Under
-/// productive():
-///   - Sites 0,1,2: V anchor codon Forbidden.
-///   - Sites 3,4,5: FrameDelta(±1) (in V, past anchor).
-///   - Sites 6,7,8: J anchor codon Forbidden.
-///   - Sites 9,10,11: FrameNeutral (in J, past anchor).
-///   - Site 12: FrameNeutral (post-pool insertion).
-///
-/// For count=1 and insertion_prob=0.5, only delta=0 candidates
-/// survive the DP filter (no remaining steps, target=0).
-/// Surviving candidates and their natural weights:
-///   - 16 FrameNeutral insertions (sites {9,10,11,12} × 4 bases),
-///     each weight = 0.5 / (pool_len+1=13) / 4 ≈ 0.009615.
-///   - 3 FrameNeutral deletions (sites {9,10,11}),
-///     each weight = 0.5 / pool_len=12 ≈ 0.041667.
-///   - Total insertion mass: 16 × 0.009615 ≈ 0.15385.
-///   - Total deletion mass: 3 × 0.041667 = 0.125.
-///   - Total mass: 0.27885.
-///   - P(insertion | count=1) = 0.15385 / 0.27885 ≈ 0.5517.
-///   - P(deletion | count=1)  = 0.125  / 0.27885 ≈ 0.4483.
-///
-/// The test runs the sampler over `n` independent seeds and
-/// asserts the empirical insertion/deletion ratio matches the
-/// theoretical to within a tolerance derived from the normal
-/// approximation of the binomial.
+/// Compare the single-event law against all frame-neutral proposals that
+/// satisfy the complete productive bundle. J-tail events can be junction-
+/// neutral while violating the whole coding frame, so class counts alone
+/// are insufficient. Condition empirical counts on an event being committed:
+/// complete proof of empty support permits a NoOp, not an invalid deletion.
 #[test]
 fn indel_pass_count_1_under_productive_matches_exact_enumeration() {
     let (cfg, sim) = balanced_dp_distribution_fixture();
     let contracts = productive();
+    let accepted_events: Vec<_> = enumerate_events(&sim, &cfg, &contracts)
+        .into_iter()
+        .filter(|e| e.delta == 0 && contracts.verify(&e.post, Some(&cfg)).is_ok())
+        .collect();
+    let accepted_mass: f64 = accepted_events.iter().map(|e| e.natural_weight).sum();
+    let insertion_mass: f64 = accepted_events
+        .iter()
+        .filter(|e| e.insertion)
+        .map(|e| e.natural_weight)
+        .sum();
+    let expected_p = insertion_mass / accepted_mass;
+    // A deletion of the final J base also changes the coding endpoint
+    // phase. Only insertion beyond the coding region survives count=1.
+    assert_eq!(expected_p, 1.0);
 
     const N: u32 = 4000;
     let mut insertions = 0u32;
     let mut deletions = 0u32;
+    let mut noops = 0u32;
     for seed in 0..N as u64 {
         let mut plan = PassPlan::new();
         plan.push(Box::new(IndelPass::new(
@@ -210,6 +362,10 @@ fn indel_pass_count_1_under_productive_matches_exact_enumeration() {
             "seed {} violated contracts",
             seed
         );
+        if outcome.trace.find("corrupt.indel.site[0]").unwrap().value == ChoiceValue::Int(-1) {
+            noops += 1;
+            continue;
+        }
         match outcome.trace.find("corrupt.indel.kind[0]").unwrap().value {
             ChoiceValue::Bool(true) => insertions += 1,
             ChoiceValue::Bool(false) => deletions += 1,
@@ -217,26 +373,19 @@ fn indel_pass_count_1_under_productive_matches_exact_enumeration() {
         }
     }
 
-    // Theoretical: P(insertion) = 0.5517, P(deletion) = 0.4483.
-    // Binomial std for N=4000: sqrt(N * p * (1-p)) ≈ sqrt(4000 *
-    // 0.5517 * 0.4483) ≈ 31. ±5 std for a tight pin.
-    let expected_insertions = (N as f64) * 0.5517;
-    let std = ((N as f64) * 0.5517 * 0.4483).sqrt();
-    let tolerance = 5.0 * std;
-    let delta = (insertions as f64 - expected_insertions).abs();
+    let total = insertions + deletions;
+    assert_eq!(total + noops, N);
     assert!(
-        delta < tolerance,
-        "empirical insertion count {} deviates from theoretical {} by {} > 5σ ({}); deletions={}",
-        insertions,
-        expected_insertions,
-        delta,
-        tolerance,
-        deletions
+        total > 3000,
+        "too few committed events: {total}, NoOps: {noops}"
     );
+    // Degenerate support has zero binomial variance: any sampled deletion
+    // is a violation, rather than a statistical fluctuation.
+    assert_eq!(deletions, 0, "accepted={total}, NoOps={noops}");
 }
 
 /// Distribution-invariant test for count=2: every accepted tuple
-/// must have net frame delta ≡ 0 mod 3 (the mod-3 DP's core
+/// must have net frame delta ≡ 0 mod 3 (the coding-frame
 /// guarantee). Verified by sampling many tuples and asserting
 /// the post-tuple junction length is divisible by 3 against the
 /// pre-tuple length.
@@ -264,11 +413,8 @@ fn indel_pass_count_2_under_productive_preserves_frame_invariant() {
             Some(&contracts),
         );
         let post = outcome.final_simulation();
-        // Either the tuple was accepted (junction in frame) or
-        // every retry rejected and we collapsed to no-op
-        // (junction unchanged from the in-frame input). Both
-        // outcomes are admissible under v3.0; what's NOT allowed
-        // is an out-of-frame post-state.
+        // This fixture has nonempty support, so each requested tuple must
+        // commit and preserve the junction reading frame.
         match compute_junction(post, &cfg) {
             Some(j) => assert!(
                 j.is_in_frame(),
@@ -286,47 +432,21 @@ fn indel_pass_count_2_under_productive_preserves_frame_invariant() {
     }
 }
 
-/// Distribution-invariant oracle for count=2 — pins
-/// **continuation weighting** (not just support filtering).
-///
-/// On the [`balanced_dp_distribution_fixture`] (V[0..6) +
-/// J[6..12) under productive()), the per-step support has:
-///   - 12 FrameDelta(+1) insertion candidates @ 1/104 each →
-///     mass[+1] = 12/104 = 0.115385
-///   - 3 FrameDelta(−1) deletion candidates @ 1/24 each →
-///     mass[−1] = 3/24 = 0.125
-///   - 16 FrameNeutral insertions + 3 FrameNeutral deletions →
-///     mass[0] = 16/104 + 3/24 = 0.278846
-///
-/// For count=2 the step-0 continuation weight for a candidate
-/// with delta `d` is `dp[1][(−d) mod 3]`:
-///   - `dp[1][0] = mass[0]` (need next step delta=0)
-///   - `dp[1][1] = mass[+1]` (next step must be +1)
-///   - `dp[1][2] = mass[−1]` (next step must be −1)
-///
-/// Step-0 effective mass per delta bucket:
-///   - delta=0: mass[0] × dp[1][0] = 0.278846² ≈ 0.07776
-///   - delta=+1: mass[+1] × dp[1][2] = 0.115385 × 0.125 ≈ 0.01442
-///   - delta=−1: mass[−1] × dp[1][1] = 0.125 × 0.115385 ≈ 0.01442
-///   - total = 0.10660
-///
-/// P(step_0 delta=+1 | count=2) ≈ 0.01442 / 0.10660 ≈ 0.1353.
-/// Without continuation weighting, the same probability would be
-/// mass[+1] / (mass[0]+mass[+1]+mass[−1]) ≈ 0.2222 — a
-/// distinguishing gap. The test asserts 0.1353 ± 5σ across N
-/// seeds, so a regression that breaks continuation weighting
-/// (e.g. dropping the DP factor) would land at ~0.22 and fail.
+/// Check natural-history weights against exact two-event enumeration, including
+/// the full post-state contract check. The accepted marginal differs from the
+/// first-proposal marginal because coding stops and J-tail frameshifts reject
+/// some otherwise junction-frame-balanced tuples.
 #[test]
-fn indel_pass_count_2_matches_exact_continuation_weighting() {
-    use crate::contract::{IndelEventClass, IndelKindHint};
-
+fn indel_pass_count_2_matches_exact_natural_sequential_weighting() {
     let (cfg, sim) = balanced_dp_distribution_fixture();
     let contracts = productive();
+    let expected = exact_two_event_first_delta(&sim, &cfg, &contracts);
 
     const N: u32 = 4000;
     let mut delta_plus = 0u32;
     let mut delta_zero = 0u32;
     let mut delta_minus = 0u32;
+    let mut noops = 0u32;
     for seed in 0..N as u64 {
         let mut plan = PassPlan::new();
         plan.push(Box::new(IndelPass::new(
@@ -341,6 +461,12 @@ fn indel_pass_count_2_matches_exact_continuation_weighting() {
             Some(&cfg),
             Some(&contracts),
         );
+        assert!(
+            contracts
+                .verify(outcome.final_simulation(), Some(&cfg))
+                .is_ok(),
+            "seed {seed} violated contracts"
+        );
 
         // Extract step-0 (kind, site) from the trace. Classify
         // delta against the *initial* sim — that's the working
@@ -350,70 +476,48 @@ fn indel_pass_count_2_matches_exact_continuation_weighting() {
             _ => panic!("unexpected kind variant"),
         };
         let site_0 = match outcome.trace.find("corrupt.indel.site[0]").unwrap().value {
-            ChoiceValue::Int(s) => s as u32,
+            ChoiceValue::Int(s) => s,
             _ => panic!("unexpected site variant"),
         };
         // Per the IndelEvent trace convention: kind=true is
         // insertion, kind=false is deletion. NoOp records site=−1,
         // which means permissive empty-support — skip it.
-        if site_0 as i64 == -1 {
+        if site_0 == -1 {
+            noops += 1;
             continue;
         }
-        let kind_hint = if kind_0 {
-            IndelKindHint::Insertion
+        let delta = if kind_0 {
+            i32::from(0 < site_0 && site_0 <= 6)
         } else {
-            IndelKindHint::Deletion
+            -i32::from(site_0 < 6)
         };
-        let class = contracts.admissible_indel_class_at(&sim, Some(&cfg), site_0, kind_hint);
-        match class {
-            IndelEventClass::FrameNeutral => delta_zero += 1,
-            IndelEventClass::FrameDelta(1) => delta_plus += 1,
-            IndelEventClass::FrameDelta(-1) => delta_minus += 1,
-            other => panic!(
-                "unexpected delta class {:?} for sampled step-0 event",
-                other
-            ),
+        match delta {
+            0 => delta_zero += 1,
+            1 => delta_plus += 1,
+            -1 => delta_minus += 1,
+            _ => unreachable!(),
         }
     }
     let total = delta_plus + delta_zero + delta_minus;
-    let p_plus = delta_plus as f64 / total as f64;
-    let p_minus = delta_minus as f64 / total as f64;
-    let p_zero = delta_zero as f64 / total as f64;
-
-    // Theoretical step-0 marginals with continuation weighting:
-    //   P(δ=+1) = 0.135338, P(δ=−1) = 0.135338, P(δ=0) = 0.729323.
-    let expected_plus = 0.135338;
-    let expected_minus = 0.135338;
-    let expected_zero = 0.729323;
-    let std_plus = ((total as f64) * expected_plus * (1.0 - expected_plus)).sqrt() / (total as f64);
-    let std_zero = ((total as f64) * expected_zero * (1.0 - expected_zero)).sqrt() / (total as f64);
-    let tol_plus = 5.0 * std_plus;
-    let tol_zero = 5.0 * std_zero;
-
+    assert_eq!(total + noops, N);
     assert!(
-        (p_plus - expected_plus).abs() < tol_plus,
-        "p(δ=+1) = {:.4}, expected {:.4} ± {:.4} (5σ); counts: + {} 0 {} − {}",
-        p_plus,
-        expected_plus,
-        tol_plus,
-        delta_plus,
-        delta_zero,
-        delta_minus
+        total > 3000,
+        "too few committed tuples: {total}, NoOps: {noops}"
     );
-    assert!(
-        (p_minus - expected_minus).abs() < tol_plus,
-        "p(δ=−1) = {:.4}, expected {:.4} ± {:.4} (5σ)",
-        p_minus,
-        expected_minus,
-        tol_plus
-    );
-    assert!(
-        (p_zero - expected_zero).abs() < tol_zero,
-        "p(δ=0) = {:.4}, expected {:.4} ± {:.4} (5σ)",
-        p_zero,
-        expected_zero,
-        tol_zero
-    );
+    for (residue, count) in [delta_zero, delta_plus, delta_minus]
+        .into_iter()
+        .enumerate()
+    {
+        let expected_p = expected[residue];
+        let observed_p = f64::from(count) / f64::from(total);
+        let tolerance = 5.0 * (expected_p * (1.0 - expected_p) / f64::from(total)).sqrt();
+        assert!(
+            (observed_p - expected_p).abs() < tolerance,
+            "p(δ mod 3={residue}) = {observed_p:.4}, expected {expected_p:.4} ± \
+             {tolerance:.4} (5σ); counts: + {delta_plus} 0 {delta_zero} − \
+             {delta_minus}; NoOps={noops}"
+        );
+    }
 }
 
 #[test]
@@ -432,7 +536,7 @@ fn indel_pass_strict_errors_when_deletion_filter_empty() {
         .unwrap_err();
 
     assert_eq!(err.pass_name(), "corrupt.indel");
-    assert_eq!(err.address(), "corrupt.indel.site[0]");
+    assert_eq!(err.address(), "corrupt.indel.count");
     assert_eq!(
         err.constraint_reason(),
         Some(FilteredSampleError::EmptyAdmissibleSupport)

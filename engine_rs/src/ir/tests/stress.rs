@@ -56,6 +56,9 @@ fn stress_persistent_ir_under_random_mutation() {
         segment_calls: std::sync::Arc::new(crate::live_call::SegmentCalls::empty()),
         dirty_log: std::sync::Arc::new(crate::live_call::DirtyLog::empty()),
         mutation_count: 0,
+        mutation_burden: 0.0,
+        live_call_support: None,
+        coding_end_provenance: None,
     };
 
     // Property check at revision 0.
@@ -94,6 +97,9 @@ fn stress_persistent_ir_under_random_mutation() {
             segment_calls: prev.segment_calls.clone(),
             dirty_log: prev.dirty_log.clone(),
             mutation_count: prev.mutation_count,
+            mutation_burden: prev.mutation_burden,
+            live_call_support: prev.live_call_support.clone(),
+            coding_end_provenance: prev.coding_end_provenance.clone(),
         });
     }
 

@@ -10,29 +10,18 @@ the right field for the question you're asking.</p>
 
 ## Derived, not accumulated
 
-A GenAIRR record is **not** an accumulator of fields filled in
-across the pipeline. It's computed once, at the end, by reading
-the final intermediate-representation pool. Coordinates, CIGARs,
-junction, productivity, calls - everything is derived from one
-source of truth, so nothing can drift out of sync.
+GenAIRR builds the record at the end from the final nucleotide
+pool, allele assignments, live calls, trace, and event history.
+Coordinates and CIGARs describe the final alignment; productivity
+checks the observed coding span, reading frame, and conserved
+anchors. Persistent assignments retain recombination provenance
+across clonal forks.
 
-Most simulators carry an AIRR record alongside the sequence and
-update fields as the pipeline progresses. An indel happens, and
-they scramble to decrement coordinates downstream; a trim
-arrives, and they bookkeep the gene end. Every update is a
-chance to introduce a desynchronisation bug.
-
-GenAIRR keeps no such running record. Coordinates exist only on
-the final pool. CIGARs are walked once at the end. `productive`
-is decided by reading the junction codons from the final state.
-There is no parallel state to fall out of sync - there is
-nothing to fall out of sync *with*.
-
-That property is also why the [`validate_records`](../validation/validate-records.md)
-gate works: the validator re-runs the same projection and asserts
-agreement with the record. If projection is pure (and it is),
-the validator can independently re-derive every field and catch
-any drift introduced by a code-path change.
+[`validate_records`](../validation/validate-records.md) checks the
+record against engine state and reference data. Passing confirms
+agreement with the implemented checks; it does not prove that every
+biological assumption or reference annotation is correct. Projection
+and validation share some helpers, so independent checks remain useful.
 
 ## What an AIRR record is
 
@@ -78,6 +67,12 @@ The remaining sections walk through each.
 | `rev_comp` | bool | `True` when the projection reverse-complemented the molecule (set by `random_strand_orientation`) |
 | `locus` | str | Cartridge identity (e.g. `"IGH"`, `"TRB"`) |
 
+Biological annotations use coding orientation. When `rev_comp=True`,
+`sequence` contains the observed reverse-strand molecule, while
+`sequence_aa`, alignments, junction/NP strings, and biological query
+coordinates refer to its reverse complement. Paired-read windows
+instead index the observed `sequence`.
+
 The lower-case base convention on `sequence` is load-bearing -
 the FASTQ exporter (`to_fastq` / `to_paired_fastq`) routes those
 positions to the low-quality bucket. See the
@@ -86,55 +81,33 @@ for what each corruption pass writes into `sequence`.
 
 ## Allele calls and truth
 
-```text
-v_call, d_call, j_call    ← the call surface
-truth_v_call, truth_d_call, truth_j_call  ← provenance (opt-in)
+`v_call`, `d_call`, and `j_call` name the final generating alleles. They are
+single-valued and define the references used by the germline alignments,
+CIGARs, identities, and germline coordinates. Receptor revision updates
+`v_call` to the replacement allele; `original_v_call` preserves its predecessor.
+`d_call` is the empty string on VJ chains.
+
+Post-mutation inference is exported separately as `recalled_v_call`,
+`recalled_d_call`, and `recalled_j_call`. These may contain comma-separated
+ties or differ from the generating allele. When the generating allele is
+in a tie, it appears first; otherwise calls follow allele-ID order.
+Donor-genotype experiments restrict re-calls to alleles carried by that donor.
+Re-calls do not change the ground-truth reference or absorb junction bases
+into a segment's alignment.
+When no inferred evidence is available, for example after complete clipping,
+the corresponding `recalled_*_call` is empty; the standard generating call remains.
+
+```python
+rec["v_call"]           # generating allele
+rec["recalled_v_call"]  # evidence-based call; split on commas for ties
 ```
-
-`v_call` (and `d_call`, `j_call`) carry the **resolved allele
-name** committed during recombination - or the post-revision
-identity after `receptor_revision()`. The call field is a
-comma-separated **tie set** when the engine sampled an
-indistinguishable group:
-
-```text
-v_call: "IGHVF1-G2*01"
-v_call: "IGHVF1-G2*01,IGHVF1-G2*02"   ← tie set: two-way ambiguity
-```
-
-Downstream code that wants the single committed allele should
-split on `","` and pick the first entry; downstream code that
-wants to credit ambiguity fractionally should split and divide.
-Either policy is valid; just pick one.
-
-**`d_call`** is empty (`""`) on VJ-chain records (kappa, lambda,
-TCR alpha). The empty string - not `None` - is the canonical
-absent value, mirroring how missing fields work in AIRR TSV.
 
 ### Truth columns (opt-in)
 
-When the experiment runs with `expose_provenance=True`:
-
-```python
-result = exp.run_records(n=10, seed=42, expose_provenance=True)
-```
-
-the records also carry `truth_v_call`, `truth_d_call`, and
-`truth_j_call`. These are the **same** call values as
-`v_call` / `d_call` / `j_call` in the ordinary case (GenAIRR's
-records *are* truth by construction). The truth columns become
-load-bearing in two cases:
-
-- **Family validation** uses them to confirm every descendant of
-  a clonal family shares the recombination-time identity (see
-  [Clonal simulation overview](../guides/clonal-families.md)).
-- **Aligner benchmarking** treats `v_call` as the aligner's
-  prediction and `truth_*_call` as the ground truth, even when
-  both came from the same simulator - the column split makes the
-  benchmark script's join symmetric.
-
-Without `expose_provenance=True`, the truth columns are absent
-entirely.
+`run_records(..., expose_provenance=True)` also emits `truth_v_call`,
+`truth_d_call`, and `truth_j_call`. These compatibility aliases equal the
+standard calls. They remain available for existing family-validation and
+benchmarking workflows.
 
 ## Junction and productivity
 
@@ -142,29 +115,54 @@ entirely.
 |---|---|---|
 | `junction` | str | Junction sequence (V end + NP1 + D + NP2 + J start, conserved Cys to Trp/Phe) |
 | `junction_aa` | str | Amino-acid translation of `junction` |
-| `junction_start`, `junction_end` | int | Junction coordinates within `sequence` |
+| `junction_start`, `junction_end` | int | Junction coordinates within the coding-oriented sequence |
 | `junction_length` | int | Length of `junction` in nucleotides (always a multiple of 3 when `productive: True`) |
-| `productive` | bool | `True` iff in-frame junction + no junction stop codon + V Cys preserved + J Trp / Phe preserved |
-| `vj_in_frame` | bool | V and J in the same reading frame |
-| `stop_codon` | bool | `True` iff a stop codon exists in `sequence_aa` |
+| `productive` | bool or null | Acceptance under the named sequence-level policy for the observed coding span |
+| `vj_in_frame` | bool or null | Junction length and original V-anchor position agree with the retained V coding frame |
+| `stop_codon` | bool or null | Whether a complete observed coding codon is definitely a stop; unknown if phase is unavailable or a possible stop remains unresolved |
+| `productivity_policy` | str | `canonical_observed_vdj_v1` |
+| `productivity_scope` | str | `observed_coding_span` |
+| `productivity_reasons` | list[str] | Stable diagnostic codes, or `["accepted"]`; JSON in TSV/CSV cells |
 
-When the pipeline includes `.productive_only()`, every record
-has `productive: True` by construction - the constraint masks
-the sampling support before the draw, so the engine never
-produces an unproductive record in the first place. See
-[Recombination and junction biology](../guides/recombination-junction.md#productivity)
-for the four-clause definition.
+The policy requires original V/J landmark provenance, V Cys and J Phe/Trp
+residue classes, V/J and J-tail frame agreement, and definitely stop-free
+complete coding codons. It does not establish expression, splicing, folding,
+or receptor function. J Phe and Trp are both accepted; exact preservation of
+the reference residue is an optional separate native contract.
+
+A known defect yields `False` even when another check is unresolved. Otherwise,
+missing required evidence yields `None`, and only all accepted checks yield
+`True`. For example, `NNN` can hide a stop, `GCN` is definitely sense, and `TAR`
+is definitely stop. An invalid reference landmark is unresolved annotation,
+not proof that the molecule is biologically nonproductive. Reference-admission
+exceptions never repair landmarks or invent a translation frame.
+
+Terminal read loss may still permit `True` when the required landmarks and
+coding evidence remain observed. Loss of a required landmark yields unknown;
+a structural deletion of an original landmark is a known defect. This scope
+makes no claim about sequence outside the observation. `junction_aa` translates
+the physical junction in complete local codons even if `vj_in_frame` is false.
+
+`.productive_only()` conditions sampling on accepted support and asserts the
+final observed assessment in both execution modes. It raises if that guarantee
+cannot be met; no failed or unresolved final record is emitted. The record
+validator reconstructs productivity independently of the projection helper.
 
 ## Recombination structure
 
 ### Per-segment alignment coordinates
 
-For each of V, D, J:
+Python record dicts use 0-based, half-open intervals. TSV defaults
+to `airr_strict=True`, which converts biological coordinates to
+1-based closed intervals. CSV and DataFrame exports keep Python
+conventions unless `airr_strict=True` is requested.
+
+For each of V, D, J, the Python fields are:
 
 | Field | Meaning |
 |---|---|
-| `{v,d,j}_sequence_start` | Position in `sequence` where this segment begins (0-based by default; 1-based when `airr_strict=True`) |
-| `{v,d,j}_sequence_end` | Exclusive end position in `sequence` |
+| `{v,d,j}_sequence_start` | Position in the coding-oriented sequence where this segment begins |
+| `{v,d,j}_sequence_end` | Exclusive end position in the coding-oriented sequence |
 | `{v,d,j}_alignment_start` | Position in `sequence_alignment` |
 | `{v,d,j}_alignment_end` | Exclusive alignment end |
 | `{v,d,j}_germline_start` | Position in the germline allele |
@@ -191,15 +189,16 @@ end-loss describes the sequencer (the read ran short).
 
 | Field | Meaning |
 |---|---|
-| `np1` | Non-templated bases between V and D ends - **P-clean** (V–D junction in VDJ; V–J junction in VJ) |
-| `np2` | Non-templated bases between D and J ends - **P-clean** (VDJ only; empty on VJ) |
-| `np1_aa`, `np2_aa` | Amino-acid translations |
+| `np1` | Bases between the final V and D alignment bounds (V–J on VJ chains), including intervening N and P bases |
+| `np2` | Bases between the final D and J alignment bounds, including intervening N and P bases (VDJ only; empty on VJ) |
+| `np1_aa`, `np2_aa` | Complete codons within those intervals, translated in the retained V coding frame |
 | `np1_length`, `np2_length` | Lengths in nucleotides |
 
-`np1` and `np2` are the **non-templated** strings only. When the
-engine claims a P-nucleotide span back as a templated extension
-of V, D, or J, those positions drop out of `np1` / `np2` - the
-NP strings are P-clean by construction.
+The NP strings are slices of the coding-oriented sequence between
+the final segment alignments. Their lengths equal the lengths of
+those strings. Bases assigned to an adjacent germline alignment
+are outside these intervals, regardless of their original N/P
+provenance.
 
 ### P-nucleotide lengths
 
@@ -213,12 +212,13 @@ sampled during recombination:
 | `p_d_3_length` | Number of P bases off the D allele's 3′ end (D → NP2 side) - VDJ only, `0` on VJ |
 | `p_j_5_length` | Number of P bases off the J allele's 5′ end (NP2 → J side on VDJ; NP1 → J side on VJ) |
 
-P bases **contribute to `sequence` and `junction`** (they are
-real palindromic nucleotides in the assembled molecule) but
-`np1` / `np2` remain N-only. **GenAIRR exposes P lengths, not P
-strings** - there is no per-base P field. If you need the actual
-P-nucleotide bases for a record, slice them from `sequence` using
-the per-segment coordinates plus the four length fields.
+P bases contribute to the assembled molecule and to `np1` / `np2`
+when they lie between the final alignment bounds. The four P
+lengths record emitted recombination history and survive clonal
+forks or later read loss. They do not necessarily equal the number
+of P bases still observed. There is no separate P-sequence field;
+alignment bounds and P lengths alone cannot recover P provenance
+after arbitrary mutation, indels, or truncation.
 
 The engine samples P-insertion lengths from
 `cfg.reference_models.p_nucleotide_lengths`. See
@@ -229,11 +229,18 @@ layout diagrams.
 
 | Field | Meaning |
 |---|---|
-| `{v,d,j}_cigar` | Per-segment CIGAR string against the assigned allele |
+| `{v,d,j}_cigar` | Local per-segment CIGAR against the generating allele named by the standard call |
 | `{v,d,j}_score` | Per-segment alignment score (when reported by the projector) |
-| `{v,d,j}_identity` | Per-segment percent identity |
+| `{v,d,j}_identity` | Fraction from 0 to 1: matching bases divided by alignment columns, including gaps |
 | `{v,d,j}_support` | Per-segment support value (when reported) |
 | `c_call` | Constant-region call (empty when no C-region biology is modeled) |
+
+Python dicts carry local `M` / `I` / `D` operation runs. Strict
+exports add leading query-offset `S` and reference-offset `N` runs
+when nonzero. End loss shortens observed reference coverage; it does not
+create alignment deletions. A structural deletion inside the observed span
+still produces a `D` operation. Strict TSV/CSV also write booleans as `T` / `F`;
+DataFrames retain boolean values.
 
 ## Mutation and artefact counters
 
@@ -245,7 +252,7 @@ n_v_mutations          ← V-segment SHM
 n_d_mutations          ← D-segment SHM
 n_j_mutations          ← J-segment SHM
 n_np_mutations         ← NP1 + NP2 combined SHM
-mutation_rate          ← realised per-base rate for this record
+mutation_rate          ← cumulative realized SHM event burden per input-molecule base
 ```
 
 These five sum cleanly:
@@ -253,6 +260,12 @@ These five sum cleanly:
 [`validate_records`](../validation/validate-records.md) gate
 checks this equality and fires `MutationCountSumMismatch` if
 it ever breaks.
+
+`mutation_rate` sums each mutation stage's applied events divided by that
+stage's input molecule length. Later clipping leaves those contributions
+unchanged. It counts repeated hits and reversions, so it is not a mismatch
+fraction measured on the observed V segment. Lineage summary records instead
+use net differences divided by the node's pre-observation molecule length.
 
 **`n_mutations` is biology only.** PCR errors, sequencing
 errors, indel-pass errors, and end-loss never increment these
@@ -338,6 +351,11 @@ still present in the record. Treat a non-empty `r1_sequence` as
 the canonical "this is a paired-end record" check; `read_layout`
 also carries the layout label (`"paired_end"` when set).
 
+`r1_start/end` and `r2_start/end` are always 0-based, half-open
+windows on the observed `sequence`, even with `rev_comp=True`
+or strict export. `r2_sequence` is the reverse complement of
+its window.
+
 See [Paired-end reads and FASTQ](../guides/paired-end-fastq.md)
 for the quality model and the layout coordinates.
 
@@ -368,9 +386,10 @@ the absent case explicitly. See
 The records page composes cleanly with the validation surface:
 
 - **[`validate_records(refdata)`](../validation/validate-records.md)**
-  re-derives every counter, every coordinate, and every truth
-  field from the underlying engine `Outcome` and checks that
-  the record agrees. This is the load-bearing AIRR-output gate.
+  checks supported counters, coordinates, calls, and productivity
+  against the underlying engine `Outcome` and reference data.
+  It tests consistency with the implemented model, not universal
+  biological correctness or arbitrary custom metadata schemas.
 - **`validate_families(refdata=None)`** groups records by
   `clone_id` and asserts each family agrees on `truth_v_call`,
   `truth_d_call`, `truth_j_call` (when present).
@@ -394,10 +413,9 @@ V-subregion fields) describes biology. `n_pcr_errors`,
 describe library / sequencer artefacts. They live on the same
 record by design - they don't share a counter.
 
-**Assuming call fields are single alleles.** `v_call`,
-`d_call`, and `j_call` can be comma-separated tie sets. Split on
-`","` before parsing; even a single-allele call can become
-ambiguous in a future cartridge revision.
+**Confusing inferred calls with generating alleles.** Standard calls are
+single generating alleles. The `recalled_*_call` fields describe inference
+and can contain comma-separated ties.
 
 **Confusing trim with end-loss.** `v_trim_3` is recombination
 biology (recombinase chewed bases off the V allele's 3′ end
@@ -405,14 +423,12 @@ before junction joining). `end_loss_3_length` is sequencing
 artefact (the read ran short / was 3′ end-loss-clipped). The
 field names are similar; the biology is different.
 
-**Inferring P-nucleotides from `np1` / `np2`.** Don't. The NP
-strings are P-clean - P bases that have been claimed back as
-templated extensions of V / D / J are deliberately excluded
-from `np1` / `np2`. Use the four `p_*_length` fields
+**Treating `np1` / `np2` as N-only strings.** They contain the
+combined gap between adjacent alignments, including intervening
+P bases. Use the four `p_*_length` fields
 (`p_v_3_length`, `p_d_5_length`, `p_d_3_length`, `p_j_5_length`)
-to read palindromic-insertion lengths. GenAIRR exposes lengths,
-not P strings; slice `sequence` with the per-segment coordinates
-if you need the actual P bases.
+to read emitted palindromic-insertion lengths. These provenance
+counters do not identify which P bases remain after read corruption.
 
 **Expecting paired-end fields without `.paired_end(...)`.** The
 eight read-layout fields are present in every record but default

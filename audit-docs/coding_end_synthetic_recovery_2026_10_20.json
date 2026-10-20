@@ -1,0 +1,214 @@
+{
+  "schema": "coding_end_synthetic_recovery_v1",
+  "reference_hash": "sha256:e8d47052c304d79e840ce97d14967e47d39c679e0a40b526078cd57bfe8d8d22",
+  "extension_sha256": "03b21c9769157a78eb4797477be6acfb02265acdd85d58ef8b362950ac8d0e78",
+  "training_seed_range": [
+    2026102000,
+    2026103999
+  ],
+  "held_out_seed_range": [
+    2026104000,
+    2026104499
+  ],
+  "training_records": 2000,
+  "held_out_records": 500,
+  "sampling_law": "unconditioned_generating_choices",
+  "maximum_absolute_error": 0.01100000000000001,
+  "recovery_tolerance": 0.04,
+  "outcomes": {
+    "V": [
+      {
+        "five": 0,
+        "three": -1,
+        "target": 0.2,
+        "estimate": 0.1965,
+        "absolute_error": 0.003500000000000003,
+        "count": 393,
+        "marginal_95_interval": [
+          0.17967444607855565,
+          0.21448920162116486
+        ]
+      },
+      {
+        "five": 0,
+        "three": 0,
+        "target": 0.6,
+        "estimate": 0.5985,
+        "absolute_error": 0.0014999999999999458,
+        "count": 1197,
+        "marginal_95_interval": [
+          0.5768472987601712,
+          0.6197750429254221
+        ]
+      },
+      {
+        "five": 0,
+        "three": 1,
+        "target": 0.2,
+        "estimate": 0.205,
+        "absolute_error": 0.004999999999999977,
+        "count": 410,
+        "marginal_95_interval": [
+          0.18788077269708534,
+          0.2232502851988538
+        ]
+      }
+    ],
+    "D": [
+      {
+        "five": -1,
+        "three": 1,
+        "target": 0.75,
+        "estimate": 0.752,
+        "absolute_error": 0.0020000000000000018,
+        "count": 1504,
+        "marginal_95_interval": [
+          0.7326024907601618,
+          0.7704313174100867
+        ]
+      },
+      {
+        "five": 1,
+        "three": -1,
+        "target": 0.25,
+        "estimate": 0.248,
+        "absolute_error": 0.0020000000000000018,
+        "count": 496,
+        "marginal_95_interval": [
+          0.22956868258991328,
+          0.2673975092398382
+        ]
+      }
+    ],
+    "J": [
+      {
+        "five": 0,
+        "three": 0,
+        "target": 0.6,
+        "estimate": 0.589,
+        "absolute_error": 0.01100000000000001,
+        "count": 1178,
+        "marginal_95_interval": [
+          0.5672862632632163,
+          0.6103725023207207
+        ]
+      },
+      {
+        "five": 1,
+        "three": 0,
+        "target": 0.4,
+        "estimate": 0.411,
+        "absolute_error": 0.010999999999999954,
+        "count": 822,
+        "marginal_95_interval": [
+          0.38962749767927923,
+          0.43271373673678365
+        ]
+      }
+    ]
+  },
+  "fitted_held_out_score": {
+    "records": 500,
+    "log_likelihood": -1076.039330037896,
+    "unseen_outcomes": 0,
+    "scope": "generating_outcome_table"
+  },
+  "authored_held_out_score": {
+    "records": 500,
+    "log_likelihood": -1076.3294911006199,
+    "unseen_outcomes": 0,
+    "scope": "generating_outcome_table"
+  },
+  "fit_provenance": {
+    "conditioning": "pooled_by_segment",
+    "counts": {
+      "D": [
+        {
+          "count": 1504,
+          "five": -1,
+          "marginal_95_interval": [
+            0.7326024907601618,
+            0.7704313174100867
+          ],
+          "three": 1
+        },
+        {
+          "count": 496,
+          "five": 1,
+          "marginal_95_interval": [
+            0.22956868258991328,
+            0.2673975092398382
+          ],
+          "three": -1
+        }
+      ],
+      "J": [
+        {
+          "count": 1178,
+          "five": 0,
+          "marginal_95_interval": [
+            0.5672862632632163,
+            0.6103725023207207
+          ],
+          "three": 0
+        },
+        {
+          "count": 822,
+          "five": 1,
+          "marginal_95_interval": [
+            0.38962749767927923,
+            0.43271373673678365
+          ],
+          "three": 0
+        }
+      ],
+      "V": [
+        {
+          "count": 393,
+          "five": 0,
+          "marginal_95_interval": [
+            0.17967444607855565,
+            0.21448920162116486
+          ],
+          "three": -1
+        },
+        {
+          "count": 1197,
+          "five": 0,
+          "marginal_95_interval": [
+            0.5768472987601712,
+            0.6197750429254221
+          ],
+          "three": 0
+        },
+        {
+          "count": 410,
+          "five": 0,
+          "marginal_95_interval": [
+            0.18788077269708534,
+            0.2232502851988538
+          ],
+          "three": 1
+        }
+      ]
+    },
+    "estimator": "supervised_retained_outcomes_v1",
+    "independent_generating_events": true,
+    "limitations": [
+      "not biochemical rate calibration",
+      "pooled frequencies reflect allele feasibility",
+      "sampling-law and source declarations supplied by caller"
+    ],
+    "pseudocount": 0.0,
+    "records": 2000,
+    "source": "independent native synthetic founders; one allele per segment; all outcomes feasible",
+    "training_sampling_law": "unconditioned_generating_choices",
+    "uncertainty": "marginal Wilson intervals on observed counts"
+  },
+  "limitations": [
+    "synthetic retained outcomes, not measured biochemical rates",
+    "single feasible allele per segment removes feasibility filtering",
+    "marginal intervals are not simultaneous confidence intervals",
+    "measured-data donor/clone validation remains pending"
+  ]
+}

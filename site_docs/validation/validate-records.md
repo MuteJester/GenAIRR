@@ -3,9 +3,8 @@
 <p class="lead">Every AIRR record GenAIRR emits is supposed to be
 internally consistent with the outcome that produced it and with the
 reference data the engine ran against. <code>validate_records</code>
-is the single call that proves it - re-deriving every reported field
-from upstream sources and surfacing any divergence as a structured
-report.</p>
+checks supported fields against those upstream sources and surfaces
+detected inconsistencies as a structured report.</p>
 
 !!! info "Section hub"
     This page covers the per-record validator in depth. For the
@@ -16,16 +15,18 @@ report.</p>
 ## What validation answers
 
 > Given a finished `SimulationResult` and the `RefDataConfig` that
-> drove it, is every reported field on every record internally
-> consistent and biologically derivable?
+> drove it, do the implemented consistency checks agree with the
+> reported records?
 
 The validator does not check whether your simulation is biologically
 *realistic* - that's a question about your cartridge and your
 parameters. It checks whether the engine's output is *self-consistent*:
-that the `v_call` matches what an independent walker would assign,
+that `v_call` matches the generating assignment and `recalled_v_call`
+matches independent scoring of the observed bases,
 that `n_mutations` matches the event ledger, that `junction_length`
 matches `len(junction)`, that the `productive` flag corresponds to a
-real in-frame-no-stop-anchors-preserved evaluation, and so on.
+coding-frame, stop-codon and anchor checks, and so on. Passing these
+checks is not a universal guarantee of biological validity.
 
 ## Quick start
 
@@ -148,28 +149,30 @@ mechanism added events to a segment the partition didn't anticipate.
 - `junction` content matches the recomputed pool slice from the V
   anchor through the J anchor + 3.
 - `junction_length` matches `len(junction)`.
-- `vj_in_frame` matches `junction_length % 3 == 0`.
-- `stop_codon` matches `junction_has_stop(junction)` (only meaningful
-  when in-frame).
-- `productive` matches the full triad: in-frame ∧ no junction stop ∧
-  V Cys preserved ∧ J W-or-F preserved.
+- `junction_aa` matches translation of complete codons in the physical
+  junction, including when the rearrangement is out of frame.
+- `vj_in_frame` requires a junction length divisible by three and
+  alignment of its start with the retained V coding frame.
+- `stop_codon` checks the retained coding sequence in that frame,
+  including sequence outside the junction.
+- `productive` also requires the retained J tail to preserve the
+  coding frame, no coding stop, V Cys and J W-or-F anchors.
 
-When `productive=False`, the issue payload also names *which*
-predicate fired (`OutOfFrame` / `JunctionStopCodon` /
-`VAnchorAaChanged` / `JAnchorAaChanged`), so a "non-productive
-storm" is immediately diagnosable.
+A productivity mismatch includes the deciding predicate
+(`OutOfFrame`, `CodingStopCodon`, `VAnchorAaChanged`, or
+`JAnchorAaChanged`).
 
 ### Allele calls
 
-The validator rescores `v_call` / `d_call` / `j_call` against an
-independent walker - same matching rules, different implementation
-path. Mismatches surface the engine-reported and oracle-reported
-tie-sets side-by-side so you can see whether the engine picked
-the wrong allele or just ordered the tie-set differently.
+The validator checks `v_call` / `d_call` / `j_call` against the final
+generating assignments. It separately rescores `recalled_v_call` /
+`recalled_d_call` / `recalled_j_call` using the same matching rules through
+an independent scoring path. In genotype runs, candidate alleles come from
+the donor's two haplotypes. Re-call mismatches report both ordered tie sets.
+The scoring oracle abstains when no germline evidence remains.
 
-For rev-comp records the C4 oracle is skipped by design (the
-post-projection flip moves the bytes out from under the oracle's
-reference index). The other four categories still run.
+These checks also run for reverse-strand records: annotations and the
+internal sequence used for scoring remain in coding orientation.
 
 ### Paired-end layout
 

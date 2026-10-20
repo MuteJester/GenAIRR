@@ -15,7 +15,7 @@ Covers the user brief's ten-test surface:
 4. P bases carry `P_NUC` flag (per the audit's per-base
    discrimination guarantee).
 5. Trace replay reproduces sequence and the four fields.
-6. Productive-only preserves the triad.
+6. Productive-only supports fixed and mixed nonzero P support.
 7. Validator catches a tampered P length field.
 8. Manifest reports configured keys and `legacy_fallback=False`.
 9. Legacy field remains orphan / no auto-lift.
@@ -35,6 +35,7 @@ from GenAIRR.reference_models import (
     EmpiricalDistributionSpec,
     ReferenceEmpiricalModels,
 )
+from ._p_productive_support import assert_productive_record
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -214,33 +215,40 @@ def test_trace_replay_round_trip_preserves_sequence_and_p_length_fields() -> Non
 
 
 # ──────────────────────────────────────────────────────────────────
-# 6. Productive-only preserves the triad
+# 6. Productive-only supports fixed and mixed nonzero P support
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_productive_only_triad_preserved_under_p_addition() -> None:
-    """Productive-only must still hold when the cartridge
-    inserts deterministic P-extensions at every junction
-    boundary. The audit §6 documented that the existing
-    `JunctionStopState` admit-mask machinery composes with
-    per-end P-length sampling — this test runs it
-    end-to-end."""
+@pytest.mark.parametrize("pairs", [[(1, 1.0)], [(0, 5.0), (1, 1.0)]])
+@pytest.mark.parametrize("strict", [False, True])
+def test_productive_only_supports_nonzero_p_support(pairs, strict) -> None:
+    """P lengths participate in productive feasibility; a positive
+    distribution must emit positive P rather than silently forcing zero."""
     cfg = _cartridge_with_p_lengths(
-        {
-            "V_3": EmpiricalDistributionSpec([(0, 5.0), (2, 1.0)]),
-            "D_5": EmpiricalDistributionSpec([(0, 5.0), (1, 1.0)]),
-            "D_3": EmpiricalDistributionSpec([(0, 5.0), (1, 1.0)]),
-            "J_5": EmpiricalDistributionSpec([(0, 5.0), (2, 1.0)]),
-        }
+        {"V_3": EmpiricalDistributionSpec(pairs)}
     )
     exp = ga.Experiment.on(cfg).recombine().productive_only()
-    refdata = exp.refdata
-    result = exp.run_records(n=20, seed=4242)
-    report = result.validate_records(refdata)
-    assert report, (
-        f"productive_only + P-addition validation failed: "
-        f"{report.summary()}"
+    result = exp.run_records(n=64, seed=4242, strict=strict, expose_provenance=True)
+    observed_lengths = {record["p_v_3_length"] for record in result}
+    assert observed_lengths == {length for length, _ in pairs}
+    for record in result:
+        assert_productive_record(record, cfg)
+    assert result.validate_records(exp.refdata).ok
+
+
+def test_productive_only_accepts_all_zero_p_support() -> None:
+    cfg = _cartridge_with_p_lengths(
+        {end: EmpiricalDistributionSpec([(0, 1.0)]) for end in ("V_3", "D_5", "D_3", "J_5")}
     )
+    exp = ga.Experiment.on(cfg).recombine().productive_only()
+    result = exp.run_records(n=20, seed=4242)
+    assert all(record["productive"] for record in result)
+    assert all(
+        record[field] == 0
+        for record in result
+        for field in ("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length")
+    )
+    assert result.validate_records(exp.refdata)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -255,14 +263,9 @@ def test_validator_recompute_matches_projection_under_p_addition() -> None:
     that surfaces `PLengthMismatch` when they diverge — here
     we verify the agreement holds across multiple seeds.
 
-    Dict-level tampering at the Python boundary can't be
-    surfaced through `validate_records` (which rebuilds the
-    AIRR record from the Outcome on each call — same
-    boundary the existing per-segment mutation counters
-    document). The `PLengthMismatch` issue kind surfaces on
-    hand-crafted mismatched records via the Rust unit test
-    `passes::p_addition::tests` and on downstream consumers
-    that deserialise records from TSV / fork the builder."""
+    The Python validator also compares returned dictionaries with
+    the outcome projection; native `PLengthMismatch` checks cover
+    persistent P provenance and the event-ledger fallback."""
     cfg = _cartridge_with_p_lengths(
         {
             "V_3": EmpiricalDistributionSpec([(0, 1.0), (2, 4.0)]),

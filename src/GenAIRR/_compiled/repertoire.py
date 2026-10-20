@@ -123,6 +123,7 @@ class CompiledRepertoireExperiment:
                 desc = self._post.run_from(
                     founder_sim, clone_seed + 1 + read_idx, strict=strict
                 )
+                desc = _engine.merge_outcomes(founder, desc)
                 rec = outcome_to_airr_record(
                     desc,
                     self._refdata,

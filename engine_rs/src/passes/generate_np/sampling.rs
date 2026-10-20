@@ -1,8 +1,8 @@
 use crate::address::ChoiceAddress;
 use crate::contract::{ChoiceContext, JunctionStopState};
 use crate::dist::{
-    sample_base_with_admit_mask, sample_filtered_with_policy, Distribution, EmptySupport,
-    FilteredSampleError,
+    sample_base_with_admit_mask, sample_filtered_result, sample_filtered_with_policy, Distribution,
+    EmptySupport, FilteredSampleError,
 };
 use crate::ir::Simulation;
 use crate::pass::{PassContext, PassError};
@@ -107,6 +107,21 @@ impl GenerateNPPass {
         let refdata = ctx.refdata;
         let contracts = ctx.contracts;
 
+        if let Some(feasibility) = ctx.feasibility.filter(|f| f.has_p_productive()) {
+            let pass_index = ctx.pass_index;
+            let context = ChoiceContext::none().with_address(self.length_choice_address());
+            return sample_filtered_result(ctx.rng, self.length_dist.as_ref(), |candidate| {
+                let choice = ChoiceValue::Int(*candidate);
+                feasibility.admits(pass_index, sim, refdata, address, &choice)
+                    && contracts.is_none_or(|contracts| {
+                        contracts
+                            .admits_with_productive_completion(sim, refdata, context, &choice)
+                            .is_ok()
+                    })
+            })
+            .map_err(|reason| self.constraint_sampling_error(address, reason));
+        }
+
         if let Some(contracts) = contracts {
             let pass_name = self.pass_name().to_string();
             let context =
@@ -130,6 +145,45 @@ impl GenerateNPPass {
             return Ok(outcome.expect("NP_LENGTH_EMPTY_SUPPORT is Sentinel(0), never Skip"));
         }
         Ok(self.length_dist.sample(ctx.rng))
+    }
+
+    pub(super) fn validate_p_aware_length(
+        &self,
+        sim: &Simulation,
+        ctx: &PassContext,
+        length: i64,
+    ) -> Result<(), PassError> {
+        let Some(feasibility) = ctx.feasibility.filter(|f| f.has_p_productive()) else {
+            return Ok(());
+        };
+        let choice = ChoiceValue::Int(length);
+        let context = ChoiceContext::none().with_address(self.length_choice_address());
+        let in_support = self.length_dist.support().is_some_and(|pairs| {
+            pairs
+                .iter()
+                .any(|&(value, weight)| value == length && weight > 0.0)
+        });
+        if in_support
+            && feasibility.admits(
+                ctx.pass_index,
+                sim,
+                ctx.refdata,
+                self.length_address(),
+                &choice,
+            )
+            && ctx.contracts.is_none_or(|contracts| {
+                contracts
+                    .admits_with_productive_completion(sim, ctx.refdata, context, &choice)
+                    .is_ok()
+            })
+        {
+            Ok(())
+        } else {
+            Err(self.constraint_sampling_error(
+                self.length_address(),
+                FilteredSampleError::EmptyAdmissibleSupport,
+            ))
+        }
     }
 
     /// Constraint-aware base sample.
@@ -171,6 +225,53 @@ impl GenerateNPPass {
         let support_pairs = self.base_generator.support(index as usize, previous);
         let base_dist = SupportPairsDist::new(&support_pairs);
 
+        if let Some(feasibility) = ctx.feasibility.filter(|f| f.has_p_productive()) {
+            let pass_index = ctx.pass_index;
+            let context = ChoiceContext::indexed(index, total_len)
+                .with_address_if_missing(ChoiceAddress::parse(address));
+            let admits = |base: &u8| {
+                support_pairs
+                    .iter()
+                    .any(|&(value, weight)| value == *base && weight > 0.0)
+                    && feasibility.admits_np_base(
+                        pass_index,
+                        sim,
+                        refdata,
+                        self.np_segment,
+                        index,
+                        total_len,
+                        *base,
+                    )
+                    && contracts.is_none_or(|contracts| {
+                        contracts
+                            .admits_with_productive_completion(
+                                sim,
+                                refdata,
+                                context,
+                                &ChoiceValue::Base(*base),
+                            )
+                            .is_ok()
+                    })
+            };
+            if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
+                let parsed = ChoiceAddress::parse(address)
+                    .expect("NP base address is a built-in ChoiceAddress");
+                let recorded = cursor
+                    .expect_base(parsed)
+                    .map_err(|reason| PassError::replay(self.pass_name(), reason))?;
+                return if admits(&recorded) {
+                    Ok(recorded)
+                } else {
+                    Err(self.constraint_sampling_error(
+                        address,
+                        FilteredSampleError::EmptyAdmissibleSupport,
+                    ))
+                };
+            }
+            return sample_filtered_result(ctx.rng, &base_dist, admits)
+                .map_err(|reason| self.constraint_sampling_error(address, reason));
+        }
+
         // ── Trace-injected replay (Tier 3 NP base) ───────────────
         //
         // Consume the recorded base and validate it against the same
@@ -192,8 +293,8 @@ impl GenerateNPPass {
         // force-apply a recorded value the live sampler couldn't
         // have produced.
         if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
-            let parsed = ChoiceAddress::parse(address)
-                .expect("NP base address is a built-in ChoiceAddress");
+            let parsed =
+                ChoiceAddress::parse(address).expect("NP base address is a built-in ChoiceAddress");
             let recorded = cursor
                 .expect_base(parsed)
                 .map_err(|reason| PassError::replay(self.pass_name(), reason))?;

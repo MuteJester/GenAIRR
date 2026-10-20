@@ -1,0 +1,915 @@
+{
+  "verified_at_utc": "2026-10-20T07:45:29+00:00",
+  "status": "passed",
+  "scope": "All S0-S12 dev suites rebuilt with the final local engine, then alignair_assay.testing.assert_oracle_perfect was applied to every truth set; donor genotypes were supplied whenever donors.json exists. This verifies the external assay truth/scoring oracle rule and records its exclusions/warnings. It is not proof that every simulator metadata field or biological distribution is correct.",
+  "run": {
+    "directory": "/tmp/genairr_assay_fixed_final",
+    "python": "/home/thomas/Desktop/AlignAIR/.venv/bin/python",
+    "pythonpath": "/home/thomas/Desktop/GenAIRR/src:/home/thomas/Desktop/AlignAIR/.claude/worktrees/dockerhub-registry/src",
+    "build_command": "python -m alignair_assay build --suites S0,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,S11,S12 --run-dir /tmp/genairr_assay_fixed_final --split dev --scale 0.02 --workers 1",
+    "build_log": "/tmp/genairr_external_assay_final.log",
+    "verification_script": "/tmp/verify_genairr_external_assay.py",
+    "seed": 20261019,
+    "scale": 0.02,
+    "split": "dev",
+    "workers": 1,
+    "reference": "HUMAN_IGH_OGRDB",
+    "reference_digest": "4d70015675eb18e3af36cc94c516a83aeb7288cc8aa84aaf05d358c25489bf89",
+    "truth_version": "3"
+  },
+  "source": {
+    "genairr": {
+      "genairr_version": "1.0.0",
+      "genairr_source": "/home/thomas/Desktop/GenAIRR/src/GenAIRR",
+      "genairr_git_commit": "1ededa676e8904430f7ea0bdcf03092de4888a41",
+      "genairr_git_dirty": true,
+      "genairr_source_sha256": "0678200704dddd82b43e09b2e676fdf9a5fa90cd7c4d91b0084d1833782aa778",
+      "branch": "fix/biological-metadata-correctness",
+      "source_project_version": "2.3.1",
+      "loaded_package": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/__init__.py",
+      "loaded_engine": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "loaded_engine_sha256": "bcb885e05b763f7c160cfa08c5a1043b9779867f72b9c09b945ba81d61831443",
+      "rust_source_sha256": "d6ddd23999e3ab05012d55af720a2cbee85d8a33ab9888b759e025244a5075f8",
+      "metadata_version_note": "The external AlignAIR virtual environment has stale installed GenAIRR distribution metadata (1.0.0). PYTHONPATH loads this checkout's package and rebuilt native extension (source project version 2.3.1); paths and hashes above identify them."
+    },
+    "assay": {
+      "path": "/home/thomas/Desktop/AlignAIR/.claude/worktrees/dockerhub-registry/src/alignair_assay",
+      "git_commit": "8cf24ca29a89df3f8617c99f51fdbc0fa1a6c77e",
+      "git_dirty": false,
+      "python_source_sha256": "fc69139307ce83ece3a4f9a7fbca482c0cc12b2ae49b82ae98f329ff607b7ab2",
+      "truth_source_sha256": "c57213a8331910f95be4b44cb947e73c511a307dc1ce8b7aa121d275ac84a08c",
+      "modified_for_this_rerun": false
+    }
+  },
+  "totals": {
+    "suites": 13,
+    "cases": 638,
+    "oracle_scored_cases": 638,
+    "oracle_metric_values": 39534,
+    "oracle_noninformational_metric_values": 34397,
+    "oracle_failures": 0,
+    "excluded": {},
+    "cases_with_warnings": 0,
+    "warnings": {},
+    "unscorable": {
+      "v": 0,
+      "d": 0,
+      "j": 0
+    },
+    "actual_recalled_calls": {
+      "generating_present": {
+        "v": 638,
+        "d": 638,
+        "j": 638
+      },
+      "recalled_field_missing": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "recalled_empty_with_generating_present": {
+        "v": 2,
+        "d": 0,
+        "j": 0
+      },
+      "nonempty_recalled_call_set_differs": {
+        "v": 58,
+        "d": 130,
+        "j": 1
+      },
+      "nonempty_recalled_first_differs": {
+        "v": 6,
+        "d": 14,
+        "j": 0
+      },
+      "nonempty_recalled_excludes_generating": {
+        "v": 6,
+        "d": 14,
+        "j": 0
+      }
+    }
+  },
+  "recalled_call_definitions": {
+    "source": "Read directly from each cases.jsonl.gz record's recalled_v_call/recalled_d_call/recalled_j_call and v_call/d_call/j_call.",
+    "scope": "All generated cases. Comparison metrics require a nonempty standard generating call.",
+    "absent": "recalled_empty_with_generating_present counts absent inference separately; it is not included in nonempty disagreements.",
+    "call_set_differs": "Nonempty recalled allele set differs from the generating singleton; includes ambiguity ties that retain the generating allele.",
+    "first_differs": "Nonempty first recalled allele differs from the generating allele.",
+    "excludes_generating": "Nonempty recalled set contains no generating allele.",
+    "assay_summary_distinction": "Counts here compare the actual recalled_* fields with the generating singleton. The assay's simulator_calls summary compares inferred calls with observable truth sets, and its adapter changed in assay commit 8cf24ca to recognize generating-reference records; it is not substituted for these direct counts."
+  },
+  "p_model_scope": {
+    "built_in_p_nucleotide_lengths": {
+      "HUMAN_IGH_OGRDB": {},
+      "HUMAN_IGK_OGRDB": {},
+      "HUMAN_IGL_OGRDB": {}
+    },
+    "nonzero_p_cases_in_this_assay_run": 0,
+    "positive_p_support": "Opt-in authored lengths, including productive conditioning, are tested separately by GenAIRR's positive-P regression suite.",
+    "mechanistic_limitation": "P bases are deterministic reverse complements of the adjacent post-trim, post-orientation coding flank; biochemical hairpin opening and subsequent processing are not explicitly simulated.",
+    "calibration_limitation": "Bundled presets omit P passes. This rerun does not supply or validate calibrated nonzero P-length frequencies.",
+    "documentation": "site_docs/guides/junction-additions.md"
+  },
+  "suites": [
+    {
+      "suite": "S0",
+      "cases": 2,
+      "oracle_scored_cases": 2,
+      "oracle_passed": true,
+      "oracle_metric_values": 122,
+      "oracle_noninformational_metric_values": 106,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 2,
+          "d": 2,
+          "j": 2
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "77830e4fd44149d1b6db31067a8f564e98f3db2ebb2011d07d194765b892f84b",
+      "config_hash": "ad5d7821f17ea0e4fba5988e78772c7a101444bea5107a03295b137fb28991fa",
+      "files_sha256": {
+        "cases.jsonl.gz": "f1721176a7d25c132a4819cb7b5bf6489f31f19293d52542a9b09fdb5a581595",
+        "truth.jsonl.gz": "c133aade51b3b611a02d1288cbb0c0f06c0fd5b5aa30afc8e3d304f8013df710",
+        "build.json": "6690541ca14eac3601f3f22c87ecc32d791c9202adea70ec507ed111e00d14aa"
+      }
+    },
+    {
+      "suite": "S1",
+      "cases": 100,
+      "oracle_scored_cases": 100,
+      "oracle_passed": true,
+      "oracle_metric_values": 6453,
+      "oracle_noninformational_metric_values": 5655,
+      "donor_genotypes_supplied": 20,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 100,
+          "d": 100,
+          "j": 100
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 10,
+          "d": 18,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "7e10fe0727b3fcbaa5f6bad8de018850b4554c781e52b8d1f6b66e1aeceeee3f",
+      "config_hash": "61b335c2a57298e7dae97275cd327431ab796d703116a7bf1f9bfac29e06ee44",
+      "files_sha256": {
+        "cases.jsonl.gz": "b805846e4a2d31a9947f557e0e126f7375281b8cc2e4bdc27e4fdca2a7ea6681",
+        "truth.jsonl.gz": "5af45ea6ad2610acd5061b88ed9edcb385655c2ed49b2207e0cccd257c452a9a",
+        "build.json": "806f15967a9eff6dc70c27d2f1970b6e373f4c1e98a79961152c7cf09304360f",
+        "donors.json": "cca4a1e72875dc1ce7e72bcc9d75ca1bca620b5ab3106af033776f341b9abd55"
+      }
+    },
+    {
+      "suite": "S2",
+      "cases": 60,
+      "oracle_scored_cases": 60,
+      "oracle_passed": true,
+      "oracle_metric_values": 3693,
+      "oracle_noninformational_metric_values": 3215,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 60,
+          "d": 60,
+          "j": 60
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 8,
+          "d": 14,
+          "j": 1
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 1,
+          "d": 3,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 1,
+          "d": 3,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "21378b0bc5ef53c17725c90143621a9ac255a393b3169c637fd87cd4d2d7b448",
+      "config_hash": "1c298dedf78cd6685d3a4085722a655ea0f386cd2c07dc8e07d5a7ef54d00fe4",
+      "files_sha256": {
+        "cases.jsonl.gz": "e2612cd556d74cebbf8074584850663c6d6b5710e4ffdadffbdee3ca3741bc9f",
+        "truth.jsonl.gz": "64a473a20b0ddbeb927ef641e42c7323bdc3a1dbf3f2137e88327f3b13645976",
+        "build.json": "a5a2880d8bf04e70877ce0d7d1161fa8a664ae76979aa46a17a5a70f980753a1"
+      }
+    },
+    {
+      "suite": "S3",
+      "cases": 63,
+      "oracle_scored_cases": 63,
+      "oracle_passed": true,
+      "oracle_metric_values": 3853,
+      "oracle_noninformational_metric_values": 3353,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 63,
+          "d": 63,
+          "j": 63
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 1,
+          "d": 17,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "2a0b3b5bfb3c0ab476dbc9f5e1a76fd2c6988834a454fd56176f2d62fb8c329a",
+      "config_hash": "36474d7e67e305c85cf0adec09b521e956a3d0fba351c8b62aee74f3b33232d3",
+      "files_sha256": {
+        "cases.jsonl.gz": "23a1c77a2fcbe9fa5fd8f72a734b7a2787c674197963385267c39ac67ad723dd",
+        "truth.jsonl.gz": "6428b3c5a3cc25ccc46bdc68cd8da1b5c24e9cfd4c58a4b4558c4358ab94fb94",
+        "build.json": "86ee5a7a4d09fe9d4624e5ee5e3f7ba8dbe977ccc612b9a11391483252fbf1f8"
+      }
+    },
+    {
+      "suite": "S4",
+      "cases": 54,
+      "oracle_scored_cases": 54,
+      "oracle_passed": true,
+      "oracle_metric_values": 3180,
+      "oracle_noninformational_metric_values": 2774,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 54,
+          "d": 54,
+          "j": 54
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 2,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 17,
+          "d": 11,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "df3c53f0dd0371b16a795013fe4d349656fdea072986458e309ab34600f6b0df",
+      "config_hash": "164887b3facd1072e9e00d88b87385d83c31c9c9ecd072e7a8ab9e9f3703d629",
+      "files_sha256": {
+        "cases.jsonl.gz": "8b66a5eff87f489229d66491709f5752c24c3957b59f611702e5f891127dceb0",
+        "truth.jsonl.gz": "74bfda4875fb18f32789670981296810f8d0094464ca4caf28fd15ed78486ff0",
+        "build.json": "bb0890bc8fd1f208390760608e7960cb95cab446aad1336328ac79fd61a3d8fa"
+      }
+    },
+    {
+      "suite": "S5",
+      "cases": 42,
+      "oracle_scored_cases": 42,
+      "oracle_passed": true,
+      "oracle_metric_values": 2542,
+      "oracle_noninformational_metric_values": 2138,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 42,
+          "d": 42,
+          "j": 42
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 1,
+          "d": 10,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "65b3a066765ed6ca82829a8a12010f0232eb3d2a8d8dba3f230decd7d0553417",
+      "config_hash": "07216548d2ff8efa07d0a0ed99215a9ce22f0ab0fac7cd5a84d17ef19b23ac76",
+      "files_sha256": {
+        "cases.jsonl.gz": "3dbfb2bc7e6f7a21343b8d12237d8cdd1ff14aa556e10266a151523932fa52bf",
+        "truth.jsonl.gz": "32f3becdb84dcdaf2ee54ca755166f689a2945b2f533f868d215fe76cce1d92c",
+        "build.json": "877ac3c66522b2b3d5b61f3fa01164c55726ebf0a6126b7e3d7d92aa2290a5c3"
+      }
+    },
+    {
+      "suite": "S6",
+      "cases": 50,
+      "oracle_scored_cases": 50,
+      "oracle_passed": true,
+      "oracle_metric_values": 2864,
+      "oracle_noninformational_metric_values": 2492,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 50,
+          "d": 50,
+          "j": 50
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 0,
+          "d": 18,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 5,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 5,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "31a5f41dce6b5b1d08bc43d67a01a5071e5153943705c57443b82322f570959d",
+      "config_hash": "1fb4686ae6c35095e0f0727f66ef0d9bd24989dd6598b738c859558bbc961c46",
+      "files_sha256": {
+        "cases.jsonl.gz": "848030eb1f59f7e70aa7e08aa79825f894ce282690734f3b5c703c2c23e45595",
+        "truth.jsonl.gz": "def9b9a2751c4a60f6e1151c26ba30617df32f41feff41721d4819eec287e647",
+        "build.json": "8fbd4895096ee841673a782e2ccf849fd48073652d5402279d1f4ad90bb6c388"
+      }
+    },
+    {
+      "suite": "S7",
+      "cases": 60,
+      "oracle_scored_cases": 60,
+      "oracle_passed": true,
+      "oracle_metric_values": 3912,
+      "oracle_noninformational_metric_values": 3399,
+      "donor_genotypes_supplied": 10,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 60,
+          "d": 60,
+          "j": 60
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 0,
+          "d": 8,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "8681185effd581b05b76eed75f1680eb08f6bf10e51f7865790cb6a442e5a6ab",
+      "config_hash": "22e13fed495712468c0503ef662d384ea9d10b6c3ed10d1e205b9a9e27c1410a",
+      "files_sha256": {
+        "cases.jsonl.gz": "def6fd8d1c8beaa42e56dd5a4a5077b8d22681015c03ea9eb229c72fcd1a62dc",
+        "truth.jsonl.gz": "a62cd68efd2beb893239d89e3d47f886a4f5804144106f8423013fcb0143dba1",
+        "build.json": "39893465e70f58faa44f02cebf62a944e679e47312a8a8572ed418272f651fba",
+        "donors.json": "0485aaa59f2c96757d1bab36cbf8222b71e8d5223f9e62b5ccc36af8a56b8f1f"
+      }
+    },
+    {
+      "suite": "S8",
+      "cases": 60,
+      "oracle_scored_cases": 60,
+      "oracle_passed": true,
+      "oracle_metric_values": 3846,
+      "oracle_noninformational_metric_values": 3370,
+      "donor_genotypes_supplied": 10,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 60,
+          "d": 60,
+          "j": 60
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 0,
+          "d": 6,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "22d9e3f83bee5d4f74fb252204afc940758f31f9c289296aef9ba5881ec98fac",
+      "config_hash": "f92c34be5ca48ce172e479457bc20a594b687bb424ed853dbc5bd1166c493dd8",
+      "files_sha256": {
+        "cases.jsonl.gz": "2a3634fe17f5afa54ab0db71ec71e42bb0acfe9d40dbbdd1726f9481848f7f6e",
+        "truth.jsonl.gz": "08b359c2b85ff78e5166f90c07b09364e5724e898d318d60fa4934742999607d",
+        "build.json": "9213d1b08fd1d24e1e958bb09ed5984ce7b8ef3c6f4f8bb361c73c78a4d2bf7d",
+        "donors.json": "4d6c43d0557d86b7b47041e4f97bfd818e6c4a2027ad39f822c3573c31cdb260"
+      }
+    },
+    {
+      "suite": "S9",
+      "cases": 17,
+      "oracle_scored_cases": 17,
+      "oracle_passed": true,
+      "oracle_metric_values": 1054,
+      "oracle_noninformational_metric_values": 918,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 17,
+          "d": 17,
+          "j": 17
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "fce404f58f4bea4c575a6b1f0d30fbc1c8c161939a12a24bd883111d8593dbcf",
+      "config_hash": "f236ce296a2ac78dbe9869a138d732e802e02bc6ee6c25e7beb9416510646e2b",
+      "files_sha256": {
+        "cases.jsonl.gz": "60cdce3b0e30ed802cccae094746a043ddb57086aebf361c437eeb62a988ab9e",
+        "truth.jsonl.gz": "0a6503196b3610bd2478ea1e60d27f2b88f681dcee65b51d51000d9bc706f54a",
+        "build.json": "43a8b7a7980b3e3ab21cf1df92ea7817092b6bd22ddff00deb349cea0cec3c80"
+      }
+    },
+    {
+      "suite": "S10",
+      "cases": 48,
+      "oracle_scored_cases": 48,
+      "oracle_passed": true,
+      "oracle_metric_values": 3016,
+      "oracle_noninformational_metric_values": 2648,
+      "donor_genotypes_supplied": 20,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 48,
+          "d": 48,
+          "j": 48
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 1,
+          "d": 13,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 0,
+          "d": 1,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "7824cc333c31ab21e1e5e2434b684aa45bf94aa4a3b645b61dbf4f8981dd5738",
+      "config_hash": "78fa10d9499b5eda25589bd58c05920dd80a67f00281d03d7e562d5611dd46fd",
+      "files_sha256": {
+        "cases.jsonl.gz": "ac11ea58f6696f1aa02e68bdf4dd963be4904a73340276c7e4cf155a3a5bf2e4",
+        "truth.jsonl.gz": "6b79557d61f27e6a0c05aa1ab28d9a86b6c637ae61aa6905134a0990a7a73486",
+        "build.json": "fb1313482463a0a9a24c186008ad8339b93e2efddd74a13de0c70e5e75d32605",
+        "donors.json": "4a6efa933da47d2a6d1f721d80f182434416ed9f3da9f0f013402f2e2758dcd3"
+      }
+    },
+    {
+      "suite": "S11",
+      "cases": 40,
+      "oracle_scored_cases": 40,
+      "oracle_passed": true,
+      "oracle_metric_values": 2446,
+      "oracle_noninformational_metric_values": 2130,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 40,
+          "d": 40,
+          "j": 40
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 14,
+          "d": 8,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 2,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 2,
+          "d": 0,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "01b9485468476b58152ee07cc121a963fbe534af3d446de0a0783871f81946d1",
+      "config_hash": "759d264d869c202830154f655cd4384584c92f284934eaa964c8c27d32b8f1bd",
+      "files_sha256": {
+        "cases.jsonl.gz": "25850c3eac887f95b65bac28898075925df119ccf42fc1a506396cb5e30b7b5e",
+        "truth.jsonl.gz": "74c276e551741a3204e7723d32cd6bc1a79b6bfaa10af625a6b69242581d00ef",
+        "build.json": "2750164d4d8bdae20c8278ebc8f6ecc3df975b923dd6f60e3208eabd67113464"
+      }
+    },
+    {
+      "suite": "S12",
+      "cases": 42,
+      "oracle_scored_cases": 42,
+      "oracle_passed": true,
+      "oracle_metric_values": 2553,
+      "oracle_noninformational_metric_values": 2199,
+      "donor_genotypes_supplied": 0,
+      "excluded": {},
+      "cases_with_warnings": 0,
+      "unscorable": {
+        "v": 0,
+        "d": 0,
+        "j": 0
+      },
+      "actual_recalled_calls": {
+        "generating_present": {
+          "v": 42,
+          "d": 42,
+          "j": 42
+        },
+        "recalled_field_missing": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "recalled_empty_with_generating_present": {
+          "v": 0,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_call_set_differs": {
+          "v": 6,
+          "d": 7,
+          "j": 0
+        },
+        "nonempty_recalled_first_differs": {
+          "v": 3,
+          "d": 0,
+          "j": 0
+        },
+        "nonempty_recalled_excludes_generating": {
+          "v": 3,
+          "d": 0,
+          "j": 0
+        }
+      },
+      "suite_source_sha256": "d50405762e18dacca843c82d4842c503e1ffd96eebf4a612b0d76e7fe1206fc9",
+      "config_hash": "2dfb14f292a59f6282b499db4d5fb7babdfb8f511d6c2972b55b83dbf25c1631",
+      "files_sha256": {
+        "cases.jsonl.gz": "23424fbf34e728f3c1daa5e48d7de72cbaddf1c5909e60458c157430a8b82def",
+        "truth.jsonl.gz": "d0ca63038e4cf3943a66352068e703bb72662e76613f199eb93bc3493abf5373",
+        "build.json": "6395a600500a98484c902f031151174db4bd93ef3411bec5871f7a4047527603"
+      }
+    }
+  ],
+  "oracle_metric_names": [
+    "airr.sequence_ok",
+    "airr.valid",
+    "clone.agree_modal",
+    "clone_key.exact",
+    "d.any_overlap",
+    "d.gene_top1",
+    "d.germ_end_err",
+    "d.germ_end_exact",
+    "d.germ_start_err",
+    "d.germ_start_exact",
+    "d.no_call",
+    "d.seq_end_err",
+    "d.seq_end_exact",
+    "d.seq_start_err",
+    "d.seq_start_exact",
+    "d.set_precision",
+    "d.set_size",
+    "d.top1_generative",
+    "d.top1_in_set",
+    "d_short.abstain_ok",
+    "d_short.top1_in_set",
+    "j.any_overlap",
+    "j.gene_top1",
+    "j.germ_end_err",
+    "j.germ_end_exact",
+    "j.germ_start_err",
+    "j.germ_start_exact",
+    "j.indel_false",
+    "j.indel_found",
+    "j.no_call",
+    "j.outside_genotype",
+    "j.seq_end_err",
+    "j.seq_end_exact",
+    "j.seq_start_err",
+    "j.seq_start_exact",
+    "j.set_precision",
+    "j.set_size",
+    "j.top1_generative",
+    "j.top1_in_set",
+    "j_short.abstain_ok",
+    "j_short.top1_in_set",
+    "junction.aa_exact",
+    "junction.end_abs_err",
+    "junction.end_err",
+    "junction.length_exact",
+    "junction.nt_exact",
+    "junction.start_abs_err",
+    "junction.start_err",
+    "orientation.correct",
+    "productive.correct",
+    "stop_codon.correct",
+    "v.any_overlap",
+    "v.deleted_gene_call",
+    "v.gene_top1",
+    "v.germ_end_err",
+    "v.germ_end_exact",
+    "v.germ_start_err",
+    "v.germ_start_exact",
+    "v.germline_errors",
+    "v.indel_false",
+    "v.indel_found",
+    "v.mutation_count_err",
+    "v.no_call",
+    "v.outside_genotype",
+    "v.seq_end_err",
+    "v.seq_end_exact",
+    "v.seq_start_err",
+    "v.seq_start_exact",
+    "v.set_precision",
+    "v.set_size",
+    "v.spurious_call",
+    "v.top1_generative",
+    "v.top1_in_set",
+    "v_indel.germline_errors",
+    "v_indel.mutation_count_err",
+    "v_novel.snp_mutations",
+    "v_short.abstain_ok",
+    "v_short.top1_in_set",
+    "vj_in_frame.correct"
+  ]
+}

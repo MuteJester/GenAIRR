@@ -288,159 +288,106 @@ fn curated_baseline_productive_no_corruption() {
 }
 
 #[test]
-fn curated_v_trim_widens_v_call() {
-    // Trim V_3 by 3 → V coding region drops the distinguishing
-    // suffix → all three V alleles match the assembled V bases.
-    // The live `v_call` must reflect that ambiguity.
+fn curated_v_trim_widens_recall_but_preserves_generating_call() {
+    // Trimming removes evidence that distinguished the generating allele.
+    // The re-call becomes ambiguous; standard fields retain generation truth.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 0, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    // V coding region is now 9 bases (12 - 3).
     assert_eq!(rec.v_sequence_end, Some(9));
     assert_eq!(rec.v_germline_end, Some(9));
     assert_eq!(rec.v_trim_3, 3);
 
-    // Live v_call lists ALL THREE V alleles (declaration order).
-    assert_eq!(rec.v_call, "V1*01,V2*01,V3*01");
+    assert_eq!(rec.v_call, "V1*01");
+    assert_eq!(rec.recalled_v_call, "V1*01,V2*01,V3*01");
 
-    // D and J calls are unchanged singletons.
     assert_eq!(rec.d_call, "D1*01");
     assert_eq!(rec.j_call, "J1*01");
 
-    // Sequence has dropped the trimmed-off V suffix; total
-    // length is 33 - 3 = 30.
     assert_eq!(rec.sequence_length, 30);
     assert_eq!(rec.v_cigar, "9M");
 }
 
 #[test]
-fn curated_np1_recreates_v_suffix_narrows_v_call_back() {
-    // Trim V_3 by 3 (live call widens to {V1,V2,V3}) AND
-    // generate NP1 = "AAA" (V1's distinguishing suffix). The
-    // V right-extension walker reaches into NP1; under conservative
-    // extension the first NP1 byte 'A' narrows
-    // {V1,V2,V3}→{V1} (V1[9]='A', V2[9]='C', V3[9]='G'). The
-    // walker then halts: subsequent bytes cannot narrow the
-    // singleton tie set. v_call collapses to {V1} after only
-    // one byte of extension.
-    //
-    // AIRR `v_germline_end` reflects the live-call ref_end (10 —
-    // structural 9 + the one narrowing byte), and `v_cigar` covers
-    // 10 columns total (9 structural + 1 NP1 column claimed).
+fn curated_np1_recreates_v_suffix_narrows_recall_without_changing_truth_bounds() {
+    // Matching NP evidence narrows the V re-call. Its generated origin and
+    // the generating reference interval stay independent of that inference.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
     assert_eq!(rec.v_call, "V1*01");
-    assert_eq!(rec.v_germline_end, Some(10));
-    // CIGAR covers 9 structural + 1 NP1 column = 10M.
-    assert_eq!(rec.v_cigar, "10M");
+    assert_eq!(rec.recalled_v_call, "V1*01");
+    assert_eq!(rec.v_germline_end, Some(9));
+    assert_eq!(rec.v_cigar, "9M");
 }
 
 #[test]
-fn curated_d_trim_both_sides_widens_d_call() {
-    // Trim D_5 by 3 AND D_3 by 3 → D coding region drops both
-    // distinguishing edges, exposing only the 6bp shared core.
-    // All three D alleles match.
+fn curated_d_trim_both_sides_widens_recall_but_preserves_generating_call() {
+    // Removing distinguishing D ends widens only the evidence-based re-call.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 3, 3, 0, 0, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    assert_eq!(rec.d_call, "D1*01,D2*01,D3*01");
+    assert_eq!(rec.d_call, "D1*01");
+    assert_eq!(rec.recalled_d_call, "D1*01,D2*01,D3*01");
     assert_eq!(rec.d_germline_start, Some(3));
     assert_eq!(rec.d_germline_end, Some(9));
     assert_eq!(rec.d_cigar, "6M");
 }
 
 #[test]
-fn curated_np_bases_narrow_d_call_from_both_sides() {
-    // Trim D_5+D_3 widens d_call to all three. NP1 = D1's
-    // distinguishing prefix bases narrow D's left back; NP2 = D1's
-    // distinguishing suffix bases narrow D's right back.
-    //
-    // Use single-base ConstBaseDist for NPs, so we have to pick
-    // NPs as homogeneous runs. D1 prefix = "TTC", suffix = "GAT" —
-    // not single-base. The fixture's `curated_plan` builder uses
-    // a single-base NP, so we drive this test by trimming only
-    // the side we narrow per-NP. Here: D_3 trim only, NP2 = "G"
-    // ×3 (matches the first base of D's suffix; D2/D3 also have
-    // 'G' as suffix's first base by design, so this still narrows
-    // to {D1} only when paired with a base hit at pos 10 / 11).
-    //
-    // For a fully narrow-from-both-sides exercise that matches
-    // the homogeneous-NP constraint, we test D_5 trim with NP1
-    // narrowing to a *subset* of D candidates — D1 prefix starts
-    // 'T', as do D2 and D3. Pos 0 'T' alone keeps all three. So
-    // single-base NP narrowing for D is best demonstrated via
-    // *one side*; the multi-base mixed-content version requires
-    // a per-position base distribution and is left to a richer
-    // helper if needed.
-    //
-    // For simplicity, this test verifies that NP1 = "A" doesn't
-    // narrow D (no D allele has 'A' at prefix pos 2 = the position
-    // the left-extension walker checks first). The d_call stays
-    // widened to all three after both trims expose only the
-    // shared core.
-    //
-    // Pos-2 bases of the D prefixes: D1='C', D2='T', D3='G'.
-    // 'A' matches none, so the walker halts immediately.
+fn curated_unmatched_np_keeps_d_recall_ambiguous() {
+    // After both D ends are trimmed, NP1=A matches none of the distinguishing
+    // prefix bases. The re-call remains ambiguous and the generating D is known.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 3, 3, 0, 1, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    let mut ids: Vec<&str> = rec.d_call.split(',').collect();
+    assert_eq!(rec.d_call, "D1*01");
+    let mut ids: Vec<&str> = rec.recalled_d_call.split(',').collect();
     ids.sort();
     assert_eq!(ids, vec!["D1*01", "D2*01", "D3*01"]);
 }
 
 #[test]
-fn curated_j_trim_widens_j_call() {
-    // Trim J_5 by 3 → J coding region drops the distinguishing
-    // 3bp prefix → all three J alleles match the remaining
-    // shared `TGGACG`.
+fn curated_j_trim_widens_recall_but_preserves_generating_call() {
+    // Removing the distinguishing J prefix widens only the re-call.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    assert_eq!(rec.j_call, "J1*01,J2*01,J3*01");
+    assert_eq!(rec.j_call, "J1*01");
+    assert_eq!(rec.recalled_j_call, "J1*01,J2*01,J3*01");
     assert_eq!(rec.j_germline_start, Some(3));
     assert_eq!(rec.j_cigar, "6M");
 }
 
 #[test]
-fn curated_np2_recreates_j_prefix_narrows_j_call_back() {
-    // Trim J_5 by 3 (widens) AND NP2 = "AAA" (matches J1's
-    // distinguishing prefix). J left-extension reaches backward
-    // into NP2. The rightmost NP2 byte at ref pos 2 narrows
-    // {J1,J2,J3}→{J1} (J1[2]='A', J2[2]='C', J3[2]='T'). Under
-    // conservative extension the walker stops there; the
-    // remaining NP2 bytes cannot narrow {J1} further.
-    //
-    // `j_germline_start` reads from the live-call hypothesis (2 —
-    // structural 3 minus the one byte that narrowed the call), and
-    // `j_cigar` is 7M (1 claimed NP2 column + 6 structural J).
+fn curated_np2_recreates_j_prefix_narrows_recall_without_changing_truth_bounds() {
+    // NP2 matching the removed J prefix narrows its re-call. The generating
+    // J still begins at reference coordinate 3 and contains six bases.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
     assert_eq!(rec.j_call, "J1*01");
-    assert_eq!(rec.j_germline_start, Some(2));
-    // CIGAR covers 6 structural + 1 NP2 column = 7M.
-    assert_eq!(rec.j_cigar, "7M");
+    assert_eq!(rec.recalled_j_call, "J1*01");
+    assert_eq!(rec.j_germline_start, Some(3));
+    assert_eq!(rec.j_cigar, "6M");
 }
 
 #[test]
-fn curated_mutation_switches_v_call_to_a_different_allele() {
-    // Sample V1 (distinguishing suffix AAA at pool 9-11). Then
-    // edit positions 9, 10, 11 to 'C' → assembled V matches V2's
-    // suffix exactly. Live v_call should switch to {V2}.
+fn curated_mutation_switches_recall_without_replacing_generating_reference() {
+    // Mutation changes the three V1 suffix bases to match V2. The re-call
+    // changes while the standard call and mismatch reference remain V1.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
@@ -449,20 +396,16 @@ fn curated_mutation_switches_v_call_to_a_different_allele() {
     plan.push(Box::new(EditBaseAtPass::new(11, b'C')));
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    // Provenance allele is still V1 (origin unchanged); live
-    // call switched to V2.
-    assert_eq!(rec.v_call, "V2*01");
+    assert_eq!(rec.v_call, "V1*01");
+    assert_eq!(rec.recalled_v_call, "V2*01");
+    assert_eq!(&rec.germline_alignment[..12], "AAACCCTGTAAA");
+    assert_eq!(rec.v_identity, Some(0.75));
 }
 
 #[test]
-fn curated_indel_deletion_widens_v_call() {
-    // Sample V1, no trim. Delete the three distinguishing
-    // V suffix bases (positions 9, 10, 11) one at a time.
-    // Note: each deletion shrinks the pool, so subsequent
-    // deletions need shifted positions. Easier: delete the
-    // same position 9 three times (each time the new "9" is
-    // the next surviving distinguishing base because the prior
-    // deletion shifted things left by one).
+fn curated_indel_deletion_widens_recall_but_preserves_source_deletion() {
+    // Deleting all three distinguishing suffix bases widens the re-call.
+    // Their generating-reference deletion columns remain explicit.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
@@ -471,13 +414,8 @@ fn curated_indel_deletion_widens_v_call() {
     plan.push(Box::new(DeleteAtPass::new(9)));
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    // V's distinguishing suffix is fully deleted → v_call
-    // widens to all three V alleles.
-    assert_eq!(rec.v_call, "V1*01,V2*01,V3*01");
-    // Three deletion ops in V's CIGAR. (We don't assert
-    // `rec.n_indels` because the test-only `DeleteAtPass` doesn't
-    // write to `corrupt.indel.count` — that counter is owned by
-    // the production indel pass.)
+    assert_eq!(rec.v_call, "V1*01");
+    assert_eq!(rec.recalled_v_call, "V1*01,V2*01,V3*01");
     let v_d_count: u32 = rec
         .v_cigar
         .split_terminator(|c: char| c.is_ascii_alphabetic())
@@ -513,87 +451,53 @@ fn curated_indel_insertion_inside_v_does_not_break_call() {
 }
 
 #[test]
-fn v_germline_end_reflects_np_extension() {
-    // Invariant: `v_germline_end` reads from the live-call
-    // hypothesis instead of the trim-derived structural range.
-    // Trim V_3 by 3 (structural end = 9), then NP1 = "AAA". Under
-    // conservative extension the first byte narrows
-    // {V1,V2,V3}→{V1} (V1[9]='A', V2[9]='C', V3[9]='G'); the
-    // remaining NP1 bytes cannot narrow further. Live ref_end
-    // advances from 9 to 10. AIRR `v_germline_end` should be 10.
+fn v_germline_end_retains_generating_boundary_despite_recall_extension() {
+    // The live V hypothesis extends into NP, but the generating V ends at 9.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    // Trim says structural V end is 9; live extension says 10
-    // (one narrowing byte). The live value wins.
     assert_eq!(rec.v_trim_3, 3);
-    assert_eq!(rec.v_germline_end, Some(10));
+    assert_eq!(rec.v_germline_end, Some(9));
 }
 
 #[test]
-fn d_germline_bounds_reflect_np_extension() {
-    // Trim D_5 = 3, NP1 = "C" (single base). Under conservative
-    // extension, extension fires only when it strictly
-    // narrows the tie set.
-    //
-    // In this fixture the primary structural walk over D's
-    // trimmed region (positions 3..12 = GGGCCCGAG) already
-    // distinguishes the alleles at pos 10 (D1='A', D2='C',
-    // D3='T'). D1 scores 9, D2/D3 score 8 → post-assemble tie
-    // set is already {D1}. The NP1 byte's left-extension thus
-    // does NOT fire (no ambiguity left to resolve), and
-    // `d_germline_start` stays at the structural trim boundary
-    // 3, not 2. This is the conservative invariant: ref bounds
-    // only move when extension genuinely narrows the call.
+fn d_germline_bounds_retain_generating_trim() {
+    // The primary D evidence already resolves its re-call to D1. The
+    // generating D reference starts at the realized trim boundary 3.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 3, 0, 0, 1, b'C', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    // d_call resolved to {D1} by the primary walk alone.
     assert_eq!(rec.d_call, "D1*01");
     assert_eq!(rec.d_trim_5, 3);
-    // No extension → germline_start stays at structural 3.
     assert_eq!(rec.d_germline_start, Some(3));
 }
 
 #[test]
-fn v_sequence_end_reflects_np_extension() {
-    // Invariant: `v_sequence_end` reads from the live-call
-    // hypothesis seq_end. Concrete: V_3 trim 3 + NP1="AAA". Under
-    // conservative extension the first 'A' narrows {V1,V2,V3}→{V1};
-    // the remaining 'A's cannot narrow {V1} further. seq_end
-    // advances from 9 → 10 (one NP1 byte claimed).
+fn v_sequence_end_excludes_np_used_by_recall() {
+    // The V re-call can use matching NP evidence without moving the
+    // generating V sequence boundary from 9.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    // Structural V region ended at pool position 9; live
-    // hypothesis grew to 10 → AIRR record reports 10.
-    assert_eq!(rec.v_sequence_end, Some(10));
+    assert_eq!(rec.v_sequence_end, Some(9));
 }
 
 #[test]
-fn j_sequence_start_reflects_np_extension() {
-    // Symmetric: J_5 trim 3 + NP2="AAA" (J1 prefix). Under
-    // conservative extension, the rightmost NP2 byte at ref pos 2
-    // narrows {J1,J2,J3}→{J1}; subsequent NP2 bytes cannot narrow
-    // {J1} further so the walker stops.
-    //
-    // Pool layout: V(12) + NP1(0) + D(12) + NP2(3) + J(6) = 33.
-    //   J structural region at [27, 33).
-    //   NP2 at [24, 27).
-    // After 1 byte of J left-extension into NP2, seq_start = 26.
+fn j_sequence_start_excludes_np_used_by_recall() {
+    // Layout: V(12) + D(12) + NP2(3) + J6. Generating J begins at 27;
+    // a re-call extension cannot move that boundary into NP.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    assert_eq!(rec.j_sequence_start, Some(26));
-    // Structural J end stays where it was; only seq_start moves.
+    assert_eq!(rec.j_sequence_start, Some(27));
     assert_eq!(rec.j_sequence_end, Some(33));
 }
 
@@ -617,103 +521,80 @@ fn no_extension_preserves_structural_germline_bounds() {
 }
 
 #[test]
-fn v_cigar_extends_into_claimed_np1_columns() {
-    // V's CIGAR includes claimed NP1 columns. With V_3 trim 3 and
-    // NP1="AAA", conservative extension claims exactly the single
-    // NP1 byte that narrows {V1,V2,V3}→{V1}. CIGAR runs 10 M ops
-    // (9 structural + 1 claimed NP1 column).
+fn v_cigar_excludes_np1_used_by_recall() {
+    // The generating V contains nine bases even though NP1 narrows its re-call.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    assert_eq!(rec.v_cigar, "10M");
+    assert_eq!(rec.v_cigar, "9M");
 }
 
 #[test]
-fn j_cigar_extends_into_claimed_np2_columns() {
-    // Mirror case: J left-extends into NP2 — under conservative
-    // extension the walker claims only the single NP2 byte that
-    // narrows the call to {J1}. Structural J = 6M; with one
-    // extension byte J's CIGAR = 7M.
+fn j_cigar_excludes_np2_used_by_recall() {
+    // The generating J contains six bases; matching NP2 bases remain junction bases.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    assert_eq!(rec.j_cigar, "7M");
+    assert_eq!(rec.j_cigar, "6M");
 }
 
 #[test]
-fn np1_string_drops_columns_claimed_by_v() {
-    // when V's right extension reabsorbs NP1 bases,
-    // those bases are no longer "non-templated" — np1 / np1_length
-    // must drop them. With V_3 trim 3 and NP1="AAA" under
-    // conservative extension only the first NP1 byte is claimed
-    // (the one that narrows V's tie set to {V1}). The remaining 2
-    // NP1 bytes stay non-templated → np1 = "AA", np1_length = 2.
+fn np1_string_retains_generated_bases_used_by_v_recall() {
+    // All three generated NP1 bases remain NP, including the base that
+    // resolves the V re-call ambiguity.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    assert_eq!(rec.np1, "AA");
-    assert_eq!(rec.np1_length, 2);
+    assert_eq!(rec.np1, "AAA");
+    assert_eq!(rec.np1_length, 3);
 }
 
 #[test]
-fn np2_string_drops_columns_claimed_by_j() {
-    // Mirror for NP2. With J_5 trim 3 and NP2="AAA" under
-    // conservative extension only the rightmost NP2 byte is
-    // claimed (the one that narrows J's tie set to {J1}); the
-    // other 2 NP2 bytes stay non-templated.
+fn np2_string_retains_generated_bases_used_by_j_recall() {
+    // All three generated NP2 bases remain NP, including the base that
+    // resolves the J re-call ambiguity.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    assert_eq!(rec.np2, "AA");
-    assert_eq!(rec.np2_length, 2);
+    assert_eq!(rec.np2, "AAA");
+    assert_eq!(rec.np2_length, 3);
 }
 
 #[test]
-fn v_alignment_end_extends_with_np_claim() {
-    // `v_alignment_end` covers the claimed NP columns too. With
-    // V_3 trim 3 + NP1="AAA" the structural V region is 9
-    // columns long; under conservative extension V claims 1 NP1
-    // column (the byte that narrowed {V1,V2,V3}→{V1}). So
-    // v_alignment_end moves out to 10 = 9 structural + 1 NP.
+fn v_alignment_end_excludes_np_recall_evidence() {
+    // The nine generating V columns determine its alignment span.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
     assert_eq!(rec.v_alignment_start, Some(0));
-    assert_eq!(rec.v_alignment_end, Some(10));
+    assert_eq!(rec.v_alignment_end, Some(9));
 }
 
 #[test]
-fn j_alignment_start_extends_with_np_claim() {
-    // Mirror: when J left-extends into NP2, j_alignment_start
-    // moves leftward. Pool layout is V(12)+NP1(0)+D(12)+NP2(3)+J(6).
-    // Structural J spans columns [27, 33); under conservative
-    // extension J claims 1 NP2 column (the byte that narrowed
-    // the call to {J1}), so j_alignment_start = 27 - 1 = 26.
+fn j_alignment_start_excludes_np_recall_evidence() {
+    // Generating J starts after V(12) + D(12) + NP2(3), at column 27.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 3, 0, b'A', 3, b'A');
     let (_outcome, rec) = curated_run(&cfg, plan);
 
-    assert_eq!(rec.j_alignment_start, Some(26));
+    assert_eq!(rec.j_alignment_start, Some(27));
     assert_eq!(rec.j_alignment_end, Some(33));
 }
 
 #[test]
-fn v_identity_counts_extended_columns() {
-    // V's identity reflects matches over the full
-    // claimed span. With V_3 trim 3 + NP1="AAA" (which match V1
-    // exactly at pos 9-11), every column in V's extended span is
-    // a match → identity = 1.0.
+fn v_identity_counts_generating_segment_columns() {
+    // Identity compares the nine generating V bases to their source reference.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let plan = curated_plan(&cfg, v1, d1, j1, 3, 0, 0, 0, 3, b'A', 0, b'A');
@@ -818,18 +699,12 @@ fn junction_shifts_with_j_insertion_before_anchor() {
 }
 
 #[test]
-fn productive_uses_germline_pos_anchor_after_indels() {
+fn upstream_indel_preserves_anchor_coordinates_but_disrupts_coding_frame() {
     // Insert a synthetic 'C' at pool position 3 (inside V, before
     // the anchor). Both V and J anchors shift right by 1, so
     // junction_start = 7, junction_end = 31, junction_length = 24
-    // — same length as baseline, still in-frame.
-    //
-    // The biological invariant: the anchor codon is still
-    // recognised as Cys (germline pos 6,7,8 still map to T,G,T
-    // in the IR). A structural-offset reader would have read
-    // pool[6..9] (now AAC after shift) and rejected the codon,
-    // marking productive=false even though the underlying allele
-    // is intact.
+    // — same junction length as baseline. The observed V coding origin
+    // stays fixed, however, so the displaced anchor is out of frame.
     let cfg = curated_v_d_j_refdata();
     let [v1, _, _, d1, _, _, j1, _, _] = curated_ids();
     let mut plan = curated_plan(&cfg, v1, d1, j1, 0, 0, 0, 0, 0, b'A', 0, b'A');
@@ -839,8 +714,8 @@ fn productive_uses_germline_pos_anchor_after_indels() {
     assert_eq!(rec.junction_start, Some(7));
     assert_eq!(rec.junction_end, Some(31));
     assert_eq!(rec.junction_length, Some(24));
-    assert_eq!(rec.vj_in_frame, Some(true));
-    assert_eq!(rec.productive, Some(true));
+    assert_eq!(rec.vj_in_frame, Some(false));
+    assert_eq!(rec.productive, Some(false));
 }
 
 #[test]

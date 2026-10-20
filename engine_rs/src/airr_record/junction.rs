@@ -21,16 +21,7 @@ pub(super) fn anchor_pool_position(
     region: &Region,
     anchor_ref: u32,
 ) -> Option<u32> {
-    let r_start = region.start.index();
-    let r_end = region.end.index();
-    let pool = sim.pool.as_slice();
-    for i in r_start..r_end {
-        let nuc = &pool[i as usize];
-        if nuc.germline_pos.get().map(|p| p as u32) == Some(anchor_ref) {
-            return Some(i);
-        }
-    }
-    None
+    crate::coding::anchor_position(sim, region, anchor_ref)
 }
 
 pub(super) fn anchor_amino_acid_preserved(
@@ -69,6 +60,9 @@ pub(super) fn anchor_amino_acid_preserved(
         let Some(nuc) = sim.pool.get(NucHandle::new(pool_start + offset)) else {
             return false;
         };
+        if nuc.germline_pos.get().map(u32::from) != Some(anchor as u32 + offset) {
+            return false;
+        }
         live[offset as usize] = nuc.base;
     }
 
@@ -112,6 +106,7 @@ pub(super) fn aa_slice_for_region(
     String::from_utf8_lossy(&aa_bytes[aa_index..end]).into_owned()
 }
 
+#[cfg(test)]
 pub(super) fn junction_has_stop(seq: &str) -> bool {
     let bytes = seq.as_bytes();
     let n = bytes.len() / 3;

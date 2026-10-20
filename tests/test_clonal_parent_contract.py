@@ -534,58 +534,21 @@ def test_pin_absence_no_run_family_or_parent_outcome_helpers() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────
-# 15. Absence — parent trace + events dropped at fork
+# 15. Provenance — parent trace + events retained at fork
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pin_absence_parent_trace_and_events_dropped_at_fork() -> None:
-    """The descendant's ``outcome.event_count()`` and
-    ``len(outcome.trace())`` reflect only post-fork passes; the
-    parent's events / trace are dropped.
-
-    Empirical pin: a clonal pipeline ``recombine + mutate(count=5)``
-    produces descendants whose trace + event counts are STRICTLY
-    LESS than a non-clonal ``recombine + mutate(count=5)`` run from
-    a fresh IR. The difference equals the recombine-pass events the
-    parent ran but didn't pass on.
-
-    Slice 2 doesn't change this — the parent is retained but the
-    descendant outcome stays unchanged. A pin failure here means
-    someone lifted parent events onto descendant outcomes, which is
-    a structural change Slice 2 explicitly avoids."""
-    # Clonal: recombine pre-fork, mutate post-fork.
-    clonal_result = _make_clonal(
-        n_clones=1, per_clone=2, with_mutate=True
-    ).run_records(seed=0)
-    clonal_outcomes = clonal_result.outcomes
-    assert clonal_outcomes is not None
-    desc_event_counts: List[int] = [o.event_count() for o in clonal_outcomes]
-    desc_trace_lens: List[int] = [len(o.trace()) for o in clonal_outcomes]
-
-    # Non-clonal: same overall passes, from a fresh IR.
-    non_clonal = (
-        ga.Experiment.on("human_igh").recombine().mutate(count=5).compile()
-    )
-    non_clonal_outcome = non_clonal.run(n=1, seed=0)[0]
-    non_clonal_event_count = non_clonal_outcome.event_count()
-    non_clonal_trace_len = len(non_clonal_outcome.trace())
-
-    # The non-clonal run carries BOTH recombine + mutate
-    # contributions; the clonal descendant carries ONLY the post-
-    # fork mutate contributions.
-    for desc_events in desc_event_counts:
-        assert desc_events < non_clonal_event_count, (
-            f"clonal descendant event_count ({desc_events}) >= "
-            f"non-clonal ({non_clonal_event_count}); parent events "
-            "may have leaked onto descendant outcomes. If intentional, "
-            "flip this audit pin (§4 invariant changed)."
-        )
-    for desc_trace in desc_trace_lens:
-        assert desc_trace < non_clonal_trace_len, (
-            f"clonal descendant trace_len ({desc_trace}) >= "
-            f"non-clonal ({non_clonal_trace_len}); parent trace may "
-            "have leaked onto descendants."
-        )
+def test_parent_trace_and_events_are_retained_once_at_fork() -> None:
+    result = _make_clonal(n_clones=1, per_clone=2, with_mutate=True).run_records(seed=0)
+    parent = result.parents[0]
+    prefix = [(c.address, c.value) for c in parent.trace().choices()]
+    for descendant in result.outcomes:
+        choices = [(c.address, c.value) for c in descendant.trace().choices()]
+        assert choices[:len(prefix)] == prefix
+        assert len(choices) == len(prefix) + 11
+        assert descendant.event_count() == parent.event_count() + 1
+        assert descendant.events()[-1].trace_start == len(prefix)
+        assert descendant.events()[-1].trace_end == len(choices)
 
 
 # ──────────────────────────────────────────────────────────────────

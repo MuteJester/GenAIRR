@@ -60,24 +60,16 @@ rec["d_call"]    # 'IGHD2-15*01'
 rec["j_call"]    # 'IGHJ2*01'
 ```
 
-Each call is a single allele name or a comma-separated *tie set*
-when an independent walker can't disambiguate from the sequence
-alone. The first entry of the tie set is the truth allele - the
-allele the engine actually used - so consumers that want a single
-canonical name can read `rec["v_call"].split(",", 1)[0]`.
+Each standard call names the generating allele used by the corresponding
+alignment. On VJ chains, `d_call` is empty.
 
-### Truth vs evidence-derived calls
+### Truth and evidence-based re-calls
 
-GenAIRR's calls are **derived from the same evidence an aligner
-would see**, not handed out from the engine's internal state. The
-engine knows which allele it sampled (the *truth*), but the AIRR
-projection runs an independent walker over the assembled sequence
-and reports what that walker would conclude. Under high SHM or
-short trims the walker can land on a tie set that doesn't include
-the truth - that's biologically correct: the alignment evidence is
-genuinely ambiguous. The truth-allele-first ordering convention
-preserves the ground truth when it's in the set; the tie set
-expresses the residual ambiguity downstream tools must handle.
+`recalled_v_call`, `recalled_d_call`, and `recalled_j_call` contain GenAIRR's
+post-mutation inference. They may differ from the generating allele or
+contain comma-separated ties. They do not change the alignment's reference.
+Optional `truth_*_call` fields remain compatibility aliases for the standard
+calls when `expose_provenance=True`.
 
 ## Junction + productivity
 

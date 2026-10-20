@@ -3,6 +3,7 @@ use crate::refdata::{Allele, AlleleId};
 
 mod bitset;
 mod caller;
+mod donor_support;
 mod reference_index;
 mod scoring;
 mod state;

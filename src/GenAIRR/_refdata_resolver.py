@@ -150,7 +150,7 @@ def _chain_type_label(chain_type: Optional[ChainType]) -> str:
     return "vj"
 
 
-def _push_alleles(alleles_by_gene, add_method, *, derive_subregions: bool = False) -> int:
+def _push_alleles(alleles_by_gene, add_method, *, derive_subregions: bool = False, refdata=None, segment=None) -> int:
     """Walk ``Dict[str, List[Allele]]`` and push every allele through
     ``add_method``. Returns the count of pushed alleles.
 
@@ -186,7 +186,11 @@ def _push_alleles(alleles_by_gene, add_method, *, derive_subregions: bool = Fals
                 sub_entries = _resolve_v_subregions(allele)
                 if sub_entries:
                     kwargs["subregions"] = sub_entries
-            add_method(allele.name, allele.gene, seq, **kwargs)
+            allele_id = add_method(allele.name, allele.gene, seq, **kwargs)
+            evidence = getattr(allele, "reference_evidence", None)
+            if evidence is not None and refdata is not None:
+                import json
+                refdata.set_allele_evidence(segment, allele_id, json.dumps(evidence, sort_keys=True))
             count += 1
     return count
 
@@ -289,11 +293,11 @@ def dataconfig_to_refdata(cfg: DataConfig) -> "_engine.RefDataConfig":
     refdata = _engine.RefDataConfig(chain)
 
     _push_alleles(
-        cfg.v_alleles, refdata.add_v_allele, derive_subregions=True
+        cfg.v_alleles, refdata.add_v_allele, derive_subregions=True, refdata=refdata, segment="V"
     )
     if chain == "vdj":
-        _push_alleles(cfg.d_alleles, refdata.add_d_allele)
-    _push_alleles(cfg.j_alleles, refdata.add_j_allele)
+        _push_alleles(cfg.d_alleles, refdata.add_d_allele, refdata=refdata, segment="D")
+    _push_alleles(cfg.j_alleles, refdata.add_j_allele, refdata=refdata, segment="J")
 
     # Stamp identity FIRST so the locus cascade below can consult it.
     _set_identity_from_dataconfig(refdata, cfg)

@@ -26,8 +26,10 @@
 
 use crate::address;
 use crate::assignment::SegmentOrientation;
+use crate::contract::ChoiceContext;
+use crate::dist::FilteredSampleError;
 use crate::ir::{Segment, Simulation, SimulationBuilder};
-use crate::pass::{Pass, PassContext, PassEffect, PassError, PassRequirement};
+use crate::pass::{Pass, PassCompileFact, PassContext, PassEffect, PassError, PassRequirement};
 use crate::trace::ChoiceValue;
 
 pub struct InvertDPass {
@@ -72,13 +74,59 @@ impl InvertDPass {
         // Mirrors `RevCompPass`: when a cursor is attached, the
         // RNG is bypassed entirely (the run is deterministic
         // against the trace).
+        let productive = ctx.feasibility.filter(|f| f.has_p_productive());
+        let replaying = ctx.replay_cursor.is_some();
+        let pass_index = ctx.pass_index;
+        let refdata = ctx.refdata;
+        let contracts = ctx.contracts;
+        let choice_address = address::ChoiceAddress::SampleAlleleDInverted;
+        let choice_name = choice_address.to_string();
+        let admits = |inverted: bool| {
+            let in_support = if inverted {
+                self.prob > 0.0
+            } else {
+                self.prob < 1.0
+            };
+            let choice = ChoiceValue::Bool(inverted);
+            in_support
+                && productive
+                    .is_none_or(|f| f.admits(pass_index, sim, refdata, &choice_name, &choice))
+                && contracts.is_none_or(|contracts| {
+                    contracts
+                        .admits_typed(
+                            sim,
+                            refdata,
+                            ChoiceContext::none().with_address(choice_address),
+                            &choice,
+                        )
+                        .is_ok()
+                })
+        };
         let inverted = if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
             cursor
                 .expect_bool(address::ChoiceAddress::SampleAlleleDInverted)
                 .map_err(|reason| PassError::replay(self.name(), reason))?
+        } else if productive.is_some() {
+            let yes = if admits(true) { self.prob } else { 0.0 };
+            let no = if admits(false) { 1.0 - self.prob } else { 0.0 };
+            if yes + no <= 0.0 {
+                return Err(PassError::constraint_sampling(
+                    self.name(),
+                    choice_name.clone(),
+                    FilteredSampleError::EmptyAdmissibleSupport,
+                ));
+            }
+            ctx.rng.next_f64() * (yes + no) < yes
         } else {
             ctx.rng.next_f64() < self.prob
         };
+        if replaying && productive.is_some() && !admits(inverted) {
+            return Err(PassError::constraint_sampling(
+                self.name(),
+                choice_name,
+                FilteredSampleError::EmptyAdmissibleSupport,
+            ));
+        }
         ctx.trace.record_choice(
             address::ChoiceAddress::SampleAlleleDInverted,
             ChoiceValue::Bool(inverted),
@@ -156,6 +204,17 @@ impl Pass for InvertDPass {
         // naturally without a new effect type.
         Vec::new()
     }
+
+    fn compile_facts(&self) -> Vec<PassCompileFact> {
+        let mut orientations = Vec::new();
+        if self.prob < 1.0 {
+            orientations.push(false);
+        }
+        if self.prob > 0.0 {
+            orientations.push(true);
+        }
+        vec![PassCompileFact::DOrientationSupport { orientations }]
+    }
 }
 
 #[cfg(test)]
@@ -163,8 +222,8 @@ mod tests {
     use super::*;
     use crate::assignment::AlleleInstance;
     use crate::ir::SimulationEvent;
-    use crate::pass::{PassError, PassPlan};
     use crate::pass::testing::PassRuntime;
+    use crate::pass::{PassError, PassPlan};
     use crate::refdata::AlleleId;
     use crate::replay::TraceCursor;
     use crate::rng::Rng;
@@ -174,8 +233,7 @@ mod tests {
     /// Forward orientation). InvertDPass is the only pass that runs
     /// in these tests — sample and assemble live elsewhere.
     fn sim_with_d_assigned() -> Simulation {
-        Simulation::new()
-            .with_allele_assigned(Segment::D, AlleleInstance::new(AlleleId::new(0)))
+        Simulation::new().with_allele_assigned(Segment::D, AlleleInstance::new(AlleleId::new(0)))
     }
 
     fn run_pass(prob: f64, seed: u64, sim: Simulation) -> (Trace, Simulation) {
@@ -306,7 +364,10 @@ mod tests {
             after.assignments.get(Segment::D).unwrap().orientation,
             SegmentOrientation::ReverseComplement,
         );
-        assert!(cursor.is_drained(), "cursor should consume exactly the one Bool");
+        assert!(
+            cursor.is_drained(),
+            "cursor should consume exactly the one Bool"
+        );
     }
 
     #[test]
@@ -409,13 +470,13 @@ mod tests {
         let pass = InvertDPass::new(0.5);
         let err = run_with_ctx(&pass, Simulation::new(), None, None).unwrap_err();
         match err {
-            PassError::MissingAssignment { pass_name, segment, .. } => {
+            PassError::MissingAssignment {
+                pass_name, segment, ..
+            } => {
                 assert_eq!(pass_name, "invert_d");
                 assert_eq!(segment, Segment::D);
             }
-            other => panic!(
-                "expected PassError::MissingAssignment, got {other:?}",
-            ),
+            other => panic!("expected PassError::MissingAssignment, got {other:?}",),
         }
     }
 
@@ -438,13 +499,7 @@ mod tests {
     fn invert_d_true_emits_orientation_changed_forward_to_reverse() {
         let pass = InvertDPass::new(1.0);
         let mut events: Vec<SimulationEvent> = Vec::new();
-        let (_, _) = run_with_ctx(
-            &pass,
-            sim_with_d_assigned(),
-            None,
-            Some(&mut events),
-        )
-        .unwrap();
+        let (_, _) = run_with_ctx(&pass, sim_with_d_assigned(), None, Some(&mut events)).unwrap();
         let orient: Vec<_> = events
             .iter()
             .filter_map(|e| match e {
@@ -513,13 +568,7 @@ mod tests {
         // no-op would require sinks to special-case the pass.
         let pass = InvertDPass::new(0.0);
         let mut events: Vec<SimulationEvent> = Vec::new();
-        let _ = run_with_ctx(
-            &pass,
-            sim_with_d_assigned(),
-            None,
-            Some(&mut events),
-        )
-        .unwrap();
+        let _ = run_with_ctx(&pass, sim_with_d_assigned(), None, Some(&mut events)).unwrap();
         let orient = events
             .iter()
             .filter(|e| matches!(e, SimulationEvent::OrientationChanged { .. }))
@@ -565,5 +614,19 @@ mod tests {
         // first.
         let pass = InvertDPass::new(0.5);
         assert!(pass.effects().is_empty());
+    }
+
+    #[test]
+    fn inversion_compile_support_contains_only_positive_probability_orientations() {
+        for (probability, orientations) in [
+            (0.0, vec![false]),
+            (0.3, vec![false, true]),
+            (1.0, vec![true]),
+        ] {
+            assert_eq!(
+                InvertDPass::new(probability).compile_facts(),
+                vec![PassCompileFact::DOrientationSupport { orientations }],
+            );
+        }
     }
 }

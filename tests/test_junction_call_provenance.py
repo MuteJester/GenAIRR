@@ -174,11 +174,8 @@ def test_junction_translation_invariant_codon_to_aa() -> None:
             )
 
 
-def test_out_of_frame_junction_emits_empty_aa_and_false_stop() -> None:
-    """Audit §3.1 + §6.1: when junction_length is not divisible by
-    3, junction_aa is the empty string `""` (NOT None). stop_codon
-    is also `False` (vacuously, not checked when OOF). productive
-    is `False`.
+def test_out_of_frame_junction_translates_complete_physical_codons() -> None:
+    """Physical junction translation is retained when V and J are OOF.
 
     NP1=1 → junction_length = 3 + 1 + 3 = 7, OOF."""
     exp = (
@@ -189,8 +186,10 @@ def test_out_of_frame_junction_emits_empty_aa_and_false_stop() -> None:
     rec = _record(exp)
     assert rec["junction_length"] == 7
     assert rec["vj_in_frame"] is False
-    assert rec["junction_aa"] == ""  # empty string, not None
-    assert rec["stop_codon"] is False  # vacuously, OOF
+    from ._p_productive_support import translate
+    assert rec["junction_aa"] == translate(rec["junction"])
+    assert len(rec["junction_aa"]) == 2
+    assert rec["stop_codon"] is False
     assert rec["productive"] is False
 
 
@@ -300,7 +299,10 @@ def test_indel_before_v_anchor_shifts_window_but_preserves_length() -> None:
     assert rec["junction_length"] == 9
     assert rec["junction_start"] == 7  # shifted by +1
     assert rec["junction_end"] == 16  # shifted by +1
-    assert rec["vj_in_frame"] is True  # length still in-frame
+    # The junction length is unchanged, but V's original coding frame
+    # was shifted by the internal insertion upstream of its anchor.
+    assert rec["vj_in_frame"] is False
+    assert rec["productive"] is False
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -336,39 +338,27 @@ def test_end_loss_5_prime_shifts_junction_coordinates_not_content() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_rev_comp_flips_junction_string_and_coordinates() -> None:
-    """Audit §5.5: under rev-comp, the junction nucleotide string
-    is reverse-complemented in place, and the (start, end)
-    coordinates flip via new_start = seq_len - old_end,
-    new_end = seq_len - old_start."""
+def test_rev_comp_preserves_coding_junction_string_and_coordinates() -> None:
+    """AIRR junction annotations retain the receptor's coding orientation."""
     baseline = _record(_baseline_vj())
     rc = _record(_baseline_vj().random_strand_orientation(prob=1.0))
 
     assert baseline["rev_comp"] is False
     assert rc["rev_comp"] is True
 
-    seq_len = len(baseline["sequence"])
-    assert rc["junction"] == reverse_complement(baseline["junction"])
-    assert rc["junction_start"] == seq_len - baseline["junction_end"]
-    assert rc["junction_end"] == seq_len - baseline["junction_start"]
+    assert rc["junction"] == baseline["junction"]
+    assert rc["junction_start"] == baseline["junction_start"]
+    assert rc["junction_end"] == baseline["junction_end"]
     # Length preserved.
     assert rc["junction_length"] == baseline["junction_length"]
 
 
-def test_rev_comp_re_translates_junction_aa_from_rc_string() -> None:
-    """Audit §5.5: junction_aa under rev-comp is the translation
-    of the reverse-complemented junction string, NOT the reverse
-    of the original junction_aa.
-
-    Original junction TGTACATGG → CTW.
-    rev-comp(TGTACATGG) = CCATGTACA → CCA(P) + TGT(C) + ACA(T) = PCT.
-    So rc_record['junction_aa'] = 'PCT', not 'WTC'."""
+def test_rev_comp_preserves_junction_protein() -> None:
+    """Observation strand cannot change the receptor's junction protein."""
     baseline = _record(_baseline_vj())
     rc = _record(_baseline_vj().random_strand_orientation(prob=1.0))
     assert baseline["junction_aa"] == "CTW"
-    assert rc["junction_aa"] == "PCT"
-    # And NOT the reverse string of the original:
-    assert rc["junction_aa"] != baseline["junction_aa"][::-1]
+    assert rc["junction_aa"] == baseline["junction_aa"]
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -432,11 +422,8 @@ def test_replay_reproduces_all_junction_fields(configure, seed) -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_drift_pinned_junction_aa_is_empty_string_not_none_when_oof() -> None:
-    """Audit §6.1: out-of-frame junction's junction_aa is the
-    empty string `""`, not `None`. Pin the convention — a future
-    fix to return `None` would flip this test, signalling the
-    schema change."""
+def test_out_of_frame_junction_aa_retains_translation_not_none() -> None:
+    """A trailing partial codon does not erase the complete codons."""
     exp = (
         ga.Experiment.on(_vj_basic())
         .recombine(np1_lengths=[(2, 1.0)])  # OOF
@@ -444,7 +431,9 @@ def test_drift_pinned_junction_aa_is_empty_string_not_none_when_oof() -> None:
     )
     rec = _record(exp)
     assert rec["vj_in_frame"] is False
-    assert rec["junction_aa"] == ""  # not None
+    from ._p_productive_support import translate
+    assert rec["junction_aa"] == translate(rec["junction"])
+    assert len(rec["junction_aa"]) == 2
     assert rec["junction_aa"] is not None
 
 
@@ -460,9 +449,8 @@ def test_drift_pinned_no_cdr3_aliases_on_airr_record() -> None:
         )
 
 
-def test_drift_pinned_stop_codon_is_false_not_none_when_oof() -> None:
-    """Audit §6.3: out-of-frame junction's stop_codon is False
-    (vacuously), not None. Pin the convention."""
+def test_out_of_frame_stop_status_is_computed_in_the_retained_v_frame() -> None:
+    """Out-of-frame V/J joining does not erase translated stops."""
     exp = (
         ga.Experiment.on(_vj_basic())
         .recombine(np1_lengths=[(2, 1.0)])
@@ -470,7 +458,11 @@ def test_drift_pinned_stop_codon_is_false_not_none_when_oof() -> None:
     )
     rec = _record(exp)
     assert rec["vj_in_frame"] is False
-    assert rec["stop_codon"] is False
+    seq = rec["sequence"].upper()
+    assert rec["stop_codon"] == any(
+        seq[i:i + 3] in {"TAA", "TAG", "TGA"}
+        for i in range(0, len(seq) - 2, 3)
+    )
     assert rec["stop_codon"] is not None
 
 

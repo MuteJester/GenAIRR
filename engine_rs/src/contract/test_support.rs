@@ -73,8 +73,11 @@ pub fn make_assembled_sim(
         sim = next;
     }
     for i in 0..v_len {
-        let (next, _) =
-            sim.with_nucleotide_pushed(Nucleotide::germline(b'A', i as u16, Segment::V));
+        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
+            b'A',
+            i as u16 + v_inst.trim_5,
+            Segment::V,
+        ));
         sim = next;
     }
     for _ in v_pool_start + v_len..j_pool_start {
@@ -83,8 +86,11 @@ pub fn make_assembled_sim(
         sim = next;
     }
     for i in 0..j_len {
-        let (next, _) =
-            sim.with_nucleotide_pushed(Nucleotide::germline(b'T', i as u16, Segment::J));
+        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
+            b'T',
+            i as u16 + j_inst.trim_5,
+            Segment::J,
+        ));
         sim = next;
     }
     sim = sim.with_region_added(Region::new(

@@ -165,10 +165,10 @@ priors.
 
 **Validated:**
 
-- **Projection consistency** - every AIRR field is independently
-  re-derived from the underlying `Outcome` events and compared
-  with the projected record. Bugs in projection / live-call
-  cache / counter aggregation fire here.
+- **Projection consistency** - supported fields are compared with
+  the underlying `Outcome` and reference data. These checks can
+  detect projection, live-call cache, and counter inconsistencies;
+  agreement does not prove that the biological model is complete.
 - **Counter partitions** - `n_v_mutations + n_d_mutations +
   n_j_mutations + n_np_mutations == n_mutations`. The six
   V-subregion counters sum to `n_v_mutations`. Indel counters
@@ -176,8 +176,8 @@ priors.
   but not the per-segment partition). Mismatches fire
   `MutationCountSumMismatch` and friends.
 - **Junction + productivity** - junction coordinates re-derived
-  from anchor codons; `productive` flag re-derived from the
-  four-clause definition; `vj_in_frame` and `stop_codon` checked.
+  from anchor codons; coding frame, J-tail frame, coding-region
+  stops, and conserved anchor amino acids checked.
 - **Paired-end geometry** - when `read_layout == "paired_end"`,
   R1/R2 coordinates checked against `insert_size`; reads are
   consistent with their parent assembled sequence.
@@ -198,9 +198,11 @@ priors.
   cartridge's species / locus / reference-set declaration. If
   the cartridge is mis-labelled, the records will faithfully
   reflect the mis-labelled biology.
-- **Compatibility with downstream tooling.** AIRR-strict
-  coordinate conventions (`airr_strict=True` on the exporters)
-  are an export-time setting, not a validator-enforced invariant.
+- **Compatibility with downstream tooling.** `to_tsv()` defaults
+  to AIRR coordinates, CIGAR placement offsets, and `T` / `F`
+  booleans. CSV and DataFrame exports require `airr_strict=True`
+  for the coordinate/CIGAR conversion. These export settings do
+  not validate arbitrary metadata fields or downstream requirements.
 
 For the canonical reproducibility surface - plan signatures,
 refdata content hashes, trace replay - see

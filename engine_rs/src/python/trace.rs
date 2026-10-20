@@ -1,7 +1,7 @@
 //! `PyChoiceRecord` + `PyTrace` — read-only views of the addressed trace.
 
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyDict};
 
 use crate::trace::{ChoiceRecord, ChoiceValue, Trace};
 
@@ -73,6 +73,27 @@ impl PyTrace {
 
 #[pymethods]
 impl PyTrace {
+    /// Non-biological sampler work and completion reports.
+    fn diagnostics(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+        self.inner
+            .diagnostics()
+            .iter()
+            .map(|report| {
+                let d = PyDict::new_bound(py);
+                d.set_item("pass_name", &report.pass_name)?;
+                d.set_item("model", &report.model)?;
+                d.set_item("strategy", &report.strategy)?;
+                d.set_item("status", &report.status)?;
+                d.set_item("requested_count", report.requested_count)?;
+                d.set_item("applied_count", report.applied_count)?;
+                d.set_item("attempts", report.attempts)?;
+                d.set_item("explored_states", report.explored_states)?;
+                d.set_item("choice_offset", report.choice_offset)?;
+                Ok(d.into_py(py))
+            })
+            .collect()
+    }
+
     /// Number of recorded choices.
     fn __len__(&self) -> usize {
         self.inner.len()

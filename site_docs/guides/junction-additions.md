@@ -175,6 +175,16 @@ given end, the bases are the reverse-complement palindrome of the
 adjacent coding-end's trimmed flank. You don't get to author the
 bases - only the length distribution and (indirectly via the trim
 distribution) which bases the palindrome will reflect.
+`D_5` and `D_3` refer to the assembled D orientation. When D is
+inverted, the opposite end of the canonical reference supplies each
+palindrome.
+
+GenAIRR applies this rule after trimming and orientation. It is a
+simplified sequence model: biochemical hairpin-opening and subsequent
+processing are not simulated explicitly. Experiments show that the
+coding-end sequence influences hairpin processing and P additions.
+See [Nadel and Feeney, 1997](https://pmc.ncbi.nlm.nih.gov/articles/PMC232228/)
+and [Lu et al., 2007](https://pmc.ncbi.nlm.nih.gov/articles/PMC2175297/).
 
 Empty / omitted P-end keys mean no P-pass runs at that end -
 byte-identical to the pre-P-plane baseline. Authoring
@@ -199,37 +209,42 @@ rec["p_j_5_length"]     # 0
 
 Two things to know:
 
-- **`np1` / `np2` are P-clean.** The structural NP region span
-  excludes P bases by construction, so `len(rec["np1"]) ==
-  rec["np1_length"]` on every record GenAIRR produces - even
-  under a max-P plane.
+- **`np1` / `np2` combine intervening N and P bases.** They are
+  slices between final segment alignment bounds in coding orientation.
+  Their lengths equal their string lengths. They are not direct
+  measurements of TdT-only addition lengths.
 - **P bases don't have their own string fields in v1.** Per-base P
   strings (`p_v_3`, `p_d_5`, etc.) and an aggregate
   `n_p_nucleotides` counter are deliberately deferred - the
   `p_*_length` fields are the only P provenance v1 ships.
+  These counts describe emitted additions and survive clonal forks
+  or later read loss.
 
 ## Interaction with `productive_only`
 
-Both N and P additions affect junction length, frame, and content,
-so they participate in the productive-triad constraint. When
-`productive_only()` is in the pipeline:
+Fixed and mixed nonzero P lengths compose with `productive_only()`.
+Before a draw, the engine checks that each retained candidate has
+at least one productive completion across allele and trim choices,
+deterministic P bases, N lengths and bases, and D orientation.
+Checks include codons crossing N/P boundaries as well as the
+complete observed coding span. With a phased genotype, future
+alleles must be available on the selected chromosome with positive
+sampling weight.
 
-- **N base draws are constraint-masked.** A position whose
-  candidate bases would all push the junction out-of-frame, into
-  a stop codon, or off-anchor drops out of the proposal support
-  before the draw. The constraint never sees a bad candidate.
-- **N length draws are constraint-masked.** Lengths whose addition
-  would force a non-productive junction simply aren't proposed.
-- **P length draws follow the same discipline.** A P length that
-  would break productivity drops out of the support.
+Each draw uses its original weights renormalized over the retained
+candidates. This is local support conditioning; it does not define
+a globally conditioned joint probability distribution. N-base
+completion supports uniform, categorical, and first-order Markov
+models. A custom generator must expose an exact supported model
+for this check.
 
-If the constraint admits *no* candidates at a given site,
-GenAIRR's default permissive mode falls back to unconstrained
-sampling and the run continues (the record may end up
-non-productive at that site). Pass `strict=True` to
-`run_records(...)` to surface the empty-support condition as
-`StrictSamplingError` instead - useful during cartridge
-development when you want to catch unsatisfiable plans loudly:
+A P length longer than its retained source flank is inadmissible.
+If no productive completion exists, the P-aware path raises an
+explicit error even in permissive mode. Fixed nonzero additions
+are preserved on successful runs; the engine does not silently
+replace them with zero P or sentinel N bases. Trace replay consumes
+the recorded choices and reproduces the same additions and counters.
+Strict mode also surfaces other passes' empty-support failures:
 
 ```python
 result = exp.run_records(n=100, seed=0, strict=True)

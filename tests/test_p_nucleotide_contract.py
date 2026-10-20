@@ -29,6 +29,7 @@ Split:
 from __future__ import annotations
 
 import inspect
+import re
 import subprocess
 from pathlib import Path
 
@@ -412,7 +413,7 @@ def test_pin_present_p_length_choice_address_variant() -> None:
     `p.{v_3,d_5,d_3,j_5}.length`. Flipped from the prior
     absence pin."""
     src = _ADDRESS_RS.read_text(encoding="utf-8")
-    assert "PLength { end: PEnd }" in src
+    assert re.search(r"PLength\s*\{\s*end:\s*PEnd\s*,?\s*\}", src)
     for spelling in (
         '"p.v_3.length"',
         '"p.d_5.length"',

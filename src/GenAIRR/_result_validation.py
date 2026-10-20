@@ -104,9 +104,9 @@ class FamilyValidationReport:
     that gate passes; a family-divergence failure means the records
     are each internally consistent with their own outcome, but they
     disagree across the clonal group on a field that should be
-    invariant by construction (heavy-SHM tie-set widening on the
-    live-call ``v_call`` etc. is intentionally NOT a divergence —
-    only ``truth_*_call`` invariance is enforced).
+    invariant by construction. Heavy-SHM changes in ``recalled_*_call``
+    are intentionally not family divergences; this gate uses the
+    ``truth_*_call`` compatibility columns.
 
     The validator is a strict subset of the audit's §6 spec
     (see ``docs/clonal_family_design.md``): pre-SHM junction
@@ -204,9 +204,9 @@ class _ResultValidation:
 
         Each record is re-derived independently from its original
         ``Outcome`` (trace + event ledger + final ``Simulation``)
-        and compared against the projected dict. A record passes
-        when ``outcome.validate_record(refdata, sequence_id=...)``
-        returns an empty issue list. Failures collect the
+        and compared against the actual returned dict, including field
+        presence and types. The native outcome validator also checks
+        projection invariants. Failures collect the
         ``record_index``, ``sequence_id``, and the issue dicts.
 
         **Companion check** — for engine-side integrity, see
@@ -239,9 +239,31 @@ class _ResultValidation:
                 "outcomes."
             )
         failures: List[Dict[str, Any]] = []
+        if len(self._records) != len(self._outcomes):
+            failures.append({
+                "record_index": None,
+                "sequence_id": "",
+                "issues": [{
+                    "kind": "RecordOutcomeCountMismatch",
+                    "reported": len(self._records),
+                    "expected": len(self._outcomes),
+                }],
+            })
         for i, (outcome, record) in enumerate(zip(self._outcomes, self._records)):
             sequence_id = str(record.get("sequence_id", ""))
             issues = outcome.validate_record(refdata, sequence_id=sequence_id)
+            expected = outcome.airr_record(refdata, sequence_id=sequence_id)
+            for field, value in expected.items():
+                if field not in record:
+                    issues.append({
+                        "kind": "RecordFieldMissing", "field": field,
+                        "expected": value,
+                    })
+                elif type(record[field]) is not type(value) or record[field] != value:
+                    issues.append({
+                        "kind": "RecordFieldMismatch", "field": field,
+                        "reported": record[field], "expected": value,
+                    })
             if issues:
                 failures.append(
                     {
@@ -250,7 +272,7 @@ class _ResultValidation:
                         "issues": issues,
                     }
                 )
-        return ValidationReport(count=len(self._outcomes), failures=failures)
+        return ValidationReport(count=len(self._records), failures=failures)
 
     def validate_families(
         self, refdata: Any = None

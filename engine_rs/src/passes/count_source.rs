@@ -39,6 +39,35 @@ pub enum CountSource {
 }
 
 impl CountSource {
+    /// Validate a replayed count against positive natural support. The range
+    /// check alone cannot establish that a fixed-count plan produced a value.
+    pub(crate) fn supports_value(
+        &self,
+        value: i64,
+    ) -> Result<bool, crate::dist::FilteredSampleError> {
+        use crate::dist::FilteredSampleError;
+        match self {
+            Self::Distribution(distribution) => {
+                let support = distribution
+                    .support()
+                    .ok_or(FilteredSampleError::SupportUnavailable)?;
+                if support.is_empty()
+                    || support.iter().any(|(_, w)| !w.is_finite() || *w < 0.0)
+                    || !support.iter().any(|(_, w)| *w > 0.0)
+                {
+                    return Err(FilteredSampleError::InvalidFilteredSupport);
+                }
+                Ok(support.iter().any(|(n, w)| *n == value && *w > 0.0))
+            }
+            Self::Rate(rate) => {
+                if !rate.is_finite() || *rate < 0.0 {
+                    return Err(FilteredSampleError::InvalidFilteredSupport);
+                }
+                Ok(value >= 0 && (*rate > 0.0 || value == 0))
+            }
+        }
+    }
+
     /// Sample the mutation count for one execution of the pass.
     ///
     /// `pool_len` is consulted only in the `Rate` variant. Returns
@@ -300,9 +329,14 @@ mod tests {
         let addr = ChoiceAddress::MutateUniformCount;
         // `fixed(99)` would draw 99 under RNG mode; the cursor
         // overrides with 17. The returned count must be 17.
-        let (count, trace, rng_words) =
-            run_with_replay(vec![rec(addr, ChoiceValue::Int(17))], fixed(99), 0, addr, true)
-                .unwrap();
+        let (count, trace, rng_words) = run_with_replay(
+            vec![rec(addr, ChoiceValue::Int(17))],
+            fixed(99),
+            0,
+            addr,
+            true,
+        )
+        .unwrap();
         assert_eq!(count, 17);
         // The helper still records to the output trace.
         let rec = trace.find("mutate.uniform.count").unwrap();
@@ -314,9 +348,14 @@ mod tests {
     #[test]
     fn helper_replay_consumes_zero_count_record() {
         let addr = ChoiceAddress::CorruptPcrCount;
-        let (count, _trace, rng_words) =
-            run_with_replay(vec![rec(addr, ChoiceValue::Int(0))], fixed(5), 0, addr, true)
-                .unwrap();
+        let (count, _trace, rng_words) = run_with_replay(
+            vec![rec(addr, ChoiceValue::Int(0))],
+            fixed(5),
+            0,
+            addr,
+            true,
+        )
+        .unwrap();
         assert_eq!(count, 0);
         assert_eq!(rng_words, 0);
     }
@@ -390,8 +429,7 @@ mod tests {
     #[test]
     fn helper_replay_exhausted_cursor_surfaces_replay_error() {
         let addr = ChoiceAddress::MutateUniformCount;
-        let err =
-            run_with_replay(Vec::new(), fixed(5), 0, addr, true).unwrap_err();
+        let err = run_with_replay(Vec::new(), fixed(5), 0, addr, true).unwrap_err();
         match err {
             PassError::Replay { reason, .. } => {
                 assert!(matches!(reason, ReplayError::Exhausted { .. }));

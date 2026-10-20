@@ -8,6 +8,32 @@ from typing import Any, Dict, List
 _NP_CANONICAL_BASES = ("A", "C", "G", "T")
 
 
+def _reject_nonzero_p_provenance(
+    records: List[Dict[str, Any]], *, estimator: str,
+) -> None:
+    """Prevent combined AIRR N/P measurements from becoming an N-only model."""
+    columns = ("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length")
+    for row_index, row in enumerate(records):
+        for column in columns:
+            raw = row.get(column)
+            if raw is None or raw == "":
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                # Validation of malformed P fields belongs to the P estimator.
+                # This guard recognizes explicit numeric nonzero provenance.
+                continue
+            if value != 0:
+                raise ValueError(
+                    f"{estimator}: row {row_index} has nonzero {column}={raw!r}; "
+                    "AIRR NP fields combine N and P bases and cannot safely "
+                    "train separate N and P models. N-only provenance is "
+                    "required; subtracting P counts after sequence "
+                    "transformations is not sufficient."
+                )
+
+
 def _split_tie_set(raw: str) -> List[str]:
     """Parse a comma-separated AIRR tie-set call into a clean list.
 

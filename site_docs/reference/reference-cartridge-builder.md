@@ -19,7 +19,8 @@ for the estimator deep dive, see
 | Method | Purpose |
 |---|---|
 | `.from_fasta(...)` | Class-level constructor; parses V/D/J FASTA into the catalogue |
-| `.infer_identity(...)` | Resolve species / chain / locus / reference-set / name |
+| `.infer_identity(...)` | Declare species / chain / locus / reference-set / name; missing species stays unknown |
+| `.with_reference_evidence(..., anchors=...)` | Attach sequence-bound landmark, coding-phase and coding-boundary evidence |
 | `.infer_v_subregions()` | Annotate V alleles with FWR/CDR intervals (required for `v_subregion_rates`) |
 | `.with_rules(...)` | Attach an explicit `ReferenceRulesSpec` |
 | `.with_models(...)` | Attach an explicit `ReferenceEmpiricalModels` bundle |
@@ -31,6 +32,9 @@ for the estimator deep dive, see
 | `.build()` | Finalise, stamp checksum, return the `DataConfig` |
 | `.report()` | Get the `CartridgeBuildReport` with stages / warnings / rejections |
 
+See [Reference evidence and catalogue quarantine](../cartridges/reference-evidence.md)
+for source requirements, conservative anchor inference and legacy compatibility.
+
 ## Class reference
 
 ::: GenAIRR.cartridge_builder.ReferenceCartridgeBuilder
@@ -41,6 +45,7 @@ for the estimator deep dive, see
       members:
         - from_fasta
         - infer_identity
+        - with_reference_evidence
         - infer_v_subregions
         - with_rules
         - with_models

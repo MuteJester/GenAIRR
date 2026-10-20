@@ -15,16 +15,27 @@ result = ga.Experiment.on("human_igh").recombine().run_records(n=1000, seed=42)
 result.to_tsv("repertoire.tsv")
 ```
 
-Writes the canonical AIRR-spec TSV - one row per record, 50+
-columns covering sequence, V/D/J calls, junction, productive flag,
+Writes one row per record with GenAIRR's canonical columns
+covering sequence, V/D/J calls, junction, productive flag,
 mutation counters, paired-end fields (when present), and arbitrary
-metadata fields added by `with_metadata(...)`. The column order is
-stable across releases.
+metadata fields added by `with_metadata(...)`.
 
-Pass `airr_strict=True` to convert coordinate fields to the
-1-based-inclusive convention the AIRR-C schema mandates (GenAIRR
-emits 0-based-exclusive coordinates by default for downstream
-consistency with Python slicing).
+`to_tsv()` defaults to `airr_strict=True`: biological coordinate
+starts become 1-based, ends are inclusive, booleans are written as
+`T` / `F`, and per-segment CIGARs gain leading `S` and `N` runs for
+query and reference offsets when nonzero. Missing values are blank.
+This conversion does not validate custom metadata against an AIRR
+schema.
+
+Python record dicts use 0-based, half-open intervals and local
+per-segment CIGARs. Pass `airr_strict=False` to retain that
+representation in TSV.
+
+Biological query coordinates refer to the coding-oriented sequence:
+`sequence` when `rev_comp=False`, or its reverse complement when
+`rev_comp=True`. Paired-read windows (`r1_start/end`, `r2_start/end`)
+always use 0-based, half-open coordinates on the observed `sequence`,
+including in strict exports.
 
 ## CSV
 
@@ -32,8 +43,9 @@ consistency with Python slicing).
 result.to_csv("repertoire.csv")
 ```
 
-Identical schema to TSV, comma-separated. Accepts the same
-`airr_strict=True` flag.
+Uses the same columns as TSV, comma-separated, but defaults to
+`airr_strict=False`. Pass `airr_strict=True` for the coordinate,
+CIGAR, and `T` / `F` boolean conversion described above.
 
 ## FASTA
 
@@ -140,8 +152,9 @@ df = result.to_dataframe()
 
 Returns one row per record with every AIRR field as a column.
 Requires `pip install GenAIRR[all]` (or `pip install pandas` on
-its own). Accepts the same `airr_strict=True` flag as the TSV /
-CSV writers.
+its own). Defaults to `airr_strict=False`; `airr_strict=True`
+converts biological coordinates and CIGAR placement offsets.
+DataFrame boolean values remain booleans in either mode.
 
 ```python
 df["productive"].mean()                    # productive fraction

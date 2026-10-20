@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import warnings
 from typing import Dict, Iterable, Optional, Tuple
 
@@ -19,6 +20,41 @@ from .._pipeline_ir import (
     _RecombineStep,
     _ReceptorRevisionStep,
 )
+
+
+def _coding_end_distribution(values, name):
+    """Validate and freeze finite signed terminal-outcome support."""
+    if values is None:
+        return ((0, 1.0),)
+    weights = {}
+    for entry in values:
+        if not isinstance(entry, (tuple, list)) or len(entry) != 2:
+            raise ValueError(f"{name} entries must be (signed integer, positive weight) pairs")
+        outcome, weight = entry
+        if (
+            isinstance(outcome, bool)
+            or not isinstance(outcome, int)
+            or not -(2**63) <= outcome < 2**63
+        ):
+            raise ValueError(f"{name} outcomes must be signed 64-bit integers")
+        try:
+            weight = float(weight)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{name} weights must be positive finite numbers") from None
+        if not math.isfinite(weight) or weight <= 0:
+            raise ValueError(f"{name} weights must be positive finite numbers")
+        weights[outcome] = weights.get(outcome, 0.0) + weight
+        if not math.isfinite(weights[outcome]):
+            raise ValueError(f"{name} combined weights must be finite")
+    if not weights:
+        raise ValueError(f"{name} must contain at least one outcome")
+    try:
+        total = math.fsum(weights.values())
+    except OverflowError:
+        raise ValueError(f"{name} total weight must be finite") from None
+    if not math.isfinite(total):
+        raise ValueError(f"{name} total weight must be finite")
+    return tuple(sorted(weights.items()))
 
 
 class _RecombinationMixin:
@@ -284,6 +320,11 @@ class _RecombinationMixin:
             )
 
         prior: _RecombineStep = self._steps[rec_idx]  # type: ignore[assignment]
+        if prior.coding_end_mode is not None:
+            raise ValueError(
+                "trim() and process_coding_ends() are mutually exclusive; "
+                "signed coding-end outcomes already specify reference loss."
+            )
         if not enabled:
             # Disable all trim slots, keep NP + weights untouched.
             new_step = _replace(
@@ -315,6 +356,117 @@ class _RecombinationMixin:
             trim_overridden=True,
         )
         self._steps[rec_idx] = new_step
+        return self
+
+    def process_coding_ends(
+        self,
+        *,
+        v_3: Optional[Iterable[Tuple[int, float]]] = None,
+        d_5: Optional[Iterable[Tuple[int, float]]] = None,
+        d_3: Optional[Iterable[Tuple[int, float]]] = None,
+        j_5: Optional[Iterable[Tuple[int, float]]] = None,
+        d_joint: Optional[Iterable[Tuple[int, int, float]]] = None,
+        model=None,
+        reference_ends_are_coding_ends: bool = False,
+    ) -> "Experiment":
+        """Configure processing of the original junction-facing coding ends.
+
+        Each end accepts ``(signed_net_deletion, positive_finite_weight)``
+        pairs: positive values remove original reference bases, zero preserves
+        the end, and negative values retain that many P bases templated from
+        the original coding tip. Omitted ends are fixed at zero. D outcomes
+        refer to the canonical reference orientation, before any D inversion.
+        ``d_joint`` supplies correlated ``(five, three, weight)`` rows and
+        excludes separate D-end distributions. Alternatively ``model`` accepts
+        a :class:`CodingEndOutcomeModel` and excludes all individual inputs.
+
+        Explicitly pass ``reference_ends_are_coding_ends=True`` to confirm that
+        the supplied junction-facing reference ends are complete biological
+        coding ends. This cannot be inferred from a truncated reference.
+
+        This opt-in model replaces automatic cartridge trim and P settings.
+        It cannot be combined with an explicit :meth:`trim` call or configured
+        twice. Configure it after :meth:`recombine` and before mutation,
+        corruption, or a clonal fork. D ends are valid only for VDJ chains.
+
+        These are user-specified net processing probabilities, not calibrated
+        Artemis opening probabilities. Productivity constraints condition
+        successive choices on feasible completion, not on completion mass.
+        """
+        from dataclasses import replace
+
+        if reference_ends_are_coding_ends is not True:
+            raise ValueError(
+                "process_coding_ends() requires "
+                "reference_ends_are_coding_ends=True: supplied junction-facing "
+                "reference ends must be complete biological coding ends."
+            )
+        rec_idx = next(
+            (i for i in range(len(self._steps) - 1, -1, -1)
+             if isinstance(self._steps[i], _RecombineStep)),
+            None,
+        )
+        if rec_idx is None:
+            raise ValueError("process_coding_ends() must be called after recombine()")
+        if any(
+            not isinstance(step, (_InvertDStep, _ReceptorRevisionStep))
+            for step in self._steps[rec_idx + 1:]
+        ):
+            raise ValueError(
+                "process_coding_ends() must precede mutation, corruption, and clonal-fork steps"
+            )
+        prior = self._steps[rec_idx]
+        if prior.trim_overridden:
+            raise ValueError("process_coding_ends() and explicit trim() are mutually exclusive")
+        if prior.coding_end_mode is not None:
+            raise ValueError("process_coding_ends() is already configured")
+        if model is not None:
+            from ..coding_end_models import CodingEndOutcomeModel
+            if not isinstance(model, CodingEndOutcomeModel):
+                raise TypeError("model must be a CodingEndOutcomeModel")
+            if any(value is not None for value in (v_3, d_5, d_3, j_5, d_joint)):
+                raise ValueError("model excludes individual coding-end distributions")
+            if (model.d is not None) != (self.chain_type == "vdj"):
+                raise ValueError("coding-end model chain type does not match experiment")
+            if model.reference_hashes and self._refdata.content_hash() not in model.reference_hashes:
+                raise ValueError("coding-end model is incompatible with this reference content hash")
+            v_3 = [(three, weight) for _, three, weight in model.v]
+            j_5 = [(five, weight) for five, _, weight in model.j]
+            d_joint = model.d
+        if self.chain_type != "vdj" and (d_5 is not None or d_3 is not None or d_joint is not None):
+            raise ValueError("d_5 and d_3 coding-end outcomes are only valid for VDJ chains")
+        if d_joint is not None and (d_5 is not None or d_3 is not None):
+            raise ValueError("d_joint excludes separate d_5 and d_3 distributions")
+        v = _coding_end_distribution(v_3, "v_3")
+        j = _coding_end_distribution(j_5, "j_5")
+        d = None
+        if d_joint is not None:
+            from ..coding_end_models import _rows
+            d = _rows(d_joint, "D")
+        elif self.chain_type == "vdj":
+            d5 = _coding_end_distribution(d_5, "d_5")
+            d3 = _coding_end_distribution(d_3, "d_3")
+            d = tuple((five, three, w5 * w3) for five, w5 in d5 for three, w3 in d3)
+            if any(not math.isfinite(weight) or weight <= 0 for _, _, weight in d):
+                raise ValueError("D joint outcome weights must remain positive and finite")
+            try:
+                total = math.fsum(weight for _, _, weight in d)
+            except OverflowError:
+                raise ValueError("D joint outcome total weight must be finite") from None
+            if not math.isfinite(total):
+                raise ValueError("D joint outcome total weight must be finite")
+        self._steps[rec_idx] = replace(
+            prior,
+            trim_v_3=None, trim_d_5=None, trim_d_3=None, trim_j_5=None,
+            p_v_3_lengths=None, p_d_5_lengths=None,
+            p_d_3_lengths=None, p_j_5_lengths=None,
+            coding_end_mode="original_coding_end_v1",
+            reference_ends_are_coding_ends=True,
+            coding_end_outcomes_v=tuple((0, value, weight) for value, weight in v),
+            coding_end_outcomes_d=d,
+            coding_end_outcomes_j=tuple((value, 0, weight) for value, weight in j),
+            coding_end_model_reference_hashes=() if model is None else model.reference_hashes,
+        )
         return self
 
     def invert_d(self, *, prob: float = 0.05) -> "Experiment":

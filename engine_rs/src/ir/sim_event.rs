@@ -104,6 +104,10 @@ use crate::assignment::{AlleleInstance, TrimEnd};
 /// See the module docs for the four-emitted / five-reserved split.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SimulationEvent {
+    /// A retained-outcome choice, without any invented microscopic history.
+    CodingEndChoiceRecorded { choice: super::CodingEndChoice },
+    /// An emitted P base's immutable template ancestry and initial position.
+    CodingEndPOriginRecorded { origin: super::CodingEndPOrigin },
     /// A nucleotide was pushed onto the end of the pool.
     BasePushed {
         handle: NucHandle,

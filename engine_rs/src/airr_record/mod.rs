@@ -12,6 +12,7 @@
 //! 1-based-inclusive conversion at TSV/CSV/DataFrame time.
 
 mod builder;
+mod coding_end;
 mod junction;
 mod locus;
 mod projection;
@@ -25,8 +26,8 @@ mod walk;
 pub use builder::build_airr_record;
 pub use record::AirrRecord;
 pub use validate::{
-    validate_airr_record, AlleleOrderReason, PairedEndField, PairedEndRead,
-    ProductiveDecidedBy, RecordValidationIssue,
+    validate_airr_record, AlleleOrderReason, PairedEndField, PairedEndRead, ProductiveDecidedBy,
+    RecordValidationIssue,
 };
 
 #[cfg(test)]

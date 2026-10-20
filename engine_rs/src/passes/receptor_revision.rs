@@ -197,7 +197,13 @@ impl ReceptorRevisionPass {
         }
 
         // Fresh: applied = coin AND an eligible alternate exists.
-        let eligible = self.genotype_eligible(constraint, c, current_v, refdata, old_v_len);
+        let eligible: Vec<_> = self
+            .genotype_eligible(constraint, c, current_v, refdata, old_v_len)
+            .into_iter()
+            .filter(|(id, _)| {
+                self.replacement_admitted(sim, refdata, *id, old_v_len, Some(c as u8), ctx)
+            })
+            .collect();
         if coin && eligible.is_empty() {
             if strict {
                 return Err(PassError::constraint_sampling(
@@ -247,7 +253,7 @@ impl ReceptorRevisionPass {
         new_id: AlleleId,
         derived_trim_3: u32,
         c: usize,
-        strict: bool,
+        _strict: bool,
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         if derived_trim_3 > u16::MAX as u32 {
@@ -271,31 +277,18 @@ impl ReceptorRevisionPass {
             ChoiceValue::Int(derived_trim_3 as i64),
         );
         let old_v_len = self.old_v_region_len(sim)?;
-        // Strict post-event contract arbitration — parity with the non-genotype
-        // path: build a hypothetical post-replacement IR (no trace/sink side
-        // effects) and ask the active contracts whether the receptor-revised
-        // state is admissible (e.g. productive_only). Permissive skips this.
-        if strict && ctx.contracts.is_some() {
-            let mut hypothetical_ctx = PassContext {
-                trace: ctx.trace,
-                rng: ctx.rng,
-                pass_index: ctx.pass_index,
-                refdata: ctx.refdata,
-                contracts: ctx.contracts,
-                feasibility: ctx.feasibility,
-                reference_index: ctx.reference_index,
-                replay_cursor: None,
-                event_log_sink: None,
-            };
-            let hypothetical = self.commit_replacement(
-                sim.clone(),
-                &new_allele,
-                new_id,
-                derived_trim_3 as u16,
-                old_v_len,
-                Some(c as u8),
-                &mut hypothetical_ctx,
-            );
+        if ctx.contracts.is_some() {
+            let hypothetical = self
+                .replacement_builder(
+                    sim.clone(),
+                    &new_allele,
+                    new_id,
+                    derived_trim_3 as u16,
+                    old_v_len,
+                    Some(c as u8),
+                    false,
+                )
+                .seal();
             self.validate_post_event_contracts(sim, &hypothetical, ctx)?;
         }
         Ok(self.commit_replacement(
@@ -365,7 +358,9 @@ impl ReceptorRevisionPass {
             ));
         }
         let trim_3 = trim_i64 as u32;
-        let retained = (allele.len() as i64).checked_sub(trim_3 as i64).unwrap_or(-1);
+        let retained = (allele.len() as i64)
+            .checked_sub(trim_3 as i64)
+            .unwrap_or(-1);
         if retained != old_v_len as i64 {
             return Err(PassError::invalid_plan_state(
                 self.name(),
@@ -387,7 +382,11 @@ impl ReceptorRevisionPass {
     /// than one violates the one-region-per-segment invariant the
     /// audit pinned (`MultipleRegionsForSegment`).
     fn old_v_region_len(&self, sim: &Simulation) -> Result<u32, PassError> {
-        let mut iter = sim.sequence.regions.iter().filter(|r| r.segment == Segment::V);
+        let mut iter = sim
+            .sequence
+            .regions
+            .iter()
+            .filter(|r| r.segment == Segment::V);
         let first = iter.next().ok_or_else(|| {
             PassError::invalid_plan_state(
                 self.name(),
@@ -403,19 +402,18 @@ impl ReceptorRevisionPass {
         Ok(first.len())
     }
 
-    /// Sample a replacement V allele constrained to same-retained-
-    /// length candidates. Strict mode errors on empty support;
-    /// permissive mode falls back to the raw distribution draw
-    /// (mirrors `SampleAllelePass`'s v3.0 documented exception for
-    /// allele sampling — a "skip" semantics would leave the V
-    /// segment in an inconsistent state).
+    /// Sample a different V allele with a compatible retained length.
+    /// Strict mode errors when no alternate is available; permissive
+    /// mode reports no revision and preserves the assembled receptor.
     fn sample_replacement_allele(
         &self,
+        sim: &Simulation,
         refdata: &RefDataConfig,
+        current_v: AlleleId,
         old_v_len: u32,
         ctx: &mut PassContext,
         strict: bool,
-    ) -> Result<AlleleId, PassError> {
+    ) -> Result<Option<AlleleId>, PassError> {
         let support = self.v_distribution.support().ok_or_else(|| {
             PassError::invalid_plan_state(
                 self.name(),
@@ -427,7 +425,7 @@ impl ReceptorRevisionPass {
         let eligible: Vec<(AlleleId, f64)> = support
             .into_iter()
             .filter(|(id, weight)| {
-                if *weight <= 0.0 {
+                if *id == current_v || *weight <= 0.0 {
                     return false;
                 }
                 refdata
@@ -435,6 +433,7 @@ impl ReceptorRevisionPass {
                     .map(|allele| allele.len() >= old_v_len)
                     .unwrap_or(false)
             })
+            .filter(|(id, _)| self.replacement_admitted(sim, refdata, *id, old_v_len, None, ctx))
             .collect();
 
         if eligible.is_empty() {
@@ -445,11 +444,7 @@ impl ReceptorRevisionPass {
                     crate::dist::FilteredSampleError::EmptyAdmissibleSupport,
                 ));
             }
-            // Permissive fall-through: take the raw natural draw
-            // even if it's length-ineligible. Caller will surface
-            // the mismatch downstream when the post-state contract
-            // check (or in v1, the slice() overflow) fires.
-            return Ok(self.v_distribution.sample(ctx.rng));
+            return Ok(None);
         }
 
         let total_weight: f64 = eligible.iter().map(|(_, w)| w).sum();
@@ -457,10 +452,48 @@ impl ReceptorRevisionPass {
         for (id, weight) in &eligible {
             u -= weight;
             if u <= 0.0 {
-                return Ok(*id);
+                return Ok(Some(*id));
             }
         }
-        Ok(eligible.last().expect("eligible non-empty").0)
+        Ok(Some(eligible.last().expect("eligible non-empty").0))
+    }
+
+    /// Check candidates on the same immutable replacement state that will be
+    /// committed. Candidate evaluation must not emit events or consume RNG.
+    fn replacement_admitted(
+        &self,
+        sim: &Simulation,
+        refdata: &RefDataConfig,
+        new_id: AlleleId,
+        old_v_len: u32,
+        haplotype: Option<u8>,
+        ctx: &PassContext,
+    ) -> bool {
+        let Some(allele) = refdata.get(Segment::V, new_id) else {
+            return false;
+        };
+        let Some(trim) = allele.len().checked_sub(old_v_len) else {
+            return false;
+        };
+        let Ok(trim) = u16::try_from(trim) else {
+            return false;
+        };
+        if ctx.contracts.is_none() {
+            return true;
+        }
+        let hypothetical = self
+            .replacement_builder(
+                sim.clone(),
+                allele,
+                new_id,
+                trim,
+                old_v_len,
+                haplotype,
+                false,
+            )
+            .seal();
+        self.validate_post_event_contracts(sim, &hypothetical, ctx)
+            .is_ok()
     }
 
     /// Apply the replacement to the simulation through a single
@@ -481,6 +514,31 @@ impl ReceptorRevisionPass {
         haplotype: Option<u8>,
         ctx: &mut PassContext,
     ) -> Simulation {
+        let mut builder = self.replacement_builder(
+            sim,
+            new_allele,
+            new_id,
+            derived_trim_3,
+            old_v_len,
+            haplotype,
+            ctx.event_log_sink.is_some(),
+        );
+        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
+            sink.extend(builder.seal_event_log_observer());
+        }
+        builder.seal()
+    }
+
+    fn replacement_builder(
+        &self,
+        sim: Simulation,
+        new_allele: &Allele,
+        new_id: AlleleId,
+        derived_trim_3: u16,
+        old_v_len: u32,
+        haplotype: Option<u8>,
+        capture_events: bool,
+    ) -> SimulationBuilder<'static> {
         // Capture the pre-revision V identity **before** the builder
         // mutates the slot. This is the IR-side source of truth for
         // the AIRR `original_v_call` projection — read by
@@ -502,7 +560,7 @@ impl ReceptorRevisionPass {
             );
 
         let mut builder = SimulationBuilder::from_simulation(sim);
-        if ctx.event_log_sink.is_some() {
+        if capture_events {
             builder.attach_event_log_observer();
         }
 
@@ -517,6 +575,13 @@ impl ReceptorRevisionPass {
         // when a cross-haplotype (same_haplotype=false) replacement is drawn.
         let mut new_inst =
             AlleleInstance::new(new_id).with_receptor_revision_original_id(preserved_original_id);
+        // Revision replaces only the structural V region; its existing P
+        // junction bases remain in the pool and retain their original history.
+        if let Some(old) = builder.peek().assignments.get(Segment::V) {
+            new_inst = new_inst
+                .with_p_length_5(old.p_length_5)
+                .with_p_length_3(old.p_length_3);
+        }
         if let Some(h) = haplotype {
             new_inst = new_inst.with_haplotype(h);
         }
@@ -528,24 +593,14 @@ impl ReceptorRevisionPass {
         //    receptor-revision v1; the same-length constraint
         //    guarantees the slice fits.
         let replacement: Vec<Nucleotide> = (0..old_v_len)
-            .map(|i| {
-                Nucleotide::germline(new_allele.seq[i as usize], i as u16, Segment::V)
-            })
+            .map(|i| Nucleotide::germline(new_allele.seq[i as usize], i as u16, Segment::V))
             .collect();
         let _ = builder.replace_segment(Segment::V, replacement);
 
-        if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
-            sink.extend(builder.seal_event_log_observer());
-        }
-        builder.seal()
+        builder
     }
 
-    /// Strict post-event contract arbitration. Builds the post-
-    /// replacement IR, asks the contract bundle whether it admits
-    /// the receptor-revised state, and surfaces a structured
-    /// `ContractViolation` on rejection. Permissive mode skips this
-    /// check — receptor revision is a rare event, and the
-    /// post-event filter would just bypass it silently anyway.
+    /// Contract arbitration shared by candidate filtering and replay.
     fn validate_post_event_contracts(
         &self,
         pre_sim: &Simulation,
@@ -555,8 +610,8 @@ impl ReceptorRevisionPass {
         let Some(contracts) = ctx.contracts else {
             return Ok(());
         };
-        let context = ChoiceContext::none()
-            .with_address(address::ChoiceAddress::ReceptorRevisionApplied);
+        let context =
+            ChoiceContext::none().with_address(address::ChoiceAddress::ReceptorRevisionApplied);
         contracts
             .admits_post_event(pre_sim, post_sim, ctx.refdata, context)
             .map_err(|violation| PassError::contract_violation(self.name(), vec![violation]))
@@ -570,7 +625,7 @@ impl ReceptorRevisionPass {
     ) -> Result<Simulation, PassError> {
         // Genotype-aware mode: restrict the replacement V to carried alleles on
         // the drawn rearrangement chromosome (same-haplotype), excluding the
-        // current V. The non-genotype path below is unchanged (byte-identical).
+        // current V. The non-genotype path enforces the same exclusion.
         if let Some(constraint) = self.genotype_v.as_ref() {
             return self.execute_genotype_aware(sim, ctx, strict, constraint);
         }
@@ -587,6 +642,11 @@ impl ReceptorRevisionPass {
             .ok_or_else(|| PassError::missing_refdata(self.name()))?;
 
         let old_v_len = self.old_v_region_len(sim)?;
+        let current_v = sim
+            .assignments
+            .get(Segment::V)
+            .expect("V assigned")
+            .allele_id;
 
         // Replay path consumes the recorded Bool first; the
         // applied/not-applied branch then mirrors the fresh path.
@@ -600,12 +660,11 @@ impl ReceptorRevisionPass {
         } else {
             ctx.rng.next_f64() < self.prob
         };
-        ctx.trace.record_choice(
-            address::ChoiceAddress::ReceptorRevisionApplied,
-            ChoiceValue::Bool(applied),
-        );
-
         if !applied {
+            ctx.trace.record_choice(
+                address::ChoiceAddress::ReceptorRevisionApplied,
+                ChoiceValue::Bool(false),
+            );
             return Ok(sim.clone());
         }
 
@@ -616,32 +675,28 @@ impl ReceptorRevisionPass {
         // `old_v_len` surfaces as `InvalidDistributionOutput`
         // rather than silently corrupting the V slice.
         let (new_id, derived_trim_3) = if replaying {
-            self.consume_replay_choices(refdata, old_v_len, ctx)?
+            self.consume_replay_choices(refdata, current_v, old_v_len, ctx)?
         } else {
-            let id = self.sample_replacement_allele(refdata, old_v_len, ctx, strict)?;
+            let Some(id) =
+                self.sample_replacement_allele(sim, refdata, current_v, old_v_len, ctx, strict)?
+            else {
+                ctx.trace.record_choice(
+                    address::ChoiceAddress::ReceptorRevisionApplied,
+                    ChoiceValue::Bool(false),
+                );
+                return Ok(sim.clone());
+            };
             let allele = refdata
                 .get(Segment::V, id)
                 .ok_or_else(|| PassError::missing_allele(self.name(), Segment::V, id.index()))?;
-            // Same-length constraint: permissive fall-through above
-            // can hand us a too-short allele. Strict mode would
-            // have errored earlier; permissive surfaces as
-            // `invalid_plan_state` so the caller sees the
-            // contradiction rather than a panic on the trim
-            // subtraction below.
-            if allele.len() < old_v_len {
-                return Err(PassError::invalid_plan_state(
-                    self.name(),
-                    format!(
-                        "sampled V allele length {} < old V region length {}; \
-                         no admissible candidate under same-length constraint",
-                        allele.len(),
-                        old_v_len
-                    ),
-                ));
-            }
             let trim = allele.len() - old_v_len;
             (id, trim)
         };
+
+        ctx.trace.record_choice(
+            address::ChoiceAddress::ReceptorRevisionApplied,
+            ChoiceValue::Bool(true),
+        );
 
         // Validate the derived 3' trim fits in `u16` (the persistent
         // trim slot's width). Cannot overflow in practice — alleles
@@ -675,7 +730,7 @@ impl ReceptorRevisionPass {
             ChoiceValue::Int(derived_trim_3 as i64),
         );
 
-        // For strict mode, build a hypothetical post-sim and ask
+        // In both sampling modes, validate a hypothetical post-sim against
         // the active contract bundle whether the receptor-revised
         // state is admissible. The check runs against the same
         // `commit_replacement` path the real apply uses below, so
@@ -686,27 +741,18 @@ impl ReceptorRevisionPass {
         // real commit below is what fires events. This keeps the
         // contract check side-effect-free on the trace / sink
         // surfaces.
-        if strict && ctx.contracts.is_some() {
-            let mut hypothetical_ctx = PassContext {
-                trace: ctx.trace,
-                rng: ctx.rng,
-                pass_index: ctx.pass_index,
-                refdata: ctx.refdata,
-                contracts: ctx.contracts,
-                feasibility: ctx.feasibility,
-                reference_index: ctx.reference_index,
-                replay_cursor: None,
-                event_log_sink: None,
-            };
-            let hypothetical = self.commit_replacement(
-                sim.clone(),
-                &new_allele,
-                new_id,
-                derived_trim_3 as u16,
-                old_v_len,
-                None,
-                &mut hypothetical_ctx,
-            );
+        if ctx.contracts.is_some() {
+            let hypothetical = self
+                .replacement_builder(
+                    sim.clone(),
+                    &new_allele,
+                    new_id,
+                    derived_trim_3 as u16,
+                    old_v_len,
+                    None,
+                    false,
+                )
+                .seal();
             self.validate_post_event_contracts(sim, &hypothetical, ctx)?;
         }
 
@@ -731,6 +777,7 @@ impl ReceptorRevisionPass {
     fn consume_replay_choices(
         &self,
         refdata: &RefDataConfig,
+        current_v: AlleleId,
         old_v_len: u32,
         ctx: &mut PassContext,
     ) -> Result<(AlleleId, u32), PassError> {
@@ -746,9 +793,29 @@ impl ReceptorRevisionPass {
             .map_err(|reason| PassError::replay(self.name(), reason))?;
 
         let id = AlleleId::new(id_index);
+        if id == current_v {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                address::ChoiceAddress::ReceptorRevisionVAllele.to_string(),
+                id_index as i64,
+                "replacement_equals_current_allele",
+            ));
+        }
         let allele = refdata
             .get(Segment::V, id)
             .ok_or_else(|| PassError::missing_allele(self.name(), Segment::V, id_index))?;
+        if !self.v_distribution.support().is_some_and(|support| {
+            support
+                .into_iter()
+                .any(|(candidate, weight)| candidate == id && weight > 0.0)
+        }) {
+            return Err(PassError::invalid_distribution_output(
+                self.name(),
+                address::ChoiceAddress::ReceptorRevisionVAllele.to_string(),
+                id_index as i64,
+                "replacement_outside_configured_support",
+            ));
+        }
 
         if trim_3_i64 < 0 {
             return Err(PassError::invalid_distribution_output(
@@ -772,7 +839,9 @@ impl ReceptorRevisionPass {
         // `(allele, trim_3)` whose retained length disagrees with
         // the current V region must error rather than silently
         // produce a mismatched-length replacement.
-        let retained = (allele.len() as i64).checked_sub(trim_3 as i64).unwrap_or(-1);
+        let retained = (allele.len() as i64)
+            .checked_sub(trim_3 as i64)
+            .unwrap_or(-1);
         if retained != old_v_len as i64 {
             return Err(PassError::invalid_plan_state(
                 self.name(),
@@ -814,8 +883,10 @@ impl Pass for ReceptorRevisionPass {
                 let mut s = base;
                 let _ = write!(s, "|geno_rr|same={}", g.same_haplotype);
                 for (c, list) in g.per_hap.iter().enumerate() {
-                    let mut rows: Vec<(u32, u64)> =
-                        list.iter().map(|(id, m)| (id.index(), m.to_bits())).collect();
+                    let mut rows: Vec<(u32, u64)> = list
+                        .iter()
+                        .map(|(id, m)| (id.index(), m.to_bits()))
+                        .collect();
                     rows.sort_unstable();
                     let _ = write!(s, "|h{}={:?}", c, rows);
                 }
@@ -835,6 +906,15 @@ impl Pass for ReceptorRevisionPass {
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         self.execute_with_sampling_mode(sim, ctx, true)
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {
@@ -870,5 +950,7 @@ impl Pass for ReceptorRevisionPass {
     }
 }
 
+#[cfg(test)]
+mod productive_tests;
 #[cfg(test)]
 mod tests;
