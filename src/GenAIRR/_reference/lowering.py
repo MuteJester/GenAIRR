@@ -15,7 +15,7 @@ from GenAIRR import _engine
 from GenAIRR._refdata_resolver import _j_anchor_residues_for_locus
 from GenAIRR._reference.capabilities import _usable
 from GenAIRR._reference.errors import ReferenceArtifactError
-from GenAIRR._reference.model import Catalogue
+from GenAIRR._reference.model import SUBREGION_LABELS, Catalogue
 
 PROFILE_ID = "observed_span_simulation"
 ADMITTED_CURATABLE_KINDS = frozenset(
@@ -136,8 +136,10 @@ def lower(catalogue: Catalogue, view: Dict[str, List[str]]) -> Lowered:
                 kwargs["anchor"] = anchor
             if segment == "V":
                 sub = _single(catalogue, allele_id, "v_subregions")
+                # IMGT order, never the claim value's key order (which canonical JSON sorts).
                 kwargs["subregions"] = (
-                    [(label, span[0], span[1]) for label, span in sub.value.items()] if sub else None)
+                    [(label, *sub.value[label]) for label in SUBREGION_LABELS if label in sub.value]
+                    if sub else None)
             adders[segment](allele.label, allele.gene, allele.sequence.encode("ascii"), **kwargs)
             ref.set_allele_evidence(
                 segment, index, json.dumps(_evidence(catalogue, allele, phase)))

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 
 from GenAIRR._airr_record import _translate_codon
+from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference.model import Catalogue
 
 CAPABILITIES = (
@@ -97,7 +98,7 @@ def _accepted(catalogue, allele_id, predicate):
 def _usable(catalogue, allele_id, predicate, want=None):
     """Accepted claims when they agree on one value (and match ``want``), else ()."""
     claims = _accepted(catalogue, allele_id, predicate)
-    values = {repr(c.value) for c in claims}
+    values = {canonical_json(c.value) for c in claims}   # key-order independent for object values
     if len(values) != 1:
         return ()
     if want is not None and claims[0].value != want:

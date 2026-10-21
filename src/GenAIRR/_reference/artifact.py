@@ -99,7 +99,7 @@ def _summary(catalogue: Catalogue, allele_id: str, predicate: str) -> Optional[C
 
 def _conflicted(catalogue: Catalogue, allele_id: str, predicate: str) -> bool:
     claims = catalogue.claims_for(allele_id, predicate)
-    accepted = {repr(c.value) for c in claims if c.status == "accepted"}
+    accepted = {canonical_json(c.value) for c in claims if c.status == "accepted"}
     return any(c.status == "conflict" for c in claims) or len(accepted) > 1
 
 

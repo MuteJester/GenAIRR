@@ -218,3 +218,28 @@ def test_seal_makes_hash_include_context():
 def test_resolver_rule_extraction_preserves_bundled_hash():
     assert dataconfig_to_refdata(data.HUMAN_IGK_OGRDB).content_hash() == \
         "sha256:6d126831c55da4f7a7f74550123709866a2835c427e16ae1d1b30c1068157b5d"
+
+
+IMGT_ORDER = ["FWR1", "CDR1", "FWR2", "CDR2", "FWR3"]
+_SPANS = {"FWR1": [0, 3], "CDR1": [3, 6], "FWR2": [6, 9]}
+
+
+def _subregions(value):
+    return claim("V:V1", "v_subregions", value, "assertion", "imgt_alignment")
+
+
+def test_subregions_lowered_in_imgt_order_regardless_of_key_order():
+    for order in (["CDR1", "FWR1", "FWR2"], ["FWR2", "CDR1", "FWR1"], ["FWR1", "CDR1", "FWR2"]):
+        cat = build([_subregions({k: _SPANS[k] for k in order})], alignment="imgt_gapped", gapped=GAPPED)
+        low = lower(cat, default_view(cat))
+        assert [s[0] for s in low.refdata.v_allele(0).subregions] == ["FWR1", "CDR1", "FWR2"]
+        assert [s["label"] if isinstance(s, dict) else s[0] for s in low.spec["v"][0]["subregions"]] == \
+            ["FWR1", "CDR1", "FWR2"]
+
+
+def test_agreeing_subregion_claims_with_different_key_order_are_used():
+    sorted_keys = _subregions({k: _SPANS[k] for k in sorted(_SPANS)})
+    imgt_keys = _subregions(dict(_SPANS))
+    cat = build([sorted_keys, imgt_keys], alignment="imgt_gapped", gapped=GAPPED)
+    assert [s[0] for s in lower(cat, default_view(cat)).refdata.v_allele(0).subregions] == \
+        ["FWR1", "CDR1", "FWR2"]

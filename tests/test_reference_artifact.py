@@ -775,3 +775,29 @@ def test_empty_selection_names_segment_and_accounting(tmp_path, monkeypatch, seg
     assert all(r in message for r in reasons), message
     positions = [message.index(r) for r in reasons]
     assert positions == sorted(positions)
+
+
+# ── Untampered round trips with a declared IMGT alignment ───────────
+
+
+def _subregion_order(reference):
+    native = reference.native_refdata()
+    return [[s[0] for s in native.v_allele(i).subregions] for i in range(native.v_pool_size())]
+
+
+def test_gapped_reference_with_subregions_round_trips_byte_identical(tmp_path):
+    ref = _gapped(tmp_path / "build")
+    full = ["FWR1", "CDR1", "FWR2", "CDR2", "FWR3"]
+    assert _subregion_order(ref) == [full, full]
+    again = Reference.from_json(ref.to_json())
+    assert again.to_json() == ref.to_json()
+    assert _subregion_order(again) == [full, full]
+    path = tmp_path / "gapped.genairr-ref.json"
+    ref.write(path)
+    read = Reference.read(path)
+    for name in ("catalogue_hash", "models_hash", "execution_hash", "artifact_hash"):
+        assert getattr(read, name) == getattr(ref, name), name
+    read.write(tmp_path / "copy.genairr-ref.json")
+    assert (tmp_path / "copy.genairr-ref.json").read_bytes() == path.read_bytes() == \
+        ref.to_json().encode("utf-8")
+    assert _subregion_order(read) == [full, full]
