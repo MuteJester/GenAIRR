@@ -135,6 +135,15 @@ pub struct PyRefDataConfig {
 }
 
 impl PyRefDataConfig {
+    fn ensure_unsealed(&self) -> PyResult<()> {
+        if self.inner.reference_context.is_some() {
+            return Err(PyValueError::new_err(
+                "RefDataConfig is sealed by a reference context; build a new Reference instead",
+            ));
+        }
+        Ok(())
+    }
+
     /// Borrowed view of the inner Rust config — used by runners that
     /// need to thread it into a `PassRuntime`. Internal API only.
     pub(crate) fn inner(&self) -> &RefDataConfig {
@@ -206,6 +215,7 @@ impl PyRefDataConfig {
         missing_severity: &str,
         mismatch_severity: &str,
     ) -> PyResult<()> {
+        self.ensure_unsealed()?;
         self.inner.rules.v_anchor = build_anchor_rule(
             "V",
             expected_aa,
@@ -227,6 +237,7 @@ impl PyRefDataConfig {
         missing_severity: &str,
         mismatch_severity: &str,
     ) -> PyResult<()> {
+        self.ensure_unsealed()?;
         self.inner.rules.j_anchor = build_anchor_rule(
             "J",
             expected_aa,
@@ -242,6 +253,7 @@ impl PyRefDataConfig {
     /// case-folded comparison is used. Default ``["A", "C", "G",
     /// "T", "N"]``.
     fn set_allowed_bases(&mut self, bases: Vec<String>) -> PyResult<()> {
+        self.ensure_unsealed()?;
         let mut allowed: Vec<u8> = Vec::with_capacity(bases.len());
         for b in &bases {
             let bytes = b.as_bytes();
@@ -312,7 +324,8 @@ impl PyRefDataConfig {
         reference_set: Option<String>,
         name: Option<String>,
         source: Option<String>,
-    ) {
+    ) -> PyResult<()> {
+        self.ensure_unsealed()?;
         let id = &mut self.inner.identity;
         if let Some(v) = species {
             id.species = into_some_or_none(v);
@@ -329,6 +342,7 @@ impl PyRefDataConfig {
         if let Some(v) = source {
             id.source = into_some_or_none(v);
         }
+        Ok(())
     }
 
     /// Return a curated copy of this cartridge under ``policy``.
@@ -377,6 +391,7 @@ impl PyRefDataConfig {
         allowed: Option<Vec<String>>,
         keep_unannotated: bool,
     ) -> PyResult<()> {
+        self.ensure_unsealed()?;
         let policy = build_curation_policy(policy, allowed, keep_unannotated)?;
         self.inner = self.inner.curated(policy);
         Ok(())
@@ -414,6 +429,7 @@ impl PyRefDataConfig {
         functional_status: Option<&str>,
         subregions: Option<Vec<(String, u16, u16)>>,
     ) -> PyResult<u32> {
+        self.ensure_unsealed()?;
         check_allele_len(Segment::V, name, seq)?;
         let status = parse_functional_status(functional_status)?;
         let subregions = parse_subregions(subregions.as_deref(), seq.len())?;
@@ -442,6 +458,7 @@ impl PyRefDataConfig {
         anchor: Option<u16>,
         functional_status: Option<&str>,
     ) -> PyResult<u32> {
+        self.ensure_unsealed()?;
         if !self.inner.chain_type.has_d() {
             return Err(PyValueError::new_err(
                 "cannot add D allele to a VJ-chain RefDataConfig",
@@ -473,6 +490,7 @@ impl PyRefDataConfig {
         anchor: Option<u16>,
         functional_status: Option<&str>,
     ) -> PyResult<u32> {
+        self.ensure_unsealed()?;
         check_allele_len(Segment::J, name, seq)?;
         let status = parse_functional_status(functional_status)?;
         Ok(push_allele(
@@ -567,6 +585,40 @@ impl PyRefDataConfig {
             .collect()
     }
 
+    /// Validate and attach a reference context, sealing this config.
+    fn set_reference_context(&mut self, context_json: &str) -> PyResult<()> {
+        self.ensure_unsealed()?;
+        let ctx: crate::refdata::ReferenceContext = serde_json::from_str(context_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid reference context: {e}")))?;
+        let problems = ctx.problems();
+        if !problems.is_empty() {
+            return Err(PyValueError::new_err(format!(
+                "invalid reference context: {}",
+                problems.join("; ")
+            )));
+        }
+        self.inner.reference_context = Some(ctx);
+        Ok(())
+    }
+
+    fn reference_context_json(&self) -> Option<String> {
+        self.inner
+            .reference_context
+            .as_ref()
+            .map(|c| serde_json::to_string(c).expect("context serializes"))
+    }
+
+    fn is_sealed(&self) -> bool {
+        self.inner.reference_context.is_some()
+    }
+
+    /// Canonical ReferenceSpecV1 JSON for an unsealed config.
+    fn reference_spec_json(&self) -> PyResult<String> {
+        let spec = crate::family_replay::reference::ReferenceSpecV1::capture(&self.inner)
+            .map_err(PyValueError::new_err)?;
+        serde_json::to_string(&spec).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     /// Attach versioned, sequence-bound authoring evidence (JSON schema v1).
     fn set_allele_evidence(
         &mut self,
@@ -574,6 +626,7 @@ impl PyRefDataConfig {
         allele_id: u32,
         evidence_json: &str,
     ) -> PyResult<()> {
+        self.ensure_unsealed()?;
         let segment = evidence_segment(segment)?;
         let evidence = serde_json::from_str(evidence_json)
             .map_err(|e| PyValueError::new_err(format!("invalid reference evidence: {e}")))?;

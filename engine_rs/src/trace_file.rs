@@ -502,6 +502,17 @@ pub fn refdata_content_hash(refdata: &RefDataConfig) -> String {
         }
     }
 
+    // Reference context is an explicit extension: absent => no bytes.
+    if let Some(ctx) = &refdata.reference_context {
+        hasher.update(b"reference_context_schema=1\n");
+        hasher.update(
+            serde_json::to_string(ctx)
+                .expect("context serializes")
+                .as_bytes(),
+        );
+        hasher.update(b"\n");
+    }
+
     let digest = hasher.finalize();
     format!("sha256:{:x}", digest)
 }

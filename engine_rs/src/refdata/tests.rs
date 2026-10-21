@@ -543,3 +543,58 @@
         assert_eq!(cfg.v_pool.len(), 1);
         assert_eq!(cfg.j_pool.len(), 1);
     }
+
+    fn ctx_for_test() -> ReferenceContext {
+        ReferenceContext {
+            schema_version: 1,
+            catalogue_hash: format!("sha256:{}", "a".repeat(64)),
+            view: "default".into(),
+            profile: "observed_span_simulation".into(),
+            models_hash: format!("sha256:{}", "b".repeat(64)),
+        }
+    }
+
+    fn ctx_cfg() -> RefDataConfig {
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        let _ = cfg.v_pool.push(make_v("v*01", "v", b"TGTAAA", Some(0)));
+        cfg
+    }
+
+    #[test]
+    fn context_absent_hash_matches_legacy() {
+        let mut a = ctx_cfg();
+        let h0 = crate::trace_file::refdata_content_hash(&a);
+        a.reference_context = Some(ctx_for_test());
+        a.reference_context = None;
+        assert_eq!(crate::trace_file::refdata_content_hash(&a), h0);
+    }
+
+    #[test]
+    fn context_present_changes_hash() {
+        let mut a = ctx_cfg();
+        let h0 = crate::trace_file::refdata_content_hash(&a);
+        a.reference_context = Some(ctx_for_test());
+        assert_ne!(crate::trace_file::refdata_content_hash(&a), h0);
+        assert!(ctx_for_test().problems().is_empty());
+        let mut bad = ctx_for_test();
+        bad.schema_version = 2;
+        bad.view = " ".into();
+        bad.catalogue_hash = "sha256:xyz".into();
+        assert_eq!(bad.problems().len(), 3);
+    }
+
+    #[test]
+    fn capture_rejects_context() {
+        let mut a = ctx_cfg();
+        assert!(crate::family_replay::reference::ReferenceSpecV1::capture(&a).is_ok());
+        a.reference_context = Some(ctx_for_test());
+        let err = crate::family_replay::reference::ReferenceSpecV1::capture(&a).unwrap_err();
+        assert!(err.contains("reference_spec_v1"));
+    }
+
+    #[test]
+    fn curated_clears_context() {
+        let mut a = ctx_cfg();
+        a.reference_context = Some(ctx_for_test());
+        assert!(a.curated(RefDataCurationPolicy::Raw).reference_context.is_none());
+    }
