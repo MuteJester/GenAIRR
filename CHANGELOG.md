@@ -41,6 +41,11 @@ All notable changes to GenAIRR are documented here.
   `infer_identity()`.
 - The native reference bridge rejects V/D/J sequences longer than 65,535 nt
   with `ValueError` before pool mutation, instead of narrowing lengths to `u16`.
+- `ReferenceCartridgeBuilder.from_fasta()` decides whether a V sequence is an
+  IMGT alignment from its gap markers, not its header. Header-less IMGT-gapped
+  FASTA (e.g. OGRDB `gapped`) keeps its validated Cys104 anchor instead of
+  losing it. An IMGT-header ungapped V no longer reads codon 309 as IMGT residue
+  104 and fabricates an anchor; its anchor stays unknown.
 - Reference authoring uses the shared native landmark resolver, retains FASTA
   functionality/source declarations, and keeps missing species unknown.
   Optional checksum-bound evidence transports independent coding phase and

@@ -126,3 +126,28 @@ def test_new_checksum_survives_repeated_roundtrips_and_fresh_hash_seed(tmp_path)
     next(iter(cfg.v_alleles.values()))[0].reference_evidence["boundary_3"] = "partial"
     with pytest.raises(Exception, match="checksum mismatch"):
         cfg.verify_integrity()
+
+
+def _v_only(v_header, v_seq):
+    cfg = ReferenceCartridgeBuilder.from_fasta(
+        v_fasta=f"{v_header}\n{v_seq}\n",
+        j_fasta=">ACC2|TRAJ1*01|Mus musculus|F|J-REGION|\nTTTGGGAAAGGG\n",
+        chain_type="TCR_ALPHA",
+    ).build()
+    return next(iter(cfg.v_alleles.values()))[0]
+
+
+def test_headerless_imgt_gapped_v_keeps_its_validated_cys104_anchor():
+    # e.g. an OGRDB "gapped" FASTA: IMGT gaps, allele name only in the header.
+    v = _v_only(">TRAV1*01", "AAA" + "..." + "AAA" * 101 + "TGT" + "AAA")
+    assert v.anchor == 306
+    assert v.reference_evidence["method"] == "imgt_gapped_104"
+
+
+def test_imgt_header_does_not_turn_ungapped_v_into_an_imgt_alignment():
+    # Ungapped, length >= 312, with TGT at 309: not IMGT codon 104.
+    seq = "GCT" * 103 + "TGT" + "GCT"
+    assert seq[309:312] == "TGT" and "." not in seq
+    v = _v_only(">ACC1|TRAV1*01|Mus musculus|F|V-REGION|", seq)
+    assert v.anchor is None
+    assert v.reference_evidence["anchor_status"] == "unknown"

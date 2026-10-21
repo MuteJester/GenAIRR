@@ -372,8 +372,8 @@ derives the IMGT region intervals from each V allele's gapped
 (IMGT-aligned) sequence. If your FASTA carries ungapped sequences
 only, `v_subregion_support.annotated_v_count` will be 0 and
 `v_subregion_rates`-driven SHM targeting will refuse to compile.
-Either include the IMGT-gapped sequence in the FASTA headers or
-supply the `(start, end)` intervals manually before `build()`.
+Either supply IMGT-gapped V sequences (with `.` gap markers) in the
+FASTA or supply the `(start, end)` intervals manually before `build()`.
 
 **Expecting legacy fields to auto-lift.** Bundled cartridges carry
 several legacy nested dicts (`NP_lengths`, `trim_dicts`,

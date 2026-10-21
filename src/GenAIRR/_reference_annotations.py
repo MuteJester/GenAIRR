@@ -41,9 +41,11 @@ def resolve_allele_anchor(allele, segment, *, imgt_gapped=False):
 def annotate_fasta_header(allele, raw_header, segment):
     """Retain IMGT header declarations without upgrading missing evidence.
 
-    An IMGT-shaped header identifies its coordinate convention; a bare FASTA
-    sequence does not. Partial/completeness flags are preserved in the raw
-    header but not guessed into per-end coding-boundary claims.
+    An IMGT-shaped header declares identity, species and functionality. It
+    does not declare an IMGT numbering alignment: IMGT exports share headers
+    across gapped and ungapped sets, so gap markers alone make a V sequence an
+    alignment. Partial/completeness flags are preserved in the raw header but
+    not guessed into per-end coding-boundary claims.
     """
     fields = raw_header.lstrip(">").strip().split("|")
     is_imgt = len(fields) >= 5 and fields[4].strip().upper() == f"{segment}-REGION"
@@ -55,7 +57,9 @@ def annotate_fasta_header(allele, raw_header, segment):
     else:
         allele.functional_status = "unknown"
     if segment in ("V", "J"):
-        result = resolve_allele_anchor(allele, segment, imgt_gapped=is_imgt and segment == "V")
+        from .utilities.imgt_regions import declares_imgt_gaps
+        imgt_gapped = segment == "V" and declares_imgt_gaps(allele.gapped_seq)
+        result = resolve_allele_anchor(allele, segment, imgt_gapped=imgt_gapped)
         if segment == "J":
             allele.frame = None if result["position"] is None else result["position"] % 3
     else:
