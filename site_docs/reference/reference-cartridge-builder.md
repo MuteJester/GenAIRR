@@ -20,6 +20,7 @@ for the estimator deep dive, see
 |---|---|
 | `.from_fasta(...)` | Class-level constructor; parses V/D/J FASTA into the catalogue |
 | `.infer_identity(...)` | Declare species / chain / locus / reference-set / name; missing species stays unknown |
+| `.with_build_date(date)` | Fix `metadata.last_updated` so identical inputs reproduce the same checksum |
 | `.with_reference_evidence(..., anchors=...)` | Attach sequence-bound landmark, coding-phase and coding-boundary evidence |
 | `.infer_v_subregions()` | Annotate V alleles with FWR/CDR intervals (required for `v_subregion_rates`) |
 | `.with_rules(...)` | Attach an explicit `ReferenceRulesSpec` |
@@ -45,6 +46,7 @@ for source requirements, conservative anchor inference and legacy compatibility.
       members:
         - from_fasta
         - infer_identity
+        - with_build_date
         - with_reference_evidence
         - infer_v_subregions
         - with_rules

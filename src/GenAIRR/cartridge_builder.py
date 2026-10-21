@@ -25,7 +25,7 @@ for the full design.
 from __future__ import annotations
 
 import io
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, IO, List, Optional, Union
@@ -55,7 +55,7 @@ from .reference_models import (
     ReferenceEmpiricalModels,
 )
 from .reference_rules import ReferenceRulesSpec
-from .utilities.imgt_regions import compute_v_region_boundaries
+from .utilities.imgt_regions import compute_v_region_boundaries, declares_imgt_gaps
 from .utilities.misc import parse_fasta
 from ._cartridge_estimators import _CartridgeEstimators
 
@@ -237,6 +237,10 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
         self._reference_rules: Optional[ReferenceRulesSpec] = None
         self._reference_models: Optional[ReferenceEmpiricalModels] = None
         self._genotype_priors: Optional[PopulationGenotypeModel] = None
+        self._build_date: Optional[date] = None
+        # Per-allele (source, species, locus) as the loader declared them,
+        # captured on the first infer_identity() call.
+        self._loader_provenance: Optional[Dict[int, tuple]] = None
         self._report = CartridgeBuildReport()
 
     # ──────────────────────────────────────────────────────────
@@ -395,10 +399,14 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
         omitted the conventional label is derived from the chain
         type (``BCR_HEAVY → "IGH"``, etc.).
 
-        ``source`` is recorded on every parsed allele's ``.source``
-        field so downstream consumers can identify cartridges
-        produced by this builder vs the bundled OGRDB / IMGT
-        loaders.
+        ``source``, ``species`` and ``locus`` fill per-allele fields
+        only where the loader left them unset. Provenance already
+        declared by a FASTA header (e.g. an IMGT accession and species)
+        is preserved; preserved species labels are listed in the report
+        because header and :class:`Species` vocabularies differ.
+
+        ``last_updated`` is the date given to :meth:`with_build_date`,
+        else today's date.
         """
         species_enum = _resolve_species(species)
         chain = self._chain_type
@@ -425,19 +433,38 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
             species=species_enum,
             chain_type=chain,
             reference_set=reference_set or "user-supplied",
-            last_updated=date.today(),
+            last_updated=self._build_date or date.today(),
             has_d=chain.has_d,
         )
 
-        # Tag every parsed allele with the source string so the
-        # manifest's per-allele provenance reflects the build origin.
-        for buckets in (self._v_alleles, self._j_alleles, self._d_alleles):
-            for allele_list in buckets.values():
-                for allele in allele_list:
-                    allele.source = source
-                    if species_enum is not None:
-                        allele.species = species_enum.value
-                    allele.locus = locus_value
+        # Fill provenance the loader left unset; never overwrite it. A
+        # repeated call re-fills only what an earlier call supplied.
+        alleles = [
+            allele
+            for buckets in (self._v_alleles, self._j_alleles, self._d_alleles)
+            for allele_list in buckets.values()
+            for allele in allele_list
+        ]
+        if self._loader_provenance is None:
+            self._loader_provenance = {
+                id(a): (a.source, a.species, a.locus) for a in alleles
+            }
+        preserved_species: Dict[str, int] = {}
+        for allele in alleles:
+            loader_source, loader_species, loader_locus = self._loader_provenance[id(allele)]
+            allele.source = source if loader_source is None else loader_source
+            if loader_species is not None:
+                allele.species = loader_species
+                preserved_species[loader_species] = preserved_species.get(loader_species, 0) + 1
+            else:
+                allele.species = species_enum.value if species_enum is not None else None
+            allele.locus = locus_value if loader_locus is None else loader_locus
+        if preserved_species:
+            warnings.append(
+                f"{sum(preserved_species.values())} allele(s) keep loader-declared "
+                f"species labels {sorted(preserved_species)}; they are not checked "
+                f"against identity species {inputs['species']}"
+            )
 
         self._report.stages.append(
             {
@@ -446,9 +473,29 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
                 "inferred": {
                     "name": cartridge_name,
                     "metadata_set": True,
+                    "preserved_allele_species": dict(sorted(preserved_species.items())),
                 },
                 "warnings": warnings,
             }
+        )
+        return self
+
+    def with_build_date(self, value: date) -> "ReferenceCartridgeBuilder":
+        """Fix ``metadata.last_updated`` for reproducible builds.
+
+        Applies whether called before or after :meth:`infer_identity`,
+        and to the stub metadata :meth:`build` creates without it.
+        Rejects ``datetime`` (it carries a wall-clock time) and strings.
+        """
+        if type(value) is not date:
+            raise TypeError(
+                f"build date must be a datetime.date, got {type(value).__name__}"
+            )
+        self._build_date = value
+        if self._metadata is not None:
+            self._metadata = replace(self._metadata, last_updated=value)
+        self._report.stages.append(
+            {"stage": "with_build_date", "inputs": {"date": value.isoformat()}, "inferred": {}, "warnings": []}
         )
         return self
 
@@ -476,14 +523,9 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
         skipped_derivation_failed: List[Dict[str, Any]] = []
         for gene_alleles in self._v_alleles.values():
             for allele in gene_alleles:
-                gapped = getattr(allele, "gapped_seq", None)
-                # `compute_v_region_boundaries` walks IMGT-gapped
-                # positions assuming `.` is the gap marker. A
-                # sequence with no dots isn't IMGT-numbered and
-                # would produce degenerate boundaries; treat
-                # that case as "skip + warn" the same way an
-                # absent `gapped_seq` is treated.
-                if not gapped or "." not in gapped:
+                # A sequence with no IMGT gap dots isn't IMGT-numbered;
+                # skip + warn the same way an absent `gapped_seq` is.
+                if not declares_imgt_gaps(getattr(allele, "gapped_seq", None)):
                     skipped_no_gapped.append(allele.name)
                     continue
                 try:
@@ -751,7 +793,7 @@ class ReferenceCartridgeBuilder(_CartridgeEstimators):
                 species=None,
                 chain_type=self._chain_type,
                 reference_set="user-supplied",
-                last_updated=date.today(),
+                last_updated=self._build_date or date.today(),
                 has_d=self._chain_type.has_d,
             )
             self._report.warnings.append(
