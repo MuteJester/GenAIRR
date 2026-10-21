@@ -24,7 +24,7 @@ def append_duplex_recombine(experiment, model, *, np1_lengths, np2_lengths,
     # Keep cartridge allele usage as an upstream rule. Junction defaults are
     # deliberately absent from this immutable step: the authored history owns
     # the complete repair product, rather than a second N/P/trim model.
-    defaults = experiment._recombine_defaults() if experiment._dataconfig is not None else {}
+    defaults = experiment._recombine_defaults() or {}
     values = []
     for segment, weights in (("V", v_allele_weights), ("D", d_allele_weights), ("J", j_allele_weights)):
         if weights is None:

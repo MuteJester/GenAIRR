@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Union, overload
 
-from ._result_common import _inject_truth_columns
+from ._result_common import _as_native_refdata, _inject_truth_columns
 from ._result_export import (
     _ResultExport,
     _DEFAULT_COLUMN_ORDER,
@@ -38,16 +38,25 @@ class SimulationResult(_ResultExport, _ResultValidation):
     The original ``Outcome`` objects (with their full trace +
     revision history) are kept on ``.outcomes`` for advanced
     inspection — most users won't need them.
+
+    Results produced by a simulation are bound to the native reference
+    they ran against (``.reference_content_hash``); validating them
+    against a different reference raises ``ValueError``.
     """
 
-    __slots__ = ("_records", "_outcomes", "_parents", "_genotypes")
+    __slots__ = ("_records", "_outcomes", "_parents", "_genotypes", "_reference_content_hash")
 
     def __init__(
         self,
         records: Sequence[Dict[str, Any]],
         outcomes: Optional[Sequence] = None,
         parents: Optional[Sequence] = None,
+        *,
+        reference_content_hash: Optional[str] = None,
     ) -> None:
+        if reference_content_hash is not None and not isinstance(reference_content_hash, str):
+            raise TypeError("reference_content_hash must be a string or None")
+        self._reference_content_hash: Optional[str] = reference_content_hash
         self._records: List[Dict[str, Any]] = list(records)
         # Per-subject ground-truth ``Genotype`` objects, populated by
         # ``CompiledExperiment.run_records`` when a genotype is attached.
@@ -90,9 +99,12 @@ class SimulationResult(_ResultExport, _ResultValidation):
         for the standard generating calls. Post-mutation inference
         is always available separately as ``recalled_*_call``.
 
+        ``refdata`` may also be a :class:`GenAIRR.Reference`. The result
+        is bound to the reference's content hash.
         """
         from ._airr_record import outcome_to_airr_record
 
+        refdata = _as_native_refdata(refdata)
         records = [
             outcome_to_airr_record(
                 o, refdata, sequence_id=f"{id_prefix}{i}"
@@ -102,9 +114,16 @@ class SimulationResult(_ResultExport, _ResultValidation):
         if expose_provenance:
             for outcome, rec in zip(outcomes, records):
                 _inject_truth_columns(outcome, refdata, rec)
-        return cls(records, outcomes=outcomes)
+        return cls(records, outcomes=outcomes, reference_content_hash=refdata.content_hash())
 
     # ── list-like access ────────────────────────────────────────────
+
+    @property
+    def reference_content_hash(self) -> Optional[str]:
+        """Content hash of the native reference these records were generated
+        against (for a portable reference, its ``execution_hash``), or
+        ``None`` when the result was built from records alone."""
+        return getattr(self, "_reference_content_hash", None)
 
     @property
     def records(self) -> List[Dict[str, Any]]:
@@ -206,8 +225,10 @@ class SimulationResultWithLineages(SimulationResult):
         lineage_trees: "Optional[Sequence]" = None,
         families: "Optional[Sequence]" = None,
         lineage_record_origins: "Optional[Sequence]" = None,
+        *,
+        reference_content_hash: "Optional[str]" = None,
     ) -> None:
-        super().__init__(records, outcomes, parents)
+        super().__init__(records, outcomes, parents, reference_content_hash=reference_content_hash)
         self._family_replay_capture = None
         self._family_replay_seal = None
         self._family_replay_refdata = None

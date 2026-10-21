@@ -251,7 +251,8 @@ class CompiledClonalExperiment:
                 if expose_provenance:
                     _inject_truth_columns(desc, self._refdata, rec)
                 records.append(rec)
-        result = SimulationResult(records, outcomes=outcomes, parents=parents)
+        result = SimulationResult(records, outcomes=outcomes, parents=parents,
+                                  reference_content_hash=self._refdata.content_hash())
         if validate_records:
             from .._validation import (
                 _raise_on_family_validation_failure,

@@ -16,9 +16,11 @@ Typical usage::
   through the builtin :mod:`GenAIRR.data` registry,
 - a :class:`GenAIRR.DataConfig` object (already-loaded reference data),
 - a :class:`GenAIRR._engine.RefDataConfig` (the engine-native form, used
-  primarily by tests and advanced callers).
+  primarily by tests and advanced callers),
+- a portable :class:`GenAIRR.Reference` (built from local FASTA files and
+  annotations, or read from a ``*.genairr-ref.json`` artifact).
 
-In all three cases the input is normalised to a
+In every case the input is normalised to a
 :class:`GenAIRR._engine.RefDataConfig` before any pass is appended.
 """
 from __future__ import annotations
@@ -127,7 +129,8 @@ class Experiment(
     """Fluent builder for a simulation pipeline.
 
     Build an ``Experiment`` from a config name, a :class:`DataConfig`,
-    or a :class:`GenAIRR._engine.RefDataConfig` via :meth:`Experiment.on`,
+    a :class:`GenAIRR._engine.RefDataConfig` or a portable
+    :class:`GenAIRR.Reference` via :meth:`Experiment.on`,
     chain configuration steps (currently just :meth:`recombine`), then
     call :meth:`run` (or :meth:`compile` for explicit two-stage flow).
 
@@ -147,6 +150,7 @@ class Experiment(
         "_allow_curatable_refdata",
         "_genotype",
         "_user_allele_weights_set",
+        "_reference",
     )
 
     def __init__(
@@ -156,6 +160,11 @@ class Experiment(
     ) -> None:
         self._refdata = refdata
         self._dataconfig = dataconfig
+        # The portable ``Reference`` this experiment runs on, when started
+        # with ``Experiment.on(reference)``; ``None`` otherwise. When set,
+        # ``_refdata`` is the reference's sealed native configuration and
+        # the reference's explicit defaults drive recombination.
+        self._reference = None
         self._steps: List[
             Union[
                 _RecombineStep,
@@ -209,7 +218,8 @@ class Experiment(
         ``source`` is one of:
         - a config-name string (e.g. ``"human_igh"``),
         - a :class:`GenAIRR.DataConfig` instance,
-        - a :class:`GenAIRR._engine.RefDataConfig`.
+        - a :class:`GenAIRR._engine.RefDataConfig`,
+        - a portable :class:`GenAIRR.Reference`.
 
         When ``source`` is a config name or a ``DataConfig``, the
         underlying empirical distributions (NP lengths, per-gene
@@ -219,7 +229,27 @@ class Experiment(
         falls through to its uniform ``[0..6]`` placeholder unless
         the caller passes ``np1_lengths`` / ``np2_lengths``
         explicitly.
+
+        A :class:`GenAIRR.Reference` runs against its sealed native
+        configuration with the reference's explicit, unfitted defaults
+        (uniform allele usage, NP lengths uniform over ``0..6``,
+        uniform NP bases, no trimming, no P-nucleotides); any of them
+        can be overridden per run. Every result is bound to the
+        reference it ran against, so
+        ``result.validate_records(reference)`` confirms the match and
+        rejects a different reference. Genotype- and cohort-constrained
+        runs and family-replay capture are not yet supported for
+        portable references.
+
+        A file path is never read here: load a reference artifact with
+        ``GenAIRR.Reference.read(path)`` and pass the ``Reference``.
         """
+        from ._reference.artifact import Reference
+
+        if isinstance(source, Reference):
+            experiment = cls(source.native_refdata())
+            experiment._reference = source
+            return experiment
         refdata, dataconfig = _coerce_to_refdata_and_dataconfig(source)
         return cls(refdata, dataconfig)
 

@@ -31,6 +31,33 @@ from .._pipeline_ir import (
 from .._refdata_resolver import dataconfig_to_refdata
 
 
+def _check_reference_binding(experiment, reference) -> None:
+    """Require the experiment to run exactly the reference's sealed native
+    configuration, and reject workflows portable references do not support."""
+    from .._reference.errors import ReferenceArtifactError
+
+    live = experiment._refdata.content_hash()
+    if live != reference.execution_hash:
+        raise ReferenceArtifactError(
+            "integrity", "execution_hash",
+            f"the experiment's native reference (content hash {live}) no longer matches "
+            f"the selected Reference (execution hash {reference.execution_hash}); a portable "
+            f"reference runs only on its own sealed configuration, so curation or replacement "
+            f"is not supported. Build a new Reference instead.",
+        )
+    if experiment._genotype is not None:
+        _reject_genotype_constrained()
+
+
+def _reject_genotype_constrained() -> None:
+    from .._reference.errors import ReferenceCapabilityError
+
+    raise ReferenceCapabilityError(
+        "capability", "genotype_constrained",
+        "genotype- and cohort-constrained runs are not yet supported for portable references",
+    )
+
+
 class _CompileMixin:
     __slots__ = ()
 
@@ -57,12 +84,27 @@ class _CompileMixin:
         issues (empty pool, duplicates, invalid byte, anchor out of
         bounds) still reject, but Curatable issues (pseudogene-shape
         anchor anomalies) pass.
+
+        On a portable :class:`GenAIRR.Reference`, ``None`` selects the
+        lenient mode when the reference admitted curatable findings
+        (see ``reference.admission``) or the instance flag is set.
+        Compilation raises :class:`GenAIRR.ReferenceArtifactError`
+        (kind ``"integrity"``) when the experiment's native reference
+        no longer matches the reference's execution hash, for example
+        after :meth:`curate_refdata`, and (kind ``"capability"``) when
+        a genotype is attached.
         """
         from .duplex import validate_duplex_steps
         validate_duplex_steps(self._steps)
 
+        reference = self._reference
+        if reference is not None:
+            _check_reference_binding(self, reference)
+
         if allow_curatable_refdata is None:
             allow_curatable_refdata = self._allow_curatable_refdata
+            if reference is not None and reference.admission["accepted_curatable_findings"]:
+                allow_curatable_refdata = True
 
         # Receptor revision with a phased genotype is now haplotype-aware:
         # the lowering builds a genotype-aware ReceptorRevisionPass that
@@ -84,8 +126,10 @@ class _CompileMixin:
         # On raw RefDataConfig with default-on trim, warn at compile
         # time if the user didn't explicitly call .trim() to either
         # disable or replace the no-op default. By compile() time we
-        # know the final shape of the recombine step.
-        if self._dataconfig is None:
+        # know the final shape of the recombine step. A portable
+        # Reference declares trimming disabled explicitly, so it is
+        # not warned about.
+        if self._dataconfig is None and reference is None:
             for step in self._steps:
                 if not isinstance(step, _RecombineStep):
                     continue

@@ -162,8 +162,10 @@ class _RecombinationMixin:
         # historically silent — and surface a warning so the synthetic
         # default isn't mistaken for real biology. The trim warning is
         # emitted at compile() time instead, after .trim() has had a
-        # chance to disable trim explicitly.
-        if self._dataconfig is None:
+        # chance to disable trim explicitly. A portable Reference
+        # declares its NP-length and trim defaults explicitly, so
+        # neither warning applies to it.
+        if self._dataconfig is None and self._reference is None:
             if np1_lengths is None or (
                 self._refdata.chain_type == "vdj" and np2_lengths is None
             ):
@@ -808,10 +810,14 @@ class _RecombinationMixin:
         return self
 
     def _recombine_defaults(self):
-        """Lazy-extract the empirical distributions for this
-        experiment's DataConfig. Returns ``None`` for raw-RefDataConfig
-        experiments. Cached on first call.
+        """The default sampling distributions for :meth:`recombine`.
+
+        A portable Reference supplies its explicit unfitted defaults;
+        a DataConfig supplies its empirical distributions. Returns
+        ``None`` for raw-RefDataConfig experiments.
         """
+        if self._reference is not None:
+            return self._reference.recombine_defaults()
         if self._dataconfig is None:
             return None
         from .._dataconfig_extract import extract_recombine_defaults

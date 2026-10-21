@@ -445,7 +445,17 @@ def _capture_request(annotations, limits=None, *, deferred=False):
     return _CaptureRequest(annotations, limits, deferred=deferred)
 
 
+def _reject_portable_reference_capture():
+    raise FamilyReplayError(
+        "unsupported", "capture.reference",
+        "family-replay capture is not yet supported for portable references "
+        "(reference_spec_v1 cannot encode a reference sealed by a portable reference context)",
+    )
+
+
 def _start_capture(compiled, request, strict, expose_provenance, seed):
+    if compiled._refdata.is_sealed():
+        _reject_portable_reference_capture()
     if type(strict) is not bool:
         raise FamilyReplayError("format", "capture.strict", "expected Boolean")
     if type(expose_provenance) is not bool:
@@ -686,7 +696,8 @@ class FamilyReplayBundle:
         if _pack(records, "records", selected_limits) != _pack(expected_records, "records.expected", selected_limits):
             raise FamilyReplayError("record_mismatch", "records", "replayed records differ in fields, values, types or order")
         result = SimulationResultWithLineages(records, outcomes=outcomes, parents=parents, lineage_trees=trees,
-                                             families=families, lineage_record_origins=origins)
+                                             families=families, lineage_record_origins=origins,
+                                             reference_content_hash=refdata.content_hash())
         for report in (result.validate_records(refdata, _family_replay_budget=budget), result.validate_families(),
                        result.validate_families_with_parents(refdata, _family_replay_budget=budget)):
             if not report.ok:

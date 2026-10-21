@@ -366,7 +366,9 @@ def test_pin_scaffold_simulationresult_slots_documented_for_extension() -> None:
     """``SimulationResult.__slots__`` is the documented attribute
     surface. After Slice 2 it carries
     ``("_records", "_outcomes", "_parents")``; the genotype slice adds
-    ``"_genotypes"`` (per-subject ground-truth genotypes). A reviewer
+    ``"_genotypes"`` (per-subject ground-truth genotypes), and reference
+    binding adds ``"_reference_content_hash"`` (the content hash of the
+    native reference the records were generated against). A reviewer
     adding a new slot must update this pin in lockstep so the slot-list
     change shows up as a deliberate, audited diff."""
     assert SimulationResult.__slots__ == (
@@ -374,11 +376,12 @@ def test_pin_scaffold_simulationresult_slots_documented_for_extension() -> None:
         "_outcomes",
         "_parents",
         "_genotypes",
+        "_reference_content_hash",
     ), (
         f"SimulationResult.__slots__ drifted to {SimulationResult.__slots__}; "
-        "expected ('_records', '_outcomes', '_parents', '_genotypes'). Either "
-        "Slice 2 regressed (parent accessor removed) or a new slot landed "
-        "without updating the lockstep pin."
+        "expected ('_records', '_outcomes', '_parents', '_genotypes', "
+        "'_reference_content_hash'). Either Slice 2 regressed (parent accessor "
+        "removed) or a new slot landed without updating the lockstep pin."
     )
 
 

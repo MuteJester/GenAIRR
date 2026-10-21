@@ -23,8 +23,15 @@ class _GenotypeAllelesMixin:
 
         Raises ``ValueError`` if the genotype was built against a
         different cartridge (content-hash mismatch), or if allele locks /
-        explicit allele weights are already set.
+        explicit allele weights are already set. Raises
+        :class:`GenAIRR.ReferenceCapabilityError` on an experiment started
+        from a portable :class:`GenAIRR.Reference`: genotype-constrained
+        runs are not yet supported for portable references.
         """
+        if self._reference is not None:
+            from .compile import _reject_genotype_constrained
+
+            _reject_genotype_constrained()
         live_hash = self._refdata.content_hash()
         if genotype._source_hash != live_hash:
             raise ValueError(

@@ -11,6 +11,11 @@ Three input shapes flow through this module:
 - A bare :class:`GenAIRR._engine.RefDataConfig` — already engine-
   native, passed through unchanged.
 
+A portable :class:`GenAIRR.Reference` is dispatched by
+:meth:`Experiment.on` itself. A string or path naming a ``.json`` file
+is rejected with a pointer to ``GenAIRR.Reference.read(path)``; the
+file is not opened.
+
 Output is the typed pair ``(RefDataConfig, Optional[DataConfig])`` —
 the DataConfig is retained when available because ``recombine()``
 reads its empirical NP-length and per-gene trim distributions for
@@ -19,12 +24,16 @@ and falls through to the synthetic ``[0..6]`` placeholder.
 """
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, Union
+import os
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 from GenAIRR import _engine  # private Rust extension submodule
 
 from .dataconfig import DataConfig
 from .dataconfig.enums import ChainType
+
+if TYPE_CHECKING:
+    from ._reference.artifact import Reference
 
 
 # Short aliases (preferred defaults). Heavy / light / TCR for human
@@ -428,8 +437,17 @@ def _infer_locus_prefix(cfg: DataConfig) -> Optional[str]:
     return None
 
 
-# Anything :meth:`Experiment.on` accepts.
-ExperimentInput = Union[str, DataConfig, "_engine.RefDataConfig"]
+# Anything :meth:`Experiment.on` accepts. A ``Reference`` is dispatched by
+# ``Experiment.on`` itself, because it also supplies the run's defaults.
+ExperimentInput = Union[str, DataConfig, "_engine.RefDataConfig", "Reference"]
+
+
+def _reference_path_error(source) -> TypeError:
+    return TypeError(
+        f"Experiment.on({str(source)!r}): Experiment.on does not read files. "
+        f"Load a reference artifact with GenAIRR.Reference.read(path) and pass "
+        f"the Reference to Experiment.on."
+    )
 
 
 def _coerce_to_refdata_and_dataconfig(
@@ -446,12 +464,19 @@ def _coerce_to_refdata_and_dataconfig(
     if isinstance(source, _engine.RefDataConfig):
         return source, None
     if isinstance(source, str):
+        # A path to a reference artifact is never opened here; the
+        # artifact must be loaded (and checked) by Reference.read.
+        if (source.lower().replace("-", "_") not in _CONFIG_ALIASES
+                and source.lower().endswith(".json")):
+            raise _reference_path_error(source)
         cfg = _resolve_config_name(source)
         return dataconfig_to_refdata(cfg), cfg
     if isinstance(source, DataConfig):
         return dataconfig_to_refdata(source), source
+    if isinstance(source, os.PathLike):
+        raise _reference_path_error(os.fspath(source))
     raise TypeError(
         f"Experiment.on(...): expected a config-name string, "
-        f"GenAIRR.DataConfig, or GenAIRR._engine.RefDataConfig, "
-        f"got {type(source).__name__}"
+        f"GenAIRR.DataConfig, GenAIRR._engine.RefDataConfig or "
+        f"GenAIRR.Reference, got {type(source).__name__}"
     )
