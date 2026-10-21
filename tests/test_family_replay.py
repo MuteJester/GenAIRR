@@ -242,10 +242,11 @@ def test_atomic_no_clobber_replace_and_public_export(captured, tmp_path):
         result.save_family_replay(target)
     assert target.read_text() == "existing"
     result.save_family_replay(target, replace=True)
-    assert target.read_text() == bundle.to_json()
+    # Artifacts are UTF-8 bytes; the platform default (cp1252 on Windows) is not.
+    assert target.read_text(encoding="utf-8") == bundle.to_json()
     restored = FamilyReplayBundle.read_from(target).replay_records()
     restored.to_tsv(tmp_path / "out.tsv")
-    assert (tmp_path / "out.tsv").read_text().splitlines()[0].startswith("sequence_id\t")
+    assert (tmp_path / "out.tsv").read_text(encoding="utf-8").splitlines()[0].startswith("sequence_id\t")
     assert not list(tmp_path.glob(".*.tmp"))
 
 
