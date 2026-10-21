@@ -12,10 +12,10 @@ import json
 import math
 import os
 from pathlib import Path
-import tempfile
 from typing import Any
 
 from GenAIRR import _engine
+from GenAIRR._artifact_io import ArtifactIOError, write_atomic
 
 
 _ARTIFACT = "genairr_family_replay"
@@ -543,34 +543,10 @@ class FamilyReplayBundle:
         """Publish atomically, refusing to replace an existing file by default."""
         if type(replace) is not bool:
             raise TypeError("replace must be Boolean")
-        destination = Path(path)
-        temporary = None
         try:
-            descriptor, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(self._text.encode("utf-8"))
-                handle.flush()
-                os.fsync(handle.fileno())
-            if replace:
-                os.replace(temporary, destination)
-            else:
-                os.link(temporary, destination)
-                os.unlink(temporary)
-            temporary = None
-            if hasattr(os, "O_DIRECTORY"):
-                directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
-        except OSError as exc:
+            write_atomic(path, self._text.encode("utf-8"), replace=replace)
+        except ArtifactIOError as exc:
             raise FamilyReplayError("io", str(path), str(exc)) from exc
-        finally:
-            if temporary is not None:
-                try:
-                    os.unlink(temporary)
-                except FileNotFoundError:
-                    pass
 
     def replay_records(self, *, limits=None):
         """Validate every source, attempt and observed read before returning truth."""

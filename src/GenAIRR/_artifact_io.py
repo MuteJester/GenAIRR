@@ -1,0 +1,93 @@
+"""Shared strict JSON and atomic file I/O for portable GenAIRR artifacts.
+
+Canonical serialization, typed digests, a bounded duplicate-key-rejecting
+parser (native) and no-clobber atomic writes live here so every artifact
+format uses one implementation.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import tempfile
+from typing import Any
+
+from GenAIRR import _engine
+
+
+class ArtifactIOError(ValueError):
+    """An artifact read/write failure; ``kind`` is "io", "format" or "resource"."""
+
+    def __init__(self, kind: str, message: str):
+        self.kind = kind
+        super().__init__(message)
+
+
+def canonical_json(value) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def typed_digest(value, domain: str) -> str:
+    return _engine._family_replay_digest(canonical_json(value), domain)
+
+
+def strict_loads(text: str, *, max_bytes: int) -> Any:
+    if not isinstance(text, str):
+        raise ArtifactIOError("format", "expected JSON text")
+    if text.startswith("﻿"):
+        text = text[1:]
+    try:
+        normalized = _engine._family_replay_parse_json(text, json.dumps({"max_file_bytes": max_bytes}))
+    except Exception as exc:
+        message = str(exc)
+        kind = "resource" if "resource" in message.lower() else "format"
+        raise ArtifactIOError(kind, message) from exc
+    return json.loads(normalized)
+
+
+def read_text_bounded(path, *, max_bytes: int) -> str:
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read(max_bytes + 1)
+    except OSError as exc:
+        raise ArtifactIOError("io", str(exc)) from exc
+    if len(data) > max_bytes:
+        raise ArtifactIOError("resource", "file byte limit exceeded")
+    try:
+        return data.decode("utf-8")
+    except UnicodeError as exc:
+        raise ArtifactIOError("format", str(exc)) from exc
+
+
+def write_atomic(path, data: bytes, *, replace: bool) -> None:
+    """Publish atomically, refusing to replace an existing file unless ``replace``."""
+    if type(replace) is not bool:
+        raise TypeError("replace must be Boolean")
+    destination = Path(path)
+    temporary = None
+    try:
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if replace:
+            os.replace(temporary, destination)
+        else:
+            os.link(temporary, destination)
+            os.unlink(temporary)
+        temporary = None
+        if hasattr(os, "O_DIRECTORY"):
+            directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    except OSError as exc:
+        raise ArtifactIOError("io", str(exc)) from exc
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
