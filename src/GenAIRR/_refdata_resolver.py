@@ -19,7 +19,7 @@ and falls through to the synthetic ``[0..6]`` placeholder.
 """
 from __future__ import annotations
 
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 from GenAIRR import _engine  # private Rust extension submodule
 
@@ -330,12 +330,20 @@ def dataconfig_to_refdata(cfg: DataConfig) -> "_engine.RefDataConfig":
         # allele-name inference last (partial/synthetic catalogues).
         # Unknown locus leaves the lenient default in place.
         locus = refdata.identity().get("locus") or _infer_locus_prefix(cfg)
-        if locus == "IGH":
-            refdata.set_j_anchor_rule(expected_aa=["W"])
-        elif locus in ("IGK", "IGL", "TRA", "TRB", "TRG", "TRD"):
-            refdata.set_j_anchor_rule(expected_aa=["F"])
+        residues = _j_anchor_residues_for_locus(locus)
+        if residues is not None:
+            refdata.set_j_anchor_rule(expected_aa=residues)
 
     return refdata
+
+
+def _j_anchor_residues_for_locus(locus: Optional[str]) -> Optional[List[str]]:
+    """Expected J anchor residues for ``locus``, or ``None`` when unknown."""
+    if locus == "IGH":
+        return ["W"]
+    if locus in ("IGK", "IGL", "TRA", "TRB", "TRG", "TRD"):
+        return ["F"]
+    return None
 
 
 # Map ``ChainType.value`` strings (from
