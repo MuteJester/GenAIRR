@@ -1,0 +1,4 @@
+# Byte-exact reference fixtures: recorded file digests and the golden artifact cover
+# these bytes, so they are checked out unchanged (no CRLF conversion) on every platform.
+tests/data/reference_first_use/** -text
+tests/golden/reference/** -text

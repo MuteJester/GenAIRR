@@ -1,0 +1,115 @@
+{
+  "schema": "genairr_reference_annotations",
+  "schema_version": 1,
+  "reference": {
+    "name": "igk_local_fixture",
+    "version": null,
+    "locus": "IGK",
+    "chain_type": "vj",
+    "taxon": {
+      "scientific_name": "Homo sapiens",
+      "taxonomy_id": 9606
+    },
+    "build_date": "2026-10-21"
+  },
+  "conventions": {
+    "coordinates": "zero_based_half_open",
+    "v_alignment": "none"
+  },
+  "alleles": [
+    {
+      "segment": "V",
+      "label": "kappa_v_a",
+      "sequence_sha256": "sha256:d40ad256b76628081dbf33290907074a795c0c982d03e5df5d3bad20f6fff914",
+      "gene": null,
+      "functionality": null,
+      "anchor": {
+        "value": 261,
+        "support": "assertion",
+        "source": null,
+        "method": "software fixture copied from GenAIRR HUMAN_IGK_IMGT; not independent evidence"
+      },
+      "coding_phase": {
+        "value": 0,
+        "support": "assertion",
+        "source": null,
+        "method": "software fixture copied from GenAIRR HUMAN_IGK_IMGT; not independent evidence",
+        "derivation": "anchor_derived"
+      },
+      "boundary_5": null,
+      "boundary_3": null,
+      "notes": []
+    },
+    {
+      "segment": "V",
+      "label": "kappa_v_b",
+      "sequence_sha256": "sha256:edfee715b3d27ec65065e8181db1c9656b821a0fb069ecd4054b2fbd998233d9",
+      "gene": null,
+      "functionality": null,
+      "anchor": null,
+      "coding_phase": null,
+      "boundary_5": null,
+      "boundary_3": null,
+      "notes": []
+    },
+    {
+      "segment": "J",
+      "label": "kappa_j_1",
+      "sequence_sha256": "sha256:85f83cce5792225edf41eae55ea2013e4f1416f7f1146d7712bc9e2fcbd18232",
+      "gene": null,
+      "functionality": null,
+      "anchor": {
+        "value": 7,
+        "support": "assertion",
+        "source": null,
+        "method": "software fixture copied from GenAIRR HUMAN_IGK_IMGT; not independent evidence"
+      },
+      "coding_phase": {
+        "value": 1,
+        "support": "assertion",
+        "source": null,
+        "method": "software fixture copied from GenAIRR HUMAN_IGK_IMGT; not independent evidence",
+        "derivation": "anchor_derived"
+      },
+      "boundary_5": null,
+      "boundary_3": null,
+      "notes": []
+    },
+    {
+      "segment": "J",
+      "label": "kappa_j_2",
+      "sequence_sha256": "sha256:3bfc29fd0ba2782a2c369c043037a01d3aae00ca690be9ca52e5f734ee449173",
+      "gene": null,
+      "functionality": null,
+      "anchor": null,
+      "coding_phase": null,
+      "boundary_5": null,
+      "boundary_3": null,
+      "notes": []
+    }
+  ],
+  "relationships": [
+    {
+      "kind": "alias",
+      "allele": "V:kappa_v_a",
+      "entity": "lab_alias_kva",
+      "source": null
+    }
+  ],
+  "suggestions": [
+    {
+      "allele": "J:kappa_j_1",
+      "predicate": "anchor",
+      "value": 7,
+      "derivation": "unique_motif",
+      "note": "unique F/W-G-X-G motif position; candidate only, verify before stating it"
+    },
+    {
+      "allele": "J:kappa_j_2",
+      "predicate": "anchor",
+      "value": 8,
+      "derivation": "unique_motif",
+      "note": "unique F/W-G-X-G motif position; candidate only, verify before stating it"
+    }
+  ]
+}
