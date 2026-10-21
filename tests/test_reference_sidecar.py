@@ -314,6 +314,20 @@ CASES = {
     "rejected_with_allele": _set(("records", 2, "allele"), "V:kv_a"),
     "executable_entity": _set(("entities", 0, "executable"), True),
     "relationship_missing_allele": _set(("relationships", 0, "allele"), "V:none"),
+    "float_phase": _set(("claims", 1, "value"), 1.0),
+    "float_anchor": _set(("claims", 0, "value"), 6.0),
+    "float_subregion": _set(("claims", 2, "value"), {"FWR1": [0.0, 10]}),
+    "float_taxonomy_id": _set(("header", "taxon", "taxonomy_id"), 9606.0),
+    "float_record_index": _set(("records", 0, "index"), 0.0),
+    "float_source_bytes": _set(("sources", 0, "bytes"), 10.0),
+    "allele_does_not_list_record": _set(("alleles", 0, "records"), []),
+    "allele_lists_foreign_record": _set(("alleles", 0, "records"), ["rec:V:0", "rec:J:0"]),
+    "record_segment_differs_from_allele": lambda d: (
+        d["records"][0].__setitem__("id", "rec:J:0"), d["records"][3].__setitem__("id", "rec:V:3"),
+        d["records"][3].__setitem__("index", 3), d["records"][0].__setitem__("index", 0),
+        d["alleles"][0].__setitem__("records", ["rec:J:0"]),
+        d["alleles"][1].__setitem__("records", ["rec:V:3"])),
+    "finding_unknown_subject": _set(("findings", 0, "subjects"), ["V:nope"]),
     "unknown_key": _set(("alleles", 0, "extra"), 1),
     "missing_key": _pop(("claims", 0, "method")),
     "bad_chain_type": _set(("header", "chain_type"), "xx"),
@@ -341,3 +355,20 @@ def test_gapped_sequence_accepted_under_imgt_gapped():
     d["alleles"][0]["gapped_sequence"] = "ACGT..ACGA" + V_SEQ[8:]
     with pytest.raises(ReferenceArtifactError):
         Catalogue.from_dict(d)
+
+
+def test_float_integers_rejected_in_sidecar():
+    for name, value in (("coding_phase", 1.0), ("coding_phase", 2.0), ("anchor", 285.0)):
+        d = minimal_sidecar()
+        d["alleles"][0][name]["value"] = value
+        with pytest.raises(ReferenceArtifactError) as e:
+            load(d)
+        assert e.value.kind == "malformed"
+    d = minimal_sidecar()
+    d["reference"]["taxon"]["taxonomy_id"] = 9606.0
+    with pytest.raises(ReferenceArtifactError):
+        load(d)
+    d = minimal_sidecar()
+    d["schema_version"] = 1.0
+    with pytest.raises(ReferenceArtifactError):
+        load(d)

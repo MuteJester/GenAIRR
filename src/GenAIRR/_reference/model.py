@@ -88,7 +88,7 @@ def _str(value, path, *, optional=False, nonblank=False):
 def _int(value, path, *, optional=False, minimum=None):
     if value is None and optional:
         return None
-    if isinstance(value, bool) or not isinstance(value, int):
+    if type(value) is not int:
         raise _bad(path, "expected an integer" + (" or null" if optional else ""))
     if minimum is not None and value < minimum:
         raise _bad(path, f"must be >= {minimum}")
@@ -127,7 +127,8 @@ def check_claim_value(predicate: str, value: Any, length: Optional[int], path: s
         if length is not None and value > length - 3:
             raise _bad(path, f"anchor {value} out of bounds for length {length}", "integrity")
     elif predicate == "coding_phase":
-        if isinstance(value, bool) or value not in (0, 1, 2):
+        _int(value, path)
+        if value not in (0, 1, 2):
             raise _bad(path, "coding phase must be 0, 1 or 2")
     elif predicate in ("boundary_5", "boundary_3"):
         _enum(value, BOUNDARIES, path)
@@ -486,6 +487,8 @@ class Catalogue:
             for rid in a.records:
                 if rid not in records:
                     raise _bad(f"{p}.records", f"unknown record {rid!r}", "integrity")
+                if records[rid].allele != a.id:
+                    raise _bad(f"{p}.records", f"record {rid!r} does not point back at {a.id!r}", "integrity")
 
         for i, r in enumerate(self.records):
             p = f"records[{i}]"
@@ -497,6 +500,12 @@ class Catalogue:
                            f"{self.header.chain_type}", "integrity")
             if r.source not in source_ids:
                 raise _bad(f"{p}.source", f"unknown source {r.source!r}", "integrity")
+            if r.allele is not None and r.allele in alleles:
+                linked = alleles[r.allele]
+                if r.id not in linked.records:
+                    raise _bad(f"{p}.allele", f"allele {linked.id!r} does not list record {r.id!r}", "integrity")
+                if match.group(1) != linked.segment:
+                    raise _bad(f"{p}.id", "record segment differs from its allele's segment", "integrity")
             if r.status == "accepted":
                 if r.allele not in alleles:
                     raise _bad(f"{p}.allele", "accepted record must point at an existing allele", "integrity")
@@ -524,6 +533,11 @@ class Catalogue:
                 raise _bad(f"{p}.derivation", "anchor_derived applies only to coding_phase", "integrity")
             if (c.support == "none") != (c.status == "candidate"):
                 raise _bad(f"{p}.status", "support none holds exactly for candidate claims", "integrity")
+
+        for i, f in enumerate(self.findings):
+            for subject in f.subjects:
+                if subject not in alleles:
+                    raise _bad(f"findings[{i}].subjects", f"unknown allele {subject!r}", "integrity")
 
         entities = {e.id: e for e in self.entities}
         for i, e in enumerate(self.entities):
