@@ -27,6 +27,20 @@ All notable changes to GenAIRR are documented here.
 
 ### Fixed
 
+- The DataConfig bridge no longer assigns IMGT FWR/CDR subregions to V alleles
+  whose `gapped_seq` declares no IMGT gaps (e.g. ungapped FASTA). Explicit
+  subregions and IMGT-gapped sequences are unchanged; all 106 bundled cartridges
+  keep identical native content hashes. Older user DataConfigs built from
+  ungapped V FASTA now compile without fabricated subregions, so their native
+  content hash changes. `compute_v_region_boundaries()` raises `ValueError` for
+  ungapped input.
+- `ReferenceCartridgeBuilder.infer_identity()` fills per-allele source, species
+  and locus only where the loader left them unset, preserving FASTA-header
+  provenance, and reports preserved species labels. New `with_build_date()`
+  fixes `metadata.last_updated` for reproducible checksums with or without
+  `infer_identity()`.
+- The native reference bridge rejects V/D/J sequences longer than 65,535 nt
+  with `ValueError` before pool mutation, instead of narrowing lengths to `u16`.
 - Reference authoring uses the shared native landmark resolver, retains FASTA
   functionality/source declarations, and keeps missing species unknown.
   Optional checksum-bound evidence transports independent coding phase and

@@ -384,10 +384,11 @@ validator catches it; the engine never gets the chance to misbehave.
 
 **Unannotated V subregions.** Passing `v_subregion_rates={...}` to
 `Experiment.mutate` against a cartridge whose V alleles lack
-`subregions` annotations raises at builder time. Either populate
-the `gapped_seq` field on each V allele so the bridge derives
-subregions automatically, or supply the `(start, end)` intervals
-explicitly.
+`subregions` annotations raises at builder time. Either give each V
+allele an IMGT-gapped `gapped_seq` (with `.` gap markers) so the bridge
+derives subregions automatically, or supply the `(start, end)` intervals
+explicitly. Ungapped sequences carry no IMGT numbering, so the bridge
+leaves their subregions unknown.
 
 **Expecting legacy fields to auto-lift.** The legacy
 `DataConfig.NP_lengths` / `trim_dicts` / `gene_use_dict` /

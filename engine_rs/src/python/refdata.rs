@@ -414,8 +414,9 @@ impl PyRefDataConfig {
         functional_status: Option<&str>,
         subregions: Option<Vec<(String, u16, u16)>>,
     ) -> PyResult<u32> {
+        check_allele_len(Segment::V, name, seq)?;
         let status = parse_functional_status(functional_status)?;
-        let subregions = parse_subregions(subregions.as_deref(), seq.len() as u16)?;
+        let subregions = parse_subregions(subregions.as_deref(), seq.len())?;
         Ok(push_allele(
             &mut self.inner.v_pool,
             Segment::V,
@@ -446,6 +447,7 @@ impl PyRefDataConfig {
                 "cannot add D allele to a VJ-chain RefDataConfig",
             ));
         }
+        check_allele_len(Segment::D, name, seq)?;
         let status = parse_functional_status(functional_status)?;
         Ok(push_allele(
             &mut self.inner.d_pool,
@@ -471,6 +473,7 @@ impl PyRefDataConfig {
         anchor: Option<u16>,
         functional_status: Option<&str>,
     ) -> PyResult<u32> {
+        check_allele_len(Segment::J, name, seq)?;
         let status = parse_functional_status(functional_status)?;
         Ok(push_allele(
             &mut self.inner.j_pool,
@@ -684,7 +687,7 @@ fn functional_status_to_str(s: FunctionalStatus) -> &'static str {
 /// hand-attaches a malformed annotation fails loudly at the bridge.
 fn parse_subregions(
     entries: Option<&[(String, u16, u16)]>,
-    seq_len: u16,
+    seq_len: usize,
 ) -> PyResult<Vec<crate::refdata::VSubregion>> {
     let Some(entries) = entries else {
         return Ok(Vec::new());
@@ -719,7 +722,7 @@ fn parse_subregions(
                 end,
             )));
         }
-        if *end > seq_len {
+        if usize::from(*end) > seq_len {
             return Err(PyValueError::new_err(format!(
                 "subregions[{:?}]: end ({}) exceeds allele length ({})",
                 label.as_str(),
@@ -1007,6 +1010,23 @@ fn parse_chain_type(s: &str) -> PyResult<ChainType> {
             other
         ))),
     }
+}
+
+/// Longest allele the native pools represent. Germline positions are
+/// `u16` and `GermlinePos` reserves `u16::MAX`, so positions run
+/// 0..=65_534 and every half-open coordinate (0..=len) fits in `u16`.
+const MAX_ALLELE_LEN: usize = u16::MAX as usize;
+
+/// Reject oversized sequences before any narrowing or pool mutation.
+fn check_allele_len(segment: Segment, name: &str, seq: &[u8]) -> PyResult<()> {
+    if seq.len() > MAX_ALLELE_LEN {
+        return Err(PyValueError::new_err(format!(
+            "{segment:?} allele {name:?}: sequence length {} exceeds the native \
+             limit of {MAX_ALLELE_LEN} nt",
+            seq.len(),
+        )));
+    }
+    Ok(())
 }
 
 fn push_allele(

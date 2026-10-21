@@ -43,6 +43,16 @@ def gapped_to_ungapped_pos(gapped_seq: str, gapped_pos: int) -> int:
     return sum(1 for c in gapped_seq[:gapped_pos] if c != '.')
 
 
+def declares_imgt_gaps(gapped_seq: Optional[str]) -> bool:
+    """Whether ``gapped_seq`` declares an IMGT-numbered alignment.
+
+    Follows the ``VAllele._find_anchor()`` convention: IMGT gap dots are
+    the declaration. Ungapped FASTA stored as ``gapped_seq`` has no
+    numbering alignment, so fixed IMGT positions cannot be mapped onto it.
+    """
+    return bool(gapped_seq) and '.' in gapped_seq
+
+
 def compute_v_region_boundaries(v_allele) -> Dict[str, Tuple[int, int]]:
     """Compute ungapped V-allele-relative boundaries for each IMGT region.
 
@@ -56,8 +66,16 @@ def compute_v_region_boundaries(v_allele) -> Dict[str, Tuple[int, int]]:
         Dict mapping region name (``'FWR1'``, ``'CDR1'``, etc.) to
         ``(ungapped_start, ungapped_end)`` half-open intervals within
         the V allele's ungapped sequence.
+
+    Raises:
+        ValueError: if ``gapped_seq`` does not declare IMGT gaps.
     """
     gapped = v_allele.gapped_seq
+    if not declares_imgt_gaps(gapped):
+        raise ValueError(
+            f"{v_allele.name}: gapped_seq declares no IMGT gap alignment; "
+            "IMGT subregions cannot be derived from an ungapped sequence"
+        )
     result = {}
     for region, (g_start, g_end) in IMGT_GAPPED_BOUNDARIES.items():
         # Clamp to actual gapped sequence length

@@ -62,7 +62,8 @@ What each call does:
 | Call | Effect |
 |---|---|
 | `from_fasta(v_fasta=..., d_fasta=..., j_fasta=..., chain_type=...)` | Classmethod constructor - parses V/J (and D on VDJ; C on optional) FASTA into per-segment allele buckets. Accepts file paths, open text handles, or raw FASTA strings. |
-| `.infer_identity(species=..., locus=..., reference_set=..., name=...)` | Populates the cartridge's identity plane and tags every parsed allele with provenance. |
+| `.infer_identity(species=..., locus=..., reference_set=..., name=...)` | Populates the cartridge's identity plane and fills per-allele provenance the FASTA headers left unset; header-declared source and species are preserved. |
+| `.with_build_date(date)` | Optional. Fixes `metadata.last_updated` (otherwise today's date) so rebuilding the same inputs reproduces the same checksum. |
 | `.infer_v_subregions()` | Derives IMGT `FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` intervals from gapped V sequences. Idempotent - calling twice re-derives. Required if you want `v_subregion_rates`-driven SHM targeting later. |
 | `.build()` | Assembles a validated `DataConfig`, stamps the checksum, attaches the build report + manifest snapshot, runs `verify_integrity()` as the final gate. |
 

@@ -162,9 +162,9 @@ def _push_alleles(alleles_by_gene, add_method, *, derive_subregions: bool = Fals
     When ``derive_subregions=True`` (passed by the V-allele branch
     only — D / J alleles have no IMGT V-subregion structure), the
     bridge looks for ``allele.subregions`` first (user-supplied,
-    trust-but-validate) and falls back to deriving from
+    trust-but-validate) and falls back to deriving from an IMGT-gapped
     ``allele.gapped_seq`` via the existing ``imgt_regions`` helper.
-    Alleles without ``gapped_seq`` (or where derivation fails) are
+    Alleles without IMGT gaps (or where derivation fails) are
     pushed with an empty subregion list — the cartridge stays
     valid; the manifest's coverage statistics surface the gap.
     """
@@ -205,9 +205,10 @@ def _resolve_v_subregions(allele) -> "list[tuple[str, int, int]]":
     1. If the caller explicitly set ``allele.subregions`` (a dict
        ``{label: (start, end)}``), forward it verbatim — the bridge
        will validate ranges + overlap.
-    2. Else, if the allele has ``gapped_seq``, derive via
+    2. Else, if ``gapped_seq`` declares IMGT gaps, derive via
        ``compute_v_region_boundaries`` from
-       :mod:`GenAIRR.utilities.imgt_regions`.
+       :mod:`GenAIRR.utilities.imgt_regions`. Ungapped sequences
+       (e.g. bare FASTA) have no numbering alignment and stay unknown.
     3. Else, return ``[]`` — the cartridge will carry an empty
        subregion list for this allele.
 
@@ -229,12 +230,13 @@ def _resolve_v_subregions(allele) -> "list[tuple[str, int, int]]":
         except (TypeError, ValueError, AttributeError):
             return []
 
-    gapped = getattr(allele, "gapped_seq", None)
-    if not gapped:
+    from .utilities.imgt_regions import compute_v_region_boundaries, declares_imgt_gaps
+
+    # Ungapped FASTA is also stored as ``gapped_seq``; only a declared
+    # IMGT alignment can carry fixed IMGT subregion positions.
+    if not declares_imgt_gaps(getattr(allele, "gapped_seq", None)):
         return []
     try:
-        from .utilities.imgt_regions import compute_v_region_boundaries
-
         boundaries = compute_v_region_boundaries(allele)
     except Exception:
         return []
