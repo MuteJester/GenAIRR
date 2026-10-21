@@ -529,6 +529,13 @@ class Catalogue:
             check_claim_value(c.predicate, c.value, len(allele.sequence), f"{p}.value")
             if c.support == "source" and (c.source is None or not c.source.strip()):
                 raise _bad(f"{p}.source", "source-supported claim needs a source", "integrity")
+            if c.derivation == "imgt_alignment" and not (
+                    self.conventions["v_alignment"] == "imgt_gapped" and allele.segment == "V"
+                    and allele.gapped_sequence is not None):
+                raise _bad(f"{p}.derivation", "imgt_alignment requires a V allele with a gapped sequence "
+                           "under a declared imgt_gapped alignment", "integrity")
+            if c.predicate == "v_subregions" and c.derivation != "imgt_alignment":
+                raise _bad(f"{p}.derivation", "v_subregions must derive from imgt_alignment", "integrity")
             if c.derivation == "anchor_derived" and c.predicate != "coding_phase":
                 raise _bad(f"{p}.derivation", "anchor_derived applies only to coding_phase", "integrity")
             if (c.support == "none") != (c.status == "candidate"):

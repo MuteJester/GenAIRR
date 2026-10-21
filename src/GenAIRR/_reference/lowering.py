@@ -50,8 +50,9 @@ def _single(catalogue, allele_id, predicate):
     return claims[0] if claims else None
 
 
-def _evidence(catalogue, allele, anchor, phase) -> dict:
+def _evidence(catalogue, allele, phase) -> dict:
     anchor_claim = _single(catalogue, allele.id, "anchor") if allele.segment != "D" else None
+    anchor_claims = _usable(catalogue, allele.id, "anchor") if allele.segment != "D" else ()
     boundaries = {}
     notes = []
     for predicate in ("boundary_5", "boundary_3"):
@@ -65,12 +66,18 @@ def _evidence(catalogue, allele, anchor, phase) -> dict:
     func = _single(catalogue, allele.id, "functionality")
     if func:
         notes.append(f"functionality={func.support}:{func.derivation}")
-    if anchor_claim is None:
+    if not anchor_claims:
         status, method, source = "unknown", f"{_TAG}:none", None
     else:
-        status = "verified" if anchor_claim.support == "source" else "inferred"
-        method = f"{_TAG}:{anchor_claim.support}:{anchor_claim.derivation}"
-        source = anchor_claim.source
+        # Evidence is only as strong as the weakest accepted anchor claim.
+        weakest = next((c for c in anchor_claims if c.support != "source"), anchor_claims[0])
+        status = "verified" if weakest.support == "source" else "inferred"
+        # When several claims share the weakest support, the first in claim order supplies the method.
+        method = f"{_TAG}:{weakest.support}:{weakest.derivation}"
+        # Source: first non-null source among source-supported claims, else among all.
+        source = next((c.source for c in anchor_claims if c.support == "source" and c.source), None)
+        if source is None:
+            source = next((c.source for c in anchor_claims if c.source), None)
     return {
         "schema_version": 1,
         "sequence_sha256": allele.sequence_sha256,
@@ -84,8 +91,22 @@ def _evidence(catalogue, allele, anchor, phase) -> dict:
     }
 
 
+def _check_view(catalogue: Catalogue, view: Dict[str, List[str]]) -> None:
+    valid = ("V", "J") if catalogue.header.chain_type == "vj" else ("V", "D", "J")
+    executable = {a for ids in default_view(catalogue).values() for a in ids}
+    for segment, ids in view.items():
+        if segment not in valid:
+            raise ReferenceArtifactError(
+                "integrity", f"view.{segment}", f"segment not valid for chain type {catalogue.header.chain_type}")
+        for allele_id in ids:
+            if allele_id not in executable or catalogue.allele(allele_id).segment != segment:
+                raise ReferenceArtifactError(
+                    "integrity", f"view.{segment}", f"{allele_id!r} is not an executable {segment} allele")
+
+
 def lower(catalogue: Catalogue, view: Dict[str, List[str]]) -> Lowered:
     header = catalogue.header
+    _check_view(catalogue, view)
     ref = _engine.RefDataConfig(header.chain_type)
     ref.set_allowed_bases(["A", "C", "G", "T"])
     ref.set_v_anchor_rule(expected_aa=["C"])
@@ -119,7 +140,7 @@ def lower(catalogue: Catalogue, view: Dict[str, List[str]]) -> Lowered:
                     [(label, span[0], span[1]) for label, span in sub.value.items()] if sub else None)
             adders[segment](allele.label, allele.gene, allele.sequence.encode("ascii"), **kwargs)
             ref.set_allele_evidence(
-                segment, index, json.dumps(_evidence(catalogue, allele, anchor, phase)))
+                segment, index, json.dumps(_evidence(catalogue, allele, phase)))
 
     findings = ref.validate()
     fatal = [f for f in findings if f.get("severity") == "fatal"]

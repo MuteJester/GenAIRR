@@ -30,7 +30,7 @@ def claim(subject, predicate, value, support="source", derivation="stated", stat
 
 
 def build(claims=(), locus="IGH", chain="vdj", version="1", labels=("V1", "J1"), alignment="none",
-          extra_v=()):
+          extra_v=(), gapped=None):
     specs = [("V", labels[0], V_SEQ)] + [("V", x, V_SEQ[:-1] + "C") for x in extra_v]
     if chain == "vdj":
         specs.append(("D", "D1", D_SEQ))
@@ -41,7 +41,8 @@ def build(claims=(), locus="IGH", chain="vdj", version="1", labels=("V1", "J1"),
         i = counts[seg] = counts.get(seg, -1) + 1
         rid = f"rec:{seg}:{i}"
         alleles.append(Allele(f"{seg}:{label}", seg, label, label, "declared", seq,
-                              "sha256:" + hashlib.sha256(seq.encode("ascii")).hexdigest(), None, (), (rid,)))
+                              "sha256:" + hashlib.sha256(seq.encode("ascii")).hexdigest(),
+                              gapped if (seg == "V" and label == labels[0]) else None, (), (rid,)))
         records.append(RecordEntry(rid, "src", i, ">" + label, label, "accepted", None, f"{seg}:{label}", None))
     cat = Catalogue(
         ReferenceHeader("t", version, Taxon("Mus musculus", 10090), locus, chain, None),
@@ -129,11 +130,54 @@ def test_stated_phase_boundaries_functionality_projected():
     assert low.spec["v"][0]["functionality"] == "orf"
 
 
+GAPPED = "AAA...TGTAAAGGG"
+
+
+def _subregion_claim():
+    return claim("V:V1", "v_subregions", {"FWR1": [0, 3], "CDR1": [3, 6]}, "assertion", "imgt_alignment")
+
+
 def test_subregions_only_from_declared_alignment():
+    with pytest.raises(ReferenceArtifactError) as e:
+        build([_subregion_claim()])
+    assert e.value.kind == "integrity"
+    with pytest.raises(ReferenceArtifactError) as e:
+        build([claim("V:V1", "v_subregions", {"FWR1": [0, 3]}, "assertion", "stated")],
+              alignment="imgt_gapped", gapped=GAPPED)
+    assert e.value.kind == "integrity"
+    cat = build([_subregion_claim()], alignment="imgt_gapped", gapped=GAPPED)
+    assert len(lower(cat, default_view(cat)).spec["v"][0]["subregions"]) == 2
     assert lower(build(), default_view(build())).spec["v"][0]["subregions"] == []
-    cat = build(anchors() + [claim("V:V1", "v_subregions", {"FWR1": [0, 3], "CDR1": [3, 6]})])
-    sub = lower(cat, default_view(cat)).spec["v"][0]["subregions"]
-    assert len(sub) == 2
+
+
+def test_imgt_alignment_claim_needs_gapped_v():
+    with pytest.raises(ReferenceArtifactError) as e:
+        build([claim("V:V1", "anchor", 3, "assertion", "imgt_alignment")], alignment="imgt_gapped")
+    assert e.value.kind == "integrity"
+    with pytest.raises(ReferenceArtifactError) as e:
+        build([claim("J:J1", "anchor", 0, "assertion", "imgt_alignment")],
+              alignment="imgt_gapped", gapped=GAPPED)
+    assert e.value.kind == "integrity"
+
+
+def test_anchor_status_uses_weakest_support_regardless_of_order():
+    stated = claim("V:V1", "anchor", 3, "source")
+    aligned = claim("V:V1", "anchor", 3, "assertion", "imgt_alignment")
+    for order in ([stated, aligned], [aligned, stated]):
+        cat = build(order, alignment="imgt_gapped", gapped=GAPPED)
+        ev = evidence(lower(cat, default_view(cat)), "V")
+        assert ev["anchor_status"] == "inferred"
+        assert ev["source"] == "doi:x"
+        assert ev["method"] == "genairr_reference_v1:assertion:imgt_alignment"
+
+
+def test_view_must_name_executable_alleles_and_valid_segments():
+    cat = build(chain="vj", locus="IGK")
+    for bad in ({"V": ["V:nope"], "J": ["J:J1"]}, {"V": ["V:V1"], "J": ["J:J1"], "D": []},
+                {"V": ["J:J1"], "J": ["J:J1"]}):
+        with pytest.raises(ReferenceArtifactError) as e:
+            lower(cat, bad)
+        assert e.value.kind == "integrity"
 
 
 def test_phase_anchor_disagreement_is_conflict():
