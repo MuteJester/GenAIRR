@@ -289,3 +289,94 @@ def test_existing_inputs_unchanged_smoke():
     assert result.reference_content_hash == by_refdata.refdata.content_hash()
     with pytest.raises(ValueError, match="Unknown config name"):
         Experiment.on("not_a_config")
+
+
+# ── describe() ───────────────────────────────────────────────────────
+
+BUILTIN_DESCRIBE = (
+    "Experiment on Human heavy-chain BCR\n"
+    "  1. V(D)J recombination: sample V/D/J alleles; custom V allele weights; empirical exonuclease "
+    "trim (V3', D5', D3', J5'); insert NP1 (0–40 weighted bases, empirical) and NP2 (0–40 weighted "
+    "bases, empirical)\n"
+    "  2. Somatic hypermutation (S5F context model, human heavy-chain (HH_S5F)): 5–15 mutations/record"
+)
+RAW_DESCRIBE = ("Experiment on raw RefDataConfig (VJ)\n"
+                "  1. V(D)J recombination: sample V/J alleles; insert NP1 (0–6 bases, uniform fallback)")
+CLONAL_DESCRIBE = (
+    "Experiment on Human heavy-chain BCR\n"
+    "  1. V(D)J recombination: sample V/D/J alleles; empirical exonuclease trim (V3', D5', D3', J5'); "
+    "insert NP1 (3 bases, empirical) and NP2 (0–6 bases, uniform fallback)\n"
+    "  ── Clonal expansion: 2 lineages × 3 reads/clone ──\n"
+    "      (steps above run once per clone; steps below run once per descendant)\n"
+    "  2. Somatic hypermutation (S5F context model, human heavy-chain (HH_S5F)): 2 mutations/record"
+)
+PROFILE = "genairr.unfitted_defaults.v1"
+REFERENCE_DESCRIBE = (
+    "Experiment on portable reference 'lab_igh' (VDJ)\n"
+    "  1. V(D)J recombination: sample V/D/J alleles; uniform V/D/J allele usage (unfitted defaults "
+    "profile genairr.unfitted_defaults.v1); no exonuclease trim or P-nucleotides (unfitted defaults "
+    "profile); insert NP1 (0–6 bases, unfitted defaults profile) and NP2 (0–6 bases, unfitted "
+    "defaults profile)"
+)
+
+
+def test_builtin_describe_output_unchanged():
+    exp = (Experiment.on("human_igh").recombine(v_allele_weights={"IGHVF1-G1*01": 5.0})
+           .mutate(count=(5, 15)))
+    assert exp.describe() == BUILTIN_DESCRIBE
+    assert exp.compile().describe() == BUILTIN_DESCRIBE
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        raw = Experiment.on(Experiment.on("human_igk").refdata).recombine().trim(enabled=False)
+        clonal = (Experiment.on(ga.data.HUMAN_IGH_OGRDB)
+                  .recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(i, 1.0) for i in range(7)])
+                  .expand_clones(n_clones=2, per_clone=3).mutate(count=2))
+    assert raw.describe() == RAW_DESCRIBE
+    assert clonal.compile().describe() == CLONAL_DESCRIBE
+
+
+def test_reference_describe_names_reference_and_profile(ref):
+    exp = Experiment.on(ref).recombine()
+    assert exp.describe() == REFERENCE_DESCRIBE
+    texts = [exp.describe(), exp.compile().describe(), _expand(Experiment.on(ref)).compile().describe(),
+             _expand(Experiment.on(ref)).describe()]
+    for text in texts:
+        assert "portable reference 'lab_igh'" in text
+        assert PROFILE in text
+        for wrong in ("raw RefDataConfig", "fallback", "custom"):
+            assert wrong not in text, (wrong, text)
+
+
+def test_reference_describe_marks_user_overrides(ref):
+    exp = (Experiment.on(ref)
+           .recombine(v_allele_weights={"IGHV1-2*02": 3.0}, np1_lengths=[(9, 1.0)])
+           .trim(v_3=[(2, 1.0)]))
+    text = exp.describe()
+    assert "custom V allele weights" in text
+    assert f"uniform D/J allele usage (unfitted defaults profile {PROFILE})" in text
+    assert "NP1 (9 bases, user-specified)" in text
+    assert "NP2 (0–6 bases, unfitted defaults profile)" in text
+    assert "user-specified exonuclease trim (V3'); no P-nucleotides (unfitted defaults profile)" in text
+    for wrong in ("raw RefDataConfig", "fallback", "empirical"):
+        assert wrong not in text
+    assert exp.compile().describe() == text
+
+    # A user override that happens to equal the default is still the user's.
+    same = Experiment.on(ref).recombine(np1_lengths=[(i, 1.0) for i in range(7)]).describe()
+    assert "NP1 (0–6 bases, user-specified)" in same
+    disabled = Experiment.on(ref).recombine().trim(enabled=False).describe()
+    assert "no exonuclease trim (user-specified); no P-nucleotides (unfitted defaults profile)" in disabled
+
+
+def test_unknown_config_name_points_to_reference_read(monkeypatch):
+    def no_reading(*args, **kwargs):
+        raise AssertionError("a file was read")
+
+    monkeypatch.setattr(builtins, "open", no_reading)
+    monkeypatch.setattr(io, "open", no_reading)
+    monkeypatch.setattr(pathlib.Path, "read_text", no_reading)
+    monkeypatch.setattr(pathlib.Path, "read_bytes", no_reading)
+    monkeypatch.setattr(pathlib.Path, "open", no_reading)
+    with pytest.raises(ValueError, match="Unknown config name") as excinfo:
+        Experiment.on("refs/lab.genairr-ref")
+    assert "To load a portable reference file, use GenAIRR.Reference.read(path)." in str(excinfo.value)

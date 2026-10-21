@@ -127,7 +127,8 @@ def _resolve_config_name(name: str) -> DataConfig:
             f"Available configs ({len(available)} total): "
             f"{', '.join(a.lower() for a in available[:10])}... "
             f"Use GenAIRR.list_configs() for the full list, "
-            f"or pass a DataConfig object directly."
+            f"or pass a DataConfig object directly. "
+            f"To load a portable reference file, use GenAIRR.Reference.read(path)."
         )
     from . import data as _data
 

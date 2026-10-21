@@ -235,6 +235,24 @@ class _RecombinationMixin:
             p_d_3_lengths = None
             p_j_5_lengths = None
 
+        # Which settings a portable Reference's defaults profile supplies,
+        # recorded before the defaults are filled in below (describe()
+        # labels them by profile and everything else as user-specified).
+        defaults_profile = None
+        profile_defaults: Tuple[str, ...] = ()
+        if self._reference is not None and defaults is not None:
+            from .._reference.defaults import PROFILE as defaults_profile
+
+            profile_defaults = tuple(
+                f"allele_usage_{segment}"
+                for segment, user in (("V", v_allele_weights), ("D", d_allele_weights), ("J", j_allele_weights))
+                if user is None and defaults.get(f"allele_usage_{segment.lower()}") is not None
+            )
+            if np1_lengths is None:
+                profile_defaults += ("np1_lengths",)
+            if np2_lengths is None and self._refdata.chain_type == "vdj":
+                profile_defaults += ("np2_lengths",)
+
         # Precedence (Slice — Allele Usage Estimation v1):
         #
         #   1. explicit `*_allele_weights=` kwarg
@@ -274,6 +292,8 @@ class _RecombinationMixin:
             p_d_3_lengths=p_d_3_lengths,
             p_j_5_lengths=p_j_5_lengths,
             np_lengths_overridden=np1_lengths is not None or np2_lengths is not None,
+            defaults_profile=defaults_profile,
+            profile_defaults=profile_defaults,
         )
         self._steps.append(step)
         return self

@@ -72,10 +72,26 @@ def _describe_recombine_step(step: "_RecombineStep", chain_type: str) -> str:
     if locked_segs:
         parts.append(f"locked to {', '.join(locked_segs)}")
 
+    # Settings supplied by a portable Reference's explicit defaults profile
+    # are labelled by that profile; everything else was given by the user.
+    profile = step.defaults_profile
+    from_profile = set(step.profile_defaults) if profile is not None else set()
     weighted_segs = []
+    profile_usage = []
     for seg, weights in (("V", step.weights_v), ("D", step.weights_d), ("J", step.weights_j)):
-        if weights is not None:
+        if weights is None:
+            continue
+        if f"allele_usage_{seg}" in from_profile:
+            profile_usage.append((seg, weights))
+        else:
             weighted_segs.append(seg)
+    if profile_usage:
+        uniform = all(len(set(weights)) <= 1 for _, weights in profile_usage)
+        segs_label = "/".join(seg for seg, _ in profile_usage)
+        parts.append(
+            f"{'uniform' if uniform else 'weighted'} {segs_label} allele usage "
+            f"(unfitted defaults profile {profile})"
+        )
     if weighted_segs:
         parts.append(f"custom {'/'.join(weighted_segs)} allele weights")
 
@@ -109,14 +125,31 @@ def _describe_recombine_step(step: "_RecombineStep", chain_type: str) -> str:
         trim_bits.append("D3'")
     if step.trim_j_5:
         trim_bits.append("J5'")
-    if trim_bits:
-        parts.append(f"empirical exonuclease trim ({', '.join(trim_bits)})")
+    if profile is None:
+        if trim_bits:
+            parts.append(f"empirical exonuclease trim ({', '.join(trim_bits)})")
+    elif step.coding_end_mode is None:
+        # The profile disables trimming and P-nucleotides; only trim()
+        # changes trimming. Coding-end processing describes both itself.
+        if not step.trim_overridden:
+            parts.append("no exonuclease trim or P-nucleotides (unfitted defaults profile)")
+        else:
+            if trim_bits:
+                parts.append(f"user-specified exonuclease trim ({', '.join(trim_bits)})")
+            else:
+                parts.append("no exonuclease trim (user-specified)")
+            parts.append("no P-nucleotides (unfitted defaults profile)")
+
+    def np_tag(lengths, plane):
+        if profile is None:
+            return _np_source_tag(lengths)
+        return ", unfitted defaults profile" if plane in from_profile else ", user-specified"
 
     np1_desc = _describe_distribution(step.np1_lengths)
-    np1_source = _np_source_tag(step.np1_lengths)
+    np1_source = np_tag(step.np1_lengths, "np1_lengths")
     if chain_type == "vdj":
         np2_desc = _describe_distribution(step.np2_lengths)
-        np2_source = _np_source_tag(step.np2_lengths)
+        np2_source = np_tag(step.np2_lengths, "np2_lengths")
         parts.append(
             f"insert NP1 ({np1_desc} bases{np1_source}) and "
             f"NP2 ({np2_desc} bases{np2_source})"
@@ -236,8 +269,16 @@ def _describe_experiment_header(
     refdata: "_engine.RefDataConfig",
     dataconfig: "Optional[DataConfig]",
 ) -> str:
-    """One-line header naming the refdata source and chain type."""
+    """One-line header naming the refdata source and chain type.
+
+    A native configuration sealed by a portable reference is named as that
+    reference.
+    """
     chain = refdata.chain_type
+    is_sealed = getattr(refdata, "is_sealed", None)
+    if dataconfig is None and is_sealed is not None and is_sealed():
+        name = refdata.identity().get("name")
+        return f"Experiment on portable reference {name!r} ({chain.upper()})"
     if dataconfig is not None and getattr(dataconfig, "metadata", None) is not None:
         meta = dataconfig.metadata
         species_label: Optional[str] = None
