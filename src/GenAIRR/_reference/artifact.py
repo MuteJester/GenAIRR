@@ -2,9 +2,11 @@
 
 A reference is built from local V/(D)/J FASTA files and an annotation sidecar, and is
 written as a closed, canonical ``*.genairr-ref.json`` artifact.  Loading an artifact
-regenerates every derived section (hashes, view, defaults, admission, native projection,
-context and execution hash) from the catalogue and compares each one for exact equality,
-so an artifact whose hashes were recomputed over inconsistent content is still rejected.
+regenerates every derived section (derived catalogue content such as alignment and motif
+claims, conflict statuses, entities and findings; hashes, view, defaults, admission, native
+projection, context and execution hash) from base data and compares each one for exact
+equality, so an artifact whose hashes were recomputed over inconsistent content is still
+rejected.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ from GenAIRR._reference.capabilities import CAPABILITIES, CapabilityReport, _usa
 from GenAIRR._reference.defaults import models_hash, recombine_defaults, unfitted_defaults_v1
 from GenAIRR._reference.defaults import PROFILE as DEFAULTS_PROFILE
 from GenAIRR._reference.errors import ReferenceArtifactError, ReferenceCapabilityError
-from GenAIRR._reference.importer import import_local, scan_fasta
+from GenAIRR._reference.importer import import_local, regenerate, scan_fasta
 from GenAIRR._reference.lowering import PROFILE_ID, default_view, lower, seal
 from GenAIRR._reference.model import Catalogue, Taxon
 from GenAIRR._reference.sidecar import annotation_template as _sidecar_template
@@ -270,6 +272,48 @@ def _check(ok: bool, path: str, message: str) -> None:
         raise ReferenceArtifactError("integrity", path, message)
 
 
+def _compare_derived(section: str, stored: tuple, regenerated: tuple) -> None:
+    """Require a stored derived section to equal its regeneration, item by item and in order."""
+    noun = {"claims": "claim", "relationships": "relationship", "entities": "entity",
+            "findings": "finding"}[section]
+    for index, (have, want) in enumerate(zip(stored, regenerated)):
+        if not _same(have.to_dict(), want.to_dict()):
+            raise ReferenceArtifactError(
+                "integrity", f"catalogue.{section}[{index}]",
+                f"{noun} {canonical_json(have.to_dict())} differs from its regeneration from base data: "
+                f"{canonical_json(want.to_dict())}")
+    if len(stored) > len(regenerated):
+        extra = stored[len(regenerated)]
+        raise ReferenceArtifactError(
+            "integrity", f"catalogue.{section}[{len(regenerated)}]",
+            f"{noun} {canonical_json(extra.to_dict())} does not follow from the catalogue's base data")
+    if len(stored) < len(regenerated):
+        missing = regenerated[len(stored)]
+        raise ReferenceArtifactError(
+            "integrity", f"catalogue.{section}",
+            f"{noun} {canonical_json(missing.to_dict())} follows from the catalogue's base data but is missing")
+
+
+def _require_selection(catalogue: Catalogue, view: dict) -> None:
+    """Every segment the chain type needs must have at least one executable allele."""
+    for segment, ids in view.items():
+        if ids:
+            continue
+        records = [r for r in catalogue.records if r.id.split(":")[1] == segment]
+        counts = {s: sum(r.status == s for r in records) for s in ("accepted", "duplicate", "rejected")}
+        reasons: Dict[str, int] = {}
+        for r in records:
+            if r.status == "rejected":
+                key = r.reason.split(":", 1)[0]
+                reasons[key] = reasons.get(key, 0) + 1
+        detail = ("rejection reasons: " + ", ".join(f"{k} ({n})" for k, n in reasons.items())
+                  if reasons else "the FASTA file has no records")
+        raise ReferenceArtifactError(
+            "empty_selection", segment,
+            f"no executable {segment} alleles: {counts['accepted']} accepted, {counts['duplicate']} duplicate, "
+            f"{counts['rejected']} rejected; {detail}")
+
+
 def _context(catalogue_hash: str, models_hash_: str) -> dict:
     return {"schema_version": 1, "catalogue_hash": catalogue_hash, "view": VIEW_ID,
             "profile": PROFILE_ID, "models_hash": models_hash_}
@@ -352,6 +396,7 @@ class Reference:
         """
         catalogue = import_local(v=v, j=j, d=d, annotations=annotations)
         view = default_view(catalogue)
+        _require_selection(catalogue, view)
         lowered = lower(catalogue, view)
         models = unfitted_defaults_v1(catalogue.header.chain_type, view)
         models_hash_ = models_hash(models)
@@ -382,21 +427,23 @@ class Reference:
         except ArtifactIOError as exc:
             raise ReferenceArtifactError("io" if exc.kind == "resource" else "malformed", "", str(exc)) from exc
 
-        # 2. Closed key sets.
+        # 2. Artifact kind, then schema version, before any key-set check, so that an artifact
+        #    written under a newer schema is reported as unsupported rather than malformed.
+        if not isinstance(doc, dict):
+            raise ReferenceArtifactError("malformed", "", "expected a JSON object")
+        if doc.get("artifact") != ARTIFACT:
+            raise ReferenceArtifactError("malformed", "artifact",
+                                         f"not a GenAIRR reference artifact (expected artifact {ARTIFACT!r})")
+        version = doc.get("schema_version")
+        if type(version) is not int or version != SCHEMA_VERSION:
+            raise ReferenceArtifactError("unsupported_schema", "schema_version",
+                                         f"unsupported schema version {version!r}; "
+                                         f"this GenAIRR reads version {SCHEMA_VERSION}")
+
+        # 3. Closed key sets, then the generator.
         _require_keys(doc, _TOP_KEYS, "")
         for section, keys in _SECTION_KEYS:
             _require_keys(doc[section], keys, section)
-
-        # 3. Artifact kind, schema version and generator.
-        if doc["artifact"] != ARTIFACT:
-            raise ReferenceArtifactError("malformed", "artifact", f"expected {ARTIFACT!r}")
-        version = doc["schema_version"]
-        if type(version) is not int:
-            raise ReferenceArtifactError("malformed", "schema_version", "expected an integer")
-        if version != SCHEMA_VERSION:
-            raise ReferenceArtifactError("unsupported_schema", "schema_version",
-                                         f"unsupported schema version {version}; "
-                                         f"this GenAIRR reads version {SCHEMA_VERSION}")
         generator = doc["generator"]
         if generator["name"] != "GenAIRR":
             raise ReferenceArtifactError("malformed", "generator.name", "expected 'GenAIRR'")
@@ -415,6 +462,12 @@ class Reference:
             path = exc.path if exc.path.startswith("catalogue") else (
                 f"catalogue.{exc.path}" if exc.path else "catalogue")
             raise ReferenceArtifactError(exc.kind, path, exc.message) from exc
+
+        # 5b. Derived catalogue content (claims with their conflict statuses, relationships,
+        #     entities, findings) must equal its regeneration from the catalogue's base data.
+        derived = regenerate(catalogue)
+        for section in ("claims", "relationships", "entities", "findings"):
+            _compare_derived(section, getattr(catalogue, section), getattr(derived, section))
 
         # 6. Catalogue hash.
         catalogue_hash = catalogue.digest()

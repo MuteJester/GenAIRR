@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional
 
@@ -15,7 +16,8 @@ from GenAIRR._artifact_io import ArtifactIOError, read_text_bounded
 from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference.model import (
     Allele, Catalogue, Claim, Entity, Finding, RecordEntry, ReferenceHeader, Relationship,
-    SourceFile, Taxon, Transform, check_label, sequence_digest,
+    SourceFile, Taxon, Transform, anchor_phase_disagreements, check_label, gene_from_label,
+    sequence_digest,
 )
 from GenAIRR._reference.sidecar import ANNOTATIONS, MAX_BYTES as SIDECAR_MAX_BYTES, load_sidecar
 from GenAIRR.utilities.imgt_regions import imgt_region_boundaries
@@ -25,6 +27,8 @@ MAX_SEQUENCE = 65535
 _BASES = frozenset("ACGT")
 _ALIAS_EXECUTABLE = ("alias names an executable record; keep one record and declare the other "
                      "name as an alias entity")
+ENTITY_PREFIX = "entity:"
+SIDECAR_DERIVATIONS = ("stated", "anchor_derived")
 
 
 def _text_digest(text: str) -> str:
@@ -180,11 +184,7 @@ def scan_fasta(*, v, j, d, v_alignment: str, locus: str):
 def _gene_of(label: str, declared: Optional[str]):
     if declared is not None:
         return declared, "declared"
-    if "*" in label:
-        prefix = label.split("*", 1)[0]
-        if prefix and check_label(prefix) is None:
-            return prefix, "label_prefix"
-    return label, "label"
+    return gene_from_label(label)
 
 
 def _stated_claims(allele_id: str, side_entry: dict) -> list:
@@ -226,6 +226,76 @@ def _mark_anchor_conflicts(claims: list) -> list:
             clash.update(id(c) for c in group)
     return [Claim(c.subject, c.predicate, c.value, c.support, c.derivation, "conflict", c.source, c.method)
             if id(c) in clash else c for c in claims]
+
+
+def _identical_sequence_findings(alleles) -> tuple:
+    findings = []
+    for segment in ("V", "D", "J"):
+        groups: dict = {}
+        for a in alleles:
+            if a.segment == segment:
+                groups.setdefault(a.sequence, []).append(a.id)
+        for ids in groups.values():
+            if len(ids) > 1:
+                findings.append(Finding("identical_sequence_distinct_labels", tuple(ids),
+                                        f"{len(ids)} alleles share one sequence under different labels"))
+    return tuple(findings)
+
+
+@dataclass(frozen=True)
+class Derived:
+    """Catalogue content computed from base data rather than supplied by the author."""
+    claims: tuple
+    relationships: tuple
+    entities: tuple
+    findings: tuple
+
+
+def derive_content(*, alleles, sidecar_claims, sidecar_relationships, locus: str, v_alignment: str) -> Derived:
+    """Compute every derived part of a catalogue from its base data.
+
+    ``sidecar_claims`` are the author's annotations (all ``accepted``), in sidecar order;
+    ``sidecar_relationships`` are sidecar-shaped relationship dicts naming entities.
+    Claims are the sidecar claims followed, in allele order, by the anchor and subregion
+    claims of a declared IMGT alignment (V) and unique-motif anchor candidates (J);
+    stated and alignment anchors that disagree are all marked ``conflict``.  Entities are
+    one non-executable entity per distinct relationship name, in relationship order.
+    Findings flag identical sequences under different labels, per segment.
+    """
+    claims = list(sidecar_claims)
+    for allele in alleles:
+        if allele.segment == "V" and allele.gapped_sequence is not None and v_alignment == "imgt_gapped":
+            claims.extend(_alignment_claims(allele, locus))
+        elif allele.segment == "J":
+            result = _resolve(allele.sequence, "J", locus, None, False)
+            if result["position"] is not None:
+                claims.append(Claim(allele.id, "anchor", result["position"], "none", "unique_motif",
+                                    "candidate", None, result["method"]))
+    entities, relationships = {}, []
+    for rel in sidecar_relationships:
+        entity_id = f"{ENTITY_PREFIX}{rel['entity']}"
+        entities.setdefault(entity_id, Entity(entity_id, rel["entity"], False))
+        relationships.append(Relationship(rel["kind"], rel["allele"], entity_id, rel["source"]))
+    return Derived(tuple(_mark_anchor_conflicts(claims)), tuple(relationships), tuple(entities.values()),
+                   _identical_sequence_findings(alleles))
+
+
+def regenerate(catalogue: Catalogue) -> Derived:
+    """Recompute the derived content of a stored catalogue from its base data.
+
+    The base data are the alleles, the sidecar-sourced claims (derivation ``stated`` or
+    ``anchor_derived``, taken as accepted before conflict marking), the relationships with
+    their entity names, the V alignment convention and the locus.
+    """
+    sidecar_claims = [replace(c, status="accepted") for c in catalogue.claims
+                      if c.derivation in SIDECAR_DERIVATIONS]
+    sidecar_relationships = [
+        {"kind": r.kind, "allele": r.allele, "source": r.source,
+         "entity": r.entity[len(ENTITY_PREFIX):] if r.entity.startswith(ENTITY_PREFIX) else r.entity}
+        for r in catalogue.relationships]
+    return derive_content(alleles=catalogue.alleles, sidecar_claims=sidecar_claims,
+                          sidecar_relationships=sidecar_relationships, locus=catalogue.header.locus,
+                          v_alignment=catalogue.conventions["v_alignment"])
 
 
 def import_local(*, v, j, d, annotations) -> Catalogue:
@@ -284,18 +354,7 @@ def import_local(*, v, j, d, annotations) -> Catalogue:
         claims.extend(_stated_claims(allele_id, side_entry))
     alleles = [replaced.get(a.id, a) for a in alleles]
 
-    for allele in alleles:
-        if allele.segment == "V" and allele.gapped_sequence is not None:
-            claims.extend(_alignment_claims(allele, locus))
-        elif allele.segment == "J":
-            result = _resolve(allele.sequence, "J", locus, None, False)
-            if result["position"] is not None:
-                claims.append(Claim(allele.id, "anchor", result["position"], "none", "unique_motif",
-                                    "candidate", None, result["method"]))
-    claims = _mark_anchor_conflicts(claims)
-
     labels = {(a.segment, a.label) for a in alleles}
-    entities, relationships = {}, []
     for i, rel in enumerate(side["relationships"]):
         segment, _, label = rel["allele"].partition(":")
         if (segment, label) not in labels:
@@ -303,25 +362,18 @@ def import_local(*, v, j, d, annotations) -> Catalogue:
                                          f"relationship names {rel['allele']}, which has no accepted allele")
         if rel["kind"] == "alias" and rel["entity"] != label and (segment, rel["entity"]) in labels:
             raise ReferenceArtifactError("conflict", f"relationships[{i}].entity", _ALIAS_EXECUTABLE)
-        entity_id = f"entity:{rel['entity']}"
-        entities.setdefault(entity_id, Entity(entity_id, rel["entity"], False))
-        relationships.append(Relationship(rel["kind"], rel["allele"], entity_id, rel["source"]))
 
-    findings = []
-    for segment in ("V", "D", "J"):
-        groups: dict = {}
-        for a in alleles:
-            if a.segment == segment:
-                groups.setdefault(a.sequence, []).append(a.id)
-        for ids in groups.values():
-            if len(ids) > 1:
-                findings.append(Finding("identical_sequence_distinct_labels", tuple(ids),
-                                        f"{len(ids)} alleles share one sequence under different labels"))
+    derived = derive_content(alleles=alleles, sidecar_claims=claims, sidecar_relationships=side["relationships"],
+                             locus=locus, v_alignment=v_alignment)
+    disagreements = anchor_phase_disagreements(derived.claims)
+    if disagreements:
+        index, message = disagreements[0]
+        raise ReferenceArtifactError("conflict", derived.claims[index].subject, message)
 
     header = ReferenceHeader(ref["name"], ref["version"],
                              Taxon(ref["taxon"]["scientific_name"], ref["taxon"]["taxonomy_id"]),
                              locus, chain_type, ref["build_date"])
     catalogue = Catalogue(header, dict(conventions), tuple(sources), tuple(records), tuple(alleles),
-                          tuple(claims), tuple(entities.values()), tuple(relationships), tuple(findings))
+                          derived.claims, derived.entities, derived.relationships, derived.findings)
     catalogue.validate()
     return catalogue

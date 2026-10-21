@@ -237,3 +237,70 @@ def test_vdj_import_includes_d_segment(tmp_path):
     cat = run(tmp_path, f">a\n{V_SEQ}\n", d=f">d1\n{V_SEQ[:12]}\n", side=sidecar(chain_type="vdj"))
     assert [a.id for a in cat.alleles] == ["V:a", "D:d1", "J:J1"]
     assert {s.id for s in cat.sources} == {"src:V", "src:D", "src:J"}
+
+
+def test_anchor_derived_phase_disagreeing_with_anchor_is_conflict(tmp_path):
+    phase_1 = {**stated(1), "derivation": "anchor_derived"}
+    side = sidecar([entry("V", "a", V_SEQ, anchor=stated(3), coding_phase=phase_1)])
+    with pytest.raises(ReferenceArtifactError) as err:
+        run(tmp_path, f">a\n{V_SEQ}\n", side=side)
+    assert err.value.kind == "conflict"
+    assert all(s in err.value.message for s in ("V:a", "anchor 3", "phase 1"))
+    # The rule also applies to an anchor taken from a declared IMGT alignment.
+    side = sidecar([entry("V", "v1", GAPPED_V.replace(".", ""), coding_phase=phase_1)], v_alignment="imgt_gapped")
+    with pytest.raises(ReferenceArtifactError) as err:
+        run(tmp_path / ".", f">v1\n{GAPPED_V}\n", side=side)
+    assert err.value.kind == "conflict" and "anchor 306" in err.value.message
+    agree = sidecar([entry("V", "a", V_SEQ, anchor=stated(3), coding_phase={**stated(0), "derivation": "anchor_derived"})])
+    assert run(tmp_path / ".", f">a\n{V_SEQ}\n", side=agree).claims_for("V:a", "coding_phase")[0].value == 0
+
+
+def _import_scenarios(tmp):
+    def sub(name):
+        path = tmp / name
+        path.mkdir()
+        return path
+
+    return {
+        "accounting": run(sub("a"), f">a\n{V_SEQ}\n>a\n{V_SEQ}\n>n\nACGN\n>e\n\n>bad,label\n{V_SEQ}\n"),
+        "aligned_agree": declared(sub("b"), anchor=stated(306)),
+        "aligned_conflict": declared(sub("c"), anchor=stated(303)),
+        "motif": run(sub("d"), f">v\n{V_SEQ}\n", j=f">k1\n{J_KAPPA}\n>k2\n{J_SEQ}\n",
+                     side=sidecar([entry("J", "k1", J_KAPPA)], chain_type="vj", locus="IGK")),
+        "paralog": run(sub("e"), f">a\n{V_SEQ}\n>b\n{V_SEQ}\n>c\n{V_SEQ}\n", side=sidecar(relationships=[
+            {"kind": "paralog", "allele": "V:a", "entity": "b", "source": None},
+            {"kind": "alias", "allele": "V:a", "entity": "lab_name", "source": "s"},
+            {"kind": "alias", "allele": "V:c", "entity": "lab_name", "source": None}])),
+        "genes": run(sub("f"), f">lab_x\n{V_SEQ}\n>IGHV3-1*01\n{V_SEQ}AC\n>plain\n{V_SEQ}GG\n",
+                     side=sidecar([entry("V", "lab_x", V_SEQ, gene="GENE-X")])),
+        "vdj": run(sub("g"), f">a\n{V_SEQ}\n", d=f">d1\n{V_SEQ[:12]}\n>d2\n{V_SEQ[:12]}\n",
+                   side=sidecar(chain_type="vdj")),
+    }
+
+
+# Catalogue digests captured from import_local before its derivation was shared with the loader.
+_IMPORT_DIGESTS = {
+    "accounting": "sha256:79a8ef54b0e7987a61af84bb99747671489fb93a2cdbf82cc66af0c2df4ee0c7",
+    "aligned_agree": "sha256:220270433ffb217fe4388118e58d538c661d72c56565d76d98f74201fd4ffc6f",
+    "aligned_conflict": "sha256:cece9b910d86a8950a9ec06a68c69318b665e6899681452ddb0709ce6063a2ec",
+    "motif": "sha256:6373c71b44c3a99e73393332c6f352ba82d3a23a1a2c396ca68e013fabca5b4e",
+    "paralog": "sha256:ba2ed73b136db9d4bd60d2971b51c1346eecf9affcc212e4ef9bf27698417dee",
+    "genes": "sha256:af1af89d5361371db83f098bd0b4a4334c65ddad89ff2dfbe722bc86ac481d04",
+    "vdj": "sha256:4f6b36bd6023f6416c61b23dd59a8d662581a3d2b13737d1fdd45757b0c89f88",
+}
+
+
+def test_import_output_unchanged_for_existing_fixtures(tmp_path):
+    digests = {name: cat.digest() for name, cat in _import_scenarios(tmp_path).items()}
+    assert digests == _IMPORT_DIGESTS
+
+
+def test_regenerated_content_matches_import(tmp_path):
+    from GenAIRR._reference.importer import regenerate
+
+    for name, cat in _import_scenarios(tmp_path).items():
+        derived = regenerate(cat)
+        assert derived.claims == cat.claims, name
+        assert derived.relationships == cat.relationships, name
+        assert derived.entities == cat.entities, name
+        assert derived.findings == cat.findings, name

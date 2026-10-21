@@ -59,6 +59,37 @@ def check_label(text: Any) -> Optional[str]:
     return None
 
 
+def gene_from_label(label: str) -> tuple:
+    """``(gene, basis)`` derived from a label: the text before ``*`` if valid, else the label."""
+    if "*" in label:
+        prefix = label.split("*", 1)[0]
+        if prefix and check_label(prefix) is None:
+            return prefix, "label_prefix"
+    return label, "label"
+
+
+def anchor_phase_disagreements(claims) -> list:
+    """``(index, message)`` for each accepted anchor-derived coding phase that differs from
+    its allele's accepted anchor modulo 3 (only when one agreed, unconflicted anchor exists)."""
+    anchors: dict = {}
+    for c in claims:
+        if c.predicate == "anchor":
+            anchors.setdefault(c.subject, []).append(c)
+    found = []
+    for index, c in enumerate(claims):
+        if (c.predicate, c.derivation, c.status) != ("coding_phase", "anchor_derived", "accepted"):
+            continue
+        group = anchors.get(c.subject, [])
+        values = {a.value for a in group if a.status == "accepted"}
+        if any(a.status == "conflict" for a in group) or len(values) != 1:
+            continue
+        (anchor,) = values
+        if c.value != anchor % 3:
+            found.append((index, f"{c.subject}: anchor-derived coding phase {c.value} disagrees with "
+                                 f"accepted anchor {anchor} ({anchor} % 3 = {anchor % 3})"))
+    return found
+
+
 def _bad(path: str, message: str, kind: str = "malformed"):
     return ReferenceArtifactError(kind, path, message)
 
@@ -472,6 +503,10 @@ class Catalogue:
                 problem = check_label(getattr(a, field))
                 if problem:
                     raise _bad(f"{p}.{field}", problem, "integrity")
+            if a.gene_basis != "declared" and (a.gene, a.gene_basis) != gene_from_label(a.label):
+                expected, basis = gene_from_label(a.label)
+                raise _bad(f"{p}.gene", f"gene {a.gene!r} ({a.gene_basis}) does not follow from label "
+                           f"{a.label!r}; expected {expected!r} ({basis})", "integrity")
             if not _SEQ_RE.fullmatch(a.sequence):
                 raise _bad(f"{p}.sequence", "sequence must match [ACGT]{1,65535}", "integrity")
             if a.sequence_sha256 != sequence_digest(a.sequence):
@@ -540,6 +575,10 @@ class Catalogue:
                 raise _bad(f"{p}.derivation", "anchor_derived applies only to coding_phase", "integrity")
             if (c.support == "none") != (c.status == "candidate"):
                 raise _bad(f"{p}.status", "support none holds exactly for candidate claims", "integrity")
+        disagreements = anchor_phase_disagreements(self.claims)
+        if disagreements:
+            index, message = disagreements[0]
+            raise _bad(f"claims[{index}].value", message, "integrity")
 
         for i, f in enumerate(self.findings):
             for subject in f.subjects:

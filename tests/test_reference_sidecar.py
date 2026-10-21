@@ -220,11 +220,11 @@ def catalogue_dict():
              "status": "accepted", "reason": None, "allele": "J:kj_a", "duplicate_of": None},
         ],
         "alleles": [
-            {"id": "V:kv_a", "segment": "V", "label": "kv_a", "gene": "kv", "gene_basis": "label_prefix",
+            {"id": "V:kv_a", "segment": "V", "label": "kv_a", "gene": "kv", "gene_basis": "declared",
              "sequence": V_SEQ, "sequence_sha256": digest(V_SEQ),
              "gapped_sequence": "ACGT..ACGT" + V_SEQ[8:],
              "transforms": [], "records": ["rec:V:0"]},
-            {"id": "J:kj_a", "segment": "J", "label": "kj_a", "gene": "kj", "gene_basis": "label_prefix",
+            {"id": "J:kj_a", "segment": "J", "label": "kj_a", "gene": "kj", "gene_basis": "declared",
              "sequence": J_SEQ, "sequence_sha256": digest(J_SEQ), "gapped_sequence": None,
              "transforms": [{"kind": "uppercase", "input_sha256": digest("acgt"),
                              "output_sha256": digest(J_SEQ)}],
@@ -257,7 +257,7 @@ def test_catalogue_round_trip_and_digest():
     assert len(cat.claims_for("V:kv_a", "anchor")) == 1
     assert cat.claims_for("V:kv_a", "boundary_3") == ()
     d2 = catalogue_dict()
-    d2["claims"][0]["value"] = 7
+    d2["claims"][0]["value"] = 9   # still phase 0, so the anchor-derived phase stays consistent
     assert Catalogue.from_dict(d2).digest() != cat.digest()
 
 
@@ -373,3 +373,30 @@ def test_float_integers_rejected_in_sidecar():
     d["schema_version"] = 1.0
     with pytest.raises(ReferenceArtifactError):
         load(d)
+
+
+def test_anchor_derived_phase_must_match_accepted_anchor():
+    d = catalogue_dict()
+    d["claims"][1]["value"] = 1   # anchor-derived phase 1 against accepted anchor 6
+    with pytest.raises(ReferenceArtifactError) as e:
+        Catalogue.from_dict(d)
+    assert e.value.kind == "integrity" and e.value.path == "claims[1].value"
+    assert "V:kv_a" in e.value.message and "anchor 6" in e.value.message and "phase 1" in e.value.message
+    d = catalogue_dict()
+    d["claims"][1]["value"] = 1
+    d["claims"][0]["status"] = "conflict"   # no accepted anchor: the phase is not constrained
+    Catalogue.from_dict(d)
+
+
+def test_derived_gene_must_follow_label():
+    d = catalogue_dict()
+    d["alleles"][0]["gene_basis"] = "label_prefix"
+    with pytest.raises(ReferenceArtifactError) as e:
+        Catalogue.from_dict(d)
+    assert e.value.kind == "integrity" and e.value.path == "alleles[0].gene"
+    d = catalogue_dict()
+    d["alleles"][0].update(gene="kv_a", gene_basis="label")
+    Catalogue.from_dict(d)
+    d["alleles"][0].update(gene="kv", gene_basis="label")
+    with pytest.raises(ReferenceArtifactError):
+        Catalogue.from_dict(d)

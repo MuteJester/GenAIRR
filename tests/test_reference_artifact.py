@@ -12,7 +12,9 @@ from GenAIRR import Reference, ReferenceArtifactError, ReferenceCapabilityError
 from GenAIRR._artifact_io import canonical_json, typed_digest
 from GenAIRR._reference import artifact as artifact_module
 from GenAIRR._reference.artifact import ClaimSummary, ReferenceAllele, ReferenceReport
-from GenAIRR._reference.lowering import PROFILE_ID
+from GenAIRR._reference.defaults import models_hash
+from GenAIRR._reference.lowering import PROFILE_ID, lower, seal
+from GenAIRR._reference.model import Catalogue
 
 # A human IGHV1-2*02-like V (TGT Cys codon at 285), two IGHD-like Ds and two IGHJ-like Js
 # (TGG-GGC-CAG/A-GG motif at 14 and 29).  Software fixtures, not evidence.
@@ -75,11 +77,11 @@ def default_alleles(v_anchor_support="assertion"):
     ]
 
 
-def sidecar(alleles, *, chain_type="vdj", locus="IGH", v_alignment="none", build_date=None):
+def sidecar(alleles, *, chain_type="vdj", locus="IGH", v_alignment="none", build_date=None, relationships=()):
     return {"schema": "genairr_reference_annotations", "schema_version": 1,
             "reference": header(chain_type, locus, build_date),
             "conventions": {"coordinates": "zero_based_half_open", "v_alignment": v_alignment},
-            "alleles": list(alleles), "relationships": [], "suggestions": []}
+            "alleles": list(alleles), "relationships": list(relationships), "suggestions": []}
 
 
 def fasta_files(directory, *, v=V_FASTA, d=D_FASTA, j=J_FASTA):
@@ -120,6 +122,36 @@ def _recommit(doc):
     doc["catalogue_hash"] = typed_digest(doc["catalogue"], "genairr_reference_catalogue_v1")
     doc["models_hash"] = typed_digest(doc["models"], "genairr_reference_models_v1")
     return _commit(doc)
+
+
+def _full_recommit(doc):
+    """Recompute every hash plus admission, native projection, context and execution hash.
+
+    This is what a careful forger would do, so only the regeneration of derived catalogue
+    content (and the catalogue's own validation) can reject such an artifact.
+    """
+    validate = Catalogue.validate
+    Catalogue.validate = lambda self: None
+    try:
+        catalogue = Catalogue.from_dict(doc["catalogue"])
+    finally:
+        Catalogue.validate = validate
+    doc["catalogue_hash"] = catalogue.digest()
+    doc["models_hash"] = models_hash(doc["models"])
+    lowered = lower(catalogue, doc["view"]["alleles"])
+    doc["view"]["admission"] = lowered.admission
+    doc["native"]["reference_spec"] = lowered.spec
+    context = {"schema_version": 1, "catalogue_hash": doc["catalogue_hash"], "view": "default",
+               "profile": PROFILE_ID, "models_hash": doc["models_hash"]}
+    doc["native"]["context"] = context
+    doc["native"]["execution_hash"] = seal(lowered, context).content_hash()
+    return _commit(doc)
+
+
+def claim_of(doc, subject, predicate, derivation):
+    (claim,) = [c for c in doc["catalogue"]["claims"] if (c["subject"], c["predicate"], c["derivation"])
+                == (subject, predicate, derivation)]
+    return claim
 
 
 def load(doc):
@@ -362,16 +394,31 @@ def test_schema_version_2_unsupported(ref):
     doc = doc_of(ref)
     doc["schema_version"] = 2
     rejected(_commit(doc), "unsupported_schema", "schema version 2")
-    for bad in ("1", True, 1.0):
+    for bad in ("1", True, 1.0, None):
         doc = doc_of(ref)
         doc["schema_version"] = bad
-        rejected(_commit(doc), "malformed")
+        rejected(_commit(doc), "unsupported_schema")
+    doc = doc_of(ref)
+    del doc["schema_version"]
+    rejected(doc, "unsupported_schema")
     doc = doc_of(ref)
     doc["artifact"] = "genairr_family_replay"
-    assert rejected(_commit(doc), "malformed").path == "artifact"
+    assert rejected(_commit(doc), "malformed", "not a GenAIRR reference artifact").path == "artifact"
+    doc = doc_of(ref)
+    del doc["artifact"]
+    rejected(doc, "malformed", "not a GenAIRR reference artifact")
     doc = doc_of(ref)
     doc["generator"]["name"] = "Other"
     assert rejected(_commit(doc), "malformed").path == "generator.name"
+
+
+def test_v2_shaped_artifact_with_extra_key_is_unsupported_schema(ref):
+    doc = doc_of(ref)
+    doc["schema_version"] = 2
+    doc["lineage"] = {"parents": []}
+    del doc["models_hash"]
+    err = rejected(doc, "unsupported_schema", "schema version 2")
+    assert err.path == "schema_version"
 
 
 def test_size_bound(ref, tmp_path, monkeypatch):
@@ -615,3 +662,116 @@ def test_public_exports():
         assert name in GenAIRR.__all__
         assert hasattr(GenAIRR, name)
     assert issubclass(ReferenceCapabilityError, ReferenceArtifactError)
+
+
+# ── Regeneration of derived catalogue content ────────────────────────
+
+
+def test_full_recommit_helper_is_faithful(ref):
+    assert load(_full_recommit(doc_of(ref))).to_json() == ref.to_json()
+
+
+def test_recommitted_finding_deleted_or_forged_rejected(ref):
+    doc = doc_of(ref)
+    doc["catalogue"]["findings"] = []
+    err = rejected(_full_recommit(doc), "integrity", "identical_sequence_distinct_labels")
+    assert err.path.startswith("catalogue.findings")
+    doc = doc_of(ref)
+    doc["catalogue"]["findings"].append({
+        "kind": "identical_sequence_distinct_labels", "subjects": ["V:IGHV1-3*01", "J:IGHJ4*02"],
+        "detail": "2 alleles share one sequence under different labels"})
+    err = rejected(_full_recommit(doc), "integrity", "finding")
+    assert err.path == "catalogue.findings[1]"
+
+
+def test_recommitted_anchor_derived_phase_disagreeing_with_anchor_rejected(ref):
+    doc = doc_of(ref)
+    claim_of(doc, "V:IGHV1-2*02", "coding_phase", "anchor_derived")["value"] = 1
+    err = rejected(_full_recommit(doc), "integrity", "anchor-derived coding phase 1")
+    assert "285" in str(err) and "V:IGHV1-2*02" in str(err)
+
+
+def test_recommitted_motif_candidate_moved_rejected(ref):
+    doc = doc_of(ref)
+    claim_of(doc, "J:IGHJ4*02", "anchor", "unique_motif")["value"] = 15
+    err = rejected(_full_recommit(doc), "integrity", r"J:IGHJ4\*02")
+    assert err.path.startswith("catalogue.claims[")
+    doc = doc_of(ref)
+    doc["catalogue"]["claims"] = [c for c in doc["catalogue"]["claims"] if c["derivation"] != "unique_motif"]
+    rejected(_full_recommit(doc), "integrity", "claim")
+
+
+def _gapped(tmp_path, relationships=()):
+    ungapped = GAPPED_V.replace(".", "")
+    alleles = [entry("V", "gv", ungapped, anchor=ann(306, "source", SOURCE)),
+               entry("V", "gw", ungapped[:-3] + "TTT", anchor=ann(303, "source", SOURCE))] + \
+        default_alleles()[3:]
+    v = f">gv\n{GAPPED_V}\n>gw\n{GAPPED_V[:-3]}TTT\n"
+    return build(tmp_path, alleles=alleles, v=v, v_alignment="imgt_gapped", relationships=relationships)
+
+
+def test_recommitted_alignment_claims_and_conflict_statuses_regenerated(tmp_path):
+    ref = _gapped(tmp_path)
+    doc = doc_of(ref)
+    for c in doc["catalogue"]["claims"]:
+        if c["subject"] == "V:gw" and c["predicate"] == "anchor":
+            assert c["status"] == "conflict"
+            c["status"] = "accepted"
+    rejected(_full_recommit(doc), "integrity", "V:gw")
+    doc = doc_of(ref)
+    doc["catalogue"]["claims"].remove(claim_of(doc, "V:gv", "v_subregions", "imgt_alignment"))
+    rejected(_full_recommit(doc), "integrity", "claim")
+    doc = doc_of(ref)
+    claim_of(doc, "V:gv", "v_subregions", "imgt_alignment")["value"]["FWR1"] = [0, 60]
+    rejected(_full_recommit(doc), "integrity", "V:gv")
+
+
+def test_recommitted_entities_relationships_and_genes_regenerated(tmp_path):
+    rel = {"kind": "alias", "allele": "V:IGHV1-2*02", "entity": "lab_alias", "source": None}
+    ref = build(tmp_path, relationships=[rel])
+    assert [(e.id, e.name) for e in ref.entities] == [("entity:lab_alias", "lab_alias")]
+    doc = doc_of(ref)
+    doc["catalogue"]["entities"].append({"id": "entity:orphan", "name": "orphan", "executable": False})
+    assert rejected(_full_recommit(doc), "integrity", "orphan").path.startswith("catalogue.entities")
+    doc = doc_of(ref)
+    doc["catalogue"]["entities"][0]["name"] = "renamed"
+    rejected(_full_recommit(doc), "integrity", "entit")
+    doc = doc_of(ref)
+    doc["catalogue"]["entities"][0]["id"] = "ent:lab_alias"
+    doc["catalogue"]["relationships"][0]["entity"] = "ent:lab_alias"
+    rejected(_full_recommit(doc), "integrity", "relationship")
+    doc = doc_of(ref)
+    doc["catalogue"]["alleles"][0]["gene"] = "IGHV9"
+    err = rejected(_full_recommit(doc), "integrity", "gene")
+    assert err.path == "catalogue.alleles[0].gene"
+
+
+# ── Empty selections ─────────────────────────────────────────────────
+
+EMPTY = {"V": f">v_n\n{V_BAD}\n>v_e\n\n>v,comma\n{V1}\n>v_n2\nACGN\n",
+         "D": ">d_n\nGGNTT\n",
+         "J": f">j_e\n\n>j_n\n{J1[:-1]}N\n"}
+
+
+@pytest.mark.parametrize("segment, counts, reasons", [
+    ("V", "0 accepted, 0 duplicate, 4 rejected",
+     ["unsupported_base (2)", "empty_sequence (1)", "unrepresentable_label (1)"]),
+    ("D", "0 accepted, 0 duplicate, 1 rejected", ["unsupported_base (1)"]),
+    ("J", "0 accepted, 0 duplicate, 2 rejected", ["empty_sequence (1)", "unsupported_base (1)"]),
+])
+def test_empty_selection_names_segment_and_accounting(tmp_path, monkeypatch, segment, counts, reasons):
+    fastas = {"v": V_FASTA, "d": D_FASTA, "j": J_FASTA, segment.lower(): EMPTY[segment]}
+    alleles = [a for a in default_alleles() if a["segment"] != segment]
+
+    def no_lowering(*args, **kwargs):
+        raise AssertionError("native lowering ran before the selection check")
+
+    monkeypatch.setattr(artifact_module, "lower", no_lowering)
+    with pytest.raises(ReferenceArtifactError) as e:
+        build(tmp_path, alleles=alleles, **fastas)
+    assert e.value.kind == "empty_selection" and e.value.path == segment
+    message = e.value.message
+    assert f"no executable {segment} alleles" in message and counts in message
+    assert all(r in message for r in reasons), message
+    positions = [message.index(r) for r in reasons]
+    assert positions == sorted(positions)
