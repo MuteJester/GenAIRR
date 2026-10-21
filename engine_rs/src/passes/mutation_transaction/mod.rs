@@ -66,6 +66,8 @@ pub(crate) struct MutationTransaction<'a, 'idx> {
     /// Bumped by [`Self::add_to_mutation_count`]; written to
     /// `sealed.mutation_count` at commit.
     pub(super) mutations_applied: u32,
+    /// Input molecule length before this pass can change observation coverage.
+    pub(super) input_pool_len: usize,
     /// Controls whether contract-filter exhaustion returns
     /// `PassError` or the pass-specific permissive sentinel
     /// (`Ok(false)` / no-op). Out-of-range handles are always
@@ -98,13 +100,24 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         if ctx.event_log_sink.is_some() {
             builder.attach_event_log_observer();
         }
+        builder.set_duplex_edit_context(Some(pass_name));
         Self {
             builder,
             ctx,
             pass_name: pass_name.to_string(),
             mutations_applied: 0,
+            input_pool_len: sim.pool.len(),
             strict,
         }
+    }
+
+    /// Preserve sampled attempts separately from applied substitution events.
+    pub(crate) fn record_duplex_attempt_stage(
+        &mut self,
+        stage: crate::ir::DuplexAttemptStage,
+        count: u32,
+    ) {
+        self.builder.record_duplex_attempt_stage(stage, count);
     }
 
     /// Read-only snapshot of the in-progress simulation. Sees every
@@ -190,6 +203,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             mut builder,
             ctx,
             mutations_applied,
+            input_pool_len,
             ..
         } = self;
 
@@ -217,14 +231,11 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             // are skipped entirely (no event, no builder wrap) —
             // mutation count is a derived metadata sidecar and an
             // unchanged value is not a state-change consequence.
-            let new_count = sealed
-                .mutation_count
-                .saturating_add(mutations_applied);
             let mut count_builder = SimulationBuilder::from_simulation(sealed);
             if ctx.event_log_sink.is_some() {
                 count_builder.attach_event_log_observer();
             }
-            count_builder.set_mutation_count(new_count);
+            count_builder.add_shm_mutations(mutations_applied, input_pool_len);
             if let Some(sink) = ctx.event_log_sink.as_deref_mut() {
                 sink.extend(count_builder.seal_event_log_observer());
             }
@@ -658,11 +669,8 @@ mod commit_event_tests {
     fn sim_with_bases(bases: &[u8]) -> Simulation {
         let mut sim = Simulation::new();
         for (i, &b) in bases.iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
-                b,
-                i as u16,
-                Segment::V,
-            ));
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
             sim = next;
         }
         sim
@@ -671,10 +679,7 @@ mod commit_event_tests {
     /// Open a transaction against `sim` with `event_log_sink`
     /// attached, call the supplied `apply` closure to drive
     /// mutations, then commit and return `(sealed, captured_events)`.
-    fn run_with_capture<F>(
-        sim: Simulation,
-        apply: F,
-    ) -> (Simulation, Vec<SimulationEvent>)
+    fn run_with_capture<F>(sim: Simulation, apply: F) -> (Simulation, Vec<SimulationEvent>)
     where
         F: for<'a, 'idx> FnOnce(&mut MutationTransaction<'a, 'idx>),
     {
@@ -712,7 +717,12 @@ mod commit_event_tests {
             // event (from the previous slice). We assert on the
             // mutation-count event specifically below; both
             // events should appear in the captured stream.
-            tx.substitute_base_admitting(NucHandle::new(1), b'G', ChoiceAddress::MutateUniformBase(0)).unwrap();
+            tx.substitute_base_admitting(
+                NucHandle::new(1),
+                b'G',
+                ChoiceAddress::MutateUniformBase(0),
+            )
+            .unwrap();
             tx.add_to_mutation_count(1);
         });
 
@@ -767,9 +777,24 @@ mod commit_event_tests {
         // not start from zero.
         let sim = sim_with_bases(b"AAAA").with_mutation_count(2);
         let (sealed, events) = run_with_capture(sim, |tx| {
-            tx.substitute_base_admitting(NucHandle::new(0), b'C', ChoiceAddress::MutateUniformBase(0)).unwrap();
-            tx.substitute_base_admitting(NucHandle::new(1), b'C', ChoiceAddress::MutateUniformBase(1)).unwrap();
-            tx.substitute_base_admitting(NucHandle::new(2), b'C', ChoiceAddress::MutateUniformBase(2)).unwrap();
+            tx.substitute_base_admitting(
+                NucHandle::new(0),
+                b'C',
+                ChoiceAddress::MutateUniformBase(0),
+            )
+            .unwrap();
+            tx.substitute_base_admitting(
+                NucHandle::new(1),
+                b'C',
+                ChoiceAddress::MutateUniformBase(1),
+            )
+            .unwrap();
+            tx.substitute_base_admitting(
+                NucHandle::new(2),
+                b'C',
+                ChoiceAddress::MutateUniformBase(2),
+            )
+            .unwrap();
             tx.add_to_mutation_count(3);
         });
 
@@ -811,7 +836,12 @@ mod commit_event_tests {
                 event_log_sink: None,
             };
             let mut tx = MutationTransaction::open(&sim, &mut ctx, "test.commit", false);
-            tx.substitute_base_admitting(NucHandle::new(0), b'T', ChoiceAddress::MutateUniformBase(0)).unwrap();
+            tx.substitute_base_admitting(
+                NucHandle::new(0),
+                b'T',
+                ChoiceAddress::MutateUniformBase(0),
+            )
+            .unwrap();
             tx.add_to_mutation_count(1);
             sealed = tx.commit().expect("commit succeeds");
         }

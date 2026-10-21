@@ -12,15 +12,16 @@
 //! reuse the same `ExtensionWalkState` borrow shape and apply
 //! byte-for-byte identical scoring/flag updates.
 
+use super::support::best_supported_alleles;
 use super::{
-    AlleleBitSet, EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentLiveCall,
-    SegmentRefIndex,
+    EvidenceScore, HypothesisFlags, PlacementHypothesis, SegmentLiveCall, SegmentRefIndex,
 };
 use crate::ir::{NucHandle, Region, Segment, Simulation};
-use crate::refdata::AlleleId;
 
 pub(crate) mod extensions;
-use extensions::{walk_left_extension, walk_right_extension, ExtensionWalkState};
+use extensions::{
+    extension_trim_caps, walk_left_extension, walk_right_extension, ExtensionWalkState,
+};
 
 pub(super) fn call_from_region(
     sim: &Simulation,
@@ -133,8 +134,7 @@ pub(super) fn call_from_region(
             ref_pos as usize,
             nucleotide.base,
             orientation,
-        )
-        else {
+        ) else {
             continue;
         };
         evidence.allele_ids.for_each_id(|id| {
@@ -173,9 +173,6 @@ pub(super) fn call_from_region(
     // halt-on-empty-evidence semantics. This keeps unit-level live-call
     // tests backwards-compatible while real pipeline runs always have
     // the trim metadata available.
-    let trim_cap_3: Option<u32> = sim.assignments.get(segment).map(|a| a.trim_3 as u32);
-    let trim_cap_5: Option<u32> = sim.assignments.get(segment).map(|a| a.trim_5 as u32);
-
     // Delegate the left and right NP-region extension walks to the
     // shared `extensions` submodule so the streaming
     // `WalkerObserverState` can reuse the exact same code. The walks
@@ -188,14 +185,7 @@ pub(super) fn call_from_region(
     // allele-right under RC — so the cap that bounds the pool-left
     // walk is `trim_5` under Forward and `trim_3` under RC. Same
     // logic mirrored on the right side.
-    let (left_cap, right_cap) = if matches!(
-        orientation,
-        crate::assignment::SegmentOrientation::ReverseComplement
-    ) {
-        (trim_cap_3, trim_cap_5)
-    } else {
-        (trim_cap_5, trim_cap_3)
-    };
+    let (left_cap, right_cap) = extension_trim_caps(sim, segment, orientation);
     if let Some(np_region) = left_extension {
         let mut state = ExtensionWalkState {
             scores: &mut scores,
@@ -238,18 +228,7 @@ pub(super) fn call_from_region(
     // every base has been edited away from every allele's germline),
     // every allele is equally consistent with the absence of
     // evidence — return the full pool.
-    let max_score = scores.iter().copied().max().unwrap_or(0);
-    let allele_call = if max_score == 0 {
-        segment_index.all_alleles.clone()
-    } else {
-        let mut bitset = AlleleBitSet::empty(allele_universe_len);
-        for (idx, &score) in scores.iter().enumerate() {
-            if score == max_score {
-                bitset.insert(AlleleId::new(idx as u32));
-            }
-        }
-        bitset
-    };
+    let allele_call = best_supported_alleles(&scores, sim.live_call_alleles(segment));
 
     let hypothesis = PlacementHypothesis::new(
         segment,

@@ -62,6 +62,18 @@ def _baseline_experiment() -> "ga.Experiment":
     )
 
 
+def _productive_experiment() -> "ga.Experiment":
+    """Use a canonical V landmark without changing the generic golden fixture."""
+    cfg = ge.RefDataConfig.vj()
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
+    cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
+    return (
+        ga.Experiment.on(cfg)
+        .recombine(np1_lengths=[(3, 1.0)])
+        .trim(enabled=False)
+    )
+
+
 def _record(exp: "ga.Experiment", seed: int = 0) -> dict:
     """Run `exp` once and return the single AIRR record."""
     result = exp.run_records(n=1, seed=seed)
@@ -248,7 +260,7 @@ def test_productive_only_with_paired_indels_preserves_triad() -> None:
     sentinels). Records must satisfy the productive triad
     regardless of which path the contract chose."""
     rec = _record(
-        _baseline_experiment()
+        _productive_experiment()
         .polymerase_indels(count=2, insertion_prob=0.5)
         .productive_only()
     )
@@ -261,17 +273,11 @@ def test_productive_only_with_single_indel_still_productive() -> None:
     """Under `productive_only` the productive contract bundle
     narrows single-indel candidates to sites that don't shift the
     junction frame AND don't modify the V/J anchor codon content.
-    On the 18-base baseline (V=9 with V_anchor=6, J=6 with J_anchor=0)
-    that means sites in `[J_anchor_pool + 3, pool.len()] = [15, 19]`
-    for insertions and `[15, 17]` for deletions — all after the J
-    anchor codon and outside the junction window `[6, 15)`.
-
-    The audit's earlier claim that count=1 is *globally* rejected
-    under productive_only was too broad: an admissible non-junction
-    site exists on this fixture, so the indel applies and the
-    record stays productive. See §5 of the audit doc."""
+    On this fixture a post-pool insertion remains outside the aligned
+    coding span. Internal indels must preserve the whole coding span,
+    including the J tail, rather than only the junction."""
     rec = _record(
-        _baseline_experiment()
+        _productive_experiment()
         .polymerase_indels(count=1, insertion_prob=0.5)
         .productive_only()
     )
@@ -284,42 +290,36 @@ def test_productive_only_with_single_indel_still_productive() -> None:
     assert rec["n_indels"] == 1
 
 
-def test_productive_only_count_1_lands_outside_junction_and_anchors() -> None:
-    """Audit §5 pin: under `productive_only` + count=1 on the
-    18-base baseline, every sampled site falls in the post-J-anchor
-    zone (pool position ≥ 15). It NEVER lands inside V/NP (which
-    would be FrameDelta(±1)) and NEVER lands inside the J anchor
-    codon `[12, 15)` (which would corrupt the J anchor amino acid).
+def test_productive_only_single_indel_preserves_coding_or_skips() -> None:
+    """One internal coding-base indel cannot preserve the full ORF.
 
-    The lower bound (15) is `J_anchor_pool + 3` = `J_region.start +
-    J_anchor_offset + 3`. The upper bound is `pool.len()` for
-    deletions and `pool.len()` (= 18 here, since insertion at end
-    is admissible) for insertions."""
+    A post-pool insertion can remain outside the aligned coding span.
+    Realized counters must distinguish the supported post-pool insertion
+    from an unapplied NoOp.
+    """
     configured = (
-        _baseline_experiment()
+        _productive_experiment()
         .polymerase_indels(count=1, insertion_prob=0.5)
         .productive_only()
     )
     compiled = configured.compile(allow_curatable_refdata=True)
     assert isinstance(compiled, CompiledExperiment)
 
-    # Sweep multiple seeds — every observed site must satisfy the
-    # post-anchor invariant.
     for seed in range(25):
         outcome = compiled.simulator.run(seed=seed)
+        record = outcome.airr_record(compiled.refdata)
         site_rec = next(
             r for r in outcome.trace().choices()
             if r.address == "corrupt.indel.site[0]"
         )
         site = int(str(site_rec.value).strip("Int()"))
-        # NoOp sentinel is -1; on this fixture an admissible site
-        # always exists, so we expect a positive site.
-        assert site != -1, f"seed {seed}: unexpected NoOp on baseline"
-        assert site >= 15, (
-            f"seed {seed}: site {site} would shift the junction frame "
-            f"or corrupt the J anchor codon (admissible zone is [15, 18])"
-        )
-        assert site <= 18  # insertion can be at end-of-pool
+        if site == -1:
+            assert record["n_indels"] == 0
+        else:
+            assert site == 18  # post-pool insertion outside the coding span
+            assert record["n_indels"] == 1
+        assert record["productive"] is True
+        assert record["stop_codon"] is False
 
 
 def test_productive_only_count_1_delete_only_short_j_no_ops_permissive() -> None:
@@ -340,7 +340,7 @@ def test_productive_only_count_1_delete_only_short_j_no_ops_permissive() -> None
     # Sites < 12 are FrameDelta. Sites 12..15 are J anchor codon.
     # → No admissible deletion exists.
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTT", anchor=0)
     exp = (
         ga.Experiment.on(cfg).allow_curatable_refdata()
@@ -377,7 +377,7 @@ def test_productive_only_count_1_delete_only_short_j_raises_strict() -> None:
     `empty_admissible_support` — the productive bundle's narrowing
     yields an empty set."""
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTT", anchor=0)
     exp = (
         ga.Experiment.on(cfg).allow_curatable_refdata()
@@ -405,7 +405,7 @@ def test_productive_only_count_1_insert_only_short_j_applies_at_end_of_pool() ->
     productive_only as long as J-end+1 is reachable, even when
     single deletions are not."""
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTT", anchor=0)
     exp = (
         ga.Experiment.on(cfg).allow_curatable_refdata()

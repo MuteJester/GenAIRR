@@ -76,6 +76,23 @@ impl ContractSet {
             .any(|contract| contract.kind() == kind)
     }
 
+    pub fn requires_productive_emission(&self) -> bool {
+        use crate::ir::Segment;
+        [
+            ContractKind::CodingSequenceIntegrity,
+            ContractKind::ProductiveJunctionFrame,
+            ContractKind::NoStopCodonInJunction,
+            ContractKind::CanonicalAnchor {
+                segment: Segment::V,
+            },
+            ContractKind::CanonicalAnchor {
+                segment: Segment::J,
+            },
+        ]
+        .into_iter()
+        .all(|kind| self.contains_kind(kind))
+    }
+
     /// Verify every contract. Returns `Ok(())` only if all pass.
     /// On failure returns the *complete* list of violations, so
     /// callers see every contract that failed in one pass.
@@ -110,6 +127,28 @@ impl ContractSet {
     ) -> Result<(), ContractViolation> {
         for c in &self.contracts {
             c.admits_typed(sim, refdata, context, candidate)?;
+        }
+        Ok(())
+    }
+
+    /// Candidate checks after the compiled completion model has checked
+    /// junction frame and stops across future N/P additions. Other contracts,
+    /// including user-defined ones, still intersect with that support.
+    pub(crate) fn admits_with_productive_completion(
+        &self,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        context: ChoiceContext<'_>,
+        candidate: &ChoiceValue,
+    ) -> Result<(), ContractViolation> {
+        for contract in &self.contracts {
+            if matches!(
+                contract.kind(),
+                ContractKind::ProductiveJunctionFrame | ContractKind::NoStopCodonInJunction
+            ) {
+                continue;
+            }
+            contract.admits_typed(sim, refdata, context, candidate)?;
         }
         Ok(())
     }

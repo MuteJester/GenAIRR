@@ -1,0 +1,1953 @@
+{
+  "schema": "duplex_family_sweep_v1",
+  "seed": 23,
+  "extension_sha256": "a31be980a932d7333714f2ddf51c78ff9296943450d2d105313638bcff482244",
+  "counts": {
+    "founders": 192,
+    "records": 896,
+    "plans": 96,
+    "node_replays": 928,
+    "observed_node_comparisons": 192
+  },
+  "errors": 0,
+  "selected_history_ids": {
+    "restored-b": 144,
+    "restored-a": 48
+  },
+  "selection_count_scope": "control plans reuse founder seeds; these correlated counts do not estimate or test population frequencies",
+  "checks": [
+    "literal coding-query and output-orientation reconstruction",
+    "exact current/removed founder-link replay",
+    "canonical inverted-D placement oracle",
+    "cumulative applied mutation and observation counter oracle",
+    "mutation-stage denominator before read loss",
+    "one immutable repair founder per clone",
+    "actual parent-edge edit prefixes and counts",
+    "all lineage nodes replay including unsampled nodes",
+    "represented-cell abundance conservation",
+    "independent observed branch maps"
+  ],
+  "scope": "authored 15-base restored-landmark controls; omitted unit history weights and existing neutral family controls; no empirical biochemical fitting",
+  "plans": [
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "fixed",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 8,
+      "represented_cells": {
+        "0": 4,
+        "1": 4
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 4
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "repertoire",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 14,
+      "represented_cells": {
+        "0": 7,
+        "1": 7
+      },
+      "distinct_observation_maps": {
+        "0": 7,
+        "1": 7
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    },
+    {
+      "workflow": "tree",
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "records": 6,
+      "represented_cells": {
+        "0": 6,
+        "1": 6
+      },
+      "distinct_observation_maps": {
+        "0": 4,
+        "1": 2
+      }
+    }
+  ]
+}

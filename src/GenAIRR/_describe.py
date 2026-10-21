@@ -30,6 +30,7 @@ from ._pipeline_ir import (
     _DEFAULT_NP_LENGTHS,
     _ClonalForkStep,
     _CorruptStep,
+    _InvertDStep,
     _MutateStep,
     _RecombineStep,
 )
@@ -78,6 +79,27 @@ def _describe_recombine_step(step: "_RecombineStep", chain_type: str) -> str:
     if weighted_segs:
         parts.append(f"custom {'/'.join(weighted_segs)} allele weights")
 
+    if step.duplex_repair_json is not None:
+        import json
+        rows = json.loads(step.duplex_repair_json)["rows"]
+        parts.append(f"coupled duplex repair ({len(rows)} authored histories; locally conditioned history weights)")
+        return "V(D)J recombination: " + "; ".join(parts)
+    if step.coding_end_mode is not None:
+        end_bits = []
+        for label, outcomes, column in (
+            ("V3'", step.coding_end_outcomes_v, 1),
+            ("D5'", step.coding_end_outcomes_d, 0),
+            ("D3'", step.coding_end_outcomes_d, 1),
+            ("J5'", step.coding_end_outcomes_j, 0),
+        ):
+            if outcomes is not None:
+                values = sorted({row[column] for row in outcomes})
+                end_bits.append(f"{label}={','.join(map(str, values))}")
+        parts.append(
+            "original coding-end processing (signed net deletions: "
+            + "; ".join(end_bits)
+            + "; reference-end boundary confirmed)"
+        )
     trim_bits = []
     if step.trim_v_3:
         trim_bits.append("V3'")
@@ -194,6 +216,8 @@ def _describe_step(step: Any, chain_type: str) -> str:
         return _describe_corrupt_step(step)
     if isinstance(step, _ClonalForkStep):
         return _describe_clonal_fork_step(step)
+    if isinstance(step, _InvertDStep):
+        return f"D-segment inversion: {step.prob:.0%} of rearrangements use the reverse-complemented D allele"
     return f"Unknown step: {type(step).__name__}"  # pragma: no cover
 
 
@@ -258,8 +282,9 @@ def _describe_step_sequence(
 _PRODUCTIVE_BUNDLE_NAMES = frozenset({
     "productive_junction_frame",
     "no_stop_codon_in_junction",
-    "anchor_preserved.v",
-    "anchor_preserved.j",
+    "canonical_anchor.v1.v",
+    "canonical_anchor.v1.j",
+    "coding_sequence_integrity",
 })
 
 
@@ -286,9 +311,9 @@ def _format_declared_contracts(declared: Sequence[str]) -> Optional[str]:
 def _format_active_contracts(active: Sequence[str]) -> Optional[str]:
     """Render the compiled simulator's active-contracts tuple as a
     biology-style line, or ``None`` if no contracts are bound. The
-    `ga.productive()` bundle's four underlying contracts
+    `ga.productive()` bundle's five underlying contracts
     (productive_junction_frame, no_stop_codon_in_junction, and the
-    two anchor_preserved contracts) collapse to the single label
+    two anchor_preserved contracts, and coding_sequence_integrity) collapse to the single label
     "productive sequences only" so the line reads naturally."""
     if not active:
         return None

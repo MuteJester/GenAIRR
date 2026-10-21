@@ -199,7 +199,7 @@ def test_s5f_kernel_name_participates_in_signature() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_fresh_emission_carries_schema_version_3() -> None:
+def test_fresh_emission_carries_schema_version_4() -> None:
     """Slice A bumps the on-disk schema to v3. Fresh emissions
     write v3 by default and the plan signature uses the new
     `name(params)` envelope on every pass."""
@@ -208,7 +208,7 @@ def test_fresh_emission_carries_schema_version_3() -> None:
     outcome = compiled.simulator.run(seed=42)
     tf = compiled.simulator.trace_file_from(outcome, seed=42)
     doc = json.loads(tf.to_json())
-    assert doc["schema_version"] == 3
+    assert doc["schema_version"] == 4
     # Envelope is observable: every pass renders as `name(...)`.
     sig = doc["pass_plan_signature"]
     assert "(" in sig

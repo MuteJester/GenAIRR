@@ -277,33 +277,64 @@ fn single_mutation_introduces_ambiguity_from_unique_truth() {
 }
 
 #[test]
-#[ignore = "test-scaffolding gap: EditBaseAtPass calls sim.with_base_changed \
-            directly, bypassing SimulationBuilder's event emission. \
-            DirtySignalObserver never sees the edit → LiveCallRefreshHook \
-            doesn't re-evaluate the v_call tie-set. Production SHM paths \
-            (S5F via MutationTransaction) work correctly; see \
-            tests/test_allele_call_provenance.py::test_shm_at_distinguishing_position_can_switch_call_away_from_truth \
-            for the production-path call-flip pin. Fixing requires routing \
-            this test scaffolding through SimulationBuilder."]
 fn multiple_mutations_flip_call_away_from_truth() {
-    // Sample v01 truth, no trim. Mutate the entire `TTT` tail
-    // (pool 9, 10, 11) to `AAA` (v02's distinguishing suffix).
-    // Now the assembled bases are byte-identical to v02*01's
-    // sequence — v_call must switch to {v02*01}, dropping v01.
+    use genairr_engine::address::ChoiceAddress;
+    use genairr_engine::airr_record::validate_airr_record;
+    use genairr_engine::trace::ChoiceValue;
+
+    // The canonical fixture has a shared framework + Cys at 0..12 and
+    // distinguishing GTT/AAA/CCC tails at 12..15. Mutating the generating
+    // v01 tail to AAA must change only the evidence-based re-call.
     let cfg = common::vj_ambiguous_refdata();
     let mut plan = vj_truth_plan(&cfg, "v01*01", "j01*01", 0, 0);
-    plan.push(Box::new(EditBaseAtPass::new(9, b'A')));
-    plan.push(Box::new(EditBaseAtPass::new(10, b'A')));
-    plan.push(Box::new(EditBaseAtPass::new(11, b'A')));
-    let sim = run_plan(&cfg, plan, 0);
-
-    let v_calls = common::v_call_names(&sim, &cfg);
-    assert_eq!(v_calls, vec!["v02*01"], "got {:?}", v_calls);
-    assert!(
-        !v_calls.iter().any(|n| n.starts_with("v01")),
-        "truth v01* alleles should have dropped out, got {:?}",
-        v_calls,
+    let baseline = {
+        let compiled =
+            CompiledSimulator::compile(&plan, Some(&cfg), None, ExecutionPolicy::Permissive)
+                .unwrap();
+        compiled.run_one(0).unwrap()
+    };
+    assert_eq!(
+        common::v_call_names(baseline.final_simulation(), &cfg),
+        vec!["v01*01", "v01*02"]
     );
+    let mut trace = baseline.trace.clone();
+    trace.record_choice(ChoiceAddress::MutateUniformCount, ChoiceValue::Int(3));
+    for i in 0..3 {
+        trace.record_choice(
+            ChoiceAddress::MutateUniformSite(i),
+            ChoiceValue::Int(i64::from(12 + i)),
+        );
+        trace.record_choice(ChoiceAddress::MutateUniformBase(i), ChoiceValue::Base(b'A'));
+    }
+    plan.push(Box::new(UniformMutationPass::new(
+        Box::new(EmpiricalLengthDist::from_pairs(vec![(3, 1.0)])),
+        Box::new(ConstBaseDist(b'A')),
+    )));
+    let compiled =
+        genairr_engine::compiled::OwnedCompiledSimulator::compile(plan, Some(cfg.clone()), None, ExecutionPolicy::Permissive).unwrap();
+    // Typed replay fixes the sites while exercising the production
+    // MutationTransaction, event ledger, observers, and live-call refresh.
+    let outcome = compiled
+        .replay_from_trace_records(trace.choices(), 0, ExecutionPolicy::Strict)
+        .unwrap();
+    let sim = outcome.final_simulation();
+    let rec = build_airr_record(&outcome, &cfg, "mutated");
+    assert_eq!(common::v_call_names(sim, &cfg), vec!["v02*01"]);
+    assert_eq!(rec.recalled_v_call, "v02*01");
+    assert_eq!(rec.v_call, "v01*01");
+    assert_eq!(
+        sim.assignments.get(Segment::V),
+        baseline.final_simulation().assignments.get(Segment::V)
+    );
+    assert!(rec.sequence.starts_with("AAACCCGGGTGTAAA"));
+    assert!(rec.germline_alignment.starts_with("AAACCCGGGTGTGTT"));
+    assert_eq!(rec.v_cigar, "15M");
+    assert_eq!(rec.v_germline_start, Some(0));
+    assert_eq!(rec.v_germline_end, Some(15));
+    assert_eq!(rec.n_mutations, 3);
+    assert_eq!(rec.n_v_mutations, 3);
+    assert!((rec.v_identity.unwrap() - 0.8).abs() < 1e-12);
+    assert!(validate_airr_record(&rec, &outcome, &cfg).is_empty());
 }
 
 #[test]

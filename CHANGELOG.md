@@ -2,6 +2,133 @@
 
 All notable changes to GenAIRR are documented here.
 
+## Unreleased
+
+### Added
+
+- Experimental `CoupledDuplexRepair` and `DuplexJoin` scripts for successive
+  V-D/D-J joins on one shared two-strand D substrate, including inversion,
+  canonical source ancestry, a global nucleotide ledger and cumulative budgets.
+- `CodingEndOutcomeModel` with joint D outcomes, compatible-reference identities,
+  generating-history estimation, held-out scoring and finite compatible-history
+  likelihood fitting. Calibration records its source and sampling assumptions.
+- Experimental `GenAIRR.experimental.DuplexRepair` for authored two-strand
+  coding-end opening, resection, N extension, compatible annealing, paired-primer
+  template synthesis and ligation, with both strand ancestries and exact replay.
+- Trace schema 4 records productivity policy and active contracts. Replay and
+  seed reruns share reference-content and address-version validation.
+
+- Opt-in `Experiment.process_coding_ends()` with explicit original coding-end
+  boundary confirmation and finite signed net outcomes. Positive values remove
+  reference bases; negative values retain original-tip P extensions. The mode
+  replaces automatic trim/P settings, preserves per-base origin provenance,
+  and supports productive completion constraints. It does not claim calibrated
+  microscopic hairpin-opening probabilities.
+
+### Fixed
+
+- Reference authoring uses the shared native landmark resolver, retains FASTA
+  functionality/source declarations, and keeps missing species unknown.
+  Optional checksum-bound evidence transports independent coding phase and
+  coding-end confidence without changing legacy reference hashes. A reproducible
+  audit marks bundled catalogues with findings as quarantined for default strict
+  compilation; unresolved source evidence is explicit and archived data is not
+  silently corrected.
+- Replace approximate constrained-indel continuation weights with versioned
+  natural sequential history sampling and exact weighted fallback. Report work
+  exhaustion separately from proven empty support; validate replay count, kind,
+  base weights and checked coordinates. Preserve sampling diagnostics separately
+  from biological events.
+- Use complete productive continuation support for ordinary zero-P VDJ
+  recombination as well as P-aware processing, excluding future D/junction stops
+  before choosing an allele or length.
+
+- Use versioned observed-span productivity with nullable evidence and stable
+  diagnostics. Reference admission overrides no longer legitimize invalid
+  landmarks or frames; ambiguous possible stops remain unknown. Default
+  anchors require V Cys and J Phe/Trp classes with original provenance.
+  Productive-only runs assert accepted final metadata in both modes, and the
+  record validator derives an independent assessment. Lineage divisions
+  inherit the same constraints instead of silently mutating outside them.
+- Filter ordinary and genotype-aware receptor-revision candidates by active
+  biological contracts before drawing, preserving their original weights.
+  Permissive execution and replay now enforce the same replacement checks.
+
+- Keep standard V/D/J calls and alignment references tied to the generating
+  allele; retain post-mutation inference separately as `recalled_*_call`.
+  Ground-truth NP boundaries no longer move when random junction bases match
+  a neighboring trimmed allele.
+- Represent end loss as missing reference coverage, preserving actual
+  structural deletions inside the observed interval.
+
+- Preserve mutation-stage molecule lengths in `mutation_rate`, so later read
+  loss does not inflate the reported cumulative SHM event burden. Clonal
+  descendants retain inherited mutation counts and their event provenance.
+- Translate the physical nucleotide junction even when it is out of frame
+  or nonproductive; complete codons remain in `junction_aa`.
+- Report impossible explicit recombination trims as structured errors instead
+  of panicking, including in permissive runs.
+- Load every bundled S5F model without pandas or NumPy. The two migrated
+  artifacts retain exactly the same mutation-model values.
+- Describe D inversion and its configured probability in `Experiment.describe()`.
+- Calculate productivity and translation from the retained V coding origin,
+  including internal stops and structural frameshifts outside the junction.
+- Preserve coding-oriented annotations when emitting reverse-strand observations.
+- Preserve P-nucleotide order in alignments and include P bases in combined NP
+  strings; align inverted D references in their assembled orientation.
+- Keep germline alignments within the called allele, including when its length
+  differs from the sampled allele.
+- Preserve recombination trims and P-addition provenance through clonal forks
+  and receptor revision. Revision selects a different eligible V allele.
+- Keep realized loss counters when a read is removed completely.
+- Support nonzero P additions with productive-only sampling by retaining
+  choices that admit a complete stop-free, in-frame sequence. Fixed P
+  lengths are preserved; impossible support fails explicitly.
+- Refresh live-call coordinates after no-op and boundary-edit passes so later
+  end loss cannot reuse stale D/J positions.
+- Use the correct canonical trim-end budgets for cached inverted-D re-calls,
+  keeping NP-extension bounds and allele ties consistent with fresh scoring.
+- Validate returned record fields and record/outcome counts; prevent custom
+  metadata from overwriting generated sequence annotations.
+
+### Compatibility
+
+- Standard `v_call`, `d_call`, and `j_call` now name single generating alleles.
+  Consumers of the previous evidence-based calls should read `recalled_v_call`,
+  `recalled_d_call`, and `recalled_j_call`; optional `truth_*_call` columns remain
+  aliases of the standard calls. Alignments now consistently use the generating
+  reference, including when the inferred allele differs in length.
+- Donor-genotype re-calls consider only alleles carried across that donor's
+  two chromosomes, while retaining their original reference-pool IDs.
+
+- `mutation_rate` sums each mutation stage's realized events divided by that
+  stage's input molecule length. It is an event burden, not the mismatch
+  fraction in an observed read; lineage records retain net-difference semantics.
+- Clonal descendant outcomes now include ancestral trace, revisions, and events
+  once, so inherited mutation counters have complete provenance.
+- The raw-file checksums of `hh_s5f_60` and `hh_s5f_opposite` changed when their
+  pandas objects were replaced by portable dictionaries; kernel values are
+  bit-for-bit unchanged.
+- `to_tsv()` now defaults to AIRR coordinates, CIGAR placement offsets and
+  `T`/`F` boolean encoding. Pass `airr_strict=False` for the previous zero-based
+  TSV representation. Python record dictionaries and default DataFrames keep
+  zero-based half-open coordinates and segment-local CIGAR operation runs.
+- AIRR `np1`/`np2` strings and lengths now include P bases between resolved
+  segment alignments; they must not be interpreted as pure TdT N additions.
+- Reverse-strand `*_sequence_start/end`, junction and amino-acid annotations
+  now use the coding orientation, as AIRR requires. Read-window coordinates
+  continue to index the emitted observation.
+- Productive-only sampling excludes retained coding stops and protects the
+  complete observed coding sequence. Seeded productive results can therefore
+  differ from previous versions.
+- Productive P-addition sampling restricts each draw's original weights to
+  candidates with a productive completion across deterministic P bytes,
+  N-addition support, and D orientation. Impossible support raises an error
+  even in permissive mode instead of substituting zero P or sentinel N bases.
+- NP length/base estimators reject records with explicitly nonzero P-length
+  provenance. AIRR NP fields combine N and P; fitting them as N-only models
+  while separately fitting P lengths would count P additions twice.
+
 ## [2.3.1] - 2026-07-05
 
 Maintenance release. No public API or simulation-behaviour changes.

@@ -315,18 +315,22 @@ ancestor have?) without confusing it with observation data.
 ## 6. Validator posture
 
 Three validators currently observe the clonal output. The audit
-pins their posture on the canonical full clonal pipeline:
+pins their posture on the canonical full legacy clonal pipeline.
+Duplex family integration deliberately adds the stronger founder and
+lineage checks described below, while retaining this legacy behavior.
 
 ### `validate_records(refdata)` — per-record AIRR postconditions
 
 Iterates `(outcome, record)` pairs independently. Each
 descendant is re-projected from its own outcome state and the
-projected record is compared with the supplied record. **Stays
-per-record only**; ignores `clone_id` and `parent_id`. Pinned by
+projected record is compared with the supplied record. On legacy results it
+**stays per-record only** and ignores `clone_id` and `parent_id`. Pinned by
 the existing `pin_validate_records_stays_per_record_only` test
 in `tests/test_clonal_family_contract.py`.
 
 On the canonical full clonal stack, every record passes.
+Duplex lineage results additionally check clone/node addressing, abundance,
+affinity and incoming-edge counts against their original native nodes.
 
 ### `validate_families()` — field-only family checks
 
@@ -339,6 +343,8 @@ present (no `expose_provenance`).
 On the canonical full clonal stack, the report is ok with
 `family_count == n_clones` and the right
 `members_per_family` map.
+Duplex records also retain identical immutable founder repair evidence
+across siblings, while their current observation maps may differ.
 
 ### `validate_families_with_parents(refdata)` — parent-aware
 
@@ -350,20 +356,31 @@ also run. With `refdata=None`, only structural checks run.
 
 On the canonical full clonal stack, the report is ok with
 `family_count == n_clones`.
+Duplex families additionally compare their complete immutable founder
+envelope against the actual parent, including required field presence.
 
 ### Wiring into `validate_records=True`
 
 `CompiledClonalExperiment.run_records(validate_records=True)`
-runs **two** gates after the batch is built:
+runs **two** gates after a legacy batch is built:
 
 1. Per-record postconditions via `validate_records(refdata)`.
 2. Field-only family checks via `validate_families()`.
 
-It does **NOT** invoke `validate_families_with_parents` —
-parent-aware validation is an explicit deeper diagnostic the
-caller invokes manually. Pinned by
+Legacy runs do **not** invoke `validate_families_with_parents`;
+parent-aware validation remains an explicit deeper diagnostic for those
+callers. Behavioral regressions pin both automatic calls and reject an
+automatic parent-aware call. This is covered by
+`pin_scaffold_validate_records_true_does_not_invoke_parent_aware` in
+`test_clonal_plan_split_contract.py` and
 `pin_present_parent_aware_validator` in
 `test_clonal_parent_contract.py`.
+
+Duplex fixed expansion, repertoire and lineage runs intentionally add the
+parent-aware gate to `validate_records=True`. Their native founder evidence
+is part of the metadata contract; lineage record checks also retain the
+original cell namespace. The duplex family integration tests cover these
+stronger checks.
 
 ---
 
@@ -472,9 +489,10 @@ pins the resulting posture.)
   `run_records`.
 - Field-only family validation: ditto, runs after the per-
   record gate.
-- Parent-aware family validation: explicit. Callers invoke
+- Parent-aware family validation: explicit for legacy runs. Callers invoke
   `result.validate_families_with_parents(refdata)` manually
-  when they want the deeper diagnostic.
+  when they want the deeper diagnostic. Duplex family runs add this gate
+  automatically under `validate_records=True`.
 - Cache parity: per-outcome (descendant only). The retained
   parent outcomes can be cache-parity-checked manually but the
   release workflow doesn't fold that in by default.
@@ -557,9 +575,10 @@ Mirrored in [`tests/test_clonal_plan_split_contract.py`](../tests/test_clonal_pl
     `prob=0.5`).
 17. **All three validators pass** on the canonical full clonal
     stack.
-18. **`validate_records=True` runs field-only family, not
-    parent-aware** — pinned via source-inspection of the
-    clonal `run_records` body.
+18. **Legacy `validate_records=True` runs per-record and field-only family,
+    not parent-aware** — pinned by running a legacy clonal batch and checking
+    the actual validator calls. Duplex families intentionally add the
+    parent-aware gate, covered by their integration tests.
 
 ### `pin_absence_*` — deferred architecture still pinned absent
 
@@ -623,10 +642,10 @@ expand the contract.
 | IR-sourced provenance | `d_inverted`, `receptor_revision_applied`, `original_v_call` survive boundary; descendants inherit them. |
 | Observation projection fields | `rev_comp`, `end_loss_*_length`, paired-end fields — descendant-only; absent on parent projection. |
 | Parent / record counts | `len(parents) == n_clones`, `len(outcomes) == n_clones * per_clone`. |
-| `validate_records(refdata)` | Per-record only; ignores clonal structure. |
-| `validate_families()` | Field-level; passes on canonical full stack. |
-| `validate_families_with_parents(refdata)` | Parent-aware; passes on canonical full stack. |
-| `validate_records=True` wiring | Per-record + field-only family; NOT parent-aware. |
+| `validate_records(refdata)` | Legacy: per-record only. Duplex lineage also checks original cell addressing and native-node metadata. |
+| `validate_families()` | Truth-field agreement; duplex records also preserve the immutable founder envelope. |
+| `validate_families_with_parents(refdata)` | Parent-aware, including duplex founder evidence; passes on canonical full stack. |
+| `validate_records=True` wiring | Legacy: per-record + field-only family. Duplex families additionally run parent-aware checks. |
 | Deferred architecture | `ClonalFamily` aggregate, clonal trace-file bundle, pre-SHM junction validator, mutation-distance aggregator — all pinned absent. |
 
 The clonal plan-split is now a **typed contract**: ancestor-phase

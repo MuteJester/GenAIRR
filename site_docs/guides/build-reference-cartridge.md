@@ -423,3 +423,11 @@ yourself.
   output at run time.
 - **[The Experiment builder](experiment-builder.md)** - what to do
   with the cartridge once it's built.
+
+
+Reference landmarks and coding ends now carry optional sequence-bound evidence.
+IMGT header functionality and per-allele source declarations are retained;
+missing cartridge species stays unknown. Use
+[`with_reference_evidence`](../cartridges/reference-evidence.md) for source-backed
+coordinates, independent phase and boundary completeness. The same page explains
+why a structurally valid catalogue can still lack biological source evidence.

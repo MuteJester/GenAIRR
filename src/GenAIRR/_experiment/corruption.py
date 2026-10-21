@@ -140,6 +140,9 @@ class _CorruptionMixin:
         *,
         count: Union[int, Tuple[int, int], Iterable[Tuple[int, float]]],
         insertion_prob: float = 0.5,
+        rejection_attempts: int = 256,
+        exact_node_budget: int = 20_000_000,
+        legacy_replay_sentinels: bool = False,
     ) -> "Experiment":
         """Append a polymerase-slippage indel step (PCR-stage artifact).
 
@@ -155,6 +158,20 @@ class _CorruptionMixin:
         Insertions sample a uniform A/C/G/T base. Indels change
         pool length and shift downstream region ranges accordingly.
 
+        With active contracts, ``natural_sequential_v1`` conditions the
+        complete ordered tuple on the final contracts while keeping the drawn
+        count fixed. Every positive count first tries ``rejection_attempts``
+        complete proposals, then exact search (optimized for counts up to two) within
+        ``exact_node_budget`` work nodes. For counts above two, this fallback
+        interleaves independent complete proposals with exhaustive search,
+        charging their edits to the same budget. Set ``rejection_attempts=0``
+        to force exhaustive search without restart probes. Resource exhaustion raises
+        ``StrictSamplingError`` with reason ``sampling_budget_exceeded`` in
+        both modes; it is not proof of empty biological support.
+
+        ``legacy_replay_sentinels=True`` explicitly permits historical
+        all-no-op replay batches. It does not permit mixed fabricated no-ops.
+
         Raises ``ValueError`` if ``insertion_prob`` is outside
         ``[0.0, 1.0]`` or non-finite.
         """
@@ -167,11 +184,22 @@ class _CorruptionMixin:
                 f"got {insertion_prob}"
             )
         pairs = _normalize_count(count)
+        for name, value, maximum in (
+            ("rejection_attempts", rejection_attempts, 2**32 - 1),
+            ("exact_node_budget", exact_node_budget, 2**64 - 1),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+                raise ValueError(f"{name} must be a nonnegative integer no greater than {maximum}")
+        if not isinstance(legacy_replay_sentinels, bool):
+            raise ValueError("legacy_replay_sentinels must be a bool")
         self._steps.append(
             _CorruptStep(
                 kind=_CORRUPT_KIND_INDEL,
                 count_pairs=pairs,
                 insertion_prob=float(insertion_prob),
+                rejection_attempts=rejection_attempts,
+                exact_node_budget=exact_node_budget,
+                legacy_replay_sentinels=legacy_replay_sentinels,
                 apply_prob=0.0,
             )
         )

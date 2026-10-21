@@ -5,6 +5,9 @@ use crate::refdata::{Allele, AlleleId, ChainType, RefDataConfig};
 use crate::trace::Trace;
 
 mod anchors;
+mod biological_alignment;
+mod coding_end_provenance;
+mod mutation_burden;
 mod projection;
 mod utilities;
 

@@ -17,6 +17,7 @@ The methods you'll reach for in most real pipelines:
 | Method | Purpose |
 |---|---|
 | `.recombine(...)` | Add the V(D)J recombination pass - the foundational ancestor-phase mechanism |
+| `.process_coding_ends(...)` | Opt in to signed net processing of explicitly confirmed original coding ends |
 | `.productive_only()` | Constrain sampling so only productive rearrangements survive |
 | `.mutate(...)` | Apply biological SHM (uniform or S5F) on top of recombination |
 | `.clonal_lineage(...)` | Grow BCR affinity-maturation lineage trees |
@@ -43,6 +44,7 @@ pilot for the wider generated-reference effort.
       members:
         - "on"
         - recombine
+        - process_coding_ends
         - productive_only
         - mutate
         - clonal_lineage

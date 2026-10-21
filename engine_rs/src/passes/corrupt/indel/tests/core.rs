@@ -37,7 +37,7 @@ fn indel_pass_zero_count_is_noop() {
 }
 
 #[test]
-#[should_panic(expected = "count distribution returned negative")]
+#[should_panic(expected = "negative_count")]
 fn indel_pass_negative_count_panics() {
     use crate::dist::UniformInt;
     let mut plan = PassPlan::new();

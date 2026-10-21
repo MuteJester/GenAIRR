@@ -40,9 +40,7 @@ use crate::s5f::{S5FKernel, S5F_NUM_CONTEXTS, S5F_SUBSTITUTION_LEN};
 /// across the bridge; this helper re-validates defensively so a
 /// custom Python wrapper that bypasses the DSL still surfaces a
 /// clear ``ValueError`` rather than panicking inside the pass.
-fn build_segment_rate_weights(
-    rates: Option<Vec<f64>>,
-) -> PyResult<SegmentRateWeights> {
+fn build_segment_rate_weights(rates: Option<Vec<f64>>) -> PyResult<SegmentRateWeights> {
     let Some(vec) = rates else {
         return Ok(SegmentRateWeights::default());
     };
@@ -65,7 +63,9 @@ fn build_segment_rate_weights(
             "segment_rates: at least one bucket must have a positive rate",
         ));
     }
-    Ok(SegmentRateWeights::from_tuple(vec[0], vec[1], vec[2], vec[3]))
+    Ok(SegmentRateWeights::from_tuple(
+        vec[0], vec[1], vec[2], vec[3],
+    ))
 }
 
 /// Materialise the canonical Python ``[fwr1, cdr1, fwr2, cdr2,
@@ -78,9 +78,7 @@ fn build_segment_rate_weights(
 /// `_validate_v_subregion_rates` boundary in `experiment.py` is
 /// the canonical authoritative validator; this helper guards a
 /// custom Python wrapper that bypasses the DSL.
-fn build_v_subregion_rate_weights(
-    rates: Option<Vec<f64>>,
-) -> PyResult<VSubregionRateWeights> {
+fn build_v_subregion_rate_weights(rates: Option<Vec<f64>>) -> PyResult<VSubregionRateWeights> {
     let Some(vec) = rates else {
         return Ok(VSubregionRateWeights::default());
     };
@@ -125,6 +123,9 @@ pub struct PyPassPlan {
 }
 
 impl PyPassPlan {
+    pub(crate) fn from_native(plan: PassPlan) -> Self {
+        Self { inner: Some(plan) }
+    }
     /// Borrow the inner `PassPlan`. Used by runners.
     pub(crate) fn inner(&self) -> PyResult<&PassPlan> {
         self.inner.as_ref().ok_or_else(consumed_plan_err)
@@ -442,11 +443,14 @@ impl PyPassPlan {
                 }
                 let allele = AlleleId::new(*aid);
                 let gene = idx.gene_of(allele);
-                grouped.entry((*h, gene.index())).or_default().push(GeneCopy {
-                    allele,
-                    copies: *copies,
-                    weight: *weight,
-                });
+                grouped
+                    .entry((*h, gene.index()))
+                    .or_default()
+                    .push(GeneCopy {
+                        allele,
+                        copies: *copies,
+                        weight: *weight,
+                    });
             }
             for ((h, gene_idx), copies) in grouped {
                 haps[h as usize].set(seg, GeneId::new(gene_idx), copies);
@@ -465,14 +469,11 @@ impl PyPassPlan {
             subject_id,
             source_hash,
         ));
-        self.inner_mut()?
-            .push(Box::new(crate::passes::sample_genotype::SampleGenotypePass::new(
-                genotype,
-                d_required,
-                usage_v,
-                usage_d,
-                usage_j,
-            )));
+        self.inner_mut()?.push(Box::new(
+            crate::passes::sample_genotype::SampleGenotypePass::new(
+                genotype, d_required, usage_v, usage_d, usage_j,
+            ),
+        ));
         Ok(())
     }
 
@@ -500,11 +501,7 @@ impl PyPassPlan {
     /// Errors:
     /// - `ValueError` when `end` isn't one of the four canonical labels.
     /// - `ValueError` when `length_pairs` is empty.
-    fn push_p_addition(
-        &mut self,
-        end: &str,
-        length_pairs: Vec<(i64, f64)>,
-    ) -> PyResult<()> {
+    fn push_p_addition(&mut self, end: &str, length_pairs: Vec<(i64, f64)>) -> PyResult<()> {
         let p_end = parse_p_end(end)?;
         if length_pairs.is_empty() {
             return Err(PyValueError::new_err(
@@ -512,9 +509,73 @@ impl PyPassPlan {
             ));
         }
         let length_dist = Box::new(EmpiricalLengthDist::from_pairs(length_pairs));
-        self.inner_mut()?.push(Box::new(
-            crate::passes::PAdditionPass::new(p_end, length_dist),
-        ));
+        self.inner_mut()?
+            .push(Box::new(crate::passes::PAdditionPass::new(
+                p_end,
+                length_dist,
+            )));
+        Ok(())
+    }
+
+    /// Sample a joint signed outcome at original coding ends. Positive
+    /// values remove reference bases; negative values retain original-tip P.
+    /// Explicit boundary confirmation is required even through this native API.
+    #[pyo3(signature = (segment, outcomes, reference_ends_are_coding_ends=false))]
+    fn push_process_coding_ends(
+        &mut self,
+        py: Python<'_>,
+        segment: &str,
+        outcomes: Vec<(PyObject, PyObject, f64)>,
+        reference_ends_are_coding_ends: bool,
+    ) -> PyResult<()> {
+        if !reference_ends_are_coding_ends {
+            return Err(PyValueError::new_err(
+                "process_coding_ends requires reference_ends_are_coding_ends=True: \
+                 supplied junction-facing reference ends must be complete biological coding ends",
+            ));
+        }
+        let segment = parse_recombinable_segment(segment)?;
+        let outcomes = outcomes
+            .into_iter()
+            .map(|(five, three, weight)| {
+                let five = five.bind(py);
+                let three = three.bind(py);
+                if five.is_instance_of::<pyo3::types::PyBool>()
+                    || three.is_instance_of::<pyo3::types::PyBool>()
+                {
+                    return Err(PyValueError::new_err(
+                        "coding-end outcomes must be signed integers, not booleans",
+                    ));
+                }
+                Ok(crate::end_processing::EndOutcome {
+                    five: five.extract::<i64>()?,
+                    three: three.extract::<i64>()?,
+                    weight,
+                })
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let pass = crate::passes::ProcessCodingEndsPass::new(segment, outcomes)
+            .map_err(PyValueError::new_err)?;
+        self.inner_mut()?.push(Box::new(pass));
+        Ok(())
+    }
+
+    /// Add one finite authored duplex source; references bind at compile time.
+    fn push_duplex_repair_source(&mut self, model_json: &str) -> PyResult<()> {
+        let model: crate::duplex_repair::model::FiniteDuplexModel =
+            serde_json::from_str(model_json)
+                .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        let pass = crate::passes::DuplexRecombinePass::new(std::sync::Arc::new(model))
+            .map_err(PyValueError::new_err)?;
+        self.inner_mut()?.push(Box::new(pass));
+        Ok(())
+    }
+
+    /// Emit deterministic P bases retained by an earlier processing outcome.
+    fn push_emit_coding_end_p(&mut self, end: &str) -> PyResult<()> {
+        let end = parse_p_end(end)?;
+        self.inner_mut()?
+            .push(Box::new(crate::passes::EmitCodingEndPPass::new(end)));
         Ok(())
     }
 
@@ -568,14 +629,9 @@ impl PyPassPlan {
         let length_dist = Box::new(EmpiricalLengthDist::from_pairs(length_pairs));
         if let Some(rows) = markov_transitions {
             let first_pairs = base_pairs.ok_or_else(|| {
-                PyValueError::new_err(
-                    "markov_transitions requires base_pairs (the first-base row)",
-                )
+                PyValueError::new_err("markov_transitions requires base_pairs (the first-base row)")
             })?;
-            let first_base = parse_canonical_base_weights(
-                &first_pairs,
-                "base_pairs",
-            )?;
+            let first_base = parse_canonical_base_weights(&first_pairs, "base_pairs")?;
             if rows.len() != 4 {
                 return Err(PyValueError::new_err(format!(
                     "markov_transitions must have 4 rows (A/C/G/T from-bases), got {}",
@@ -584,7 +640,10 @@ impl PyPassPlan {
             }
             let mut transition_rows: Vec<Vec<f64>> = Vec::with_capacity(4);
             for (from_idx, row) in rows.iter().enumerate() {
-                let label = format!("markov_transitions[{}]", "ACGT".chars().nth(from_idx).unwrap());
+                let label = format!(
+                    "markov_transitions[{}]",
+                    "ACGT".chars().nth(from_idx).unwrap()
+                );
                 let row_weights = parse_canonical_base_weights(row, &label)?;
                 transition_rows.push(row_weights.to_vec());
             }
@@ -601,47 +660,43 @@ impl PyPassPlan {
             ));
             return Ok(());
         }
-        let base_dist: Box<dyn crate::dist::Distribution<Output = u8>> =
-            match base_pairs {
-                None => Box::new(UniformBase),
-                Some(pairs) => {
-                    if pairs.is_empty() {
-                        return Err(PyValueError::new_err(
-                            "base_pairs must contain at least one (base, weight) entry",
-                        ));
-                    }
-                    // Defence-in-depth re-validation. The Python DSL
-                    // boundary (`NpBaseModelSpec`) is the authoritative
-                    // validator; this catch defends against callers
-                    // that bypass the DSL.
-                    for (base, weight) in &pairs {
-                        if !matches!(*base, b'A' | b'C' | b'G' | b'T') {
-                            return Err(PyValueError::new_err(format!(
+        let base_dist: Box<dyn crate::dist::Distribution<Output = u8>> = match base_pairs {
+            None => Box::new(UniformBase),
+            Some(pairs) => {
+                if pairs.is_empty() {
+                    return Err(PyValueError::new_err(
+                        "base_pairs must contain at least one (base, weight) entry",
+                    ));
+                }
+                // Defence-in-depth re-validation. The Python DSL
+                // boundary (`NpBaseModelSpec`) is the authoritative
+                // validator; this catch defends against callers
+                // that bypass the DSL.
+                for (base, weight) in &pairs {
+                    if !matches!(*base, b'A' | b'C' | b'G' | b'T') {
+                        return Err(PyValueError::new_err(format!(
                                 "base_pairs: only canonical A/C/G/T are allowed, got byte {} (0x{:02X})",
                                 base, base
                             )));
-                        }
-                        if !weight.is_finite() || *weight < 0.0 {
-                            return Err(PyValueError::new_err(format!(
-                                "base_pairs: weights must be finite and non-negative, got {}",
-                                weight
-                            )));
-                        }
                     }
-                    let total: f64 = pairs.iter().map(|(_, w)| w).sum();
-                    if total <= 0.0 {
-                        return Err(PyValueError::new_err(
-                            "base_pairs: at least one weight must be strictly positive",
-                        ));
+                    if !weight.is_finite() || *weight < 0.0 {
+                        return Err(PyValueError::new_err(format!(
+                            "base_pairs: weights must be finite and non-negative, got {}",
+                            weight
+                        )));
                     }
-                    Box::new(crate::dist::CategoricalBase::from_pairs(pairs))
                 }
-            };
-        self.inner_mut()?.push(Box::new(GenerateNPPass::new(
-            seg,
-            length_dist,
-            base_dist,
-        )));
+                let total: f64 = pairs.iter().map(|(_, w)| w).sum();
+                if total <= 0.0 {
+                    return Err(PyValueError::new_err(
+                        "base_pairs: at least one weight must be strictly positive",
+                    ));
+                }
+                Box::new(crate::dist::CategoricalBase::from_pairs(pairs))
+            }
+        };
+        self.inner_mut()?
+            .push(Box::new(GenerateNPPass::new(seg, length_dist, base_dist)));
         Ok(())
     }
 
@@ -911,11 +966,14 @@ impl PyPassPlan {
     ///
     /// Errors: ``ValueError`` when ``insertion_prob`` is outside
     /// ``[0.0, 1.0]`` or non-finite, or when ``count_pairs`` is empty.
-    #[pyo3(signature = (count_pairs, *, insertion_prob=0.5))]
+    #[pyo3(signature = (count_pairs, *, insertion_prob=0.5, rejection_attempts=256, exact_node_budget=20_000_000, legacy_replay_sentinels=false))]
     fn push_corrupt_indel(
         &mut self,
         count_pairs: Vec<(i64, f64)>,
         insertion_prob: f64,
+        rejection_attempts: u32,
+        exact_node_budget: u64,
+        legacy_replay_sentinels: bool,
     ) -> PyResult<()> {
         if count_pairs.is_empty() {
             return Err(PyValueError::new_err(
@@ -928,11 +986,20 @@ impl PyPassPlan {
                 insertion_prob
             )));
         }
-        self.inner_mut()?.push(Box::new(IndelPass::new(
-            Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
-            insertion_prob,
-            Box::new(UniformBase),
-        )));
+        self.inner_mut()?.push(Box::new(
+            IndelPass::new(
+                Box::new(EmpiricalLengthDist::from_pairs(count_pairs)),
+                insertion_prob,
+                Box::new(UniformBase),
+            )
+            .with_sampling_options(
+                crate::passes::corrupt::indel::IndelSamplingOptions {
+                    rejection_attempts,
+                    exact_node_budget,
+                    legacy_replay_sentinels,
+                },
+            ),
+        ));
         Ok(())
     }
 
@@ -1134,11 +1201,7 @@ impl PyPassPlan {
         Ok(())
     }
 
-    fn push_receptor_revision(
-        &mut self,
-        prob: f64,
-        refdata: &PyRefDataConfig,
-    ) -> PyResult<()> {
+    fn push_receptor_revision(&mut self, prob: f64, refdata: &PyRefDataConfig) -> PyResult<()> {
         use crate::ir::Segment;
         if !prob.is_finite() || !(0.0..=1.0).contains(&prob) {
             return Err(PyValueError::new_err(format!(
@@ -1214,9 +1277,7 @@ impl PyPassPlan {
                 )));
             }
             if *copies == 0 {
-                return Err(PyValueError::new_err(
-                    "V candidate copies must be >= 1",
-                ));
+                return Err(PyValueError::new_err("V candidate copies must be >= 1"));
             }
             let mass = *weight as f64 * *copies as f64;
             if !(mass > 0.0) {
@@ -1318,10 +1379,7 @@ impl PyPassPlan {
 ///
 /// Requires every canonical base to be present at least once;
 /// duplicates accumulate (matches `CategoricalBase::from_pairs`).
-fn parse_canonical_base_weights(
-    pairs: &[(u8, f64)],
-    label: &str,
-) -> PyResult<[f64; 4]> {
+fn parse_canonical_base_weights(pairs: &[(u8, f64)], label: &str) -> PyResult<[f64; 4]> {
     let mut weights = [0.0f64; 4];
     let mut seen = [false; 4];
     for (base, weight) in pairs.iter() {

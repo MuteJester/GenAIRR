@@ -46,6 +46,7 @@ use crate::contract::JunctionStopState;
 use crate::live_call::dirty_signal_observer::DirtySignalObserver;
 use crate::live_call::walker_observer::{SealedWalkerState, WalkerObserverState};
 use crate::live_call::SegmentRefIndex;
+use std::sync::Arc;
 
 /// Mutable, by-value owner of an in-progress `Simulation` whose pool
 /// supports cheap per-base append. See the module docs for the design
@@ -68,6 +69,7 @@ use crate::live_call::SegmentRefIndex;
 /// the admit-mask migration; only the typed sinks remain.
 pub struct SimulationBuilder<'idx> {
     simulation: Simulation,
+    duplex_edit_context: Option<String>,
     /// Recorder sink for the typed event stream — `Some` when a
     /// caller has opted in via [`Self::attach_event_log_observer`].
     /// Drained at seal time via
@@ -94,6 +96,7 @@ impl<'idx> SimulationBuilder<'idx> {
     pub fn from_simulation(sim: Simulation) -> Self {
         let mut builder = Self {
             simulation: sim,
+            duplex_edit_context: None,
             event_log_sink: None,
             dirty_signal_sink: None,
             walker_sinks: Vec::new(),
@@ -135,6 +138,130 @@ impl<'idx> SimulationBuilder<'idx> {
         &self.simulation
     }
 
+    /// Atomically assemble a preflighted duplex founder into an unassembled
+    /// sampled context. Preserve the sampled donor restrictions and haplotype.
+    /// Validation precedes every mutation/event; source publication occurs only
+    /// after the owning pass successfully seals this builder.
+    pub(crate) fn install_duplex_seed(&mut self, seed: &Simulation) -> Result<(), String> {
+        let current = &self.simulation;
+        if !current.pool.is_empty()
+            || !current.sequence.regions.is_empty()
+            || current.duplex_provenance.is_some()
+            || current.coding_end_provenance.is_some()
+            || current.mutation_count != 0
+            || current.mutation_burden != 0.0
+        {
+            return Err("duplex source requires an unassembled, unmodified VDJ context".into());
+        }
+        let provenance = seed
+            .duplex_provenance
+            .as_ref()
+            .ok_or("duplex source seed lacks founder evidence")?;
+        provenance.validate_initial_pool(seed.pool.as_slice())?;
+        let mut assignments = Vec::new();
+        for segment in [Segment::V, Segment::D, Segment::J] {
+            let old = current
+                .assignments
+                .get(segment)
+                .ok_or("duplex source requires all VDJ assignments")?;
+            let mut expected = crate::assignment::AlleleInstance::new(old.allele_id);
+            expected.orientation = old.orientation;
+            expected.haplotype = old.haplotype;
+            if *old != expected {
+                return Err(
+                    "duplex source cannot follow trim, P emission, revision, or read loss".into(),
+                );
+            }
+            let mut new = *seed
+                .assignments
+                .get(segment)
+                .ok_or("duplex source seed lacks a generating assignment")?;
+            let binding = provenance
+                .founder
+                .bindings
+                .for_segment(segment)
+                .ok_or("duplex source seed lacks a source binding")?;
+            if old.allele_id != new.allele_id
+                || old.orientation != new.orientation
+                || new.allele_id.index() != binding.allele_id
+                || new.orientation.is_reverse()
+                    != (segment == Segment::D && provenance.founder.bindings.d_inverted)
+                || current
+                    .live_call_alleles(segment)
+                    .is_some_and(|allowed| !allowed.contains(&new.allele_id))
+            {
+                return Err("duplex source seed differs from the sampled donor context".into());
+            }
+            new.haplotype = old.haplotype;
+            assignments.push((segment, new));
+        }
+        // The same complete snapshot is validated before installation above.
+        for (segment, assignment) in assignments {
+            self.assign_allele(segment, assignment);
+        }
+        for nucleotide in seed.pool.as_slice() {
+            self.push_nucleotide(*nucleotide);
+        }
+        for region in &seed.sequence.regions {
+            self.add_region(region.clone());
+        }
+        self.attach_duplex_provenance(provenance.clone())?;
+        Ok(())
+    }
+
+    /// Install complete founder evidence only after the query and assignments exist.
+    pub(crate) fn attach_duplex_provenance(
+        &mut self,
+        provenance: Arc<super::DuplexProvenance>,
+    ) -> Result<(), String> {
+        for segment in [Segment::V, Segment::D, Segment::J] {
+            let binding = provenance.founder.bindings.for_segment(segment).unwrap();
+            let assignment = self
+                .simulation
+                .assignments
+                .get(segment)
+                .ok_or("duplex installation requires all generating assignments")?;
+            if assignment.allele_id.index() != binding.allele_id
+                || assignment.orientation.is_reverse()
+                    != (segment == Segment::D && provenance.founder.bindings.d_inverted)
+            {
+                return Err("duplex installation assignment differs from founder binding".into());
+            }
+        }
+        let next = self.simulation.with_duplex_provenance(provenance.clone())?;
+        self.broadcast_event(SimulationEvent::DuplexProvenanceInstalled { provenance });
+        self.simulation = next;
+        Ok(())
+    }
+
+    pub(crate) fn set_duplex_edit_context(&mut self, source_pass: Option<&str>) {
+        self.duplex_edit_context = source_pass.map(str::to_owned);
+        if self.simulation.duplex_provenance.is_some() {
+            self.broadcast_event(SimulationEvent::DuplexEditContextRecorded {
+                source_pass: self.duplex_edit_context.clone(),
+            });
+        }
+    }
+
+    pub(crate) fn record_duplex_attempt_stage(
+        &mut self,
+        stage: super::DuplexAttemptStage,
+        sampled_attempts: u32,
+    ) {
+        if let Some(p) = &self.simulation.duplex_provenance {
+            let next = p.with_attempt_stage(stage, sampled_attempts);
+            let summary = next.attempt_stages.last().unwrap().clone();
+            self.broadcast_event(SimulationEvent::DuplexAttemptStageRecorded { summary });
+            self.simulation.duplex_provenance = Some(Arc::new(next));
+        }
+    }
+
+    fn tag_duplex_edit(&mut self) {
+        if let Some(p) = &mut self.simulation.duplex_provenance {
+            Arc::make_mut(p).set_last_edit_source(self.duplex_edit_context.as_deref());
+        }
+    }
+
     /// Attach a streaming live-call walker observer for one segment's
     /// assembly. `seq_start` is the pool index of the first base of
     /// the soon-to-be-assembled region — typically `peek().pool.len()`
@@ -150,8 +277,11 @@ impl<'idx> SimulationBuilder<'idx> {
         seq_start: u32,
         orientation: crate::assignment::SegmentOrientation,
     ) {
-        self.walker_sinks
-            .push(WalkerObserverState::new(segment_index, seq_start, orientation));
+        self.walker_sinks.push(WalkerObserverState::new(
+            segment_index,
+            seq_start,
+            orientation,
+        ));
     }
 
     /// Attach a walker observer **rebuilt** from an already-assembled
@@ -201,7 +331,93 @@ impl<'idx> SimulationBuilder<'idx> {
         // refcount==1 path on every iteration. The returned handle
         // equals the one we computed above (Pool::push uses pool.len()
         // before the push to mint the handle, same as we did).
+        if let Some(p) = &self.simulation.duplex_provenance {
+            self.simulation.duplex_provenance = Some(Arc::new(p.with_inserted(handle.index(), n)));
+            self.tag_duplex_edit();
+        }
         self.simulation.pool.push(n)
+    }
+
+    /// Emit a P base while retaining the original coding-end template ancestry.
+    /// Mutations change its observed byte, never this origin.
+    pub fn push_coding_end_p(
+        &mut self,
+        base: u8,
+        source_segment: Segment,
+        end: crate::address::PEnd,
+        template_position: u32,
+    ) -> NucHandle {
+        let choice = self
+            .simulation
+            .coding_end_choice(source_segment)
+            .expect("coding-end P emission requires a retained-outcome choice")
+            .clone();
+        let orientation = self
+            .simulation
+            .assignments
+            .get(source_segment)
+            .expect("coding-end P emission requires an assignment")
+            .orientation;
+        let np_segment = match end {
+            crate::address::PEnd::V3 | crate::address::PEnd::D5 => Segment::Np1,
+            crate::address::PEnd::D3 => Segment::Np2,
+            crate::address::PEnd::J5 => {
+                if self.simulation.assignments.has(Segment::D) {
+                    Segment::Np2
+                } else {
+                    Segment::Np1
+                }
+            }
+        };
+        let mut flags = super::flag::P_NUC;
+        if orientation.is_reverse() {
+            flags = flags.with(super::flag::INVERTED);
+        }
+        let handle = self.push_nucleotide(Nucleotide::synthetic(base, np_segment, flags));
+        self.record_coding_end_p_origin(super::CodingEndPOrigin {
+            choice_id: choice.choice_id,
+            source_segment,
+            allele_id: choice.allele_id,
+            end,
+            orientation,
+            template_position,
+            original_base: base,
+            query_position: Some(handle.index()),
+        });
+        handle
+    }
+
+    /// Persist a processing choice through the same typed event channel as
+    /// allele assignments. Choice identity is independent of later revision.
+    pub fn record_coding_end_choice(
+        &mut self,
+        segment: Segment,
+        allele_id: crate::refdata::AlleleId,
+        five: i64,
+        three: i64,
+        outcome_index: usize,
+    ) {
+        self.simulation =
+            self.simulation
+                .with_coding_end_choice(segment, allele_id, five, three, outcome_index);
+        let choice = self
+            .simulation
+            .coding_end_choice(segment)
+            .expect("choice was installed")
+            .clone();
+        self.broadcast_event(SimulationEvent::CodingEndChoiceRecorded { choice });
+    }
+
+    pub(crate) fn record_coding_end_p_origin(&mut self, origin: super::CodingEndPOrigin) {
+        self.broadcast_event(SimulationEvent::CodingEndPOriginRecorded {
+            origin: origin.clone(),
+        });
+        let provenance = self
+            .simulation
+            .coding_end_provenance
+            .as_mut()
+            .expect("P origin requires coding-end provenance");
+        std::sync::Arc::make_mut(provenance).p_origins.push(origin);
     }
 
     /// Insert `n` into the pool at position `at`, shifting every
@@ -237,6 +453,7 @@ impl<'idx> SimulationBuilder<'idx> {
         // path; consumers compute on demand. The persistent layer's
         // recompute would be wasted work.
         self.simulation = self.simulation.with_indel_inserted(at, n);
+        self.tag_duplex_edit();
     }
 
     /// Delete the nucleotide at position `at`, shifting every existing
@@ -255,6 +472,22 @@ impl<'idx> SimulationBuilder<'idx> {
             segment: removed.segment,
         });
         self.simulation = self.simulation.with_indel_deleted(at);
+        self.tag_duplex_edit();
+        Some(removed)
+    }
+
+    /// Explicit observation loss preserves a cause distinct from a structural indel.
+    pub(crate) fn delete_observation_base(&mut self, at: u32) -> Option<Nucleotide> {
+        if self.simulation.duplex_provenance.is_none() {
+            return self.delete_indel(at);
+        }
+        let removed = *self.simulation.pool.get(NucHandle::new(at))?;
+        self.broadcast_event(SimulationEvent::BaseDeleted {
+            at,
+            removed_base: removed.base,
+        });
+        self.simulation = self.simulation.with_observation_deleted(at);
+        self.tag_duplex_edit();
         Some(removed)
     }
 
@@ -301,10 +534,14 @@ impl<'idx> SimulationBuilder<'idx> {
         end: crate::assignment::TrimEnd,
         value: u16,
     ) {
-        let old = self.simulation.assignments.get(segment).map(|inst| match end {
-            crate::assignment::TrimEnd::Five => inst.trim_5,
-            crate::assignment::TrimEnd::Three => inst.trim_3,
-        });
+        let old = self
+            .simulation
+            .assignments
+            .get(segment)
+            .map(|inst| match end {
+                crate::assignment::TrimEnd::Five => inst.trim_5,
+                crate::assignment::TrimEnd::Three => inst.trim_3,
+            });
         self.broadcast_event(SimulationEvent::TrimChanged {
             segment,
             end,
@@ -333,11 +570,7 @@ impl<'idx> SimulationBuilder<'idx> {
     /// sites stay correct (one structural region per segment).
     /// AIRR's per-end `p_*_length` fields project off this
     /// event variant via the AIRR builder's event-ledger walk.
-    pub(crate) fn record_p_region(
-        &mut self,
-        end: crate::address::PEnd,
-        region: super::Region,
-    ) {
+    pub(crate) fn record_p_region(&mut self, end: crate::address::PEnd, region: super::Region) {
         self.broadcast_event(SimulationEvent::PRegionAdded { end, region });
     }
 
@@ -407,6 +640,7 @@ impl<'idx> SimulationBuilder<'idx> {
             bytes_delta,
         });
         self.simulation = new_sim;
+        self.tag_duplex_edit();
         // Pool was structurally rewritten; re-establish the unique
         // ownership prepayment so subsequent push_nucleotide /
         // change_base_in_place calls stay on the refcount==1 fast
@@ -430,6 +664,21 @@ impl<'idx> SimulationBuilder<'idx> {
         self.simulation = self.simulation.with_mutation_count(new_count);
     }
 
+    /// Record realized SHM against the molecule exposed to this mutation
+    /// stage. Its count event and enclosing pass's pre-state length are the
+    /// independent provenance for the cumulative per-site burden.
+    pub(crate) fn add_shm_mutations(&mut self, applied: u32, input_pool_len: usize) {
+        let count = self.simulation.mutation_count.saturating_add(applied);
+        let burden = self.simulation.mutation_burden
+            + if input_pool_len == 0 {
+                0.0
+            } else {
+                applied as f64 / input_pool_len as f64
+            };
+        self.set_mutation_count(count);
+        self.simulation = self.simulation.with_mutation_burden(burden);
+    }
+
     /// Record a reverse-complement decision. `RevCompPass` is a
     /// flag-only pass — the IR is **not** mutated; the AIRR
     /// projection picks up the trace flag and post-flips the
@@ -439,6 +688,11 @@ impl<'idx> SimulationBuilder<'idx> {
     #[allow(dead_code)]
     pub(crate) fn record_reverse_complement_flag(&mut self, applied: bool) {
         self.broadcast_event(SimulationEvent::ReverseComplementFlagRecorded { applied });
+        if let Some(p) = &self.simulation.duplex_provenance {
+            let mut next = p.with_reverse_complement(applied);
+            next.set_last_edit_source(Some(crate::address::CORRUPT_REV_COMP));
+            self.simulation.duplex_provenance = Some(Arc::new(next));
+        }
     }
 
     /// Update the orientation of the assigned `segment` allele and
@@ -559,6 +813,11 @@ impl<'idx> SimulationBuilder<'idx> {
             germline_pos: old.germline_pos.get(),
         });
 
+        if let Some(p) = &self.simulation.duplex_provenance {
+            self.simulation.duplex_provenance =
+                Some(Arc::new(p.with_substitution(handle.index(), old, new_base)));
+            self.tag_duplex_edit();
+        }
         let prev = self.simulation.pool.change_base_in_place(handle, new_base);
         debug_assert_eq!(
             prev.base, old.base,
@@ -697,19 +956,22 @@ impl<'idx> SimulationBuilder<'idx> {
         // Drain dirty signals captured during the pass so
         // `apply_live_call_updates` can use them to skip refreshes
         // for segments that received no edits.
-        let dirty_windows = self
-            .take_dirty_signal_observer()
-            .map(|o| o.seal())
-            .unwrap_or_default();
+        let dirty_observer = self.take_dirty_signal_observer();
+        let tracks_dirty_windows = dirty_observer.is_some();
+        let dirty_windows = dirty_observer.map(|o| o.seal()).unwrap_or_default();
         let current = self.seal();
 
         // Take ownership of the SegmentCalls once, stage in place
         // across V → D → J, and reattach via a single
         // `with_segment_calls` at the end.
         //
-        // Stage walker calls ONLY for segments whose region overlaps
-        // a dirty window. Clean segments inherit their prior live
-        // call unchanged.
+        // With dirty tracking attached, stage only segments whose
+        // region overlaps a dirty window. An empty log means no
+        // edits, so stage nothing: the event-derived refresh hook
+        // has no work to do and would leave those staged calls
+        // pending across later passes, where upstream indels could
+        // make their coordinates stale. Without dirty tracking,
+        // preserve the conservative fallback of staging all calls.
         //
         // Each staged call's `evidence_version` is stamped with the
         // global version it'll have AFTER commit (base+1 for V,
@@ -722,7 +984,6 @@ impl<'idx> SimulationBuilder<'idx> {
         // control signal.
         let mut calls: crate::live_call::SegmentCalls = (*current.segment_calls).clone();
         let base_version = calls.version;
-        let has_dirty_observer_signal = !dirty_windows.is_empty();
         let mut walker_sealed = walker_sealed;
         let mut staged_count: u64 = 0;
         for target_segment in Segment::assignable() {
@@ -733,7 +994,7 @@ impl<'idx> SimulationBuilder<'idx> {
                 Some(p) => p,
                 None => continue,
             };
-            if has_dirty_observer_signal
+            if tracks_dirty_windows
                 && !segment_region_overlaps_dirty(&current, *target_segment, &dirty_windows)
             {
                 walker_sealed.swap_remove(position);
@@ -1100,11 +1361,31 @@ mod tests {
                 (b'C', Segment::J, 3),
             ],
         );
-        sim.with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(5)))
-            .with_region_added(Region::new(Segment::Np1, NucHandle::new(5), NucHandle::new(7)))
-            .with_region_added(Region::new(Segment::D, NucHandle::new(7), NucHandle::new(10)))
-            .with_region_added(Region::new(Segment::Np2, NucHandle::new(10), NucHandle::new(11)))
-            .with_region_added(Region::new(Segment::J, NucHandle::new(11), NucHandle::new(15)))
+        sim.with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(5),
+        ))
+        .with_region_added(Region::new(
+            Segment::Np1,
+            NucHandle::new(5),
+            NucHandle::new(7),
+        ))
+        .with_region_added(Region::new(
+            Segment::D,
+            NucHandle::new(7),
+            NucHandle::new(10),
+        ))
+        .with_region_added(Region::new(
+            Segment::Np2,
+            NucHandle::new(10),
+            NucHandle::new(11),
+        ))
+        .with_region_added(Region::new(
+            Segment::J,
+            NucHandle::new(11),
+            NucHandle::new(15),
+        ))
     }
 
     fn v_replacement(bases: &[u8]) -> Vec<Nucleotide> {
@@ -1137,18 +1418,17 @@ mod tests {
         );
         // Pool length unchanged; V bytes overwritten.
         assert_eq!(sealed.pool.len(), 15);
-        let v_bases: Vec<u8> = sealed.pool.as_slice()[0..5].iter().map(|n| n.base).collect();
+        let v_bases: Vec<u8> = sealed.pool.as_slice()[0..5]
+            .iter()
+            .map(|n| n.base)
+            .collect();
         assert_eq!(&v_bases, b"GGGGG");
         // Downstream regions byte-identical.
         assert_eq!(
             sealed.sequence.regions[1],
-            Region::new(Segment::Np1, NucHandle::new(5), NucHandle::new(7))
-                .with_frame_phase(2)
+            Region::new(Segment::Np1, NucHandle::new(5), NucHandle::new(7)).with_frame_phase(2)
         );
-        assert_eq!(
-            sealed.sequence.regions[4].start.index(),
-            11
-        );
+        assert_eq!(sealed.sequence.regions[4].start.index(), 11);
         assert_eq!(sealed.sequence.regions[4].end.index(), 15);
     }
 
@@ -1235,7 +1515,14 @@ mod tests {
         let d = &sealed.sequence.regions[2];
         assert_eq!(d.segment, Segment::D);
         let d_germ_positions: Vec<Option<u16>> = (d.start.index()..d.end.index())
-            .map(|i| sealed.pool.get(NucHandle::new(i)).unwrap().germline_pos.get())
+            .map(|i| {
+                sealed
+                    .pool
+                    .get(NucHandle::new(i))
+                    .unwrap()
+                    .germline_pos
+                    .get()
+            })
             .collect();
         // Same germline_pos values [0, 1, 2] we pushed into D.
         assert_eq!(d_germ_positions, vec![Some(0), Some(1), Some(2)]);
@@ -1244,7 +1531,14 @@ mod tests {
         let j = &sealed.sequence.regions[4];
         assert_eq!(j.segment, Segment::J);
         let j_germ_positions: Vec<Option<u16>> = (j.start.index()..j.end.index())
-            .map(|i| sealed.pool.get(NucHandle::new(i)).unwrap().germline_pos.get())
+            .map(|i| {
+                sealed
+                    .pool
+                    .get(NucHandle::new(i))
+                    .unwrap()
+                    .germline_pos
+                    .get()
+            })
             .collect();
         assert_eq!(j_germ_positions, vec![Some(0), Some(1), Some(2), Some(3)]);
     }
@@ -1252,8 +1546,11 @@ mod tests {
     #[test]
     #[should_panic(expected = "no region for V")]
     fn replace_segment_panics_on_missing_segment() {
-        let sim = Simulation::new()
-            .with_region_added(Region::new(Segment::J, NucHandle::new(0), NucHandle::new(3)));
+        let sim = Simulation::new().with_region_added(Region::new(
+            Segment::J,
+            NucHandle::new(0),
+            NucHandle::new(3),
+        ));
         let mut b = SimulationBuilder::from_simulation(sim);
         b.replace_segment(Segment::V, v_replacement(b"A"));
     }
@@ -1262,8 +1559,16 @@ mod tests {
     #[should_panic(expected = "multiple regions for V")]
     fn replace_segment_panics_on_multiple_regions_for_segment() {
         let sim = Simulation::new()
-            .with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(3)))
-            .with_region_added(Region::new(Segment::V, NucHandle::new(3), NucHandle::new(6)));
+            .with_region_added(Region::new(
+                Segment::V,
+                NucHandle::new(0),
+                NucHandle::new(3),
+            ))
+            .with_region_added(Region::new(
+                Segment::V,
+                NucHandle::new(3),
+                NucHandle::new(6),
+            ));
         let mut b = SimulationBuilder::from_simulation(sim);
         b.replace_segment(Segment::V, v_replacement(b"A"));
     }
@@ -1279,8 +1584,8 @@ mod tests {
         let pool_len_before = base.pool.len();
         let mut b = SimulationBuilder::from_simulation(base);
         b.attach_event_log_observer();
-        let v_reframed = Region::new(Segment::V, NucHandle::new(0), NucHandle::new(5))
-            .with_frame_phase(2);
+        let v_reframed =
+            Region::new(Segment::V, NucHandle::new(0), NucHandle::new(5)).with_frame_phase(2);
         b.replace_region(v_reframed.clone());
         let (events, sealed) = drain_log(b);
 
@@ -1301,7 +1606,11 @@ mod tests {
         // attached — the per-method broadcast is a no-op.
         let mut b = SimulationBuilder::from_simulation(Simulation::new());
         b.assign_allele(Segment::V, AlleleInstance::new(AlleleId::new(0)));
-        b.add_region(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(1)));
+        b.add_region(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(1),
+        ));
         b.set_mutation_count(2);
         b.record_reverse_complement_flag(false);
         let sealed = b.seal();

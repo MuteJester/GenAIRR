@@ -1,0 +1,991 @@
+{
+  "configurations": [
+    {
+      "allow_curatable_refdata": false,
+      "applicable_p_ends": [
+        "V_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_IGL_OGRDB",
+      "checks_seconds": 0.0188,
+      "compile_and_generation_seconds": 0.1792,
+      "d_inversion_probability": null,
+      "d_inverted_records": 0,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "J_5": {
+          "1": 50
+        },
+        "V_3": {
+          "1": 50
+        }
+      },
+      "p_profile": "fixed_positive",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "J_5": {
+          "0": 8,
+          "1": 37,
+          "3": 2,
+          "4": 3
+        },
+        "V_3": {
+          "0": 7,
+          "1": 8,
+          "11": 1,
+          "2": 12,
+          "3": 3,
+          "4": 8,
+          "5": 4,
+          "6": 2,
+          "7": 3,
+          "8": 2
+        }
+      },
+      "records_with_positive_p": 50,
+      "reference_allele_counts": {
+        "j": 10,
+        "v": 181
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20261020,
+      "setup_seconds": 0.3444,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.5424,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": false,
+      "applicable_p_ends": [
+        "V_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_IGL_OGRDB",
+      "checks_seconds": 0.0162,
+      "compile_and_generation_seconds": 0.1771,
+      "d_inversion_probability": null,
+      "d_inverted_records": 0,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "J_5": {
+          "0": 19,
+          "1": 14,
+          "2": 17
+        },
+        "V_3": {
+          "0": 21,
+          "1": 22,
+          "2": 7
+        }
+      },
+      "p_profile": "mixed",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "J_5": {
+          "0": 2,
+          "1": 40,
+          "2": 2,
+          "3": 4,
+          "5": 2
+        },
+        "V_3": {
+          "0": 11,
+          "1": 8,
+          "10": 1,
+          "14": 1,
+          "2": 12,
+          "3": 5,
+          "4": 5,
+          "5": 1,
+          "6": 2,
+          "7": 2,
+          "8": 1,
+          "9": 1
+        }
+      },
+      "records_with_positive_p": 43,
+      "reference_allele_counts": {
+        "j": 10,
+        "v": 181
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20262020,
+      "setup_seconds": 0.2829,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.4762,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": true,
+      "applicable_p_ends": [
+        "V_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_TCRA_IMGT",
+      "checks_seconds": 0.0118,
+      "compile_and_generation_seconds": 0.4259,
+      "d_inversion_probability": null,
+      "d_inverted_records": 0,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "J_5": {
+          "1": 50
+        },
+        "V_3": {
+          "1": 50
+        }
+      },
+      "p_profile": "fixed_positive",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "J_5": {
+          "0": 11,
+          "1": 11,
+          "11": 2,
+          "12": 1,
+          "14": 1,
+          "2": 7,
+          "3": 5,
+          "4": 3,
+          "5": 1,
+          "6": 2,
+          "7": 1,
+          "8": 3,
+          "9": 2
+        },
+        "V_3": {
+          "0": 11,
+          "1": 9,
+          "11": 1,
+          "2": 7,
+          "3": 6,
+          "4": 4,
+          "5": 4,
+          "6": 5,
+          "7": 1,
+          "8": 1,
+          "9": 1
+        }
+      },
+      "records_with_positive_p": 50,
+      "reference_allele_counts": {
+        "j": 68,
+        "v": 76
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20263020,
+      "setup_seconds": 0.0118,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.4495,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": true,
+      "applicable_p_ends": [
+        "V_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_TCRA_IMGT",
+      "checks_seconds": 0.0118,
+      "compile_and_generation_seconds": 0.7194,
+      "d_inversion_probability": null,
+      "d_inverted_records": 0,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "J_5": {
+          "0": 14,
+          "1": 13,
+          "2": 23
+        },
+        "V_3": {
+          "0": 21,
+          "1": 19,
+          "2": 10
+        }
+      },
+      "p_profile": "mixed",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "J_5": {
+          "0": 5,
+          "1": 7,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "15": 1,
+          "2": 5,
+          "3": 8,
+          "4": 8,
+          "5": 1,
+          "6": 3,
+          "7": 2,
+          "8": 3,
+          "9": 1
+        },
+        "V_3": {
+          "0": 19,
+          "1": 7,
+          "10": 1,
+          "11": 4,
+          "2": 2,
+          "3": 5,
+          "4": 3,
+          "5": 1,
+          "6": 4,
+          "7": 1,
+          "8": 1,
+          "9": 2
+        }
+      },
+      "records_with_positive_p": 45,
+      "reference_allele_counts": {
+        "j": 68,
+        "v": 76
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20264020,
+      "setup_seconds": 0.0064,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.7376,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": true,
+      "applicable_p_ends": [
+        "V_3",
+        "D_5",
+        "D_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_TCRB_IMGT",
+      "checks_seconds": 0.0127,
+      "compile_and_generation_seconds": 0.5821,
+      "d_inversion_probability": 0.5,
+      "d_inverted_records": 24,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "D_3": {
+          "1": 50
+        },
+        "D_5": {
+          "1": 50
+        },
+        "J_5": {
+          "1": 50
+        },
+        "V_3": {
+          "1": 50
+        }
+      },
+      "p_profile": "fixed_positive",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "D_3": {
+          "0": 14,
+          "1": 12,
+          "2": 12,
+          "3": 6,
+          "4": 6
+        },
+        "D_5": {
+          "0": 14,
+          "1": 9,
+          "2": 11,
+          "3": 8,
+          "4": 8
+        },
+        "J_5": {
+          "0": 15,
+          "1": 4,
+          "10": 1,
+          "11": 1,
+          "14": 1,
+          "2": 9,
+          "3": 6,
+          "4": 1,
+          "5": 2,
+          "6": 2,
+          "7": 5,
+          "8": 2,
+          "9": 1
+        },
+        "V_3": {
+          "0": 6,
+          "1": 9,
+          "11": 2,
+          "12": 1,
+          "2": 5,
+          "3": 6,
+          "4": 11,
+          "5": 4,
+          "6": 3,
+          "8": 2,
+          "9": 1
+        }
+      },
+      "records_with_positive_p": 50,
+      "reference_allele_counts": {
+        "d": 3,
+        "j": 16,
+        "v": 98
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20265020,
+      "setup_seconds": 0.0084,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.6032,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": true,
+      "applicable_p_ends": [
+        "V_3",
+        "D_5",
+        "D_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_TCRB_IMGT",
+      "checks_seconds": 0.0132,
+      "compile_and_generation_seconds": 0.8705,
+      "d_inversion_probability": 0.5,
+      "d_inverted_records": 21,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "D_3": {
+          "0": 21,
+          "1": 16,
+          "2": 13
+        },
+        "D_5": {
+          "0": 21,
+          "1": 17,
+          "2": 12
+        },
+        "J_5": {
+          "0": 14,
+          "1": 20,
+          "2": 16
+        },
+        "V_3": {
+          "0": 19,
+          "1": 18,
+          "2": 13
+        }
+      },
+      "p_profile": "mixed",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "D_3": {
+          "0": 11,
+          "1": 17,
+          "2": 12,
+          "3": 4,
+          "4": 6
+        },
+        "D_5": {
+          "0": 13,
+          "1": 10,
+          "2": 11,
+          "3": 6,
+          "4": 10
+        },
+        "J_5": {
+          "0": 8,
+          "1": 11,
+          "11": 2,
+          "12": 1,
+          "14": 1,
+          "18": 1,
+          "2": 7,
+          "3": 5,
+          "4": 4,
+          "5": 1,
+          "6": 1,
+          "7": 3,
+          "8": 3,
+          "9": 2
+        },
+        "V_3": {
+          "0": 7,
+          "1": 13,
+          "10": 2,
+          "11": 1,
+          "2": 6,
+          "3": 3,
+          "4": 5,
+          "5": 2,
+          "6": 3,
+          "7": 4,
+          "8": 2,
+          "9": 2
+        }
+      },
+      "records_with_positive_p": 47,
+      "reference_allele_counts": {
+        "d": 3,
+        "j": 16,
+        "v": 98
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20266020,
+      "setup_seconds": 0.0073,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.891,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": true,
+      "applicable_p_ends": [
+        "V_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_TCRG_IMGT",
+      "checks_seconds": 0.0077,
+      "compile_and_generation_seconds": 0.2651,
+      "d_inversion_probability": null,
+      "d_inverted_records": 0,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "J_5": {
+          "1": 50
+        },
+        "V_3": {
+          "1": 50
+        }
+      },
+      "p_profile": "fixed_positive",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "J_5": {
+          "0": 5,
+          "1": 8,
+          "12": 1,
+          "13": 1,
+          "15": 3,
+          "2": 11,
+          "22": 1,
+          "3": 7,
+          "4": 3,
+          "5": 1,
+          "6": 6,
+          "7": 1,
+          "9": 2
+        },
+        "V_3": {
+          "0": 10,
+          "1": 12,
+          "11": 1,
+          "12": 2,
+          "13": 1,
+          "14": 1,
+          "15": 1,
+          "2": 4,
+          "3": 7,
+          "4": 2,
+          "6": 2,
+          "7": 3,
+          "8": 4
+        }
+      },
+      "records_with_positive_p": 50,
+      "reference_allele_counts": {
+        "j": 6,
+        "v": 20
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20267020,
+      "setup_seconds": 0.0027,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.2755,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": true,
+      "applicable_p_ends": [
+        "V_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_TCRG_IMGT",
+      "checks_seconds": 0.0072,
+      "compile_and_generation_seconds": 0.4241,
+      "d_inversion_probability": null,
+      "d_inverted_records": 0,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "J_5": {
+          "0": 21,
+          "1": 15,
+          "2": 14
+        },
+        "V_3": {
+          "0": 18,
+          "1": 22,
+          "2": 10
+        }
+      },
+      "p_profile": "mixed",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "J_5": {
+          "0": 12,
+          "1": 10,
+          "10": 1,
+          "12": 2,
+          "13": 2,
+          "16": 1,
+          "2": 3,
+          "3": 1,
+          "4": 6,
+          "5": 5,
+          "6": 4,
+          "7": 2,
+          "8": 1
+        },
+        "V_3": {
+          "0": 11,
+          "1": 10,
+          "11": 2,
+          "14": 1,
+          "15": 1,
+          "2": 5,
+          "3": 5,
+          "4": 6,
+          "5": 4,
+          "6": 2,
+          "7": 1,
+          "8": 1,
+          "9": 1
+        }
+      },
+      "records_with_positive_p": 39,
+      "reference_allele_counts": {
+        "j": 6,
+        "v": 20
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20268020,
+      "setup_seconds": 0.0021,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.4334,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": false,
+      "applicable_p_ends": [
+        "V_3",
+        "D_5",
+        "D_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_TCRD_IMGT",
+      "checks_seconds": 0.0078,
+      "compile_and_generation_seconds": 0.1254,
+      "d_inversion_probability": 0.5,
+      "d_inverted_records": 30,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "D_3": {
+          "1": 50
+        },
+        "D_5": {
+          "1": 50
+        },
+        "J_5": {
+          "1": 50
+        },
+        "V_3": {
+          "1": 50
+        }
+      },
+      "p_profile": "fixed_positive",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "D_3": {
+          "0": 18,
+          "1": 19,
+          "2": 13
+        },
+        "D_5": {
+          "0": 23,
+          "1": 16,
+          "2": 11
+        },
+        "J_5": {
+          "0": 8,
+          "1": 7,
+          "10": 2,
+          "11": 2,
+          "18": 1,
+          "2": 9,
+          "3": 3,
+          "4": 4,
+          "5": 2,
+          "6": 4,
+          "7": 5,
+          "8": 2,
+          "9": 1
+        },
+        "V_3": {
+          "0": 9,
+          "1": 10,
+          "10": 1,
+          "13": 1,
+          "2": 7,
+          "3": 8,
+          "4": 1,
+          "5": 4,
+          "6": 2,
+          "7": 2,
+          "8": 4,
+          "9": 1
+        }
+      },
+      "records_with_positive_p": 50,
+      "reference_allele_counts": {
+        "d": 3,
+        "j": 4,
+        "v": 14
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20269020,
+      "setup_seconds": 0.0029,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.1362,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": false,
+      "applicable_p_ends": [
+        "V_3",
+        "D_5",
+        "D_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_TCRD_IMGT",
+      "checks_seconds": 0.0077,
+      "compile_and_generation_seconds": 0.0679,
+      "d_inversion_probability": 0.5,
+      "d_inverted_records": 27,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "D_3": {
+          "0": 20,
+          "1": 19,
+          "2": 11
+        },
+        "D_5": {
+          "0": 20,
+          "1": 15,
+          "2": 15
+        },
+        "J_5": {
+          "0": 15,
+          "1": 18,
+          "2": 17
+        },
+        "V_3": {
+          "0": 25,
+          "1": 16,
+          "2": 9
+        }
+      },
+      "p_profile": "mixed",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "D_3": {
+          "0": 19,
+          "1": 15,
+          "2": 16
+        },
+        "D_5": {
+          "0": 26,
+          "1": 12,
+          "2": 12
+        },
+        "J_5": {
+          "0": 8,
+          "1": 12,
+          "10": 1,
+          "12": 2,
+          "13": 1,
+          "14": 1,
+          "18": 1,
+          "2": 6,
+          "3": 2,
+          "4": 1,
+          "5": 4,
+          "6": 4,
+          "7": 3,
+          "8": 1,
+          "9": 3
+        },
+        "V_3": {
+          "0": 9,
+          "1": 13,
+          "10": 2,
+          "2": 4,
+          "3": 5,
+          "4": 3,
+          "5": 4,
+          "6": 4,
+          "7": 1,
+          "8": 4,
+          "9": 1
+        }
+      },
+      "records_with_positive_p": 49,
+      "reference_allele_counts": {
+        "d": 3,
+        "j": 4,
+        "v": 14
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20270020,
+      "setup_seconds": 0.0024,
+      "shm_rate": null,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.078,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    },
+    {
+      "allow_curatable_refdata": false,
+      "applicable_p_ends": [
+        "V_3",
+        "J_5"
+      ],
+      "cartridge": "HUMAN_IGL_OGRDB",
+      "checks_seconds": 0.0147,
+      "compile_and_generation_seconds": 0.2299,
+      "d_inversion_probability": null,
+      "d_inverted_records": 0,
+      "independent_checked": 50,
+      "independent_errors": [],
+      "ok": true,
+      "p_length_histograms": {
+        "J_5": {
+          "0": 12,
+          "1": 19,
+          "2": 19
+        },
+        "V_3": {
+          "0": 23,
+          "1": 18,
+          "2": 9
+        }
+      },
+      "p_profile": "mixed",
+      "produced_records": 50,
+      "productive_records": 50,
+      "realized_trim_histograms": {
+        "J_5": {
+          "0": 4,
+          "1": 35,
+          "3": 5,
+          "5": 4,
+          "6": 1,
+          "7": 1
+        },
+        "V_3": {
+          "0": 8,
+          "1": 4,
+          "17": 1,
+          "2": 12,
+          "3": 9,
+          "4": 7,
+          "5": 3,
+          "6": 2,
+          "8": 1,
+          "9": 3
+        }
+      },
+      "records_with_positive_p": 46,
+      "reference_allele_counts": {
+        "j": 10,
+        "v": 181
+      },
+      "requested_records": 50,
+      "runtime_error": null,
+      "seed": 20271020,
+      "setup_seconds": 0.2652,
+      "shm_rate": 0.01,
+      "stop_flagged_records": 0,
+      "total_seconds": 0.5099,
+      "validator_checked": 50,
+      "validator_failure_samples": [],
+      "validator_issue_histogram": {},
+      "validator_ok": true
+    }
+  ],
+  "date": "2026-10-20",
+  "default_reference_preflight_errors": {
+    "HUMAN_TCRA_IMGT": "plan compilation failed; 6 refdata validation issue(s) (0 fatal, 6 curatable):\n  - [curatable] J allele 9 anchor codon 'ggt' translates to 'G' (expected one of \"F\")\n  - [curatable] J allele 10 anchor codon 'ggt' translates to 'G' (expected one of \"F\")\n  - [curatable] J allele 33 anchor codon 'tgg' translates to 'W' (expected one of \"F\")\n  - [curatable] J allele 35 anchor codon 'gat' translates to 'D' (expected one of \"F\")\n  - [curatable] J allele 39 anchor codon 'tgg' translates to 'W' (expected one of \"F\")\n  - [curatable] J allele 64 anchor codon 'ggt' translates to 'G' (expected one of \"F\")\nThese may represent pseudogene/ORF alleles. Use allow_curatable_refdata() or filter reference alleles before simulation.\n",
+    "HUMAN_TCRB_IMGT": "plan compilation failed; 6 refdata validation issue(s) (0 fatal, 6 curatable):\n  - [curatable] V allele 25 anchor codon 'gag' translates to 'E' (expected C)\n  - [curatable] V allele 26 anchor codon 'gag' translates to 'E' (expected C)\n  - [curatable] V allele 86 anchor codon 'ggt' translates to 'G' (expected C)\n  - [curatable] V allele 87 anchor codon 'ggt' translates to 'G' (expected C)\n  - [curatable] J allele 9 anchor codon 'ctg' translates to 'L' (expected one of \"F\")\n  - [curatable] J allele 15 anchor codon 'ctc' translates to 'L' (expected one of \"F\")\nThese may represent pseudogene/ORF alleles. Use allow_curatable_refdata() or filter reference alleles before simulation.\n",
+    "HUMAN_TCRG_IMGT": "plan compilation failed; 2 refdata validation issue(s) (0 fatal, 2 curatable):\n  - [curatable] J allele 4 anchor codon 'ata' translates to 'I' (expected one of \"F\")\n  - [curatable] J allele 5 anchor codon 'ata' translates to 'I' (expected one of \"F\")\nThese may represent pseudogene/ORF alleles. Use allow_curatable_refdata() or filter reference alleles before simulation.\n"
+  },
+  "default_reference_preflight_without_p": {
+    "HUMAN_TCRA_IMGT": {
+      "message": "plan compilation failed; 6 refdata validation issue(s) (0 fatal, 6 curatable):\n  - [curatable] J allele 9 anchor codon 'ggt' translates to 'G' (expected one of \"F\")\n  - [curatable] J allele 10 anchor codon 'ggt' translates to 'G' (expected one of \"F\")\n  - [curatable] J allele 33 anchor codon 'tgg' translates to 'W' (expected one of \"F\")\n  - [curatable] J allele 35 anchor codon 'gat' translates to 'D' (expected one of \"F\")\n  - [curatable] J allele 39 anchor codon 'tgg' translates to 'W' (expected one of \"F\")\n  - [curatable] J allele 64 anchor codon 'ggt' translates to 'G' (expected one of \"F\")\nThese may represent pseudogene/ORF alleles. Use allow_curatable_refdata() or filter reference alleles before simulation.\n",
+      "raised": true,
+      "same_message_as_p_config": true,
+      "type": "ValueError"
+    },
+    "HUMAN_TCRB_IMGT": {
+      "message": "plan compilation failed; 6 refdata validation issue(s) (0 fatal, 6 curatable):\n  - [curatable] V allele 25 anchor codon 'gag' translates to 'E' (expected C)\n  - [curatable] V allele 26 anchor codon 'gag' translates to 'E' (expected C)\n  - [curatable] V allele 86 anchor codon 'ggt' translates to 'G' (expected C)\n  - [curatable] V allele 87 anchor codon 'ggt' translates to 'G' (expected C)\n  - [curatable] J allele 9 anchor codon 'ctg' translates to 'L' (expected one of \"F\")\n  - [curatable] J allele 15 anchor codon 'ctc' translates to 'L' (expected one of \"F\")\nThese may represent pseudogene/ORF alleles. Use allow_curatable_refdata() or filter reference alleles before simulation.\n",
+      "raised": true,
+      "same_message_as_p_config": true,
+      "type": "ValueError"
+    },
+    "HUMAN_TCRG_IMGT": {
+      "message": "plan compilation failed; 2 refdata validation issue(s) (0 fatal, 2 curatable):\n  - [curatable] J allele 4 anchor codon 'ata' translates to 'I' (expected one of \"F\")\n  - [curatable] J allele 5 anchor codon 'ata' translates to 'I' (expected one of \"F\")\nThese may represent pseudogene/ORF alleles. Use allow_curatable_refdata() or filter reference alleles before simulation.\n",
+      "raised": true,
+      "same_message_as_p_config": true,
+      "type": "ValueError"
+    }
+  },
+  "elapsed_seconds": 5.14,
+  "environment": {
+    "concurrent_workload": "Root agent running full Python and Rust test suites; timings are observational, not isolated benchmarks.",
+    "engine_mtime_utc": "2026-10-20T07:01:17.103705+00:00",
+    "engine_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+    "package_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/__init__.py",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]"
+  },
+  "method": {
+    "additional_engine_check": "SimulationResult.validate_records against actual returned record dictionaries and source outcomes",
+    "d_inversion": "probability 0.5 for VDJ chains, no inversion step for VJ",
+    "helper": "tests/_p_productive_support.py::assert_productive_record; independent P-template/trace checks in /tmp/genairr_p_stress/run.py",
+    "independent_checks": [
+      "Standard genetic-code table translation from retained V anchor-derived coding phase; compare full sequence_aa.",
+      "No translated stop in observed coding interval through J end; junction translated independently starts C, ends F/W, and metadata productive/vj_in_frame/stop flags agree.",
+      "Whole alignment recovers sequence, alignment lengths agree, CIGAR reference/query consumption matches coordinates, and NP intervals exactly match sequence substrings.",
+      "P counters equal traced P-length choices and are in positive authored support; forced P1 must remain 1 at every applicable end.",
+      "Pre-SHM assembled P bytes independently equal reverse complements of retained, oriented source allele flanks, including reversed D.",
+      "Combined NP length equals traced N length plus both adjacent P lengths."
+    ],
+    "limitations": [
+      "Finite deterministic-seed samples are evidence, not a universal correctness guarantee.",
+      "No terminal read loss, indels, receptor revision, genotype, or reverse-complement reads in this additional matrix.",
+      "Raw nucleotide P_NUC bit is not exposed through Python; counters are checked against trace, deterministic sequence templates, NP intervals, and native validator.",
+      "P templates follow the current documented post-trim source-flank model."
+    ],
+    "mutation": "Only extra IGL case: hkl_s5f SHM rate 0.01",
+    "np_lengths_and_bases": "Existing cartridge defaults preserved; only P-length plane replaced",
+    "p_profiles": {
+      "fixed_positive": [
+        [
+          1,
+          1.0
+        ]
+      ],
+      "mixed": [
+        [
+          0,
+          0.4
+        ],
+        [
+          1,
+          0.35
+        ],
+        [
+          2,
+          0.25
+        ]
+      ]
+    },
+    "records_per_configuration": 50,
+    "reference_curatable_policy": "Default reference validation was attempted first. TCRA/TCRB/TCRG rejected curatable anchor entries before sampling; only those cartridges then explicitly used allow_curatable_refdata(). The productive contract remained enabled, P support was unaltered, and all emitted sequences were independently checked.",
+    "strict": true,
+    "trim": "Default empirical recombination trim laws preserved"
+  },
+  "scope": "Read-only stress of current fixed P-aware productive generation",
+  "status": "completed",
+  "summary": {
+    "configuration_count": 11,
+    "independent_error_count": 0,
+    "independently_checked_records": 550,
+    "passing_configurations": 11,
+    "produced_records": 550,
+    "runtime_error_count": 0,
+    "validator_checked_records": 550,
+    "validator_failure_configurations": 0
+  }
+}

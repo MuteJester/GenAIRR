@@ -204,16 +204,9 @@ fn np1_string_is_the_unclaimed_span_after_segment_extension() {
 }
 
 #[test]
-fn np1_string_drops_columns_claimed_by_v_extension() {
-    // Trim V3=3 widens v_call to {v01*01, v01*02, v02*01, v03*01}.
-    // NP1 = 'G' x 3 — only v01 (alleles 0 and 1) has G at ref
-    // pos 12 (the first distinguishing-tail byte). The first NP1
-    // byte narrows {v01,v01*02,v02,v03}→{v01,v01*02}; the remaining
-    // 'G' bytes match neither surviving alias (v01[13]=T) so they
-    // cannot extend further. Under conservative extension the
-    // walker stops after the single narrowing byte.
-    //
-    // 1 of 3 NP1 columns claimed → np1 = "GG" (2 chars).
+fn np1_string_preserves_bases_that_narrow_v_recall() {
+    // NP1=GGG narrows the V re-call to two aliases. All three generated
+    // junction bases remain NP1 and the standard V call is its source allele.
     let cfg = common::vj_ambiguous_refdata();
     let v_id = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let j_id = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
@@ -243,11 +236,11 @@ fn np1_string_drops_columns_claimed_by_v_extension() {
 
     let rec = run_compiled(&cfg, plan, 0);
 
-    // V claimed the single narrowing NP1 column; 2 remain.
-    assert_eq!(rec.np1, "GG");
-    assert_eq!(rec.np1_length, 2);
-    // v_call narrowed to the v01 aliases.
-    let mut v_calls: Vec<&str> = rec.v_call.split(',').collect();
+    assert_eq!(rec.np1, "GGG");
+    assert_eq!(rec.np1_length, 3);
+    assert_eq!(rec.v_call, "v01*01");
+    // The re-call narrowed to the v01 aliases.
+    let mut v_calls: Vec<&str> = rec.recalled_v_call.split(',').collect();
     v_calls.sort();
     assert_eq!(v_calls, vec!["v01*01", "v01*02"]);
 }
@@ -475,9 +468,9 @@ fn v_call_falls_back_to_origin_when_no_live_call_is_present() {
 }
 
 #[test]
-fn v_call_listing_orders_truth_first_then_remaining_alleles() {
+fn recalled_call_lists_generating_allele_first_when_it_remains_tied() {
     // When the live call sets a tie-set {V01*01, V01*02, V02*01, V03*01}
-    // (e.g. trim V3=3), AIRR `v_call` lists the truth allele FIRST,
+    // (e.g. trim V3=3), `recalled_v_call` lists the generating allele FIRST,
     // then the other alleles in iter_ids() ascending order.
     // (See `live_call_name` in airr_record/projection.rs.)
     //
@@ -518,7 +511,8 @@ fn v_call_listing_orders_truth_first_then_remaining_alleles() {
     // Truth (v02*01) is FIRST in the call list; rest follow iter_ids
     // order (which is ascending pool-index, i.e. v01*01 (id 0),
     // v01*02 (id 1), v03*01 (id 3); v02*01 already listed first).
-    let v_calls: Vec<&str> = rec.v_call.split(',').collect();
+    assert_eq!(rec.v_call, "v02*01");
+    let v_calls: Vec<&str> = rec.recalled_v_call.split(',').collect();
     assert_eq!(v_calls.first(), Some(&"v02*01"));
     // The set must contain all 4 alleles (ambiguity after V3=3 trim).
     let mut sorted = v_calls.clone();

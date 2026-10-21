@@ -26,15 +26,9 @@
 //! - **Mutation counts add up**: `n_mutations + n_pcr_errors +
 //!   n_quality_errors == total base changes recorded in the trace`
 //!   (modulo synthetic indel-inserted bytes).
-//! - **rev_comp consistency**: a record with `rev_comp = true`
-//!   has all coordinate fields flipped consistently
-//!   (`v_sequence_start = old_seq_len - v_sequence_end`, etc.),
-//!   and `junction_aa` is unchanged from the forward strand
-//!   (rev-complementing the junction nt gives the same protein
-//!   for a productive sequence... actually verify this — for the
-//!   record to BE a meaningful rev-comp it must still translate
-//!   correctly, which probably means the rev-comp path only fires
-//!   pre-translation).
+//! - **rev_comp consistency**: the raw observed sequence reverses,
+//!   while coordinates, junction protein and other annotations
+//!   retain their coding orientation.
 //! - **Determinism**: same seed → same record (sha256 over a fixed
 //!   subset of fields per record). Pin this in regression tests.
 //!
@@ -258,8 +252,15 @@ fn full_corruption_stack_preserves_record_self_consistency() {
         );
     }
 
-    // mutation_rate = n_mutations / sequence_length exactly.
-    let expected_rate = rec.n_mutations as f64 / rec.sequence_length as f64;
+    // Corruption cannot change the denominator measured by the SHM stage.
+    let mutation_input_length = outcome
+        .events
+        .iter()
+        .find(|event| event.pass_name == "mutate.uniform")
+        .expect("stack has uniform SHM")
+        .pre
+        .pool_len;
+    let expected_rate = rec.n_mutations as f64 / mutation_input_length as f64;
     assert_eq!(rec.mutation_rate, expected_rate);
 
     // n_mutations == Simulation.mutation_count.
@@ -463,10 +464,8 @@ fn full_corruption_stack_rev_comp_flips_coordinates_consistently() {
 
     // Sequence length is unchanged.
     assert_eq!(fwd.sequence_length, rev.sequence_length);
-    let seq_len = fwd.sequence_length;
-
-    // Coord pairs are consistently flipped (where both pairs are
-    // present in both records).
+    // AIRR annotations remain in the coding orientation for both
+    // forward and reverse observations.
     let pairs = [
         (
             "v_sequence",
@@ -500,20 +499,14 @@ fn full_corruption_stack_rev_comp_flips_coordinates_consistently() {
     for (name, fs, fe, rs, re) in pairs {
         if let (Some(fs), Some(fe), Some(rs), Some(re)) = (fs, fe, rs, re) {
             assert_eq!(
-                rs,
-                seq_len - fe,
-                "{} start flipped incorrectly: expected {} got {}",
-                name,
-                seq_len - fe,
-                rs,
+                rs, fs,
+                "{} coding start changed: expected {} got {}",
+                name, fs, rs,
             );
             assert_eq!(
-                re,
-                seq_len - fs,
-                "{} end flipped incorrectly: expected {} got {}",
-                name,
-                seq_len - fs,
-                re,
+                re, fe,
+                "{} coding end changed: expected {} got {}",
+                name, fe, re,
             );
         }
     }
@@ -601,7 +594,6 @@ fn rev_comp_record_has_all_coord_pairs_flipped_and_productive_flags_invariant() 
     assert!(!fwd.rev_comp);
     assert!(rev.rev_comp);
     assert_eq!(fwd.sequence_length, rev.sequence_length);
-    let seq_len = fwd.sequence_length;
 
     // Every sequence-space coord pair must flip. (alignment pairs
     // are intentionally NOT flipped — see
@@ -640,20 +632,14 @@ fn rev_comp_record_has_all_coord_pairs_flipped_and_productive_flags_invariant() 
     for (name, fs, fe, rs, re) in pairs {
         if let (Some(fs), Some(fe), Some(rs), Some(re)) = (fs, fe, rs, re) {
             assert_eq!(
-                rs,
-                seq_len - fe,
-                "{} start mis-flipped: expected {}, got {}",
-                name,
-                seq_len - fe,
-                rs,
+                rs, fs,
+                "{} coding start changed: expected {}, got {}",
+                name, fs, rs,
             );
             assert_eq!(
-                re,
-                seq_len - fs,
-                "{} end mis-flipped: expected {}, got {}",
-                name,
-                seq_len - fs,
-                re,
+                re, fe,
+                "{} coding end changed: expected {}, got {}",
+                name, fe, re,
             );
         }
     }

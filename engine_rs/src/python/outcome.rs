@@ -2,7 +2,7 @@
 
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 
 use crate::address::PrimeEnd;
 use crate::airr_record::{
@@ -22,12 +22,86 @@ use super::trace::PyTrace;
 #[pyclass(name = "Outcome", module = "GenAIRR._engine", frozen)]
 pub struct PyOutcome {
     pub(crate) inner: Outcome,
+    pub(crate) duplex_execution: Option<std::sync::Arc<DuplexExecutionBinding>>,
+    pub(crate) family_execution: Option<FamilyExecutionContext>,
+}
+
+/// Trusted Python execution context; computed once per compiled duplex plan.
+/// This is separate from editable trace JSON and deliberately absent on
+/// external-state continuations or synthesized/merged outcomes.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DuplexExecutionBinding {
+    pub plan_signature: String,
+    pub reference_hash: String,
+    pub active_contracts: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FamilyExecutionContext {
+    pub binding: std::sync::Arc<super::compiled::FamilyPlanBinding>,
+    pub strict: bool,
+    pub seed: u64,
 }
 
 impl PyOutcome {
     pub(crate) fn new(inner: Outcome) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            duplex_execution: None,
+            family_execution: None,
+        }
     }
+
+    pub(crate) fn with_family_execution(mut self, context: Option<FamilyExecutionContext>) -> Self {
+        self.family_execution = context;
+        self
+    }
+
+    pub(crate) fn with_duplex_execution(
+        mut self,
+        binding: Option<std::sync::Arc<DuplexExecutionBinding>>,
+    ) -> Self {
+        self.duplex_execution = binding;
+        self
+    }
+}
+
+pub(crate) fn has_duplex_provenance(outcome: &Outcome) -> bool {
+    outcome
+        .revisions
+        .iter()
+        .any(|simulation| simulation.duplex_provenance.is_some())
+}
+
+fn duplex_record(
+    outcome: &Outcome,
+    refdata: &crate::refdata::RefDataConfig,
+    sequence_id: &str,
+) -> PyResult<serde_json::Value> {
+    let mut envelope = crate::duplex_repair::observation::project_duplex_simulation(
+        outcome.final_simulation(),
+        refdata,
+    )
+    .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    let paths = envelope["paths"].take();
+    let mut record = envelope["record"].take();
+    record["sequence_id"] = serde_json::json!(sequence_id);
+    // A normal Result exports records without the outer projection envelope.
+    // Preserve the current oriented alignment paths with their declared native
+    // coordinate convention so inverted D CIGAR offsets remain recoverable.
+    record["duplex_repair"]["current_paths"] = paths;
+    Ok(record)
+}
+
+/// Preserve ancestor mutation and recombination provenance when a clonal
+/// descendant was produced with run_from(parent.final_simulation()).
+#[pyfunction]
+pub(crate) fn merge_outcomes(parent: &PyOutcome, continuation: &PyOutcome) -> PyResult<PyOutcome> {
+    parent
+        .inner
+        .with_continuation(&continuation.inner)
+        .map(PyOutcome::new)
+        .map_err(pyo3::exceptions::PyValueError::new_err)
 }
 
 #[pymethods]
@@ -112,13 +186,23 @@ impl PyOutcome {
     /// time.
     ///
     /// `sequence_id` defaults to an empty string when omitted.
+    /// Duplex-backed outcomes retain unknown values as `None` and include
+    /// complete founder/observation provenance under `duplex_repair`.
     #[pyo3(signature = (refdata, *, sequence_id = ""))]
-    fn airr_record<'py>(
+    pub(crate) fn airr_record<'py>(
         &self,
         py: Python<'py>,
         refdata: &PyRefDataConfig,
         sequence_id: &str,
     ) -> PyResult<Bound<'py, PyDict>> {
+        if has_duplex_provenance(&self.inner) {
+            let record = duplex_record(&self.inner, refdata.inner(), sequence_id)?;
+            let dict = PyDict::new_bound(py);
+            for (key, value) in record.as_object().expect("duplex record is an object") {
+                dict.set_item(key, json_value_to_py(py, value)?)?;
+            }
+            return Ok(dict);
+        }
         let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
         airr_record_to_pydict(py, &rec)
     }
@@ -136,19 +220,27 @@ impl PyOutcome {
     ///
     /// See `docs/airr_record_validator.md` for the check catalogue.
     #[pyo3(signature = (refdata, *, sequence_id = ""))]
-    fn validate_record<'py>(
+    pub(crate) fn validate_record<'py>(
         &self,
         py: Python<'py>,
         refdata: &PyRefDataConfig,
         sequence_id: &str,
     ) -> PyResult<Vec<Bound<'py, PyDict>>> {
         use crate::airr_record::validate_airr_record;
-        let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
-        let issues = validate_airr_record(&rec, &self.inner, refdata.inner());
-        issues
+        if has_duplex_provenance(&self.inner) {
+            let record = duplex_record(&self.inner, refdata.inner(), sequence_id)?;
+            return crate::airr_record::validate_duplex_productivity(
+                &record,
+                self.inner.final_simulation(),
+                refdata.inner(),
+            )
             .into_iter()
             .map(|i| issue_to_pydict(py, i))
-            .collect()
+            .collect();
+        }
+        let rec = build_airr_record(&self.inner, refdata.inner(), sequence_id);
+        let issues = validate_airr_record(&rec, &self.inner, refdata.inner());
+        issues.into_iter().map(|i| issue_to_pydict(py, i)).collect()
     }
 
     /// **Internal live-call cache correctness check.**
@@ -225,8 +317,14 @@ impl PyOutcome {
 /// `Option<i64>` becomes `int | None`, `Option<f64>` becomes `float
 /// | None`, `Option<bool>` becomes `bool | None`. Strings and the
 /// few `bool`/`i64`/`f64` non-optional fields go through directly.
-pub(crate) fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> PyResult<Bound<'py, PyDict>> {
+pub(crate) fn airr_record_to_pydict<'py>(
+    py: Python<'py>,
+    rec: &AirrRecord,
+) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new_bound(py);
+    if let Some(metadata) = &rec.coding_end_processing {
+        dict.set_item("coding_end_processing", json_value_to_py(py, metadata)?)?;
+    }
 
     // AIRR metadata
     dict.set_item("sequence_id", &rec.sequence_id)?;
@@ -241,6 +339,7 @@ pub(crate) fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> P
 
     // V
     dict.set_item("v_call", &rec.v_call)?;
+    dict.set_item("recalled_v_call", &rec.recalled_v_call)?;
     dict.set_item("v_cigar", &rec.v_cigar)?;
     set_opt_f64(&dict, "v_score", rec.v_score)?;
     set_opt_f64(&dict, "v_identity", rec.v_identity)?;
@@ -256,6 +355,7 @@ pub(crate) fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> P
 
     // D
     dict.set_item("d_call", &rec.d_call)?;
+    dict.set_item("recalled_d_call", &rec.recalled_d_call)?;
     dict.set_item("d_cigar", &rec.d_cigar)?;
     set_opt_f64(&dict, "d_score", rec.d_score)?;
     set_opt_f64(&dict, "d_identity", rec.d_identity)?;
@@ -271,6 +371,7 @@ pub(crate) fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> P
 
     // J
     dict.set_item("j_call", &rec.j_call)?;
+    dict.set_item("recalled_j_call", &rec.recalled_j_call)?;
     dict.set_item("j_cigar", &rec.j_cigar)?;
     set_opt_f64(&dict, "j_score", rec.j_score)?;
     set_opt_f64(&dict, "j_identity", rec.j_identity)?;
@@ -321,6 +422,9 @@ pub(crate) fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> P
     set_opt_bool(&dict, "productive", rec.productive)?;
     set_opt_bool(&dict, "vj_in_frame", rec.vj_in_frame)?;
     set_opt_bool(&dict, "stop_codon", rec.stop_codon)?;
+    dict.set_item("productivity_policy", &rec.productivity_policy)?;
+    dict.set_item("productivity_scope", &rec.productivity_scope)?;
+    dict.set_item("productivity_reasons", &rec.productivity_reasons)?;
 
     // SHM + corruption
     dict.set_item("n_mutations", rec.n_mutations)?;
@@ -355,10 +459,7 @@ pub(crate) fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> P
     dict.set_item("n_fwr2_mutations", rec.n_fwr2_mutations)?;
     dict.set_item("n_cdr2_mutations", rec.n_cdr2_mutations)?;
     dict.set_item("n_fwr3_mutations", rec.n_fwr3_mutations)?;
-    dict.set_item(
-        "n_v_unannotated_mutations",
-        rec.n_v_unannotated_mutations,
-    )?;
+    dict.set_item("n_v_unannotated_mutations", rec.n_v_unannotated_mutations)?;
     // Observation-stage end-loss / primer-trim amounts (audit
     // §6.1 fix). Distinct from recombination-stage v_trim_*/
     // j_trim_*; defaults to 0 when no end-loss pass ran.
@@ -372,10 +473,7 @@ pub(crate) fn airr_record_to_pydict<'py>(py: Python<'py>, rec: &AirrRecord) -> P
     // roadmap). See `AirrRecord.receptor_revision_applied` /
     // `original_v_call` for the rationale (trace-sourced, empty
     // sentinel on no-revision).
-    dict.set_item(
-        "receptor_revision_applied",
-        rec.receptor_revision_applied,
-    )?;
+    dict.set_item("receptor_revision_applied", rec.receptor_revision_applied)?;
     dict.set_item("original_v_call", rec.original_v_call.clone())?;
 
     // Paired-end / read layout (Slice A of the paired-end roadmap).
@@ -401,6 +499,40 @@ fn set_opt_i64(dict: &Bound<'_, PyDict>, key: &str, val: Option<i64>) -> PyResul
         Some(v) => dict.set_item(key, v),
         None => dict.set_item(key, dict.py().None()),
     }
+}
+
+/// Convert the native structured extension without a Python serializer or
+/// optional package dependency.
+fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<PyObject> {
+    use serde_json::Value;
+    Ok(match value {
+        Value::Null => py.None(),
+        Value::Bool(value) => value.into_py(py),
+        Value::String(value) => value.into_py(py),
+        Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                value.into_py(py)
+            } else if let Some(value) = value.as_u64() {
+                value.into_py(py)
+            } else {
+                value.as_f64().expect("JSON number").into_py(py)
+            }
+        }
+        Value::Array(values) => {
+            let list = PyList::empty_bound(py);
+            for value in values {
+                list.append(json_value_to_py(py, value)?)?;
+            }
+            list.into_py(py)
+        }
+        Value::Object(values) => {
+            let dict = PyDict::new_bound(py);
+            for (key, value) in values {
+                dict.set_item(key, json_value_to_py(py, value)?)?;
+            }
+            dict.into_py(py)
+        }
+    })
 }
 
 #[inline]
@@ -461,6 +593,7 @@ fn productive_reason_str(r: &ProductiveDecidedBy) -> &'static str {
     match r {
         ProductiveDecidedBy::OutOfFrame => "out_of_frame",
         ProductiveDecidedBy::JunctionStopCodon => "junction_stop_codon",
+        ProductiveDecidedBy::CodingStopCodon => "coding_stop_codon",
         ProductiveDecidedBy::VAnchorAaChanged => "v_anchor_aa_changed",
         ProductiveDecidedBy::JAnchorAaChanged => "j_anchor_aa_changed",
         ProductiveDecidedBy::InFrameAndAnchorsPreserved => "in_frame_and_anchors_preserved",
@@ -481,6 +614,21 @@ fn issue_to_pydict<'py>(
     let d = PyDict::new_bound(py);
     let details = PyDict::new_bound(py);
     match issue {
+        RecordValidationIssue::ProductivityAssessmentMismatch {
+            field,
+            reported,
+            expected,
+        } => {
+            d.set_item("kind", "ProductivityAssessmentMismatch")?;
+            d.set_item("field", field)?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", expected)?;
+        }
+        RecordValidationIssue::CodingEndProcessingMismatch { field, reason } => {
+            d.set_item("kind", "CodingEndProcessingMismatch")?;
+            details.set_item("field", field)?;
+            details.set_item("reason", reason)?;
+        }
         // ── C1: Structural ───────────────────────────────────────
         RecordValidationIssue::SequenceLengthMismatch {
             reported,
@@ -498,13 +646,21 @@ fn issue_to_pydict<'py>(
             d.set_item("reported", reported_prefix)?;
             d.set_item("expected", actual_prefix)?;
         }
-        RecordValidationIssue::SegmentCoordinatesOutOfOrder { segment, start, end } => {
+        RecordValidationIssue::SegmentCoordinatesOutOfOrder {
+            segment,
+            start,
+            end,
+        } => {
             d.set_item("kind", "SegmentCoordinatesOutOfOrder")?;
             d.set_item("segment", segment_str(segment))?;
             details.set_item("start", start)?;
             details.set_item("end", end)?;
         }
-        RecordValidationIssue::GermlineCoordinatesOutOfOrder { segment, start, end } => {
+        RecordValidationIssue::GermlineCoordinatesOutOfOrder {
+            segment,
+            start,
+            end,
+        } => {
             d.set_item("kind", "GermlineCoordinatesOutOfOrder")?;
             d.set_item("segment", segment_str(segment))?;
             details.set_item("start", start)?;
@@ -535,6 +691,18 @@ fn issue_to_pydict<'py>(
             d.set_item("reported", reported)?;
             d.set_item("expected", sim_count)?;
             details.set_item("source", "sim.mutation_count")?;
+        }
+        RecordValidationIssue::MutationRateMismatch {
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "MutationRateMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", recomputed)?;
+            details.set_item(
+                "source",
+                "initial SHM burden + realized events / mutation-stage input length",
+            )?;
         }
         RecordValidationIssue::NPcrErrorsMismatch {
             reported,
@@ -725,10 +893,7 @@ fn issue_to_pydict<'py>(
             d.set_item("reported", reported)?;
             d.set_item("expected", event_count)?;
             details.set_item("end", p_end_str(end))?;
-            details.set_item(
-                "source",
-                "event-ledger:PRegionAdded",
-            )?;
+            details.set_item("source", "ir:assignments.p_lengths (event-ledger fallback)")?;
         }
         RecordValidationIssue::DInvertedMismatch { reported, expected } => {
             d.set_item("kind", "DInvertedMismatch")?;
@@ -740,19 +905,13 @@ fn issue_to_pydict<'py>(
             d.set_item("kind", "ReceptorRevisionAppliedMismatch")?;
             d.set_item("reported", reported)?;
             d.set_item("expected", expected)?;
-            details.set_item(
-                "source",
-                "ir:assignments.v.receptor_revision_original_id",
-            )?;
+            details.set_item("source", "ir:assignments.v.receptor_revision_original_id")?;
         }
         RecordValidationIssue::OriginalVCallMismatch { reported, expected } => {
             d.set_item("kind", "OriginalVCallMismatch")?;
             d.set_item("reported", reported.clone())?;
             d.set_item("expected", expected.clone())?;
-            details.set_item(
-                "source",
-                "ir:assignments.v.receptor_revision_original_id",
-            )?;
+            details.set_item("source", "ir:assignments.v.receptor_revision_original_id")?;
         }
 
         // ── C3: Junction truth ──────────────────────────────────
@@ -832,6 +991,17 @@ fn issue_to_pydict<'py>(
         }
 
         // ── C5: Structural invariants ───────────────────────────
+        RecordValidationIssue::RecalledAlleleCallMismatch {
+            segment,
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "RecalledAlleleCallMismatch")?;
+            d.set_item("segment", segment_str(segment))?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", recomputed)?;
+        }
+
         RecordValidationIssue::MultipleRegionsForSegment { segment, count } => {
             d.set_item("kind", "MultipleRegionsForSegment")?;
             d.set_item("segment", segment_str(segment))?;
@@ -865,10 +1035,7 @@ fn issue_to_pydict<'py>(
             d.set_item("kind", "ReadWindowOutOfBounds")?;
             d.set_item("side", side.as_str())?;
             d.set_item("reported", format!("[{start}, {end})"))?;
-            d.set_item(
-                "expected",
-                format!("[0, {sequence_length}]"),
-            )?;
+            d.set_item("expected", format!("[0, {sequence_length}]"))?;
             details.set_item("source", "projection:read_window")?;
             details.set_item("start", start)?;
             details.set_item("end", end)?;

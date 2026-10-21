@@ -79,8 +79,8 @@ impl AssembleSegmentPass {
         let slice_start = trim_5;
         let slice_end = allele_len - trim_3;
         let slice_len = slice_end - slice_start;
-        let cumulative_len: u32 = sim.sequence.regions.iter().map(|r| r.len()).sum();
-        let frame_phase = (cumulative_len % 3) as u8;
+        // Include P additions, which occupy the pool without a structural region.
+        let frame_phase = (sim.pool.len() % 3) as u8;
 
         let seg = self.segment;
         let slice = &allele.seq[slice_start as usize..(slice_start + slice_len) as usize];
@@ -138,8 +138,7 @@ impl AssembleSegmentPass {
         // §12). Treating non-D ReverseComplement as Forward keeps the
         // behavior intentionally restricted — a defence-in-depth
         // guard against accidental broadening before a design pass.
-        let invert =
-            matches!(seg, Segment::D) && inst.orientation.is_reverse();
+        let invert = matches!(seg, Segment::D) && inst.orientation.is_reverse();
         if invert {
             // Emit retained slice in reverse, complementing each byte.
             // i-th emitted base sources from allele position

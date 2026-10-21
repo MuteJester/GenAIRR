@@ -29,7 +29,7 @@ def _vj_basic() -> "ge.RefDataConfig":
     J_anchor_offset=0 → junction = V[6:9] + NP1 + J[0:3], length
     = NP1+6. In-frame requires NP1 ≡ 0 mod 3."""
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
     return cfg
 
@@ -39,18 +39,16 @@ def _vj_short_j() -> "ge.RefDataConfig":
     with no post-anchor zone — used to construct the indel
     no-admissible-tuple fixture."""
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTT", anchor=0)
     return cfg
 
 
 def _vj_stop_completing_v() -> "ge.RefDataConfig":
-    """V ends with `GTA` so the V anchor codon's last two bases
-    are `TA` — used to exercise the NP-base stop-codon mask
-    (positions immediately following see a `TA` prefix that
-    could complete TAA/TAG)."""
+    """Canonical Cys is followed by an incomplete TA codon at the V end.
+    One NP base completes that codon; A/G would create a stop."""
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGTA", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGTTA", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
     return cfg
 
@@ -80,12 +78,12 @@ def test_all_invalid_np_lengths_fails_at_compile_time() -> None:
     msg = str(excinfo.value)
     assert "productive_junction_frame" in msg
     assert "precondition failed" in msg
-    assert "NP1 length support has no in-frame mass" in msg
+    assert "no productive completion" in msg
 
 
 def test_all_invalid_v_trim_3_fails_at_compile_time() -> None:
-    """Audit F2: V_anchor_to_end=3 on the baseline fixture →
-    `v_trim_3` must be < 3 to preserve the anchor codon. A
+    """Audit F2: the terminal Cys occupies the last three V bases.
+    Any positive V3 trim removes part of that codon. A
     distribution of {4, 5} eliminates every valid anchor."""
     exp = (
         ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
@@ -97,7 +95,7 @@ def test_all_invalid_v_trim_3_fails_at_compile_time() -> None:
         exp.run_records(n=1, seed=0)
     msg = str(excinfo.value)
     assert "productive_junction_frame" in msg
-    assert "V trim support removes every valid anchor" in msg
+    assert "no productive completion" in msg
 
 
 def test_all_invalid_j_trim_5_fails_at_compile_time() -> None:
@@ -114,7 +112,7 @@ def test_all_invalid_j_trim_5_fails_at_compile_time() -> None:
         exp.run_records(n=1, seed=0)
     msg = str(excinfo.value)
     assert "productive_junction_frame" in msg
-    assert "J trim support removes every valid anchor" in msg
+    assert "no productive completion" in msg
 
 
 def test_compile_time_failure_raises_same_value_error_in_strict_mode() -> None:
@@ -161,10 +159,8 @@ def test_mixed_np_length_support_narrows_at_sample_time() -> None:
 
 
 def test_mixed_v_trim_support_narrows_at_sample_time() -> None:
-    """Audit F5: V_anchor_to_end=3 → v_trim_3 ≤ 2 preserves the
-    anchor. A distribution mixing valid {0, 1, 2} with invalid
-    {3, 5} should produce only the valid values across many
-    seeds."""
+    """Audit F5: the complete terminal Cys codon must survive.
+    Only zero V3 trimming retains all three landmark bases."""
     exp = (
         ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
@@ -175,8 +171,7 @@ def test_mixed_v_trim_support_narrows_at_sample_time() -> None:
     for seed in range(30):
         rec = exp.run_records(n=1, seed=seed).records[0]
         observed.add(rec["v_trim_3"])
-    # 3 and 5 would violate the anchor; only 0/1/2 admissible.
-    assert observed.issubset({0, 1, 2}), (
+    assert observed == {0}, (
         f"anchor-violating trim values leaked through; observed={observed}"
     )
 
@@ -187,40 +182,26 @@ def test_mixed_v_trim_support_narrows_at_sample_time() -> None:
 
 
 def test_np_base_mask_excludes_stop_completing_bases() -> None:
-    """Audit F6: when V's anchor codon ends in `TA`, the first
-    NP1 base completes a codon with that prefix:
-    - `TA` + A → TAA (stop)
-    - `TA` + G → TAG (stop)
-    - `TA` + C → TAC (Tyr) ✓
-    - `TA` + T → TAT (Tyr) ✓
+    """A partial TA codon after canonical Cys must complete as TAC/TAT.
 
-    The NP-base admit mask should narrow to {C, T} at this
-    position. Across many seeds the assembled junction never
-    contains TAA / TAG / TGA — pinned by checking the codons
-    directly.
-
-    Note: this is *not* an empty-support failure (2 of 4 bases
-    are admissible), so the sampler always completes
-    successfully. Strict mode also never raises here."""
-    # V ends with GTA → V_anchor codon = GTA (Val). NP1 follows
-    # immediately after the anchor. With NP1 length 3 (in-frame),
-    # the junction codons are: GTA | NP[0:3] | TTT.
-    # For productivity, NP[0:3] must not be a stop.
+    This exercises a real codon spanning the V/NP boundary. The conserved
+    Cys remains intact and the one-base NP makes the joint in-frame.
+    """
     exp = (
-        ga.Experiment.on(_vj_stop_completing_v()).allow_curatable_refdata()
-        .recombine(np1_lengths=[(3, 1.0)])
+        ga.Experiment.on(_vj_stop_completing_v())
+        .recombine(np1_lengths=[(1, 1.0)])
         .trim(enabled=False)
         .productive_only()
     )
-    stops = {"TAA", "TAG", "TGA"}
+    observed = set()
     for seed in range(50):
         rec = exp.run_records(n=1, seed=seed).records[0]
         np1 = rec["np1"]
-        assert np1 not in stops, (
-            f"seed {seed}: NP1 codon {np1!r} is a stop codon — "
-            f"the no-stop-codon mask failed to exclude it"
-        )
+        observed.add(np1)
+        assert np1 in {"C", "T"}, f"seed {seed}: stop-completing NP base {np1!r}"
+        assert rec["junction"].startswith("TGTTA" + np1)
         assert rec["productive"] is True
+    assert observed == {"C", "T"}
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -261,7 +242,9 @@ def test_indel_no_admissible_tuple_raises_strict_emits_no_op_permissive() -> Non
         exp.run_records(n=1, seed=0, strict=True)
     args = excinfo.value.args
     assert args[0] == "corrupt.indel"
-    assert args[1] == "corrupt.indel.site[0]"
+    # The finite continuation solver detects empty support for the entire
+    # requested count before sampling a concrete edit site.
+    assert args[1] == "corrupt.indel.count"
     assert args[2] == "empty_admissible_support"
 
 
@@ -271,13 +254,11 @@ def test_indel_no_admissible_tuple_raises_strict_emits_no_op_permissive() -> Non
 
 
 def test_shm_high_rate_under_productive_never_fails_strict() -> None:
-    """Audit F8: SHM at rate=0.99 under `productive_only` does
-    not raise `StrictSamplingError` because per-base mutation
-    support is never empty — only 3 stop codons exist (TAA/TAG/
-    TGA), so at most 3 of the 4 substitution choices can be
-    rejected at any given site. This is the structural reason
-    the SHM `EmptySupport::Skip` codepath is unreachable through
-    standard contracts."""
+    """High-rate SHM preserves productivity across synonymous constraints.
+
+    Positions with no valid substitution may remain unchanged; this does not
+    claim that every requested mutation can alter an invariant landmark base.
+    """
     exp = (
         ga.Experiment.on(_vj_basic()).allow_curatable_refdata()
         .recombine(np1_lengths=[(3, 1.0)])
@@ -429,17 +410,13 @@ def test_strict_docstring_documents_fresh_vs_replay_distinction() -> None:
     assert "replay" in run_doc.lower(), (
         "simulator.run docstring should cross-reference replay semantics"
     )
-    # Replay docstring acknowledges that strict has limited effect.
+    # Replay validates proposals without replacing them. P-aware productive
+    # replay also checks natural support/completion under either policy.
     assert "strict" in replay_doc.lower()
-    assert (
-        "verbatim" in replay_doc.lower()
-        or "does not re-evaluate" in replay_doc.lower()
-        or "does not re-run" in replay_doc.lower()
-    ), (
-        "replay_from_trace_file docstring should state that strict "
-        "does not re-evaluate contract admissibility on the recorded "
-        "value"
-    )
+    assert "recorded choices are proposals" in replay_doc.lower()
+    assert "positive natural support" in replay_doc.lower()
+    assert "regardless of" in replay_doc.lower()
+    assert "without resampling" in replay_doc.lower()
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -486,18 +463,16 @@ def test_drift_pinned_compile_and_runtime_failures_use_different_exception_types
 
 
 def test_drift_pinned_np_base_sentinel_path_is_structurally_unreachable() -> None:
-    """Audit §6.3: `EmptySupport::Sentinel(b'N')` for NP-base
-    sampling exists for defensive completeness but cannot be
-    triggered through the standard productive contract bundle
-    because only 3 stop codons exist (TAA, TAG, TGA) — at most 3
-    of 4 NP base choices can be banned at any single position.
+    """Audit §6.3: finite productive completion prevents an NP dead end.
+    A candidate base must retain a complete productive continuation;
+    the sampler cannot repair an impossible prefix with a sentinel N.
 
     Pin this by asserting that across all our failure-mode
     fixtures, no `np1.base[i]` slot is ever sentinel-`N` in the
     trace."""
     exp = (
         ga.Experiment.on(_vj_stop_completing_v()).allow_curatable_refdata()
-        .recombine(np1_lengths=[(3, 1.0)])
+        .recombine(np1_lengths=[(1, 1.0)])
         .trim(enabled=False)
         .productive_only()
     )

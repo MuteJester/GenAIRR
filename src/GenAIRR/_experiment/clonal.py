@@ -185,6 +185,10 @@ class _ClonalMixin:
         emits identical copies, so it collapses to a single record whose
         ``duplicate_count`` equals the drawn size.
 
+        Duplex repair is sampled once per founder. Duplex observations
+        collapse only when their generated truth also agrees; equal DNA
+        alone cannot erase different repair/observation histories.
+
         Constraints:
         - At most one fork per pipeline — calling this when an
           :meth:`expand_clones`, :meth:`clonal_lineage`, or
@@ -284,14 +288,16 @@ class _ClonalMixin:
         ``simulate_family_outcomes`` kernel. The returned
         :class:`~GenAIRR.result.SimulationResultWithLineages` carries:
 
-        - ``.records`` — one AIRR dict per *observed* (genotype-collapsed) cell,
+        - ``.records`` — one AIRR dict per observed representative,
           tagged with ``clone_id``, ``lineage_node_id``, ``lineage_parent_id``,
           ``lineage_generation``, ``lineage_abundance``, and
-          ``lineage_affinity``. Because identical genotypes are collapsed before
-          sampling, the number of records per clone is ≤ ``n_sample``; the
+          ``lineage_affinity``. Legacy mode collapses identical sampled
+          genotypes; duplex mode aggregates repeated draws of the same cell
+          ID and retains distinct equal-DNA cells. The number of records
+          per clone is ≤ ``n_sample``; the
           ``lineage_abundance`` field accounts for how many sampled cells were
-          represented by each observed record. Mutation counts (``n_mutations``,
-          ``n_v_mutations``, …) are pool-derived and self-consistent.
+          represented by each observed record. Duplex mutation counts retain
+          actual cumulative division events, including back mutations.
         - ``.lineage_trees`` — one :class:`~GenAIRR._engine.LineageTree`
           per clone for ground-truth export (Newick, FASTA, node table TSV).
 
@@ -308,8 +314,9 @@ class _ClonalMixin:
             total number of cells per clone.
         n_sample:
             Number of cells to sample as observed leaves. Records returned
-            per clone are ≤ ``n_sample`` because identical genotypes are
-            collapsed (duplicates are counted in ``lineage_abundance``).
+            per clone are ≤ ``n_sample``. Legacy mode collapses identical
+            sampled genotypes; duplex mode counts repeated draws of the same
+            cell in ``lineage_abundance`` while retaining distinct cells.
         rate:
             Per-base SHM rate for within-lineage mutations.
         lambda_base:

@@ -16,7 +16,7 @@ fn airr_call_projection_falls_back_to_origin_assignment_without_live_call() {
 }
 
 #[test]
-fn airr_call_projection_prefers_live_call_allele_set() {
+fn standard_airr_call_is_generating_allele_and_recall_preserves_live_ties() {
     let (cfg, sim, v0, v1) = call_projection_fixture();
     let hypothesis = PlacementHypothesis::new(
         Segment::V,
@@ -34,7 +34,8 @@ fn airr_call_projection_prefers_live_call_allele_set() {
 
     let rec = build_airr_record(&outcome, &cfg, "live");
 
-    assert_eq!(rec.v_call, "IGHV1-1*01,IGHV1-1*02");
+    assert_eq!(rec.v_call, "IGHV1-1*01");
+    assert_eq!(rec.recalled_v_call, "IGHV1-1*01,IGHV1-1*02");
     assert_eq!(rec.locus, "IGH");
 }
 
@@ -53,16 +54,9 @@ fn airr_call_projection_falls_back_to_truth_when_live_call_is_unsupported() {
 // ──────────────────────────────────────────────────────────────────
 // End-loss interaction with the fallback germline-coord path.
 //
-// Investigation of audit §6.3 surfaced that the trim-only fallback
-// already matches the walker's AIRR semantic: the walker encodes
-// a 5'-end-loss as `D` (deletion) ops at the start of V's CIGAR,
-// keeping `v_germline_start = v_trim_5` regardless of how many
-// pool bytes the end-loss physically removed. The 3' J side
-// mirrors. So the fallback's pre-existing math (also keying off
-// `v_trim_5` / `j_trim_3`) was already coherent.
-//
-// The tests below pin that parity invariant — for the same trace,
-// walker-path and fallback-path germline coords match.
+// Explicit read loss removes reference coverage. Both normal rendering
+// and partial-state fallback use the persisted reference bounds; trace
+// query-base counters alone cannot recover those bounds after indels.
 // ──────────────────────────────────────────────────────────────────
 
 use crate::address::ChoiceAddress;
@@ -97,11 +91,8 @@ fn fallback_forcing_v_fixture() -> (RefDataConfig, Simulation) {
     // non-empty but no V region exists. Walker iterates regions —
     // with no V region, ref_ranges[V] stays None.
     for _ in 0..3 {
-        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::synthetic(
-            b'A',
-            Segment::Np1,
-            flag::N_NUC,
-        ));
+        let (next, _) =
+            sim.with_nucleotide_pushed(Nucleotide::synthetic(b'A', Segment::Np1, flag::N_NUC));
         sim = next;
     }
     sim = sim
@@ -132,11 +123,8 @@ fn fallback_forcing_j_fixture() -> (RefDataConfig, Simulation) {
 
     let mut sim = Simulation::new();
     for _ in 0..3 {
-        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::synthetic(
-            b'A',
-            Segment::Np1,
-            flag::N_NUC,
-        ));
+        let (next, _) =
+            sim.with_nucleotide_pushed(Nucleotide::synthetic(b'A', Segment::Np1, flag::N_NUC));
         sim = next;
     }
     sim = sim
@@ -170,16 +158,22 @@ fn make_trace_with_end_loss_3(amount: i64) -> Trace {
     trace
 }
 
+fn with_observed_bounds(
+    sim: Simulation,
+    segment: Segment,
+    start: Option<u32>,
+    end: Option<u32>,
+) -> Simulation {
+    let mut instance = *sim.assignments.get(segment).unwrap();
+    instance.observed_ref_start = start;
+    instance.observed_ref_end = end;
+    sim.with_allele_assigned(segment, instance)
+}
+
 #[test]
-fn fallback_v_germline_coords_unaffected_by_end_loss_match_walker() {
-    // The walker encodes 5'-end-loss as leading `D` ops in V's
-    // CIGAR and keeps `v_germline_start = v_trim_5`. The fallback
-    // — which fires when the walker can't compute ref_ranges (no
-    // V region in the sim, allele assigned for projection only) —
-    // matches that convention by keying off `v_trim_5` /
-    // `v_trim_3` and ignoring `end_loss_5_length` for coord math.
-    // The provenance is carried by `end_loss_5_length` itself.
+fn fallback_v_germline_coords_respect_observed_reference_start() {
     let (cfg, sim) = fallback_forcing_v_fixture();
+    let sim = with_observed_bounds(sim, Segment::V, Some(2), None);
     let outcome = Outcome {
         revisions: vec![sim],
         pass_names: Vec::new(),
@@ -194,22 +188,14 @@ fn fallback_v_germline_coords_unaffected_by_end_loss_match_walker() {
     assert_eq!(rec.v_trim_3, 0);
     // End-loss field surfaces from the trace (audit §6.1 fix).
     assert_eq!(rec.end_loss_5_length, 2);
-    // Germline coords pin the AIRR convention: 0..allele_len,
-    // unchanged by end-loss. The walker would emit '2D' at CIGAR
-    // start; the fallback would emit the same coords with no
-    // CIGAR ops (no walker columns), matching the trim-only
-    // semantic.
-    assert_eq!(rec.v_germline_start, Some(0));
+    assert_eq!(rec.v_germline_start, Some(2));
     assert_eq!(rec.v_germline_end, Some(9));
 }
 
 #[test]
-fn fallback_j_germline_coords_unaffected_by_end_loss_match_walker() {
-    // J-side mirror. 3'-end-loss does NOT shift `j_germline_end`
-    // in either the walker path (trailing 'D' ops) or the
-    // fallback (trim-only). End-loss provenance lives in
-    // `end_loss_3_length`.
+fn fallback_j_germline_coords_respect_observed_reference_end() {
     let (cfg, sim) = fallback_forcing_j_fixture();
+    let sim = with_observed_bounds(sim, Segment::J, None, Some(4));
     let outcome = Outcome {
         revisions: vec![sim],
         pass_names: Vec::new(),
@@ -223,18 +209,11 @@ fn fallback_j_germline_coords_unaffected_by_end_loss_match_walker() {
     assert_eq!(rec.j_trim_3, 0);
     assert_eq!(rec.end_loss_3_length, 2);
     assert_eq!(rec.j_germline_start, Some(0));
-    // Full allele coverage (6 bases) — end-loss doesn't shift the
-    // germline_end coord, only the AIRR projection's CIGAR.
-    assert_eq!(rec.j_germline_end, Some(6));
+    assert_eq!(rec.j_germline_end, Some(4));
 }
 
 #[test]
-fn walker_path_keeps_v_germline_start_at_zero_under_5prime_end_loss() {
-    // Sanity check on the WALKER path: a real post-end-loss pool
-    // (germline_pos[2..9] after deleting V[0..2]) still produces
-    // `v_germline_start = 0` because the walker fills the
-    // deletion gap with 'D' ops. This is the AIRR convention the
-    // fallback above mirrors.
+fn walker_path_excludes_unobserved_v_prefix_after_5prime_end_loss() {
     let mut cfg = RefDataConfig::empty(ChainType::Vj);
     let v0 = cfg.v_pool.push(Allele {
         name: "v_walker*01".into(),
@@ -247,15 +226,19 @@ fn walker_path_keeps_v_germline_start_at_zero_under_5prime_end_loss() {
     });
     let mut sim = Simulation::new();
     for (i, &b) in b"AAACCCGGG".iter().enumerate() {
-        let (next, _) =
-            sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
+        let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(b, i as u16, Segment::V));
         sim = next;
     }
     sim = sim
-        .with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9)))
+        .with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(9),
+        ))
         .with_allele_assigned(Segment::V, AlleleInstance::new(v0))
         .with_indel_deleted(0)
         .with_indel_deleted(0);
+    sim = with_observed_bounds(sim, Segment::V, Some(2), None);
 
     let outcome = Outcome {
         revisions: vec![sim],
@@ -268,26 +251,15 @@ fn walker_path_keeps_v_germline_start_at_zero_under_5prime_end_loss() {
 
     // End-loss provenance still surfaces.
     assert_eq!(rec.end_loss_5_length, 2);
-    // But germline coords describe the full allele coverage, not
-    // the post-end-loss read coverage. The walker emits '2D' at
-    // CIGAR start.
-    assert_eq!(
-        rec.v_germline_start,
-        Some(0),
-        "walker should keep v_germline_start at 0 (end-loss encoded \
-         as leading 'D' ops, not a coord shift)"
-    );
+    assert_eq!(rec.v_germline_start, Some(2));
     assert_eq!(rec.v_germline_end, Some(9));
+    assert_eq!(rec.v_cigar, "7M");
+    assert_eq!(rec.v_identity, Some(1.0));
 }
 
 #[test]
 fn fallback_and_walker_paths_agree_on_germline_coords_under_end_loss() {
-    // Parity invariant: same end-loss recorded in the trace,
-    // walker path and fallback path produce the same
-    // `v_germline_start/end`. This is the AIRR-consistency check
-    // — the audit's §6.3 concern was that they might diverge; in
-    // practice the trim-only fallback math already matches the
-    // walker's deletion-op encoding without modification.
+    // Both paths use the same persisted reference coverage.
     let mut cfg_walker = RefDataConfig::empty(ChainType::Vj);
     let v0 = cfg_walker.v_pool.push(Allele {
         name: "v_parity*01".into(),
@@ -305,10 +277,15 @@ fn fallback_and_walker_paths_agree_on_germline_coords_under_end_loss() {
         sim_walker = next;
     }
     sim_walker = sim_walker
-        .with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(9)))
+        .with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(9),
+        ))
         .with_allele_assigned(Segment::V, AlleleInstance::new(v0))
         .with_indel_deleted(0)
         .with_indel_deleted(0);
+    sim_walker = with_observed_bounds(sim_walker, Segment::V, Some(2), None);
     let walker_outcome = Outcome {
         revisions: vec![sim_walker],
         pass_names: Vec::new(),
@@ -317,6 +294,7 @@ fn fallback_and_walker_paths_agree_on_germline_coords_under_end_loss() {
     };
 
     let (cfg_fb, sim_fb) = fallback_forcing_v_fixture();
+    let sim_fb = with_observed_bounds(sim_fb, Segment::V, Some(2), None);
     let fallback_outcome = Outcome {
         revisions: vec![sim_fb],
         pass_names: Vec::new(),
@@ -487,17 +465,19 @@ fn validator_passes_clean_d_inverted_record() {
     use crate::airr_record::{validate_airr_record, RecordValidationIssue};
     use crate::assignment::SegmentOrientation;
 
-    for orientation in [SegmentOrientation::Forward, SegmentOrientation::ReverseComplement] {
+    for orientation in [
+        SegmentOrientation::Forward,
+        SegmentOrientation::ReverseComplement,
+    ] {
         let (cfg, sim, _) = vdj_with_d_assigned_fixture();
         let sim = sim.with_allele_orientation(Segment::D, orientation);
         let outcome = outcome_from_sim(sim);
         let rec = build_airr_record(&outcome, &cfg, "clean");
         let issues = validate_airr_record(&rec, &outcome, &cfg);
         assert!(
-            !issues.iter().any(|i| matches!(
-                i,
-                RecordValidationIssue::DInvertedMismatch { .. }
-            )),
+            !issues
+                .iter()
+                .any(|i| matches!(i, RecordValidationIssue::DInvertedMismatch { .. })),
             "validator must accept a clean record for orientation \
              {orientation:?}; got {issues:?}",
         );
@@ -532,9 +512,7 @@ fn receptor_revision_outcome_with_trace(
 ) -> (RefDataConfig, Outcome) {
     let (cfg, mut sim, _) = vdj_with_d_assigned_fixture();
     if matches!(applied, Some(true)) {
-        let original_id = crate::refdata::AlleleId::new(
-            sample_allele_v_original_id.unwrap_or(0),
-        );
+        let original_id = crate::refdata::AlleleId::new(sample_allele_v_original_id.unwrap_or(0));
         let new_v = sim
             .assignments
             .get(Segment::V)
@@ -730,9 +708,7 @@ fn validator_flags_each_paired_end_field_populated_without_layout() {
     // every tamper must surface the matching
     // `PairedEndFieldWithoutLayout` variant. Pins the
     // per-field arm of the C6 check.
-    use crate::airr_record::{
-        validate_airr_record, PairedEndField, RecordValidationIssue,
-    };
+    use crate::airr_record::{validate_airr_record, PairedEndField, RecordValidationIssue};
     let (cfg, sim, _) = vdj_with_d_assigned_fixture();
     let outcome = outcome_from_sim(sim);
 
@@ -746,26 +722,11 @@ fn validator_flags_each_paired_end_field_populated_without_layout() {
             PairedEndField::R2Sequence,
             Box::new(|r| r.r2_sequence = "ACGT".into()),
         ),
-        (
-            PairedEndField::R1Start,
-            Box::new(|r| r.r1_start = Some(0)),
-        ),
-        (
-            PairedEndField::R1End,
-            Box::new(|r| r.r1_end = Some(4)),
-        ),
-        (
-            PairedEndField::R2Start,
-            Box::new(|r| r.r2_start = Some(5)),
-        ),
-        (
-            PairedEndField::R2End,
-            Box::new(|r| r.r2_end = Some(9)),
-        ),
-        (
-            PairedEndField::InsertSize,
-            Box::new(|r| r.insert_size = 9),
-        ),
+        (PairedEndField::R1Start, Box::new(|r| r.r1_start = Some(0))),
+        (PairedEndField::R1End, Box::new(|r| r.r1_end = Some(4))),
+        (PairedEndField::R2Start, Box::new(|r| r.r2_start = Some(5))),
+        (PairedEndField::R2End, Box::new(|r| r.r2_end = Some(9))),
+        (PairedEndField::InsertSize, Box::new(|r| r.insert_size = 9)),
     ];
 
     for (field, tamper) in cases {
@@ -908,7 +869,10 @@ fn projection_r2_is_reverse_complemented_not_just_reversed() {
     let rec = synthetic_record_with_sequence("TTTTACCGGT");
     let p = project_paired_end_layout(&rec, 2, 4, 10).expect("valid inputs");
     assert_eq!(p.r2_sequence, "ACCG");
-    assert_ne!(p.r2_sequence, "TGGC", "R2 must be reverse-complement, not reverse-only");
+    assert_ne!(
+        p.r2_sequence, "TGGC",
+        "R2 must be reverse-complement, not reverse-only"
+    );
 }
 
 #[test]
@@ -940,12 +904,18 @@ fn projection_rejects_non_positive_r1_length() {
     let err = project_paired_end_layout(&rec, 0, 3, 8).unwrap_err();
     assert_eq!(
         err,
-        PairedEndProjectionError::NonPositiveLength { side: PairedEndRead::R1, length: 0 }
+        PairedEndProjectionError::NonPositiveLength {
+            side: PairedEndRead::R1,
+            length: 0
+        }
     );
     let err = project_paired_end_layout(&rec, -1, 3, 8).unwrap_err();
     assert!(matches!(
         err,
-        PairedEndProjectionError::NonPositiveLength { side: PairedEndRead::R1, length: -1 }
+        PairedEndProjectionError::NonPositiveLength {
+            side: PairedEndRead::R1,
+            length: -1
+        }
     ));
 }
 
@@ -957,7 +927,10 @@ fn projection_rejects_non_positive_r2_length() {
     let err = project_paired_end_layout(&rec, 3, 0, 8).unwrap_err();
     assert_eq!(
         err,
-        PairedEndProjectionError::NonPositiveLength { side: PairedEndRead::R2, length: 0 }
+        PairedEndProjectionError::NonPositiveLength {
+            side: PairedEndRead::R2,
+            length: 0
+        }
     );
 }
 
@@ -965,7 +938,7 @@ fn projection_rejects_non_positive_r2_length() {
 fn projection_rejects_insert_size_outside_sequence_bounds() {
     use crate::airr_record::sequence::{project_paired_end_layout, PairedEndProjectionError};
     let rec = synthetic_record_with_sequence("AAAACCGGTT"); // len 10
-    // Past sequence end.
+                                                            // Past sequence end.
     let err = project_paired_end_layout(&rec, 3, 3, 11).unwrap_err();
     assert_eq!(
         err,
@@ -1054,8 +1027,8 @@ fn validator_accepts_record_populated_via_projection_kernel() {
 
 #[test]
 fn validator_flags_read_window_out_of_bounds_for_r1() {
-    use crate::airr_record::{PairedEndRead, RecordValidationIssue};
     use crate::airr_record::sequence::project_paired_end_layout;
+    use crate::airr_record::{PairedEndRead, RecordValidationIssue};
     let mut rec = synthetic_record_with_sequence("AAAACCGGTT");
     let p = project_paired_end_layout(&rec, 3, 3, 8).unwrap();
     apply_projection(&mut rec, &p);
@@ -1065,7 +1038,10 @@ fn validator_flags_read_window_out_of_bounds_for_r1() {
     assert!(
         issues.iter().any(|i| matches!(
             i,
-            RecordValidationIssue::ReadWindowOutOfBounds { side: PairedEndRead::R1, .. }
+            RecordValidationIssue::ReadWindowOutOfBounds {
+                side: PairedEndRead::R1,
+                ..
+            }
         )),
         "expected ReadWindowOutOfBounds for R1; got {issues:?}",
     );
@@ -1076,17 +1052,22 @@ fn validator_flags_read_window_out_of_bounds_when_coord_missing() {
     // Missing coord (None) while read_layout = "paired_end" must
     // surface as out-of-bounds with the sentinel -1 in the
     // structured payload.
-    use crate::airr_record::{PairedEndRead, RecordValidationIssue};
     use crate::airr_record::sequence::project_paired_end_layout;
+    use crate::airr_record::{PairedEndRead, RecordValidationIssue};
     let mut rec = synthetic_record_with_sequence("AAAACCGGTT");
     let p = project_paired_end_layout(&rec, 3, 3, 8).unwrap();
     apply_projection(&mut rec, &p);
     rec.r2_start = None;
     let issues = validate_synthetic(&rec);
-    let oob = issues.iter().find(|i| matches!(
-        i,
-        RecordValidationIssue::ReadWindowOutOfBounds { side: PairedEndRead::R2, .. }
-    ));
+    let oob = issues.iter().find(|i| {
+        matches!(
+            i,
+            RecordValidationIssue::ReadWindowOutOfBounds {
+                side: PairedEndRead::R2,
+                ..
+            }
+        )
+    });
     let issue = oob.expect("expected ReadWindowOutOfBounds for R2 missing-coord");
     match issue {
         RecordValidationIssue::ReadWindowOutOfBounds { start, end, .. } => {
@@ -1099,8 +1080,8 @@ fn validator_flags_read_window_out_of_bounds_when_coord_missing() {
 
 #[test]
 fn validator_flags_read_sequence_mismatch_for_r1() {
-    use crate::airr_record::{PairedEndRead, RecordValidationIssue};
     use crate::airr_record::sequence::project_paired_end_layout;
+    use crate::airr_record::{PairedEndRead, RecordValidationIssue};
     let mut rec = synthetic_record_with_sequence("AAAACCGGTT");
     let p = project_paired_end_layout(&rec, 3, 3, 8).unwrap();
     apply_projection(&mut rec, &p);
@@ -1120,8 +1101,8 @@ fn validator_flags_read_sequence_mismatch_for_r1() {
 
 #[test]
 fn validator_flags_read_sequence_mismatch_for_r2() {
-    use crate::airr_record::{PairedEndRead, RecordValidationIssue};
     use crate::airr_record::sequence::project_paired_end_layout;
+    use crate::airr_record::{PairedEndRead, RecordValidationIssue};
     let mut rec = synthetic_record_with_sequence("AAAACCGGTT");
     let p = project_paired_end_layout(&rec, 3, 3, 8).unwrap();
     apply_projection(&mut rec, &p);
@@ -1135,7 +1116,8 @@ fn validator_flags_read_sequence_mismatch_for_r2() {
         issues.iter().any(|i| matches!(
             i,
             RecordValidationIssue::ReadSequenceMismatch {
-                side: PairedEndRead::R2, ..
+                side: PairedEndRead::R2,
+                ..
             }
         )),
         "expected ReadSequenceMismatch for R2 (reverse-only vs. revcomp); got {issues:?}",
@@ -1144,8 +1126,8 @@ fn validator_flags_read_sequence_mismatch_for_r2() {
 
 #[test]
 fn validator_flags_read_insert_size_mismatch() {
-    use crate::airr_record::RecordValidationIssue;
     use crate::airr_record::sequence::project_paired_end_layout;
+    use crate::airr_record::RecordValidationIssue;
     let mut rec = synthetic_record_with_sequence("AAAACCGGTT");
     let p = project_paired_end_layout(&rec, 3, 3, 8).unwrap();
     apply_projection(&mut rec, &p);
@@ -1155,7 +1137,10 @@ fn validator_flags_read_insert_size_mismatch() {
     assert!(
         issues.iter().any(|i| matches!(
             i,
-            RecordValidationIssue::ReadInsertSizeMismatch { reported: 7, expected: 8 }
+            RecordValidationIssue::ReadInsertSizeMismatch {
+                reported: 7,
+                expected: 8
+            }
         )),
         "expected ReadInsertSizeMismatch reported=7 expected=8; got {issues:?}",
     );
@@ -1282,9 +1267,21 @@ fn vdj_recombine_sim() -> (RefDataConfig, Simulation) {
         sim = next;
     }
     sim = sim
-        .with_region_added(Region::new(Segment::V, NucHandle::new(0), NucHandle::new(6)))
-        .with_region_added(Region::new(Segment::D, NucHandle::new(6), NucHandle::new(9)))
-        .with_region_added(Region::new(Segment::J, NucHandle::new(9), NucHandle::new(15)))
+        .with_region_added(Region::new(
+            Segment::V,
+            NucHandle::new(0),
+            NucHandle::new(6),
+        ))
+        .with_region_added(Region::new(
+            Segment::D,
+            NucHandle::new(6),
+            NucHandle::new(9),
+        ))
+        .with_region_added(Region::new(
+            Segment::J,
+            NucHandle::new(9),
+            NucHandle::new(15),
+        ))
         .with_allele_assigned(Segment::V, AlleleInstance::new(AlleleId::new(0)))
         .with_allele_assigned(Segment::D, AlleleInstance::new(AlleleId::new(0)))
         .with_allele_assigned(Segment::J, AlleleInstance::new(AlleleId::new(0)));
@@ -1445,7 +1442,8 @@ fn slice_c_builder_tags_layout_when_kernel_rejects_insert_past_sequence() {
         issues.iter().any(|i| matches!(
             i,
             RecordValidationIssue::ReadWindowOutOfBounds {
-                side: PairedEndRead::R1, ..
+                side: PairedEndRead::R1,
+                ..
             }
         )),
         "kernel-rejected record must surface ReadWindowOutOfBounds for R1; got {issues:?}",
@@ -1493,7 +1491,6 @@ fn slice_c_baseline_run_without_pass_keeps_airr_fields_at_defaults() {
         "baseline outcome surfaced paired-end issues: {issues:?}",
     );
 }
-
 
 // ──────────────────────────────────────────────────────────────────
 // V-subregion mutation counters — validator mismatch detection
@@ -1560,9 +1557,8 @@ fn v_subregion_counter_outcome_fixture_with_pos(
     // subregion intervals (FWR1 = [0, 3), CDR1 = [3, 6)).
     let mut sim = Simulation::new();
     for (i, b) in b"AAACCC".iter().enumerate() {
-        let (next, _) = sim.with_nucleotide_pushed(
-            crate::ir::Nucleotide::germline(*b, i as u16, Segment::V),
-        );
+        let (next, _) =
+            sim.with_nucleotide_pushed(crate::ir::Nucleotide::germline(*b, i as u16, Segment::V));
         sim = next;
     }
     let v_region = crate::ir::Region::new(
@@ -1726,9 +1722,8 @@ fn p_addition_outcome_fixture() -> (RefDataConfig, Outcome) {
 
     let mut sim = Simulation::new();
     for (i, b) in b"AAACCC".iter().enumerate() {
-        let (next, _) = sim.with_nucleotide_pushed(
-            crate::ir::Nucleotide::germline(*b, i as u16, Segment::V),
-        );
+        let (next, _) =
+            sim.with_nucleotide_pushed(crate::ir::Nucleotide::germline(*b, i as u16, Segment::V));
         sim = next;
     }
     let v_region = Region::new(

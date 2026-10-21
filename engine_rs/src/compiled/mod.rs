@@ -518,6 +518,18 @@ impl OwnedCompiledSimulator {
     /// Returns `PassError::Replay` on cursor-vs-plan disagreement —
     /// address mismatch, value-kind mismatch, exhausted trace, or
     /// trailing unused records.
+    /// Family-only exact replay from its explicitly bound initial state.
+    pub fn replay_family_from(
+        &self,
+        initial: Simulation,
+        records: &[crate::trace::ChoiceRecord],
+        policy: ExecutionPolicy,
+    ) -> Result<Outcome, PassError> {
+        let mut inputs = self.inputs_with_policy(policy);
+        inputs.replay_records = Some(records);
+        execute_transactional(inputs, initial, 1).map_err(|abort| abort.error)
+    }
+
     pub fn replay_from_trace_records(
         &self,
         records: &[crate::trace::ChoiceRecord],
@@ -562,6 +574,7 @@ impl OwnedCompiledSimulator {
 mod analyze;
 use analyze::analyze_plan;
 
+mod duplex_feasibility;
 mod feasibility_builder;
 
 fn sample_allele_address(segment: Segment) -> &'static str {

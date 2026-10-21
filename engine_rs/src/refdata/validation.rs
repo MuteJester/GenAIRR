@@ -96,7 +96,9 @@ impl ReferenceAlphabet {
     /// Returns whether `byte` is in the allowed set (case-insensitive).
     pub fn is_allowed(&self, byte: u8) -> bool {
         let upper = byte.to_ascii_uppercase();
-        self.allowed.iter().any(|&a| a.to_ascii_uppercase() == upper)
+        self.allowed
+            .iter()
+            .any(|&a| a.to_ascii_uppercase() == upper)
     }
 }
 
@@ -240,6 +242,12 @@ pub enum RefDataValidationMode {
 /// it precisely without re-parsing a free-form message.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefDataValidationIssue {
+    ReferenceEvidenceProblem {
+        segment: Segment,
+        allele_id: AlleleId,
+        reason: String,
+        severity: RefDataIssueSeverity,
+    },
     /// A pool that is required by the chain type is empty. VJ
     /// requires V and J; VDJ requires V, D, and J.
     EmptyRequiredPool { segment: Segment },
@@ -321,7 +329,8 @@ impl RefDataValidationIssue {
             | InvalidAlleleByte { .. }
             | AnchorOutOfBounds { .. }
             | LocusChainTypeMismatch { .. } => Fatal,
-            VAnchorNotCys { severity, .. }
+            ReferenceEvidenceProblem { severity, .. }
+            | VAnchorNotCys { severity, .. }
             | JAnchorUnexpectedAa { severity, .. }
             | MissingAnchor { severity, .. } => *severity,
         }
@@ -332,6 +341,7 @@ impl std::fmt::Display for RefDataValidationIssue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use RefDataValidationIssue::*;
         match self {
+            ReferenceEvidenceProblem { segment, allele_id, reason, .. } => write!(f, "{segment:?} allele {} reference evidence: {reason}", allele_id.index()),
             EmptyRequiredPool { segment } => write!(
                 f,
                 "{segment:?} pool is empty but required for this chain type"
@@ -516,6 +526,34 @@ impl RefDataConfig {
         validate_pool(&self.v_pool, Segment::V, &self.rules, &mut issues);
         validate_pool(&self.d_pool, Segment::D, &self.rules, &mut issues);
         validate_pool(&self.j_pool, Segment::J, &self.rules, &mut issues);
+        for segment in [Segment::V, Segment::D, Segment::J] {
+            for (id, allele) in self.pool_for(segment).unwrap().iter() {
+                if let Some(evidence) = self.allele_evidence(segment, id) {
+                    for reason in evidence.problems(allele) {
+                        issues.push(RefDataValidationIssue::ReferenceEvidenceProblem {
+                            segment,
+                            allele_id: id,
+                            reason,
+                            severity: RefDataIssueSeverity::Fatal,
+                        });
+                    }
+                    if matches!(segment, Segment::V | Segment::J)
+                        && matches!(
+                            evidence.anchor_status,
+                            super::AnchorEvidenceStatus::Unknown
+                                | super::AnchorEvidenceStatus::Invalid
+                        )
+                    {
+                        issues.push(RefDataValidationIssue::ReferenceEvidenceProblem {
+                            segment,
+                            allele_id: id,
+                            reason: "landmark evidence is unresolved or invalid".into(),
+                            severity: RefDataIssueSeverity::Curatable,
+                        });
+                    }
+                }
+            }
+        }
 
         issues
     }
@@ -547,9 +585,7 @@ impl RefDataConfig {
         }
         let any_blocking = issues.iter().any(|i| match mode {
             RefDataValidationMode::Strict => true,
-            RefDataValidationMode::AllowCuratable => {
-                i.severity() == RefDataIssueSeverity::Fatal
-            }
+            RefDataValidationMode::AllowCuratable => i.severity() == RefDataIssueSeverity::Fatal,
         });
         if any_blocking {
             Err(RefDataValidationErrors { issues, mode })
@@ -656,7 +692,10 @@ fn validate_anchor(
 
 #[allow(dead_code)]
 fn _locus_prefix(name: &str) -> String {
-    name.chars().take(3).flat_map(|c| c.to_uppercase()).collect()
+    name.chars()
+        .take(3)
+        .flat_map(|c| c.to_uppercase())
+        .collect()
 }
 
 /// Discourage `ChainType` being silently swapped — bring it into

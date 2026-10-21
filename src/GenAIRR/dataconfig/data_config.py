@@ -93,6 +93,10 @@ class DataConfig:
     schema_version: int = SCHEMA_VERSION
     schema_sha256: str = ""
 
+    # Unannotated class default keeps archived instance wire shapes unchanged.
+    # New authoring artifacts explicitly store the portable v2 checksum scheme.
+    checksum_scheme = "pickle4_v1"
+
     # Build-time provenance. Populated by
     # :class:`GenAIRR.cartridge_builder.ReferenceCartridgeBuilder.build`
     # with a :class:`~GenAIRR.cartridge_builder.CartridgeBuildReport`
@@ -158,7 +162,10 @@ class DataConfig:
     def compute_checksum(self) -> str:
         """Compute the canonical sha256 of this DataConfig's contents.
 
-        The hash is taken over ``pickle.dumps(self, protocol=4)`` with
+        Legacy ``pickle4_v1`` hashes the original protocol-4 representation.
+        New builder artifacts explicitly select ``pickle4_roundtrip_v2``, which
+        normalizes one local serialization roundtrip before hashing to remove
+        first-load dictionary-key interning differences. Both schemes apply
         the following transient surgery on ``__dict__``:
 
         - ``schema_sha256`` is temporarily zeroed so the field cannot
@@ -175,6 +182,9 @@ class DataConfig:
           retained because it materially changes simulation semantics
           and should produce a distinct hash.
         """
+        scheme = self.checksum_scheme
+        if scheme not in ("pickle4_v1", "pickle4_roundtrip_v2"):
+            raise DataConfigError(f"Unsupported DataConfig checksum scheme {scheme!r}")
         saved_sha = self.schema_sha256
         had_report = 'build_report' in self.__dict__
         saved_report = self.__dict__.get('build_report')
@@ -203,6 +213,12 @@ class DataConfig:
             del self.__dict__['genotype_priors']
         try:
             blob = pickle.dumps(self, protocol=4)
+            if scheme == "pickle4_roundtrip_v2":
+                # Pickle BUILD may canonicalize attribute-name strings on first
+                # load. Normalize that representation before hashing, so fresh
+                # authoring objects and their portable reloads agree. The input
+                # here is our own just-serialized object, never external bytes.
+                blob = pickle.dumps(pickle.loads(blob), protocol=4)
             return hashlib.sha256(blob).hexdigest()
         finally:
             self.schema_sha256 = saved_sha

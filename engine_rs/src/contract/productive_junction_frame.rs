@@ -204,62 +204,28 @@ impl Contract for ProductiveJunctionFrame {
 
     /// Classify an indel candidate's effect on the junction frame.
     ///
-    /// `compute_junction` derives the junction window as
-    /// `[V_region.start + V_anchor_offset, J_region.start +
-    /// J_anchor_offset + 3)`, so the junction *length* equals
-    /// `(J_region.start - V_region.start) + (J_anchor_offset −
-    /// V_anchor_offset) + 3`. The anchor offsets are allele-static —
-    /// only the region starts shift under indels. Therefore an
-    /// indel changes the length iff it shifts the V and J region
-    /// starts asymmetrically.
-    ///
-    /// `Sequence::with_indel_adjusted(pos, ±1)` shifts `region.start`
-    /// iff `region.start > pos` (strict — `region.start == pos`
-    /// does NOT shift). So an indel at site `s`:
-    /// - `s < V_region.start`: both V and J start shift → length
-    ///   unchanged → `FrameNeutral`.
-    /// - `V_region.start ≤ s < J_region.start`: V stays, J shifts
-    ///   → length ± 1 → `FrameDelta(±1)` (sign follows kind).
-    /// - `s ≥ J_region.start`: neither shifts → length unchanged →
-    ///   `FrameNeutral`.
-    ///
-    /// Vacuous (`FrameNeutral`) whenever V or J isn't yet assembled
-    /// (no region to read region.start from). The mod-3 DP in the
-    /// indel pass aggregates this classification across the
-    /// candidate tuple; final stop-codon / anchor-codon checks
-    /// happen via `admits_post_event` on the assembled tuple.
+    /// An edit changes junction length only when it moves the mapped J anchor
+    /// without also moving the mapped V anchor. Insertion before an anchor
+    /// shifts that anchor; deletion before it shifts it in the other direction.
+    /// Anchor destruction is separately excluded by `AnchorPreserved`.
     fn admissible_indel_class_at(
         &self,
         sim: &Simulation,
-        _refdata: Option<&RefDataConfig>,
+        refdata: Option<&RefDataConfig>,
         site: u32,
         kind: super::IndelKindHint,
     ) -> super::IndelEventClass {
         use super::IndelEventClass;
-        let v_start = match sim
-            .sequence
-            .regions
-            .iter()
-            .find(|r| r.segment == Segment::V)
-        {
-            Some(r) => r.start.index(),
-            None => return IndelEventClass::FrameNeutral,
-        };
-        let j_start = match sim
-            .sequence
-            .regions
-            .iter()
-            .find(|r| r.segment == Segment::J)
-        {
-            Some(r) => r.start.index(),
-            None => return IndelEventClass::FrameNeutral,
-        };
-        if j_start <= v_start {
-            // Degenerate / not-yet-assembled layout; no junction
-            // length to defend.
+        let Some(junction) = refdata.and_then(|r| compute_junction(sim, r)) else {
             return IndelEventClass::FrameNeutral;
-        }
-        if site >= v_start && site < j_start {
+        };
+        let v_start = junction.start.index();
+        let j_start = junction.end.index() - 3;
+        let changes_length = match kind {
+            super::IndelKindHint::Insertion => site > v_start && site <= j_start,
+            super::IndelKindHint::Deletion => site >= v_start && site < j_start,
+        };
+        if changes_length {
             match kind {
                 super::IndelKindHint::Insertion => IndelEventClass::FrameDelta(1),
                 super::IndelKindHint::Deletion => IndelEventClass::FrameDelta(-1),
@@ -551,13 +517,10 @@ mod tests {
         }
 
         #[test]
-        fn insertion_inside_v_region_is_frame_delta_plus_one() {
-            // Any insertion at site in [V.start=0, J.start=9) shifts
-            // J.region.start by +1 but leaves V.region.start fixed
-            // → junction length += 1.
+        fn insertion_between_anchors_is_frame_delta_plus_one() {
             let (cfg, sim) = fixture();
             let c = ProductiveJunctionFrame::new();
-            for site in 0..9u32 {
+            for site in 7..=9u32 {
                 assert_eq!(
                     c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Insertion,),
                     IndelEventClass::FrameDelta(1),
@@ -568,10 +531,10 @@ mod tests {
         }
 
         #[test]
-        fn deletion_inside_v_region_is_frame_delta_minus_one() {
+        fn deletion_between_anchors_is_frame_delta_minus_one() {
             let (cfg, sim) = fixture();
             let c = ProductiveJunctionFrame::new();
-            for site in 0..9u32 {
+            for site in 6..9u32 {
                 assert_eq!(
                     c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Deletion),
                     IndelEventClass::FrameDelta(-1),
@@ -582,18 +545,30 @@ mod tests {
         }
 
         #[test]
-        fn insertion_inside_j_region_is_frame_neutral() {
-            // Site s ≥ J.start: neither V.start nor J.start shifts
-            // → length unchanged.
+        fn insertion_after_j_anchor_is_frame_neutral() {
             let (cfg, sim) = fixture();
             let c = ProductiveJunctionFrame::new();
-            for site in 9..=15u32 {
+            for site in 10..=15u32 {
                 assert_eq!(
                     c.admissible_indel_class_at(&sim, Some(&cfg), site, IndelKindHint::Insertion,),
                     IndelEventClass::FrameNeutral,
                     "site {} should be FrameNeutral for insertion",
                     site
                 );
+            }
+        }
+
+        #[test]
+        fn edits_before_both_anchors_preserve_junction_length() {
+            let (cfg, sim) = fixture();
+            let c = ProductiveJunctionFrame::new();
+            for site in 0..6u32 {
+                for kind in [IndelKindHint::Insertion, IndelKindHint::Deletion] {
+                    assert_eq!(
+                        c.admissible_indel_class_at(&sim, Some(&cfg), site, kind),
+                        IndelEventClass::FrameNeutral,
+                    );
+                }
             }
         }
 

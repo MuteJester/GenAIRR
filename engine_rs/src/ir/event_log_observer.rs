@@ -80,19 +80,17 @@ impl SimulationEventSink for EventLogObserver {
 /// - `BaseChanged` → `builder.change_base(handle, new_base)`.
 /// - `IndelInserted` → `builder.insert_indel(at, n)`.
 /// - `IndelDeleted` → `builder.delete_indel(at)`.
-/// - Reserved variants (`BaseDeleted`, `RegionChanged`,
-///   `AssignmentChanged`, `ReverseComplemented`,
-///   `MutationCountChanged`) are not yet emitted by the builder
-///   and are skipped by the replay path.
+/// - `BaseDeleted` preserves observation-loss cause.
+/// - Founder installation, edit context, assignment and region events preserve
+///   the state required to interpret descendant ancestry.
 ///
 /// No observers are attached during replay: the goal is to
 /// reproduce the post-mutation `Simulation`, not to re-emit the
 /// captured events.
 ///
-/// This replays the *raw IR mutation stream* only — pass-side
-/// effects like region creation, allele assignment, trim updates,
-/// or live-call snapshots happen at pass boundaries via
-/// non-builder APIs and would need their own event surface.
+/// Segment replacement and scalar mutation-burden aggregation are outside
+/// this helper: replacement events do not carry the replacement nucleotide
+/// payload, and the burden denominator belongs to the enclosing pass.
 #[cfg(test)]
 pub(crate) fn replay_events(start: Simulation, events: &[SimulationEvent]) -> Simulation {
     let mut builder = SimulationBuilder::from_simulation(start);
@@ -105,6 +103,60 @@ pub(crate) fn replay_events(start: Simulation, events: &[SimulationEvent]) -> Si
 #[cfg(test)]
 fn replay_one(builder: &mut SimulationBuilder, event: &SimulationEvent) {
     match event {
+        SimulationEvent::DuplexAttemptStageRecorded { summary } => {
+            let p = builder
+                .peek()
+                .duplex_provenance
+                .as_ref()
+                .expect("attempt stage requires duplex founder");
+            assert_eq!(summary.stage_ordinal, p.attempt_stages.len() as u64);
+            assert_eq!(summary.edit_ordinal, p.next_edit_ordinal);
+            assert_eq!(summary.input_pool_len as usize, builder.peek().pool.len());
+            builder.record_duplex_attempt_stage(summary.stage, summary.sampled_attempts);
+        }
+        SimulationEvent::AssignmentChanged { segment, new, .. } => {
+            builder.assign_allele(*segment, *new);
+        }
+        SimulationEvent::TrimChanged {
+            segment, end, new, ..
+        } => {
+            builder.update_trim(*segment, *end, *new);
+        }
+        SimulationEvent::RegionAdded { region } => {
+            builder.add_region(region.clone());
+        }
+        SimulationEvent::OrientationChanged { segment, new, .. } => {
+            builder.update_allele_orientation(*segment, *new);
+        }
+        SimulationEvent::MutationCountChanged { new, .. } => {
+            builder.set_mutation_count(*new);
+        }
+        SimulationEvent::DuplexProvenanceInstalled { provenance } => {
+            builder
+                .attach_duplex_provenance(provenance.clone())
+                .expect("valid captured founder installation");
+        }
+        SimulationEvent::DuplexEditContextRecorded { source_pass } => {
+            builder.set_duplex_edit_context(source_pass.as_deref());
+        }
+        SimulationEvent::BaseDeleted { at, .. } => {
+            builder.delete_observation_base(*at);
+        }
+        SimulationEvent::ReverseComplementFlagRecorded { applied } => {
+            builder.record_reverse_complement_flag(*applied);
+        }
+        SimulationEvent::CodingEndChoiceRecorded { choice } => {
+            builder.record_coding_end_choice(
+                choice.segment,
+                choice.allele_id,
+                choice.five,
+                choice.three,
+                choice.outcome_index,
+            );
+        }
+        SimulationEvent::CodingEndPOriginRecorded { origin } => {
+            builder.record_coding_end_p_origin(origin.clone());
+        }
         SimulationEvent::BasePushed {
             handle: _,
             base,
@@ -130,9 +182,7 @@ fn replay_one(builder: &mut SimulationBuilder, event: &SimulationEvent) {
             builder.push_nucleotide(n);
         }
         SimulationEvent::BaseChanged {
-            handle,
-            new_base,
-            ..
+            handle, new_base, ..
         } => {
             // segment / germline_pos / old_base are unchanged by
             // `change_base`; replay only needs the target handle
@@ -155,26 +205,10 @@ fn replay_one(builder: &mut SimulationBuilder, event: &SimulationEvent) {
         } => {
             builder.delete_indel(*at);
         }
-        // Reserved (non-pool) variants don't drive replay. Replay
-        // is, by documented policy, **pool-mutation only** — the
-        // non-pool consequence variants describe sidecar state
-        // (assignments, trims, regions, rev-comp, mutation
-        // counters) which is reconstructed by the passes that own
-        // it, not by the event stream. Skipping them here keeps
-        // `replay_events` honest: if a future caller wires a
-        // non-pool consumer (e.g. an audit-log rebuilder) it
-        // belongs in a sibling replay function, not by widening
-        // this one.
-        SimulationEvent::BaseDeleted { .. }
-        | SimulationEvent::AssignmentChanged { .. }
-        | SimulationEvent::TrimChanged { .. }
-        | SimulationEvent::RegionAdded { .. }
-        | SimulationEvent::PRegionAdded { .. }
+        // These payloads cannot reconstruct their full underlying changes.
+        SimulationEvent::PRegionAdded { .. }
         | SimulationEvent::RegionReplaced { .. }
-        | SimulationEvent::SegmentReplaced { .. }
-        | SimulationEvent::ReverseComplementFlagRecorded { .. }
-        | SimulationEvent::OrientationChanged { .. }
-        | SimulationEvent::MutationCountChanged { .. } => {}
+        | SimulationEvent::SegmentReplaced { .. } => {}
     }
 }
 
@@ -310,11 +344,9 @@ mod tests {
     }
 
     #[test]
-    fn replay_skips_non_pool_events_by_documented_policy() {
-        // `replay_events` is pool-mutation only. A captured stream
-        // that interleaves non-pool variants between pool events
-        // must produce the same final `Simulation` as if the non-
-        // pool variants had been omitted — they're inert.
+    fn replay_non_pool_events_do_not_change_query_bytes() {
+        // Assignment, trim, region, count and orientation events restore
+        // their sidecars without changing the nucleotide bytes.
         use crate::assignment::{AlleleInstance, TrimEnd};
         use crate::ir::Region;
         use crate::refdata::AlleleId;

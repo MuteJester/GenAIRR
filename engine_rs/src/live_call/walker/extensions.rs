@@ -1,6 +1,24 @@
+use super::super::support::{max_supported_score, supported};
 use super::super::{HypothesisFlags, SegmentRefIndex};
 use crate::ir::{NucHandle, Region, Segment, Simulation};
 use crate::refdata::AlleleId;
+
+/// Map canonical allele-end trim budgets onto the observed pool's
+/// left/right edges. Both full and streaming walkers must use this
+/// mapping: an inverted D exposes its canonical 3' end on pool-left.
+pub(crate) fn extension_trim_caps(
+    sim: &Simulation,
+    segment: Segment,
+    orientation: crate::assignment::SegmentOrientation,
+) -> (Option<u32>, Option<u32>) {
+    let assignment = sim.assignments.get(segment);
+    let trim_5 = assignment.map(|a| a.trim_5 as u32);
+    let trim_3 = assignment.map(|a| a.trim_3 as u32);
+    match orientation {
+        crate::assignment::SegmentOrientation::Forward => (trim_5, trim_3),
+        crate::assignment::SegmentOrientation::ReverseComplement => (trim_3, trim_5),
+    }
+}
 
 /// Conservative narrowing check for the boundary extension walkers.
 /// The walkers extend a V/D/J live-call hypothesis one byte at a
@@ -28,8 +46,12 @@ use crate::refdata::AlleleId;
 ///   walk is what populates initial scores.
 ///
 /// Returns `true` iff the extension is allowed to proceed.
-fn extension_narrows_tie_set(scores: &[u32], matched_ids: &super::super::AlleleBitSet) -> bool {
-    let pre_max = scores.iter().copied().max().unwrap_or(0);
+fn extension_narrows_tie_set(
+    scores: &[u32],
+    matched_ids: &super::super::AlleleBitSet,
+    allowed: Option<&[AlleleId]>,
+) -> bool {
+    let pre_max = max_supported_score(scores, allowed);
     if pre_max == 0 {
         return false;
     }
@@ -40,6 +62,9 @@ fn extension_narrows_tie_set(scores: &[u32], matched_ids: &super::super::AlleleB
             continue;
         }
         let id = AlleleId::new(i as u32);
+        if !supported(id, allowed) {
+            continue;
+        }
         if matched_ids.contains(id) {
             any_matched = true;
         } else {
@@ -166,7 +191,11 @@ pub(crate) fn walk_left_extension(
         // matches the byte (or none of them do), the extension would
         // not resolve any ambiguity — leave the structural boundary
         // alone and stop walking.
-        if !extension_narrows_tie_set(state.scores, &evidence.allele_ids) {
+        if !extension_narrows_tie_set(
+            state.scores,
+            &evidence.allele_ids,
+            sim.live_call_alleles(segment_index.segment),
+        ) {
             break;
         }
         evidence.allele_ids.for_each_id(|id| {
@@ -292,7 +321,11 @@ pub(crate) fn walk_right_extension(
             break;
         }
         // see commentary in `walk_left_extension`.
-        if !extension_narrows_tie_set(state.scores, &evidence.allele_ids) {
+        if !extension_narrows_tie_set(
+            state.scores,
+            &evidence.allele_ids,
+            sim.live_call_alleles(segment_index.segment),
+        ) {
             break;
         }
         evidence.allele_ids.for_each_id(|id| {

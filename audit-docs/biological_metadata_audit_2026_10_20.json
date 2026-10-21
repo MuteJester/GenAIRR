@@ -1,0 +1,621 @@
+{
+  "audit_date": "2026-10-20",
+  "commit": "1ededa676e8904430f7ea0bdcf03092de4888a41",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "package": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/__init__.py",
+  "extension": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+  "checks_run": 19,
+  "discrepancies_reproduced": 19,
+  "confirmed_defect_probes_reproduced": 16,
+  "checks": [
+    {
+      "id": "productivity_outside_junction_shm",
+      "title": "SHM creates an upstream stop but metadata still says productive",
+      "expected": {
+        "productive": false,
+        "stop_codon": true,
+        "reason": "A translated stop in the aligned V coding region is outside the junction but still interrupts the receptor."
+      },
+      "observed": {
+        "v_call": "IGHVF10-G38*04",
+        "j_call": "IGHJ2*01",
+        "productive": true,
+        "stop_codon": false,
+        "vj_in_frame": true,
+        "v_sequence_start": 0,
+        "v_germline_start": 0,
+        "v_cigar": "296M",
+        "junction_start": 285,
+        "junction_end": 378,
+        "junction": "tgtgtgaaagaCGACGGGAACAGaggatattgtagtggtgAtagctgctaCGGACATTGTTGTGCACTAGACtactggtacttcgatctctgg",
+        "junction_aa": "CVKDDGNRGYCSGDSCYGHCCALDYWYFDLW",
+        "sequence_aa": "EVQLRESGEGLVQPGGSLRLSCSASGFTFSSYAMHWVRQAPGKGLENVSAISSNGGSTYYADSVKGRFTISRDNSKNSLYL*MSSLRADDTAVYYCVKDDGNRGYCSGDSCYGHCCALDYWYFDLWGRGTLVTVSS",
+        "coding_stops": [
+          {
+            "start": 243,
+            "end": 246,
+            "codon": "TAA"
+          }
+        ],
+        "junction_stops": [],
+        "sequence_translation_matches_independent_table": true
+      },
+      "reproduced": true,
+      "validator_issues": {},
+      "reproduction": "Experiment.on('human_igh').recombine().productive_only().mutate(rate=0.03).run_records(n=1, seed=42)[0]",
+      "source": "engine_rs/src/airr_record/builder.rs:464",
+      "sample": {
+        "name": "shm_3_percent",
+        "n": 1000,
+        "seed": 42,
+        "productive_records_with_coding_stops": 292,
+        "first_five_row_indexes": [
+          0,
+          1,
+          2,
+          5,
+          11
+        ],
+        "note": "Seed-specific demonstration, not a population estimate."
+      },
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "productivity_outside_junction_germline",
+      "title": "A germline stop also escapes clean productive-only generation",
+      "expected": {
+        "productive": false,
+        "stop_codon": true,
+        "reason": "The retained reference TAG at [282,285) is an in-frame V-region stop immediately before the Cys anchor."
+      },
+      "observed": {
+        "v_call": "IGHVF9-G32*02",
+        "j_call": "IGHJ4*02",
+        "productive": true,
+        "stop_codon": false,
+        "vj_in_frame": true,
+        "v_sequence_start": 0,
+        "v_germline_start": 0,
+        "v_cigar": "294M",
+        "junction_start": 285,
+        "junction_end": 339,
+        "junction": "tgtaccagaATCCAATtaaccggaaCCCTATGCTGGCGctactttgactactgg",
+        "junction_aa": "CTRIQLTGTLCWRYFDYW",
+        "sequence_aa": "EMQLVESGGGLAKPAWSPRLSCAASQFTFSSYYMNCVRQAPGNGLELVGQVNPNGGSTYLIDSGKDRFNTSRDNAKNTLHLQMNSLKTEDTALY*CTRIQLTGTLCWRYFDYWGQGTLVTVSS",
+        "coding_stops": [
+          {
+            "start": 282,
+            "end": 285,
+            "codon": "TAG"
+          }
+        ],
+        "reference_allele": "IGHVF9-G32*02",
+        "reference_functional_status": null,
+        "reference_anchor": 285,
+        "reference_codon_282_285": "tag",
+        "record_codon_282_285": "tag"
+      },
+      "reproduced": true,
+      "validator_issues": {},
+      "reproduction": "Experiment.on('human_igh').recombine().productive_only().run_records(n=120, seed=42)[119]",
+      "source": "engine_rs/src/airr_record/builder.rs:464",
+      "sample": {
+        "name": "clean",
+        "n": 1000,
+        "seed": 42,
+        "productive_records_with_coding_stops": 23,
+        "first_five_row_indexes": [
+          119,
+          184,
+          296,
+          349,
+          379
+        ],
+        "note": "Seed-specific demonstration, not a population estimate."
+      },
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "stop_codon_out_of_frame",
+      "title": "An out-of-frame junction forces stop_codon=False despite stops",
+      "expected": {
+        "stop_codon": true,
+        "reason": "Loss of V/J frame agreement does not remove the stop codons encountered when translating from the V frame."
+      },
+      "observed": {
+        "v_call": "IGHVF10-G38*02",
+        "j_call": "IGHJ4*02",
+        "productive": false,
+        "stop_codon": false,
+        "vj_in_frame": false,
+        "v_sequence_start": 0,
+        "v_germline_start": 0,
+        "v_cigar": "293M",
+        "junction_start": 285,
+        "junction_end": 349,
+        "junction": "tgtgcgagGAGATGCCAAATAGTAtgactacggtgactacTAGGGCTTCtactttgactactgg",
+        "junction_aa": "",
+        "sequence_aa": "EVQLVESGGGLVQPGGSLRLSCAASGFTFSSYAMHWVRQAPGKGLEYVSAISSNGGSTYYANSVKGRFTISRDNSKNTLYLQMGSLRAEDMAVYYCARRCQIV*LR*LLGLLL*LLGPGNPGHRLL",
+        "coding_stops": [
+          {
+            "start": 309,
+            "end": 312,
+            "codon": "TGA"
+          },
+          {
+            "start": 318,
+            "end": 321,
+            "codon": "TGA"
+          },
+          {
+            "start": 339,
+            "end": 342,
+            "codon": "TGA"
+          }
+        ],
+        "independent_junction_translation": "CARRCQIV*LR*LLGLLL*LL"
+      },
+      "reproduced": true,
+      "validator_issues": {},
+      "reproduction": "Experiment.on('human_igh').recombine().run_records(n=2, seed=42)[1]",
+      "source": "engine_rs/src/airr_record/builder.rs:484",
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "sequence_aa_upstream_frameshift",
+      "title": "An upstream insertion resets translation to the junction frame",
+      "expected": {
+        "productive": false,
+        "sequence_aa": "QLQLQESGSGLVKPSQTLSLTCAVSGGSISSGGYSWSWIRQPPGKVPGVDWVHLS*WEHLLQPVPQESSYHISRHVQEPVLPEAELCDCRRHGRVLLCQRVV*PEPPILPALGPGHPGHRLL",
+        "reason": "The complete retained V starts in frame zero. An internal one-base insertion shifts downstream translation; moving the Cys anchor does not move the original coding origin."
+      },
+      "observed": {
+        "v_call": "IGHVF3-G12*02",
+        "j_call": "IGHJ1*01",
+        "productive": true,
+        "stop_codon": false,
+        "vj_in_frame": true,
+        "v_sequence_start": 0,
+        "v_germline_start": 0,
+        "v_cigar": "136M1I163M",
+        "junction_start": 289,
+        "junction_end": 337,
+        "junction": "tgtgccagagaGTGgtataaccggaacCACCaatacttccagcactgg",
+        "junction_aa": "CAREWYNRNHQYFQHW",
+        "sequence_aa": "SCSCRSPAQDW*SLHRPCPSPALSLVAPSAVVVTPGAGSGSHQGRCLEWIGYIYHSGSTYYNPSLKSRVTISVDTSKNQFSLKLSSVTAADTAVYYCAREWYNRNHQYFQHWGQGTLVTVSS",
+        "sequence": "cagctgcagctgcaggagtccggctcaggactggtgaagccttcacagaccctgtccctcacctgcgctgtctctggtggctccatcagcagtggtggttactcctggagctggatccggcagccaccagggaaggTgcctggagtggattgggtacatctatcatagtgggagcacctactacaacccgtccctcaagagtcgagttaccatatcagtagacacgtccaagaaccagttctccctgaagctgagctctgtgactgccgcagacacggccgtgtattactgtgccagagaGTGgtataaccggaacCACCaatacttccagcactggggccagggcaccctggtcaccgtctcctcag",
+        "independent_v_origin_translation": "QLQLQESGSGLVKPSQTLSLTCAVSGGSISSGGYSWSWIRQPPGKVPGVDWVHLS*WEHLLQPVPQESSYHISRHVQEPVLPEAELCDCRRHGRVLLCQRVV*PEPPILPALGPGHPGHRLL",
+        "independent_v_origin_stops": [
+          {
+            "start": 165,
+            "end": 168,
+            "codon": "TAG"
+          },
+          {
+            "start": 306,
+            "end": 309,
+            "codon": "TAA"
+          }
+        ],
+        "matches_wrong_frame_one": true
+      },
+      "reproduced": true,
+      "validator_issues": {},
+      "reproduction": "Experiment.on('human_igh').recombine().polymerase_indels(count=1, insertion_prob=1).run_records(n=20, seed=42)[19]",
+      "minimal_example": {
+        "v_reference": "ATGAAATGTAAA",
+        "v_anchor": 6,
+        "j_reference": "AAATGGGGG",
+        "j_anchor": 3,
+        "np_length": 0,
+        "trim": false,
+        "seed": 42,
+        "n": 2,
+        "row": 1,
+        "sequence": "ATCGAAATGTAAAAAATGGGGG",
+        "reported_sequence_aa": "SKCKKWG",
+        "expected_sequence_aa": "IEM*KMG",
+        "productive": true,
+        "v_cigar": "2M1I10M",
+        "validator_issues": {}
+      },
+      "source": "engine_rs/src/airr_record/builder.rs:501",
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "coordinate_reverse_orientation",
+      "title": "Reverse orientation changes coding-strand annotations",
+      "expected": {
+        "junction": "TGTACATTT",
+        "junction_aa": "CTF",
+        "v_sequence_interval": [
+          0,
+          9
+        ],
+        "j_sequence_interval": [
+          12,
+          18
+        ]
+      },
+      "observed": {
+        "junction": "AAATGTACA",
+        "junction_aa": "KCT",
+        "v_sequence_interval": [
+          9,
+          18
+        ],
+        "j_sequence_interval": [
+          0,
+          6
+        ]
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "data": {
+        "sequence": "CCCAAATGTACAGGGTTT",
+        "sequence_alignment": "AAACCCTGTACATTTGGG",
+        "rev_comp": true,
+        "expectation": "AIRR rev_comp=true annotations use the reverse complement of sequence, so the coding-strand annotations must agree with the otherwise identical forward record.",
+        "standard": "https://docs.airr-community.org/en/stable/datarep/rearrangements.html",
+        "source": [
+          "engine_rs/src/airr_record/sequence.rs:18"
+        ]
+      },
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "coordinate_d_inversion",
+      "title": "Inverted D alignment fabricates deletions and mismatches",
+      "expected": {
+        "d_reference_consumption": 6,
+        "d_germline_span": 6,
+        "d_identity": 1.0,
+        "d_deletion_bases": 0,
+        "d_germline_alignment": "TACGTT"
+      },
+      "observed": {
+        "d_reference_consumption": 16,
+        "d_germline_span": 6,
+        "d_identity": 0.0,
+        "d_deletion_bases": 10,
+        "d_germline_alignment": "AACGTATGCAAACGTA"
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "data": {
+        "d_cigar": "5D6M5D",
+        "d_inverted": true,
+        "n_indels": 0,
+        "expectation": "AACGTA reverse-complements to TACGTT. This untrimmed, unmutated six-base segment must align to its oriented reference without deletions.",
+        "source": [
+          "engine_rs/src/airr_record/segment_projection.rs:176",
+          "engine_rs/src/airr_record/walk/mod.rs:217"
+        ]
+      },
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "coordinate_p_alignment_order",
+      "title": "P nucleotides move to the end of the alignment",
+      "expected": {
+        "ungapped_sequence_alignment": "AAACCCTGTACACATAATTTGGG"
+      },
+      "observed": {
+        "ungapped_sequence_alignment": "AAACCCTGTCATTTTGGGACAAA"
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "data": {
+        "sequence": "AAACCCTGTACACATAATTTGGG",
+        "sequence_alignment": "AAACCCTGTCATTTTGGGACAAA",
+        "p_v_3_length": 3,
+        "p_j_5_length": 2,
+        "expectation": "An alignment must preserve query-base order. The P bases must remain between their adjacent coding regions.",
+        "source": [
+          "engine_rs/src/airr_record/walk/mod.rs:115",
+          "engine_rs/src/passes/p_addition.rs:293"
+        ]
+      },
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "coordinate_end_loss_5",
+      "title": "5' read loss is represented as a sequence deletion",
+      "expected": {
+        "germline_interval": [
+          3,
+          9
+        ],
+        "identity": 1.0,
+        "cigar_deletion_bases": 0
+      },
+      "observed": {
+        "germline_interval": [
+          0,
+          9
+        ],
+        "identity": 0.6666666666666666,
+        "cigar_deletion_bases": 3
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "data": {
+        "segment": "V",
+        "cigar": "3D6M",
+        "sequence_alignment": "---CCCTGTACATTTGGG",
+        "realized_end_loss": 3,
+        "expectation": "Read/primer loss removes coverage of terminal germline bases; the observed unchanged bases retain identity 1.0 against their covered reference interval.",
+        "source": [
+          "engine_rs/src/airr_record/segment_projection.rs:176",
+          "engine_rs/src/airr_record/walk/mod.rs:217"
+        ],
+        "qualification": "GenAIRR intentionally represents missing read ends as terminal deletions. AIRR allows tool-dependent identity definitions; this difference from a covered-interval alignment is a semantic concern, not independently sufficient evidence of invalid AIRR."
+      },
+      "classification": "alignment convention requiring a downstream contract decision"
+    },
+    {
+      "id": "coordinate_end_loss_3",
+      "title": "3' read loss is represented as a sequence deletion",
+      "expected": {
+        "germline_interval": [
+          0,
+          3
+        ],
+        "identity": 1.0,
+        "cigar_deletion_bases": 0
+      },
+      "observed": {
+        "germline_interval": [
+          0,
+          6
+        ],
+        "identity": 0.5,
+        "cigar_deletion_bases": 3
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "data": {
+        "segment": "J",
+        "cigar": "3M3D",
+        "sequence_alignment": "AAACCCTGTACATTT---",
+        "realized_end_loss": 3,
+        "expectation": "Read/primer loss removes coverage of terminal germline bases; the observed unchanged bases retain identity 1.0 against their covered reference interval.",
+        "source": [
+          "engine_rs/src/airr_record/segment_projection.rs:176",
+          "engine_rs/src/airr_record/walk/mod.rs:217"
+        ],
+        "qualification": "GenAIRR intentionally represents missing read ends as terminal deletions. AIRR allows tool-dependent identity definitions; this difference from a covered-interval alignment is a semantic concern, not independently sufficient evidence of invalid AIRR."
+      },
+      "classification": "alignment convention requiring a downstream contract decision"
+    },
+    {
+      "id": "coordinate_empty_pool_provenance",
+      "title": "Complete read loss discards the realized end-loss count",
+      "expected": {
+        "sequence_length": 0,
+        "end_loss_5_length": 18
+      },
+      "observed": {
+        "sequence_length": 0,
+        "end_loss_5_length": 0
+      },
+      "reproduced": true,
+      "validator_issues": [
+        {
+          "kind": "EndLossLengthMismatch",
+          "reported": 0,
+          "expected": 18,
+          "details": {
+            "side": "5'"
+          }
+        }
+      ],
+      "data": {
+        "expectation": "A sampled end loss larger than the read is clamped to its length. Empty observation must retain that realized count.",
+        "source": [
+          "engine_rs/src/airr_record/builder.rs:75"
+        ]
+      },
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "revision_stale_v_trim",
+      "title": "V replacement exports the original trim and invents deletion columns",
+      "expected": {
+        "v_call": "v2*01",
+        "v_trim_3": 3,
+        "v_germline_end": 9,
+        "v_cigar": "9M"
+      },
+      "observed": {
+        "v_call": "v2*01",
+        "original_v_call": "v1*01",
+        "v_trim_3": 0,
+        "v_germline_end": 12,
+        "v_cigar": "9M3D",
+        "sequence_alignment": "GGGTTTAAA---ACGTTATTTAAA",
+        "germline_alignment": "GGGTTTAAACCCACGTTATTTAAA"
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "source": [
+        "engine_rs/src/airr_record/builder.rs:80",
+        "engine_rs/src/passes/receptor_revision.rs:642",
+        "engine_rs/src/passes/receptor_revision.rs:525"
+      ],
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "revision_same_allele",
+      "title": "Revision reports replacement when it selects the existing V allele",
+      "expected": "A replacement event selects a different V allele or reports not applied.",
+      "observed": {
+        "original_v_call": "v2*01",
+        "truth_v_call": "v2*01",
+        "v_call": "v2*01",
+        "receptor_revision_applied": true
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "source": [
+        "engine_rs/src/passes/receptor_revision.rs:427"
+      ],
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "p_missing_from_np",
+      "title": "AIRR combined N/P metadata omits P nucleotides",
+      "expected": {
+        "np1": "tgt",
+        "np1_length": 3
+      },
+      "observed": {
+        "np1": "",
+        "np1_length": 0,
+        "p_v_3_length": 2,
+        "p_j_5_length": 1,
+        "v_sequence_end": 287,
+        "j_sequence_start": 290
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "source": [
+        "engine_rs/src/airr_record/builder.rs:191",
+        "engine_rs/src/passes/p_addition.rs:291"
+      ],
+      "references": [
+        "https://docs.airr-community.org/en/stable/datarep/rearrangements.html"
+      ],
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "p_after_coding_end_deletion",
+      "title": "P additions are modeled from exonuclease-trimmed coding ends",
+      "classification": "biological model limitation requiring a modeling decision",
+      "expected": "Hairpin-derived P bases come from intact original coding ends. Do not label complements of newly trimmed germline ends as such P bases.",
+      "observed": {
+        "v_trim_3": 1,
+        "j_trim_5": 1,
+        "p_v_3_length": 2,
+        "p_j_5_length": 1
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "source": [
+        "engine_rs/src/passes/p_addition.rs:134"
+      ],
+      "references": [
+        "https://www.imgt.org/textes/FAQ/"
+      ]
+    },
+    {
+      "id": "shorter_called_allele_hybrid_germline",
+      "title": "An alternate shorter allele produces out-of-bounds germline metadata",
+      "expected": "Coordinates and germline alignment must refer to the reported allele; vShort*01 has only 6 bases, so its germline end cannot exceed 6.",
+      "observed": {
+        "v_call": "vShort*01",
+        "truth_v_call": "vLong*01",
+        "v_germline_start": 0,
+        "v_germline_end": 9,
+        "v_cigar": "9M",
+        "germline_alignment": "ACCCCCCCCTTTGGG",
+        "called_reference_length": 6
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "source": [
+        "engine_rs/src/airr_record/walk/mod.rs:246",
+        "engine_rs/src/airr_record/segment_projection.rs:212"
+      ],
+      "scope": "Synthetic high-mutation fixture. Separate built-in human_igh 1000-record sweeps at rates 0.03 and 0.1, seed 42, found no out-of-bounds coordinates or germline-substring mismatches.",
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "clonal_founder_trims",
+      "title": "A no-op post-fork step loses founder trim metadata",
+      "expected": "Identical molecules retain identical trims and alignments.",
+      "observed": {
+        "sequences_equal": true,
+        "without_post": {
+          "d_trim_3": 4,
+          "j_trim_5": 1,
+          "d_cigar": "27M",
+          "j_cigar": "52M",
+          "d_identity": 1.0,
+          "j_identity": 1.0
+        },
+        "with_noop_post": {
+          "d_trim_3": 0,
+          "j_trim_5": 0,
+          "d_cigar": "27M4D",
+          "j_cigar": "1D52M",
+          "d_identity": 0.8709677419354839,
+          "j_identity": 0.9811320754716981
+        }
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "airr_cigar_offsets",
+      "title": "CIGAR lacks the leading AIRR query/reference offsets",
+      "expected": "Nonzero query/reference starts have leading S/N operators.",
+      "observed": [
+        {
+          "segment": "d",
+          "cigar": "27M",
+          "query_start_0based": 309,
+          "germline_start_0based": 0,
+          "required_leading_operations": "309S"
+        },
+        {
+          "segment": "j",
+          "cigar": "52M",
+          "query_start_0based": 336,
+          "germline_start_0based": 1,
+          "required_leading_operations": "336S1N"
+        }
+      ],
+      "reproduced": true,
+      "validator_issues": [],
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "airr_tsv_serialization",
+      "title": "Default TSV coordinates and even strict TSV booleans violate AIRR",
+      "expected": "AIRR TSV starts are 1-based and booleans are T/F.",
+      "observed": {
+        "False": {
+          "v_sequence_start": "0",
+          "rev_comp": "False",
+          "productive": "False",
+          "stop_codon": "True"
+        },
+        "True": {
+          "v_sequence_start": "1",
+          "rev_comp": "False",
+          "productive": "False",
+          "stop_codon": "True"
+        }
+      },
+      "reproduced": true,
+      "validator_issues": "Record validator does not inspect serialized TSV.",
+      "classification": "confirmed correctness defect"
+    },
+    {
+      "id": "validator_ignores_records",
+      "title": "Validation checks a rebuilt record instead of the emitted dictionary",
+      "expected": "A malformed emitted record is rejected.",
+      "observed": {
+        "invalid_record_validation_ok": true,
+        "stamped_sequence": "AAA",
+        "stamped_productive": "wrong",
+        "run_records_validate_true_returned": true
+      },
+      "reproduced": true,
+      "validator_issues": [],
+      "classification": "confirmed correctness defect"
+    }
+  ]
+}

@@ -34,15 +34,12 @@ impl Sequence {
 
     /// Return a new sequence whose regions have frame phases recomputed.
     pub fn with_frame_phases_recomputed(&self) -> Self {
-        let mut cumulative_len = 0u64;
         let regions: Vec<Region> = self
             .regions
             .iter()
-            .map(|r| {
-                let next = r.with_frame_phase((cumulative_len % 3) as u8);
-                cumulative_len = cumulative_len.saturating_add(next.len() as u64);
-                next
-            })
+            // Region gaps contain real pool bases (for example P additions).
+            // Their lengths must remain part of the pool-origin codon phase.
+            .map(|r| r.with_frame_phase((r.start.index() % 3) as u8))
             .collect();
         Self { regions }
     }
@@ -95,11 +92,7 @@ impl Sequence {
         replaced: PoolRange,
         new_region: Region,
     ) -> Self {
-        let matches = self
-            .regions
-            .iter()
-            .filter(|r| r.segment == segment)
-            .count();
+        let matches = self.regions.iter().filter(|r| r.segment == segment).count();
         assert!(
             matches == 1,
             "Sequence::with_segment_replaced: expected exactly 1 region for {segment:?}, found {matches}",

@@ -98,6 +98,25 @@ def test_cache_parity_holds_under_indels():
     )
 
 
+def test_cache_parity_inverted_d_asymmetric_trims_after_shm_and_indels():
+    """Streaming NP-extension budgets must swap ends for inverted D.
+
+    Seed 157 previously retained two inferred D alleles in the cache,
+    while a fresh walk extended one more NP byte and selected one.
+    """
+    exp = (
+        ga.Experiment.on("human_igh").recombine().invert_d(prob=1)
+        .mutate(rate=0.15).polymerase_indels(count=3)
+    )
+    compiled = exp.compile()
+    for seed in (157, *range(50)):
+        outcome = compiled.simulator.run(seed=seed)
+        _assert_parity(
+            outcome.check_live_call_cache_parity(compiled.refdata),
+            label="inverted D + SHM + indels", seed=seed,
+        )
+
+
 def test_cache_parity_holds_under_end_loss():
     """End-loss removes pool bytes at the 5'/3' boundaries. The
     3'-boundary deletion was where the `segment_region_overlaps_dirty`

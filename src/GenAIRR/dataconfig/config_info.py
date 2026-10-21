@@ -2,12 +2,13 @@ import os
 import pickle
 from dataclasses import dataclass
 from datetime import date
+from typing import Optional
 from .enums import ChainType, Species
 
 @dataclass(frozen=True)
 class ConfigInfo:
     """A structured container for data configuration metadata."""
-    species: Species
+    species: Optional[Species]
     chain_type: ChainType
     reference_set: str
     last_updated: date
@@ -17,7 +18,7 @@ class ConfigInfo:
         """Provides a clean, readable representation of the config info."""
         # Added the 'has_d' flag for a more complete summary
         return (
-            f"Species: {self.species.value}, "
+            f"Species: {self.species.value if self.species is not None else 'Unknown'}, "
             f"Chain: {self.chain_type.value}, "
             f"Has D: {self.has_d}, "
             f"Reference: '{self.reference_set}', "

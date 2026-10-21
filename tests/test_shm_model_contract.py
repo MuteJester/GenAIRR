@@ -298,13 +298,8 @@ def test_pin_scaffold_live_call_truth_invariant_under_heavy_shm() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pin_scaffold_validate_records_redrives_n_mutations() -> None:
-    """Audit §7: ``validate_records`` re-derives the record from
-    the outcome and compares. A clean SHM batch validates ok;
-    dict-level tampering of ``n_mutations`` is silently ignored
-    (documented behaviour — the supplied record dict isn't
-    audited against the outcome). For real tamper detection,
-    callers use the Rust-side ``validate_airr_record`` directly."""
+def test_pin_scaffold_validate_records_detects_n_mutations_tampering() -> None:
+    """Validate the returned mutation count against its producing outcome."""
     refdata = _refdata()
     result = (
         ga.Experiment.on("human_igh").recombine().mutate(count=5)
@@ -312,13 +307,12 @@ def test_pin_scaffold_validate_records_redrives_n_mutations() -> None:
     )
     # Clean: validates.
     assert result.validate_records(refdata).ok
-    # Tamper a record's n_mutations; validator still returns ok
-    # because it re-projects from outcome state.
     result.records[0]["n_mutations"] = 9999
-    assert result.validate_records(refdata).ok, (
-        "validate_records started catching dict-level n_mutations "
-        "tampering; the documented re-derive contract has drifted."
-    )
+    report = result.validate_records(refdata)
+    assert not report.ok
+    assert report.summary() == {"RecordFieldMismatch": 1}
+    assert report.failures[0]["record_index"] == 0
+    assert report.failures[0]["issues"][0]["field"] == "n_mutations"
 
 
 # ──────────────────────────────────────────────────────────────────

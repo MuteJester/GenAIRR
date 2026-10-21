@@ -1,4 +1,4 @@
-use crate::ir::{translate_codon, NucHandle, Segment, Simulation, AMINO_STOP};
+use crate::ir::{NucHandle, Segment, Simulation};
 
 use super::layout::np_segment_label;
 use super::model::{SlotSource, CONTRACT_NAME};
@@ -19,7 +19,7 @@ impl JunctionStopState {
             return Err(ContractViolation::new(
                 CONTRACT_NAME,
                 format!(
-                    "candidate at np.{}.bases[{}] would force stop codon '{}{}{}' at junction offset {}",
+                    "candidate at np.{}.bases[{}] would leave a definite or possible stop codon '{}{}{}' at junction offset {}",
                     np_segment_label(np_segment),
                     np_index,
                     violation.codon[0] as char,
@@ -52,11 +52,11 @@ impl JunctionStopState {
             }
         }
 
-        if translate_codon(codon[0], codon[1], codon[2]) == AMINO_STOP {
+        if crate::productivity::codon_stop(codon) != Some(false) {
             return Err(ContractViolation::new(
                 CONTRACT_NAME,
                 format!(
-                    "candidate at np.{}.bases[{}] would force stop codon '{}{}{}' at junction offset {}",
+                    "candidate at np.{}.bases[{}] would leave a definite or possible stop codon '{}{}{}' at junction offset {}",
                     np_segment_label(np_segment),
                     np_index,
                     codon[0] as char,

@@ -12,14 +12,25 @@
 
 use crate::address::{self, ChoiceAddress, VdjSegment};
 use crate::assignment::TrimEnd;
-use crate::ir::{translate_codon, Segment, Simulation, AMINO_STOP};
+use crate::ir::{Segment, Simulation};
 use crate::refdata::{AlleleId, RefDataConfig};
 use crate::trace::ChoiceValue;
+
+mod duplex;
+mod p_productive;
+pub(crate) use duplex::DuplexCompletionFeasibility;
+pub(crate) use p_productive::{
+    NpCompletionDomain, PProductiveFeasibility, SegmentCompletionDomain,
+};
 
 /// Runtime view of compile-derived feasibility domains.
 #[derive(Clone, Debug, Default)]
 pub struct FeasibilityContext {
     vj_productive: Option<VjProductiveFeasibility>,
+    coding_segments: Vec<CodingSegmentFeasibility>,
+    p_productive: Option<PProductiveFeasibility>,
+    coding_end_geometry: Vec<CodingEndGeometry>,
+    duplex: Option<DuplexCompletionFeasibility>,
 }
 
 impl FeasibilityContext {
@@ -34,6 +45,105 @@ impl FeasibilityContext {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.vj_productive.is_none()
+            && self.coding_segments.is_empty()
+            && self.p_productive.is_none()
+            && self.coding_end_geometry.is_empty()
+            && self.duplex.is_none()
+    }
+
+    pub(crate) fn with_p_productive(mut self, feasibility: PProductiveFeasibility) -> Self {
+        self.p_productive = Some(feasibility);
+        self
+    }
+
+    pub(crate) fn has_p_productive(&self) -> bool {
+        self.p_productive.is_some()
+    }
+
+    pub(crate) fn with_duplex(mut self, feasibility: DuplexCompletionFeasibility) -> Self {
+        self.duplex = Some(feasibility);
+        self
+    }
+
+    pub(crate) fn has_duplex(&self) -> bool {
+        self.duplex.is_some()
+    }
+
+    pub(crate) fn owns_duplex_source_pass(&self, pass_index: usize) -> bool {
+        self.duplex
+            .as_ref()
+            .is_some_and(|d| d.owns_source_pass(pass_index))
+    }
+
+    pub(crate) fn owns_duplex_generation_pass(&self, pass_index: usize) -> bool {
+        self.duplex
+            .as_ref()
+            .is_some_and(|d| d.owns_source_pass(pass_index) || d.repair_pass == pass_index)
+    }
+
+    pub(crate) fn duplex_history_rows(
+        &self,
+    ) -> Option<&[crate::duplex_repair::model::PreparedDuplexHistory]> {
+        self.duplex.as_ref().map(|d| d.rows.as_slice())
+    }
+
+    pub(crate) fn has_coding_end_geometry(&self) -> bool {
+        !self.coding_end_geometry.is_empty()
+    }
+
+    pub(crate) fn with_coding_end_geometry(mut self, geometry: CodingEndGeometry) -> Self {
+        self.coding_end_geometry.push(geometry);
+        self
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn admits_with_allele_restrictions(
+        &self,
+        pass_index: usize,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        address: &str,
+        candidate: &ChoiceValue,
+        allowed_alleles: &[(Segment, Vec<AlleleId>)],
+    ) -> bool {
+        self.admits(pass_index, sim, refdata, address, candidate)
+            && self.p_productive.as_ref().map_or(true, |p| {
+                p.admits_with_allele_restrictions(
+                    pass_index,
+                    sim,
+                    refdata,
+                    address,
+                    candidate,
+                    allowed_alleles,
+                )
+            })
+            && self
+                .duplex
+                .as_ref()
+                .is_none_or(|d| d.admits(pass_index, sim, address, candidate, allowed_alleles))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn admits_np_base(
+        &self,
+        pass_index: usize,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        segment: Segment,
+        index: u32,
+        total_len: u32,
+        candidate: u8,
+    ) -> bool {
+        self.p_productive.as_ref().map_or(true, |p| {
+            refdata.is_some_and(|r| {
+                p.admits_np_base(pass_index, sim, r, segment, index, total_len, candidate)
+            })
+        })
+    }
+
+    pub(crate) fn with_coding_segment(mut self, feasibility: CodingSegmentFeasibility) -> Self {
+        self.coding_segments.push(feasibility);
+        self
     }
 
     /// Return whether `candidate` at `address` keeps at least one
@@ -46,12 +156,206 @@ impl FeasibilityContext {
         address: &str,
         candidate: &ChoiceValue,
     ) -> bool {
+        if self
+            .duplex
+            .as_ref()
+            .is_some_and(|d| !d.admits(pass_index, sim, address, candidate, &[]))
+        {
+            return false;
+        }
+        if self
+            .coding_end_geometry
+            .iter()
+            .any(|geometry| !geometry.admits(pass_index, sim, refdata, address, candidate))
+        {
+            return false;
+        }
+        if let Some(p) = &self.p_productive {
+            if !p.admits(pass_index, sim, refdata, address, candidate) {
+                return false;
+            }
+        }
+        for coding in &self.coding_segments {
+            if !coding.admits(pass_index, sim, refdata, address, candidate) {
+                return false;
+            }
+        }
         if let Some(vj_productive) = &self.vj_productive {
             if !vj_productive.admits(pass_index, sim, refdata, address, candidate) {
                 return false;
             }
         }
         true
+    }
+}
+
+/// Physical end geometry applies even when no productivity contracts are active.
+/// It filters original allele choices before a too-short allele can be committed.
+#[derive(Clone, Debug)]
+pub(crate) struct CodingEndGeometry {
+    pub(crate) segment: Segment,
+    pub(crate) allele_pass: Option<usize>,
+    pub(crate) outcomes: ChoiceDomain<crate::end_processing::EndOutcome>,
+}
+
+impl CodingEndGeometry {
+    fn admits(
+        &self,
+        pass_index: usize,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        address: &str,
+        candidate: &ChoiceValue,
+    ) -> bool {
+        let parsed = ChoiceAddress::parse(address);
+        let allele_choice = matches!(parsed, Some(ChoiceAddress::SampleAllele(s))
+            if Segment::from(s) == self.segment)
+            && self.allele_pass == Some(pass_index);
+        let end_choice = matches!(parsed, Some(ChoiceAddress::CodingEndOutcome(s))
+            if Segment::from(s) == self.segment)
+            && self.outcomes.pass_index == Some(pass_index);
+        if !allele_choice && !end_choice {
+            return true;
+        }
+        let Some(refdata) = refdata else { return false };
+        let id = if allele_choice {
+            match candidate {
+                ChoiceValue::AlleleId(id) => AlleleId::new(*id),
+                _ => return false,
+            }
+        } else {
+            let Some(instance) = sim.assignments.get(self.segment) else {
+                return false;
+            };
+            instance.allele_id
+        };
+        if !refdata.coding_ends_are_not_known_partial(self.segment, id) {
+            return false;
+        }
+        let Some(allele) = refdata.get(self.segment, id) else {
+            return false;
+        };
+        let valid = |outcome: &crate::end_processing::EndOutcome| {
+            crate::end_processing::materialize(
+                &allele.seq,
+                outcome.five,
+                outcome.three,
+                crate::assignment::SegmentOrientation::Forward,
+            )
+            .is_ok()
+        };
+        if end_choice {
+            let ChoiceValue::Int(index) = candidate else {
+                return false;
+            };
+            usize::try_from(*index)
+                .ok()
+                .and_then(|index| self.outcomes.values.get(index))
+                .is_some_and(valid)
+        } else {
+            self.outcomes.values.iter().any(valid)
+        }
+    }
+}
+
+/// Stop-free V/J reference support conditioned on the actual future trim
+/// domains. Filtering alleles before those domains are known would incorrectly
+/// reject an allele whose stop is removed by an explicitly requested trim.
+#[derive(Clone, Debug)]
+pub(crate) struct CodingSegmentFeasibility {
+    segment: Segment,
+    alleles: ChoiceDomain<AlleleId>,
+    trim_5: ChoiceDomain<u32>,
+    trim_3: ChoiceDomain<u32>,
+}
+
+impl CodingSegmentFeasibility {
+    pub(crate) fn new(
+        segment: Segment,
+        alleles: ChoiceDomain<AlleleId>,
+        trim_5: ChoiceDomain<u32>,
+        trim_3: ChoiceDomain<u32>,
+    ) -> Self {
+        Self {
+            segment,
+            alleles,
+            trim_5,
+            trim_3,
+        }
+    }
+
+    fn admits(
+        &self,
+        pass_index: usize,
+        sim: &Simulation,
+        refdata: Option<&RefDataConfig>,
+        address: &str,
+        candidate: &ChoiceValue,
+    ) -> bool {
+        let sample_address = sample_allele_address(self.segment);
+        let five_address = trim_address(self.segment, TrimEnd::Five);
+        let three_address = trim_address(self.segment, TrimEnd::Three);
+        if address != sample_address && address != five_address && address != three_address {
+            return true;
+        }
+        let Some(refdata) = refdata else { return true };
+        let allele_ids = if address == sample_address {
+            let ChoiceValue::AlleleId(id) = candidate else {
+                return false;
+            };
+            vec![AlleleId::new(*id)]
+        } else if let Some(inst) = sim.assignments.get(self.segment) {
+            vec![inst.allele_id]
+        } else {
+            self.alleles.values.clone()
+        };
+        let trim_values = |domain: &ChoiceDomain<u32>, end: TrimEnd, target_address: &str| {
+            if address == target_address {
+                match candidate {
+                    ChoiceValue::Int(n) if (0..=u16::MAX as i64).contains(n) => vec![*n as u32],
+                    _ => Vec::new(),
+                }
+            } else if domain.is_committed_before(pass_index) {
+                sim.assignments
+                    .get(self.segment)
+                    .map(|inst| {
+                        vec![u32::from(match end {
+                            TrimEnd::Five => inst.trim_5,
+                            TrimEnd::Three => inst.trim_3,
+                        })]
+                    })
+                    .unwrap_or_default()
+            } else {
+                domain.values.clone()
+            }
+        };
+        let five = trim_values(&self.trim_5, TrimEnd::Five, five_address);
+        let three = trim_values(&self.trim_3, TrimEnd::Three, three_address);
+        allele_ids.into_iter().any(|id| {
+            let Some(allele) = refdata.get(self.segment, id) else {
+                return false;
+            };
+            let Some(anchor) = allele.anchor.map(u32::from) else {
+                return false;
+            };
+            five.iter().any(|&t5| {
+                three.iter().any(|&t3| {
+                    t5 <= anchor
+                        && allele
+                            .seq
+                            .len()
+                            .checked_sub(t3 as usize)
+                            .is_some_and(|end| anchor as usize + 3 <= end)
+                        && crate::productivity::retained_stop_free(
+                            refdata,
+                            self.segment,
+                            id,
+                            t5,
+                            t3,
+                        )
+                })
+            })
+        })
     }
 }
 
@@ -67,6 +371,10 @@ pub(crate) struct ChoiceDomain<T> {
 impl<T> ChoiceDomain<T> {
     pub(crate) fn new(pass_index: Option<usize>, values: Vec<T>) -> Self {
         Self { pass_index, values }
+    }
+
+    pub(crate) fn pass_index(&self) -> Option<usize> {
+        self.pass_index
     }
 
     fn is_committed_before(&self, pass_index: usize) -> bool {
@@ -85,6 +393,7 @@ pub(crate) struct VjProductiveFeasibility {
     j_trim_5: ChoiceDomain<u32>,
     j_trim_3: ChoiceDomain<u32>,
     np1_lengths: Vec<u32>,
+    require_coding_integrity: bool,
 }
 
 impl VjProductiveFeasibility {
@@ -106,7 +415,13 @@ impl VjProductiveFeasibility {
             j_trim_5,
             j_trim_3,
             np1_lengths,
+            require_coding_integrity: false,
         }
+    }
+
+    pub(crate) fn with_coding_integrity(mut self) -> Self {
+        self.require_coding_integrity = true;
+        self
     }
 
     fn admits(
@@ -291,6 +606,17 @@ impl VjProductiveFeasibility {
                     else {
                         continue;
                     };
+                    if self.require_coding_integrity
+                        && !crate::productivity::retained_stop_free(
+                            refdata,
+                            Segment::V,
+                            *v_id,
+                            *v_five,
+                            *v_three,
+                        )
+                    {
+                        continue;
+                    }
 
                     for j_id in j_alleles {
                         let Some(j_allele) = refdata.get(Segment::J, *j_id) else {
@@ -310,6 +636,18 @@ impl VjProductiveFeasibility {
                                 ) else {
                                     continue;
                                 };
+
+                                if self.require_coding_integrity
+                                    && !crate::productivity::retained_stop_free(
+                                        refdata,
+                                        Segment::J,
+                                        *j_id,
+                                        *j_five,
+                                        *j_three,
+                                    )
+                                {
+                                    continue;
+                                }
 
                                 if self.np1_lengths.iter().any(|np_len| {
                                     productive_length_is_feasible(v_tail, *np_len, j_head)
@@ -388,7 +726,7 @@ fn no_known_stop_for_length(v_tail: &[u8], np_len: u32, j_head: &[u8]) -> bool {
     let mut offset = 0usize;
     while offset + 3 <= bases.len() {
         if let (Some(a), Some(b), Some(c)) = (bases[offset], bases[offset + 1], bases[offset + 2]) {
-            if translate_codon(a, b, c) == AMINO_STOP {
+            if crate::productivity::codon_stop([a, b, c]) != Some(false) {
                 return false;
             }
         }

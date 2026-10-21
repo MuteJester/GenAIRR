@@ -25,6 +25,16 @@ pub struct Simulation {
     /// V/D/J/C allele instances sampled for this simulation.
     pub assignments: crate::assignment::AlleleAssignments,
 
+    /// Donor genotype's immutable union of carried alleles across both
+    /// chromosomes. None leaves inference reference-wide.
+    pub live_call_support: Option<Arc<crate::live_call::LiveCallSupport>>,
+
+    /// Optional retained-outcome choices and persistent P-base ancestry.
+    /// Ordinary simulations pay no allocation for this opt-in model.
+    pub coding_end_provenance: Option<Arc<super::CodingEndProvenance>>,
+    /// Optional immutable repair founder and persistent descendant observation map.
+    pub duplex_provenance: Option<Arc<super::DuplexProvenance>>,
+
     /// V/D/J live-call evidence and its monotonic version chain.
     /// Writers: `with_assembled_segment_live_call`,
     /// `SimulationBuilder::seal_with_committed_live_calls`. Readers:
@@ -41,9 +51,78 @@ pub struct Simulation {
     /// uniform mutation passes. Read by AIRR projection's
     /// `n_mutations` field.
     pub mutation_count: u32,
+    /// Cumulative realized SHM event burden per input-molecule nucleotide:
+    /// sum of `applied_count / input_pool_len` over mutation stages.
+    /// Observation loss and structural edits preserve earlier contributions.
+    /// Lineage projection resets this with its net-difference counter.
+    pub mutation_burden: f64,
 }
 
 impl Simulation {
+    pub fn with_duplex_provenance(
+        &self,
+        provenance: Arc<super::DuplexProvenance>,
+    ) -> Result<Self, String> {
+        if self.duplex_provenance.is_some() {
+            return Err("duplex founder ancestry is already installed".into());
+        }
+        provenance.validate_initial_pool(self.pool.as_slice())?;
+        let mut next = self.clone();
+        next.duplex_provenance = Some(provenance);
+        Ok(next)
+    }
+
+    pub fn coding_end_choice(&self, segment: Segment) -> Option<&super::CodingEndChoice> {
+        self.coding_end_provenance
+            .as_ref()?
+            .choices
+            .iter()
+            .rev()
+            .find(|choice| choice.segment == segment)
+    }
+
+    pub fn with_coding_end_choice(
+        &self,
+        segment: Segment,
+        allele_id: crate::refdata::AlleleId,
+        five: i64,
+        three: i64,
+        outcome_index: usize,
+    ) -> Self {
+        let mut next = self.clone();
+        let provenance = Arc::make_mut(
+            next.coding_end_provenance
+                .get_or_insert_with(|| Arc::new(super::CodingEndProvenance::default())),
+        );
+        provenance.choices.push(super::CodingEndChoice {
+            choice_id: provenance.choices.len(),
+            segment,
+            allele_id,
+            five,
+            three,
+            outcome_index,
+        });
+        next
+    }
+
+    pub fn live_call_alleles(&self, segment: Segment) -> Option<&[crate::refdata::AlleleId]> {
+        self.live_call_support
+            .as_ref()
+            .and_then(|support| support.alleles(segment))
+    }
+
+    pub(crate) fn with_live_call_support(
+        &self,
+        support: Arc<crate::live_call::LiveCallSupport>,
+    ) -> Self {
+        let mut next = self.clone();
+        if self.live_call_support.as_deref() != Some(support.as_ref()) {
+            next.segment_calls = Arc::new(crate::live_call::SegmentCalls::empty());
+        }
+        next.live_call_support = Some(support);
+        next
+    }
+
     /// Empty simulation.
     pub fn new() -> Self {
         Self::with_capacity(DEFAULT_POOL_CAPACITY)
@@ -58,6 +137,10 @@ impl Simulation {
             segment_calls: Arc::new(crate::live_call::SegmentCalls::empty()),
             dirty_log: Arc::new(crate::live_call::DirtyLog::empty()),
             mutation_count: 0,
+            mutation_burden: 0.0,
+            live_call_support: None,
+            coding_end_provenance: None,
+            duplex_provenance: None,
         }
     }
 
@@ -70,6 +153,10 @@ impl Simulation {
             segment_calls: Arc::new(calls),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -82,6 +169,10 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: Arc::new(log),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -94,7 +185,19 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
+    }
+
+    /// Replace the SHM burden when recording a mutation stage or synthesizing
+    /// lineage net-difference provenance. This is not an observed mismatch rate.
+    pub(crate) fn with_mutation_burden(&self, burden: f64) -> Self {
+        let mut next = self.clone();
+        next.mutation_burden = burden;
+        next
     }
 
     #[must_use = "with_nucleotide_pushed returns (Simulation, NucHandle); \
@@ -102,6 +205,10 @@ impl Simulation {
                   explicitly with `let (next, _) = ...` if it isn't needed."]
     pub fn with_nucleotide_pushed(&self, n: Nucleotide) -> (Self, NucHandle) {
         let (pool, h) = self.pool.with_pushed(n);
+        let duplex_provenance = self
+            .duplex_provenance
+            .as_ref()
+            .map(|p| Arc::new(p.with_inserted(h.index(), n)));
         (
             Self {
                 pool,
@@ -110,6 +217,10 @@ impl Simulation {
                 segment_calls: self.segment_calls.clone(),
                 dirty_log: self.dirty_log.clone(),
                 mutation_count: self.mutation_count,
+                mutation_burden: self.mutation_burden,
+                live_call_support: self.live_call_support.clone(),
+                coding_end_provenance: self.coding_end_provenance.clone(),
+                duplex_provenance,
             },
             h,
         )
@@ -121,6 +232,14 @@ impl Simulation {
         iter: I,
     ) -> (Self, std::ops::Range<u32>) {
         let (pool, range) = self.pool.with_pushed_many(iter);
+        let duplex_provenance = self.duplex_provenance.as_ref().map(|p| {
+            Arc::new(p.with_replacement(
+                range.start,
+                range.start,
+                &pool.as_slice()[range.start as usize..range.end as usize],
+                super::DuplexRemovalCause::Replacement,
+            ))
+        });
         (
             Self {
                 pool,
@@ -129,6 +248,10 @@ impl Simulation {
                 segment_calls: self.segment_calls.clone(),
                 dirty_log: self.dirty_log.clone(),
                 mutation_count: self.mutation_count,
+                mutation_burden: self.mutation_burden,
+                live_call_support: self.live_call_support.clone(),
+                coding_end_provenance: self.coding_end_provenance.clone(),
+                duplex_provenance,
             },
             range,
         )
@@ -143,6 +266,21 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.as_ref().map(|p| {
+                Arc::new(
+                    p.with_substitution(
+                        handle.index(),
+                        *self
+                            .pool
+                            .get(handle)
+                            .expect("nucleotide handle outside pool"),
+                        new_n.base,
+                    ),
+                )
+            }),
         }
     }
 
@@ -155,6 +293,21 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.as_ref().map(|p| {
+                Arc::new(
+                    p.with_substitution(
+                        handle.index(),
+                        *self
+                            .pool
+                            .get(handle)
+                            .expect("nucleotide handle outside pool"),
+                        new_base,
+                    ),
+                )
+            }),
         }
     }
 
@@ -167,6 +320,10 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -192,6 +349,10 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -208,6 +369,10 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -220,6 +385,10 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -243,6 +412,10 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            coding_end_provenance: self.coding_end_provenance.clone(),
+            duplex_provenance: self.duplex_provenance.clone(),
         }
     }
 
@@ -253,7 +426,11 @@ impl Simulation {
     /// demand via [`crate::ir::compute_codon_rail`].
     pub fn with_indel_inserted(&self, at: u32, n: Nucleotide) -> Self {
         let new_pool = self.pool.with_inserted(at, n);
-        let adjusted = self.sequence.with_indel_adjusted(at, 1);
+        let adjusted = if self.duplex_provenance.is_some() {
+            duplex_sequence_after_insertion(&self.sequence, at, n.segment)
+        } else {
+            self.sequence.with_indel_adjusted(at, 1)
+        };
         Self {
             pool: new_pool,
             sequence: Arc::new(adjusted),
@@ -261,6 +438,16 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            duplex_provenance: self
+                .duplex_provenance
+                .as_ref()
+                .map(|p| Arc::new(p.with_inserted(at, n))),
+            coding_end_provenance: self
+                .coding_end_provenance
+                .as_ref()
+                .map(|p| Arc::new(p.shifted_for_replacement(at, at, 1))),
         }
     }
 
@@ -345,6 +532,19 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            duplex_provenance: self.duplex_provenance.as_ref().map(|p| {
+                Arc::new(p.with_replacement(
+                    old_range.start,
+                    old_range.end,
+                    &replacement,
+                    super::DuplexRemovalCause::Replacement,
+                ))
+            }),
+            coding_end_provenance: self.coding_end_provenance.as_ref().map(|p| {
+                Arc::new(p.shifted_for_replacement(old_range.start, old_range.end, new_len))
+            }),
         };
 
         (new_sim, old_region, installed_new_region)
@@ -354,6 +554,15 @@ impl Simulation {
     /// `at` removed. Same range-shift semantics as
     /// [`Self::with_indel_inserted`].
     pub fn with_indel_deleted(&self, at: u32) -> Self {
+        self.with_query_deleted(at, super::DuplexRemovalCause::StructuralDeletion)
+    }
+
+    /// Explicit missing read coverage, distinct from a structural deletion.
+    pub fn with_observation_deleted(&self, at: u32) -> Self {
+        self.with_query_deleted(at, super::DuplexRemovalCause::ObservationLoss)
+    }
+
+    fn with_query_deleted(&self, at: u32, cause: super::DuplexRemovalCause) -> Self {
         let new_pool = self.pool.with_deleted(at);
         let adjusted = self.sequence.with_indel_adjusted(at, -1);
         Self {
@@ -363,6 +572,61 @@ impl Simulation {
             segment_calls: self.segment_calls.clone(),
             dirty_log: self.dirty_log.clone(),
             mutation_count: self.mutation_count,
+            mutation_burden: self.mutation_burden,
+            live_call_support: self.live_call_support.clone(),
+            duplex_provenance: self.duplex_provenance.as_ref().map(|p| {
+                Arc::new(
+                    p.with_removed(
+                        at,
+                        *self
+                            .pool
+                            .get(NucHandle::new(at))
+                            .expect("deletion outside pool"),
+                        cause,
+                    ),
+                )
+            }),
+            coding_end_provenance: self
+                .coding_end_provenance
+                .as_ref()
+                .map(|p| Arc::new(p.shifted_for_replacement(at, at + 1, 0))),
         }
     }
+}
+
+/// A duplex observation has an explicit partition, including zero-width
+/// sources. Keep its declared insertion owner even at the outer query edge
+/// or when every source has become empty. Ordinary IR range semantics stay
+/// unchanged.
+fn duplex_sequence_after_insertion(sequence: &Sequence, at: u32, segment: Segment) -> Sequence {
+    let Some(owner) = sequence.regions.iter().position(|region| {
+        region.segment == segment && region.start.index() <= at && at <= region.end.index()
+    }) else {
+        // Invalid low-level owners remain detectable by the layout validator.
+        return sequence.with_indel_adjusted(at, 1);
+    };
+    Sequence {
+        regions: sequence
+            .regions
+            .iter()
+            .enumerate()
+            .map(|(index, region)| {
+                let start = region.start.index();
+                let end = region.end.index();
+                let (start, end) = if index == owner {
+                    (start, end + 1)
+                } else if at < start || (at == start && index > owner) {
+                    (start + 1, end + 1)
+                } else {
+                    (start, end)
+                };
+                Region {
+                    start: NucHandle::new(start),
+                    end: NucHandle::new(end),
+                    ..region.clone()
+                }
+            })
+            .collect(),
+    }
+    .with_frame_phases_recomputed()
 }

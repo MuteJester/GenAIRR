@@ -30,6 +30,20 @@ pub fn vj_refdata() -> RefDataConfig {
     cfg
 }
 
+/// Canonical landmarks for the biological productive contract; the generic
+/// structural fixtures above deliberately make no such biological claim.
+pub fn productive_vj_refdata() -> RefDataConfig {
+    let mut cfg = vj_refdata();
+    let mut pool = genairr_engine::refdata::AllelePool::new();
+    for (_, source) in cfg.v_pool.iter() {
+        let mut allele = source.clone();
+        allele.seq[6..9].copy_from_slice(b"TGT");
+        let _ = pool.push(allele);
+    }
+    cfg.v_pool = pool;
+    cfg
+}
+
 pub fn vj_plan(refdata: &RefDataConfig) -> PassPlan {
     let length_dist = || {
         Box::new(EmpiricalLengthDist::from_pairs(

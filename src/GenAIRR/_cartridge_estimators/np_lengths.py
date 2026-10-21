@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ._common import _load_rearrangements
+from ._common import _load_rearrangements, _reject_nonzero_p_provenance
 from ..reference_models import (
     EmpiricalDistributionSpec,
     NP_KEYS,
@@ -47,12 +47,16 @@ class _NpLengthEstimatorMixin:
         Columns deliberately ignored: ``np1`` / ``np2``
         (sequence-derived length is sensitive to
         post-claim reabsorption — see audit §5.3),
-        ``p_v_3_length`` / ``p_d_5_length`` /
-        ``p_d_3_length`` / ``p_j_5_length`` (separate
-        P-nucleotide biology — see
-        ``docs/p_nucleotide_design.md``),
         and ``junction_length`` (aggregate arithmetic too
         fragile across simulators — audit §5.2).
+
+        AIRR NP lengths include both N and P nucleotides, whereas
+        the engine's NP sampler generates N additions separately
+        from P additions. Any explicitly nonzero ``p_*_length``
+        provenance therefore raises ``ValueError`` before estimation.
+        Missing or zero P fields remain accepted. P counts are not
+        subtracted because later sequence transformations can remove
+        or reassign those bases; N-only provenance is required.
 
         Per-row validation is **field-local**: a malformed
         or missing value in one NP column drops only that
@@ -115,6 +119,9 @@ class _NpLengthEstimatorMixin:
         )
 
         records, source_label = _load_rearrangements(rearrangements)
+        _reject_nonzero_p_provenance(
+            records, estimator="estimate_np_length_distributions",
+        )
         chain_has_d = self._chain_type.has_d
         active_keys = NP_KEYS if chain_has_d else ("NP1",)
 

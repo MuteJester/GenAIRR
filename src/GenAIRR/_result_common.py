@@ -28,9 +28,9 @@ def _allele_name_or_empty(refdata: Any, segment: str, allele_id: Optional[int]) 
 def _inject_truth_columns(outcome: Any, refdata: Any, record: Dict[str, Any]) -> None:
     """Append `truth_v_call` / `truth_d_call` / `truth_j_call`
     columns to ``record`` from the originally-sampled allele ids
-    stored in the simulation's `assignments`. Distinct from
-    `v_call` / `d_call` / `j_call`, which are evidence-driven and
-    can change under heavy SHM.
+    stored in the simulation's `assignments`. These compatibility
+    aliases equal the standard `v_call` / `d_call` / `j_call` fields.
+    Evidence-based calls are available as `recalled_*_call`.
     """
     sim = outcome.final_simulation()
     record["truth_v_call"] = _allele_name_or_empty(refdata, "V", sim.v_allele_id())

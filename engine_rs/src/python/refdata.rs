@@ -252,26 +252,19 @@ impl PyRefDataConfig {
             }
             allowed.push(bytes[0].to_ascii_uppercase());
         }
-        self.inner.rules.alphabet =
-            crate::refdata::ReferenceAlphabet { allowed };
+        self.inner.rules.alphabet = crate::refdata::ReferenceAlphabet { allowed };
         Ok(())
     }
 
     /// Read the V anchor rule as a dict: ``{"expected_aa": [...],
     /// "required": bool, "missing_severity": str, "mismatch_severity":
     /// str}``.
-    fn v_anchor_rule<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    fn v_anchor_rule<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         anchor_rule_to_pydict(py, &self.inner.rules.v_anchor)
     }
 
     /// Read the J anchor rule. Same shape as [`Self::v_anchor_rule`].
-    fn j_anchor_rule<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    fn j_anchor_rule<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         anchor_rule_to_pydict(py, &self.inner.rules.j_anchor)
     }
 
@@ -392,10 +385,7 @@ impl PyRefDataConfig {
     /// Read the identity as a dict. Missing fields are present with
     /// value ``None``; consumers can use ``dict.get(...)`` without
     /// guarding.
-    fn identity<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    fn identity<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         use pyo3::types::PyDict;
         let d = PyDict::new_bound(py);
         let id = &self.inner.identity;
@@ -425,8 +415,7 @@ impl PyRefDataConfig {
         subregions: Option<Vec<(String, u16, u16)>>,
     ) -> PyResult<u32> {
         let status = parse_functional_status(functional_status)?;
-        let subregions =
-            parse_subregions(subregions.as_deref(), seq.len() as u16)?;
+        let subregions = parse_subregions(subregions.as_deref(), seq.len() as u16)?;
         Ok(push_allele(
             &mut self.inner.v_pool,
             Segment::V,
@@ -567,15 +556,36 @@ impl PyRefDataConfig {
     ///
     /// Read-only; never raises. To force errors instead, call
     /// [`Self::validate_strict`].
-    fn validate<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+    fn validate<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
         let issues = self.inner.validate();
         issues
             .into_iter()
             .map(|issue| issue_to_pydict(py, &issue))
             .collect()
+    }
+
+    /// Attach versioned, sequence-bound authoring evidence (JSON schema v1).
+    fn set_allele_evidence(
+        &mut self,
+        segment: &str,
+        allele_id: u32,
+        evidence_json: &str,
+    ) -> PyResult<()> {
+        let segment = evidence_segment(segment)?;
+        let evidence = serde_json::from_str(evidence_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid reference evidence: {e}")))?;
+        self.inner
+            .set_allele_evidence(segment, AlleleId::new(allele_id), evidence)
+            .map_err(PyValueError::new_err)
+    }
+
+    /// JSON avoids any Python-side interpretation of evidence values.
+    fn allele_evidence_json(&self, segment: &str, allele_id: u32) -> PyResult<Option<String>> {
+        let segment = evidence_segment(segment)?;
+        Ok(self
+            .inner
+            .allele_evidence(segment, AlleleId::new(allele_id))
+            .map(|e| serde_json::to_string(e).expect("evidence serializes")))
     }
 
     /// Strict variant: raises `ValueError` with a multi-line summary
@@ -638,9 +648,7 @@ fn _identity_marker(_: ReferenceIdentity) {}
 /// `None` (or omitted at the call site) yields `Ok(None)`, meaning
 /// the cartridge did not provide an annotation. Any other value
 /// raises `ValueError`.
-pub(crate) fn parse_functional_status(
-    s: Option<&str>,
-) -> PyResult<Option<FunctionalStatus>> {
+pub(crate) fn parse_functional_status(s: Option<&str>) -> PyResult<Option<FunctionalStatus>> {
     let Some(raw) = s else { return Ok(None) };
     match raw.to_ascii_lowercase().as_str() {
         "functional" | "f" => Ok(Some(FunctionalStatus::Functional)),
@@ -688,8 +696,8 @@ fn parse_subregions(
         std::collections::HashSet::new();
     let mut out: Vec<crate::refdata::VSubregion> = Vec::with_capacity(entries.len());
     for (raw_label, start, end) in entries {
-        let label = crate::refdata::VSubregionLabel::from_str(raw_label.as_str())
-            .ok_or_else(|| {
+        let label =
+            crate::refdata::VSubregionLabel::from_str(raw_label.as_str()).ok_or_else(|| {
                 PyValueError::new_err(format!(
                     "subregions: unknown label {:?}; expected one of \
                      'FWR1' / 'CDR1' / 'FWR2' / 'CDR2' / 'FWR3' \
@@ -895,6 +903,17 @@ fn issue_to_pydict<'py>(
     };
     d.set_item("severity", severity)?;
     match issue {
+        RefDataValidationIssue::ReferenceEvidenceProblem {
+            segment,
+            allele_id,
+            reason,
+            ..
+        } => {
+            d.set_item("kind", "ReferenceEvidenceProblem")?;
+            d.set_item("segment", segment_str(*segment))?;
+            d.set_item("allele_id", allele_id.index())?;
+            d.set_item("reason", reason)?;
+        }
         RefDataValidationIssue::EmptyRequiredPool { segment } => {
             d.set_item("kind", "EmptyRequiredPool")?;
             d.set_item("segment", segment_str(*segment))?;
@@ -950,7 +969,10 @@ fn issue_to_pydict<'py>(
             d.set_item("allele_id", allele_id.index())?;
             d.set_item("codon", PyBytes::new_bound(py, codon))?;
             d.set_item("aa", aa.to_string())?;
-            d.set_item("expected", expected.iter().map(|c| c.to_string()).collect::<Vec<_>>())?;
+            d.set_item(
+                "expected",
+                expected.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+            )?;
         }
         RefDataValidationIssue::MissingAnchor {
             segment,
@@ -1007,4 +1029,36 @@ fn push_allele(
         subregions,
     });
     id.index()
+}
+
+fn evidence_segment(segment: &str) -> PyResult<Segment> {
+    match segment.to_ascii_uppercase().as_str() {
+        "V" => Ok(Segment::V),
+        "D" => Ok(Segment::D),
+        "J" => Ok(Segment::J),
+        _ => Err(PyValueError::new_err("segment must be V, D or J")),
+    }
+}
+
+/// Internal native authoring resolver, shared by all Python authoring consumers.
+#[pyfunction]
+#[pyo3(signature = (sequence, segment, *, locus="", gapped_sequence=None, imgt_gapped=false, explicit_anchor=None))]
+pub fn resolve_reference_anchor(
+    sequence: &[u8],
+    segment: &str,
+    locus: &str,
+    gapped_sequence: Option<&[u8]>,
+    imgt_gapped: bool,
+    explicit_anchor: Option<u16>,
+) -> PyResult<String> {
+    let segment = evidence_segment(segment)?;
+    let resolved = crate::refdata::evidence::resolve_anchor(
+        sequence,
+        segment,
+        locus,
+        gapped_sequence,
+        imgt_gapped,
+        explicit_anchor,
+    );
+    serde_json::to_string(&resolved).map_err(|e| PyValueError::new_err(e.to_string()))
 }

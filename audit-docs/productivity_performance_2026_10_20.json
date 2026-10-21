@@ -1,0 +1,31 @@
+{
+  "extension_sha256": "03b21c9769157a78eb4797477be6acfb02265acdd85d58ef8b362950ac8d0e78",
+  "profiles": [
+    {
+      "workload": "W3",
+      "records": 1000,
+      "warmup_records": 50,
+      "seed_range": [
+        50,
+        1049
+      ],
+      "wall_seconds": 0.985384679006529,
+      "cpu_seconds": 0.9853810369999999,
+      "unchanged_budget_seconds": 2.0,
+      "reference_hash": "sha256:7f01b15942a3b648800fde857efc6799b37bf0065dc45144406196dd24ea2fc5"
+    },
+    {
+      "workload": "W6",
+      "records": 1000,
+      "warmup_records": 50,
+      "seed_range": [
+        50,
+        1049
+      ],
+      "wall_seconds": 0.7921269880025648,
+      "cpu_seconds": 0.79211926,
+      "unchanged_budget_seconds": 1.0,
+      "reference_hash": "sha256:7f01b15942a3b648800fde857efc6799b37bf0065dc45144406196dd24ea2fc5"
+    }
+  ]
+}

@@ -5,8 +5,9 @@ bundled ``data/mutation_model_parameters/*.pkl`` pickles and
 reshapes them into the flat ``(mutability, substitution)`` lists
 that ``GenAIRR._engine.PassPlan.push_mutate_s5f`` expects.
 
-The bundled pickles are 3-tuples of ``(mutability, substitution,
-combined)`` dicts keyed by 5-mer strings. ``mutability[5mer]`` is a
+The bundled pickles use only Python builtins, so loading a kernel does
+not require pandas or NumPy. They are 3-tuples of ``(mutability,
+substitution, combined)`` dicts keyed by 5-mer strings. ``mutability[5mer]`` is a
 float; ``substitution[5mer]`` is a per-destination dict
 ``{"A": p, "C": p, "G": p, "T": p}`` (the source base entry is
 absent — S5F is "given a mutation, what does the central base

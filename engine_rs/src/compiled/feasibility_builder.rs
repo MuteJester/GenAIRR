@@ -10,11 +10,15 @@
 use super::analyze::{CompileFactIndex, Located};
 use super::error::{contract_precondition, plan_scoped_error, CompileError};
 use super::{np_length_address, trim_address};
+use crate::address::PEnd;
 use crate::assignment::TrimEnd;
 use crate::contract::{ContractKind, ContractSet};
-use crate::feasibility::{ChoiceDomain, FeasibilityContext, VjProductiveFeasibility};
+use crate::feasibility::{
+    ChoiceDomain, CodingEndGeometry, CodingSegmentFeasibility, FeasibilityContext,
+    NpCompletionDomain, PProductiveFeasibility, SegmentCompletionDomain, VjProductiveFeasibility,
+};
 use crate::ir::Segment;
-use crate::pass::{AlleleIdSupport, IntegerSupport};
+use crate::pass::{AlleleIdSupport, IntegerSupport, NpBaseSupport};
 use crate::refdata::{AlleleId, RefDataConfig};
 use std::collections::HashSet;
 
@@ -334,21 +338,351 @@ pub(super) fn build_feasibility_context(
     refdata: Option<&RefDataConfig>,
     facts: &CompileFactIndex,
 ) -> Option<FeasibilityContext> {
-    let contracts = contracts?;
-    if !contracts.contains_kind(ContractKind::ProductiveJunctionFrame) {
-        return None;
-    }
-    if facts.assigned_segments.contains(&Segment::D) {
-        return None;
-    }
-
     let refdata = refdata?;
-    let vj_productive = build_vj_productive_feasibility(refdata, facts)?;
-    let context = FeasibilityContext::empty().with_vj_productive(vj_productive);
+    let mut context = FeasibilityContext::empty();
+    for (&segment, entry) in &facts.coding_end_supports {
+        context = context.with_coding_end_geometry(CodingEndGeometry {
+            segment,
+            allele_pass: facts
+                .allele_supports
+                .get(&segment)
+                .map(|entry| entry.pass_index),
+            outcomes: ChoiceDomain::new(Some(entry.pass_index), entry.value.clone()),
+        });
+    }
+    let Some(contracts) = contracts else {
+        return (!context.is_empty()).then_some(context);
+    };
+    if contracts.contains_kind(ContractKind::CodingSequenceIntegrity) {
+        for segment in [Segment::V, Segment::J] {
+            if facts.coding_end_supports.contains_key(&segment) {
+                continue;
+            }
+            if let (Some(alleles), Some(trim_5), Some(trim_3)) = (
+                allele_domain_for_feasibility(segment, refdata, facts),
+                trim_domain_for_feasibility(segment, TrimEnd::Five, facts),
+                trim_domain_for_feasibility(segment, TrimEnd::Three, facts),
+            ) {
+                context = context.with_coding_segment(CodingSegmentFeasibility::new(
+                    segment, alleles, trim_5, trim_3,
+                ));
+            }
+        }
+    }
+    let p_aware = facts.needs_complete_productive_support(contracts);
+    if p_aware {
+        if let Some(feasibility) =
+            build_p_productive_feasibility(contracts, refdata, facts, &mut Vec::new())
+        {
+            context = context.with_p_productive(feasibility);
+        }
+    } else if contracts.contains_kind(ContractKind::ProductiveJunctionFrame)
+        && !facts.assigned_segments.contains(&Segment::D)
+    {
+        if let Some(mut vj_productive) = build_vj_productive_feasibility(refdata, facts) {
+            if contracts.contains_kind(ContractKind::CodingSequenceIntegrity) {
+                vj_productive = vj_productive.with_coding_integrity();
+            }
+            context = context.with_vj_productive(vj_productive);
+        }
+    }
     if context.is_empty() {
         None
     } else {
         Some(context)
+    }
+}
+
+pub(super) fn validate_p_productive_supports(
+    contracts: &ContractSet,
+    refdata: Option<&RefDataConfig>,
+    facts: &CompileFactIndex,
+    errors: &mut Vec<CompileError>,
+) {
+    let Some(refdata) = refdata else {
+        errors.push(plan_scoped_error(contract_precondition(
+            "productive_junction_frame",
+            "P-aware productive feasibility requires reference data",
+        )));
+        return;
+    };
+    if let Some(feasibility) = build_p_productive_feasibility(contracts, refdata, facts, errors) {
+        if !feasibility.has_completion(&crate::ir::Simulation::new(), refdata) {
+            errors.push(plan_scoped_error(contract_precondition(
+                "productive_junction_frame",
+                "declared allele, trim, N and P supports have no productive completion",
+            )));
+        }
+    }
+}
+
+fn build_p_productive_feasibility(
+    contracts: &ContractSet,
+    refdata: &RefDataConfig,
+    facts: &CompileFactIndex,
+    errors: &mut Vec<CompileError>,
+) -> Option<PProductiveFeasibility> {
+    let initial_errors = errors.len();
+    let unsupported = |reason: String| super::error::CompileErrorKind::UnsupportedContractCombo {
+        contract_name: "productive_junction_frame".into(),
+        reason,
+    };
+    let mut p_lengths = Vec::new();
+    let processing = facts
+        .coding_end_supports
+        .iter()
+        .map(|(&segment, entry)| {
+            (
+                segment,
+                ChoiceDomain::new(Some(entry.pass_index), entry.value.clone()),
+            )
+        })
+        .collect();
+    let mut ends = HashSet::new();
+    let mut ordered = Vec::new();
+    for (end, entry) in &facts.p_length_supports {
+        if !ends.insert(*end) {
+            errors.push(entry.error(unsupported(format!("P-aware productive feasibility requires one P-length pass per coding end; repeated {end:?}"))));
+            continue;
+        }
+        let Some(values) = completion_integer_values(&entry.value) else {
+            errors.push(entry.error(unsupported(format!("P-aware productive feasibility requires finite nonnegative enumerable P-length support at {end:?}"))));
+            continue;
+        };
+        p_lengths.push((*end, ChoiceDomain::new(Some(entry.pass_index), values)));
+        ordered.push((
+            entry.pass_index,
+            match end {
+                PEnd::V3 => 1,
+                PEnd::D5 => 4,
+                PEnd::D3 => 6,
+                PEnd::J5 => 8,
+            },
+        ));
+        if !facts.allele_supports.contains_key(&end.source_segment()) {
+            errors.push(entry.error(unsupported(format!(
+                "P-aware productive feasibility requires an allele-sampling pass for {:?}",
+                end.source_segment()
+            ))));
+        }
+    }
+    for (end, entry) in &facts.coding_end_emissions {
+        ordered.push((
+            entry.pass_index,
+            match end {
+                PEnd::V3 => 1,
+                PEnd::D5 => 4,
+                PEnd::D3 => 6,
+                PEnd::J5 => 8,
+            },
+        ));
+    }
+    let uses_d = facts.assigned_segments.contains(&Segment::D);
+    let mut segments = Vec::new();
+    for segment in [Segment::V, Segment::D, Segment::J] {
+        if segment == Segment::D && !uses_d {
+            continue;
+        }
+        let (Some(alleles), Some(trim_5), Some(trim_3)) = (
+            allele_domain_for_feasibility(segment, refdata, facts),
+            trim_domain_for_feasibility(segment, TrimEnd::Five, facts),
+            trim_domain_for_feasibility(segment, TrimEnd::Three, facts),
+        ) else {
+            errors.push(plan_scoped_error(unsupported(format!("P-aware productive feasibility requires finite allele and trim support for {segment:?}"))));
+            continue;
+        };
+        let assembly = facts
+            .append_passes
+            .get(&segment)
+            .filter(|passes| passes.len() == 1)
+            .map(|passes| passes[0]);
+        if let Some(index) = assembly {
+            ordered.push((
+                index,
+                match segment {
+                    Segment::V => 0,
+                    Segment::D => 5,
+                    _ => 9,
+                },
+            ));
+            for (end, trim) in [(TrimEnd::Five, &trim_5), (TrimEnd::Three, &trim_3)] {
+                let earliest_p = facts
+                    .p_length_supports
+                    .iter()
+                    .filter(|(e, _)| e.source_segment() == segment)
+                    .map(|(_, e)| e.pass_index)
+                    .min()
+                    .unwrap_or(index)
+                    .min(index);
+                if trim.pass_index().is_some_and(|t| t >= earliest_p) {
+                    errors.push(plan_scoped_error(unsupported(format!(
+                        "{segment:?} {end:?} trimming must precede P templating and assembly"
+                    ))));
+                }
+            }
+        } else {
+            errors.push(plan_scoped_error(unsupported(format!(
+                "P-aware productive feasibility requires one assembly pass for {segment:?}"
+            ))));
+        }
+        segments.push(SegmentCompletionDomain {
+            segment,
+            alleles,
+            trim_5,
+            trim_3,
+        });
+    }
+    let mut np = Vec::new();
+    for segment in [Segment::Np1, Segment::Np2] {
+        let Some(entry) = facts.np_length_supports.get(&segment) else {
+            continue;
+        };
+        if !facts
+            .append_passes
+            .get(&segment)
+            .is_some_and(|passes| passes.as_slice() == [entry.pass_index])
+        {
+            errors.push(entry.error(unsupported(format!(
+                "P-aware productive feasibility requires one N-generation pass for {segment:?}"
+            ))));
+        }
+        if segment == Segment::Np2 && !uses_d {
+            errors.push(entry.error(unsupported(
+                "NP2 is not part of a VJ productive junction".into(),
+            )));
+        }
+        let Some(values) = completion_integer_values(&entry.value) else {
+            errors.push(entry.error(unsupported(format!("P-aware productive feasibility requires finite enumerable {segment:?} length support"))));
+            continue;
+        };
+        let bases = facts
+            .np_base_supports
+            .get(&segment)
+            .and_then(|entry| entry.value)
+            .or_else(|| {
+                values.iter().all(|n| *n == 0).then_some(NpBaseSupport {
+                    first: 15,
+                    transitions: [15; 4],
+                })
+            });
+        let Some(bases) = bases.filter(|b| {
+            b.first != 0
+                && b.first & !15 == 0
+                && b.transitions.iter().all(|m| *m != 0 && *m & !15 == 0)
+        }) else {
+            errors.push(entry.error(unsupported(format!("P-aware productive feasibility requires declared canonical first-order N-base support for {segment:?}"))));
+            continue;
+        };
+        ordered.push((
+            entry.pass_index,
+            if segment == Segment::Np1 { 2 } else { 7 },
+        ));
+        np.push(NpCompletionDomain {
+            segment,
+            lengths: ChoiceDomain::new(Some(entry.pass_index), values),
+            bases,
+        });
+    }
+    let d_orientation = match facts.d_orientation_supports.as_slice() {
+        [] => ChoiceDomain::new(None, vec![false]),
+        [entry] if !entry.value.is_empty() => {
+            ordered.push((entry.pass_index, 3));
+            ChoiceDomain::new(Some(entry.pass_index), entry.value.clone())
+        }
+        _ => {
+            errors.push(plan_scoped_error(unsupported(
+                "P-aware productive feasibility requires at most one D-orientation decision".into(),
+            )));
+            ChoiceDomain::new(None, vec![false])
+        }
+    };
+    ordered.sort_unstable();
+    if ordered.windows(2).any(|pair| pair[0].1 > pair[1].1) {
+        errors.push(plan_scoped_error(unsupported("P-aware productive feasibility requires coding-order assembly: V, V3-P, N1, D orientation/D5-P/D/D3-P, N2, J5-P, J".into())));
+    }
+    if errors.len() != initial_errors {
+        return None;
+    }
+    Some(PProductiveFeasibility {
+        segments,
+        processing,
+        p_lengths,
+        np,
+        d_orientation,
+        check_frame: contracts.contains_kind(ContractKind::ProductiveJunctionFrame)
+            || contracts.contains_kind(ContractKind::CodingSequenceIntegrity),
+        check_stops: contracts.contains_kind(ContractKind::NoStopCodonInJunction)
+            || contracts.contains_kind(ContractKind::CodingSequenceIntegrity),
+        check_coding: contracts.contains_kind(ContractKind::CodingSequenceIntegrity),
+        check_v_anchor: contracts.contains_kind(ContractKind::CanonicalAnchor {
+            segment: Segment::V,
+        }),
+        check_j_anchor: contracts.contains_kind(ContractKind::CanonicalAnchor {
+            segment: Segment::J,
+        }),
+    })
+}
+
+fn completion_integer_values(support: &IntegerSupport) -> Option<Vec<u32>> {
+    let IntegerSupport::Enumerated(values) = support else {
+        return None;
+    };
+    if values.is_empty() || values.iter().any(|n| !(0..=u32::MAX as i64).contains(n)) {
+        return None;
+    }
+    Some(unique_u32_values(values.iter().map(|n| *n as u32)))
+}
+
+pub(super) fn validate_coding_supports(
+    refdata: Option<&RefDataConfig>,
+    facts: &CompileFactIndex,
+    errors: &mut Vec<CompileError>,
+) {
+    let Some(refdata) = refdata else { return };
+    for segment in [Segment::V, Segment::J] {
+        // The joint end-outcome solver validates these without reducing
+        // correlated outcomes to independent trim marginals.
+        if facts.coding_end_supports.contains_key(&segment) {
+            continue;
+        }
+        if !facts.allele_supports.contains_key(&segment) {
+            continue;
+        }
+        let (Some(five), Some(three)) = (
+            trim_values(segment, TrimEnd::Five, facts, errors),
+            trim_values(segment, TrimEnd::Three, facts, errors),
+        ) else {
+            continue;
+        };
+        let feasible = allele_ids_for_segment(segment, refdata, facts)
+            .into_iter()
+            .any(|id| {
+                let Some(allele) = refdata.get(segment, id) else {
+                    return false;
+                };
+                let Some(anchor) = allele.anchor.map(u32::from) else {
+                    return false;
+                };
+                five.iter().any(|&t5| {
+                    three.iter().any(|&t3| {
+                        t5 <= anchor
+                            && allele
+                                .seq
+                                .len()
+                                .checked_sub(t3 as usize)
+                                .is_some_and(|end| anchor as usize + 3 <= end)
+                            && crate::productivity::retained_stop_free(refdata, segment, id, t5, t3)
+                    })
+                })
+            });
+        if !feasible {
+            errors.push(plan_scoped_error(contract_precondition(
+                "coding_sequence_integrity",
+                format!(
+                    "{segment:?} allele/trim support has no stop-free retained coding sequence"
+                ),
+            )));
+        }
     }
 }
 

@@ -89,41 +89,46 @@ truth.
 
 A crucial detail: when `d_inverted == True`, the **`d_germline_start`
 / `d_germline_end` coordinates remain in the original (forward)
-allele orientation**. They don't track the inverted orientation
-that's in the assembled pool. `d_cigar` continues to use only
-canonical M/I/D ops (never X), tallied over the inverted pool
-bytes vs the forward allele bytes - so under inversion the
-match-rate `d_identity` drops, but the M-op length still equals
-the retained slice's allele-coordinate span.
+allele orientation**. Alignment columns traverse that interval in
+reverse order and complement its reference bases to match the
+assembled orientation. Segment-local `d_cigar` uses M/I/D operations;
+`d_identity` is the fraction of matching alignment columns, including
+gap columns in the denominator.
 
 This convention means:
 
 - `d_germline_start/end` are stable forward-allele coordinates
   regardless of orientation.
-- `d_identity` reflects the alignment evidence (low identity is
-  expected under inversion).
+- Inversion alone does not lower `d_identity`; an unchanged inverted
+  D matches its oriented reference.
 - `d_inverted` is the single source of truth for "did inversion
   happen" - don't try to infer it from `d_identity` or coordinate
   patterns.
 
 ### D allele calls are orientation-aware
 
-The live-call walker that produces `d_call` is orientation-aware:
+The live-call walker that produces `recalled_d_call` is orientation-aware:
 it complements the observed pool byte on the fly before scoring
-against the reference index. So inverted records still get a
-meaningful `d_call` - the same forward allele id, just scored
-through a single-complement pass instead of via a parallel
-inverted index. The orientation lives on the AlleleInstance,
-not on the call.
+against the reference index. The inferred names refer to the same
+canonical alleles and may differ from the generating allele after
+mutation. Standard `d_call` always identifies the generating allele;
+`d_inverted` records its assembled orientation.
 
 ## Receptor revision
 
 In real B-cell biology, the V segment can be replaced after
 initial recombination - receptor editing in the bone marrow.
 GenAIRR models that with a per-record Bernoulli draw at the
-post-recombine point: with probability `prob`, the originally
-sampled V is replaced with a different germline V allele; with
-probability `1 - prob`, the original V is kept.
+post-recombine point: with probability `prob`, it attempts replacement
+with a different eligible germline V allele; with probability `1 - prob`,
+the original V is kept.
+
+Replacement candidates must retain the current V-region length and satisfy
+the active contracts on the complete revised sequence. Their original weights
+are renormalized over the eligible candidates, including genotype restrictions
+when configured. If an attempted revision has no eligible replacement,
+permissive execution records `receptor_revision_applied=False`; strict execution
+raises an empty-support error. Replay checks the same replacement constraints.
 
 ```python
 result = (
@@ -158,14 +163,15 @@ print(sum(1 for r in result.records if r["receptor_revision_applied"]))
 ```python
 rec["receptor_revision_applied"]    # bool - did revision fire on this record?
 rec["original_v_call"]              # str - the pre-revision V identity (when applied)
-rec["v_call"]                       # str - the POST-revision V evidence-call
+rec["v_call"]                       # str - the post-revision generating V allele
+rec["recalled_v_call"]              # str - inference from the final observed bases
 ```
 
 | Field | When revision NOT applied | When revision applied |
 |---|---|---|
 | `receptor_revision_applied` | `False` | `True` |
 | `original_v_call` | `""` (empty string) | The pre-revision V allele name |
-| `v_call` | The recombination-time V evidence-call | The post-revision V evidence-call |
+| `v_call` | The original generating V allele | The replacement generating V allele |
 
 Two facts to internalise about the `v_call` / `original_v_call`
 distinction:

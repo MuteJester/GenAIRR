@@ -219,4 +219,26 @@ def __dir__() -> list[str]:
     This function tells IDEs and ``dir()`` what names are available
     for import and autocompletion.
     """
-    return sorted(_CONFIG_NAMES | {'list_configs'})
+    return sorted(_CONFIG_NAMES | {'list_configs', 'audit_config'})
+
+
+def audit_config(name):
+    """Return checksum-bound structural audit/quarantine status for a builtin.
+
+    A structurally valid catalogue is not certified complete or independently
+    source-verified. Quarantined catalogues remain inspectable; default strict
+    compilation blocks them. ``allow_curatable_refdata()`` permits curatable
+    diagnostic catalogues only and never bypasses fatal structural errors.
+    """
+    import hashlib
+    import json
+    name = name.upper()
+    if name not in _CONFIG_NAMES:
+        raise ValueError(f"Unknown builtin cartridge {name!r}")
+    registry = json.loads(files(__package__).joinpath("reference_audit_v1.json").read_text())
+    entry = dict(registry["cartridges"][name])
+    artifact = files(__package__).joinpath("builtin_dataconfigs", name + ".pkl")
+    current = "sha256:" + hashlib.sha256(artifact.read_bytes()).hexdigest()
+    if current != entry["artifact_sha256"]:
+        raise ValueError(f"Reference audit for {name} is stale: archived bytes changed; rerun the native audit")
+    return entry

@@ -29,6 +29,41 @@ pub struct AllelePoolDist {
 }
 
 impl AllelePoolDist {
+    pub(crate) fn from_replay_parts(
+        pool: &AllelePool,
+        ids: Option<Vec<AlleleId>>,
+        cumulative: Vec<f64>,
+        total: f64,
+    ) -> Result<Self, String> {
+        if cumulative.is_empty()
+            || !total.is_finite()
+            || total <= 0.0
+            || cumulative.last().copied() != Some(total)
+            || cumulative[0] < 0.0
+            || cumulative.iter().any(|v| !v.is_finite())
+            || cumulative.windows(2).any(|p| p[1] < p[0])
+        {
+            return Err("invalid allele CDF".into());
+        }
+        if let Some(ref ids) = ids {
+            let mut seen = std::collections::HashSet::new();
+            if ids.len() != cumulative.len()
+                || ids
+                    .iter()
+                    .any(|id| id.as_usize() >= pool.len() || !seen.insert(*id))
+            {
+                return Err("invalid allele support IDs".into());
+            }
+        } else if cumulative.len() != pool.len() {
+            return Err("allele CDF/pool mismatch".into());
+        }
+        Ok(Self {
+            ids,
+            cumulative,
+            total,
+        })
+    }
+
     /// Uniform distribution over all alleles in `pool`. Panics if
     /// the pool is empty (no valid sample possible).
     pub fn uniform(pool: &AllelePool) -> Self {
@@ -151,6 +186,17 @@ impl AllelePoolDist {
 }
 
 impl Distribution for AllelePoolDist {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::DistributionSpec> {
+        use crate::family_replay::plan::DistributionSpec as D;
+        Some(D::AllelePool {
+            ids: self
+                .ids
+                .as_ref()
+                .map(|ids| ids.iter().map(|id| id.index()).collect()),
+            cumulative: crate::family_replay::plan::vec_bits(&self.cumulative)?,
+            total: crate::family_replay::plan::bits(self.total)?,
+        })
+    }
     type Output = AlleleId;
 
     fn sample(&self, rng: &mut Rng) -> AlleleId {

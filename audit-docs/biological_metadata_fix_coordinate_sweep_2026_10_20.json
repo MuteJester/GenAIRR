@@ -1,0 +1,74 @@
+{
+  "human_igh/baseline": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igh/substitutions": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igh/indels": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igh/end_loss": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igh/paired_end": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igh/all_forward": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igk/baseline": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igk/substitutions": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igk/indels": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igk/end_loss": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igk/paired_end": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  },
+  "human_igk/all_forward": {
+    "n": 100,
+    "records_with_errors": 0,
+    "errors": {},
+    "examples": []
+  }
+}

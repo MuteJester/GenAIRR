@@ -1,5 +1,10 @@
 # P-Nucleotide / Palindromic Addition Modeling — Audit + v1 Implementation Shipped
 
+Subsequent work provides an opt-in original-coding-end retained-outcome model;
+see [implementation and verification](original_coding_end_processing_2026_10_20.md).
+The original audit/design below documents the legacy post-trim P model and is
+preserved as historical context.
+
 **Status: v1 implementation shipped** — closes the remaining
 material junction-biology gap after the N-addition story.
 The engine ships `PAdditionPass`, `PEnd`, `PRegionAdded` event,

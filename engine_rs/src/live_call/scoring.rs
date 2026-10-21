@@ -110,7 +110,10 @@ pub fn matches_observed_with_orientation(
     germline: u8,
     orientation: SegmentOrientation,
 ) -> bool {
-    matches_observed(observed_in_germline_orientation(observed, orientation), germline)
+    matches_observed(
+        observed_in_germline_orientation(observed, orientation),
+        germline,
+    )
 }
 
 /// Does the observed pool byte match the allele's germline byte at
@@ -268,9 +271,7 @@ pub fn alleles_compatible_at(
         .map(|a| {
             a.seq
                 .get(ref_pos as usize)
-                .map(|&ref_byte| {
-                    matches_observed_with_orientation(observed, ref_byte, orientation)
-                })
+                .map(|&ref_byte| matches_observed_with_orientation(observed, ref_byte, orientation))
                 .unwrap_or(false)
         })
         .collect()
@@ -288,15 +289,32 @@ pub fn alleles_compatible_at(
 ///    so a new `pre_max + 1` plateau exists after the increment.
 /// 3. At least one allele tied at `pre_max` is NOT in `matched` —
 ///    so the new plateau excludes them (strict narrowing).
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn extension_narrows_tie_set(scores: &[u32], matched: &[bool]) -> bool {
-    let pre_max = scores.iter().copied().max().unwrap_or(0);
+    extension_narrows_supported_tie_set(scores, matched, None)
+}
+
+fn extension_narrows_supported_tie_set(
+    scores: &[u32],
+    matched: &[bool],
+    allowed: Option<&[AlleleId]>,
+) -> bool {
+    let eligible =
+        |index: usize| allowed.map_or(true, |ids| ids.contains(&AlleleId::new(index as u32)));
+    let pre_max = scores
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| eligible(*index))
+        .map(|(_, score)| *score)
+        .max()
+        .unwrap_or(0);
     if pre_max == 0 {
         return false;
     }
     let mut any_matched = false;
     let mut any_missed = false;
     for (i, &score) in scores.iter().enumerate() {
-        if score != pre_max {
+        if score != pre_max || !eligible(i) {
             continue;
         }
         if matched.get(i).copied().unwrap_or(false) {
@@ -367,10 +385,7 @@ pub fn score_alleles_with_extensions(
         // `next_ref_pos` tracks `max_seen + 1`. Same `[start,
         // end)` semantics as the walker; the iteration order is
         // the only orientation-dependent piece.
-        let is_rc = matches!(
-            orientation,
-            SegmentOrientation::ReverseComplement
-        );
+        let is_rc = matches!(orientation, SegmentOrientation::ReverseComplement);
         if let Some(expected) = next_ref_pos {
             let backwards = if is_rc {
                 ref_pos > expected
@@ -405,8 +420,7 @@ pub fn score_alleles_with_extensions(
 
     // No structural evidence (every byte was an indel-insert)
     // means no ref window to extend from — return the zero scores.
-    let (Some(mut current_ref_start), Some(mut current_ref_end)) = (ref_start, next_ref_pos)
-    else {
+    let (Some(mut current_ref_start), Some(mut current_ref_end)) = (ref_start, next_ref_pos) else {
         return scores;
     };
     let mut current_seq_start = structural_region.start.index();
@@ -459,12 +473,15 @@ pub fn score_alleles_with_extensions(
             let Some(nuc) = pool.get(seq_pos as usize) else {
                 break;
             };
-            let matched =
-                alleles_compatible_at(alleles, candidate_ref_pos, nuc.base, orientation);
+            let matched = alleles_compatible_at(alleles, candidate_ref_pos, nuc.base, orientation);
             if !matched.iter().any(|&m| m) {
                 break;
             }
-            if !extension_narrows_tie_set(&scores, &matched) {
+            if !extension_narrows_supported_tie_set(
+                &scores,
+                &matched,
+                sim.live_call_alleles(segment),
+            ) {
                 break;
             }
             for (idx, &m) in matched.iter().enumerate() {
@@ -516,12 +533,15 @@ pub fn score_alleles_with_extensions(
             let Some(nuc) = pool.get(seq_pos as usize) else {
                 break;
             };
-            let matched =
-                alleles_compatible_at(alleles, candidate_ref_pos, nuc.base, orientation);
+            let matched = alleles_compatible_at(alleles, candidate_ref_pos, nuc.base, orientation);
             if !matched.iter().any(|&m| m) {
                 break;
             }
-            if !extension_narrows_tie_set(&scores, &matched) {
+            if !extension_narrows_supported_tie_set(
+                &scores,
+                &matched,
+                sim.live_call_alleles(segment),
+            ) {
                 break;
             }
             for (idx, &m) in matched.iter().enumerate() {
@@ -550,9 +570,7 @@ fn find_left_extension(sim: &Simulation, seq_start: u32) -> Option<Region> {
     sim.sequence
         .regions
         .iter()
-        .find(|r| {
-            matches!(r.segment, Segment::Np1 | Segment::Np2) && r.end.index() == seq_start
-        })
+        .find(|r| matches!(r.segment, Segment::Np1 | Segment::Np2) && r.end.index() == seq_start)
         .cloned()
 }
 
@@ -563,9 +581,7 @@ fn find_right_extension(sim: &Simulation, seq_end: u32) -> Option<Region> {
     sim.sequence
         .regions
         .iter()
-        .find(|r| {
-            matches!(r.segment, Segment::Np1 | Segment::Np2) && r.start.index() == seq_end
-        })
+        .find(|r| matches!(r.segment, Segment::Np1 | Segment::Np2) && r.start.index() == seq_end)
         .cloned()
 }
 
@@ -578,11 +594,7 @@ pub fn score_segment_in_sim<'a>(
     refdata: &'a RefDataConfig,
     segment: Segment,
 ) -> Option<(Vec<u32>, &'a [Allele])> {
-    let region = sim
-        .sequence
-        .regions
-        .iter()
-        .find(|r| r.segment == segment)?;
+    let region = sim.sequence.regions.iter().find(|r| r.segment == segment)?;
     let alleles = allele_pool_for_segment(refdata, segment)?;
     if alleles.is_empty() {
         return None;

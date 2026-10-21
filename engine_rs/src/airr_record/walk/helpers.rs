@@ -43,29 +43,13 @@ pub(in crate::airr_record) fn push_dmask_for_seg(dmask: &mut Vec<u8>, seg: Segme
 /// `ref_pos`. Used for `ref_ranges` in the column walker — every
 /// `M` and `D` op consumes one ref position; this helper folds that
 /// into the per-segment span.
-pub(in crate::airr_record) fn extend_ref_range(ranges: &mut [Option<(i64, i64)>; 3], idx: usize, ref_pos: i64) {
+pub(in crate::airr_record) fn extend_ref_range(
+    ranges: &mut [Option<(i64, i64)>; 3],
+    idx: usize,
+    ref_pos: i64,
+) {
     ranges[idx] = Some(match ranges[idx] {
         Some((s, e)) => (s.min(ref_pos), e.max(ref_pos + 1)),
         None => (ref_pos, ref_pos + 1),
     });
-}
-
-/// returns true when `ref_pos` is already inside
-/// `ranges[idx]`. Used by the NP-claim path to detect when a
-/// hypothesis's `pool_pos → ref_pos` projection collides with a
-/// ref position the structural walker already accounted for. This
-/// happens when the segment contains a structural-indel deletion
-/// (the live-call hypothesis tracks pool↔ref linearly, but a
-/// deletion breaks that mapping). When detected, the NP claim is
-/// skipped — structural CIGAR ops take precedence over extension
-/// ops on overlap.
-pub(in crate::airr_record) fn ref_pos_already_covered(
-    ranges: &[Option<(i64, i64)>; 3],
-    idx: usize,
-    ref_pos: i64,
-) -> bool {
-    match ranges[idx] {
-        Some((s, e)) => ref_pos >= s && ref_pos < e,
-        None => false,
-    }
 }

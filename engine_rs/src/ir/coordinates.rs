@@ -59,7 +59,10 @@ impl PoolRange {
     }
 
     pub fn empty_at(pos: u32) -> Self {
-        Self { start: pos, end: pos }
+        Self {
+            start: pos,
+            end: pos,
+        }
     }
 
     pub fn len(&self) -> u32 {
@@ -307,7 +310,10 @@ mod tests {
         let replaced = PoolRange::new(5, 10); // len 5
         let downstream = PoolRange::new(10, 14);
         let upstream = PoolRange::new(0, 5);
-        assert_eq!(downstream.after_segment_replacement(replaced, 5), downstream);
+        assert_eq!(
+            downstream.after_segment_replacement(replaced, 5),
+            downstream
+        );
         assert_eq!(upstream.after_segment_replacement(replaced, 5), upstream);
     }
 
@@ -316,8 +322,14 @@ mod tests {
         let replaced = PoolRange::new(5, 10); // len 5 → len 8 (+3)
         let np1 = PoolRange::new(10, 12);
         let d = PoolRange::new(12, 15);
-        assert_eq!(np1.after_segment_replacement(replaced, 8), PoolRange::new(13, 15));
-        assert_eq!(d.after_segment_replacement(replaced, 8), PoolRange::new(15, 18));
+        assert_eq!(
+            np1.after_segment_replacement(replaced, 8),
+            PoolRange::new(13, 15)
+        );
+        assert_eq!(
+            d.after_segment_replacement(replaced, 8),
+            PoolRange::new(15, 18)
+        );
     }
 
     #[test]
@@ -325,8 +337,14 @@ mod tests {
         let replaced = PoolRange::new(5, 10); // len 5 → len 2 (-3)
         let np1 = PoolRange::new(10, 12);
         let j = PoolRange::new(15, 20);
-        assert_eq!(np1.after_segment_replacement(replaced, 2), PoolRange::new(7, 9));
-        assert_eq!(j.after_segment_replacement(replaced, 2), PoolRange::new(12, 17));
+        assert_eq!(
+            np1.after_segment_replacement(replaced, 2),
+            PoolRange::new(7, 9)
+        );
+        assert_eq!(
+            j.after_segment_replacement(replaced, 2),
+            PoolRange::new(12, 17)
+        );
     }
 
     #[test]
@@ -337,6 +355,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic(expected = "intersects replaced span")]
     fn pool_range_after_segment_replacement_overlap_panics_in_debug() {
         let replaced = PoolRange::new(5, 10);
@@ -358,7 +377,10 @@ mod tests {
     #[test]
     fn pool_range_intersection() {
         let a = PoolRange::new(3, 7);
-        assert_eq!(a.intersection(PoolRange::new(5, 10)), Some(PoolRange::new(5, 7)));
+        assert_eq!(
+            a.intersection(PoolRange::new(5, 10)),
+            Some(PoolRange::new(5, 7))
+        );
         assert_eq!(a.intersection(PoolRange::new(0, 3)), None);
         assert_eq!(a.intersection(PoolRange::new(7, 10)), None);
     }

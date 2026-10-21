@@ -79,7 +79,7 @@ impl SimulationEventSink for DirtySignalObserver {
                     DirtyReason::StructuralIndel { site: at, delta: 1 },
                 ));
             }
-            SimulationEvent::IndelDeleted { at, .. } => {
+            SimulationEvent::IndelDeleted { at, .. } | SimulationEvent::BaseDeleted { at, .. } => {
                 self.windows.push(DirtyWindow::new(
                     at,
                     at.saturating_add(1),
@@ -93,7 +93,11 @@ impl SimulationEventSink for DirtySignalObserver {
             // reserved (non-pool) variants describe sidecar state
             // that doesn't dirty pool positions.
             SimulationEvent::BasePushed { .. }
-            | SimulationEvent::BaseDeleted { .. }
+            | SimulationEvent::CodingEndChoiceRecorded { .. }
+            | SimulationEvent::CodingEndPOriginRecorded { .. }
+            | SimulationEvent::DuplexProvenanceInstalled { .. }
+            | SimulationEvent::DuplexEditContextRecorded { .. }
+            | SimulationEvent::DuplexAttemptStageRecorded { .. }
             | SimulationEvent::AssignmentChanged { .. }
             | SimulationEvent::TrimChanged { .. }
             | SimulationEvent::RegionAdded { .. }
@@ -110,7 +114,9 @@ impl SimulationEventSink for DirtySignalObserver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{flag, NucFlags, NucHandle, Nucleotide, Segment, Simulation, SimulationBuilder};
+    use crate::ir::{
+        flag, NucFlags, NucHandle, Nucleotide, Segment, Simulation, SimulationBuilder,
+    };
 
     fn base_pushed(handle: u32, base: u8) -> SimulationEvent {
         SimulationEvent::BasePushed {
@@ -213,10 +219,7 @@ mod tests {
         use crate::ir::Region;
         use crate::refdata::AlleleId;
         let mut obs = DirtySignalObserver::new();
-        obs.on_event(&SimulationEvent::BaseDeleted {
-            at: 0,
-            removed_base: b'A',
-        });
+
         obs.on_event(&SimulationEvent::AssignmentChanged {
             segment: Segment::V,
             old: None,
@@ -242,6 +245,24 @@ mod tests {
             delta: 5,
         });
         assert!(obs.seal().is_empty());
+    }
+
+    #[test]
+    fn observation_deletion_invalidates_the_shifted_live_call() {
+        let mut obs = DirtySignalObserver::new();
+        obs.on_event(&SimulationEvent::BaseDeleted {
+            at: 3,
+            removed_base: b'A',
+        });
+        let windows = obs.seal();
+        assert_eq!(
+            windows,
+            vec![DirtyWindow::new(
+                3,
+                4,
+                DirtyReason::StructuralIndel { site: 3, delta: -1 }
+            )]
+        );
     }
 
     #[test]

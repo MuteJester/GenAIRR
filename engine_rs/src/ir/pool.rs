@@ -17,6 +17,7 @@ impl NucleotidePool {
 
     /// New empty pool pre-allocated for `cap` nucleotides.
     pub fn with_capacity(cap: usize) -> Self {
+        crate::family_replay::primitive_bases(cap as u64);
         Self {
             nucleotides: Arc::new(Vec::with_capacity(cap)),
         }
@@ -50,11 +51,20 @@ impl NucleotidePool {
     /// every internal `Arc::make_mut` in `push` / `extend` is the cheap
     /// refcount==1 path.
     pub(crate) fn make_unique(&mut self) {
+        self.account_copy();
         let _ = Arc::make_mut(&mut self.nucleotides);
+    }
+
+    fn account_copy(&self) {
+        if Arc::strong_count(&self.nucleotides) > 1 {
+            crate::family_replay::primitive_bases(self.nucleotides.len() as u64);
+        }
     }
 
     /// Append a nucleotide to the pool, returning its handle.
     pub fn push(&mut self, n: Nucleotide) -> NucHandle {
+        self.account_copy();
+        crate::family_replay::primitive_bases(1);
         let inner = Arc::make_mut(&mut self.nucleotides);
         let h = NucHandle::new(inner.len() as u32);
         inner.push(n);
@@ -63,8 +73,12 @@ impl NucleotidePool {
 
     /// Append every nucleotide produced by `iter` into the pool in place.
     pub fn extend<I: IntoIterator<Item = Nucleotide>>(&mut self, iter: I) {
+        self.account_copy();
         let inner = Arc::make_mut(&mut self.nucleotides);
-        inner.extend(iter);
+        inner.extend(
+            iter.into_iter()
+                .inspect(|_| crate::family_replay::primitive_bases(1)),
+        );
     }
 
     #[must_use = "with_pushed returns (NucleotidePool, NucHandle); both must \
@@ -91,6 +105,7 @@ impl NucleotidePool {
     /// Return a new pool with the nucleotide at `handle` replaced.
     pub fn with_nucleotide_changed(&self, handle: NucHandle, new_n: Nucleotide) -> Self {
         let mut next = self.clone();
+        next.account_copy();
         let inner = Arc::make_mut(&mut next.nucleotides);
         inner[handle.as_usize()] = new_n;
         next
@@ -99,6 +114,7 @@ impl NucleotidePool {
     /// Return a new pool with only the `base` field changed.
     pub fn with_base_changed(&self, handle: NucHandle, new_base: u8) -> Self {
         let mut next = self.clone();
+        next.account_copy();
         let inner = Arc::make_mut(&mut next.nucleotides);
         inner[handle.as_usize()].base = new_base;
         next
@@ -112,6 +128,7 @@ impl NucleotidePool {
     /// which is the refcount==1 cheap path once `make_unique` has
     /// been called on the owning `SimulationBuilder`.
     pub(crate) fn change_base_in_place(&mut self, handle: NucHandle, new_base: u8) -> Nucleotide {
+        self.account_copy();
         let inner = Arc::make_mut(&mut self.nucleotides);
         let idx = handle.as_usize();
         let old = inner[idx];
@@ -128,6 +145,8 @@ impl NucleotidePool {
             self.nucleotides.len()
         );
         let mut next = self.clone();
+        next.account_copy();
+        crate::family_replay::primitive_bases(1);
         let inner = Arc::make_mut(&mut next.nucleotides);
         inner.insert(at as usize, n);
         next
@@ -153,6 +172,8 @@ impl NucleotidePool {
             self.nucleotides.len()
         );
         let mut next = self.clone();
+        next.account_copy();
+        crate::family_replay::primitive_bases(replacement.len() as u64);
         let inner = Arc::make_mut(&mut next.nucleotides);
         inner.splice(
             range.start as usize..range.end as usize,
@@ -170,6 +191,7 @@ impl NucleotidePool {
             self.nucleotides.len()
         );
         let mut next = self.clone();
+        next.account_copy();
         let inner = Arc::make_mut(&mut next.nucleotides);
         inner.remove(at as usize);
         next

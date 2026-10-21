@@ -1,0 +1,24 @@
+{
+  "schema": "duplex_projection_sweep_v1",
+  "projection_model": "duplex_airr_projection_v1",
+  "extension_sha256": "3b601a4d6df473e8c45bc3b31da1be8148a67899d594f248e823e49e40f9950c",
+  "cases": 32768,
+  "accepted": {
+    "offset_0": 16384,
+    "offset_1": 1024
+  },
+  "incompatible_rejected": {
+    "offset_1": 15360
+  },
+  "errors": 0,
+  "checks": [
+    "literal sequence and full body alignment",
+    "canonical inverted D paths",
+    "unique body claims supported by either strand",
+    "hairpin transfers separate from body placement",
+    "empty NP intervals and zero net trims",
+    "paired physical origin conservation",
+    "no repair operations counted as SHM or downstream indels"
+  ],
+  "scope": "deterministic dinucleotide controls, not empirical frequencies"
+}

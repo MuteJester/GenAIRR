@@ -1,0 +1,810 @@
+{
+  "schema": "durable_family_sweep_v1",
+  "extension_sha256": "a31be980a932d7333714f2ddf51c78ff9296943450d2d105313638bcff482244",
+  "counts": {
+    "literal_record_checks": 298,
+    "node_checks_including_roots_unsampled": 1354,
+    "attempts_including_rejected": 122,
+    "rejected_attempts": 18,
+    "growth_parent_proposals": 718,
+    "ordered_sample_choices": 600,
+    "plans": 52,
+    "founders": 104,
+    "artifact_bytes": 47031654,
+    "accepted_extinct_families": 4
+  },
+  "errors": 0,
+  "plans": [
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 840625
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1085957
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 825726
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1007627
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 840619
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1085945
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 825720
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1007615
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 841680
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1088810
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 827586
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1011444
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 841674
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1088798
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 827580
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1011432
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 842265
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1087597
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 827366
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1009267
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 842259
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1087585
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 827360
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1009255
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 843320
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": false,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1090450
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 829226
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1013084
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 843314
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": false,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1090438
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 829220
+    },
+    {
+      "join_order": [
+        "dj",
+        "vd"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1013072
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "explicit",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 801136
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "automatic",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 830231
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "explicit",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 992911
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "automatic",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1012132
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "explicit",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 801130
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "automatic",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 830225
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "explicit",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 992899
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "automatic",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1012120
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "explicit",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 804118
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "automatic",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 832320
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "explicit",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 999848
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "automatic",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1016178
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "explicit",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 804112
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": false,
+      "target": "automatic",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 832314
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "explicit",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 999836
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": true,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "automatic",
+      "records": 6,
+      "growth_control": "ordinary",
+      "attempts": 2,
+      "bytes": 1016166
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 5,
+      "growth_control": "retry",
+      "attempts": 11,
+      "bytes": 955830
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": false,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 0,
+      "growth_control": "extinct",
+      "attempts": 2,
+      "bytes": 199214
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 5,
+      "growth_control": "retry",
+      "attempts": 11,
+      "bytes": 955810
+    },
+    {
+      "join_order": [
+        "vd",
+        "dj"
+      ],
+      "d_inverted": false,
+      "strict": true,
+      "productive_only": true,
+      "observation_suffix": true,
+      "target": "neutral",
+      "records": 0,
+      "growth_control": "extinct",
+      "attempts": 2,
+      "bytes": 199208
+    }
+  ],
+  "checks": [
+    "capture-on/off seeded identity",
+    "saved and loaded exact typed records",
+    "literal repair/query/edit/link/counter reconstruction",
+    "canonical inverted D",
+    "actual cumulative mutations including reversions",
+    "all accepted nodes including unsampled cells",
+    "tree topology, affinity and abundance",
+    "complete attempted-family and ordered sampling receipts"
+  ],
+  "scope": "52 short restored-landmark controls including retries and accepted extinction; equal authored weights and declared neutral/selection controls; no measured repair rates or full-length performance claim"
+}

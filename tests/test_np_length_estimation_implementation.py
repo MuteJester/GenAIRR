@@ -18,7 +18,7 @@ Covers the 12-test surface from the user brief:
     recombination defaults.
  8. Explicit `recombine(np1_lengths=...)` override still
     wins.
- 9. P-nucleotide / sequence fields ignored.
+ 9. Zero P provenance accepted; sequence-derived lengths ignored.
 10. Report JSON-clean and stage shape stable.
 11. Manifest `models.np_length_models` block reflects
     estimated keys.
@@ -365,30 +365,26 @@ def test_explicit_recombine_np_lengths_kwarg_takes_precedence() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────
-# 9. P-nucleotide / sequence fields ignored
+# 9. Zero P provenance accepted; sequence-derived lengths ignored
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_p_nucleotide_and_sequence_fields_are_ignored() -> None:
-    """`p_v_3_length` / `p_d_5_length` / `p_d_3_length` /
-    `p_j_5_length` / `np1` / `np2` / `junction_length`
-    are all silently ignored by the estimator (no error,
-    no contribution, no warning). The estimator's input
-    surface is exactly the two integer length columns."""
+def test_zero_p_provenance_and_unrelated_sequence_fields_are_accepted() -> None:
+    """Zero P provenance is safe; string and junction lengths
+    still do not replace the explicit integer NP-length columns."""
     builder = _builder_vj()
     records = [
         {
             "np1_length": 0,
-            # P-nucleotide fields (separate biology).
-            "p_v_3_length": 7, "p_d_5_length": 11,
-            "p_d_3_length": 13, "p_j_5_length": 17,
+            "p_v_3_length": 0, "p_d_5_length": "0",
+            "p_d_3_length": 0, "p_j_5_length": "0",
             # Sequence fields (post-claim-reabsorption issue).
             "np1": "AAAAAAAAA",  # len=9 — disagrees with np1_length=0
             "np2": "TTTTTT",
             # Junction-length arithmetic.
             "junction_length": 51,
         },
-        {"np1_length": 1, "p_v_3_length": 99, "np1": "GG"},
+        {"np1_length": 1, "p_v_3_length": "0", "np1": "GG"},
     ]
     builder.estimate_np_length_distributions(records, min_count=1)
     cfg = builder.build()

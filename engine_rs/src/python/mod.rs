@@ -27,7 +27,9 @@ use pyo3::prelude::*;
 
 pub mod compiled;
 pub mod contract;
+pub mod duplex_repair;
 pub mod event;
+pub mod family_replay;
 pub mod lineage;
 pub mod outcome;
 pub mod plan;
@@ -52,15 +54,39 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<lineage::PyLineageTree>()?;
     m.add_class::<lineage::PyFamilyOutcome>()?;
     m.add_function(pyo3::wrap_pyfunction!(lineage::simulate_lineage, m)?)?;
-    m.add_function(pyo3::wrap_pyfunction!(lineage::simulate_family_outcomes, m)?)?;
-    m.add_function(pyo3::wrap_pyfunction!(lineage::merge_lineage_corruption, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        lineage::simulate_family_outcomes,
+        m
+    )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        lineage::merge_lineage_corruption,
+        m
+    )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(outcome::merge_outcomes, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(lineage::sample_clone_sizes, m)?)?;
     m.add_class::<refdata::PyAllele>()?;
     m.add_class::<refdata::PyRefDataConfig>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        refdata::resolve_reference_anchor,
+        m
+    )?)?;
     m.add_class::<plan::PyPassPlan>()?;
     m.add_class::<compiled::PyCompiledSimulator>()?;
     m.add_class::<trace_file::PyTraceFile>()?;
     contract::register(m)?;
+    family_replay::register(m)?;
+    m.add_function(pyo3::wrap_pyfunction!(lineage::replay_family_outcomes,m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(duplex_repair::duplex_repair, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        duplex_repair::coupled_duplex_repair,
+        m
+    )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        duplex_repair::coupled_duplex_projection,
+        m
+    )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(duplex_repair::coupled_duplex_seed,m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(duplex_repair::project_duplex_simulation,m)?)?;
     runner::register(m)?;
     Ok(())
 }

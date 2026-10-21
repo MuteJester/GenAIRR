@@ -3,8 +3,10 @@ use crate::ir::Simulation;
 
 use super::{PassCompileFact, PassContext, PassEffect, PassError, PassRequirement};
 
-/// A single step in the simulation pipeline.
-pub trait Pass {
+/// A single step in the simulation pipeline. Stored passes are owned/static;
+/// `Any` permits capability checks on their concrete implementation rather
+/// than trusting a user-provided name or effect declaration.
+pub trait Pass: std::any::Any {
     /// Stable, human-readable identifier for this pass.
     fn name(&self) -> &str;
 
@@ -35,8 +37,19 @@ pub trait Pass {
     /// - Default implementation returns `""` (the pass has no
     ///   compile-time parameters or chooses not to participate in
     ///   the signature). Passes with parameters MUST override.
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        None
+    }
+
     fn parameter_signature(&self) -> String {
         String::new()
+    }
+
+    /// Complete natural sampling law for plans that explicitly require it.
+    /// Legacy plan signatures remain unchanged; finite duplex histories bind
+    /// upstream allele/genotype probabilities as well as repair row weights.
+    fn sampling_law_signature(&self) -> String {
+        self.parameter_signature()
     }
 
     /// Apply this pass to `sim`, returning the next IR revision.
@@ -49,6 +62,22 @@ pub trait Pass {
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         Ok(self.execute(sim, ctx))
+    }
+
+    /// Fallible dispatch in either execution mode. A permissive policy may
+    /// permit a declared no-op, but must not turn resource/numerical failures
+    /// into panics or successful biological events.
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        if strict {
+            self.execute_checked(sim, ctx)
+        } else {
+            Ok(self.execute(sim, ctx))
+        }
     }
 
     /// Address specs for the random choices this pass intends to make.

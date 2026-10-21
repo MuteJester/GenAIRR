@@ -1,7 +1,7 @@
 """Contract pins for the clonal plan-split architecture.
 
 Companion to
-[`docs/clonal_plan_split_design.md`](../docs/clonal_plan_split_design.md).
+[`audit-docs/clonal_plan_split_design.md`](../audit-docs/clonal_plan_split_design.md).
 The audit's predecessor passes (the Bug-A-through-F slices) shipped
 the user-visible changes; this contract suite freezes the resulting
 architecture as positive scaffold pins plus deferred-architecture
@@ -27,7 +27,6 @@ spec files.
 """
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 
@@ -259,68 +258,33 @@ def test_pin_scaffold_parent_trace_has_recombination_and_ancestor_passes() -> No
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pin_scaffold_descendant_trace_has_only_descendant_phase_passes() -> None:
-    """Descendants' ``pass_names()`` contains exactly the post-fork
-    passes from the canonical configuration, in order. None of the
-    parent's pass names leak through."""
+def test_descendant_history_includes_ancestor_and_descendant_passes_once() -> None:
+    """Complete provenance keeps inherited mutation counters auditable."""
     result = _canonical_clonal(n_clones=1, per_clone=2).run_records(seed=0)
-    assert result.outcomes is not None
+    parent_names = result.parents[0].pass_names()
     for desc in result.outcomes:
-        names = desc.pass_names()
-        assert names == [
-            "mutate.s5f",
-            "corrupt.end_loss.5",
-            "corrupt.end_loss.3",
-            "corrupt.rev_comp",
-            "paired_end",
-        ], f"unexpected descendant pass_names: {names}"
-        # Specifically: no ancestor-phase passes.
-        for forbidden in (
-            "sample_allele.v",
-            "assemble.v",
-            "invert_d",
-            "receptor_revision",
-        ):
-            assert forbidden not in names, (
-                f"descendant carries ancestor-phase pass {forbidden!r}; "
-                "boundary handoff regressed."
-            )
+        assert desc.pass_names() == parent_names + [
+            "mutate.s5f", "corrupt.end_loss.5", "corrupt.end_loss.3",
+            "corrupt.rev_comp", "paired_end",
+        ]
+        assert desc.revision_count() == len(desc.pass_names()) + 1
 
 
-def test_pin_scaffold_descendant_trace_does_not_duplicate_parent() -> None:
-    """The descendant's ``trace()`` length is strictly less than a
-    non-clonal run of ``recombine + same post-fork plan`` (the
-    difference equals the recombine-pass choices the parent ran
-    but didn't pass on). Audit §4 calls this out as a load-bearing
-    invariant."""
-    clonal = _canonical_clonal(n_clones=1, per_clone=1).run_records(seed=0)
-    assert clonal.outcomes is not None
-    desc_trace_len = len(clonal.outcomes[0].trace())
-
-    # Same post-fork tail as the canonical, layered on a non-clonal
-    # recombine pipeline. The ancestor-phase calls go through their
-    # method-level guards (they require pre-fork placement and a
-    # canonical chain), so we replay only the descendant-phase tail
-    # from a fresh recombine.
-    non_clonal = (
-        ga.Experiment.on("human_igh")
-        .recombine()
-        .invert_d(prob=1.0)
-        .receptor_revision(prob=1.0)
-        .mutate(count=5)
-        .end_loss_5prime(length=10)
-        .end_loss_3prime(length=10)
-        .random_strand_orientation(prob=0.5)
-        .paired_end(r1_length=150, insert_size=300)
-        .compile()
-        .run(n=1, seed=0)[0]
-    )
-    non_clonal_trace_len = len(non_clonal.trace())
-    assert desc_trace_len < non_clonal_trace_len, (
-        f"descendant trace_len ({desc_trace_len}) >= non-clonal "
-        f"({non_clonal_trace_len}); parent trace may have leaked "
-        "onto descendants."
-    )
+def test_descendant_trace_keeps_parent_prefix_once_and_rebases_event_spans() -> None:
+    result = _canonical_clonal(n_clones=1, per_clone=1).run_records(seed=0)
+    parent = result.parents[0]
+    descendant = result.outcomes[0]
+    prefix = [(c.address, c.value) for c in parent.trace().choices()]
+    choices = [(c.address, c.value) for c in descendant.trace().choices()]
+    assert choices[:len(prefix)] == prefix
+    events = descendant.events()
+    assert events[parent.event_count()].trace_start == len(prefix)
+    for index, event in enumerate(events):
+        assert event.pass_index == index
+        assert event.pass_name == descendant.pass_names()[index]
+        if index:
+            assert event.trace_start == events[index - 1].trace_end
+    assert events[-1].trace_end == len(choices)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -443,21 +407,36 @@ def test_pin_scaffold_canonical_clonal_passes_all_three_validators() -> None:
     assert parent_report.family_count == 2
 
 
-def test_pin_scaffold_validate_records_true_does_not_invoke_parent_aware() -> None:
-    """Audit §6: ``validate_records=True`` on a clonal
-    ``run_records`` runs per-record + field-only family, NOT
-    parent-aware. Pinned via source inspection of the clonal
-    ``run_records`` body so a refactor that auto-wires the
-    parent-aware validator surfaces here."""
-    src = inspect.getsource(_compiled.CompiledClonalExperiment.run_records)
-    # The field-only family raiser must still be called.
-    assert "_raise_on_family_validation_failure" in src
-    # The parent-aware validator must NOT be invoked automatically.
-    assert "validate_families_with_parents" not in src, (
-        "validate_records=True now auto-invokes the parent-aware "
-        "validator; audit §6 architectural decision changed — flip "
-        "this pin in lockstep with the slice that made the change."
-    )
+def test_pin_scaffold_validate_records_true_does_not_invoke_parent_aware(monkeypatch) -> None:
+    """Legacy clonal runs retain the two automatic validation gates.
+
+    Duplex families intentionally add parent-aware validation. Check the
+    legacy runtime behavior rather than forbidding that call in shared code.
+    """
+    calls = []
+    original_records = SimulationResult.validate_records
+    original_families = SimulationResult.validate_families
+
+    def validate_records(result, refdata):
+        calls.append("records")
+        return original_records(result, refdata)
+
+    def validate_families(result, refdata=None):
+        calls.append("families")
+        return original_families(result, refdata)
+
+    def fail_if_parent_aware(*args, **kwargs):
+        raise AssertionError("legacy run automatically invoked parent-aware validation")
+
+    monkeypatch.setattr(SimulationResult, "validate_records", validate_records)
+    monkeypatch.setattr(SimulationResult, "validate_families", validate_families)
+    monkeypatch.setattr(SimulationResult, "validate_families_with_parents", fail_if_parent_aware)
+    with pytest.warns(DeprecationWarning):
+        experiment = (ga.Experiment.on("human_igh").recombine()
+                      .expand_clones(n_clones=1, per_clone=2))
+    result = experiment.run_records(seed=0, validate_records=True)
+    assert len(result) == 2
+    assert calls == ["records", "families"]
 
 
 # ──────────────────────────────────────────────────────────────────

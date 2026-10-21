@@ -17,7 +17,7 @@
 //!   `pass_plan_signature`, `refdata_signature` (structural only —
 //!   chain type + per-pool counts), `trace`. No content hash. No
 //!   address-vocabulary version field.
-//! - **v2** (current): adds `address_schema_version` (the revision
+//! - **v2** (legacy): adds `address_schema_version` (the revision
 //!   of the persisted [`crate::address::ChoiceAddress`] vocabulary)
 //!   and `refdata_content_hash` (`"sha256:{hex}"` over the
 //!   canonical chain+pools+alleles byte stream — see
@@ -25,6 +25,13 @@
 //!   `#[serde(default)]` so v1 files still deserialise; the loader
 //!   skips the corresponding validation gates when those fields
 //!   are absent.
+//! - **v3** (legacy): parameterized pass signatures protect distribution and
+//!   sampler settings, in addition to pass names.
+//! - **v4** (current): requires `productivity_policy` and `active_contracts`.
+//!   Finite duplex source plans bind their own policy and complete upstream
+//!   sampling-law signatures; they cannot use legacy signature fallbacks.
+//!   Reference admission, annotation semantics and constrained execution are
+//!   distinct parts of the reproducibility context.
 //!
 //! [`KNOWN_TRACE_FILE_SCHEMA_VERSIONS`] enumerates every version
 //! this engine accepts. [`TRACE_FILE_SCHEMA_VERSION`] is the
@@ -100,7 +107,7 @@ use crate::trace::Trace;
 /// Current on-disk schema version the engine emits. Bumped when a
 /// new required field or wire-format change ships. See module docs
 /// for the bump policy.
-pub const TRACE_FILE_SCHEMA_VERSION: u32 = 3;
+pub const TRACE_FILE_SCHEMA_VERSION: u32 = 4;
 
 /// Schema versions this engine knows how to load. Loading a file
 /// whose `schema_version` is outside this set surfaces as
@@ -117,7 +124,7 @@ pub const TRACE_FILE_SCHEMA_VERSION: u32 = 3;
 ///       signature gate instead of silently sampling different
 ///       output at the same addresses (Slice A — Pass Parameter
 ///       Signature). The other v2 fields stay unchanged.
-pub const KNOWN_TRACE_FILE_SCHEMA_VERSIONS: &[u32] = &[1, 2, 3];
+pub const KNOWN_TRACE_FILE_SCHEMA_VERSIONS: &[u32] = &[1, 2, 3, 4];
 
 /// Durable artifact bundling a simulation's [`Trace`] with the
 /// metadata needed to verify and rerun it. See the module docs.
@@ -148,6 +155,12 @@ pub struct TraceFile {
     /// [`refdata_content_hash`].
     #[serde(default)]
     pub refdata_content_hash: Option<String>,
+    /// v4 identifies the biological annotation semantics independently of
+    /// reference data and pass parameters. Older traces have no such claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub productivity_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_contracts: Option<Vec<String>>,
     pub trace: Trace,
 }
 
@@ -175,6 +188,14 @@ pub enum TraceFileError {
     /// loaded by an engine that ships `M ≠ N` — the spelling /
     /// parse pair has shifted underneath it.
     AddressSchemaVersionMismatch { got: u32, expected: u32 },
+    ProductivityPolicyMismatch {
+        got: Option<String>,
+        expected: String,
+    },
+    ContractSetMismatch {
+        got: Option<Vec<String>>,
+        expected: Vec<String>,
+    },
     /// A recorded address doesn't parse to a built-in
     /// [`ChoiceAddress`] and the loader was asked to be strict.
     UnknownAddress { address: String },
@@ -210,6 +231,10 @@ impl std::fmt::Display for TraceFileError {
             Self::UnknownAddress { address } => {
                 write!(f, "trace-file contains non-built-in address {address:?}; pass allow_custom_addresses=true to accept it")
             }
+            Self::ProductivityPolicyMismatch { got, expected } => write!(f,
+                "trace-file productivity policy mismatch: got {got:?}, expected {expected}"),
+            Self::ContractSetMismatch { got, expected } => write!(f,
+                "trace-file active contracts mismatch: got {got:?}, expected {expected:?}"),
             Self::Io(e) => write!(f, "trace-file I/O error: {e}"),
             Self::Json(e) => write!(f, "trace-file JSON error: {e}"),
         }
@@ -255,11 +280,38 @@ impl From<serde_json::Error> for TraceFileError {
 /// [`TraceFile::validate_against`]; see also
 /// [`pass_plan_signature_names_only`].
 pub fn pass_plan_signature(plan: &PassPlan) -> String {
+    let complete_law = duplex_source(plan).is_some();
     plan.passes()
         .iter()
-        .map(|p| format!("{}({})", p.name(), p.parameter_signature()))
+        .map(|p| {
+            format!(
+                "{}({})",
+                p.name(),
+                if complete_law {
+                    p.sampling_law_signature()
+                } else {
+                    p.parameter_signature()
+                }
+            )
+        })
         .collect::<Vec<_>>()
         .join("|")
+}
+
+/// Concrete capability, never inferred from a user-defined pass name.
+pub(crate) fn duplex_source(plan: &PassPlan) -> Option<&crate::passes::DuplexRecombinePass> {
+    plan.passes().iter().find_map(|pass| {
+        let any: &dyn std::any::Any = pass.as_ref();
+        any.downcast_ref::<crate::passes::DuplexRecombinePass>()
+    })
+}
+
+pub(crate) fn plan_productivity_policy(plan: &PassPlan) -> &'static str {
+    if duplex_source(plan).is_some() {
+        crate::productivity::DUPLEX_POLICY
+    } else {
+        crate::productivity::POLICY
+    }
 }
 
 /// Legacy v1/v2 plan signature shape — pass names joined by `|`.
@@ -365,14 +417,12 @@ pub fn refdata_content_hash(refdata: &RefDataConfig) -> String {
     // differently and produce different downstream interpretations.
     // Hash them in canonical order so determinism is preserved.
     let rules = &refdata.rules;
-    let alphabet: String = rules
-        .alphabet
-        .allowed
-        .iter()
-        .map(|&b| b as char)
-        .collect();
+    let alphabet: String = rules.alphabet.allowed.iter().map(|&b| b as char).collect();
     hasher.update(format!("rules.alphabet={alphabet}\n").as_bytes());
-    for (label, rule) in [("rules.v_anchor", &rules.v_anchor), ("rules.j_anchor", &rules.j_anchor)] {
+    for (label, rule) in [
+        ("rules.v_anchor", &rules.v_anchor),
+        ("rules.j_anchor", &rules.j_anchor),
+    ] {
         let expected: String = rule.expected_amino_acids.iter().collect();
         let miss = match rule.missing_severity {
             crate::refdata::RefDataIssueSeverity::Fatal => "fatal",
@@ -418,10 +468,7 @@ pub fn refdata_content_hash(refdata: &RefDataConfig) -> String {
                 .unwrap_or_else(|| "NA".to_string());
             write_field(&mut hasher, "anchor", anchor_str.as_bytes());
             hasher.update(b"|");
-            let status_str = allele
-                .functional_status
-                .map(|s| s.as_str())
-                .unwrap_or("NA");
+            let status_str = allele.functional_status.map(|s| s.as_str()).unwrap_or("NA");
             write_field(&mut hasher, "functional_status", status_str.as_bytes());
             // V-region substructure annotations participate in the
             // content hash so cartridges with different region
@@ -433,10 +480,24 @@ pub fn refdata_content_hash(refdata: &RefDataConfig) -> String {
             hasher.update(b"subregions=");
             for sub in &allele.subregions {
                 hasher.update(
-                    format!("{}:{}-{},", sub.label.as_str(), sub.start, sub.end)
-                        .as_bytes(),
+                    format!("{}:{}-{},", sub.label.as_str(), sub.start, sub.end).as_bytes(),
                 );
             }
+            hasher.update(b"\n");
+        }
+    }
+
+    // Evidence is an explicit extension. Empty registries emit no bytes, so
+    // archived reference hashes/traces retain their original meaning.
+    if !refdata.evidence.is_empty() {
+        hasher.update(b"reference_evidence_schema=1\n");
+        let mut evidence: Vec<_> = refdata.evidence.iter().collect();
+        evidence.sort_by_key(|((seg, name), _)| (format!("{seg:?}"), name.as_str()));
+        for ((segment, name), item) in evidence {
+            hasher.update(
+                serde_json::to_vec(&(format!("{segment:?}"), name, item))
+                    .expect("evidence serializes"),
+            );
             hasher.update(b"\n");
         }
     }
@@ -448,8 +509,10 @@ pub fn refdata_content_hash(refdata: &RefDataConfig) -> String {
 impl TraceFile {
     /// Build a [`TraceFile`] from a fresh `(plan, refdata, seed, trace)`
     /// tuple. Stamps the current schema version, engine version,
-    /// address schema version, and refdata content hash onto the
-    /// file — i.e. emits v2.
+    /// address vocabulary, annotation policy and reference identity. This
+    /// constructor declares an unconstrained context. A contextual writer
+    /// must set `active_contracts` from the actual contract set; the Python
+    /// compiled simulator performs that step automatically.
     pub fn build(plan: &PassPlan, refdata: &RefDataConfig, seed: u64, trace: Trace) -> Self {
         Self {
             schema_version: TRACE_FILE_SCHEMA_VERSION,
@@ -459,6 +522,8 @@ impl TraceFile {
             refdata_signature: refdata_signature(refdata),
             address_schema_version: crate::address::ADDRESS_SCHEMA_VERSION,
             refdata_content_hash: Some(refdata_content_hash(refdata)),
+            productivity_policy: Some(plan_productivity_policy(plan).to_string()),
+            active_contracts: Some(Vec::new()),
             trace,
         }
     }
@@ -475,6 +540,7 @@ impl TraceFile {
                 expected: TRACE_FILE_SCHEMA_VERSION,
             });
         }
+        f.validate_annotation_policy()?;
         Ok(f)
     }
 
@@ -517,6 +583,100 @@ impl TraceFile {
         plan: &PassPlan,
         refdata: &RefDataConfig,
     ) -> Result<(), TraceFileError> {
+        self.validate_execution(plan, refdata, false)
+    }
+
+    /// True choice replay can opt into the specifically declared historical
+    /// indel sentinel compatibility. Seed reruns never bypass a changed law.
+    pub fn validate_for_replay(
+        &self,
+        plan: &PassPlan,
+        refdata: &RefDataConfig,
+    ) -> Result<(), TraceFileError> {
+        self.validate_execution(plan, refdata, true)
+    }
+
+    fn validate_annotation_policy(&self) -> Result<(), TraceFileError> {
+        if (self.schema_version >= 4 || self.productivity_policy.is_some())
+            && !matches!(
+                self.productivity_policy.as_deref(),
+                Some(crate::productivity::POLICY | crate::productivity::DUPLEX_POLICY)
+            )
+        {
+            return Err(TraceFileError::ProductivityPolicyMismatch {
+                got: self.productivity_policy.clone(),
+                expected: crate::productivity::POLICY.into(),
+            });
+        }
+        if self.schema_version >= 4 && self.active_contracts.is_none() {
+            return Err(TraceFileError::ContractSetMismatch {
+                got: None,
+                expected: vec!["explicit v4 contract context".into()],
+            });
+        }
+        Ok(())
+    }
+
+    pub fn validate_contracts(
+        &self,
+        contracts: Option<&crate::contract::ContractSet>,
+    ) -> Result<(), TraceFileError> {
+        if let Some(recorded) = &self.active_contracts {
+            let mut expected: Vec<_> = contracts
+                .map(|c| c.iter().map(|c| c.name().to_owned()).collect())
+                .unwrap_or_default();
+            let mut got = recorded.clone();
+            expected.sort();
+            got.sort();
+            if got != expected {
+                return Err(TraceFileError::ContractSetMismatch {
+                    got: self.active_contracts.clone(),
+                    expected,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_execution(
+        &self,
+        plan: &PassPlan,
+        refdata: &RefDataConfig,
+        legacy_replay: bool,
+    ) -> Result<(), TraceFileError> {
+        if !KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&self.schema_version) {
+            return Err(TraceFileError::UnsupportedSchemaVersion {
+                got: self.schema_version,
+                expected: TRACE_FILE_SCHEMA_VERSION,
+            });
+        }
+        self.validate_annotation_policy()?;
+        let expected_policy = plan_productivity_policy(plan);
+        if self
+            .productivity_policy
+            .as_deref()
+            .is_some_and(|p| p != expected_policy)
+            || (expected_policy == crate::productivity::DUPLEX_POLICY && self.schema_version < 4)
+        {
+            return Err(TraceFileError::ProductivityPolicyMismatch {
+                got: self.productivity_policy.clone(),
+                expected: expected_policy.into(),
+            });
+        }
+        if expected_policy == crate::productivity::DUPLEX_POLICY {
+            if self.refdata_content_hash.is_none() {
+                return Err(TraceFileError::RefdataContentHashMismatch {
+                    expected: refdata_content_hash(refdata),
+                    got: "missing".into(),
+                });
+            }
+            if self.address_schema_version != crate::address::ADDRESS_SCHEMA_VERSION {
+                return Err(TraceFileError::AddressSchemaVersionMismatch {
+                    expected: crate::address::ADDRESS_SCHEMA_VERSION,
+                    got: self.address_schema_version,
+                });
+            }
+        }
         // v1/v2 traces recorded the legacy names-only plan
         // signature; rebuild the comparator in the same format so
         // existing fixtures replay byte-identically. v3+ writers
@@ -528,7 +688,27 @@ impl TraceFile {
         } else {
             pass_plan_signature(plan)
         };
-        if live_plan_sig != self.pass_plan_signature {
+        let legacy_indel_match = legacy_replay && self.schema_version == 3 && {
+            let recorded: Vec<_> = self.pass_plan_signature.split('|').collect();
+            recorded.len() == plan.passes().len()
+                && recorded.iter().zip(plan.passes()).all(|(old, pass)| {
+                    let params = pass.parameter_signature();
+                    if *old == format!("{}({params})", pass.name()) {
+                        return true;
+                    }
+                    if pass.name() != crate::address::CORRUPT_INDEL
+                        || !params.starts_with("sampler=natural_sequential_v1,")
+                    {
+                        return false;
+                    }
+                    let Some((options, previous)) = params.split_once(",count=") else {
+                        return false;
+                    };
+                    options.ends_with(",legacy_replay_sentinels=true")
+                        && *old == format!("{}(count={previous})", pass.name())
+                })
+        };
+        if live_plan_sig != self.pass_plan_signature && !legacy_indel_match {
             return Err(TraceFileError::PassPlanSignatureMismatch {
                 expected: self.pass_plan_signature.clone(),
                 got: live_plan_sig,
@@ -591,10 +771,10 @@ impl TraceFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pass::{PassPlan, Pass, PassContext, PassEffect};
-    use crate::refdata::{Allele, ChainType, RefDataConfig};
-    use crate::ir::{Segment, Simulation};
     use crate::address;
+    use crate::ir::{Segment, Simulation};
+    use crate::pass::{Pass, PassContext, PassEffect, PassPlan};
+    use crate::refdata::{Allele, ChainType, RefDataConfig};
     use crate::trace::{ChoiceRecord, ChoiceValue};
 
     /// Minimal dummy pass for plan-signature tests. Does nothing on
@@ -621,6 +801,68 @@ mod tests {
             plan.push(Box::new(NamedPass(n)));
         }
         plan
+    }
+
+    #[test]
+    fn v4_requires_annotation_policy_and_contract_context() {
+        let plan = make_plan(&["a"]);
+        let cfg = make_refdata();
+        let mut file = TraceFile::build(&plan, &cfg, 1, Trace::new());
+        let contracts = crate::contract::productive();
+        assert!(matches!(
+            file.validate_contracts(Some(&contracts)),
+            Err(TraceFileError::ContractSetMismatch { .. })
+        ));
+        file.active_contracts = Some(contracts.iter().map(|c| c.name().to_owned()).collect());
+        assert!(file.validate_contracts(Some(&contracts)).is_ok());
+        let mut raw = serde_json::to_value(&file).unwrap();
+        raw.as_object_mut().unwrap().remove("productivity_policy");
+        assert!(matches!(
+            TraceFile::from_json(&raw.to_string()),
+            Err(TraceFileError::ProductivityPolicyMismatch { .. })
+        ));
+        file.productivity_policy = Some("future_policy".into());
+        assert!(matches!(
+            file.validate_against(&plan, &cfg),
+            Err(TraceFileError::ProductivityPolicyMismatch { .. })
+        ));
+        file.productivity_policy = Some(crate::productivity::POLICY.into());
+        file.active_contracts = None;
+        assert!(matches!(
+            TraceFile::from_json(&file.to_json_pretty().unwrap()),
+            Err(TraceFileError::ContractSetMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn old_indel_signature_compatibility_is_explicit_and_never_a_seed_rerun() {
+        struct IndelParams(String);
+        impl Pass for IndelParams {
+            fn name(&self) -> &str {
+                crate::address::CORRUPT_INDEL
+            }
+            fn parameter_signature(&self) -> String {
+                self.0.clone()
+            }
+            fn execute(&self, sim: &Simulation, _: &mut PassContext) -> Simulation {
+                sim.clone()
+            }
+        }
+        let cfg = make_refdata();
+        let previous = "count=dist:[(2:1.0)],insertion_prob=0.5,base=uniform";
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(IndelParams(format!("sampler=natural_sequential_v1,rejection_attempts=256,exact_node_budget=5000000,legacy_replay_sentinels=true,{previous}"))));
+        let mut file = TraceFile::build(&plan, &cfg, 1, Trace::new());
+        file.schema_version = 3;
+        file.pass_plan_signature = format!("corrupt.indel({previous})");
+        assert!(file.validate_for_replay(&plan, &cfg).is_ok());
+        assert!(file.validate_against(&plan, &cfg).is_err());
+        file.schema_version = 4;
+        assert!(file.validate_for_replay(&plan, &cfg).is_err());
+        file.schema_version = 3;
+        file.pass_plan_signature =
+            "corrupt.indel(count=dist:[(3:1.0)],insertion_prob=0.5,base=uniform)".into();
+        assert!(file.validate_for_replay(&plan, &cfg).is_err());
     }
 
     fn make_refdata() -> RefDataConfig {
@@ -851,24 +1093,29 @@ mod tests {
     // ── Schema policy compatibility tests ─────────────────────────
 
     #[test]
-    fn schema_version_constant_is_3() {
+    fn schema_version_constant_is_4() {
         // Pinned so a downstream consumer adding a new optional
         // field can't accidentally bump the version. Bumping must
         // come with explicit documentation + KNOWN list update.
         // (Slice A — Pass Parameter Signature — bumped to v3.)
-        assert_eq!(TRACE_FILE_SCHEMA_VERSION, 3);
+        assert_eq!(TRACE_FILE_SCHEMA_VERSION, 4);
         assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&1));
         assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&2));
         assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&3));
+        assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&4));
     }
 
     #[test]
-    fn fresh_emit_carries_v3_metadata() {
+    fn fresh_emit_carries_v4_metadata() {
         let plan = make_plan(&["sample_allele.v"]);
         let refdata = make_refdata();
         let file = TraceFile::build(&plan, &refdata, 0, Trace::new());
 
-        assert_eq!(file.schema_version, 3);
+        assert_eq!(file.schema_version, 4);
+        assert_eq!(
+            file.productivity_policy.as_deref(),
+            Some(crate::productivity::POLICY)
+        );
         assert_eq!(
             file.address_schema_version,
             crate::address::ADDRESS_SCHEMA_VERSION
@@ -923,6 +1170,8 @@ mod tests {
             refdata_signature: refdata_signature(&refdata),
             address_schema_version: 0,
             refdata_content_hash: None,
+            productivity_policy: None,
+            active_contracts: None,
             trace: Trace::new(),
         };
         assert!(v1.validate_against(&plan, &refdata).is_ok());

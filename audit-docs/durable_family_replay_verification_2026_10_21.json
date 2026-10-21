@@ -1,0 +1,887 @@
+{
+  "schema": "durable_family_replay_verification_v1",
+  "date": "2026-10-21",
+  "branch": "fix/biological-metadata-correctness",
+  "base_commit": "3cd99bf14c9cb861c19ce3ed45627030f0580a7f",
+  "milestone": "F1–F5: self-contained source-backed duplex BCR VDJ lineage choice replay",
+  "extension_sha256": "a31be980a932d7333714f2ddf51c78ff9296943450d2d105313638bcff482244",
+  "runtime_source_sha256": "bb602141a97971330c88db8e6457df8328ffe573a13cd9960946ff06ea7aa8f3",
+  "runtime_source_hash_scope": "engine_rs/src/**/*.rs, src/GenAIRR/**/*.py, engine_rs/Cargo.toml, engine_rs/Cargo.lock; sorted relative paths, each followed by NUL, file bytes and NUL",
+  "changed_source_manifest_sha256": "cac09ed776a8f2221ddcacd07aa979ef7bafb3354a240be6c4868b34141a0505",
+  "changed_source_files": 61,
+  "source_manifest_scope": "Sorted (path,content SHA-256) objects for changed/new engine_rs/src, src/GenAIRR, tests and tools/metadata_biology_audit files relative to base_commit; compact JSON serialization.",
+  "results": {
+    "native_debug": {
+      "passed": 1663,
+      "failed": 0,
+      "ignored": 3
+    },
+    "native_release": {
+      "passed": 1662,
+      "failed": 0,
+      "ignored": 3
+    },
+    "native_ignored_note": "Three inherited ignored cases, including two documentation examples; debug-only test accounts for the one-test count difference.",
+    "durable_python": {
+      "passed": 143,
+      "warnings": 1,
+      "seconds": 67.49,
+      "failed": 0
+    },
+    "compatibility_python": {
+      "passed": 135,
+      "warnings": 53,
+      "seconds": 20.69,
+      "failed": 0
+    },
+    "python_full_nonperformance": {
+      "passed": 3138,
+      "deselected": 8,
+      "warnings": 171,
+      "seconds": 359.27,
+      "failed": 0,
+      "execution": "All collected nonperformance test files assigned to two disjoint subprocesses; every selected case passed; runtime source/extension hashes checked before/after.",
+      "shards": {
+        "identity": {
+          "source_sha256": "bb602141a97971330c88db8e6457df8328ffe573a13cd9960946ff06ea7aa8f3",
+          "extension_sha256": "a31be980a932d7333714f2ddf51c78ff9296943450d2d105313638bcff482244"
+        },
+        "elapsed_seconds": 359.2678684849816,
+        "shards": [
+          {
+            "status": 0,
+            "summary": "1569 passed, 103 warnings in 355.83s (0:05:55)",
+            "command": [
+              "/home/thomas/Desktop/GenAIRR/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_airr_record_validator.py",
+              "tests/test_allele_call_provenance.py",
+              "tests/test_allele_model_audit.py",
+              "tests/test_allele_usage_estimation_contract.py",
+              "tests/test_build_imgt_configs.py",
+              "tests/test_cartridge_manifest_shm.py",
+              "tests/test_cartridge_views.py",
+              "tests/test_clonal_descendant_phase_guards.py",
+              "tests/test_clonal_dsl_ordering_guards.py",
+              "tests/test_clonal_lineage_corruption.py",
+              "tests/test_clonal_parent_contract.py",
+              "tests/test_clone_size_sampler.py",
+              "tests/test_coding_end_processing_integration.py",
+              "tests/test_complete_productive_support.py",
+              "tests/test_curation_policy.py",
+              "tests/test_duplex_experiment.py",
+              "tests/test_duplex_family_integration.py",
+              "tests/test_duplex_family_outputs.py",
+              "tests/test_duplex_observation.py",
+              "tests/test_duplex_observation_review.py",
+              "tests/test_duplex_result_integration.py",
+              "tests/test_duplex_seed_gates.py",
+              "tests/test_duplex_trace_integration.py",
+              "tests/test_end_loss_dsl_alias.py",
+              "tests/test_experiment.py",
+              "tests/test_family_replay_codecs.py",
+              "tests/test_fastq_export_contract.py",
+              "tests/test_genotype_backward_compat.py",
+              "tests/test_genotype_builder.py",
+              "tests/test_genotype_cartridge_plane.py",
+              "tests/test_genotype_cohorts.py",
+              "tests/test_genotype_dsl.py",
+              "tests/test_genotype_engine.py",
+              "tests/test_genotype_population.py",
+              "tests/test_genotype_recalled_calls.py",
+              "tests/test_genotype_usage.py",
+              "tests/test_junction_n_addition_contract.py",
+              "tests/test_lineage_engine.py",
+              "tests/test_lineage_outcome_validation.py",
+              "tests/test_live_call_cache_parity.py",
+              "tests/test_metadata_biology_fixes.py",
+              "tests/test_np_base_model_estimation_contract.py",
+              "tests/test_np_base_model_estimation_implementation.py",
+              "tests/test_np_base_model_implementation.py",
+              "tests/test_np_length_estimation_contract.py",
+              "tests/test_np_markov_base_generator_contract.py",
+              "tests/test_np_markov_base_generator_implementation.py",
+              "tests/test_p_nucleotide_release.py",
+              "tests/test_paired_end_contract.py",
+              "tests/test_paired_end_schema.py",
+              "tests/test_per_segment_mutation_counters.py",
+              "tests/test_productive_failure_modes.py",
+              "tests/test_productive_p_genotype.py",
+              "tests/test_productive_stress_matrix.py",
+              "tests/test_productivity_assessment.py",
+              "tests/test_productivity_trusted_landmarks.py",
+              "tests/test_receptor_revision_contract.py",
+              "tests/test_refdata_validation.py",
+              "tests/test_reference_cartridge_authoring_contract.py",
+              "tests/test_reference_cartridge_authoring_release.py",
+              "tests/test_reference_identity.py",
+              "tests/test_release_validation.py",
+              "tests/test_shm_model_contract.py",
+              "tests/test_to_paired_fastq.py",
+              "tests/test_trace_file_compat.py",
+              "tests/test_trim_distribution_estimation_implementation.py",
+              "tests/test_v_region_substructure_contract.py",
+              "tests/test_v_subregion_annotations.py",
+              "tests/test_v_subregion_rates_implementation.py",
+              "tests/test_validate_families.py",
+              "tests/test_validate_families_with_parents.py",
+              "-m",
+              "not performance",
+              "-q",
+              "--durations=10"
+            ],
+            "files": [
+              "tests/test_airr_record_validator.py",
+              "tests/test_allele_call_provenance.py",
+              "tests/test_allele_model_audit.py",
+              "tests/test_allele_usage_estimation_contract.py",
+              "tests/test_build_imgt_configs.py",
+              "tests/test_cartridge_manifest_shm.py",
+              "tests/test_cartridge_views.py",
+              "tests/test_clonal_descendant_phase_guards.py",
+              "tests/test_clonal_dsl_ordering_guards.py",
+              "tests/test_clonal_lineage_corruption.py",
+              "tests/test_clonal_parent_contract.py",
+              "tests/test_clone_size_sampler.py",
+              "tests/test_coding_end_processing_integration.py",
+              "tests/test_complete_productive_support.py",
+              "tests/test_curation_policy.py",
+              "tests/test_duplex_experiment.py",
+              "tests/test_duplex_family_integration.py",
+              "tests/test_duplex_family_outputs.py",
+              "tests/test_duplex_observation.py",
+              "tests/test_duplex_observation_review.py",
+              "tests/test_duplex_result_integration.py",
+              "tests/test_duplex_seed_gates.py",
+              "tests/test_duplex_trace_integration.py",
+              "tests/test_end_loss_dsl_alias.py",
+              "tests/test_experiment.py",
+              "tests/test_family_replay_codecs.py",
+              "tests/test_fastq_export_contract.py",
+              "tests/test_genotype_backward_compat.py",
+              "tests/test_genotype_builder.py",
+              "tests/test_genotype_cartridge_plane.py",
+              "tests/test_genotype_cohorts.py",
+              "tests/test_genotype_dsl.py",
+              "tests/test_genotype_engine.py",
+              "tests/test_genotype_population.py",
+              "tests/test_genotype_recalled_calls.py",
+              "tests/test_genotype_usage.py",
+              "tests/test_junction_n_addition_contract.py",
+              "tests/test_lineage_engine.py",
+              "tests/test_lineage_outcome_validation.py",
+              "tests/test_live_call_cache_parity.py",
+              "tests/test_metadata_biology_fixes.py",
+              "tests/test_np_base_model_estimation_contract.py",
+              "tests/test_np_base_model_estimation_implementation.py",
+              "tests/test_np_base_model_implementation.py",
+              "tests/test_np_length_estimation_contract.py",
+              "tests/test_np_markov_base_generator_contract.py",
+              "tests/test_np_markov_base_generator_implementation.py",
+              "tests/test_p_nucleotide_release.py",
+              "tests/test_paired_end_contract.py",
+              "tests/test_paired_end_schema.py",
+              "tests/test_per_segment_mutation_counters.py",
+              "tests/test_productive_failure_modes.py",
+              "tests/test_productive_p_genotype.py",
+              "tests/test_productive_stress_matrix.py",
+              "tests/test_productivity_assessment.py",
+              "tests/test_productivity_trusted_landmarks.py",
+              "tests/test_receptor_revision_contract.py",
+              "tests/test_refdata_validation.py",
+              "tests/test_reference_cartridge_authoring_contract.py",
+              "tests/test_reference_cartridge_authoring_release.py",
+              "tests/test_reference_identity.py",
+              "tests/test_release_validation.py",
+              "tests/test_shm_model_contract.py",
+              "tests/test_to_paired_fastq.py",
+              "tests/test_trace_file_compat.py",
+              "tests/test_trim_distribution_estimation_implementation.py",
+              "tests/test_v_region_substructure_contract.py",
+              "tests/test_v_subregion_annotations.py",
+              "tests/test_v_subregion_rates_implementation.py",
+              "tests/test_validate_families.py",
+              "tests/test_validate_families_with_parents.py"
+            ],
+            "selected_collected": 1569
+          },
+          {
+            "status": 0,
+            "summary": "1569 passed, 68 warnings in 219.92s (0:03:39)",
+            "command": [
+              "/home/thomas/Desktop/GenAIRR/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_allele_usage_estimation_implementation.py",
+              "tests/test_allele_usage_estimation_release.py",
+              "tests/test_assay_mutation_and_junction.py",
+              "tests/test_assay_robustness_regressions.py",
+              "tests/test_cartridge_manifest.py",
+              "tests/test_cartridge_public_api.py",
+              "tests/test_clonal_family_contract.py",
+              "tests/test_clonal_lineage_dsl.py",
+              "tests/test_clonal_lineage_validation.py",
+              "tests/test_clonal_plan_split_contract.py",
+              "tests/test_clonal_repertoire.py",
+              "tests/test_coding_end_models.py",
+              "tests/test_coding_end_processing.py",
+              "tests/test_coding_end_provenance.py",
+              "tests/test_coupled_duplex_repair.py",
+              "tests/test_d_inversion_contract.py",
+              "tests/test_d_inversion_extension_contract.py",
+              "tests/test_dataconfig_schema_version.py",
+              "tests/test_distribution_invariants.py",
+              "tests/test_docs_mkdocs_migration_contract.py",
+              "tests/test_docs_website_contract.py",
+              "tests/test_duplex_observation_productivity.py",
+              "tests/test_duplex_projection.py",
+              "tests/test_duplex_uniform_defaults.py",
+              "tests/test_durable_family_codec.py",
+              "tests/test_engine_python_types.py",
+              "tests/test_engine_smoke.py",
+              "tests/test_expand_clones_deprecation.py",
+              "tests/test_experimental_duplex_repair.py",
+              "tests/test_family_replay.py",
+              "tests/test_functional_status_curation.py",
+              "tests/test_generating_alignment_truth.py",
+              "tests/test_genotype_novel.py",
+              "tests/test_genotype_receptor_revision.py",
+              "tests/test_indel_natural_history.py",
+              "tests/test_indel_provenance.py",
+              "tests/test_invert_d_dsl.py",
+              "tests/test_junction_call_provenance.py",
+              "tests/test_lineage_mutation_counts.py",
+              "tests/test_mcp_server.py",
+              "tests/test_metadata_germline_regressions.py",
+              "tests/test_metadata_np_estimator_regressions.py",
+              "tests/test_mutation_provenance_contract.py",
+              "tests/test_np_length_estimation_implementation.py",
+              "tests/test_np_markov_release.py",
+              "tests/test_observed_alignment_coverage.py",
+              "tests/test_p_nucleotide_contract.py",
+              "tests/test_p_nucleotide_implementation.py",
+              "tests/test_p_nucleotide_length_estimation_contract.py",
+              "tests/test_p_nucleotide_length_estimation_implementation.py",
+              "tests/test_paired_end_dsl.py",
+              "tests/test_parent_outcomes.py",
+              "tests/test_pass_parameter_signature.py",
+              "tests/test_plan_signature_completeness_contract.py",
+              "tests/test_primer_trim_end_loss_provenance.py",
+              "tests/test_productive_p_nucleotides.py",
+              "tests/test_receptor_revision_dsl.py",
+              "tests/test_receptor_revision_productive.py",
+              "tests/test_receptor_revision_provenance_in_ir.py",
+              "tests/test_refdata_validation_compile_gate.py",
+              "tests/test_reference_cartridge_authoring_implementation.py",
+              "tests/test_reference_cartridge_completeness_contract.py",
+              "tests/test_reference_evidence.py",
+              "tests/test_reference_models.py",
+              "tests/test_reference_rules.py",
+              "tests/test_reference_rules_bridge.py",
+              "tests/test_segment_rates_implementation.py",
+              "tests/test_shm_segment_rate_contract.py",
+              "tests/test_trace_execution_context.py",
+              "tests/test_trace_file.py",
+              "tests/test_trace_replay.py",
+              "tests/test_trim_distribution_estimation_contract.py",
+              "tests/test_v_subregion_mutation_counters_contract.py",
+              "tests/test_v_subregion_mutation_counters_implementation.py",
+              "tests/test_v_subregion_shm_rate_contract.py",
+              "tests/test_validate_records_kwarg.py",
+              "-m",
+              "not performance",
+              "-q",
+              "--durations=10"
+            ],
+            "files": [
+              "tests/test_allele_usage_estimation_implementation.py",
+              "tests/test_allele_usage_estimation_release.py",
+              "tests/test_assay_mutation_and_junction.py",
+              "tests/test_assay_robustness_regressions.py",
+              "tests/test_cartridge_manifest.py",
+              "tests/test_cartridge_public_api.py",
+              "tests/test_clonal_family_contract.py",
+              "tests/test_clonal_lineage_dsl.py",
+              "tests/test_clonal_lineage_validation.py",
+              "tests/test_clonal_plan_split_contract.py",
+              "tests/test_clonal_repertoire.py",
+              "tests/test_coding_end_models.py",
+              "tests/test_coding_end_processing.py",
+              "tests/test_coding_end_provenance.py",
+              "tests/test_coupled_duplex_repair.py",
+              "tests/test_d_inversion_contract.py",
+              "tests/test_d_inversion_extension_contract.py",
+              "tests/test_dataconfig_schema_version.py",
+              "tests/test_distribution_invariants.py",
+              "tests/test_docs_mkdocs_migration_contract.py",
+              "tests/test_docs_website_contract.py",
+              "tests/test_duplex_observation_productivity.py",
+              "tests/test_duplex_projection.py",
+              "tests/test_duplex_uniform_defaults.py",
+              "tests/test_durable_family_codec.py",
+              "tests/test_engine_python_types.py",
+              "tests/test_engine_smoke.py",
+              "tests/test_expand_clones_deprecation.py",
+              "tests/test_experimental_duplex_repair.py",
+              "tests/test_family_replay.py",
+              "tests/test_functional_status_curation.py",
+              "tests/test_generating_alignment_truth.py",
+              "tests/test_genotype_novel.py",
+              "tests/test_genotype_receptor_revision.py",
+              "tests/test_indel_natural_history.py",
+              "tests/test_indel_provenance.py",
+              "tests/test_invert_d_dsl.py",
+              "tests/test_junction_call_provenance.py",
+              "tests/test_lineage_mutation_counts.py",
+              "tests/test_mcp_server.py",
+              "tests/test_metadata_germline_regressions.py",
+              "tests/test_metadata_np_estimator_regressions.py",
+              "tests/test_mutation_provenance_contract.py",
+              "tests/test_np_length_estimation_implementation.py",
+              "tests/test_np_markov_release.py",
+              "tests/test_observed_alignment_coverage.py",
+              "tests/test_p_nucleotide_contract.py",
+              "tests/test_p_nucleotide_implementation.py",
+              "tests/test_p_nucleotide_length_estimation_contract.py",
+              "tests/test_p_nucleotide_length_estimation_implementation.py",
+              "tests/test_paired_end_dsl.py",
+              "tests/test_parent_outcomes.py",
+              "tests/test_pass_parameter_signature.py",
+              "tests/test_plan_signature_completeness_contract.py",
+              "tests/test_primer_trim_end_loss_provenance.py",
+              "tests/test_productive_p_nucleotides.py",
+              "tests/test_receptor_revision_dsl.py",
+              "tests/test_receptor_revision_productive.py",
+              "tests/test_receptor_revision_provenance_in_ir.py",
+              "tests/test_refdata_validation_compile_gate.py",
+              "tests/test_reference_cartridge_authoring_implementation.py",
+              "tests/test_reference_cartridge_completeness_contract.py",
+              "tests/test_reference_evidence.py",
+              "tests/test_reference_models.py",
+              "tests/test_reference_rules.py",
+              "tests/test_reference_rules_bridge.py",
+              "tests/test_segment_rates_implementation.py",
+              "tests/test_shm_segment_rate_contract.py",
+              "tests/test_trace_execution_context.py",
+              "tests/test_trace_file.py",
+              "tests/test_trace_replay.py",
+              "tests/test_trim_distribution_estimation_contract.py",
+              "tests/test_v_subregion_mutation_counters_contract.py",
+              "tests/test_v_subregion_mutation_counters_implementation.py",
+              "tests/test_v_subregion_shm_rate_contract.py",
+              "tests/test_validate_records_kwarg.py"
+            ],
+            "selected_collected": 1569
+          }
+        ]
+      }
+    },
+    "performance": {
+      "passed": 8,
+      "seconds": 3.78,
+      "failed": 0,
+      "thresholds": "All eight existing thresholds unchanged; separate execution without concurrent GenAIRR test/sweep/benchmark loads. Shared development host, unrelated external workloads uncontrolled."
+    },
+    "strict_docs": {
+      "passed": true,
+      "command": ".venv/bin/mkdocs build --strict --site-dir /tmp/genairr_durable_family_docs"
+    },
+    "actual_guide_examples": {
+      "passed": 7,
+      "execution": "All seven actual Python fences run sequentially in a shared namespace inside one temporary output directory, then removed."
+    },
+    "diff_check": {
+      "passed": true
+    }
+  },
+  "artifacts": {
+    "sweep": {
+      "path": "audit-docs/durable_family_sweep_2026_10_21.json",
+      "sha256": "fe76abe8521e391651505ae94a7548c801f025be7f581252f970068a16d1f11f",
+      "counts": {
+        "literal_record_checks": 298,
+        "node_checks_including_roots_unsampled": 1354,
+        "attempts_including_rejected": 122,
+        "rejected_attempts": 18,
+        "growth_parent_proposals": 718,
+        "ordered_sample_choices": 600,
+        "plans": 52,
+        "founders": 104,
+        "artifact_bytes": 47031654,
+        "accepted_extinct_families": 4
+      },
+      "errors": 0,
+      "checks": [
+        "capture-on/off seeded identity",
+        "saved and loaded exact typed records",
+        "literal repair/query/edit/link/counter reconstruction",
+        "canonical inverted D",
+        "actual cumulative mutations including reversions",
+        "all accepted nodes including unsampled cells",
+        "tree topology, affinity and abundance",
+        "complete attempted-family and ordered sampling receipts"
+      ],
+      "scope": "52 short restored-landmark controls including retries and accepted extinction; equal authored weights and declared neutral/selection controls; no measured repair rates or full-length performance claim"
+    },
+    "legacy_family_regression": {
+      "path": "audit-docs/durable_family_legacy_family_regression_2026_10_21.json",
+      "sha256": "371a53308ed3df8b89f59c978b1ac1040585511000face5de822a9e2df83fd36",
+      "counts": {
+        "founders": 192,
+        "records": 896,
+        "plans": 96,
+        "node_replays": 928,
+        "observed_node_comparisons": 192
+      },
+      "errors": 0,
+      "checks": [
+        "literal coding-query and output-orientation reconstruction",
+        "exact current/removed founder-link replay",
+        "canonical inverted-D placement oracle",
+        "cumulative applied mutation and observation counter oracle",
+        "mutation-stage denominator before read loss",
+        "one immutable repair founder per clone",
+        "actual parent-edge edit prefixes and counts",
+        "all lineage nodes replay including unsampled nodes",
+        "represented-cell abundance conservation",
+        "independent observed branch maps"
+      ],
+      "scope": "authored 15-base restored-landmark controls; omitted unit history weights and existing neutral family controls; no empirical biochemical fitting"
+    },
+    "projection_regression": {
+      "path": "audit-docs/durable_family_projection_regression_2026_10_21.json",
+      "sha256": "7cb0affb362c69fb7173a8743c0330a60652418111c27af54bf0e82ec8cc20ef",
+      "cases": 32768,
+      "errors": 0,
+      "checks": [
+        "literal sequence and full body alignment",
+        "canonical inverted D paths",
+        "unique body claims supported by either strand",
+        "hairpin transfers separate from body placement",
+        "empty NP intervals and zero net trims",
+        "paired physical origin conservation",
+        "no repair operations counted as SHM or downstream indels"
+      ],
+      "scope": "deterministic dinucleotide controls, not empirical frequencies"
+    },
+    "observation_regression": {
+      "path": "audit-docs/durable_family_observation_regression_2026_10_21.json",
+      "sha256": "665bfb5bff951fc9cd7913f78b8394beed14e294febefe20ee06b930c6e0bac7",
+      "counts": {
+        "founders": 2048,
+        "continuations": 18432
+      },
+      "errors": 0,
+      "checks": [
+        "independent literal edit replay",
+        "founder-column conservation",
+        "current certified claim remapping",
+        "query/alignment conservation",
+        "immutable repair product and counters",
+        "both join orders and D orientations"
+      ],
+      "scope": "short authored controls; no fitted biochemical probabilities"
+    },
+    "benchmark": {
+      "path": "audit-docs/durable_family_benchmark_2026_10_21.json",
+      "sha256": "a7932c20d1e3f460c1d854ded1777bce1d645bf48fff4d7773e99107c0e43790",
+      "checks": [
+        "fresh process per mode/repeat",
+        "identical seeded plain/captured records and trees",
+        "artifact-only fresh-process semantic replay",
+        "replayed records/tree/abundance identity",
+        "all rejected attempts retained"
+      ],
+      "scope": "Three small synthetic full-length workloads; no empirical repair calibration, production-throughput claim, hard RSS bound, or incremental native-allocation claim. Capture includes sealing; save includes encoding and atomic fsync publication; parse is bounded structural/integrity loading; replay includes reconstructing plans, all failed attempts, accepted trees, and observed reads.",
+      "summaries": [
+        {
+          "case": "shallow",
+          "parameters": {
+            "n_clones": 1,
+            "rate": 0.01,
+            "s5f_model": "hh_s5f",
+            "selection_strength": 0.0,
+            "strict": true,
+            "validate_records": true,
+            "allow_extinction": false,
+            "max_generations": 2,
+            "n_max": 8,
+            "n_sample": 2,
+            "lambda_base": 2.4
+          },
+          "repeats": 2,
+          "plain_median_compile_seconds": 0.0040989270055433735,
+          "plain_median_run_seconds": 0.25798986649897415,
+          "plain_max_process_peak_kib": 67012,
+          "capture_median_compile_seconds": 0.004143777012359351,
+          "capture_median_run_seconds": 1.7033238344884012,
+          "capture_median_save_seconds": 3.116310246507055,
+          "capture_median_artifact_bytes": 6608534.0,
+          "capture_median_attempts": 1.5,
+          "capture_median_rejected_attempts": 0.5,
+          "capture_median_all_attempt_nodes": 9.5,
+          "capture_median_accepted_nodes": 9.0,
+          "capture_max_process_peak_kib": 255140,
+          "parse_median_parse_seconds": 0.4196858740033349,
+          "parse_max_process_peak_kib": 173676,
+          "replay_median_replay_seconds": 2.7952027059945976,
+          "replay_max_process_peak_kib": 290828,
+          "capture_run_over_plain_ratio": 6.602289685262402
+        },
+        {
+          "case": "deeper",
+          "parameters": {
+            "n_clones": 1,
+            "rate": 0.01,
+            "s5f_model": "hh_s5f",
+            "selection_strength": 0.0,
+            "strict": true,
+            "validate_records": true,
+            "allow_extinction": false,
+            "max_generations": 6,
+            "n_max": 8,
+            "n_sample": 2,
+            "lambda_base": 2.4
+          },
+          "repeats": 2,
+          "plain_median_compile_seconds": 0.004131650508497842,
+          "plain_median_run_seconds": 0.2720741425000597,
+          "plain_max_process_peak_kib": 67360,
+          "capture_median_compile_seconds": 0.004029439005535096,
+          "capture_median_run_seconds": 1.9673627855081577,
+          "capture_median_save_seconds": 2.508878693493898,
+          "capture_median_artifact_bytes": 6678354.5,
+          "capture_median_attempts": 2.0,
+          "capture_median_rejected_attempts": 1.0,
+          "capture_median_all_attempt_nodes": 28.5,
+          "capture_median_accepted_nodes": 24.0,
+          "capture_max_process_peak_kib": 252068,
+          "parse_median_parse_seconds": 0.4429581215081271,
+          "parse_max_process_peak_kib": 175068,
+          "replay_median_replay_seconds": 3.210889893991407,
+          "replay_max_process_peak_kib": 292000,
+          "capture_run_over_plain_ratio": 7.2309803770041325
+        },
+        {
+          "case": "survival_retries",
+          "parameters": {
+            "n_clones": 1,
+            "rate": 0.01,
+            "s5f_model": "hh_s5f",
+            "selection_strength": 0.0,
+            "strict": true,
+            "validate_records": true,
+            "allow_extinction": false,
+            "max_generations": 3,
+            "n_max": 8,
+            "n_sample": 2,
+            "lambda_base": 0.7
+          },
+          "repeats": 2,
+          "plain_median_compile_seconds": 0.004920629507978447,
+          "plain_median_run_seconds": 0.19048377498984337,
+          "plain_max_process_peak_kib": 57352,
+          "capture_median_compile_seconds": 0.004076174489455298,
+          "capture_median_run_seconds": 1.2194929370016325,
+          "capture_median_save_seconds": 2.0294959425082197,
+          "capture_median_artifact_bytes": 6578042.5,
+          "capture_median_attempts": 4.5,
+          "capture_median_rejected_attempts": 3.5,
+          "capture_median_all_attempt_nodes": 12.5,
+          "capture_median_accepted_nodes": 6.5,
+          "capture_max_process_peak_kib": 230504,
+          "parse_median_parse_seconds": 0.4208939435047796,
+          "parse_max_process_peak_kib": 172988,
+          "replay_median_replay_seconds": 2.1259379440016346,
+          "replay_max_process_peak_kib": 200212,
+          "capture_run_over_plain_ratio": 6.402082996657621
+        }
+      ],
+      "synthetic_lengths_nt": {
+        "v": 300,
+        "d": 18,
+        "j": 51,
+        "molecule": 369
+      }
+    }
+  },
+  "scope": {
+    "supported": "Source-backed BCR VDJ clonal_lineage; multi-clone; all rejected growth attempts and accepted extinction; neutral/explicit/automatic targets; supported per-cell read corruption; retained root/unsampled cellular replay.",
+    "replay_guarantee": "Zero fresh RNG semantic choice replay under recorded support, control flow, exact native context, state/events and typed output. Not seed-stream provenance, authorship or empirical calibration.",
+    "unfitted_defaults": "Equal eligible authored repair-history weights remain explicit unfitted controls; no new biochemical rates.",
+    "unsupported": "Fixed/repertoire or legacy lineage bundles, arbitrary external snapshots, VJ, phased genotype families, revision, contaminants and paired-end adapters.",
+    "resource_limits": "Conservative captured offspring bound lambda_base*(1+selection_strength)<=64. Configurable software-accounted execution/history/output ceilings are not a hard process-RSS limit.",
+    "publication": "Prepublication failures preserve old destination. Atomic complete-file publication precedes directory fsync; a postpublication sync failure reports uncertain crash persistence and may leave the complete new file visible.",
+    "performance": "Full-length JSON/evidence-heavy capture is opt-in and materially more costly than uncaptured generation. Descriptive isolated shared-host measurements, not production-throughput guarantees."
+  },
+  "development_findings": [
+    "Oversized JSON integers initially promoted silently to binary64; lexical integer-range validation added, with regression tests.",
+    "Existing InvertD panic-message test changed to verify its newly structured permissive missing-assignment error and unchanged zero-choice/zero-RNG failure.",
+    "Review closed actual-policy replay, zero-weight/transformed support, extreme S5F normalization, missing work fences, nested legacy trace extras, final-node aggregate budget and exact attempt counting.",
+    "Final resource closure scopes output materialization, merges, projection and validation; charges copied trace/event containers and preserves native Arc sharing. Two exact-history regressions and three native helper tests were added, then all 3138 Python tests and full native suites passed on the final binary.",
+    "An initial pre-scoped full run also passed all 3133 then-collected nonperformance Python tests; the final suite includes the additional output-copy regressions.",
+    "Several initial new-test failures were fixture/API/scope authoring mistakes; corrected before focused/full release verification."
+  ],
+  "commands": [
+    ".venv/bin/maturin develop --release",
+    "cargo test --manifest-path engine_rs/Cargo.toml",
+    "cargo test --manifest-path engine_rs/Cargo.toml --release",
+    ".venv/bin/python -m pytest tests/test_durable_family_codec.py tests/test_family_replay_codecs.py tests/test_family_replay.py -q",
+    ".venv/bin/python -m pytest [each disjoint file list in results.python_full_nonperformance.shards] -m 'not performance' -q --durations=10",
+    ".venv/bin/python -m pytest tests/test_performance_budgets.py -q",
+    ".venv/bin/python -m tools.metadata_biology_audit.durable_family_sweep --output audit-docs/durable_family_sweep_2026_10_21.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_family_sweep --output audit-docs/durable_family_legacy_family_regression_2026_10_21.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_projection_sweep --output audit-docs/durable_family_projection_regression_2026_10_21.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_observation_sweep --output audit-docs/durable_family_observation_regression_2026_10_21.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.durable_family_benchmark --repeats 2 --output audit-docs/durable_family_benchmark_2026_10_21.json",
+    ".venv/bin/mkdocs build --strict --site-dir /tmp/genairr_durable_family_docs",
+    "git diff --check"
+  ],
+  "changed_source_manifest": [
+    {
+      "path": "engine_rs/src/compiled/duplex_feasibility.rs",
+      "sha256": "22e22785be8c12b3cfee49cd41f50679b3585e229374b277cf597f7406157bf5"
+    },
+    {
+      "path": "engine_rs/src/compiled/execute.rs",
+      "sha256": "abc446bab1673ce90b8d6264d13db5eab74d3bab9cc11184f346fd8fbd270f6f"
+    },
+    {
+      "path": "engine_rs/src/compiled/mod.rs",
+      "sha256": "b9e70177612cefcdd45260824abf6180a687602d561d2f5eff93ea5949a48226"
+    },
+    {
+      "path": "engine_rs/src/dist/allele_pool.rs",
+      "sha256": "176af21897f61308bfdaf0d421665bfa33d58f712399e7ac0ea9f6b44832122a"
+    },
+    {
+      "path": "engine_rs/src/dist/categorical_base.rs",
+      "sha256": "7174c1e4aa440dbcc0319c579e3f1281afc2c27e69f58b75620108e8c95dd86d"
+    },
+    {
+      "path": "engine_rs/src/dist/empirical.rs",
+      "sha256": "f4fa3be62b1b4a08799defc7beb6c69ab0663b378a3677f4d56bb4c6f82c3039"
+    },
+    {
+      "path": "engine_rs/src/dist/integer.rs",
+      "sha256": "4232b0c1981aa21e2fdd540b1532bfcad338bb136b6c09e45feccfd8f3d35ed9"
+    },
+    {
+      "path": "engine_rs/src/dist/mod.rs",
+      "sha256": "3ca703809de040707c8a5ddc3dac4b292a1ccb8b3fbf958fd45743ff38f19050"
+    },
+    {
+      "path": "engine_rs/src/dist/uniform.rs",
+      "sha256": "fba995bcd5763c327aceafd8f5c08b87e650b0ff6b0d983b2b1b6a3622c4529b"
+    },
+    {
+      "path": "engine_rs/src/duplex_repair.rs",
+      "sha256": "307648aa47bf35de8763efdf30b00d017973555c2dfa30578208691a831d42c8"
+    },
+    {
+      "path": "engine_rs/src/duplex_repair/coupled.rs",
+      "sha256": "9783b393e694d9b7e36826ea6a211b57db4a67ac70f16216518e369984ee036e"
+    },
+    {
+      "path": "engine_rs/src/family_replay.rs",
+      "sha256": "9da7ccf02c3fc99d9a973a71cf55d2e9c088e2974d99b92c610e4a084839659f"
+    },
+    {
+      "path": "engine_rs/src/family_replay/plan.rs",
+      "sha256": "d649396083dfcbb45ccf0dcc67c551b1ae802959e2688c96c9f6928ca29e183c"
+    },
+    {
+      "path": "engine_rs/src/family_replay/plan/tests.rs",
+      "sha256": "ddf1361e5c8785f4c93d31ac34422e968c61ee925d2112fa0b36bf5841574beb"
+    },
+    {
+      "path": "engine_rs/src/family_replay/reference.rs",
+      "sha256": "90d34e8d6257b5bb0a95c33585b0c6684574a0160f1dc712f0e31d776f893fdd"
+    },
+    {
+      "path": "engine_rs/src/family_replay/state.rs",
+      "sha256": "9f4ff72655e11ca07986dc5324cfb895063fba76ff5a13cd660136ec88ba540d"
+    },
+    {
+      "path": "engine_rs/src/family_replay/strict_json.rs",
+      "sha256": "74817976b62066f0ea5c9cf35f8b337252cf321c95b772c91876f7806a3062e8"
+    },
+    {
+      "path": "engine_rs/src/ir/duplex_provenance.rs",
+      "sha256": "ab96f96ee658768cc42c0177a51aaabb22e69321cc764aafc71153aea3e22ed3"
+    },
+    {
+      "path": "engine_rs/src/ir/pool.rs",
+      "sha256": "3f48c08b71f6f19a95f69b70045eef43eaebf77edbb4a44db62a50852ce1c865"
+    },
+    {
+      "path": "engine_rs/src/lib.rs",
+      "sha256": "db4be6ed7662f8458d764f5f7c4c31fc8d39a4cd8442b1bbfa83b56554299614"
+    },
+    {
+      "path": "engine_rs/src/lineage/affinity.rs",
+      "sha256": "a561c0d8015ba817461b940e2ae88c651cadee971d931f908862bf42dd238e4e"
+    },
+    {
+      "path": "engine_rs/src/lineage/branching.rs",
+      "sha256": "a56a5a7e6176975a8315824b9dbe8015a2c52d61d005e86fbebc9cae03d111ca"
+    },
+    {
+      "path": "engine_rs/src/lineage/family.rs",
+      "sha256": "ee3f18c103126c8d0ef387270758a13d8f42500e4016d65839dd7e462a088a89"
+    },
+    {
+      "path": "engine_rs/src/lineage/mod.rs",
+      "sha256": "f9c200bbdce416a49adf7c2ad27c2ab7704941ed465dbbf1b86eb788fca4936c"
+    },
+    {
+      "path": "engine_rs/src/lineage/poisson.rs",
+      "sha256": "de72a3532384f9a4d90ddb8586391560ccc96c48a600438914b761e0ad9fbdc5"
+    },
+    {
+      "path": "engine_rs/src/lineage/replay_receipt.rs",
+      "sha256": "d08a2e8915c806b1d6e8a9b208b12befcf60fe0dea64b5b7f66a8dadf83d45b5"
+    },
+    {
+      "path": "engine_rs/src/lineage/replay_receipt/tests.rs",
+      "sha256": "cb2b5e23a79e90dee9d320c836fc6a26d35d265d451b7be3e0134f56a0fa8d7f"
+    },
+    {
+      "path": "engine_rs/src/lineage/sampling.rs",
+      "sha256": "427fcc0376761d86c8ca90d1a609a70a91e3805d283a66493fb1e410fff3d55e"
+    },
+    {
+      "path": "engine_rs/src/pass/traits.rs",
+      "sha256": "f5664927148cdfbc15c1dfdcf9e8d30c9194afa7d04ed898dd8a90d67453544a"
+    },
+    {
+      "path": "engine_rs/src/passes/corrupt/end_loss.rs",
+      "sha256": "3212076c95c2de513a3c4d77aa4557e88e1c67cd8b4d6d87d550600cd4b2d171"
+    },
+    {
+      "path": "engine_rs/src/passes/corrupt/indel.rs",
+      "sha256": "fae6b4ea261f628695c58ea3c67e4ad602c0c6f405d19ba3b221384737216925"
+    },
+    {
+      "path": "engine_rs/src/passes/corrupt/ncorrupt.rs",
+      "sha256": "8bc3ae57174bba610520a707e73c9bad1554974dd830dd13b360f4bb51d8275a"
+    },
+    {
+      "path": "engine_rs/src/passes/corrupt/pcr.rs",
+      "sha256": "b84ef8f3c84fd86e66542bc1b1f0e4db42937fa50116a6569066e7d57b468668"
+    },
+    {
+      "path": "engine_rs/src/passes/corrupt/quality.rs",
+      "sha256": "59a161dfe3be2d4b3bab05d67940ab6d8a51a468f6e0753cef65fe7f47b84594"
+    },
+    {
+      "path": "engine_rs/src/passes/corrupt/rev_comp.rs",
+      "sha256": "deb79c3ae61af04867d38162b783ed5f2067fbcee20280c264fd5f46bebfeadc"
+    },
+    {
+      "path": "engine_rs/src/passes/count_source.rs",
+      "sha256": "57b71305c16de7aa3cd900a37caf52a4c8d60fb3fdc8d3c2e5fbf371435c6b50"
+    },
+    {
+      "path": "engine_rs/src/passes/duplex_recombine.rs",
+      "sha256": "fc8867caafb92b55fd20813e36ea0460c97de6408b6e36541213c77bdcce918d"
+    },
+    {
+      "path": "engine_rs/src/passes/invert_d.rs",
+      "sha256": "90fb23ec6b3f651c8cf26021b4adc67e5c1cab4368761be9b7e9a4126be60ace"
+    },
+    {
+      "path": "engine_rs/src/passes/mutate/s5f.rs",
+      "sha256": "65ae491a6f546907110c051bca7995a1ecf3fd577c512728715fbb0efbe98287"
+    },
+    {
+      "path": "engine_rs/src/passes/mutate/s5f/execution.rs",
+      "sha256": "d34864e4286ee320549a57af7da24b5aad7252e96a4994f19174300ed4e71f7c"
+    },
+    {
+      "path": "engine_rs/src/passes/mutate/uniform.rs",
+      "sha256": "403fbf259561677f3fdd962df263cc881874f5df804793d790dcd9a575064cb8"
+    },
+    {
+      "path": "engine_rs/src/passes/mutation_transaction/substitution.rs",
+      "sha256": "cc8c464b9364bcb6a9729de97b0f9f07a0668a380f7d6664c9624c725fa46ba5"
+    },
+    {
+      "path": "engine_rs/src/passes/sample_allele.rs",
+      "sha256": "145a79f3fd450a2331590012833f24eb1f2e7d97ec3c3829a5310ca0d55931c2"
+    },
+    {
+      "path": "engine_rs/src/python/compiled.rs",
+      "sha256": "325f0e306c1b0d7312eebd5e6ddd89b07ce226d1b08f52f67b27ecddd364dfcd"
+    },
+    {
+      "path": "engine_rs/src/python/family_replay.rs",
+      "sha256": "32092aa70031cbdf5e201dc607046ad8d9a5a53c881e1c09778a3f45e1a8c142"
+    },
+    {
+      "path": "engine_rs/src/python/lineage.rs",
+      "sha256": "8006bd7815bbe21745d92be2f3f27e370e7c6c1bdeed5b47ce3418ce9b02b1ed"
+    },
+    {
+      "path": "engine_rs/src/python/mod.rs",
+      "sha256": "3214c581e216d91769eb41f064147f46b7ea6f16be571b68dcff552a7ccdb84f"
+    },
+    {
+      "path": "engine_rs/src/python/outcome.rs",
+      "sha256": "77460b517b4a6bd355144a9213822b01c7cc9505afb74d7bd08be4bc1a55c110"
+    },
+    {
+      "path": "engine_rs/src/python/plan.rs",
+      "sha256": "486036598c6f174524adcdc85b90916eb5503b774dfb19ac813538f1005ef22b"
+    },
+    {
+      "path": "engine_rs/src/rng.rs",
+      "sha256": "fc8a5088cea33f69c9dd55480e4f5f4110d99e9885f07884331303ab190a93e2"
+    },
+    {
+      "path": "src/GenAIRR/_compiled/lineage.py",
+      "sha256": "61b027e2ad0e2e25a061293e6e22b4ddcd7e774810edca1d55ab08c791187778"
+    },
+    {
+      "path": "src/GenAIRR/_experiment/run.py",
+      "sha256": "b5f837a54bb136e4beca5ac00c7822c287dbd789b4bba62405e4055521944260"
+    },
+    {
+      "path": "src/GenAIRR/_family_replay.py",
+      "sha256": "82dd9e6c49ad8fbba3f0f8e2691a7d372a92d83a7a62bcd2938aa9833c8a833c"
+    },
+    {
+      "path": "src/GenAIRR/_result_validation.py",
+      "sha256": "823a58d437d26ee981cf7009cea3a709d7c77422cdf9cbc2a180898f32594f55"
+    },
+    {
+      "path": "src/GenAIRR/experimental.py",
+      "sha256": "c3a52a3877ff6b0155537578f5a7f53bb17fdbc7f8a245d5de62145269b1384d"
+    },
+    {
+      "path": "src/GenAIRR/result.py",
+      "sha256": "3bd2e1bcca3859f9c468af88080e837e6d7c5b94753cee6b494f785f24d90c2e"
+    },
+    {
+      "path": "tests/test_durable_family_codec.py",
+      "sha256": "0b889443186c1379c6e73105389b3397cd5a751b2dc0ea93c4d4777e0da741cf"
+    },
+    {
+      "path": "tests/test_family_replay.py",
+      "sha256": "fa7e18cb76b18d64fe75abd7ff79f77292c26b44abfa6acd5b89aac05d0bdcb4"
+    },
+    {
+      "path": "tests/test_family_replay_codecs.py",
+      "sha256": "ec34c86363b69e9d17a355b5df95eced52fc9dacfe43b99b267ff2353d8e150e"
+    },
+    {
+      "path": "tools/metadata_biology_audit/durable_family_benchmark.py",
+      "sha256": "09b3df1de490fbcb9bdd14850a7f75707db870ca4b4a196644fe218941dc828f"
+    },
+    {
+      "path": "tools/metadata_biology_audit/durable_family_sweep.py",
+      "sha256": "6f8314fdea9e7502b9293dbab0a6701970a92f7bb918fe6d06cf665b70822468"
+    }
+  ]
+}

@@ -58,9 +58,26 @@ impl AlleleIdSupport {
     }
 }
 
+/// Positive-weight support of a canonical first-order N-base generator.
+/// Bits are A/C/G/T; transitions are indexed by the preceding N base.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct NpBaseSupport {
+    pub first: u8,
+    pub transitions: [u8; 4],
+}
+
 /// Typed facts exposed by passes for semantic compile-time analysis.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PassCompileFact {
+    /// Exact naturally reachable source groups, preserving chromosome linkage.
+    /// Each group is a positive-mass complete V/D/J haplotype support.
+    JointAlleleSupport {
+        groups: Vec<[Vec<AlleleId>; 3]>,
+    },
+    /// An atomic source constructed from a finite authored repair vocabulary.
+    FiniteDuplexSource {
+        model: std::sync::Arc<crate::duplex_repair::model::FiniteDuplexModel>,
+    },
     AlleleSampleSupport {
         segment: Segment,
         support: AlleleIdSupport,
@@ -74,6 +91,13 @@ pub enum PassCompileFact {
         segment: Segment,
         support: IntegerSupport,
     },
+    NpBaseSupport {
+        segment: Segment,
+        support: Option<NpBaseSupport>,
+    },
+    DOrientationSupport {
+        orientations: Vec<bool>,
+    },
     /// Per-end P-nucleotide length integer support, declared
     /// by `PAdditionPass`. Symmetric with `NpLengthSupport` for
     /// downstream consumers (schedule analyser, feasibility
@@ -82,5 +106,14 @@ pub enum PassCompileFact {
     PLengthSupport {
         end: crate::address::PEnd,
         support: IntegerSupport,
+    },
+    /// Joint, canonical signed outcomes at the original coding ends.
+    CodingEndSupport {
+        segment: Segment,
+        outcomes: Vec<crate::end_processing::EndOutcome>,
+    },
+    /// Deterministic emission from a committed original-end outcome.
+    CodingEndEmission {
+        end: crate::address::PEnd,
     },
 }

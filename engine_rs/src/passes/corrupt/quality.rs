@@ -41,7 +41,7 @@ fn lowercase_base(base: u8) -> u8 {
 /// errors do not change downstream amino-acid translation.
 ///
 /// Trace addresses (D3):
-/// - `corrupt.quality.count` — total errors applied
+/// - `corrupt.quality.count` — sampled sequencing error attempts
 /// - `corrupt.quality.error_site[i]` — pool position of the i-th error
 /// - `corrupt.quality.error_base[i]` — *lowercase* destination base
 pub struct QualityErrorPass {
@@ -95,7 +95,7 @@ impl QualityErrorPass {
             strict,
         )?;
 
-        if pool_len == 0 || count == 0 {
+        if (pool_len == 0 || count == 0) && sim.duplex_provenance.is_none() {
             return Ok(sim.clone());
         }
 
@@ -108,6 +108,10 @@ impl QualityErrorPass {
         // `Contract::admits_fixed_base_at`). The TX still owns
         // observer attach, trace recording, and the seal protocol.
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
+        tx.record_duplex_attempt_stage(crate::ir::DuplexAttemptStage::Quality, count);
+        if pool_len == 0 || count == 0 {
+            return tx.commit();
+        }
 
         for i in 0..count {
             tx.substitute_position_constrained(
@@ -125,6 +129,16 @@ impl QualityErrorPass {
 }
 
 impl Pass for QualityErrorPass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::Quality {
+            count: CountSpec::capture(&self.count_source)?,
+            base: self.base_dist.family_replay_spec()?,
+        })
+    }
     fn name(&self) -> &str {
         address::CORRUPT_QUALITY
     }
@@ -140,6 +154,15 @@ impl Pass for QualityErrorPass {
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("QualityErrorPass permissive execution must not return PassError")
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn execute_checked(
@@ -447,12 +470,15 @@ mod tests {
                 .value,
             ChoiceValue::Base(b'a')
         );
-        let violations = productive()
-            .verify(unconstrained.final_simulation(), Some(&cfg))
-            .unwrap_err();
-        assert!(violations
-            .iter()
-            .any(|v| v.contract_name == "no_stop_codon_in_junction"));
+        // Conditioning also changes site weights, so the same seed need
+        // not choose the same unconstrained site. Independently evaluate the
+        // rejected target-2 candidate: TGC -> TGA is a coding stop.
+        let (_, baseline) = make_substitution_productive_vj_fixture();
+        let stopped = baseline.with_base_changed(NucHandle::new(2), b'A');
+        assert_eq!(
+            crate::productivity::assess(&stopped, &cfg).stop_codon,
+            Some(true)
+        );
     }
 
     #[test]

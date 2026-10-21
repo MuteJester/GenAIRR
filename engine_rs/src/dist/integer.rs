@@ -71,6 +71,13 @@ impl UniformInt {
 }
 
 impl Distribution for UniformInt {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::DistributionSpec> {
+        use crate::family_replay::plan::DistributionSpec as D;
+        Some(D::UniformInt {
+            min: self.min,
+            max: self.max,
+        })
+    }
     type Output = i64;
 
     fn sample(&self, rng: &mut Rng) -> i64 {

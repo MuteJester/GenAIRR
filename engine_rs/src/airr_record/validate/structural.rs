@@ -23,11 +23,16 @@ pub(super) fn check_structural(
     // Compare case-insensitively because sequencing errors lowercase
     // their substitutions, and the AIRR record may carry rev-comp.
     let pool_seq = String::from_utf8(pool_bases(sim)).unwrap_or_default();
-    if !record.rev_comp && !record.sequence.eq_ignore_ascii_case(&pool_seq) {
-        let prefix_len = record.sequence.len().min(pool_seq.len()).min(40);
+    let observed_seq = if record.rev_comp {
+        super::super::sequence::reverse_complement(&pool_seq)
+    } else {
+        pool_seq
+    };
+    if !record.sequence.eq_ignore_ascii_case(&observed_seq) {
+        let prefix_len = record.sequence.len().min(observed_seq.len()).min(40);
         issues.push(RecordValidationIssue::SequenceContentMismatch {
             reported_prefix: record.sequence.chars().take(prefix_len).collect(),
-            actual_prefix: pool_seq.chars().take(prefix_len).collect(),
+            actual_prefix: observed_seq.chars().take(prefix_len).collect(),
         });
     }
 
@@ -163,7 +168,10 @@ fn parse_cigar(cigar: &str) -> Result<Vec<(usize, u8)>, String> {
             let n: usize = digits
                 .parse()
                 .map_err(|_| format!("non-numeric op length in CIGAR {cigar:?}"))?;
-            if !matches!(ch as u8, b'M' | b'I' | b'D' | b'S' | b'N' | b'P' | b'X' | b'=') {
+            if !matches!(
+                ch as u8,
+                b'M' | b'I' | b'D' | b'S' | b'N' | b'P' | b'X' | b'='
+            ) {
                 return Err(format!("unrecognized CIGAR op {ch:?} in {cigar:?}"));
             }
             ops.push((n, ch as u8));

@@ -351,8 +351,16 @@ def test_receptor_revision_composes_with_productive_only_at_prob_one() -> None:
     statement: if a future contract change ever rejects revision
     state, this test surfaces the regression before AIRR fields
     rely on it."""
+    cfg = ge.RefDataConfig.vdj()
+    cfg.add_v_allele("v1*01", "v1", b"AAAAAATGT", anchor=6)
+    cfg.add_v_allele("v2*01", "v2", b"CCCCCCTGT", anchor=6)
+    cfg.add_d_allele("d1*01", "d1", b"GGGGGG")
+    cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
     rec = (
-        _baseline(revise=True)
+        ga.Experiment.on(cfg)
+        .recombine(np1_lengths=[(3, 1.0)], np2_lengths=[(3, 1.0)])
+        .trim(enabled=False)
+        .receptor_revision(prob=1.0)
         .productive_only()
         .run_records(n=1, seed=0)
         .records[0]
@@ -361,6 +369,8 @@ def test_receptor_revision_composes_with_productive_only_at_prob_one() -> None:
     # V region — both confirm the pass survived contract arbitration.
     assert rec["sequence"]
     assert rec["v_sequence_start"] is not None
+    assert rec["productive"] is True
+    assert rec["vj_in_frame"] is True and rec["stop_codon"] is False
 
 
 # ──────────────────────────────────────────────────────────────────

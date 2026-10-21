@@ -305,6 +305,23 @@ class Genotype(_GenotypeSampling):
             except Exception:
                 pass
 
+        # Same-length substitutions preserve coordinate geometry, but a
+        # source annotation is no longer evidence for the exact original bytes.
+        # Bind the derived annotation to its new sequence and retain ancestry.
+        evidence = getattr(novel, "reference_evidence", None)
+        if evidence is not None:
+            from GenAIRR._reference_annotations import sequence_sha256
+            evidence["notes"] = list(evidence.get("notes", [])) + [
+                f"substitution derivative of {base}; original_sequence={evidence['sequence_sha256']}"
+            ]
+            evidence["sequence_sha256"] = sequence_sha256(new_ungapped)
+            evidence["method"] = "substitution_derivative_v1"
+            if anchor is not None and segment in ("V", "J"):
+                if translate(new_ungapped[anchor:anchor + 3]) not in {"V": {"C"}, "J": {"W", "F"}}[segment]:
+                    evidence["anchor_status"] = "invalid"
+                elif evidence["anchor_status"] == "verified":
+                    evidence["anchor_status"] = "inferred"
+
         self._novel[name] = {
             "allele": novel,
             "gene": gene,

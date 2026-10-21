@@ -14,6 +14,7 @@ mod reference_index;
 mod refresh_hook;
 mod refresh_plan;
 pub(crate) mod scoring;
+mod support;
 mod walker;
 pub(crate) mod walker_observer;
 
@@ -30,6 +31,7 @@ pub use reference_index::{
 };
 pub use refresh_hook::{refresh_live_calls, LiveCallRefreshHook};
 pub use refresh_plan::{LiveCallRefreshPlan, LiveCallRefreshStep};
+pub use support::LiveCallSupport;
 
 fn assert_live_segment(segment: Segment) {
     assert!(

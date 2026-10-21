@@ -19,7 +19,9 @@
 
 use crate::ir::Segment;
 
+pub mod evidence;
 mod validation;
+pub use evidence::{AlleleEvidence, AnchorEvidenceStatus, CodingBoundaryStatus};
 
 pub use validation::{
     AnchorRule, RefDataIssueSeverity, RefDataValidationErrors, RefDataValidationIssue,
@@ -119,10 +121,10 @@ impl GeneId {
 /// unchanged, so `Allele` and `refdata_content_hash` are untouched.
 #[derive(Clone, Debug)]
 pub struct GeneIndex {
-    names: Vec<String>,                                   // GeneId.index() -> gene name
-    by_name: std::collections::HashMap<String, GeneId>,   // gene name -> GeneId
-    alleles: Vec<Vec<AlleleId>>,                          // GeneId.index() -> alleles, pool order
-    gene_of: Vec<GeneId>,                                 // AlleleId.index() -> GeneId
+    names: Vec<String>,                                 // GeneId.index() -> gene name
+    by_name: std::collections::HashMap<String, GeneId>, // gene name -> GeneId
+    alleles: Vec<Vec<AlleleId>>,                        // GeneId.index() -> alleles, pool order
+    gene_of: Vec<GeneId>,                               // AlleleId.index() -> GeneId
 }
 
 impl GeneIndex {
@@ -466,6 +468,8 @@ pub struct RefDataConfig {
     pub d_pool: AllelePool,
     pub j_pool: AllelePool,
     pub c_pool: AllelePool,
+    /// Optional sequence-bound evidence; empty preserves legacy trace hashes.
+    pub evidence: std::collections::HashMap<(Segment, String), AlleleEvidence>,
 }
 
 impl RefDataConfig {
@@ -483,6 +487,7 @@ impl RefDataConfig {
             d_pool: AllelePool::new(),
             j_pool: AllelePool::new(),
             c_pool: AllelePool::new(),
+            evidence: std::collections::HashMap::new(),
         }
     }
 
@@ -553,7 +558,10 @@ impl RefDataConfig {
                 tag_identity_source(&mut out.identity, &policy.tag());
                 out
             }
-            RefDataCurationPolicy::FunctionalStatus { allowed, keep_unannotated } => {
+            RefDataCurationPolicy::FunctionalStatus {
+                allowed,
+                keep_unannotated,
+            } => {
                 out.v_pool =
                     filter_pool_by_functional_status(&self.v_pool, allowed, *keep_unannotated);
                 out.d_pool =
@@ -618,12 +626,12 @@ impl RefDataCurationPolicy {
     pub fn tag(&self) -> String {
         match self {
             RefDataCurationPolicy::Raw => "raw".to_string(),
-            RefDataCurationPolicy::FunctionalAnchorsOnly => {
-                "functional_anchors_only".to_string()
-            }
-            RefDataCurationPolicy::FunctionalStatus { allowed, keep_unannotated } => {
-                let mut canonical: Vec<&'static str> =
-                    allowed.iter().map(|s| s.as_str()).collect();
+            RefDataCurationPolicy::FunctionalAnchorsOnly => "functional_anchors_only".to_string(),
+            RefDataCurationPolicy::FunctionalStatus {
+                allowed,
+                keep_unannotated,
+            } => {
+                let mut canonical: Vec<&'static str> = allowed.iter().map(|s| s.as_str()).collect();
                 canonical.sort_unstable();
                 canonical.dedup();
                 format!(
@@ -720,3 +728,6 @@ mod tests;
 
 #[cfg(test)]
 mod gene_index_tests;
+
+#[cfg(test)]
+mod evidence_tests;

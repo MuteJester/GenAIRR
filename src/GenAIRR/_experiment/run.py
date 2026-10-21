@@ -150,10 +150,18 @@ class _RunMixin:
         expose_provenance: bool = False,
         allow_curatable_refdata: Optional[bool] = None,
         validate_records: bool = False,
+        capture_family_replay: bool = False,
+        family_replay_limits=None,
     ) -> "SimulationResult":
         """Compile and run, then return the batch as a
         :class:`SimulationResult` ready for ``.to_csv`` / ``.to_fasta``
         / ``.to_dataframe`` export.
+
+        ``capture_family_replay=True`` additionally seals the complete history
+        of a source-backed duplex ``clonal_lineage`` run, including applied
+        metadata, for ``result.save_family_replay(path)``. Other workflows reject
+        this option before sampling. ``family_replay_limits`` sets optional
+        computational ceilings for capture.
 
         For non-clonal experiments ``n`` defaults to 1. For clonal
         experiments (when the pipeline contains :meth:`with_clonal
@@ -161,12 +169,10 @@ class _RunMixin:
         be omitted; passing ``n`` explicitly is allowed only if it
         matches that product.
 
-        ``expose_provenance=True`` appends ``truth_v_call``,
-        ``truth_d_call``, ``truth_j_call`` columns containing the
-        originally-sampled allele names — distinct from the
-        evidence-driven ``v_call`` / ``d_call`` / ``j_call`` fields
-        an aligner would produce. Useful for benchmarking aligners
-        against ground truth without keeping a side truth file.
+        ``expose_provenance=True`` adds ``truth_v_call``,
+        ``truth_d_call``, and ``truth_j_call`` compatibility aliases
+        for the standard generating calls. Post-mutation inference
+        is always available separately as ``recalled_*_call``.
 
         ``strict`` semantics match :meth:`run` — strict-mode applies
         only to **fresh sampling**. Trace replay
@@ -193,7 +199,18 @@ class _RunMixin:
         Returns a :class:`SimulationResult`; clonal records carry
         an integer ``clone_id`` field per row.
         """
+        if type(capture_family_replay) is not bool:
+            raise TypeError("capture_family_replay must be Boolean")
+        if family_replay_limits is not None and not capture_family_replay:
+            raise ValueError("family_replay_limits requires capture_family_replay=True")
         compiled = self.compile(allow_curatable_refdata=allow_curatable_refdata)
+        capture_request = None
+        if capture_family_replay:
+            from .._family_replay import FamilyReplayError, _capture_request
+
+            if not isinstance(compiled, CompiledLineageExperiment):
+                raise FamilyReplayError("unsupported", "capture.workflow", "only source-backed duplex clonal_lineage is supported")
+            capture_request = _capture_request(self._metadata, family_replay_limits, deferred=True)
         if isinstance(compiled, CompiledClonalExperiment):
             result = compiled.run_records(
                 n=n,
@@ -228,6 +245,9 @@ class _RunMixin:
                 strict=strict,
                 expose_provenance=expose_provenance,
                 validate_records=validate_records,
+                capture_family_replay=capture_family_replay,
+                family_replay_limits=family_replay_limits,
+                _family_replay_request=capture_request,
             )
         else:
             result = compiled.run_records(
@@ -237,10 +257,20 @@ class _RunMixin:
                 expose_provenance=expose_provenance,
                 validate_records=validate_records,
             )
-        if self._metadata:
+        applied_metadata = (capture_request.annotation_values()
+                            if capture_request is not None else self._metadata)
+        if applied_metadata:
             for rec in result.records:
-                for key, value in self._metadata.items():
+                for key, value in applied_metadata.items():
+                    if key in rec:
+                        raise ValueError(
+                            f"with_metadata: reserved generated field {key!r} cannot be overwritten"
+                        )
                     rec[key] = value
+        if capture_request is not None:
+            from .._family_replay import _finish_capture
+
+            _finish_capture(result)
         return result
 
     def run(

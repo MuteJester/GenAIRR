@@ -19,6 +19,7 @@ impl GenerateNPPass {
         // assertion path runs unchanged, so bad recorded values
         // still surface as `InvalidDistributionOutput` rather than
         // corrupting the IR.
+        let replaying = ctx.replay_cursor.is_some();
         let length = if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
             cursor
                 .expect_int(self.length_choice_address())
@@ -26,6 +27,9 @@ impl GenerateNPPass {
         } else {
             self.sample_length(sim, ctx, address, strict)?
         };
+        if replaying {
+            self.validate_p_aware_length(sim, ctx, length)?;
+        }
         if strict && length < 0 {
             return Err(PassError::invalid_distribution_output(
                 self.pass_name(),
@@ -61,17 +65,16 @@ impl GenerateNPPass {
         let region_start = NucHandle::new(sim.pool.len() as u32);
 
         let junction_stop_state = match (ctx.refdata, ctx.contracts) {
+            _ if ctx.feasibility.is_some_and(|f| f.has_p_productive()) => None,
             (Some(refdata), Some(_)) => {
                 JunctionStopState::build(sim, refdata, self.np_segment, length)
             }
             _ => None,
         };
 
-        // Frame phase is determined by upstream regions' cumulative
-        // length mod 3 — captured here so the codon-rail observer
-        // can be initialised before the push loop.
-        let cumulative_len: u32 = sim.sequence.regions.iter().map(|r| r.len()).sum();
-        let frame_phase = (cumulative_len % 3) as u8;
+        // P additions occupy pool positions without structural regions.
+        // The pool offset includes those bases in the region's codon phase.
+        let frame_phase = (sim.pool.len() % 3) as u8;
 
         let mut builder = SimulationBuilder::from_simulation(sim.clone());
 

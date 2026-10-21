@@ -27,6 +27,84 @@ fn base_to_row_index(b: u8) -> Option<usize> {
 }
 
 impl S5FMutationPass {
+    fn require_family_replay_event_support(
+        &self,
+        tx: &mut MutationTransaction<'_, '_>,
+        site: u32,
+        base: u8,
+        index: u32,
+        count: u32,
+    ) -> Result<(), PassError> {
+        let invalid = |reason| {
+            PassError::constraint_sampling(
+                self.name(),
+                address::ChoiceAddress::MutateS5fBase(index).to_string(),
+                reason,
+            )
+        };
+        crate::family_replay::primitive_work(tx.peek().pool.len() as u64);
+        let (sim, ctx) = tx.split_borrows();
+        let profile = self.build_profile(&sim.pool, sim, ctx.refdata);
+        let total: f64 = profile.iter().map(|(_, w)| *w).sum();
+        if !total.is_finite() || total <= 0.0 {
+            return Err(invalid(FilteredSampleError::InvalidFilteredSupport));
+        }
+        if !profile
+            .iter()
+            .any(|(p, w)| *p == site && w.is_finite() && *w > 0.0)
+        {
+            return Err(invalid(FilteredSampleError::EmptyAdmissibleSupport));
+        }
+        let context = Self::context_at(&sim.pool, site)
+            .ok_or_else(|| invalid(FilteredSampleError::EmptyAdmissibleSupport))?;
+        let row = self.kernel.substitution_row(context);
+        let row_total: f64 = Self::positive_row_candidates(row)
+            .iter()
+            .map(|(_, w)| *w)
+            .sum();
+        if !row_total.is_finite() || row_total <= 0.0 {
+            return Err(invalid(FilteredSampleError::InvalidFilteredSupport));
+        }
+        if !base_to_row_index(base).is_some_and(|i| row[i] > 0.0) {
+            return Err(invalid(FilteredSampleError::EmptyAdmissibleSupport));
+        }
+        if let Some(contracts) = ctx.contracts {
+            crate::family_replay::primitive_work(profile.len() as u64 * 4);
+            let candidates = self
+                .event_candidates(sim, &profile, index, count)
+                .map_err(invalid)?;
+            let mut masks = HashMap::new();
+            let filtered: Vec<_> = candidates
+                .into_iter()
+                .filter(|candidate| {
+                    masks
+                        .entry(candidate.event.site)
+                        .or_insert_with(|| {
+                            contracts.admissible_bases_at(
+                                sim,
+                                ctx.refdata,
+                                NucHandle::new(candidate.event.site),
+                            )
+                        })
+                        .admits(candidate.event.base)
+                })
+                .collect();
+            let total: f64 = filtered.iter().map(|candidate| candidate.weight).sum();
+            if !total.is_finite() || total <= 0.0 {
+                return Err(invalid(FilteredSampleError::InvalidFilteredSupport));
+            }
+            if !filtered.iter().any(|candidate| {
+                candidate.event.site == site
+                    && candidate.event.base == base
+                    && candidate.weight.is_finite()
+                    && candidate.weight > 0.0
+            }) {
+                return Err(invalid(FilteredSampleError::EmptyAdmissibleSupport));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn execute_with_sampling_mode(
         &self,
         sim: &Simulation,
@@ -69,9 +147,70 @@ impl S5FMutationPass {
         let mut applied: u32 = 0;
 
         for i in 0..count {
+            crate::family_replay::primitive_work(1);
             let site_choice_address = address::ChoiceAddress::MutateS5fSite(i);
             let base_choice_address = address::ChoiceAddress::MutateS5fBase(i);
             let base_address = base_choice_address.to_string();
+
+            // Fresh execution records no site/base pair for a deterministic
+            // empty profile, a skipped zero-row site or permissive contract
+            // exhaustion. Reconstruct only such naturally reachable no-ops;
+            // absence of an ordinary positive supported pair remains an error.
+            let missing_pair = tx.replay_cursor().is_some_and(|cursor| {
+                cursor.peek_address() != Some(site_choice_address.to_string().as_str())
+            });
+            if missing_pair {
+                crate::family_replay::primitive_work(tx.peek().pool.len() as u64);
+                let (sim_ref, ctx_ref) = tx.split_borrows();
+                let profile = self.build_profile(&sim_ref.pool, sim_ref, ctx_ref.refdata);
+                let total: f64 = profile.iter().map(|(_, m)| m).sum();
+                if crate::family_replay::is_replaying() && !total.is_finite() {
+                    return Err(PassError::constraint_sampling(
+                        self.name(),
+                        &base_address,
+                        FilteredSampleError::InvalidFilteredSupport,
+                    ));
+                }
+                if profile.is_empty() || total <= 0.0 || !total.is_finite() {
+                    break;
+                }
+                if let Some(contracts) = ctx_ref.contracts {
+                    if !strict {
+                        crate::family_replay::primitive_work(profile.len() as u64 * 4);
+                        let candidates = self
+                            .event_candidates(sim_ref, &profile, i, count)
+                            .map_err(|reason| {
+                                PassError::constraint_sampling(self.name(), &base_address, reason)
+                            })?;
+                        let any = candidates.iter().any(|candidate| {
+                            contracts
+                                .admissible_bases_at(
+                                    sim_ref,
+                                    ctx_ref.refdata,
+                                    NucHandle::new(candidate.event.site),
+                                )
+                                .admits(candidate.event.base)
+                        });
+                        if !any {
+                            continue;
+                        }
+                    }
+                } else if !crate::family_replay::is_replaying() {
+                    // Historical traces may omit globally empty destination
+                    // support. Durable duplex capture records the selected
+                    // site even when its row is empty, so that choice is
+                    // required whenever the site profile is positive.
+                    crate::family_replay::primitive_work(profile.len() as u64 * 4);
+                    let candidates =
+                        self.event_candidates(sim_ref, &profile, i, count)
+                            .map_err(|reason| {
+                                PassError::constraint_sampling(self.name(), &base_address, reason)
+                            })?;
+                    if candidates.is_empty() {
+                        continue;
+                    }
+                }
+            }
 
             // ── Trace-injected replay (Tier 2, S5F) ──────────────
             //
@@ -98,13 +237,48 @@ impl S5FMutationPass {
             // produce it, so silently skipping would erase the
             // mismatch.
             let consumed_pair = if tx.replay_cursor().is_some() {
-                let cursor = tx
+                let site = tx
                     .replay_cursor()
-                    .expect("cursor presence checked above");
-                let site = cursor
+                    .expect("cursor presence checked above")
                     .expect_int(site_choice_address)
                     .map_err(|reason| PassError::replay(self.name(), reason))?;
-                let base = cursor
+                let no_base = tx
+                    .replay_cursor()
+                    .expect("cursor presence checked above")
+                    .peek_address()
+                    != Some(base_choice_address.to_string().as_str());
+                if no_base && site >= 0 {
+                    crate::family_replay::primitive_work(tx.peek().pool.len() as u64);
+                    let (sim_ref, ctx_ref) = tx.split_borrows();
+                    if sim_ref.duplex_provenance.is_some() && ctx_ref.contracts.is_none() {
+                        let profile = self.build_profile(&sim_ref.pool, sim_ref, ctx_ref.refdata);
+                        let total: f64 = profile.iter().map(|(_, mu)| mu).sum();
+                        let positive_site = total.is_finite()
+                            && total > 0.0
+                            && profile
+                                .iter()
+                                .any(|(p, mu)| i64::from(*p) == site && *mu > 0.0);
+                        let empty_row = positive_site
+                            && u32::try_from(site)
+                                .ok()
+                                .and_then(|p| Self::context_at(&sim_ref.pool, p))
+                                .is_some_and(|context| {
+                                    Self::positive_row_candidates(
+                                        self.kernel.substitution_row(context),
+                                    )
+                                    .is_empty()
+                                });
+                        if positive_site && empty_row {
+                            ctx_ref
+                                .trace
+                                .record_choice(site_choice_address, ChoiceValue::Int(site));
+                            continue;
+                        }
+                    }
+                }
+                let base = tx
+                    .replay_cursor()
+                    .expect("cursor presence checked above")
                     .expect_base(base_choice_address)
                     .map_err(|reason| PassError::replay(self.name(), reason))?;
                 Some((site, base))
@@ -123,6 +297,10 @@ impl S5FMutationPass {
                     ));
                 }
                 let site = site_idx as u32;
+                let family_replay = crate::family_replay::is_replaying();
+                if family_replay {
+                    self.require_family_replay_event_support(&mut tx, site, base_byte, i, count)?;
+                }
 
                 // S5F naturality: the recorded `(site, base)` must
                 // be a reachable event under the current pool. The
@@ -145,7 +323,7 @@ impl S5FMutationPass {
                     },
                     None => 0.0,
                 };
-                if !(s5f_natural_weight > 0.0) {
+                if !family_replay && !(s5f_natural_weight > 0.0) {
                     return Err(PassError::constraint_sampling(
                         self.name(),
                         &base_address,
@@ -160,9 +338,7 @@ impl S5FMutationPass {
                 // configuration; reject rather than force-apply.
                 // Mirrors the build_profile filter that zeroes
                 // those sites in fresh-RNG runs.
-                if !self.segment_rates.is_default()
-                    || !self.v_subregion_rates.is_default()
-                {
+                if !self.segment_rates.is_default() || !self.v_subregion_rates.is_default() {
                     let (sim_ref, ctx_ref) = tx.split_borrows();
                     let site_rate =
                         crate::passes::mutation_transaction::substitution::combined_site_factor(
@@ -211,6 +387,7 @@ impl S5FMutationPass {
             }
 
             let profile = {
+                crate::family_replay::primitive_work(tx.peek().pool.len() as u64);
                 let (sim_ref, ctx_ref) = tx.split_borrows();
                 self.build_profile(&sim_ref.pool, sim_ref, ctx_ref.refdata)
             };
@@ -219,6 +396,13 @@ impl S5FMutationPass {
             }
 
             let total: f64 = profile.iter().map(|(_, m)| m).sum();
+            if crate::family_replay::is_budgeted() && !total.is_finite() {
+                return Err(PassError::constraint_sampling(
+                    self.name(),
+                    &base_address,
+                    FilteredSampleError::InvalidFilteredSupport,
+                ));
+            }
             if total <= 0.0 || !total.is_finite() {
                 break;
             }
@@ -253,9 +437,10 @@ impl S5FMutationPass {
                 // sampler would re-propose a contract-violating
                 // (site, base) and consume extra RNG words — both
                 // architectural violations.
+                crate::family_replay::primitive_work(profile.len() as u64 * 4);
                 let candidates = match self.event_candidates(sim_ref, &profile, i, count) {
                     Ok(candidates) => candidates,
-                    Err(reason) if strict => {
+                    Err(reason) if strict || crate::family_replay::is_budgeted() => {
                         return Err(PassError::constraint_sampling(
                             self.name(),
                             &base_address,
@@ -292,6 +477,13 @@ impl S5FMutationPass {
                         // contract mask filter above — force-write.
                         tx.force_substitute_base(NucHandle::new(event.site), event.base)?;
                         applied += 1;
+                    }
+                    Err(reason) if crate::family_replay::is_budgeted() => {
+                        return Err(PassError::constraint_sampling(
+                            self.name(),
+                            &base_address,
+                            reason,
+                        ));
                     }
                     Ok(None) | Err(_) if strict => {
                         return Err(PassError::constraint_sampling(
@@ -333,7 +525,18 @@ impl S5FMutationPass {
                     PassError::constraint_sampling(self.name(), &base_address, reason)
                 })? {
                     Some(base) => base,
-                    None => continue,
+                    None => {
+                        if tx.peek().duplex_provenance.is_some() {
+                            // Preserve the selected positive site even though
+                            // its zero destination row produces no base edit.
+                            // Legacy traces retain their existing wire shape.
+                            tx.trace().record_choice(
+                                site_choice_address,
+                                ChoiceValue::Int(chosen_pos as i64),
+                            );
+                        }
+                        continue;
+                    }
                 };
 
             tx.trace()

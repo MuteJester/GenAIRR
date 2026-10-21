@@ -106,7 +106,7 @@ impl EndLossPass {
             let n = cursor
                 .expect_int(self.choice_address())
                 .map_err(|reason| PassError::replay(self.name(), reason))?;
-            if n < 0 {
+            if n < 0 || (crate::family_replay::is_replaying() && n > u32::MAX as i64) {
                 return Err(PassError::invalid_plan_state(
                     self.name().to_string(),
                     format!(
@@ -141,6 +141,65 @@ impl EndLossPass {
             }
         };
 
+        if crate::family_replay::is_replaying() && replay_count.is_some() {
+            let descriptor = self.length_dist.family_replay_spec().ok_or_else(|| {
+                PassError::invalid_plan_state(
+                    self.name(),
+                    "unsupported family end-loss distribution",
+                )
+            })?;
+            let exact = descriptor
+                .end_loss_preimage(target, pool_len, false)
+                .map_err(|e| PassError::invalid_plan_state(self.name(), e))?;
+            if !exact {
+                let greater = descriptor
+                    .end_loss_preimage(target, pool_len, true)
+                    .map_err(|e| PassError::invalid_plan_state(self.name(), e))?;
+                if strict || !greater {
+                    return Err(PassError::invalid_plan_state(
+                        self.name(),
+                        "family end-loss count has no positive realized-value preimage",
+                    ));
+                }
+                // In permissive execution a larger requested length can stop
+                // at the first rejected deletion. Probe the same deterministic
+                // transition without consuming choices or committing events.
+                let mut trace = crate::trace::Trace::new();
+                let mut rng = crate::rng::Rng::new(1);
+                let mut probe = PassContext {
+                    trace: &mut trace,
+                    rng: &mut rng,
+                    pass_index: ctx.pass_index,
+                    refdata: ctx.refdata,
+                    contracts: ctx.contracts,
+                    feasibility: ctx.feasibility,
+                    reference_index: ctx.reference_index,
+                    event_log_sink: None,
+                    replay_cursor: None,
+                };
+                self.apply_target(sim, &mut probe, false, target + 1, false)?;
+                drop(probe);
+                if trace.find(self.address()).map(|r| &r.value)
+                    != Some(&ChoiceValue::Int(target as i64))
+                {
+                    return Err(PassError::invalid_plan_state(
+                        self.name(),
+                        "family end-loss count is not its natural contract-limited result",
+                    ));
+                }
+            }
+        }
+        self.apply_target(sim, ctx, strict, target, replay_count.is_some())
+    }
+
+    fn apply_target(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+        target: u32,
+        in_replay: bool,
+    ) -> Result<Simulation, PassError> {
         if target == 0 {
             ctx.trace
                 .record_choice(self.choice_address(), ChoiceValue::Int(0));
@@ -159,13 +218,13 @@ impl EndLossPass {
 
         let address = self.choice_address();
         let mut applied: u32 = 0;
-        let in_replay = replay_count.is_some();
         match self.end {
             LossEnd::Five => {
                 // Delete pool position 0 repeatedly. The contract
                 // reduces the effective trim count when a candidate
                 // deletion would cross the V anchor.
                 for _ in 0..target {
+                    crate::family_replay::primitive_work(1);
                     let did_delete = tx.delete_base_admitting(0, address)?;
                     if !did_delete {
                         if in_replay {
@@ -185,6 +244,7 @@ impl EndLossPass {
                 // call the new pool length is one less, so the next
                 // "last" index decreases.
                 for _ in 0..target {
+                    crate::family_replay::primitive_work(1);
                     let cur_len = tx.peek().pool.len() as u32;
                     if cur_len == 0 {
                         if in_replay {
@@ -227,6 +287,16 @@ impl EndLossPass {
 }
 
 impl Pass for EndLossPass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::EndLoss {
+            five_prime: self.end == LossEnd::Five,
+            distribution: self.length_dist.family_replay_spec()?,
+        })
+    }
     fn name(&self) -> &str {
         self.address()
     }
@@ -244,6 +314,15 @@ impl Pass for EndLossPass {
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_inner(sim, ctx, false)
             .expect("EndLossPass permissive execution must not return PassError")
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_inner(sim, ctx, strict)
     }
 
     fn execute_checked(

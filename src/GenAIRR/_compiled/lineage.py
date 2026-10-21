@@ -40,6 +40,7 @@ class CompiledLineageExperiment:
         "_post_steps",
         "_dataconfig",
         "_metadata",
+        "_contracts",
     )
 
     def __init__(
@@ -51,6 +52,7 @@ class CompiledLineageExperiment:
         post_steps: Sequence[Any] = (),
         dataconfig: Optional["DataConfig"] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        contracts: Optional["_engine.ContractSet"] = None,
     ) -> None:
         self._pre = pre_simulator
         self._step = step
@@ -61,6 +63,7 @@ class CompiledLineageExperiment:
         self._post_steps: Tuple[Any, ...] = tuple(post_steps)
         self._dataconfig = dataconfig
         self._metadata = dict(metadata) if metadata else {}
+        self._contracts = contracts
 
     @property
     def refdata(self) -> "_engine.RefDataConfig":
@@ -73,11 +76,16 @@ class CompiledLineageExperiment:
         strict: bool = False,
         expose_provenance: bool = False,
         validate_records: bool = False,
+        capture_family_replay: bool = False,
+        family_replay_limits=None,
+        _family_replay_request=None,
     ) -> "SimulationResultWithLineages":
         """Grow lineage trees and return per-observed-node AIRR records.
 
         Each clone is seeded at ``seed + clone_idx * 1_000_000`` so
-        independent clones are reproducible and non-overlapping.
+        independent clones are reproducible and non-overlapping. Declared
+        productivity contracts constrain each division's mutation support,
+        as well as the founder and any post-lineage observation passes.
 
         The returned :class:`SimulationResultWithLineages` carries the
         per-record ``Outcome`` that produced each AIRR record on its
@@ -99,11 +107,28 @@ class CompiledLineageExperiment:
         postcondition) and :meth:`SimulationResult.validate_families`
         (clonal-family consistency by ``clone_id``) on the freshly built
         batch, raising the matching validation error on any failure.
+
+        ``capture_family_replay=True`` records and seals a self-contained duplex
+        family history for :meth:`SimulationResult.save_family_replay`. It
+        validates all native evidence even when ``validate_records`` is false.
+        The optional ``family_replay_limits`` bounds capture work and storage.
         """
         from GenAIRR import _engine as _eng
         from .._airr_record import outcome_to_airr_record
         from .._s5f_loader import load_builtin_s5f_kernel
         from ..result import SimulationResultWithLineages, _inject_truth_columns
+
+        if type(capture_family_replay) is not bool:
+            raise TypeError("capture_family_replay must be Boolean")
+        capture = None
+        if capture_family_replay:
+            from .._family_replay import _capture_request, _start_capture
+
+            request = (_family_replay_request if _family_replay_request is not None
+                       else _capture_request({}, family_replay_limits))
+            capture = _start_capture(self, request, strict, expose_provenance, seed)
+        elif family_replay_limits is not None or _family_replay_request is not None:
+            raise ValueError("family replay limits/context require capture_family_replay=True")
 
         step = self._step
         mutability, substitution = load_builtin_s5f_kernel(step.s5f_model)
@@ -114,6 +139,10 @@ class CompiledLineageExperiment:
         # record from the engine state that produced it.
         outcomes: List["_engine.Outcome"] = []
         lineage_trees = []
+        duplex = "duplex.recombine" in self._pre.pass_names()
+        parents = [] if duplex else None
+        families = [] if duplex else None
+        lineage_record_origins = [] if duplex else None
 
         # Bound on founder-survival retries. Sampling draws from the LIVING
         # final-generation population, so an extinct founder (drew 0 offspring)
@@ -128,34 +157,60 @@ class CompiledLineageExperiment:
 
         for clone_idx in range(step.n_clones):
             clone_seed = int(seed) + clone_idx * 1_000_000
+            # Repair is a once-per-founder choice. Conditioning duplex growth
+            # on survival must not reweight the source history by redrawing it.
+            if capture is not None:
+                from .._family_replay import _native, _truth_aliases
+
+                founder = _native(f"clones[{clone_idx}].source", self._pre.run_for_family_capture,
+                                  clone_seed, strict, capture.budget)
+            else:
+                founder = self._pre.run(seed=clone_seed, strict=strict) if duplex else None
+            captured_clone = capture.source(self._pre, founder, clone_idx) if capture is not None else None
             fam = None
             tree = None
             for attempt in range(_MAX_SURVIVAL_ATTEMPTS):
                 family_seed = clone_seed + attempt * _SUBSEED_STRIDE
                 # _pre.run() returns a single Outcome (not a list) — mirror
                 # CompiledClonalExperiment which calls self._pre.run(seed=...).
-                founder = self._pre.run(seed=family_seed, strict=strict)
-                candidate = _eng.simulate_family_outcomes(
-                    founder,
-                    self._refdata,
-                    mutability,
-                    substitution,
-                    step.rate,
-                    step.lambda_base,
-                    0.0,      # lambda_mut: positional slot 6 (inert; hardcoded)
-                    step.max_generations,
-                    step.n_max,
-                    step.n_sample,
-                    family_seed,
-                    selection_strength=step.selection_strength,
-                    beta=step.beta,
-                    target_aa=step.target_aa,
-                    mature_substitutions=step.mature_substitutions,
-                )
-                survived = len(candidate.observed_outcomes()) > 0
+                if not duplex:
+                    founder = self._pre.run(seed=family_seed, strict=strict)
+                capture_kwargs = ({"capture_family_replay": True, "budget": capture.budget}
+                                  if capture is not None else {})
+
+                def grow_candidate():
+                    return _eng.simulate_family_outcomes(
+                        founder,
+                        self._refdata,
+                        mutability,
+                        substitution,
+                        step.rate,
+                        step.lambda_base,
+                        0.0,  # lambda_mut: positional slot 6 (inert; hardcoded)
+                        step.max_generations,
+                        step.n_max,
+                        step.n_sample,
+                        family_seed,
+                        selection_strength=step.selection_strength,
+                        beta=step.beta,
+                        target_aa=step.target_aa,
+                        mature_substitutions=step.mature_substitutions,
+                        respect=self._contracts,
+                        strict=strict,
+                        **capture_kwargs,
+                    )
+                candidate = (_native(f"clones[{clone_idx}].attempts[{attempt}]", grow_candidate)
+                             if capture is not None else grow_candidate())
+                if capture is not None:
+                    capture.attempt(captured_clone, candidate)
+                survived = (_native(f"clones[{clone_idx}].attempts[{attempt}]", _eng._family_replay_has_observed,
+                                    candidate, budget=capture.budget)
+                            if capture is not None else len(candidate.observed_outcomes()) > 0)
                 if survived or allow_extinction:
                     fam = candidate
                     tree = candidate.tree()
+                    if capture is not None:
+                        captured_clone["accepted_attempt"] = attempt
                     break
                 # extinct + survival required => retry with next sub-seed
             else:
@@ -175,25 +230,48 @@ class CompiledLineageExperiment:
                 continue
 
             lineage_trees.append(tree)
-            if len(fam.observed_outcomes()) == 0:
+            parent_id = len(parents) if parents is not None else None
+            if parents is not None:
+                parents.append(founder)
+                families.append(fam)
+            has_records = survived if capture is not None else len(fam.observed_outcomes()) > 0
+            if not has_records:
                 # allow_extinction=True and this family is extinct: keep its
                 # (empty) tree for export parity but emit no records.
                 continue
 
             if self._post is None:
-                # Pristine-read path: project each observed node's
-                # synthesized SHM Outcome straight to an AIRR record.
+                # Pristine-read path: project each observed node's native
+                # SHM Outcome straight to an AIRR record.
                 # ``observed_outcomes()`` is index-aligned with both the
                 # observed-node list and ``airr_records()``.
                 observed_nodes = [n for n in tree.nodes() if n.observed]
-                recs = fam.airr_records(self._refdata)
-                observed_outcomes = fam.observed_outcomes()
+                if capture is not None:
+                    observed_outcomes = _native(f"clones[{clone_idx}].nodes", _eng._family_replay_observed_outcomes,
+                                                fam, budget=capture.budget)
+                    recs = (_native(f"clones[{clone_idx}].observations[{node.id}]", _eng._family_replay_airr_record,
+                                    outcome, self._refdata, f"clone{clone_idx}_node{node.id}", budget=capture.budget)
+                            for node, outcome in zip(observed_nodes, observed_outcomes))
+                else:
+                    recs = fam.airr_records(self._refdata)
+                    observed_outcomes = fam.observed_outcomes()
                 for node, rec, node_outcome in zip(
                     observed_nodes, recs, observed_outcomes
                 ):
                     self._stamp_lineage_metadata(rec, clone_idx, node)
+                    if capture is not None:
+                        capture.observation(captured_clone, node.id)
+                    if duplex:
+                        rec["parent_id"] = parent_id
+                        rec["lineage_mutations_from_parent"] = node.mutations_from_parent
+                        lineage_record_origins.append((parent_id, clone_idx, node.id))
                     if expose_provenance and node_outcome is not None:
-                        _inject_truth_columns(node_outcome, self._refdata, rec)
+                        if capture is not None:
+                            _truth_aliases(rec)
+                        else:
+                            _inject_truth_columns(node_outcome, self._refdata, rec)
+                    if capture is not None:
+                        capture.record(rec)
                     records.append(rec)
                     outcomes.append(node_outcome)
                 continue
@@ -204,39 +282,74 @@ class CompiledLineageExperiment:
             # provenance with the corruption trace / events so the AIRR
             # record reports trims, v/d/j, SHM counts AND artefact
             # counters (n_quality_errors, n_pcr_errors, n_indels, …).
-            node_outcomes = fam.node_outcomes()
+            node_outcomes = (_native(f"clones[{clone_idx}].nodes", _eng._family_replay_node_outcomes,
+                                     fam, budget=capture.budget)
+                             if capture is not None else fam.node_outcomes())
             for node, base_outcome in zip(tree.nodes(), node_outcomes):
                 if base_outcome is None:
                     continue
                 node_seed = clone_seed + 1 + node.id
-                corruption_outcome = self._post.run_from(
-                    base_outcome.final_simulation(), node_seed, strict=strict
-                )
-                merged = _eng.merge_lineage_corruption(
-                    base_outcome, corruption_outcome
-                )
-                rec = outcome_to_airr_record(
-                    merged,
-                    self._refdata,
-                    sequence_id=f"clone{clone_idx}_node{node.id}",
-                )
+                if capture is not None:
+                    initial = _native(f"clones[{clone_idx}].observations[{node.id}]",
+                                      _eng._family_replay_final_simulation, base_outcome, budget=capture.budget)
+                    corruption_outcome = _native(
+                        f"clones[{clone_idx}].observations[{node.id}]", self._post.run_for_family_capture,
+                        node_seed, strict, capture.budget, initial,
+                    )
+                else:
+                    corruption_outcome = self._post.run_from(
+                        base_outcome.final_simulation(), node_seed, strict=strict
+                    )
+                if capture is not None:
+                    capture.observation(captured_clone, node.id, self._post, corruption_outcome)
+                if capture is not None:
+                    merged = _native(f"clones[{clone_idx}].observations[{node.id}]", _eng._family_replay_merge_outcomes,
+                                     base_outcome, corruption_outcome, budget=capture.budget)
+                    rec = _native(f"clones[{clone_idx}].observations[{node.id}]", _eng._family_replay_airr_record,
+                                  merged, self._refdata, f"clone{clone_idx}_node{node.id}", budget=capture.budget)
+                else:
+                    merged = _eng.merge_lineage_corruption(base_outcome, corruption_outcome)
+                    rec = outcome_to_airr_record(merged, self._refdata, sequence_id=f"clone{clone_idx}_node{node.id}")
                 self._stamp_lineage_metadata(rec, clone_idx, node)
+                if duplex:
+                    rec["parent_id"] = parent_id
+                    rec["lineage_mutations_from_parent"] = node.mutations_from_parent
+                    lineage_record_origins.append((parent_id, clone_idx, node.id))
                 if expose_provenance:
-                    _inject_truth_columns(merged, self._refdata, rec)
+                    if capture is not None:
+                        _truth_aliases(rec)
+                    else:
+                        _inject_truth_columns(merged, self._refdata, rec)
+                if capture is not None:
+                    capture.record(rec)
                 records.append(rec)
                 outcomes.append(merged)
 
         result = SimulationResultWithLineages(
-            records, outcomes=outcomes, lineage_trees=lineage_trees
+            records, outcomes=outcomes, parents=parents,
+            lineage_trees=lineage_trees, families=families,
+            lineage_record_origins=lineage_record_origins,
         )
+        if capture is not None:
+            result._family_replay_capture = capture
+            result._family_replay_refdata = self._refdata
+            if not capture.request.deferred:
+                from .._family_replay import _finish_capture
+
+                _finish_capture(result)
         if validate_records:
             from .._validation import (
                 _raise_on_family_validation_failure,
                 _raise_on_validation_failure,
             )
 
-            _raise_on_validation_failure(result.validate_records(self._refdata))
+            validation_kwargs = ({"_family_replay_budget": capture.budget} if capture is not None else {})
+            _raise_on_validation_failure(result.validate_records(self._refdata, **validation_kwargs))
             _raise_on_family_validation_failure(result.validate_families())
+            if duplex:
+                _raise_on_family_validation_failure(
+                    result.validate_families_with_parents(self._refdata, **validation_kwargs)
+                )
         return result
 
     @staticmethod

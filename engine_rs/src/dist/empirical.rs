@@ -37,6 +37,29 @@ pub struct EmpiricalLengthDist {
 }
 
 impl EmpiricalLengthDist {
+    pub(crate) fn from_replay_parts(
+        values: Vec<i64>,
+        cumulative: Vec<f64>,
+        total: f64,
+    ) -> Result<Self, String> {
+        if values.len() != cumulative.len()
+            || values.is_empty()
+            || !total.is_finite()
+            || total <= 0.0
+            || cumulative.last().copied() != Some(total)
+            || cumulative[0] < 0.0
+            || cumulative.iter().any(|v| !v.is_finite())
+            || cumulative.windows(2).any(|p| p[1] < p[0])
+        {
+            return Err("invalid empirical CDF".into());
+        }
+        Ok(Self {
+            values,
+            cumulative,
+            total,
+        })
+    }
+
     /// Construct from an iterator of `(value, weight)` pairs.
     ///
     /// Panics if:
@@ -124,6 +147,14 @@ impl EmpiricalLengthDist {
 }
 
 impl Distribution for EmpiricalLengthDist {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::DistributionSpec> {
+        use crate::family_replay::plan::DistributionSpec as D;
+        Some(D::EmpiricalInt {
+            values: self.values.clone(),
+            cumulative: crate::family_replay::plan::vec_bits(&self.cumulative)?,
+            total: crate::family_replay::plan::bits(self.total)?,
+        })
+    }
     type Output = i64;
 
     fn sample(&self, rng: &mut Rng) -> i64 {

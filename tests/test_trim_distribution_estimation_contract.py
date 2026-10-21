@@ -8,8 +8,8 @@ Pin set:
 - ``pin_scaffold_*`` — live surfaces the new estimator
   reuses verbatim:
   - AirrRecord (Rust) carrying all six AIRR trim fields.
-  - The Rust builder hard-zeroing `v_trim_5` / `j_trim_3`
-    and sourcing the other four from the trace.
+  - The Rust builder preserving assignment trims separately
+    from observation-stage end loss.
   - `ReferenceEmpiricalModels.trims` typed plane +
     `TRIM_KEYS` / `TRIM_KEYS_VJ` constants + the
     chain-aware validator.
@@ -84,31 +84,21 @@ def test_pin_scaffold_airr_record_carries_six_trim_fields() -> None:
         )
 
 
-def test_pin_scaffold_engine_populates_recombination_trim_fields_only() -> None:
-    """The Rust AIRR builder sources `v_trim_3` / `d_trim_5` /
-    `d_trim_3` / `j_trim_5` from the trace (`trim.v_3` / etc.)
-    and hard-zeros `v_trim_5` and `j_trim_3`. The estimator
-    audit's hard-zero finding is pinned at source."""
-    src = (
-        _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "builder.rs"
-    ).read_text(encoding="utf-8")
-    assert "rec.v_trim_5 = 0;" in src, (
-        "v_trim_5 no longer hard-zeroed — audit §1.2 finding regressed"
+def test_pin_scaffold_engine_separates_recombination_trims_from_end_loss() -> None:
+    """Read coverage loss must not become a recombination trim."""
+    before = ga.Experiment.on("human_igh").recombine().run_records(n=20, seed=42)
+    experiment = (
+        ga.Experiment.on("human_igh").recombine()
+        .primer_trim_5prime(length=2).primer_trim_3prime(length=3)
     )
-    assert "rec.j_trim_3 = 0;" in src, (
-        "j_trim_3 no longer hard-zeroed — audit §1.2 finding regressed"
-    )
-    # The four populated fields read from trace via TrimEnd.
-    for marker in (
-        'segment: VdjSegment::V',
-        'segment: VdjSegment::D',
-        'segment: VdjSegment::J',
-        'end: TrimEnd::Three',
-        'end: TrimEnd::Five',
-    ):
-        assert marker in src, (
-            f"trace-sourced trim field plumbing missing {marker!r}"
-        )
+    after = experiment.run_records(n=20, seed=42)
+    for original, observed in zip(before, after):
+        for field in ("v_trim_5", "v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5", "j_trim_3"):
+            assert observed[field] == original[field], field
+        assert observed["v_trim_5"] == observed["j_trim_3"] == 0
+        assert observed["end_loss_5_length"] == 2
+        assert observed["end_loss_3_length"] == 3
+    assert after.validate_records(experiment.refdata).ok
 
 
 def test_pin_scaffold_python_projection_hard_zeros_v_trim_5_with_comment() -> None:

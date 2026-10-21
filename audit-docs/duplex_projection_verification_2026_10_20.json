@@ -1,0 +1,120 @@
+{
+  "baseline_commit": "c480374e0fffb8991c03a113017578847992e7c5",
+  "branch": "fix/biological-metadata-correctness",
+  "commands": [
+    "VIRTUAL_ENV=/home/thomas/Desktop/GenAIRR/.venv .venv/bin/maturin develop --release",
+    "cargo test --manifest-path engine_rs/Cargo.toml -q",
+    "cargo test --release --manifest-path engine_rs/Cargo.toml -q",
+    ".venv/bin/python -m pytest -q tests/test_duplex_projection.py tests/test_coupled_duplex_repair.py tests/test_experimental_duplex_repair.py tests/test_coding_end_models.py tests/test_metadata_np_estimator_regressions.py tests/test_np_length_estimation_contract.py tests/test_np_length_estimation_implementation.py tests/test_np_base_model_estimation_contract.py tests/test_np_base_model_estimation_implementation.py tests/test_p_nucleotide_length_estimation_contract.py tests/test_p_nucleotide_length_estimation_implementation.py tests/test_trim_distribution_estimation_contract.py tests/test_trim_distribution_estimation_implementation.py tests/test_productivity_assessment.py tests/test_productivity_trusted_landmarks.py",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_projection_sweep --output audit-docs/duplex_projection_sweep_2026_10_20.json",
+    ".venv/bin/python -m pytest -q tests/test_performance_budgets.py",
+    ".venv/bin/python -m mkdocs build --strict --site-dir /tmp/genairr_duplex_projection_docs"
+  ],
+  "date": "2026-10-20",
+  "evidence_model": "duplex_operation_placement_v1",
+  "exhaustive_sweep": {
+    "accepted": 17408,
+    "artifact": "audit-docs/duplex_projection_sweep_2026_10_20.json",
+    "cases": 32768,
+    "errors": 0,
+    "incompatible_rejected": 15360,
+    "sha256": "86d5855dc821beda2a7dbc28cbbf7156c2f84304f296a36df3ac7b2137c06bc2"
+  },
+  "extension": {
+    "build_log": "/tmp/genairr_duplex_projection_build_verified.log",
+    "path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+    "sha256": "3b601a4d6df473e8c45bc3b31da1be8148a67899d594f248e823e49e40f9950c"
+  },
+  "model": "duplex_airr_projection_v1",
+  "productivity_policy": "duplex_observed_vdj_v1",
+  "schema": "duplex_projection_verification_v1",
+  "scope": {
+    "both_strand_placement_evidence": true,
+    "clonal_integration": false,
+    "experiment_integration": false,
+    "external_simulator_or_inference_dependencies_added": false,
+    "finite_history_sampling": false,
+    "known_partial_facing_boundaries_rejected": true,
+    "legacy_fitters_reject_duplex_provenance": true,
+    "measured_biochemical_rates": false,
+    "nullable_partial_records": true,
+    "persistent_observation_lifecycle": false,
+    "resolved_acgt_only": true,
+    "restoration_aware_productivity": true,
+    "standalone_projection": true,
+    "strict_tsv_and_json": true,
+    "whole_allele_bindings": true
+  },
+  "source_sha256": {
+    "engine_rs/src/duplex_repair.rs": "90e532085a2825902351db6e04c87c1711eaa2ef5d0879a64b71ae141f5f348a",
+    "engine_rs/src/duplex_repair/bindings.rs": "eb8cf75f2345a099f11f99a683c759efc896fcf50e75f8812a03d6c1574e630f",
+    "engine_rs/src/duplex_repair/bindings/tests.rs": "15de53e482e7d6292fe922a16623b1eb877cf60973a5eec75e94329329d45db3",
+    "engine_rs/src/duplex_repair/coupled.rs": "4c16d625ef66ae51397fd83ad07cbed7ecd2f521cf3c4df112c8a17589d271d3",
+    "engine_rs/src/duplex_repair/evidence.rs": "6872df769c4da6091326db9a852ebf5271145160d24e5bc213314f12b92262b2",
+    "engine_rs/src/duplex_repair/evidence/tests.rs": "be72562366b28f0f01bdbbb33eba9393e376d4d7693f3c4008c6c6994c4d226c",
+    "engine_rs/src/duplex_repair/projection.rs": "379b7319baa3a6f19e3f98d8459b4b905de3bed8223dd9613f87b60451b36eb8",
+    "engine_rs/src/duplex_repair/projection/tests.rs": "e69097c9ea4c9ae24eadba9513eb433835269fbacb0a5c093a4a9bf0ce8dce4f",
+    "engine_rs/src/python/duplex_repair.rs": "01a5e0a006e5710102cb0edaf28a1fefaffdc76e23e25926b9cbabe401ef5620",
+    "engine_rs/src/python/mod.rs": "c0a538e55e338d7dcb3e2538206d311667bebefabeef791f5c22db2d53cd67e2",
+    "site_docs/guides/experimental-duplex-repair.md": "fe5a86e61b338a48a0b1d06c134c8fa8f36a1be5216f889106e9185e0f80d3c4",
+    "src/GenAIRR/_cartridge_estimators/_common.py": "3fcaa3bca3373940ad4cf4899cd9bbac3987f890276aa89a4e6a46e088372360",
+    "src/GenAIRR/_cartridge_estimators/p_nucleotide_lengths.py": "184eebc2eca22659a6268fe5bd3a4e5fe0044f33af4a538dd58abac82cff3195",
+    "src/GenAIRR/_cartridge_estimators/trim.py": "19432603ec1469080a19656f25d64a6e3d969b848044fc7e340d7918a763ae33",
+    "src/GenAIRR/_duplex_projection_export.py": "7f2cf7983e6352bd9ba2db8e039ff9adb0d35fa891ff4caf26cea20464c9b68b",
+    "src/GenAIRR/coding_end_models.py": "eeb533958fae169de4960c6fb968feee12178294c59e84cdaec4897db68a449d",
+    "src/GenAIRR/experimental.py": "29908952c6ce572de0e0f0c4479f99de906f70a58c3a6cb497d8df1dd163f982",
+    "tests/test_duplex_projection.py": "3087e4c00575a96ef826d582cb4af03f02557cf0ac0935eefd616bf69fa7aaf8",
+    "tools/metadata_biology_audit/duplex_projection_sweep.py": "aba818bfafa38a9dbb6425a5b9be8abcb72580e4bb44ce578c9d164d44305eda"
+  },
+  "tests": {
+    "affected_python": {
+      "inner_blunt_controls": 256,
+      "log": "/tmp/genairr_duplex_projection_python_verified.log",
+      "new_projection_tests": 29,
+      "passed": 334
+    },
+    "changed_rust_formatting": {
+      "passed": true,
+      "skip_children": true
+    },
+    "initial_full_python": {
+      "log": "/tmp/genairr_duplex_projection_python_full.log",
+      "passed": 2813,
+      "performance_deselected": 8,
+      "scope": "Initial projection build, before final stable IDs, canonical tip fields and fitter guards; affected suites rerun on final build; full Python not repeated."
+    },
+    "native_debug": {
+      "failed": 0,
+      "ignored": 3,
+      "log": "/tmp/genairr_duplex_projection_rust_debug_verified.log",
+      "passed": 1541
+    },
+    "native_release": {
+      "failed": 0,
+      "ignored": 3,
+      "log": "/tmp/genairr_duplex_projection_rust_release_verified.log",
+      "passed": 1540
+    },
+    "performance": {
+      "budgets_changed": false,
+      "initial_attempt": {
+        "failed": 1,
+        "limit_seconds": 1.0,
+        "log": "/tmp/genairr_duplex_projection_performance_verified.log",
+        "passed": 7,
+        "seconds": 1.3346777830010979,
+        "workload": "W6"
+      },
+      "isolated_w6_rerun": {
+        "log": "/tmp/genairr_duplex_projection_w6_rerun.log",
+        "passed": true
+      },
+      "log": "/tmp/genairr_duplex_projection_performance_confirmed.log",
+      "passed": 8
+    },
+    "strict_docs": {
+      "log": "/tmp/genairr_duplex_projection_docs_verified.log",
+      "passed": true
+    }
+  }
+}

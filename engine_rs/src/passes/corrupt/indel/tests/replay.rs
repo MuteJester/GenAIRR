@@ -49,6 +49,121 @@ fn count_rec(count: i64) -> ChoiceRecord {
     rec(ChoiceAddress::CorruptIndelCount, ChoiceValue::Int(count))
 }
 
+#[test]
+fn replay_rejects_wrapping_sites_and_zero_probability_kinds_and_counts() {
+    for (insertion, site, probability, count) in [
+        (true, (1i64 << 32) + 5, 1.0, 1),
+        (false, (1i64 << 32) + 5, 0.0, 1),
+        (true, 5, 0.0, 1),
+        (false, 5, 1.0, 1),
+        (true, 5, 1.0, 2),
+    ] {
+        let pass = IndelPass::new(fixed_count(1), probability, Box::new(UniformBase));
+        let mut records = vec![
+            count_rec(count),
+            rec(
+                ChoiceAddress::CorruptIndelKind(0),
+                ChoiceValue::Bool(insertion),
+            ),
+            rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(site)),
+        ];
+        if insertion {
+            records.push(rec(
+                ChoiceAddress::CorruptIndelBase(0),
+                ChoiceValue::Base(b'A'),
+            ));
+        }
+        let (result, _, words) = run_indel_replay(&pass, indel_test_sim(), records, None, None);
+        assert!(
+            result.is_err(),
+            "accepted kind={insertion}, site={site}, p={probability}, count={count}"
+        );
+        assert_eq!(words, 0);
+    }
+}
+
+#[test]
+fn replay_rejects_fake_mixed_noops_even_in_legacy_mode() {
+    for legacy_replay_sentinels in [false, true] {
+        let pass = IndelPass::new(fixed_count(2), 0.5, Box::new(UniformBase))
+            .with_sampling_options(IndelSamplingOptions {
+                legacy_replay_sentinels,
+                ..Default::default()
+            });
+        let records = vec![
+            count_rec(2),
+            rec(ChoiceAddress::CorruptIndelKind(0), ChoiceValue::Bool(false)),
+            rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(-1)),
+            rec(ChoiceAddress::CorruptIndelKind(1), ChoiceValue::Bool(true)),
+            rec(ChoiceAddress::CorruptIndelSite(1), ChoiceValue::Int(2)),
+            rec(ChoiceAddress::CorruptIndelBase(1), ChoiceValue::Base(b'A')),
+        ];
+        assert!(
+            run_indel_replay(&pass, indel_test_sim(), records, None, None)
+                .0
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn replay_accepts_repairable_anchor_interruption_without_rng() {
+    let (cfg, sim) = make_substitution_productive_vj_fixture();
+    let pass = IndelPass::new(fixed_count(2), 0.5, Box::new(UniformBase));
+    let records = vec![
+        count_rec(2),
+        rec(ChoiceAddress::CorruptIndelKind(0), ChoiceValue::Bool(true)),
+        rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(1)),
+        rec(ChoiceAddress::CorruptIndelBase(0), ChoiceValue::Base(b'A')),
+        rec(ChoiceAddress::CorruptIndelKind(1), ChoiceValue::Bool(false)),
+        rec(ChoiceAddress::CorruptIndelSite(1), ChoiceValue::Int(1)),
+    ];
+    let (result, trace, words) =
+        run_indel_replay(&pass, sim.clone(), records, Some(&productive()), Some(&cfg));
+    assert_eq!(result.unwrap().pool.as_slice(), sim.pool.as_slice());
+    assert_eq!(words, 0);
+    assert_eq!(trace.diagnostics()[0].strategy, "replay");
+}
+
+#[test]
+fn replay_empty_pool_deletion_is_a_natural_event() {
+    let pass = IndelPass::new(fixed_count(1), 0.0, Box::new(UniformBase));
+    let records = vec![
+        count_rec(1),
+        rec(ChoiceAddress::CorruptIndelKind(0), ChoiceValue::Bool(false)),
+        rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(-1)),
+    ];
+    let (result, _, words) = run_indel_replay(&pass, Simulation::new(), records, None, None);
+    assert!(result.unwrap().pool.is_empty());
+    assert_eq!(words, 0);
+}
+
+#[test]
+fn replay_base_must_have_positive_weight_not_just_support_membership() {
+    struct ZeroA;
+    impl Distribution for ZeroA {
+        type Output = u8;
+        fn sample(&self, _: &mut Rng) -> u8 {
+            b'C'
+        }
+        fn support(&self) -> Option<Vec<(u8, f64)>> {
+            Some(vec![(b'A', 0.0), (b'C', 1.0)])
+        }
+    }
+    let pass = IndelPass::new(fixed_count(1), 1.0, Box::new(ZeroA));
+    let records = vec![
+        count_rec(1),
+        rec(ChoiceAddress::CorruptIndelKind(0), ChoiceValue::Bool(true)),
+        rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(1)),
+        rec(ChoiceAddress::CorruptIndelBase(0), ChoiceValue::Base(b'A')),
+    ];
+    assert!(
+        run_indel_replay(&pass, indel_test_sim(), records, None, None)
+            .0
+            .is_err()
+    );
+}
+
 // ─────────────────────────────────────────────────────────────────
 // 1. Valid insertion + deletion tuple replays with zero RNG
 // ─────────────────────────────────────────────────────────────────
@@ -65,8 +180,7 @@ fn indel_replay_consumes_insertion_with_zero_rng() {
         rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(5)),
         rec(ChoiceAddress::CorruptIndelBase(0), ChoiceValue::Base(b'A')),
     ];
-    let (result, trace, rng_words) =
-        run_indel_replay(&pass, indel_test_sim(), records, None, None);
+    let (result, trace, rng_words) = run_indel_replay(&pass, indel_test_sim(), records, None, None);
     let next = result.unwrap();
 
     assert_eq!(next.pool.len(), 13);
@@ -99,8 +213,7 @@ fn indel_replay_consumes_deletion_with_zero_rng() {
         rec(ChoiceAddress::CorruptIndelKind(0), ChoiceValue::Bool(false)),
         rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(3)),
     ];
-    let (result, _trace, rng_words) =
-        run_indel_replay(&pass, initial, records, None, None);
+    let (result, _trace, rng_words) = run_indel_replay(&pass, initial, records, None, None);
     let next = result.unwrap();
 
     assert_eq!(next.pool.len(), 11);
@@ -149,7 +262,12 @@ fn indel_replay_consumes_mixed_insertion_and_deletion_tuple() {
 fn indel_replay_no_op_sentinel_applies_without_pool_mutation() {
     // count=2, every slot is kind=false / site=-1 (the no-op
     // sentinel). Pool stays unchanged; trace mirrors the sentinel.
-    let pass = IndelPass::new(fixed_count(2), 0.5, Box::new(UniformBase));
+    let pass = IndelPass::new(fixed_count(2), 0.5, Box::new(UniformBase)).with_sampling_options(
+        IndelSamplingOptions {
+            legacy_replay_sentinels: true,
+            ..Default::default()
+        },
+    );
     let initial = indel_test_sim();
     let initial_bases: Vec<u8> = initial.pool.as_slice().iter().map(|n| n.base).collect();
     let records = vec![
@@ -345,8 +463,7 @@ fn indel_replay_frame_invalid_tuple_rejects_under_productive() {
         rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(3)),
         rec(ChoiceAddress::CorruptIndelBase(0), ChoiceValue::Base(b'A')),
     ];
-    let (result, _, _) =
-        run_indel_replay(&pass, sim, records, Some(&contracts), Some(&cfg));
+    let (result, _, _) = run_indel_replay(&pass, sim, records, Some(&contracts), Some(&cfg));
     match result.unwrap_err() {
         PassError::ConstraintSampling { .. } => { /* expected */ }
         other => panic!("expected ConstraintSampling, got {other:?}"),
@@ -367,8 +484,7 @@ fn indel_replay_forbidden_site_rejects_under_productive() {
         rec(ChoiceAddress::CorruptIndelSite(0), ChoiceValue::Int(0)),
         rec(ChoiceAddress::CorruptIndelBase(0), ChoiceValue::Base(b'A')),
     ];
-    let (result, _, _) =
-        run_indel_replay(&pass, sim, records, Some(&contracts), Some(&cfg));
+    let (result, _, _) = run_indel_replay(&pass, sim, records, Some(&contracts), Some(&cfg));
     match result.unwrap_err() {
         PassError::ConstraintSampling { .. } => { /* expected */ }
         other => panic!("expected ConstraintSampling, got {other:?}"),

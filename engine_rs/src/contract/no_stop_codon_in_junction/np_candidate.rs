@@ -1,5 +1,5 @@
 use crate::address::ChoiceAddress;
-use crate::ir::{translate_codon, NucHandle, Segment, Simulation, AMINO_STOP};
+use crate::ir::{NucHandle, Segment, Simulation};
 use crate::refdata::RefDataConfig;
 use crate::trace::ChoiceValue;
 
@@ -233,11 +233,11 @@ impl NoStopCodonInJunction {
             if let (Some(b1), Some(b2), Some(b3)) =
                 (bases[offset], bases[offset + 1], bases[offset + 2])
             {
-                if translate_codon(b1, b2, b3) == AMINO_STOP {
+                if crate::productivity::codon_stop([b1, b2, b3]) != Some(false) {
                     return Err(ContractViolation::new(
                         self.name(),
                         format!(
-                            "candidate at {} would force stop codon '{}{}{}' at junction offset {}",
+                            "candidate at {} would leave a definite or possible stop codon '{}{}{}' at junction offset {}",
                             address, b1 as char, b2 as char, b3 as char, offset
                         ),
                     ));

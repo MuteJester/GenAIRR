@@ -1,4 +1,4 @@
-use crate::ir::{translate_codon, NucHandle, Simulation, AMINO_STOP};
+use crate::ir::{NucHandle, Simulation};
 use crate::junction::compute_junction;
 use crate::refdata::RefDataConfig;
 
@@ -50,12 +50,11 @@ impl NoStopCodonInJunction {
                 .map(|n| n.base)
                 .unwrap_or(b'N');
 
-            let aa = translate_codon(b1, b2, b3);
-            if aa == AMINO_STOP {
+            if crate::productivity::codon_stop([b1, b2, b3]) != Some(false) {
                 return Err(ContractViolation::new(
                     self.name(),
                     format!(
-                        "stop codon at junction position {}: '{}{}{}'",
+                        "definite or possible stop codon at junction position {}: '{}{}{}'",
                         pos, b1 as char, b2 as char, b3 as char
                     ),
                 ));

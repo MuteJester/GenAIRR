@@ -116,8 +116,8 @@ impl Contract for NoStopCodonInJunction {
     /// translates to a stop. `translate_codon` is case-insensitive,
     /// so lowercase quality writes (`a`/`c`/`g`/`t`) and uppercase
     /// candidates yield the same verdict. Non-canonical bytes
-    /// (`N`, IUPAC ambiguities) translate to `X` rather than a
-    /// stop, so they are admitted by this contract.
+    /// (`N`, IUPAC ambiguities) are accepted only when every possible
+    /// canonical resolution is a sense codon.
     fn admits_fixed_base_at(
         &self,
         sim: &Simulation,

@@ -27,14 +27,14 @@ the engine, so a bug in the projection (or in any code path that
 feeds the projection - live-call caching, V-subregion attribution,
 counter aggregation) could silently produce a record whose fields
 don't match the outcome that produced them. Validation closes that
-loop: independently re-derive every reported field from the
-upstream source, and surface any divergence as a structured
-report.
+loop by checking supported fields against upstream state and surfacing
+detected differences as a structured report. These checks test agreement
+with the implemented model, not every possible biological assumption.
 
 If you ever ask "does this record's `v_call` match the allele the
 engine actually sampled?", "do `n_v + n_d + n_j + n_np` add up to
 `n_mutations`?", "is `productive` consistent with the actual
-junction translation?" - validation is the call that answers,
+retained coding sequence?" - validation is the call that answers,
 without you writing the cross-check yourself.
 
 ## The three validation layers
@@ -109,8 +109,8 @@ hot loops.
 | Sequence + coordinate consistency (`sequence` matches pool; `*_start/end` well-ordered) | `validate_records` |
 | CIGAR ops (canonical M/I/D/S/N/P/X/=) + query span | `validate_records` |
 | Counter provenance (`n_mutations`, per-segment partition, `n_pcr_errors`, indel counts) | `validate_records` |
-| Allele calls (`v_call` / `d_call` / `j_call` matches an independent walker) | `validate_records` |
-| Junction + productive triad (junction content, `vj_in_frame`, `stop_codon`, `productive` predicate identification) | `validate_records` |
+| Generating `v_call` / `d_call` / `j_call` match assignments; `recalled_*_call` match independent evidence scoring | `validate_records` |
+| Junction content/translation and coding-frame, stop-codon and anchor checks | `validate_records` |
 | Paired-end geometry (R1/R2 windows, R2 reverse-complement, `insert_size`) | `validate_records` (when `paired_end()` is in the pipeline) |
 | Clonal batch is consistently stamped with `clone_id`; truth V/D/J calls are invariant within clone when truth columns are present | `validate_families` |
 | Legacy `expand_clones` descendants agree with their parent `Outcome` | `validate_families_with_parents` |

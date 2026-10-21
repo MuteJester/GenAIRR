@@ -1,0 +1,91 @@
+{
+  "schema": "duplex_seed_verification_v1",
+  "date": "2026-10-20",
+  "branch": "fix/biological-metadata-correctness",
+  "base_commit": "a805688779da56e0c02546e6e850efffc41673f4",
+  "milestone": "slice B: persistent native duplex seeds and downstream observation provenance",
+  "extension_sha256": "f29f1b3cf99847cd435436b997c27141bf2203b5bc12c78ff5ed76154fc901b3",
+  "changed_source_manifest_sha256": "e3c572e2cec4693da9d6bdaf21af5073837fb2a5f988cf32d80f0d79b8fca172",
+  "changed_source_files": 51,
+  "source_manifest_scope": "Sorted (path,content SHA-256) pairs for changed/new engine_rs/src, src/GenAIRR, tests and tools/metadata_biology_audit files; JSON compact serialization.",
+  "results": {
+    "native_debug": {
+      "passed": 1583,
+      "failed": 0,
+      "ignored": 3,
+      "ignored_note": "Three inherited ignored tests, including two documentation examples."
+    },
+    "native_release": {
+      "passed": 1582,
+      "failed": 0,
+      "ignored": 3,
+      "ignored_note": "Three inherited ignored tests, including two documentation examples; one debug-only test is absent in release."
+    },
+    "affected_python": {
+      "passed": 97,
+      "failed": 0
+    },
+    "projection_sweep": {
+      "cases": 32768,
+      "accepted": 17408,
+      "incompatible_rejected": 15360,
+      "errors": 0
+    },
+    "observation_sweep": {
+      "founders": 2048,
+      "continuations": 18432,
+      "errors": 0
+    },
+    "strict_docs": {
+      "passed": true
+    },
+    "guide_examples": {
+      "python_blocks": 4,
+      "passed": 4,
+      "execution": "Sequential shared namespace in a temporary working directory; generated sample exports removed."
+    },
+    "diff_check": {
+      "passed": true
+    },
+    "python_full_nonperformance": {
+      "passed": 2891,
+      "failed": 0,
+      "deselected": 8,
+      "warnings": 169,
+      "seconds": 828.55
+    },
+    "performance": {
+      "passed": 8,
+      "failed": 0,
+      "deselected": 2891,
+      "seconds": 9.27,
+      "thresholds": "unchanged"
+    }
+  },
+  "commands": [
+    "VIRTUAL_ENV=$PWD/.venv .venv/bin/maturin develop --release",
+    "cargo test --manifest-path engine_rs/Cargo.toml",
+    "cargo test --release --manifest-path engine_rs/Cargo.toml",
+    ".venv/bin/pytest -q -m 'not performance'",
+    ".venv/bin/pytest -q -m performance",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_projection_sweep --output audit-docs/duplex_seed_projection_sweep_2026_10_20.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_observation_sweep --output audit-docs/duplex_seed_observation_sweep_2026_10_20.json",
+    ".venv/bin/mkdocs build --strict --site-dir /tmp/genairr_duplex_seed_docs_final",
+    "git diff --check"
+  ],
+  "artifacts": [
+    "duplex_seed_projection_sweep_2026_10_20.json",
+    "duplex_seed_observation_sweep_2026_10_20.json"
+  ],
+  "scope": [
+    "All mechanisms inside GenAIRR; no new dependency or external tool.",
+    "Current observation links, body placements, full edit bytes, region partition, clipping coverage and generating assignments verified.",
+    "Strict productive sampling uses current duplex evidence; legacy productivity behavior preserved.",
+    "Legacy P metrics unknown rather than zero; incompatible legacy exports and continuation passes fail explicitly."
+  ],
+  "remaining_milestones": [
+    "Native finite authored history source in Experiment with support-wide capability checks.",
+    "Family integration and durable initial-snapshot-bound trace replay.",
+    "General flap/mismatch processing, reopening completed joins and measured biochemical calibration."
+  ]
+}

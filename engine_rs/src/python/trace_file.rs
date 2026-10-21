@@ -77,6 +77,16 @@ impl PyTraceFile {
         self.inner.refdata_content_hash.clone()
     }
 
+    #[getter]
+    fn productivity_policy(&self) -> Option<String> {
+        self.inner.productivity_policy.clone()
+    }
+
+    #[getter]
+    fn active_contracts(&self) -> Option<Vec<String>> {
+        self.inner.active_contracts.clone()
+    }
+
     /// The recorded choice trace.
     #[getter]
     fn trace(&self) -> PyTrace {
@@ -85,7 +95,9 @@ impl PyTraceFile {
 
     /// Serialise to a pretty-printed JSON string.
     fn to_json(&self) -> PyResult<String> {
-        self.inner.to_json_pretty().map_err(trace_file_error_to_pyerr)
+        self.inner
+            .to_json_pretty()
+            .map_err(trace_file_error_to_pyerr)
     }
 
     /// Deserialise from a JSON string. Rejects unsupported schema versions.

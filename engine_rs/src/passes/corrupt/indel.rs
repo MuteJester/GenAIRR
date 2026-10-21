@@ -49,15 +49,18 @@ use crate::pass::{Pass, PassContext, PassEffect, PassError};
 use crate::passes::count_source::{sample_validated_count, CountSource};
 use crate::passes::mutation_transaction::MutationTransaction;
 
+mod edit_view;
 mod event;
 mod replay;
 mod sampling;
 mod tuple_sampler;
+pub use tuple_sampler::IndelSamplingOptions;
 
 pub struct IndelPass {
     count_source: CountSource,
     insertion_prob: f64,
     base_dist: Box<dyn Distribution<Output = u8>>,
+    sampling_options: IndelSamplingOptions,
 }
 
 impl IndelPass {
@@ -79,7 +82,35 @@ impl IndelPass {
             count_source: CountSource::Distribution(count_dist),
             insertion_prob,
             base_dist,
+            sampling_options: IndelSamplingOptions::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_sampling_options(mut self, options: IndelSamplingOptions) -> Self {
+        self.sampling_options = options;
+        self
+    }
+
+    fn record_sampling_report(
+        ctx: &mut PassContext,
+        count: u32,
+        applied: u32,
+        status: &str,
+        report: &tuple_sampler::SamplingReport,
+    ) {
+        ctx.trace
+            .record_sampling_diagnostic(crate::trace::SamplingDiagnostic {
+                pass_name: address::CORRUPT_INDEL.to_string(),
+                model: tuple_sampler::SAMPLER_MODEL.to_string(),
+                strategy: report.strategy.to_string(),
+                status: status.to_string(),
+                requested_count: count,
+                applied_count: applied,
+                attempts: report.attempts,
+                explored_states: report.explored_states,
+                choice_offset: 0,
+            });
     }
 
     fn execute_with_sampling_mode(
@@ -99,10 +130,45 @@ impl IndelPass {
             sim.pool.len() as u32,
             self.name(),
             address::ChoiceAddress::CorruptIndelCount,
-            strict,
+            true,
         )?;
+        if ctx.replay_cursor.is_some() {
+            let supported =
+                self.count_source
+                    .supports_value(i64::from(count))
+                    .map_err(|reason| {
+                        PassError::constraint_sampling(
+                            self.name(),
+                            address::ChoiceAddress::CorruptIndelCount.to_string(),
+                            reason,
+                        )
+                    })?;
+            if !supported {
+                return Err(PassError::invalid_distribution_output(
+                    self.name(),
+                    address::ChoiceAddress::CorruptIndelCount.to_string(),
+                    i64::from(count),
+                    "replay_count_outside_positive_support",
+                ));
+            }
+        }
 
         if count == 0 {
+            Self::record_sampling_report(
+                ctx,
+                0,
+                0,
+                "completed",
+                &tuple_sampler::SamplingReport {
+                    strategy: if ctx.replay_cursor.is_some() {
+                        "replay"
+                    } else {
+                        "zero_count"
+                    },
+                    attempts: 0,
+                    explored_states: 0,
+                },
+            );
             return Ok(sim.clone());
         }
 
@@ -120,25 +186,16 @@ impl IndelPass {
         // fast path in the post-pass `PassEffect::StructuralIndel`
         // dispatch, replacing the prior unconditional from-scratch
         // `call_from_region` re-walk per V/D/J segment.
-        // v3.0 architecture: under active contracts, single indels
-        // around the junction break frame and would all be rejected
-        // by the post-event check. The
-        // `sample_admissible_tuple` path picks a frame-balanced
-        // tuple in one shot using a mod-3 reachability DP +
-        // continuation weighting, then validates the assembled
-        // post-state against the full contract bundle. On
-        // permissive-mode rejection (DP exhausted, or final
-        // validator fails) every slot records as NoOp; in strict
-        // mode the failure surfaces as `PassError::ConstraintSampling`
-        // / `ContractViolation`. When no contracts are active we
-        // stay on the per-step legacy path so RNG behavior matches
-        // the pre-v3 indel pass exactly.
+        // Active contracts condition the natural sequential history on the
+        // complete final state. Temporary, repairable changes are allowed.
+        // Only a completed empty-support proof permits a permissive no-op;
+        // work exhaustion remains an error in both execution modes.
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
 
         // Trace-injected replay (Tier 3 — final): consume the
         // pre-recorded tuple from the cursor, validate each event
         // against current state + contracts, and apply through the
-        // same `apply_event_via_tx` path as fresh sampling. No DP
+        // same `apply_event_via_tx` path as fresh sampling. No proposal
         // sampling, no RNG draws.
         if tx.replay_cursor().is_some() {
             self.replay_tuple(&mut tx, count)?;
@@ -146,25 +203,56 @@ impl IndelPass {
         }
 
         if tx.ctx().contracts.is_some() {
-            let tuple_opt = {
+            let sampled = {
                 let (sim_ref, ctx_ref) = tx.split_borrows();
-                self.sample_admissible_tuple(sim_ref, ctx_ref, count, strict)?
+                self.sample_admissible_tuple(sim_ref, ctx_ref, count)?
             };
-            match tuple_opt {
+            match sampled.events {
                 Some(events) => {
+                    let applied = events
+                        .iter()
+                        .filter(|event| {
+                            matches!(
+                                event,
+                                event::IndelEvent::Insertion { .. }
+                                    | event::IndelEvent::Deletion { site: Some(_) }
+                            )
+                        })
+                        .count() as u32;
                     for (i, event) in events.into_iter().enumerate() {
                         let i = i as u32;
                         Self::record_event(tx.ctx(), i, event);
                         Self::apply_event_via_tx(&mut tx, event)?;
                     }
+                    Self::record_sampling_report(
+                        tx.ctx(),
+                        count,
+                        applied,
+                        "completed",
+                        &sampled.report,
+                    );
                 }
                 None => {
+                    if strict {
+                        return Err(PassError::constraint_sampling(
+                            self.name(),
+                            address::ChoiceAddress::CorruptIndelCount.to_string(),
+                            crate::dist::FilteredSampleError::EmptyAdmissibleSupport,
+                        ));
+                    }
                     // Permissive: no admissible tuple. Record NoOp
                     // for each slot so trace consumers can audit
                     // the reduction; no pool mutation.
                     for i in 0..count {
                         Self::record_event(tx.ctx(), i, event::IndelEvent::NoOp);
                     }
+                    Self::record_sampling_report(
+                        tx.ctx(),
+                        count,
+                        0,
+                        "proven_empty_support",
+                        &sampled.report,
+                    );
                 }
             }
             return tx.commit();
@@ -176,29 +264,66 @@ impl IndelPass {
         // runs instead, so this branch is reached only with
         // `ctx.contracts == None`.
         let _ = strict;
+        let mut applied = 0;
         for i in 0..count {
             let event = {
                 let (sim_ref, ctx_ref) = tx.split_borrows();
                 self.sample_legacy_event(sim_ref, ctx_ref)
             };
+            if matches!(
+                event,
+                event::IndelEvent::Insertion { .. } | event::IndelEvent::Deletion { site: Some(_) }
+            ) {
+                applied += 1;
+            }
             Self::record_event(tx.ctx(), i, event);
             Self::apply_event_via_tx(&mut tx, event)?;
         }
+        Self::record_sampling_report(
+            tx.ctx(),
+            count,
+            applied,
+            "completed",
+            &tuple_sampler::SamplingReport {
+                strategy: "unconstrained_sequential",
+                attempts: 1,
+                explored_states: 0,
+            },
+        );
 
         tx.commit()
     }
 }
 
 impl Pass for IndelPass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::Indel {
+            count: CountSpec::capture(&self.count_source)?,
+            base: self.base_dist.family_replay_spec()?,
+            insertion_probability: bits(self.insertion_prob)?,
+            rejection_attempts: self.sampling_options.rejection_attempts,
+            exact_node_budget: self.sampling_options.exact_node_budget,
+            legacy_replay_sentinels: self.sampling_options.legacy_replay_sentinels,
+        })
+    }
     fn name(&self) -> &str {
         address::CORRUPT_INDEL
     }
 
     fn parameter_signature(&self) -> String {
-        use crate::passes::paramsig::{
-            fmt_byte_dist, fmt_count_source, fmt_prob, join_parts,
-        };
+        use crate::passes::paramsig::{fmt_byte_dist, fmt_count_source, fmt_prob, join_parts};
         join_parts([
+            format!(
+                "sampler={},search=bounded_interleaved_v1,rejection_attempts={},exact_node_budget={},legacy_replay_sentinels={}",
+                tuple_sampler::SAMPLER_MODEL,
+                self.sampling_options.rejection_attempts,
+                self.sampling_options.exact_node_budget,
+                self.sampling_options.legacy_replay_sentinels
+            ),
             fmt_count_source(&self.count_source),
             fmt_prob("insertion_prob", self.insertion_prob),
             format!("base={}", fmt_byte_dist(self.base_dist.as_ref())),
@@ -216,6 +341,15 @@ impl Pass for IndelPass {
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         self.execute_with_sampling_mode(sim, ctx, true)
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {

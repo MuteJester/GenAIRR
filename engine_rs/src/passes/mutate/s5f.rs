@@ -80,6 +80,17 @@ pub struct S5FMutationPass {
 }
 
 impl S5FMutationPass {
+    /// Fallible lineage dispatch preserves permissive empty-support no-ops
+    /// while allowing malformed recorded choices to return structured errors.
+    pub(crate) fn execute_for_lineage(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
+    }
+
     /// Construct from an explicit count distribution. Sampled once
     /// per pass execution independently of the pool length.
     pub fn new(kernel: S5FKernel, count_dist: Box<dyn Distribution<Output = i64>>) -> Self {
@@ -144,6 +155,10 @@ impl S5FMutationPass {
 }
 
 impl Pass for S5FMutationPass {
+    fn family_replay_spec(&self)->Option<crate::family_replay::plan::ReplayPassSpecV1>{
+        #[allow(unused_imports)] use crate::family_replay::plan::{ReplayPassSpecV1 as P,CountSpec,KernelSpecV1,bits,rate_bits,subregion_bits};
+        Some(P::S5fMutation{count:CountSpec::capture(&self.count_source)?,kernel:KernelSpecV1::capture(&self.kernel)?,kernel_name:self.kernel_name.clone(),segment_rates:rate_bits(self.segment_rates)?,v_subregion_rates:subregion_bits(self.v_subregion_rates)?})
+    }
     fn name(&self) -> &str {
         address::MUTATE_S5F
     }
@@ -164,6 +179,23 @@ impl Pass for S5FMutationPass {
         ])
     }
 
+    fn sampling_law_signature(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        hash.update(b"s5f_numeric_kernel_f64_le_v1\0");
+        for context in 0..1024 {
+            hash.update(self.kernel.mutability(context).to_bits().to_le_bytes());
+            for weight in self.kernel.substitution_row(context) {
+                hash.update(weight.to_bits().to_le_bytes());
+            }
+        }
+        format!(
+            "{};numeric_kernel=sha256:{:x}",
+            self.parameter_signature(),
+            hash.finalize()
+        )
+    }
+
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("S5FMutationPass permissive execution must not return PassError")
@@ -175,6 +207,15 @@ impl Pass for S5FMutationPass {
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         self.execute_with_sampling_mode(sim, ctx, true)
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {

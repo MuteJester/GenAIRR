@@ -87,9 +87,9 @@ replayed = compiled.simulator.replay_from_trace_file(
 `replay_from_trace_file` consumes the recorded values verbatim.
 The simulator walks the plan, hits every address in the same
 order, and reads the corresponding value out of the trace instead
-of asking the RNG. The returned `Outcome` is byte-identical to
-the original (modulo non-determinism in code paths that aren't
-sampling - there shouldn't be any).
+of asking the RNG. The sequence and biological provenance reproduce the
+recorded choices. Sampling diagnostics identify replay instead of repeating
+the original search work.
 
 ## Rerun from trace
 
@@ -126,7 +126,8 @@ strongest reproducibility check you can author with one trace.
 
 ## What the trace contains
 
-A serialised trace carries eight fields:
+Version 4 records the annotation policy and active contract context alongside
+the existing signatures:
 
 | Field | Purpose |
 |---|---|
@@ -137,19 +138,33 @@ A serialised trace carries eight fields:
 | `refdata_signature` | Identity hash of the refdata (cartridge identity + catalogue shape) |
 | `address_schema_version` | The schema version of the choice-address encoding |
 | `refdata_content_hash` | Content hash of every plane the trace depends on |
-| `trace` | The ordered list of `(address, value)` choice records |
+| `productivity_policy` | Versioned biological annotation policy |
+| `active_contracts` | Contracts active when the outcome was generated |
+| `trace` | Ordered choices and separate sampling-work diagnostics |
 
 What's deliberately **not** in the trace:
 
 - The full reference cartridge bytes (only its signature + content hash)
 - The assembled sequences from the original outcome
 - The compiled pass results (these are derived during replay)
-- The contract set used at compile time
 - The execution policy (strict / permissive) - that's a replay-time argument
 
 The trace is small because the cartridge is its provenance, not
 its payload. You ship the trace + the cartridge name; the engine
 re-derives everything else from the recorded choices.
+
+Both seed reruns and choice replay check reference content, address vocabulary,
+annotation policy and active contracts. New schema-4 files require explicit
+policy/context fields. Earlier schemas remain readable with their documented
+historical limitations.
+
+Constrained indels now use `natural_sequential_v1`, whose probabilities follow
+the actual sequence after each event. Changed sampler signatures intentionally
+prevent seed reruns from claiming old sampling behavior. Choice replay of an
+old schema-3 indel signature requires the explicit `legacy_replay_sentinels=True`
+compatibility setting and still validates recorded counts, bounds, positive
+proposal support and final contracts. Compatibility never restores incorrect
+historical productivity annotations.
 
 ## What can make replay fail
 
@@ -163,6 +178,8 @@ exception) with one of these distinct shapes:
 | `plan_signature_mismatch` | The compiled experiment's plan hash doesn't match `pass_plan_signature` |
 | `refdata_signature_mismatch` | The cartridge's identity hash doesn't match `refdata_signature` |
 | `refdata_content_hash_mismatch` | A plane referenced by the trace has changed bytes |
+| Productivity policy mismatch | Annotation semantics changed or a required policy is missing |
+| Active contracts mismatch | The trace and compiled simulator use different constraints |
 
 These three are the load-bearing gates. A `plan_signature_mismatch`
 means the pipeline differs - somebody added an `.invert_d()`

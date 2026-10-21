@@ -1,0 +1,219 @@
+{
+  "schema": "duplex_family_verification_v1",
+  "date": "2026-10-20",
+  "branch": "fix/biological-metadata-correctness",
+  "base_commit": "a75db8cf75443d29e0031c40bb6d8994adcadc49",
+  "milestone": "slice D: duplex clonal continuation and explicit unfitted uniform controls",
+  "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+  "runtime_source_sha256": "2ded1989be24cd34e0b99ae33d0554910baa6a1149a4b1134429e7ee187540da",
+  "runtime_source_hash_scope": "engine_rs/src/**/*.rs, src/GenAIRR/**/*.py, engine_rs/Cargo.toml, engine_rs/Cargo.lock; sorted relative paths, each followed by NUL, file bytes and NUL",
+  "changed_source_manifest_sha256": "b22e1462af9677d333a879b4458b7b42d7a12b7e8b709a75a2fce35785a1864c",
+  "changed_source_files": 27,
+  "source_manifest_scope": "Sorted (path,content SHA-256) pairs for changed/new engine_rs/src, src/GenAIRR, tests and tools/metadata_biology_audit files relative to base_commit; JSON compact serialization.",
+  "results": {
+    "native_debug": {
+      "passed": 1630,
+      "failed": 0,
+      "ignored": 3,
+      "ignored_note": "Three inherited ignored tests, including two documentation examples."
+    },
+    "native_release": {
+      "passed": 1629,
+      "failed": 0,
+      "ignored": 3,
+      "ignored_note": "Three inherited ignored tests, including two documentation examples."
+    },
+    "affected_python": {
+      "passed": 50,
+      "deselected": 0,
+      "warnings": 0,
+      "failed": 0,
+      "seconds": 3.45
+    },
+    "corrected_contracts_and_family_python": {
+      "passed": 105,
+      "deselected": 0,
+      "warnings": 33,
+      "failed": 0,
+      "seconds": 10.55
+    },
+    "python_full_nonperformance": {
+      "passed": 2995,
+      "deselected": 8,
+      "warnings": 170,
+      "failed": 0,
+      "seconds": 459.16,
+      "initial_attempt": {
+        "passed": 2994,
+        "failed": 1,
+        "deselected": 8,
+        "warnings": 170,
+        "seconds": 485.58,
+        "case": "test_pin_scaffold_validate_records_true_does_not_invoke_parent_aware",
+        "reason": "A legacy source-text assertion forbade the method from containing any parent-aware validator call, including the intentionally added duplex-only call.",
+        "follow_up": "Replaced with a behavioral legacy regression checking the actual record/family calls and rejecting automatic parent validation for legacy runs; architecture note updated. No production changes. Focused contracts and final complete Python repeat passed."
+      }
+    },
+    "performance": {
+      "passed": 8,
+      "deselected": 2995,
+      "warnings": 0,
+      "failed": 0,
+      "seconds": 5.54,
+      "thresholds": "unchanged; separate CPU-quiet execution before full suites"
+    },
+    "family_sweep": {
+      "founders": 192,
+      "records": 896,
+      "plans": 96,
+      "node_replays": 928,
+      "observed_node_comparisons": 192,
+      "errors": 0,
+      "checks": [
+        "literal coding-query and output-orientation reconstruction",
+        "exact current/removed founder-link replay",
+        "canonical inverted-D placement oracle",
+        "cumulative applied mutation and observation counter oracle",
+        "mutation-stage denominator before read loss",
+        "one immutable repair founder per clone",
+        "actual parent-edge edit prefixes and counts",
+        "all lineage nodes replay including unsampled nodes",
+        "represented-cell abundance conservation",
+        "independent observed branch maps"
+      ],
+      "selection_count_scope": "control plans reuse founder seeds; these correlated counts do not estimate or test population frequencies"
+    },
+    "projection_regression": {
+      "cases": 32768,
+      "accepted": 17408,
+      "incompatible_rejected": 15360,
+      "errors": 0
+    },
+    "observation_regression": {
+      "founders": 2048,
+      "continuations": 18432,
+      "errors": 0
+    },
+    "family_benchmark": {
+      "measurements": 6,
+      "retained_nodes": 664,
+      "observed_records": 117,
+      "exact_node_replays": 117,
+      "errors": 0,
+      "summaries": [
+        {
+          "max_actual_total_nodes": 42,
+          "max_compile_peak_increase_kib": 0,
+          "max_generations": 2,
+          "max_observed_records": 17,
+          "max_replay_peak_increase_kib": 128,
+          "max_run_records_peak_increase_kib": 4876,
+          "median_compile_seconds": 0.0004321274973335676,
+          "median_native_replay_seconds": 0.008865687021170743,
+          "median_replay_check_seconds": 0.03205486648948863,
+          "median_replay_seconds": 0.040943572494143154,
+          "median_run_records_seconds": 0.07739565450174268,
+          "min_actual_total_nodes": 22,
+          "min_observed_records": 13,
+          "repeats": 2
+        },
+        {
+          "max_actual_total_nodes": 120,
+          "max_compile_peak_increase_kib": 0,
+          "max_generations": 4,
+          "max_observed_records": 22,
+          "max_replay_peak_increase_kib": 128,
+          "max_run_records_peak_increase_kib": 6936,
+          "median_compile_seconds": 0.00043088999518658966,
+          "median_native_replay_seconds": 0.011898256998392753,
+          "median_replay_check_seconds": 0.04340781299106311,
+          "median_replay_seconds": 0.05533599549380597,
+          "median_run_records_seconds": 0.10083541800122475,
+          "min_actual_total_nodes": 97,
+          "min_observed_records": 16,
+          "repeats": 2
+        },
+        {
+          "max_actual_total_nodes": 195,
+          "max_compile_peak_increase_kib": 0,
+          "max_generations": 6,
+          "max_observed_records": 25,
+          "max_replay_peak_increase_kib": 128,
+          "max_run_records_peak_increase_kib": 8624,
+          "median_compile_seconds": 0.00043230600567767397,
+          "median_native_replay_seconds": 0.016022169540519826,
+          "median_replay_check_seconds": 0.05550351149577182,
+          "median_replay_seconds": 0.07155980050447397,
+          "median_run_records_seconds": 0.1302343590068631,
+          "min_actual_total_nodes": 188,
+          "min_observed_records": 24,
+          "repeats": 2
+        }
+      ],
+      "max_current_rss_increase_kib": {
+        "compile": 648.0,
+        "run_records": 10380.0,
+        "replay": 172.0,
+        "before_compile_through_replay": 11196.0
+      },
+      "scope": [
+        "Short synthetic 15-base founders do not establish performance for realistic full-length references or larger histories.",
+        "Equal authored history weights are unfitted controls, not measured biochemical rates.",
+        "Neutral offspring and mutation settings are declared benchmark controls, not an empirical family model fit.",
+        "All emitted metadata and native family replay state remain retained during measurements; this is not a bounded-stream benchmark.",
+        "Process RSS, allocator retention and high-water marks cannot prove individual immutable founder Arc sharing; no allocation introspection is performed.",
+        "Replay timing includes validation and metadata equality work; native replay time is also reported separately.",
+        "Two repeats at each depth are a small descriptive sample, not a statistical latency guarantee."
+      ]
+    },
+    "strict_docs": {
+      "passed": true
+    },
+    "guide_examples": {
+      "python_blocks": 6,
+      "passed": 6,
+      "execution": "Actual guide fences executed sequentially with shared globals in one temporary directory; generated files and directory removed.",
+      "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6"
+    },
+    "diff_check": {
+      "passed": true
+    }
+  },
+  "commands": [
+    "VIRTUAL_ENV=$PWD/.venv .venv/bin/maturin develop --release",
+    "cargo test --manifest-path engine_rs/Cargo.toml",
+    "cargo test --release --manifest-path engine_rs/Cargo.toml",
+    ".venv/bin/pytest -q -m 'not performance'",
+    ".venv/bin/pytest -q -m performance",
+    ".venv/bin/pytest -q tests/test_duplex_family_integration.py tests/test_duplex_family_outputs.py tests/test_duplex_uniform_defaults.py tests/test_duplex_seed_gates.py",
+    ".venv/bin/pytest -q tests/test_clonal_plan_split_contract.py tests/test_clonal_parent_contract.py tests/test_duplex_family_integration.py tests/test_duplex_family_outputs.py",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_family_sweep --output audit-docs/duplex_family_sweep_2026_10_20.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_projection_sweep --output audit-docs/duplex_family_projection_regression_2026_10_20.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_observation_sweep --output audit-docs/duplex_family_observation_regression_2026_10_20.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_family_benchmark --output audit-docs/duplex_family_benchmark_2026_10_20.json",
+    ".venv/bin/mkdocs build --strict --site-dir /tmp/genairr_duplex_family_docs",
+    "git diff --check",
+    "git diff --cached --check"
+  ],
+  "artifacts": [
+    "duplex_family_sweep_2026_10_20.json",
+    "duplex_family_projection_regression_2026_10_20.json",
+    "duplex_family_observation_regression_2026_10_20.json",
+    "duplex_family_benchmark_2026_10_20.json"
+  ],
+  "scope": [
+    "All mechanisms remain inside GenAIRR; no outside simulator or new dependency.",
+    "Omitted unit repair weights are uniform over eligible authored history IDs in a selected context; upstream sampling laws are retained.",
+    "Equal weights and existing neutral lineage controls are explicitly unfitted; no enzyme rates or measured repertoire frequencies are claimed.",
+    "One repair founder per clone, actual cumulative mutation events and ancestry, full-truth repertoire collapse and sampled-cell identity verified.",
+    "Nullable output, founder-aware and actual-node-aware validation, strict/permissive replay and numeric S5F kernel binding verified.",
+    "Legacy seeded sampling and legacy trace shapes remain unchanged; the stale test pin was corrected without production changes.",
+    "Sweeps and benchmarks use short synthetic controls, not evidence of biological exhaustiveness or full-length performance."
+  ],
+  "remaining_milestones": [
+    "Durable full-family and external initial-snapshot replay formats.",
+    "Phased genotype families; VJ, receptor revision, contaminants and paired-end provenance adapters.",
+    "General flap/mismatch processing, reopened joins and unrestricted overlapping layouts.",
+    "Automatic stochastic history generation and measured biochemical calibration; authored finite-support uniform controls remain available now."
+  ]
+}

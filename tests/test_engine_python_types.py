@@ -529,9 +529,9 @@ def test_allele_repr_for_anchorless():
 # ── Recombination via Python-supplied refdata ─────────────────────
 
 
-def _build_smoke_vj_refdata():
+def _build_smoke_vj_refdata(*, canonical=False):
     cfg = genairr_engine.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT" if canonical else b"AAACCCGGG", anchor=6)
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
     return cfg
 
@@ -946,7 +946,7 @@ def test_pass_plan_productive_compile_rejects_anchorless_v_support():
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)
     plan = _build_smoke_vj_plan(cfg)
 
-    with pytest.raises(ValueError, match="V sample support has no alleles"):
+    with pytest.raises(ValueError, match="supports have no productive completion"):
         plan.compile(refdata=cfg, respect=genairr_engine.productive(), allow_curatable_refdata=True)
 
     assert len(plan) == 5
@@ -954,7 +954,7 @@ def test_pass_plan_productive_compile_rejects_anchorless_v_support():
 
 
 def test_pass_plan_productive_compile_rejects_no_in_frame_np_mass():
-    cfg = _build_smoke_vj_refdata()
+    cfg = _build_smoke_vj_refdata(canonical=True)
     plan = genairr_engine.PassPlan()
     plan.push_sample_allele("V", cfg)
     plan.push_sample_allele("J", cfg)
@@ -962,14 +962,14 @@ def test_pass_plan_productive_compile_rejects_no_in_frame_np_mass():
     plan.push_generate_np("NP1", [(1, 1.0), (2, 1.0)])
     plan.push_assemble("J")
 
-    with pytest.raises(ValueError, match="NP1 length support has no in-frame mass"):
+    with pytest.raises(ValueError, match="supports have no productive completion"):
         plan.compile(refdata=cfg, respect=genairr_engine.productive(), allow_curatable_refdata=True)
 
     assert len(plan) == 5
 
 
 def test_compiled_simulator_captures_contracts_and_strict_policy():
-    cfg = _build_smoke_vj_refdata()
+    cfg = _build_smoke_vj_refdata(canonical=True)
     compiled = _build_smoke_vj_plan(cfg).compile(
         refdata=cfg,
         respect=genairr_engine.productive(),
@@ -981,8 +981,9 @@ def test_compiled_simulator_captures_contracts_and_strict_policy():
     assert compiled.active_contracts() == [
         "productive_junction_frame",
         "no_stop_codon_in_junction",
-        "anchor_preserved.v",
-        "anchor_preserved.j",
+        "canonical_anchor.v1.v",
+        "canonical_anchor.v1.j",
+        "coding_sequence_integrity",
     ]
     out = compiled.run(0)
     assert out.final_simulation().regions()[1].frame_phase == 0

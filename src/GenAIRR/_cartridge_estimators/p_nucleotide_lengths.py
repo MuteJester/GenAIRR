@@ -1,10 +1,9 @@
-"""P-nucleotide length estimator sub-mixin (behavior-preserving). The
-estimator method is moved verbatim from the original single-file module."""
+"""P-emission length estimation under its declared scalar provenance contract."""
 from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ._common import _load_rearrangements
+from ._common import _load_rearrangements, _reject_duplex_provenance
 from ..reference_models import (
     EmpiricalDistributionSpec,
     P_NUCLEOTIDE_END_KEYS,
@@ -126,6 +125,7 @@ class _PNucleotideLengthEstimatorMixin:
         )
 
         records, source_label = _load_rearrangements(rearrangements)
+        _reject_duplex_provenance(records, estimator="estimate_p_nucleotide_lengths")
         chain_has_d = self._chain_type.has_d
         active_keys = (
             P_NUCLEOTIDE_END_KEYS if chain_has_d

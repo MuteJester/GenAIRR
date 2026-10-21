@@ -3,7 +3,7 @@ into the IR (`AlleleInstance.receptor_revision_original_id`).
 
 Background (from the plan-split audit's Bug D):
 
-The descendant ``Outcome``'s trace contains only post-fork choices.
+Historically, descendant ``Outcome`` traces contained only post-fork choices.
 ``receptor_revision_applied`` / ``original_v_call`` used to be
 trace-sourced (the AIRR builder read them from
 ``ChoiceAddress::ReceptorRevisionApplied`` and
@@ -38,9 +38,9 @@ Spec coverage (from the user brief):
    provenance.
 4. Replay still reproduces provenance.
 5. Tampered AIRR fields trigger the existing validator issues.
-6. Trace-only old logic is not enough: a descendant whose trace
-   lacks ``receptor_revision.*`` still projects correctly when the
-   IR provenance is present.
+6. A raw ``run_from`` continuation whose trace lacks
+   ``receptor_revision.*`` still projects correctly from IR provenance;
+   the public clonal result also retains the parent trace exactly once.
 """
 from __future__ import annotations
 
@@ -299,11 +299,8 @@ def test_validator_clean_clonal_revision_path_emits_no_mismatch_issues() -> None
     Negative-direction tamper coverage lives in the Rust unit
     tests
     (``validator_flags_receptor_revision_applied_mismatch`` /
-    ``validator_flags_original_v_call_mismatch``) which exercise
-    the per-record validator directly with a tampered
-    ``AirrRecord`` — a tamper path Python's ``validate_records``
-    doesn't expose because it re-projects the record from the
-    outcome state."""
+    ``validator_flags_original_v_call_mismatch``), which exercise
+    the per-record validator directly with a tampered ``AirrRecord``."""
     refdata = _refdata()
     exp = (
         ga.Experiment.on("human_igh")
@@ -329,9 +326,7 @@ def test_validator_source_string_flipped_to_ir() -> None:
     ``ir:assignments.v.receptor_revision_original_id`` instead of
     the old trace addresses (``trace:receptor_revision.applied`` /
     ``trace:sample_allele.v``). Checked at the Rust binding source
-    level — Python's ``validate_records`` doesn't expose a
-    record-tamper path, so we pin the source string at its
-    declaration site."""
+    level to pin the provenance explanation at its declaration site."""
     from pathlib import Path
 
     bindings = (
@@ -356,44 +351,33 @@ def test_validator_source_string_flipped_to_ir() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────
-# Spec 6 — Trace-only old logic is not enough: descendant trace lacks
-#          receptor_revision.* but IR provenance still projects
+# Spec 6 — Raw continuations project IR provenance without parent trace
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_descendant_trace_lacks_receptor_revision_events_but_ir_projects_correctly() -> None:
-    """The Bug D mechanism: the descendant's trace doesn't carry
-    pre-fork events. Pin both facts side-by-side:
-
-    1. The descendant's ``outcome.events()`` contains NO
-       ``receptor_revision.applied`` event (those are pre-fork,
-       and the descendant trace is fresh per
-       ``execute_transactional``).
-    2. Despite that, ``original_v_call`` / ``receptor_revision_applied``
-       project correctly because they read from the IR
-       (``assignments.v.receptor_revision_original_id``), which
-       DOES survive the parent→descendant boundary.
-
-    This is the load-bearing pin for Bug D — a regression that
-    re-routes provenance back to the trace would surface here."""
+def test_raw_continuation_projects_revision_provenance_without_parent_trace() -> None:
+    """Receptor-revision truth must survive a run_from boundary in the
+    IR independently of the complete history exposed by clonal wrappers."""
     exp = (
         ga.Experiment.on("human_igh")
         .recombine()
         .receptor_revision(prob=1.0)
         .expand_clones(n_clones=1, per_clone=2)
     )
-    result = exp.run_records(seed=0)
+    compiled = exp.compile()
+    result = compiled.run_records(seed=0)
     assert result.outcomes is not None
-    for desc_outcome, rec in zip(result.outcomes, result.records):
-        # (1) No receptor_revision in the descendant pass_names —
-        # pre-fork passes don't surface here.
-        desc_pass_names = " ".join(desc_outcome.pass_names())
-        assert "receptor_revision" not in desc_pass_names, (
-            f"descendant carries receptor_revision in its pass_names "
-            f"({desc_pass_names!r}); the parent's trace leaked onto the "
-            "descendant and the Bug D mechanism has changed."
-        )
-        # (2) But provenance still projects correctly because the IR
-        # carries it.
+    assert result.parents is not None
+    parent = result.parents[0]
+    parent_choices = [(c.address, c.value) for c in parent.trace().choices()]
+    for index, (desc_outcome, rec) in enumerate(zip(result.outcomes, result.records)):
+        assert [(c.address, c.value) for c in desc_outcome.trace().choices()] == parent_choices
+        assert desc_outcome.pass_names() == parent.pass_names()
+        raw = compiled._post.run_from(parent.final_simulation(), seed=index + 1)
+        assert raw.trace().is_empty()
+        assert raw.pass_names() == []
+        raw_rec = raw.airr_record(compiled.refdata)
+        assert raw_rec["receptor_revision_applied"] == rec["receptor_revision_applied"]
+        assert raw_rec["original_v_call"] == rec["original_v_call"]
         assert rec["receptor_revision_applied"] is True
         assert rec["original_v_call"] != ""

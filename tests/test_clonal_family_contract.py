@@ -276,52 +276,20 @@ def test_pin_scaffold_truth_alleles_invariant_across_descendants() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────
-# 7. Absence — parent trace is not carried on any descendant
+# 7. Provenance — parent trace is retained on each descendant
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pin_absence_parent_trace_not_carried_on_descendants() -> None:
-    """A descendant's ``outcome.trace`` carries only the post-fork
-    sampling sites — the pre-fork (recombination) addressed choices
-    are gone after ``parent.final_simulation()``. Two descendants
-    of the SAME clone have identically-sized traces (no parent
-    history per-descendant); a descendant of a non-clonal recombine-
-    only run has a strictly LARGER trace (it carries the pre-fork
-    events directly). If this asymmetry disappears, a future
-    contributor has either (a) lifted parent events onto
-    descendant traces — flip this pin to ``pin_descendants_carry_
-    parent_trace``, or (b) regressed the non-clonal trace to drop
-    pre-fork events, which is a real bug."""
-    # Clonal: recombine pre-fork, mutate post-fork.
-    clonal_result = (
-        _make_clonal_experiment(n_clones=1, per_clone=2, with_mutate=True)
-        .run_records(seed=0)
-    )
-    clonal_outcomes = clonal_result.outcomes
-    assert clonal_outcomes is not None
-    desc_trace_lens = [len(o.trace()) for o in clonal_outcomes]
-    # Descendants of a single clone all see only post-fork events,
-    # so their traces are commensurate (same plan, different seeds).
-    # We don't pin equality because mutate may sample different
-    # numbers of substitutions per descendant; we pin the structural
-    # ceiling: trace length must NOT include the recombination
-    # passes' sampling sites.
-    non_clonal = (
-        ga.Experiment.on("human_igh").recombine().mutate(count=5).compile()
-    )
-    non_clonal_outcome = non_clonal.run(n=1, seed=0)[0]
-    non_clonal_trace_len = len(non_clonal_outcome.trace())
-    # Non-clonal trace carries BOTH recombine + mutate sites; clonal
-    # descendant trace carries ONLY the post-fork mutate sites. So
-    # descendant trace length must be strictly less than non-clonal.
-    for desc_len in desc_trace_lens:
-        assert desc_len < non_clonal_trace_len, (
-            f"clonal descendant trace ({desc_len}) is not strictly "
-            f"smaller than non-clonal trace ({non_clonal_trace_len}); "
-            "parent recombination events may have leaked onto the "
-            "descendant trace. If this is intentional, flip the audit's "
-            "§5 'parent trace not preserved' gap pin."
-        )
+def test_descendants_retain_exact_parent_trace_prefix_once() -> None:
+    result = _make_clonal_experiment(n_clones=1, per_clone=2, with_mutate=True).run_records(seed=0)
+    parent = result.parents[0]
+    prefix = [(c.address, c.value) for c in parent.trace().choices()]
+    for outcome in result.outcomes:
+        choices = [(c.address, c.value) for c in outcome.trace().choices()]
+        assert choices[:len(prefix)] == prefix
+        # One count and five site/base choices belong to the child stage.
+        assert len(choices) == len(prefix) + 11
+        assert outcome.event_count() == parent.event_count() + 1
 
 
 # ──────────────────────────────────────────────────────────────────

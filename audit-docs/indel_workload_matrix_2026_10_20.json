@@ -1,0 +1,956 @@
+{
+  "schema": "indel_workload_matrix_v1",
+  "model": "natural_sequential_v1",
+  "extension_sha256": "03b21c9769157a78eb4797477be6acfb02265acdd85d58ef8b362950ac8d0e78",
+  "samples_per_profile": 30,
+  "profiles": [
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 1,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 43966.93126887939,
+      "median_ms": 0.021904997993260622,
+      "p95_ms": 0.03243899845983833,
+      "maximum_ms": 0.04017299215774983,
+      "process_cpu_seconds": 0.0006934349999999923,
+      "process_peak_rss_kib": 27636,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 2,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 41881.425259157004,
+      "median_ms": 0.021915999241173267,
+      "p95_ms": 0.030826005968265235,
+      "maximum_ms": 0.07115300104487687,
+      "process_cpu_seconds": 0.0007243460000000007,
+      "process_peak_rss_kib": 27764,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 4,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 33915.08894191224,
+      "median_ms": 0.025119996280409396,
+      "p95_ms": 0.04291300137992948,
+      "maximum_ms": 0.0645300024189055,
+      "process_cpu_seconds": 0.000893709999999992,
+      "process_peak_rss_kib": 27764,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 6,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 34110.2525696801,
+      "median_ms": 0.02640900493133813,
+      "p95_ms": 0.03711899626068771,
+      "maximum_ms": 0.0977019954007119,
+      "process_cpu_seconds": 0.0008877300000000032,
+      "process_peak_rss_kib": 27764,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 1,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 1631.3557880769608,
+      "median_ms": 0.8624800029792823,
+      "p95_ms": 0.9832079958869144,
+      "maximum_ms": 1.0822150070453063,
+      "process_cpu_seconds": 0.018403054000000002,
+      "process_peak_rss_kib": 27764,
+      "strategies": {
+        "exact_short_tuple": 19,
+        "independent_tuple_rejection": 11
+      },
+      "fallback_completions": 19,
+      "maximum_attempts": 256,
+      "maximum_explored_states": 1849
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 2,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 21800.249715852264,
+      "median_ms": 0.041618004615884274,
+      "p95_ms": 0.05680200411006808,
+      "maximum_ms": 0.10837000445462763,
+      "process_cpu_seconds": 0.0013880290000000128,
+      "process_peak_rss_kib": 27764,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 13,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 4,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 17470.38198218399,
+      "median_ms": 0.05389100260799751,
+      "p95_ms": 0.08405600965488702,
+      "maximum_ms": 0.10048500553239137,
+      "process_cpu_seconds": 0.0017278710000000197,
+      "process_peak_rss_kib": 27892,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 11,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 6,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 17791.673384089987,
+      "median_ms": 0.052480500016827136,
+      "p95_ms": 0.07419900794047862,
+      "maximum_ms": 0.10856700828298926,
+      "process_cpu_seconds": 0.0016956579999999888,
+      "process_peak_rss_kib": 27892,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 11,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 1,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 2053.023156509914,
+      "median_ms": 0.20076600776519626,
+      "p95_ms": 0.9982639894587919,
+      "maximum_ms": 1.1846519919345155,
+      "process_cpu_seconds": 0.01462692900000001,
+      "process_peak_rss_kib": 27892,
+      "strategies": {
+        "exact_short_tuple": 14,
+        "independent_tuple_rejection": 16
+      },
+      "fallback_completions": 14,
+      "maximum_attempts": 256,
+      "maximum_explored_states": 1849
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 2,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 17900.092067570582,
+      "median_ms": 0.04874850856140256,
+      "p95_ms": 0.09398499969393015,
+      "maximum_ms": 0.09458500426262617,
+      "process_cpu_seconds": 0.0016884719999999964,
+      "process_peak_rss_kib": 27892,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 32,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 4,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 7149.514663625432,
+      "median_ms": 0.12143899948569015,
+      "p95_ms": 0.35096899955533445,
+      "maximum_ms": 0.423478995799087,
+      "process_cpu_seconds": 0.004209574999999993,
+      "process_peak_rss_kib": 27892,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 225,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 369,
+      "reference_hash": "sha256:10f7dd5615fce09bf8aab386d9a417ec25916320fff234c9473fa6e9e5cbf034",
+      "count": 6,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 18235.86238506304,
+      "median_ms": 0.05131200305186212,
+      "p95_ms": 0.07890300184953958,
+      "maximum_ms": 0.07944299431983382,
+      "process_cpu_seconds": 0.0016573019999999994,
+      "process_peak_rss_kib": 27892,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 8,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 1,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 34419.141791165006,
+      "median_ms": 0.025325003662146628,
+      "p95_ms": 0.045396998757496476,
+      "maximum_ms": 0.10669000039342791,
+      "process_cpu_seconds": 0.0008830800000000083,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 2,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 34848.425976771665,
+      "median_ms": 0.026738496671896428,
+      "p95_ms": 0.044603002606891096,
+      "maximum_ms": 0.06077499710954726,
+      "process_cpu_seconds": 0.0008707119999999957,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 4,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 32197.512786918825,
+      "median_ms": 0.029315997380763292,
+      "p95_ms": 0.05087300087325275,
+      "maximum_ms": 0.05235298885963857,
+      "process_cpu_seconds": 0.0009407519999999892,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 6,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 24690.89115213934,
+      "median_ms": 0.03704499249579385,
+      "p95_ms": 0.054406002163887024,
+      "maximum_ms": 0.06882699381094426,
+      "process_cpu_seconds": 0.0012269330000000134,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 1,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 1054.6210759057267,
+      "median_ms": 1.1503574933158234,
+      "p95_ms": 1.5737219946458936,
+      "maximum_ms": 1.704437003354542,
+      "process_cpu_seconds": 0.028465092999999997,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "exact_short_tuple": 22,
+        "independent_tuple_rejection": 8
+      },
+      "fallback_completions": 22,
+      "maximum_attempts": 256,
+      "maximum_explored_states": 2509
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 2,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 18988.398991669284,
+      "median_ms": 0.04965849802829325,
+      "p95_ms": 0.05961299757473171,
+      "maximum_ms": 0.11690199607983232,
+      "process_cpu_seconds": 0.001592533000000007,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 13,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 4,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 15393.417424722584,
+      "median_ms": 0.0564165020477958,
+      "p95_ms": 0.10663799184840173,
+      "maximum_ms": 0.14768999244552106,
+      "process_cpu_seconds": 0.0019624800000000164,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 10,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 6,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 13654.965382418743,
+      "median_ms": 0.06687950371997431,
+      "p95_ms": 0.12311300088185817,
+      "maximum_ms": 0.13110399595461786,
+      "process_cpu_seconds": 0.002210989999999996,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 22,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 1,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 1060.331631477991,
+      "median_ms": 1.129954500356689,
+      "p95_ms": 2.27778400585521,
+      "maximum_ms": 2.292632998432964,
+      "process_cpu_seconds": 0.028313930000000015,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "exact_short_tuple": 17,
+        "independent_tuple_rejection": 13
+      },
+      "fallback_completions": 17,
+      "maximum_attempts": 256,
+      "maximum_explored_states": 2509
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 2,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 9349.35360210263,
+      "median_ms": 0.10141349775949493,
+      "p95_ms": 0.15220898785628378,
+      "maximum_ms": 0.1864280056906864,
+      "process_cpu_seconds": 0.00322546600000001,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 54,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 4,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 3915.647568537754,
+      "median_ms": 0.22768999770050868,
+      "p95_ms": 0.6121280021034181,
+      "maximum_ms": 0.6622390064876527,
+      "process_cpu_seconds": 0.007680491999999983,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 225,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 501,
+      "reference_hash": "sha256:f8014a48186cc9325b384a1389b9292bd9b7f61404fac2c1f3f0a774a1d0741e",
+      "count": 6,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 16846.26691228824,
+      "median_ms": 0.05509999755304307,
+      "p95_ms": 0.08420499216299504,
+      "maximum_ms": 0.10454100265633315,
+      "process_cpu_seconds": 0.0017922340000000037,
+      "process_peak_rss_kib": 28276,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 7,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 1,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 32435.446065197695,
+      "median_ms": 0.03076399298151955,
+      "p95_ms": 0.05149999924469739,
+      "maximum_ms": 0.08120200072880834,
+      "process_cpu_seconds": 0.0009364620000000268,
+      "process_peak_rss_kib": 28660,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 2,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 30265.001674893447,
+      "median_ms": 0.030798502848483622,
+      "p95_ms": 0.051727998652495444,
+      "maximum_ms": 0.056154996855184436,
+      "process_cpu_seconds": 0.001000512000000009,
+      "process_peak_rss_kib": 28660,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 4,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 27574.264691442953,
+      "median_ms": 0.03440700675128028,
+      "p95_ms": 0.04326300404500216,
+      "maximum_ms": 0.09534700075164437,
+      "process_cpu_seconds": 0.0010974860000000364,
+      "process_peak_rss_kib": 28660,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 6,
+      "insertion_probability": 0.5,
+      "productive": false,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 25435.540396272598,
+      "median_ms": 0.03591249696910381,
+      "p95_ms": 0.05687199882231653,
+      "maximum_ms": 0.06793100328650326,
+      "process_cpu_seconds": 0.0011878630000000112,
+      "process_peak_rss_kib": 28660,
+      "strategies": {
+        "unconstrained_sequential": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 1,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 1,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 721.2498978064098,
+      "median_ms": 1.5001354986452498,
+      "p95_ms": 2.4388000019825995,
+      "maximum_ms": 2.4745819973759353,
+      "process_cpu_seconds": 0.04160920699999998,
+      "process_peak_rss_kib": 28660,
+      "strategies": {
+        "exact_short_tuple": 24,
+        "independent_tuple_rejection": 6
+      },
+      "fallback_completions": 24,
+      "maximum_attempts": 256,
+      "maximum_explored_states": 3259
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 2,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 15286.53036117795,
+      "median_ms": 0.06073900294722989,
+      "p95_ms": 0.08797500049695373,
+      "maximum_ms": 0.11314499715808779,
+      "process_cpu_seconds": 0.00197509899999998,
+      "process_peak_rss_kib": 28660,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 13,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 4,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 14644.712298543456,
+      "median_ms": 0.0637674966128543,
+      "p95_ms": 0.07725699106231332,
+      "maximum_ms": 0.1454010052839294,
+      "process_cpu_seconds": 0.002060222999999972,
+      "process_peak_rss_kib": 28660,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 10,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 6,
+      "insertion_probability": 0.5,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 12246.557357151889,
+      "median_ms": 0.07244700100272894,
+      "p95_ms": 0.13290900096762925,
+      "maximum_ms": 0.18913000531028956,
+      "process_cpu_seconds": 0.0024634929999999833,
+      "process_peak_rss_kib": 28660,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 11,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 1,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 858.2754620675266,
+      "median_ms": 1.4794335074839182,
+      "p95_ms": 2.6237949932692572,
+      "maximum_ms": 2.6547479938017204,
+      "process_cpu_seconds": 0.03497679599999998,
+      "process_peak_rss_kib": 28916,
+      "strategies": {
+        "exact_short_tuple": 20,
+        "independent_tuple_rejection": 10
+      },
+      "fallback_completions": 20,
+      "maximum_attempts": 256,
+      "maximum_explored_states": 3259
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 2,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 14301.60254700328,
+      "median_ms": 0.06558449967997149,
+      "p95_ms": 0.08398400677833706,
+      "maximum_ms": 0.13797200517728925,
+      "process_cpu_seconds": 0.0021110300000000137,
+      "process_peak_rss_kib": 28916,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 32,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 4,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 5146.072122535301,
+      "median_ms": 0.1711670047370717,
+      "p95_ms": 0.39107000338844955,
+      "maximum_ms": 0.4694520030170679,
+      "process_cpu_seconds": 0.005844883999999995,
+      "process_peak_rss_kib": 28916,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 208,
+      "maximum_explored_states": 0
+    },
+    {
+      "sequence_length": 651,
+      "reference_hash": "sha256:00dd6e4bad0bca85d16aed05d1fd17cd711df36a7d234e14f833581d6dd3352a",
+      "count": 6,
+      "insertion_probability": 0.95,
+      "productive": true,
+      "seeds": [
+        0,
+        29
+      ],
+      "attempted_records": 30,
+      "completed_records": 30,
+      "failures": [],
+      "throughput_completed_per_second": 15332.6027043612,
+      "median_ms": 0.06099200254539028,
+      "p95_ms": 0.09078999573830515,
+      "maximum_ms": 0.12748099106829613,
+      "process_cpu_seconds": 0.0019691860000000116,
+      "process_peak_rss_kib": 28916,
+      "strategies": {
+        "independent_tuple_rejection": 30
+      },
+      "fallback_completions": 0,
+      "maximum_attempts": 11,
+      "maximum_explored_states": 0
+    }
+  ],
+  "limitations": [
+    "literal valid references, not an empirical repertoire sample",
+    "single-process latency under ambient machine load",
+    "RSS is cumulative process high-water mark on Linux",
+    "finite seeds do not establish a universal success guarantee"
+  ]
+}

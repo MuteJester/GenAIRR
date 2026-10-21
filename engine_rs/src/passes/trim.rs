@@ -565,7 +565,15 @@ mod tests {
     mod productive_trim {
         use super::*;
         use crate::assignment::AlleleInstance;
-        use crate::contract::productive;
+        use crate::contract::{AnchorPreserved, ContractSet};
+
+        // These tests isolate preassembly trim admission. The complete productive
+        // bundle additionally requires an accepted assembled final sequence.
+        fn productive() -> ContractSet {
+            ContractSet::new()
+                .with(Box::new(AnchorPreserved::canonical(Segment::V)))
+                .with(Box::new(AnchorPreserved::canonical(Segment::J)))
+        }
         use crate::refdata::{Allele, AlleleId, AllelePool, ChainType, RefDataConfig};
 
         fn vj_cfg_with_v_anchor(v_anchor: u16) -> RefDataConfig {

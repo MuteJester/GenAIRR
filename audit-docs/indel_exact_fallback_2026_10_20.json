@@ -1,0 +1,34 @@
+{
+  "schema": "exact_two_indel_release_benchmark_v1",
+  "model": "natural_sequential_v1",
+  "count": 2,
+  "rejection_attempts": 0,
+  "exact_node_budget": 20000000,
+  "extension_sha256": "03b21c9769157a78eb4797477be6acfb02265acdd85d58ef8b362950ac8d0e78",
+  "native_test_binary_sha256": "bae1ff0806efb5dd0fd798a6275eb498635cdaed161bf4808927889c95e2fac3",
+  "fixture_source": "engine_rs/src/passes/corrupt/indel/tests/natural.rs::benchmark_exact_two_edits_at_receptor_lengths",
+  "profiles": [
+    {
+      "sequence_length": 369,
+      "elapsed_ms": 2035,
+      "explored_states": 3426205,
+      "reference_hash": "sha256:312e81a161cc1bd9edba23797b941bd6fead5fb84d43c9a00d3230a752fe76c7"
+    },
+    {
+      "sequence_length": 501,
+      "elapsed_ms": 2896,
+      "explored_states": 6305125,
+      "reference_hash": "sha256:fca3f3f4d742fe82e855b443ed7f9fdf0f585e2ff6c6c92460726caba9483b54"
+    },
+    {
+      "sequence_length": 651,
+      "elapsed_ms": 4237,
+      "explored_states": 10634125,
+      "reference_hash": "sha256:7bbb9e7cb10487e0bd0b84e60ff7b35b00a28e07478f90d4ab9bf7b601fb87d4"
+    }
+  ],
+  "limitations": [
+    "One exhaustive timed sample per literal reference; elapsed time includes ambient machine load.",
+    "Timings describe fallback, not typical rejection-path throughput."
+  ]
+}

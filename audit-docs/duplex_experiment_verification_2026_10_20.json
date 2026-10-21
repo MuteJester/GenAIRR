@@ -1,0 +1,202 @@
+{
+  "schema": "duplex_experiment_verification_v1",
+  "date": "2026-10-20",
+  "branch": "fix/biological-metadata-correctness",
+  "base_commit": "6413a6bbf321a492f6c79f679b71506dabf101ae",
+  "milestone": "slice C: finite authored duplex histories in ordinary Experiment",
+  "extension_sha256": "6e45f13f74a170caa8f9fb861192350659586b315812deb2701fc0a9ad1909d4",
+  "changed_source_manifest_sha256": "8cd8b47ce884baba51b368aa8291741358bdc5448ce668a4571568e582285510",
+  "changed_source_files": 53,
+  "source_manifest_scope": "Sorted (path,content SHA-256) pairs for changed/new engine_rs/src, src/GenAIRR, tests and tools/metadata_biology_audit files relative to base_commit; JSON compact serialization.",
+  "results": {
+    "native_debug": {
+      "passed": 1618,
+      "failed": 0,
+      "ignored": 3,
+      "ignored_note": "Three inherited ignored tests, including two documentation examples."
+    },
+    "native_release": {
+      "passed": 1617,
+      "failed": 0,
+      "ignored": 3,
+      "ignored_note": "Three inherited ignored tests, including two documentation examples."
+    },
+    "affected_python": {
+      "passed": 68,
+      "failed": 0,
+      "commands": 2
+    },
+    "python_full_nonperformance": {
+      "passed": 2953,
+      "failed": 0,
+      "deselected": 8,
+      "warnings": 169,
+      "seconds": 471.73
+    },
+    "performance": {
+      "passed": 8,
+      "failed": 0,
+      "deselected": 2953,
+      "seconds": 5.7,
+      "thresholds": "unchanged; separate CPU-quiet execution",
+      "initial_attempt": {
+        "passed": 7,
+        "failed": 1,
+        "case": "W6: legacy VDJ productive indels",
+        "measured_seconds": 1.187260808001156,
+        "budget_seconds": 1.0,
+        "follow_up": "Isolated cProfile run passed (1050 native run calls, including warmup, totaled 0.638 seconds); full repeat passed without code or budget changes. The initial slowdown did not reproduce; its cause was not established."
+      }
+    },
+    "projection_regression": {
+      "cases": 32768,
+      "accepted": 17408,
+      "incompatible_rejected": 15360,
+      "errors": 0
+    },
+    "observation_regression": {
+      "founders": 2048,
+      "continuations": 18432,
+      "errors": 0
+    },
+    "finite_law_sweep": {
+      "records": 6144,
+      "plans": 12,
+      "errors": 0,
+      "checks": [
+        "independent exact PRNG/weighted-choice arithmetic",
+        "local conditioning hierarchy",
+        "generating calls and canonical inverted D",
+        "literal query, body alignment and NP intervals",
+        "same-DNA histories remain distinct",
+        "repair resection separate from downstream counters"
+      ]
+    },
+    "partial_copy_gene_law": {
+      "live_runs": 512,
+      "policies": [
+        "strict",
+        "permissive"
+      ],
+      "gene_odds": "10:1",
+      "checks": [
+        "independent exact SplitMix64 choice oracle",
+        "feasible-copy conditioning preserves natural gene dosage",
+        "exact trace and founder-ancestry replay",
+        "unproductive-copy replay rejected"
+      ]
+    },
+    "compile_benchmark": {
+      "measurements": 18,
+      "streamed_records": 18000,
+      "scope": [
+        "Synthetic 15-base molecules and duplicate physical recipes test vocabulary scaling only.",
+        "Reference hashing/binding and physical replay remain per active authored row.",
+        "RSS does not prove native Arc sharing; no entire outcome batch is retained.",
+        "Timings include Python/native execution and one first-record metadata export."
+      ],
+      "summaries": [
+        {
+          "max_compile_peak_increase_kib": 960,
+          "max_stream_peak_increase_kib": 1024,
+          "median_compile_seconds": 0.001016237001749687,
+          "median_stream_seconds": 0.02270522600156255,
+          "natural_contexts": 1,
+          "repeats": 3,
+          "rows": 8
+        },
+        {
+          "max_compile_peak_increase_kib": 1728,
+          "max_stream_peak_increase_kib": 896,
+          "median_compile_seconds": 0.00322621499071829,
+          "median_stream_seconds": 0.022948705998715013,
+          "natural_contexts": 1,
+          "repeats": 3,
+          "rows": 32
+        },
+        {
+          "max_compile_peak_increase_kib": 4544,
+          "max_stream_peak_increase_kib": 768,
+          "median_compile_seconds": 0.012122743006329983,
+          "median_stream_seconds": 0.025905087997671217,
+          "natural_contexts": 1,
+          "repeats": 3,
+          "rows": 128
+        },
+        {
+          "max_compile_peak_increase_kib": 960,
+          "max_stream_peak_increase_kib": 896,
+          "median_compile_seconds": 0.001114522005082108,
+          "median_stream_seconds": 0.022148557007312775,
+          "natural_contexts": 8,
+          "repeats": 3,
+          "rows": 8
+        },
+        {
+          "max_compile_peak_increase_kib": 1728,
+          "max_stream_peak_increase_kib": 768,
+          "median_compile_seconds": 0.0036449659965001047,
+          "median_stream_seconds": 0.022705294002662413,
+          "natural_contexts": 8,
+          "repeats": 3,
+          "rows": 32
+        },
+        {
+          "max_compile_peak_increase_kib": 4544,
+          "max_stream_peak_increase_kib": 768,
+          "median_compile_seconds": 0.013803929003188387,
+          "median_stream_seconds": 0.023545999007183127,
+          "natural_contexts": 8,
+          "repeats": 3,
+          "rows": 128
+        }
+      ]
+    },
+    "strict_docs": {
+      "passed": true
+    },
+    "guide_examples": {
+      "python_blocks": 5,
+      "passed": 5,
+      "execution": "Actual guide fences executed sequentially in one temporary directory with shared globals; generated files and directory removed."
+    },
+    "diff_check": {
+      "passed": true
+    }
+  },
+  "commands": [
+    "VIRTUAL_ENV=$PWD/.venv .venv/bin/maturin develop --release",
+    "cargo test --manifest-path engine_rs/Cargo.toml",
+    "cargo test --release --manifest-path engine_rs/Cargo.toml",
+    ".venv/bin/pytest -q -m 'not performance'",
+    ".venv/bin/pytest -q -m performance",
+    ".venv/bin/pytest -q tests/test_duplex_experiment.py",
+    ".venv/bin/python -m pytest -q tests/test_duplex_result_integration.py tests/test_duplex_trace_integration.py tests/test_duplex_seed_gates.py",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_experiment_sweep --output audit-docs/duplex_experiment_sweep_2026_10_20.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_projection_sweep --output audit-docs/duplex_experiment_projection_regression_2026_10_20.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_observation_sweep --output audit-docs/duplex_experiment_observation_regression_2026_10_20.json",
+    ".venv/bin/python -m tools.metadata_biology_audit.duplex_compile_benchmark --output audit-docs/duplex_experiment_compile_benchmark_2026_10_20.json",
+    ".venv/bin/mkdocs build --strict --site-dir /tmp/genairr_duplex_experiment_docs",
+    "git diff --check",
+    "git diff --cached --check"
+  ],
+  "artifacts": [
+    "duplex_experiment_sweep_2026_10_20.json",
+    "duplex_experiment_projection_regression_2026_10_20.json",
+    "duplex_experiment_observation_regression_2026_10_20.json",
+    "duplex_experiment_compile_benchmark_2026_10_20.json"
+  ],
+  "scope": [
+    "All mechanisms remain inside GenAIRR; no external simulator or new dependency.",
+    "Finite positive active rows physically and structurally preflighted before productivity masking; exact local conditioning, including linked genotype support.",
+    "Ordinary nullable records, downstream truth counters, strict exports, mutable-record validation and durable source-backed replay verified.",
+    "Flat and history CDF numerical support loss rejects at compile; realized genotype masked CDF loss rejects before the affected draw/replay.",
+    "Legacy behavior and trace signatures remain unchanged outside finite-duplex mode.",
+    "Sweeps and compile benchmarks use short synthetic controls, not measured biochemical rates or receptor function."
+  ],
+  "remaining_milestones": [
+    "Slice D: clonal continuation, branch-specific ancestry, summaries, exports and replay.",
+    "Durable external initial-snapshot replay; VJ, receptor revision, contamination and paired-end provenance adapters.",
+    "General flap/mismatch processing, reopened joins, unrestricted overlapping layouts and measured biochemical calibration."
+  ]
+}

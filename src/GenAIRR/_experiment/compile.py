@@ -58,6 +58,9 @@ class _CompileMixin:
         bounds) still reject, but Curatable issues (pseudogene-shape
         anchor anomalies) pass.
         """
+        from .duplex import validate_duplex_steps
+        validate_duplex_steps(self._steps)
+
         if allow_curatable_refdata is None:
             allow_curatable_refdata = self._allow_curatable_refdata
 
@@ -89,7 +92,7 @@ class _CompileMixin:
                 has_trim_data = any(
                     (step.trim_v_3, step.trim_d_5, step.trim_d_3, step.trim_j_5)
                 )
-                if has_trim_data or step.trim_overridden:
+                if has_trim_data or step.trim_overridden or step.coding_end_mode is not None or step.duplex_repair_json is not None:
                     # Either trim is set up (DataConfig path or
                     # .trim(v_3=...)) or the user explicitly called
                     # .trim() — both silence the warning.
@@ -277,6 +280,7 @@ class _CompileMixin:
                 post_steps=tuple(post_steps),
                 dataconfig=self._dataconfig,
                 metadata=self._metadata,
+                contracts=contracts,
             )
 
         # When the attached genotype defines novel/private alleles, compile

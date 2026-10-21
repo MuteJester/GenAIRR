@@ -9,6 +9,93 @@ from typing import Any, Dict, List
 from ._result_common import _inject_truth_columns
 
 
+def _same_generated_value(reported, expected):
+    """Compare nested generated provenance without bool/int coercion."""
+    if type(reported) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return reported.keys() == expected.keys() and all(
+            _same_generated_value(reported[key], value) for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(reported) == len(expected) and all(
+            _same_generated_value(a, b) for a, b in zip(reported, expected)
+        )
+    return reported == expected
+
+
+def _duplex_founder_view(record):
+    """Select immutable founder evidence without descendant observation state.
+
+    The full physical ledger is deliberately compared. A shared identifier alone
+    cannot prove that two records still carry the same repair history.
+    """
+    payload = record.get("duplex_repair")
+    if not isinstance(payload, dict):
+        return None, ["duplex_repair"]
+    view, missing = {}, []
+    for field in (
+        "model", "projection_policy", "coordinate_system", "bindings",
+        "product", "evidence", "founder_column_body_claims", "overlaps",
+        "body_claims_timepoint",
+    ):
+        if field not in payload:
+            missing.append(field)
+        else:
+            view[field] = payload[field]
+    for section, fields in (
+        ("counts", ("physical", "founder_query")),
+        ("observation", ("model", "coordinate_system", "founder_id", "insertion_identity_scope")),
+    ):
+        nested = payload.get(section)
+        for field in fields:
+            path = f"{section}.{field}"
+            if not isinstance(nested, dict) or field not in nested:
+                missing.append(path)
+            else:
+                view[path] = nested[field]
+    if "selection" in payload:
+        view["selection"] = payload["selection"]
+    return view, missing
+
+
+def _duplex_founder_differences(reported, expected):
+    return sorted(
+        field for field in reported.keys() | expected.keys()
+        if field not in reported or field not in expected
+        or not _same_generated_value(reported[field], expected[field])
+    )
+
+
+def _lineage_record_issues(result, record_index, record):
+    origins = getattr(result, "_lineage_record_origins", None)
+    if origins is None or record_index >= len(origins):
+        return []
+    parent_id, clone_id, node_id = origins[record_index]
+    node = result._lineage_origin_nodes[record_index]
+    expected = {
+        "clone_id": clone_id,
+        "parent_id": parent_id,
+        "lineage_node_id": node_id,
+        "lineage_parent_id": node.parent_id if node.parent_id is not None else -1,
+        "lineage_generation": node.generation,
+        "lineage_abundance": node.abundance,
+        "duplicate_count": node.abundance,
+        "lineage_affinity": node.affinity,
+        "lineage_mutations_from_parent": node.mutations_from_parent,
+    }
+    issues = []
+    if not node.observed:
+        issues.append({"kind": "LineageNodeNotObserved", "node_id": node.id})
+    for field, value in expected.items():
+        if field not in record or not _same_generated_value(record[field], value):
+            issues.append({
+                "kind": "LineageMetadataMismatch", "field": field,
+                "reported": record.get(field), "expected": value,
+            })
+    return issues
+
+
 class ValidationReport:
     """Aggregate report from :meth:`SimulationResult.validate_records`.
 
@@ -104,9 +191,9 @@ class FamilyValidationReport:
     that gate passes; a family-divergence failure means the records
     are each internally consistent with their own outcome, but they
     disagree across the clonal group on a field that should be
-    invariant by construction (heavy-SHM tie-set widening on the
-    live-call ``v_call`` etc. is intentionally NOT a divergence —
-    only ``truth_*_call`` invariance is enforced).
+    invariant by construction. Heavy-SHM changes in ``recalled_*_call``
+    are intentionally not family divergences; this gate uses the
+    ``truth_*_call`` compatibility columns.
 
     The validator is a strict subset of the audit's §6 spec
     (see ``docs/clonal_family_design.md``): pre-SHM junction
@@ -193,7 +280,7 @@ class _ResultValidation:
 
     __slots__ = ()
 
-    def validate_records(self, refdata: Any) -> "ValidationReport":
+    def validate_records(self, refdata: Any, *, _family_replay_budget=None) -> "ValidationReport":
         """**Public AIRR output correctness check.**
 
         Run the postcondition validator over every record in this
@@ -204,10 +291,12 @@ class _ResultValidation:
 
         Each record is re-derived independently from its original
         ``Outcome`` (trace + event ledger + final ``Simulation``)
-        and compared against the projected dict. A record passes
-        when ``outcome.validate_record(refdata, sequence_id=...)``
-        returns an empty issue list. Failures collect the
+        and compared against the actual returned dict, including field
+        presence and types. The native outcome validator also checks
+        projection invariants. Failures collect the
         ``record_index``, ``sequence_id``, and the issue dicts.
+        Duplex lineage results also check clone/node addressing and lineage
+        counters against the original native node, including value types.
 
         **Companion check** — for engine-side integrity, see
         :meth:`Outcome.check_live_call_cache_parity` (returns the
@@ -239,9 +328,50 @@ class _ResultValidation:
                 "outcomes."
             )
         failures: List[Dict[str, Any]] = []
+        if len(self._records) != len(self._outcomes):
+            failures.append({
+                "record_index": None,
+                "sequence_id": "",
+                "issues": [{
+                    "kind": "RecordOutcomeCountMismatch",
+                    "reported": len(self._records),
+                    "expected": len(self._outcomes),
+                }],
+            })
+        origins = getattr(self, "_lineage_record_origins", None)
+        if origins is not None and len(origins) != len(self._records):
+            failures.append({
+                "record_index": None, "sequence_id": "",
+                "issues": [{
+                    "kind": "LineageOriginCountMismatch",
+                    "reported": len(self._records), "expected": len(origins),
+                }],
+            })
         for i, (outcome, record) in enumerate(zip(self._outcomes, self._records)):
             sequence_id = str(record.get("sequence_id", ""))
-            issues = outcome.validate_record(refdata, sequence_id=sequence_id)
+            if _family_replay_budget is None:
+                issues = outcome.validate_record(refdata, sequence_id=sequence_id)
+                expected = outcome.airr_record(refdata, sequence_id=sequence_id)
+            else:
+                from . import _engine
+                from ._family_replay import _native
+
+                issues = _native(f"records[{i}].validation", _engine._family_replay_validate_record,
+                                 outcome, refdata, sequence_id, budget=_family_replay_budget)
+                expected = _native(f"records[{i}].projection", _engine._family_replay_airr_record,
+                                   outcome, refdata, sequence_id, budget=_family_replay_budget)
+            for field, value in expected.items():
+                if field not in record:
+                    issues.append({
+                        "kind": "RecordFieldMissing", "field": field,
+                        "expected": value,
+                    })
+                elif not _same_generated_value(record[field], value):
+                    issues.append({
+                        "kind": "RecordFieldMismatch", "field": field,
+                        "reported": record[field], "expected": value,
+                    })
+            issues.extend(_lineage_record_issues(self, i, record))
             if issues:
                 failures.append(
                     {
@@ -250,7 +380,7 @@ class _ResultValidation:
                         "issues": issues,
                     }
                 )
-        return ValidationReport(count=len(self._outcomes), failures=failures)
+        return ValidationReport(count=len(self._records), failures=failures)
 
     def validate_families(
         self, refdata: Any = None
@@ -260,11 +390,9 @@ class _ResultValidation:
         (``docs/clonal_family_design.md``).
 
         Groups records by ``clone_id`` and asserts the recombination-
-        time truth fields agree across every descendant of a clone.
-        ``refdata`` is reserved for forward compatibility with the
-        deeper family-layer checks (pre-SHM junction, mutation-
-        distance distribution) the audit's later slices add; this
-        slice's invariants are all dict-only and ignore ``refdata``.
+        time truth fields and immutable duplex founder evidence agree
+        across every descendant of a clone. These checks use record
+        dictionaries only; ``refdata`` is reserved for compatibility.
 
         **Currently enforced invariants:**
 
@@ -276,6 +404,9 @@ class _ResultValidation:
         - ``clone_id`` is present on every record once any record
           in the batch carries one (a batch that mixes clonal and
           non-clonal records raises ``CloneIdMissing``).
+        - Duplex descendants retain the same complete immutable repair
+          evidence, bindings, selected history and founder identity.
+          Current observation maps, alignments and edit histories may differ.
 
         **Non-clonal results return ok with ``family_count == 0``.**
         This makes ``result.validate_families()`` a safe no-op on a
@@ -344,6 +475,27 @@ class _ResultValidation:
 
         for cid, indices in by_clone.items():
             members = [records[i] for i in indices]
+            if any("duplex_repair" in rec for rec in members):
+                baseline = None
+                for idx, rec in zip(indices, members):
+                    founder, missing = _duplex_founder_view(rec)
+                    if missing:
+                        failures.append({
+                            "clone_id": cid, "record_indices": [idx],
+                            "issue_kind": "DuplexFounderIncomplete",
+                            "values": missing,
+                        })
+                        continue
+                    if baseline is None:
+                        baseline = founder
+                    else:
+                        differences = _duplex_founder_differences(founder, baseline)
+                        if differences:
+                            failures.append({
+                                "clone_id": cid, "record_indices": [idx],
+                                "issue_kind": "DuplexFounderDiverges",
+                                "values": differences,
+                            })
             for field, kind in _FAMILY_TRUTH_INVARIANTS:
                 # Skip the field for this group if no record carries
                 # it (consumer opted out of expose_provenance). Once
@@ -378,7 +530,7 @@ class _ResultValidation:
         )
 
     def validate_families_with_parents(
-        self, refdata: Any = None
+        self, refdata: Any = None, *, _family_replay_budget=None
     ) -> "FamilyValidationReport":
         """**Parent-aware clonal-family validator** — the deeper
         diagnostic that compares every descendant against its
@@ -410,7 +562,7 @@ class _ResultValidation:
             ``ParentTruthJCallMismatch`` — descendant's
             ``truth_*_call`` (from ``expose_provenance=True``)
             disagrees with the parent's projected truth allele.
-        - Provenance consistency (no ``refdata`` needed):
+        - Provenance consistency (requires ``refdata``):
           - ``ParentDInvertedMismatch`` — descendant's
             ``d_inverted`` disagrees with the parent's. D inversion
             is a pre-fork decision, so divergence indicates a
@@ -418,6 +570,9 @@ class _ResultValidation:
           - ``ParentOriginalVCallMismatch`` — descendant's
             ``original_v_call`` (receptor-revision provenance)
             disagrees with the parent's. Same reasoning.
+        - Duplex founder consistency (requires ``refdata``): the complete
+          immutable repair ledger, bindings, selection and founder identity
+          must match the actual parent, including required field presence.
 
         **Without ``refdata``:** only the structural checks
         (``ParentsMissing`` / ``ParentIdMissing`` /
@@ -459,12 +614,9 @@ class _ResultValidation:
           contract-test level (the pre-fork plan's pass names)
           rather than enforced at runtime here.
 
-        **Not wired into ``validate_records=True``.** This is an
-        explicit deeper diagnostic surface. The
-        ``validate_records=True`` gate continues to run only the
-        per-record postcondition validator and the field-only
-        :meth:`validate_families`. Callers who want parent-aware
-        checks invoke this method explicitly.
+        Duplex family runs include this gate in ``validate_records=True``.
+        Legacy runs retain the explicit diagnostic interface and continue
+        to run the per-record and sibling gates automatically.
 
         Returns a :class:`FamilyValidationReport`. Failure dicts
         carry ``clone_id``, ``parent_id``, ``record_indices``,
@@ -589,12 +741,18 @@ class _ResultValidation:
             from ._airr_record import outcome_to_airr_record
 
             for pid in by_parent:
-                proj = outcome_to_airr_record(
-                    parents[pid],
-                    refdata,
-                    sequence_id=f"parent{pid}",
-                )
-                _inject_truth_columns(parents[pid], refdata, proj)
+                if _family_replay_budget is None:
+                    proj = outcome_to_airr_record(
+                        parents[pid], refdata, sequence_id=f"parent{pid}",
+                    )
+                    _inject_truth_columns(parents[pid], refdata, proj)
+                else:
+                    from . import _engine
+                    from ._family_replay import _native, _truth_aliases
+
+                    proj = _native(f"parents[{pid}].projection", _engine._family_replay_airr_record,
+                                   parents[pid], refdata, f"parent{pid}", budget=_family_replay_budget)
+                    _truth_aliases(proj)
                 parent_projections[pid] = proj
 
         # The (field, issue_kind) pairs the parent-aware validator
@@ -620,6 +778,27 @@ class _ResultValidation:
             # group would have surfaced via the family validator
             # already.
             clone_id_for_group = members[0].get("clone_id", pid)
+            if "duplex_repair" in parent_proj or any(
+                "duplex_repair" in rec for rec in members
+            ):
+                parent_founder, parent_missing = _duplex_founder_view(parent_proj)
+                for idx, rec in zip(indices, members):
+                    child_founder, child_missing = _duplex_founder_view(rec)
+                    differences = (
+                        _duplex_founder_differences(child_founder, parent_founder)
+                        if not parent_missing and not child_missing else []
+                    )
+                    if parent_missing or child_missing or differences:
+                        failures.append({
+                            "clone_id": clone_id_for_group, "parent_id": pid,
+                            "record_indices": [idx],
+                            "issue_kind": "ParentDuplexFounderMismatch",
+                            "parent_value": {"missing": parent_missing},
+                            "child_values": [{
+                                "missing": child_missing,
+                                "differing_fields": differences,
+                            }],
+                        })
             for field, kind in FIELD_CHECKS:
                 parent_val = parent_proj.get(field)
                 # Skip when parent has no opinion on the field

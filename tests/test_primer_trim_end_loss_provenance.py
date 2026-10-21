@@ -46,7 +46,7 @@ from GenAIRR import CompiledExperiment
 
 def _vj_refdata() -> "ge.RefDataConfig":
     cfg = ge.RefDataConfig.vj()
-    cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG", anchor=6)  # 9 bases, anchor codon at 6..9
+    cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)  # 9 bases, Cys at 6..9
     cfg.add_j_allele("j1*01", "j1", b"TTTAAA", anchor=0)     # 6 bases, anchor codon at 0..3
     return cfg
 
@@ -280,8 +280,8 @@ def test_primer_trim_replay_reproduces_sequence_and_coords(configure) -> None:
 def test_productive_only_keeps_records_productive_after_5prime_loss() -> None:
     # 5'-loss of 6 bytes removes V[0..6] but stops at the V-anchor
     # codon (positions 6..9). Under productive_only the
-    # AnchorPreserved contract ensures the loss never bites into
-    # the anchor — the productive triad must still hold.
+    # canonical anchor/provenance contracts retain its required
+    # evidence; the observed-span productive triad must still hold.
     rec = _record(
         _baseline_experiment()
         .primer_trim_5prime(length=6)

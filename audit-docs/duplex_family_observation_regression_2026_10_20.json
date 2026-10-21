@@ -1,0 +1,18 @@
+{
+  "schema": "duplex_observation_sweep_v1",
+  "counts": {
+    "founders": 2048,
+    "continuations": 18432
+  },
+  "errors": 0,
+  "extension_sha256": "e3edd39a59b3c0743d25ce03a407f65738eb4b13ef36637f152ecfd8658b08f6",
+  "checks": [
+    "independent literal edit replay",
+    "founder-column conservation",
+    "current certified claim remapping",
+    "query/alignment conservation",
+    "immutable repair product and counters",
+    "both join orders and D orientations"
+  ],
+  "scope": "short authored controls; no fitted biochemical probabilities"
+}

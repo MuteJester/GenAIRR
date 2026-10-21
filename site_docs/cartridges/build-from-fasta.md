@@ -9,3 +9,9 @@
     documentation site at
     [mutejester.github.io/GenAIRR](https://mutejester.github.io/GenAIRR/)
     or the source markdown referenced above (if any).
+
+New authoring also preserves source-header declarations and carries optional
+sequence-bound landmark, coding-phase and coding-boundary evidence. Missing
+species and unresolved anchors remain explicit. See
+[Reference evidence and catalogue quarantine](reference-evidence.md) for the
+schema, source requirements and bundled audit status.

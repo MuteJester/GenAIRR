@@ -14,6 +14,16 @@ by proving the engine **remains practical at scale** after every
 validation, contract-narrowing, event-capture, and replay
 mechanism added since the v3.0 architecture.
 
+The tables below preserve the May 2026 baseline. The October correctness change
+replaces the approximate indel DP and invalid productive toy anchors; current
+evidence is in the
+[implementation report](productivity_indel_repair_implementation_2026_10_20.md).
+The existing eight performance budgets remain unchanged. After profiling,
+reachable-state continuation and indexed multi-edit views brought W3 and W6
+back within those budgets; higher-count fallback uses the same bounded natural
+history law. Historical retry/DP descriptions below do not describe that new
+sampler.
+
 The goal is **not** a microbenchmark; it is a regression guard.
 Budgets are set at ~5–10× the current observed mean so a 10×
 regression (e.g. accidentally re-allocating per-record, removing

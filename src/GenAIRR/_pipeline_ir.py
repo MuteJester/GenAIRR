@@ -110,6 +110,22 @@ class _RecombineStep:
     # user explicitly called .trim(), silence the warning regardless
     # of whether trim is enabled or disabled.
     trim_overridden: bool = False
+    # Opt-in original-coding-end processing. Each tuple is a joint
+    # (signed five-prime outcome, signed three-prime outcome, weight).
+    # Positive outcomes remove reference bases; negative outcomes retain
+    # palindromic extension from the original coding tip. None keeps legacy
+    # trim/P behaviour. These are immutable model inputs, not fitted defaults.
+    coding_end_mode: Optional[str] = None
+    reference_ends_are_coding_ends: bool = False
+    coding_end_outcomes_v: Optional[Tuple[Tuple[int, int, float], ...]] = None
+    coding_end_outcomes_d: Optional[Tuple[Tuple[int, int, float], ...]] = None
+    coding_end_outcomes_j: Optional[Tuple[Tuple[int, int, float], ...]] = None
+    coding_end_model_reference_hashes: Tuple[str, ...] = ()
+    # Canonical finite authored repair model. Presence gives one atomic owner
+    # of both junctions, replacing automatic trim/P/NP assembly defaults.
+    duplex_repair_json: Optional[str] = None
+    # Capture explicit intent before empirical/default normalization.
+    np_lengths_overridden: bool = False
 
 
 @dataclass(frozen=True)
@@ -359,5 +375,8 @@ class _CorruptStep:
     kind: str
     count_pairs: Optional[Tuple[Tuple[int, float], ...]] = None
     insertion_prob: float = 0.0
+    rejection_attempts: int = 256
+    exact_node_budget: int = 20_000_000
+    legacy_replay_sentinels: bool = False
     apply_prob: float = 0.0
     rate: Optional[float] = None

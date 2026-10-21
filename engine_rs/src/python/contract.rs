@@ -28,47 +28,15 @@ create_exception!(
     _engine,
     StrictSamplingError,
     PyException,
-    "Raised by strict-mode **fresh** runs when a pass's admissible \
-     support is empty at sample time.\n\
-     \n\
-     Exception args are a 3-tuple ``(pass_name, address, reason)`` where:\n\
-     - ``pass_name`` (str) is the name of the failing pass (e.g. \
-       ``\"generate_np.np1\"``);\n\
-     - ``address`` (str) is the trace address when applicable (e.g. \
-       ``\"np.np1.length\"``);\n\
-     - ``reason`` (str) is a stable lowercase error reason \
-       (one of ``\"support_unavailable\"``, \
-       ``\"empty_admissible_support\"``, ``\"invalid_filtered_support\"``, \
-       ``\"missing_refdata\"``, ``\"missing_assignment\"``, \
-       ``\"contract_violation\"``, ``\"invalid_plan_state\"``, or \
-       a pass-specific code).\n\
-     \n\
-     **When this is raised:** only by a *fresh* strict-mode run \
-     (``simulator.run(seed=..., strict=True)`` / \
-     ``Experiment.run_records(..., strict=True)``) at the moment a \
-     pass's contract-narrowed candidate set becomes empty.\n\
-     \n\
-     **When this is NOT raised:** trace replay \
-     (``replay_from_trace_file``) consumes the recorded value at each \
-     sampling slot verbatim — even with ``strict=True``. If the \
-     original run was permissive and recorded a sentinel value (e.g. \
-     indel ``site = -1`` NoOp, NP length ``0``, NP base ``N``, trim \
-     ``0``), replay reproduces that outcome without raising. Replay \
-     validates address/value-kind consistency, not contract semantics. \
-     See ``docs/productive_failure_mode_audit.md`` §5 / §6.2.\n\
-     \n\
-     **Class hierarchy:** ``StrictSamplingError`` extends ``Exception`` \
-     directly — NOT ``ValueError``. A bare ``except ValueError:`` will \
-     not catch this error. Compile-time precondition failures \
-     (e.g. distributions where *every* candidate violates a contract \
-     before runtime) raise ``ValueError`` from \
-     ``Experiment.compile()`` instead; the two paths are not unified.\n\
-     \n\
-     **Related but distinct:** ``ValueError`` from ``Experiment.compile()`` \
-     fires when the contract bundle can statically prove a sampling \
-     distribution has no admissible candidates (precondition failure). \
-     ``StrictSamplingError`` fires when an empty support emerges \
-     dynamically during sampling."
+    "Structured sampling, replay, or contract validation failure.\n\
+     Args are (pass_name, address, stable_reason). The reason \
+     sampling_budget_exceeded means support remains unresolved, never empty; \
+     it is raised in strict and permissive execution, with requested_count, \
+     attempts, explored_states, state_budget, and strategy attributes.\n\
+     Replay validates positive configured support and the final contracts. \
+     Historical all-no-op indel traces require explicit legacy compatibility.\n\
+     This exception extends Exception directly, not ValueError. Compile-time \
+     static support failures remain ValueError."
 );
 
 /// Convert a [`PassError`] into a Python [`StrictSamplingError`]
@@ -76,6 +44,27 @@ create_exception!(
 /// string in `args`.
 pub(crate) fn pass_error_to_pyerr(err: PassError) -> PyErr {
     match err {
+        PassError::SamplingBudgetExceeded {
+            pass_name,
+            address,
+            requested_count,
+            attempts,
+            explored_states,
+            state_budget,
+            strategy,
+        } => {
+            let error =
+                StrictSamplingError::new_err((pass_name, address, "sampling_budget_exceeded"));
+            Python::with_gil(|py| {
+                let value = error.value_bound(py);
+                let _ = value.setattr("requested_count", requested_count);
+                let _ = value.setattr("attempts", attempts);
+                let _ = value.setattr("explored_states", explored_states);
+                let _ = value.setattr("state_budget", state_budget);
+                let _ = value.setattr("strategy", strategy);
+            });
+            error
+        }
         PassError::ConstraintSampling {
             pass_name,
             address,
@@ -143,7 +132,9 @@ pub(crate) fn pass_error_to_pyerr(err: PassError) -> PyErr {
             let reason_tag = match reason {
                 crate::replay::ReplayError::Exhausted { .. } => "replay.exhausted",
                 crate::replay::ReplayError::AddressMismatch { .. } => "replay.address_mismatch",
-                crate::replay::ReplayError::ValueKindMismatch { .. } => "replay.value_kind_mismatch",
+                crate::replay::ReplayError::ValueKindMismatch { .. } => {
+                    "replay.value_kind_mismatch"
+                }
                 crate::replay::ReplayError::UnusedTrailingRecords { .. } => {
                     "replay.unused_trailing_records"
                 }
@@ -205,14 +196,17 @@ impl PyContractSet {
 /// Composes:
 /// 1. `ProductiveJunctionFrame` — junction length divisible by 3
 /// 2. `NoStopCodonInJunction` — no stops inside the junction
-/// 3. `AnchorPreserved::V` — V Cys codon retained after V trim
-/// 4. `AnchorPreserved::J` — J W/F codon retained after J trim
+/// 3. Canonical V anchor — original landmark retained, encoding Cys
+/// 4. Canonical J anchor — original landmark retained, encoding Phe/Trp
+/// 5. `CodingSequenceIntegrity` — stop-free retained coding sequence and
+///    preservation of the original V coding phase through the J tail
 ///
 /// Pass this to ``Experiment.run(respect=...)`` (or to
 /// ``GenAIRR._engine.run(plan, seed, respect=...)``) to constrain
 /// every NP-base draw, every length sample, and every mutation /
 /// corruption substitution to admissible values. In strict mode, the
-/// compiled simulator also verifies the bundle after each pass.
+/// compiled simulator also verifies the bundle after each pass. Both modes
+/// require a final accepted `canonical_observed_vdj_v1` assessment.
 #[pyfunction]
 pub fn productive() -> PyContractSet {
     PyContractSet {

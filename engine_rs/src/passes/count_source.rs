@@ -39,6 +39,35 @@ pub enum CountSource {
 }
 
 impl CountSource {
+    /// Validate a replayed count against positive natural support. The range
+    /// check alone cannot establish that a fixed-count plan produced a value.
+    pub(crate) fn supports_value(
+        &self,
+        value: i64,
+    ) -> Result<bool, crate::dist::FilteredSampleError> {
+        use crate::dist::FilteredSampleError;
+        match self {
+            Self::Distribution(distribution) => {
+                let support = distribution
+                    .support()
+                    .ok_or(FilteredSampleError::SupportUnavailable)?;
+                if support.is_empty()
+                    || support.iter().any(|(_, w)| !w.is_finite() || *w < 0.0)
+                    || !support.iter().any(|(_, w)| *w > 0.0)
+                {
+                    return Err(FilteredSampleError::InvalidFilteredSupport);
+                }
+                Ok(support.iter().any(|(n, w)| *n == value && *w > 0.0))
+            }
+            Self::Rate(rate) => {
+                if !rate.is_finite() || *rate < 0.0 {
+                    return Err(FilteredSampleError::InvalidFilteredSupport);
+                }
+                Ok(value >= 0 && (*rate > 0.0 || value == 0))
+            }
+        }
+    }
+
     /// Sample the mutation count for one execution of the pass.
     ///
     /// `pool_len` is consulted only in the `Rate` variant. Returns
@@ -106,6 +135,35 @@ pub(crate) fn sample_validated_count(
     } else {
         count_source.sample(ctx.rng, pool_len)
     };
+    if crate::family_replay::is_replaying() && ctx.replay_cursor.is_some() {
+        let supported = match count_source {
+            CountSource::Rate(rate) => {
+                let lambda = *rate * f64::from(pool_len);
+                count_raw == 0
+                    || (count_raw > 0
+                        && count_raw <= POISSON_ITERATION_CAP as i64
+                        && lambda.is_finite()
+                        && lambda > 0.0
+                        && (-lambda).exp() < 1.0)
+            }
+            CountSource::Distribution(d) => d
+                .family_replay_spec()
+                .ok_or_else(|| {
+                    PassError::invalid_plan_state(
+                        pass_name,
+                        "unsupported family count distribution",
+                    )
+                })?
+                .supports_integer(count_raw)
+                .map_err(|e| PassError::invalid_plan_state(pass_name, e))?,
+        };
+        if count_raw < 0 || count_raw > u32::MAX as i64 || !supported {
+            return Err(PassError::invalid_plan_state(
+                pass_name,
+                "family replay count has no positive natural support",
+            ));
+        }
+    }
     if strict && count_raw < 0 {
         return Err(PassError::invalid_distribution_output(
             pass_name,
@@ -149,6 +207,8 @@ pub(crate) fn sample_validated_count(
 /// expected, so the algorithm is unsuitable for large `lambda` —
 /// but for the genuinely-immunological regime where rate × len is
 /// at most a few dozen, it's the right pick.
+const POISSON_ITERATION_CAP: u32 = 1_000_001;
+
 fn poisson_sample(rng: &mut Rng, lambda: f64) -> u32 {
     if !lambda.is_finite() || lambda <= 0.0 {
         return 0;
@@ -166,7 +226,7 @@ fn poisson_sample(rng: &mut Rng, lambda: f64) -> u32 {
         // very generous bound so we never spin forever. The real
         // engine guard is the upstream `count_raw > u32::MAX` check
         // in the pass; here we just stop the loop.
-        if k > 1_000_000 {
+        if k >= POISSON_ITERATION_CAP {
             return k;
         }
     }
@@ -300,9 +360,14 @@ mod tests {
         let addr = ChoiceAddress::MutateUniformCount;
         // `fixed(99)` would draw 99 under RNG mode; the cursor
         // overrides with 17. The returned count must be 17.
-        let (count, trace, rng_words) =
-            run_with_replay(vec![rec(addr, ChoiceValue::Int(17))], fixed(99), 0, addr, true)
-                .unwrap();
+        let (count, trace, rng_words) = run_with_replay(
+            vec![rec(addr, ChoiceValue::Int(17))],
+            fixed(99),
+            0,
+            addr,
+            true,
+        )
+        .unwrap();
         assert_eq!(count, 17);
         // The helper still records to the output trace.
         let rec = trace.find("mutate.uniform.count").unwrap();
@@ -314,9 +379,14 @@ mod tests {
     #[test]
     fn helper_replay_consumes_zero_count_record() {
         let addr = ChoiceAddress::CorruptPcrCount;
-        let (count, _trace, rng_words) =
-            run_with_replay(vec![rec(addr, ChoiceValue::Int(0))], fixed(5), 0, addr, true)
-                .unwrap();
+        let (count, _trace, rng_words) = run_with_replay(
+            vec![rec(addr, ChoiceValue::Int(0))],
+            fixed(5),
+            0,
+            addr,
+            true,
+        )
+        .unwrap();
         assert_eq!(count, 0);
         assert_eq!(rng_words, 0);
     }
@@ -390,8 +460,7 @@ mod tests {
     #[test]
     fn helper_replay_exhausted_cursor_surfaces_replay_error() {
         let addr = ChoiceAddress::MutateUniformCount;
-        let err =
-            run_with_replay(Vec::new(), fixed(5), 0, addr, true).unwrap_err();
+        let err = run_with_replay(Vec::new(), fixed(5), 0, addr, true).unwrap_err();
         match err {
             PassError::Replay { reason, .. } => {
                 assert!(matches!(reason, ReplayError::Exhausted { .. }));

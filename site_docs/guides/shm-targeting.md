@@ -29,6 +29,34 @@ If a downstream tool wants the count of "biology that actually
 changed the sequence under SHM", `n_mutations` is the answer. For
 anything else, look at the corruption counters.
 
+### Interpreting `mutation_rate`
+
+For ordinary mutation stages, `mutation_rate` is the cumulative realized
+SHM event burden per nucleotide:
+
+```text
+mutation_rate = sum(applied SHM events in stage / molecule length entering stage)
+```
+
+The denominator is measured before that stage runs. Later primer trimming,
+read loss, or structural edits do not change earlier contributions. For example,
+12 mutations on a 300-nucleotide molecule give `0.04`, even if the final read
+contains only 80 nucleotides. Two stages with 6 events each on the same
+300-nucleotide molecule also give `0.04`. A zero-event stage contributes zero.
+When molecule lengths differ between stages, each contribution uses its own
+input length.
+
+This records mutation events, including repeated hits and reversions; it is
+not the fraction of observed V bases that differ from a reference. It can exceed
+one after enough mutation stages. To measure observed mismatch fractions, use
+the appropriate aligned observed region and reference instead.
+
+Ordinary clonal descendants inherit their ancestor's mutation count and burden,
+and their outcomes retain the ancestor's provenance once. Lineage-tree records
+keep their separate net-difference convention: `n_mutations` counts the node's
+net differences, and `mutation_rate` divides those by the node's molecule
+length before observation-stage loss.
+
 ## Minimal mutation
 
 A working SHM pass is one method call:

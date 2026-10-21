@@ -152,6 +152,7 @@ class CompiledClonalExperiment:
                 desc = self._post.run_from(
                     parent_sim, desc_seed, strict=strict
                 )
+                desc = _engine.merge_outcomes(parent, desc)
                 outcomes.append(desc)
         return outcomes
 
@@ -177,7 +178,7 @@ class CompiledClonalExperiment:
         pre-fork event ledger, and the post-recombination IR — useful
         for replay, lineage analysis, and the upcoming parent-aware
         family validator. The flat ``.outcomes`` list continues to
-        carry only the descendant outcomes (one per record);
+        carry one outcome per descendant, including inherited provenance;
         parents are exposed separately so the per-record list stays
         the same shape clonal consumers already know.
 
@@ -213,10 +214,10 @@ class CompiledClonalExperiment:
         # orchestration loop used to drop them after extracting
         # ``final_simulation()``. We now keep them so the returned
         # :class:`SimulationResult` can expose ``.parents`` for
-        # replay / lineage tooling. The parent ``Outcome`` itself
-        # is not copied onto each descendant; we hold a single
-        # reference per clone in the ``parents`` list.
+        # replay / lineage tooling. Descendant outcomes merge its
+        # provenance once; persistent simulation storage remains shared.
         parents: List["_engine.Outcome"] = []
+        duplex = "duplex.recombine" in self._pre.pass_names()
         for clone_idx in range(self._fork.n_clones):
             clone_seed = int(seed) + clone_idx * 1_000_000
             parent = self._pre.run(seed=clone_seed, strict=strict)
@@ -227,6 +228,7 @@ class CompiledClonalExperiment:
                 desc = self._post.run_from(
                     parent_sim, desc_seed, strict=strict
                 )
+                desc = _engine.merge_outcomes(parent, desc)
                 outcomes.append(desc)
                 rec = outcome_to_airr_record(
                     desc,
@@ -258,6 +260,10 @@ class CompiledClonalExperiment:
 
             _raise_on_validation_failure(result.validate_records(self._refdata))
             _raise_on_family_validation_failure(result.validate_families())
+            if duplex:
+                _raise_on_family_validation_failure(
+                    result.validate_families_with_parents(self._refdata)
+                )
         return result
 
     def __repr__(self) -> str:

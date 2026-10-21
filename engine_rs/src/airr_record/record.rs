@@ -20,6 +20,9 @@ pub struct AirrRecord {
 
     // V
     pub v_call: String,
+    /// Post-mutation evidence-based allele calls. These may be comma-separated
+    /// ties and do not define the reference used by the truth alignment.
+    pub recalled_v_call: String,
     pub v_cigar: String,
     pub v_score: Option<f64>,
     pub v_identity: Option<f64>,
@@ -35,6 +38,7 @@ pub struct AirrRecord {
 
     // D
     pub d_call: String,
+    pub recalled_d_call: String,
     pub d_cigar: String,
     pub d_score: Option<f64>,
     pub d_identity: Option<f64>,
@@ -50,6 +54,7 @@ pub struct AirrRecord {
 
     // J
     pub j_call: String,
+    pub recalled_j_call: String,
     pub j_cigar: String,
     pub j_score: Option<f64>,
     pub j_identity: Option<f64>,
@@ -84,10 +89,9 @@ pub struct AirrRecord {
     // Per-end P-nucleotide length counters (Slice —
     // P-nucleotide v1). Counts of templated palindromic
     // (P-)nucleotide bytes emitted by `PAdditionPass` at each
-    // V(D)J coding-end junction side. Aggregated by walking
-    // `outcome.events()` filtered to
-    // `SimulationEvent::PRegionAdded { end, region }` and
-    // summing `region.len()` per `end`. Bases themselves are
+    // V(D)J coding-end junction side. Persistent assignment totals
+    // preserve these counts across clonal forks; PRegionAdded
+    // events provide a fallback for synthetic outcomes. Bases are
     // deterministic from `(allele, trim, orientation,
     // length)` — see [`docs/p_nucleotide_design.md`].
     //
@@ -99,19 +103,33 @@ pub struct AirrRecord {
     //
     // The validator surfaces `PLengthMismatch { end }` per
     // end when a downstream record's reported value
-    // disagrees with the event-ledger recompute.
+    // disagrees with the persistent provenance.
     pub p_v_3_length: i64,
     pub p_d_5_length: i64,
     pub p_d_3_length: i64,
     pub p_j_5_length: i64,
 
+    /// Optional structured extension for the original-coding-end model.
+    /// Query positions are zero-based in the coding-oriented pool even when
+    /// the reported read is reverse-complemented. Legacy records omit it.
+    pub coding_end_processing: Option<serde_json::Value>,
+
     // Functionality
     pub productive: Option<bool>,
     pub vj_in_frame: Option<bool>,
     pub stop_codon: Option<bool>,
+    /// Named prediction policy and evidence scope; never a claim of expression
+    /// or receptor function.
+    pub productivity_policy: String,
+    pub productivity_scope: String,
+    pub productivity_reasons: Vec<String>,
 
     // SHM + corruption (non-AIRR; GenAIRR additions)
     pub n_mutations: i64,
+    /// Cumulative realized SHM event burden: sum of each stage's applied
+    /// count divided by its input molecule length. Preserved through later
+    /// observation loss; not the mismatch fraction in the observed read.
+    /// Lineage net-summary records use net differences / node molecule length.
     pub mutation_rate: f64,
     pub n_pcr_errors: i64,
     pub n_quality_errors: i64,
@@ -257,7 +275,7 @@ pub struct AirrRecord {
     ///   - the step ran but `receptor_revision_applied=false`.
     ///
     /// Sourced from the trace's first `sample_allele.v` record;
-    /// `v_call` continues to report the live-evidence call (which,
+    /// `v_call` reports the assigned post-revision allele (which,
     /// after a successful revision, points at the replacement
     /// allele). Holding both lets downstream consumers
     /// distinguish "not revised" from "revised but unrelated to
@@ -284,7 +302,6 @@ pub struct AirrRecord {
     // `read_layout` is empty, every other paired-end field must
     // also be at its default. Geometry / window-byte checks land
     // in Slice B/C once the projection helper exists.
-
     /// String tag for the read-layout convention. v1 sanctioned
     /// values: `""` (legacy single-molecule output — the default),
     /// `"paired_end"` (Slice C+ — R1/R2 windows populated),

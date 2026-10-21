@@ -1,51 +1,9 @@
-//! NP region extending the V/D/J call back into trimmed bytes.
+//! NP evidence can narrow live re-calls without changing generation truth.
 //!
-//! After 5'/3' trimming widens a V/D/J call to a set of
-//! indistinguishable alleles, the adjacent NP region's random bases
-//! may "recreate" enough of the trimmed germline that the call
-//! narrows back. The engine must propagate this NP-extension event
-//! into both the call set AND the structural coordinates:
-//!
-//! - `v_sequence_end` extends into NP1 by the number of recreated
-//!   bytes.
-//! - `np1` (the AIRR string) drops those columns from the start.
-//! - `v_germline_end` extends in the allele reference by the same
-//!   count.
-//! - `v_cigar` reflects the extended M-run.
-//! - Equivalent invariants for D (NP1 left + NP2 right) and J (NP1
-//!   left in VJ; NP2 left in VDJ).
-//!
-//! ## Invariants this module should test
-//!
-//! - **Exact recreation narrows call to single allele** (V01 was the
-//!   truth, trim removed 3 bytes, NP1 first 3 bytes happen to be the
-//!   V01 trimmed bytes verbatim — call narrows to just V01).
-//! - **Partial recreation narrows partially** (NP1 recreates only
-//!   the first 2 of 3 trimmed bytes — call narrows to alleles that
-//!   match those 2, stays widened for the third).
-//! - **No recreation leaves call widened** (NP1 bytes don't match
-//!   any candidate's trimmed suffix).
-//! - **NP extension crosses INTO the next region** (V extends past
-//!   the entire NP1 region into D's bytes — D's bytes form a suffix
-//!   of a V allele).
-//! - **NP1 / NP2 strings shrink correctly** when V/D/J claim
-//!   adjacent NP columns.
-//! - **Bidirectional D extension** (D's left edge extends into NP1
-//!   AND D's right edge extends into NP2 simultaneously).
-//! - **VJ chain J extension into NP1** (no D region, NP1 is V→J
-//!   spacer, J's 5' extends back into it).
-//! - **Frame-phase invariance**: the extended region's frame_phase
-//!   is unchanged (extension doesn't move the V anchor frame).
-//!
-//! ## Adjacent in-tree coverage
-//!
-//! - `engine_rs/src/compiled/tests/v_extensions.rs`
-//! - `engine_rs/src/compiled/tests/d_extensions.rs`
-//! - `engine_rs/src/compiled/tests/j_extensions.rs`
-//! - `engine_rs/src/compiled/tests/curated.rs::curated_np1_recreates_v_suffix_narrows_v_call_back`
-//! - `engine_rs/src/compiled/tests/curated.rs::v_germline_end_reflects_np_extension`
-//! - `engine_rs/src/compiled/tests/curated.rs::v_cigar_extends_into_claimed_np1_columns`
-//! - `engine_rs/src/compiled/tests/curated.rs::np1_string_drops_columns_claimed_by_v`
+//! Matching adjacent junction bases may extend an inferred placement. Standard
+//! AIRR calls and alignment bounds retain the generating assignments, and all
+//! generated NP bytes remain in their actual junction intervals. These tests
+//! check the live inference and the independent standard projection together.
 
 use super::common;
 use genairr_engine::airr_record::build_airr_record;
@@ -202,14 +160,9 @@ fn compile_and_run<'a>(
 // ──────────────────────────────────────────────────────────────
 
 #[test]
-fn exact_recreation_narrows_v_call_to_single_truth_allele() {
-    // Sample v03*01 (distinguishing suffix CCC). Trim V_3 by 3 →
-    // v_call widens to all 4. NP1 = "CCC". Under conservative
-    // extension, the first NP1 byte 'C' is enough to
-    // narrow {v01,v01*02,v02,v03}→{v03} (only v03 has C at pos 12).
-    // The remaining two 'C' bytes cannot narrow {v03} further, so
-    // the walker halts. v_call collapses to {v03*01} after a
-    // single byte of extension; ref_end advances by 1 only.
+fn exact_recreation_narrows_recall_without_reassigning_np() {
+    // NP1=CCC identifies v03 from the trimmed V tie set; all three
+    // bases remain generated junction bases in the standard record.
     let cfg = common::vj_ambiguous_refdata();
     let v03 = common::allele_id_by_name(&cfg, Segment::V, "v03*01");
     let j01 = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
@@ -223,28 +176,18 @@ fn exact_recreation_narrows_v_call_to_single_truth_allele() {
         "NP1=CCC recreates v03's unique suffix; call should narrow to v03 only",
     );
 
-    // AIRR projection: v_germline_end extends by 1 byte (the
-    // narrowing step) under conservative extension, from
-    // structural 12 (post-trim end) to 13.
     let rec = build_airr_record(&outcome, &cfg, "exact-recreation");
-    assert_eq!(rec.v_germline_end, Some(13));
-    assert_eq!(rec.v_sequence_end, Some(13));
-    // NP1 string drops only the single claimed column; the other
-    // two 'C' bytes stay non-templated.
-    assert_eq!(rec.np1, "CC");
-    assert_eq!(rec.np1_length, 2);
-    // CIGAR covers 12 structural + 1 NP1 = 13M.
-    assert_eq!(rec.v_cigar, "13M");
+    assert_eq!(rec.v_germline_end, Some(12));
+    assert_eq!(rec.v_sequence_end, Some(12));
+    assert_eq!(rec.np1, "CCC");
+    assert_eq!(rec.np1_length, 3);
+    assert_eq!(rec.v_cigar, "12M");
 }
 
 #[test]
-fn partial_recreation_narrows_partway() {
-    // Sample v03 (distinguishing suffix CCC). Trim V_3 by 3,
-    // NP1 length 5 of 'C'. Under conservative extension, the
-    // first 'C' narrows {v01,v01*02,v02,v03}→{v03}; subsequent
-    // bytes cannot narrow further so the walker stops after 1
-    // byte. v_call narrows to {v03}, ref_end advances 12→13,
-    // and 4 of the 5 NP1 bytes stay in the np1 string.
+fn partial_recreation_narrows_recall_without_shortening_np() {
+    // NP1 narrows the live call after one matching base. Standard
+    // generation truth keeps the full five-base junction.
     let cfg = common::vj_ambiguous_refdata();
     let v03 = common::allele_id_by_name(&cfg, Segment::V, "v03*01");
     let j01 = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
@@ -255,10 +198,9 @@ fn partial_recreation_narrows_partway() {
     assert_eq!(names, vec!["v03*01".to_string()]);
 
     let rec = build_airr_record(&outcome, &cfg, "partial-recreation");
-    assert_eq!(rec.v_germline_end, Some(13));
-    // V claimed 1 of the 5 NP1 bases; remaining 4 stay in np1.
-    assert_eq!(rec.np1_length, 4);
-    assert_eq!(rec.np1, "CCCC");
+    assert_eq!(rec.v_germline_end, Some(12));
+    assert_eq!(rec.np1_length, 5);
+    assert_eq!(rec.np1, "CCCCC");
 }
 
 #[test]
@@ -297,27 +239,9 @@ fn no_recreation_leaves_v_call_widened() {
 }
 
 #[test]
-fn bidirectional_d_extension_recreates_both_sides() {
-    // VDJ: trim D_5 by 3 AND D_3 by 3 → D structural region is
-    // just TTT (the shared core). NP1 = "AAA" (3 bytes) and
-    // NP2 = "GGG" (3 bytes).
-    //
-    // D pool: d01=AAATTTGGG, d02=AAATTTCCC, d03=CCCTTTGGG.
-    //
-    // NP1 left walk (against ref pos 2,1,0):
-    //   pre tie set after assembly = {d01,d02,d03} (all match TTT)
-    //   step 1 at ref pos 2: d01[2]='A' ✓, d02[2]='A' ✓,
-    //     d03[2]='C' ✗ → narrows {d01,d02,d03}→{d01,d02}. Extends.
-    //   step 2 at ref pos 1: tie set is {d01,d02}, both match 'A'.
-    //     No "any_missed" → conservative declines. Walker stops.
-    //   ref_start moves from 3 to 2 (one byte).
-    //
-    // NP2 right walk (against ref pos 6,7,8):
-    //   pre tie set after NP1 extension = {d01,d02} (d03 dropped)
-    //   step 1 at ref pos 6: d01[6]='G' ✓, d02[6]='C' ✗ → narrows
-    //     {d01,d02}→{d01}. Extends.
-    //   step 2: tie {d01}; conservative declines. Walker stops.
-    //   ref_end moves from 6 to 7 (one byte).
+fn bidirectional_d_recall_extension_preserves_both_generated_junctions() {
+    // NP1 and NP2 together resolve the D re-call. Standard D bounds
+    // remain the retained reference interval 3..6 and both NPs remain length 3.
     let cfg = common::vdj_ambiguous_refdata();
     let v01 = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let d01 = common::allele_id_by_name(&cfg, Segment::D, "d01*01");
@@ -333,14 +257,12 @@ fn bidirectional_d_extension_recreates_both_sides() {
     );
 
     let rec = build_airr_record(&outcome, &cfg, "bidirectional-d");
-    // Each side recovers 1 byte under conservative extension.
-    assert_eq!(rec.d_germline_start, Some(2));
-    assert_eq!(rec.d_germline_end, Some(7));
-    // Each NP region: 1 byte claimed, 2 remaining.
-    assert_eq!(rec.np1, "AA");
-    assert_eq!(rec.np2, "GG");
-    assert_eq!(rec.np1_length, 2);
-    assert_eq!(rec.np2_length, 2);
+    assert_eq!(rec.d_germline_start, Some(3));
+    assert_eq!(rec.d_germline_end, Some(6));
+    assert_eq!(rec.np1, "AAA");
+    assert_eq!(rec.np2, "GGG");
+    assert_eq!(rec.np1_length, 3);
+    assert_eq!(rec.np2_length, 3);
 }
 
 #[test]
@@ -404,13 +326,9 @@ fn v_extends_past_empty_np1_into_d_bytes() {
 }
 
 #[test]
-fn np1_string_shrinks_when_v_claims_bytes() {
-    // Sample v01, V_3 trim 3, NP1 length 6, base 'G'. v01[12]='G',
-    // v01*02[12]='G', v02[12]='A', v03[12]='C'. The first NP1 byte
-    // at ref pos 12 narrows {v01,v01*02,v02,v03}→{v01,v01*02}
-    // (two indistinguishable aliases remain). The second byte at
-    // ref pos 13 cannot match further (v01[13]='T') so under
-    // conservative extension the walker stops after just 1 byte.
+fn np1_string_retains_all_generated_bases_despite_v_recall_extension() {
+    // Matching NP evidence narrows V to its two indistinguishable aliases,
+    // while the standard NP1 field retains all six generated bases.
     let cfg = common::vj_ambiguous_refdata();
     let v01 = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let j01 = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
@@ -418,25 +336,19 @@ fn np1_string_shrinks_when_v_claims_bytes() {
     let outcome = compile_and_run(&cfg, &plan);
     let rec = build_airr_record(&outcome, &cfg, "np1-shrink");
     assert_eq!(
-        rec.np1_length, 5,
-        "1 of the 6 NP1 bytes is claimed by V; np1_length should be 5",
+        rec.np1_length, 6,
+        "all six generated bases must remain in NP1",
     );
     assert_eq!(
-        rec.np1, "GGGGG",
-        "remaining NP1 string holds the un-claimed bytes",
+        rec.np1, "GGGGGG",
+        "NP1 string preserves the generated junction",
     );
 }
 
 #[test]
-fn vj_chain_j_extension_into_np1() {
-    // VJ chain: J's left neighbour is NP1 (no D). Sample j01,
-    // trim J_5 by 3 → j_call widens to {j01, j02}. NP1 = "TTT"
-    // (j01's distinguishing prefix). Walker checks right-to-left:
-    //   NP1[2]='T' vs j01[2]='T' ✓, j02[2]='G' ✗ → narrows the
-    //     tie set {j01,j02}→{j01}. Extends.
-    //   NP1[1]: tie {j01}; conservative declines. Walker stops.
-    // j_call narrows to {j01*01} via a single byte of extension;
-    // ref_start moves from 3 to 2, not all the way to 0.
+fn vj_j_recall_extension_does_not_move_generating_j_boundary() {
+    // NP1=TTT narrows the J re-call after trimming its prefix. The
+    // generating J still starts at reference 3 and NP1 retains all three bases.
     let cfg = common::vj_ambiguous_refdata();
     let v01 = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let j01 = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
@@ -453,21 +365,17 @@ fn vj_chain_j_extension_into_np1() {
     let rec = build_airr_record(&outcome, &cfg, "vj-j-np1");
     assert_eq!(
         rec.j_germline_start,
-        Some(2),
-        "single byte of left extension"
+        Some(3),
+        "generating J begins at the sampled trim boundary"
     );
-    // Only 1 NP1 column absorbed; remaining 2 stay non-templated.
-    assert_eq!(rec.np1, "TT");
-    assert_eq!(rec.np1_length, 2);
+    assert_eq!(rec.np1, "TTT");
+    assert_eq!(rec.np1_length, 3);
 }
 
 #[test]
-fn vdj_chain_j_extension_into_np2() {
-    // VDJ chain: J's left neighbour is NP2. Trim J_5 by 3, NP2 =
-    // "TTT" — narrows j_call to {j01*01} via left-extension.
-    // Under conservative extension only the first NP2 byte (which
-    // narrows {j01,j02}→{j01}) is claimed; subsequent bytes stay
-    // non-templated.
+fn vdj_j_recall_extension_does_not_move_generating_j_boundary() {
+    // NP2=TTT identifies J from its trimmed prefix without changing
+    // the generating J bounds or the three-base NP2 interval.
     let cfg = common::vdj_ambiguous_refdata();
     let v01 = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let d01 = common::allele_id_by_name(&cfg, Segment::D, "d01*01");
@@ -483,24 +391,19 @@ fn vdj_chain_j_extension_into_np2() {
     );
 
     let rec = build_airr_record(&outcome, &cfg, "vdj-j-np2");
-    assert_eq!(rec.j_germline_start, Some(2));
-    assert_eq!(rec.np2, "TT");
+    assert_eq!(rec.j_germline_start, Some(3));
+    assert_eq!(rec.np2, "TTT");
 }
 
 #[test]
-fn v_cigar_extends_across_claimed_np1_columns() {
-    // With V_3 trim 3 and NP1=GGG against v01 (first
-    // distinguishing-tail byte = 'G', aliased by v01*02), the
-    // first NP1 byte at ref pos 12 narrows {v01,v01*02,v02,v03}
-    // → {v01,v01*02}; the next 'G' byte fails to match v01[13]='T'
-    // so the walker stops. Under conservative extension only 1
-    // NP1 column is claimed → v_cigar = 13M (12 post-trim
-    // structural + 1 NP1 column).
+fn v_cigar_excludes_np_bases_used_by_recall() {
+    // The standard V CIGAR covers its twelve generating bases. The
+    // three generated NP1 bases are independent of re-call extension evidence.
     let cfg = common::vj_ambiguous_refdata();
     let v01 = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let j01 = common::allele_id_by_name(&cfg, Segment::J, "j01*01");
     let plan = vj_plan(&cfg, v01, j01, 3, 0, 3, b'G');
     let outcome = compile_and_run(&cfg, &plan);
     let rec = build_airr_record(&outcome, &cfg, "cigar-extend");
-    assert_eq!(rec.v_cigar, "13M");
+    assert_eq!(rec.v_cigar, "12M");
 }

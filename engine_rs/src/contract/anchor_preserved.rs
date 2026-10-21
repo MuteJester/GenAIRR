@@ -36,6 +36,7 @@ mod support;
 /// - a targeted substitution changes the anchor codon's amino acid.
 pub struct AnchorPreserved {
     segment: Segment,
+    canonical_class: bool,
 }
 
 impl AnchorPreserved {
@@ -49,11 +50,35 @@ impl AnchorPreserved {
                 segment
             ),
         }
-        Self { segment }
+        Self {
+            segment,
+            canonical_class: false,
+        }
+    }
+
+    /// Canonical-class acceptance used by the productive bundle. The public
+    /// preservation-only constructor retains its exact reference-AA contract.
+    pub fn canonical(segment: Segment) -> Self {
+        assert!(matches!(segment, Segment::V | Segment::J));
+        Self {
+            segment,
+            canonical_class: true,
+        }
     }
 
     pub fn segment(&self) -> Segment {
         self.segment
+    }
+
+    fn require_supported_policy(&self, sim: &Simulation) -> Result<(), ContractViolation> {
+        if !self.canonical_class && sim.duplex_provenance.is_some() {
+            return Err(ContractViolation::new(
+                self.name(),
+                "preservation-only AnchorPreserved is unsupported for duplex ancestry; \
+                 use the restoration-aware productive bundle",
+            ));
+        }
+        Ok(())
     }
 
     fn name_for(segment: Segment) -> &'static str {
@@ -88,6 +113,14 @@ impl AnchorPreserved {
                     ),
                 )
             })?;
+        if self.canonical_class
+            && !crate::productivity::reference_ready(refdata, self.segment, AlleleId::new(*raw_id))
+        {
+            return Err(ContractViolation::new(
+                self.name(),
+                "reference_anchor_unresolved",
+            ));
+        }
         self.require_anchor_retained(allele, 0, 0)
     }
 
@@ -119,10 +152,22 @@ impl AnchorPreserved {
 
 impl Contract for AnchorPreserved {
     fn name(&self) -> &str {
+        if self.canonical_class {
+            return if self.segment == Segment::V {
+                "canonical_anchor.v1.v"
+            } else {
+                "canonical_anchor.v1.j"
+            };
+        }
         Self::name_for(self.segment)
     }
 
     fn kind(&self) -> ContractKind {
+        if self.canonical_class {
+            return ContractKind::CanonicalAnchor {
+                segment: self.segment,
+            };
+        }
         ContractKind::AnchorPreserved {
             segment: self.segment,
         }
@@ -133,6 +178,7 @@ impl Contract for AnchorPreserved {
         sim: &Simulation,
         refdata: Option<&RefDataConfig>,
     ) -> Result<(), ContractViolation> {
+        self.require_supported_policy(sim)?;
         // No allele yet → vacuously satisfied.
         let inst = match sim.assignments.get(self.segment) {
             None => return Ok(()),
@@ -150,6 +196,28 @@ impl Contract for AnchorPreserved {
             None => return Ok(()),
             Some(a) => a,
         };
+
+        if self.canonical_class {
+            if !crate::productivity::reference_ready(refdata, self.segment, inst.allele_id) {
+                return Err(ContractViolation::new(
+                    self.name(),
+                    "reference_anchor_unresolved",
+                ));
+            }
+            if sim
+                .sequence
+                .regions
+                .iter()
+                .any(|r| r.segment == self.segment)
+            {
+                let a = crate::productivity::anchor(sim, refdata, self.segment);
+                return if a.accepted == Some(true) {
+                    Ok(())
+                } else {
+                    Err(ContractViolation::new(self.name(), a.reason))
+                };
+            }
+        }
 
         // Anchorless allele → can't violate.
         let anchor = match allele.anchor {
@@ -201,6 +269,7 @@ impl Contract for AnchorPreserved {
         context: ChoiceContext<'_>,
         candidate: &ChoiceValue,
     ) -> Result<(), ContractViolation> {
+        self.require_supported_policy(sim)?;
         let address = context.address_string().unwrap_or_default();
         if let Some(refdata) = refdata {
             match context.address {
@@ -246,6 +315,9 @@ impl Contract for AnchorPreserved {
         refdata: Option<&RefDataConfig>,
         site: NucHandle,
     ) -> super::BaseMask {
+        if self.require_supported_policy(sim).is_err() {
+            return super::BaseMask::EMPTY;
+        }
         self.admissible_bases_at_impl(sim, refdata, site)
     }
 
@@ -290,6 +362,9 @@ impl Contract for AnchorPreserved {
         site: u32,
         kind: super::IndelKindHint,
     ) -> super::IndelEventClass {
+        if self.require_supported_policy(sim).is_err() {
+            return super::IndelEventClass::Forbidden;
+        }
         self.admissible_indel_class_at_impl(sim, refdata, site, kind)
     }
 
@@ -317,6 +392,9 @@ impl Contract for AnchorPreserved {
         target: super::TrimTarget,
         requested_max: u32,
     ) -> super::LengthSupport {
+        if self.require_supported_policy(sim).is_err() {
+            return super::LengthSupport::Empty;
+        }
         self.admissible_trim_lengths_impl(sim, refdata, target, requested_max)
     }
 
@@ -334,6 +412,9 @@ impl Contract for AnchorPreserved {
         site: NucHandle,
         byte: u8,
     ) -> bool {
+        if self.require_supported_policy(sim).is_err() {
+            return false;
+        }
         self.admits_fixed_base_at_impl(sim, refdata, site, byte)
     }
 }

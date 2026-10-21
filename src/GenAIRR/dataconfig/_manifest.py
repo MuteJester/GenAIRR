@@ -717,6 +717,7 @@ def build_manifest(cfg, refdata=None, *, schema_version):
 
     manifest: Dict[str, Any] = {
         "schema_version": getattr(cfg, "schema_version", schema_version),
+        "checksum_scheme": cfg.checksum_scheme,
         "identity": identity_dict,
         "catalogue": catalogue_dict,
         "rules": rules_dict,
@@ -726,6 +727,26 @@ def build_manifest(cfg, refdata=None, *, schema_version):
         "dropped_allele_fields": dropped_allele_fields,
         "orphan_dataconfig_fields": orphan_dataconfig_fields,
     }
+    # Optional evidence is transported, while raw legacy anchor_meta remains
+    # a Python compatibility field. Absence is explicit rather than upgraded.
+    evidence_rows = []
+    for segment, buckets in (("V", cfg.v_alleles), ("D", cfg.d_alleles), ("J", cfg.j_alleles)):
+        for group in (buckets or {}).values():
+            for allele in group:
+                evidence = getattr(allele, "reference_evidence", None)
+                if evidence is not None:
+                    evidence_rows.append({"segment": segment, "allele": allele.name, "evidence": evidence})
+    manifest["reference_evidence"] = {"schema_version": 1, "alleles": evidence_rows,
+        "legacy_unannotated_count": sum(catalogue_dict[k] for k in ("v_count", "d_count", "j_count")) - len(evidence_rows)}
+    from GenAIRR import data
+    from importlib.resources import files
+    import json
+    registry = json.loads(files("GenAIRR.data").joinpath("reference_audit_v1.json").read_text())
+    checksum = hashes_dict["data_config_checksum"]
+    for builtin_name, entry in registry["cartridges"].items():
+        if checksum == entry["dataconfig_checksum"]:
+            manifest["reference_audit"] = {"builtin_name": builtin_name, **data.audit_config(builtin_name)}
+            break
     if errors:
         manifest["errors"] = errors
     return manifest

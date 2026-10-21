@@ -18,12 +18,12 @@
 //! - **Replay symmetric.** Trace cursor consumes the recorded
 //!   length; the same allele + trim + orientation produces the
 //!   same bytes.
-//! - **Empty-support sentinel reuses
-//!   [`crate::dist::EmptySupport::Sentinel`]`(0)`** — under
-//!   productive-only, if every length in the cartridge's
-//!   distribution would disrupt the junction frame / drop an
-//!   anchor, the pass emits length 0 (no-op) under permissive
-//!   and surfaces `PassError::ConstraintSampling` under strict.
+//! - **Productive sampling uses joint N/P completion support.**
+//!   A P length is admissible only if its templated bytes leave a
+//!   productive downstream completion. Empty productive support is an
+//!   explicit error. The empty-support sentinel for other permissive
+//!   configurations is
+//!   [`crate::dist::EmptySupport::Sentinel`]`(0)`.
 //!
 //! Pipeline placement is per the audit's §1.4 / §9 (post-trim,
 //! pre-NP / pre-assemble on the relevant side; for `D5` the
@@ -33,11 +33,12 @@
 
 use crate::address::{ChoiceAddress, ChoiceAddressPattern, PEnd};
 use crate::assignment::SegmentOrientation;
-use crate::dist::{Distribution, EmptySupport};
+use crate::contract::ChoiceContext;
+use crate::dist::{sample_filtered_result, Distribution, EmptySupport, FilteredSampleError};
 use crate::ir::{
     complement_base, flag, NucHandle, Nucleotide, Region, Segment, Simulation, SimulationBuilder,
 };
-use crate::pass::{Pass, PassCompileFact, PassContext, PassEffect, PassError, IntegerSupport};
+use crate::pass::{IntegerSupport, Pass, PassCompileFact, PassContext, PassEffect, PassError};
 use crate::trace::ChoiceValue;
 
 /// Permissive empty-support policy: length 0 means "no P
@@ -130,7 +131,7 @@ impl PAdditionPass {
     /// `AssembleSegmentPass` would push. Used by the palindrome
     /// derivation to know which source bytes are at positions
     /// `[0..L)` (5' palindrome) or `[len-L..len)` (3' palindrome).
-    fn effective_coding_bytes(
+    pub(crate) fn effective_coding_bytes(
         allele_seq: &[u8],
         trim_5: u32,
         trim_3: u32,
@@ -152,7 +153,7 @@ impl PAdditionPass {
     /// Compute the `length` palindromic P-bytes for `end` from
     /// `effective` (the post-trim, post-orientation coding
     /// sequence). Returns the bytes in pool order.
-    fn derive_p_bytes(end: PEnd, effective: &[u8], length: usize) -> Vec<u8> {
+    pub(crate) fn derive_p_bytes(end: PEnd, effective: &[u8], length: usize) -> Vec<u8> {
         let mut out = Vec::with_capacity(length);
         match end {
             PEnd::V3 | PEnd::D3 => {
@@ -180,13 +181,52 @@ impl PAdditionPass {
         // we record only after the validation gates pass so a
         // strict-mode failure doesn't leak a half-committed
         // trace entry.
+        let productive = ctx.feasibility.filter(|f| f.has_p_productive());
+        let replaying = ctx.replay_cursor.is_some();
+        let refdata = ctx.refdata;
+        let contracts = ctx.contracts;
+        let pass_index = ctx.pass_index;
+        let choice_address = self.length_choice_address();
+        let address = choice_address.to_string();
+        let admits = |length: &i64| {
+            let choice = ChoiceValue::Int(*length);
+            productive.is_none_or(|f| f.admits(pass_index, sim, refdata, &address, &choice))
+                && contracts.is_none_or(|contracts| {
+                    contracts
+                        .admits_typed(
+                            sim,
+                            refdata,
+                            ChoiceContext::none().with_address(choice_address),
+                            &choice,
+                        )
+                        .is_ok()
+                })
+        };
         let length = if let Some(cursor) = ctx.replay_cursor.as_deref_mut() {
             cursor
                 .expect_int(self.length_choice_address())
                 .map_err(|reason| PassError::replay(self.pass_name(), reason))?
+        } else if productive.is_some() {
+            sample_filtered_result(ctx.rng, self.length_dist.as_ref(), admits).map_err(
+                |reason| PassError::constraint_sampling(self.pass_name(), address.clone(), reason),
+            )?
         } else {
             self.length_dist.sample(ctx.rng)
         };
+        if replaying
+            && productive.is_some()
+            && (!self.length_dist.support().is_some_and(|pairs| {
+                pairs
+                    .iter()
+                    .any(|&(value, weight)| value == length && weight > 0.0)
+            }) || !admits(&length))
+        {
+            return Err(PassError::constraint_sampling(
+                self.pass_name(),
+                address,
+                FilteredSampleError::EmptyAdmissibleSupport,
+            ));
+        }
 
         // Negative length — caller bug. Strict surfaces;
         // permissive falls back to the sentinel.
@@ -231,9 +271,7 @@ impl PAdditionPass {
         };
         let inst = match sim.assignments.get(seg).copied() {
             Some(inst) => inst,
-            None if strict => {
-                return Err(PassError::missing_assignment(self.pass_name(), seg))
-            }
+            None if strict => return Err(PassError::missing_assignment(self.pass_name(), seg)),
             None => panic!(
                 "PAdditionPass({:?}): no allele assigned to {seg:?} — \
                  SampleAllelePass must run before P-addition",
@@ -293,14 +331,22 @@ impl PAdditionPass {
         for byte in &p_bytes {
             builder.push_nucleotide(Nucleotide::synthetic(*byte, seg, flag::P_NUC));
         }
+        // Keep the total on the persistent assignment: descendants inherit
+        // the molecule but have their own trace and event ledger. The event
+        // records below still describe only this pass's newly emitted bases.
+        let emitted = p_bytes.len() as u32;
+        let updated = match self.end {
+            PEnd::V3 | PEnd::D3 => inst.with_p_length_3(inst.p_length_3 + emitted),
+            PEnd::D5 | PEnd::J5 => inst.with_p_length_5(inst.p_length_5 + emitted),
+        };
+        builder.assign_allele(seg, updated);
         let region_end = NucHandle::new(builder.peek().pool.len() as u32);
         // Frame phase is the codon offset of the first P-byte
         // — i.e. (current pool length) % 3. Use the pool length
         // directly so any prior P-bytes (which don't carry a
         // structural region) are counted correctly.
         let frame_phase = (sim.pool.len() as u32 % 3) as u8;
-        let region =
-            Region::new(seg, region_start, region_end).with_frame_phase(frame_phase);
+        let region = Region::new(seg, region_start, region_end).with_frame_phase(frame_phase);
         builder.record_p_region(self.end, region);
         if ctx.event_log_sink.is_some() {
             let captured = builder.seal_event_log_observer();
@@ -323,7 +369,10 @@ impl Pass for PAdditionPass {
         // are byte-stable under the existing
         // `fmt_int_dist` convention.
         use crate::passes::paramsig::{fmt_int_dist, join_parts};
-        join_parts([format!("length={}", fmt_int_dist(self.length_dist.as_ref()))])
+        join_parts([format!(
+            "length={}",
+            fmt_int_dist(self.length_dist.as_ref())
+        )])
     }
 
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
@@ -397,12 +446,8 @@ mod tests {
 
     #[test]
     fn effective_coding_bytes_forward_orientation_skips_trim() {
-        let bytes = PAdditionPass::effective_coding_bytes(
-            b"NACGTM",
-            1,
-            1,
-            SegmentOrientation::Forward,
-        );
+        let bytes =
+            PAdditionPass::effective_coding_bytes(b"NACGTM", 1, 1, SegmentOrientation::Forward);
         assert_eq!(bytes, b"ACGT");
     }
 
@@ -437,9 +482,64 @@ mod tests {
         );
         let patterns = pass.declared_choice_patterns();
         assert_eq!(patterns.len(), 1);
-        assert_eq!(
-            patterns[0],
-            ChoiceAddressPattern::PLength { end: PEnd::J5 }
+        assert_eq!(patterns[0], ChoiceAddressPattern::PLength { end: PEnd::J5 });
+    }
+
+    #[test]
+    fn emitted_p_lengths_survive_without_the_founder_event_ledger() {
+        use crate::airr_record::{build_airr_record, validate_airr_record, RecordValidationIssue};
+        use crate::assignment::AlleleInstance;
+        use crate::pass::{testing::PassRuntime, Outcome, PassPlan};
+        use crate::passes::AssembleSegmentPass;
+        use crate::refdata::{Allele, ChainType, RefDataConfig};
+        use crate::trace::Trace;
+
+        let mut cfg = RefDataConfig::empty(ChainType::Vj);
+        let v = cfg.v_pool.push(Allele {
+            name: "v*01".into(),
+            gene: "v".into(),
+            seq: b"ACGT".to_vec(),
+            segment: Segment::V,
+            anchor: None,
+            functional_status: None,
+            subregions: Vec::new(),
+        });
+        let mut plan = PassPlan::new();
+        plan.push(Box::new(AssembleSegmentPass::new(Segment::V)));
+        plan.push(Box::new(PAdditionPass::new(
+            PEnd::V3,
+            Box::new(EmpiricalLengthDist::from_pairs(vec![(2, 1.0)])),
+        )));
+        let founder = PassRuntime::execute_with_refdata(
+            &plan,
+            Simulation::new().with_allele_assigned(Segment::V, AlleleInstance::new(v)),
+            0,
+            &cfg,
         );
+        assert_eq!(
+            founder
+                .final_simulation()
+                .assignments
+                .get(Segment::V)
+                .unwrap()
+                .p_length_3,
+            2,
+        );
+        let descendant = Outcome {
+            revisions: vec![founder.final_simulation().clone()],
+            pass_names: Vec::new(),
+            trace: Trace::new(),
+            events: Vec::new(),
+        };
+        let record = build_airr_record(&descendant, &cfg, "descendant");
+        assert_eq!(record.p_v_3_length, 2);
+        assert!(!validate_airr_record(&record, &descendant, &cfg)
+            .iter()
+            .any(|issue| matches!(issue, RecordValidationIssue::PLengthMismatch { .. })));
+        let mut tampered = record;
+        tampered.p_v_3_length = 0;
+        assert!(validate_airr_record(&tampered, &descendant, &cfg)
+            .iter()
+            .any(|issue| matches!(issue, RecordValidationIssue::PLengthMismatch { .. })));
     }
 }

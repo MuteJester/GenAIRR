@@ -33,7 +33,7 @@ use crate::trace::ChoiceValue;
 /// replacement exists.
 ///
 /// Trace addresses (D3):
-/// - `corrupt.pcr.count` — total PCR errors applied
+/// - `corrupt.pcr.count` — sampled PCR error attempts
 /// - `corrupt.pcr.error_site[i]` — pool position of the i-th error
 /// - `corrupt.pcr.error_base[i]` — replacement base at the i-th error
 pub struct PCRErrorPass {
@@ -87,11 +87,15 @@ impl PCRErrorPass {
             strict,
         )?;
 
-        if pool_len == 0 || count == 0 {
+        if (pool_len == 0 || count == 0) && sim.duplex_provenance.is_none() {
             return Ok(sim.clone());
         }
 
         let mut tx = MutationTransaction::open(sim, ctx, self.name(), strict);
+        tx.record_duplex_attempt_stage(crate::ir::DuplexAttemptStage::Pcr, count);
+        if pool_len == 0 || count == 0 {
+            return tx.commit();
+        }
 
         for i in 0..count {
             tx.substitute_position_constrained(
@@ -109,6 +113,16 @@ impl PCRErrorPass {
 }
 
 impl Pass for PCRErrorPass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::Pcr {
+            count: CountSpec::capture(&self.count_source)?,
+            base: self.base_dist.family_replay_spec()?,
+        })
+    }
     fn name(&self) -> &str {
         address::CORRUPT_PCR
     }
@@ -124,6 +138,15 @@ impl Pass for PCRErrorPass {
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("PCRErrorPass permissive execution must not return PassError")
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn execute_checked(
@@ -458,12 +481,15 @@ mod tests {
                 .value,
             ChoiceValue::Base(b'A')
         );
-        let violations = productive()
-            .verify(unconstrained.final_simulation(), Some(&cfg))
-            .unwrap_err();
-        assert!(violations
-            .iter()
-            .any(|v| v.contract_name == "no_stop_codon_in_junction"));
+        // Conditioning also changes site weights, so the same seed need
+        // not choose the same unconstrained site. Independently evaluate the
+        // rejected target-2 candidate: TGC -> TGA is a coding stop.
+        let (_, baseline) = make_substitution_productive_vj_fixture();
+        let stopped = baseline.with_base_changed(NucHandle::new(2), b'A');
+        assert_eq!(
+            crate::productivity::assess(&stopped, &cfg).stop_codon,
+            Some(true)
+        );
     }
 
     #[test]
