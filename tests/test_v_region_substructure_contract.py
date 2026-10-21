@@ -561,6 +561,10 @@ def test_pin_present_imgt_regions_consumed_by_bridge_and_mcp() -> None:
         # boundary the bridge resolver uses at load time. See
         # `docs/reference_cartridge_authoring_audit.md` §2.
         "src/GenAIRR/cartridge_builder.py",
+        # FASTA V-anchor resolution reads `declares_imgt_gaps`, so the
+        # IMGT-alignment declaration rule is shared with subregion
+        # derivation (it derives no regions itself).
+        "src/GenAIRR/_reference_annotations.py",
     }
     assert set(consumers) == expected, (
         f"imgt_regions consumers changed: got {consumers}, expected "

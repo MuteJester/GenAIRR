@@ -12,7 +12,9 @@ the GenAIRR native resolver. No external annotation program is required.
 
 - A declared IMGT-gapped V alignment maps conserved residue 104 to an ungapped
   coordinate and validates the cysteine codon. The result is **inferred** from
-  that alignment declaration.
+  that alignment declaration. IMGT `.` gap markers in the V sequence are the
+  declaration. An IMGT FASTA header alone is not, because IMGT uses the same
+  headers for gapped and ungapped exports.
 - A unique locus-compatible J F/W-G-X-G motif is an **inferred** candidate.
   Multiple candidates stay unresolved; the resolver does not select one
   arbitrarily. The J expectation is W for IGH and F for the other supported
