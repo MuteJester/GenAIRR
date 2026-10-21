@@ -143,3 +143,62 @@ def test_c4_capabilities_unavailable_with_note():
     assert "unavailable genotype_constrained: not yet supported for portable references" in r.explain()
     assert r.explain().splitlines()[-1] == "phase support: none"
     assert r.to_dict()["phase_support"] == "none"
+
+
+ALL_ENDS = [claim(a, p, "complete") for a in ("V:V1", "D:D1", "J:J1") for p in ("boundary_5", "boundary_3")]
+GATED = ("source_annotated_junction", "original_coding_ends", "complete_reference_span")
+
+
+def test_empty_view_segments_make_claim_capabilities_unavailable():
+    cat = build(anchors() + ALL_ENDS)
+    for view in ({"V": [], "D": ["D:D1"], "J": ["J:J1"]}, {"V": ["V:V1"], "D": ["D:D1"], "J": []}):
+        r = evaluate(cat, view)
+        for name in GATED + ("canonical_productive",):
+            st = r.status(name)
+            assert not st.available and st.evidence is None
+            assert any(u.allele == "(view)" for u in st.unmet)
+        assert not set(GATED) & set(r.available(evidence="assertion"))
+
+
+def test_complete_reference_span_available():
+    st = evaluate(build(ALL_ENDS), VIEW).status("complete_reference_span")
+    assert st.available and st.evidence == "source"
+
+
+def test_complete_reference_span_lists_missing_ends():
+    cl = [c for c in ALL_ENDS if (c.subject, c.predicate) not in
+          (("V:V1", "boundary_5"), ("J:J1", "boundary_3"))]
+    st = evaluate(build(cl), VIEW).status("complete_reference_span")
+    assert not st.available
+    assert [(u.allele, u.requirement) for u in st.unmet] == [
+        ("V:V1", 'accepted boundary_5 == "complete"'), ("J:J1", 'accepted boundary_3 == "complete"')]
+
+
+def test_complete_reference_span_evidence_is_weakest():
+    cl = [claim("D:D1", "boundary_5", "complete", "assertion") if (c.subject, c.predicate) ==
+          ("D:D1", "boundary_5") else c for c in ALL_ENDS]
+    st = evaluate(build(cl), VIEW).status("complete_reference_span")
+    assert st.available and st.evidence == "assertion"
+
+
+def test_boundary_conflict_blocks_original_coding_ends():
+    cl = [c for c in ALL_ENDS] + [claim("V:V1", "boundary_3", "partial", status="conflict")]
+    st = evaluate(build(cl), VIEW).status("original_coding_ends")
+    assert not st.available
+    assert [u.allele for u in st.unmet] == ["V:V1"]
+
+
+def test_disagreeing_accepted_boundaries_are_missing():
+    cl = ALL_ENDS + [claim("V:V1", "boundary_3", "partial")]
+    st = evaluate(build(cl), VIEW).status("original_coding_ends")
+    assert not st.available
+    assert [(u.allele, u.requirement) for u in st.unmet] == [("V:V1", 'accepted boundary_3 == "complete"')]
+
+
+def test_wrong_end_boundaries_do_not_satisfy_original_coding_ends():
+    cl = [claim("V:V1", "boundary_5", "complete"), claim("J:J1", "boundary_3", "complete"),
+          claim("D:D1", "boundary_5", "complete"), claim("D:D1", "boundary_3", "complete")]
+    st = evaluate(build(cl), VIEW).status("original_coding_ends")
+    assert not st.available
+    assert [(u.allele, u.requirement) for u in st.unmet] == [
+        ("V:V1", 'accepted boundary_3 == "complete"'), ("J:J1", 'accepted boundary_5 == "complete"')]

@@ -106,7 +106,9 @@ def _usable(catalogue, allele_id, predicate, want=None):
 
 
 def _weakest(claims):
-    return "source" if claims and all(c.support == "source" for c in claims) else "assertion"
+    if not claims:
+        return None
+    return "source" if all(c.support == "source" for c in claims) else "assertion"
 
 
 def _phase_support(catalogue, ids):
@@ -160,8 +162,11 @@ def evaluate(catalogue: Catalogue, view: dict, *, native_fatal: Sequence[dict] =
                            detail or "resolve the reported engine finding"))
     add("observed_span_simulation", unmet)
 
+    view_unmet = [u for u in unmet if u.requirement.startswith("at least one") and
+                  not u.requirement.endswith("D allele")]
+
     # Junction anchors.
-    junction_unmet, anchor_claims, anchors = [], [], {}
+    junction_unmet, anchor_claims, anchors = list(view_unmet), [], {}
     for aid in vs + js:
         claims = _usable(catalogue, aid, "anchor")
         if claims:
@@ -187,7 +192,7 @@ def evaluate(catalogue: Catalogue, view: dict, *, native_fatal: Sequence[dict] =
 
     # Boundaries.
     def boundaries(required):
-        unmet, claims = [], []
+        unmet, claims = list(view_unmet), []
         for aid, preds in required:
             for p in preds:
                 found = _usable(catalogue, aid, p, "complete")
@@ -207,5 +212,6 @@ def evaluate(catalogue: Catalogue, view: dict, *, native_fatal: Sequence[dict] =
 
     for name in ("genotype_constrained", "duplex_family_replay"):
         add(name, note=_UNSUPPORTED_NOTE, force_unavailable=True)
-    assert tuple(s.name for s in statuses) == CAPABILITIES
+    if tuple(s.name for s in statuses) != CAPABILITIES:
+        raise RuntimeError("capability statuses out of order")
     return CapabilityReport(tuple(statuses), phase)
