@@ -168,6 +168,19 @@ class SimulationResult(_ResultExport, _ResultValidation):
     def __repr__(self) -> str:
         return f"<SimulationResult n={len(self._records)}>"
 
+    def save_family_replay(self, path, *, replace=False):
+        """Save a sealed, captured duplex lineage run for self-contained replay.
+
+        Run with ``capture_family_replay=True`` first. Changed records or
+        annotations reject publication; existing destinations require the
+        explicit ``replace=True`` option.
+        """
+        from ._family_replay import _bundle_from_result, FamilyReplayError
+
+        if getattr(self, "_family_replay_capture", None) is None:
+            raise FamilyReplayError("missing_capture", "result", "run a supported lineage with capture_family_replay=True")
+        _bundle_from_result(self).write_to(path, replace=replace)
+
 
 class SimulationResultWithLineages(SimulationResult):
     """A :class:`SimulationResult` that also carries per-clone lineage trees.
@@ -182,6 +195,7 @@ class SimulationResultWithLineages(SimulationResult):
     __slots__ = (
         "_lineage_trees", "_families", "_lineage_record_origins",
         "_lineage_origin_trees", "_lineage_origin_nodes",
+        "_family_replay_capture", "_family_replay_seal", "_family_replay_refdata",
     )
 
     def __init__(
@@ -194,6 +208,9 @@ class SimulationResultWithLineages(SimulationResult):
         lineage_record_origins: "Optional[Sequence]" = None,
     ) -> None:
         super().__init__(records, outcomes, parents)
+        self._family_replay_capture = None
+        self._family_replay_seal = None
+        self._family_replay_refdata = None
         self._lineage_trees: "Optional[List]" = (
             list(lineage_trees) if lineage_trees is not None else None
         )
@@ -221,6 +238,11 @@ class SimulationResultWithLineages(SimulationResult):
                 native_nodes[parent_id][node_id]
                 for parent_id, _, node_id in self._lineage_record_origins
             )
+
+    @property
+    def refdata(self):
+        """Exact native references for captured/replayed duplex families, else None."""
+        return self._family_replay_refdata
 
     @property
     def families(self) -> "Optional[List]":

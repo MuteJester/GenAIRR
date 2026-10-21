@@ -5,7 +5,7 @@ use crate::ir::{compute_codon_rail, Simulation};
 use crate::rng::Rng;
 
 /// 20 standard amino acids in the BLOSUM62 matrix's row/column order.
-const AA_ORDER: &[u8; 20] = b"ARNDCQEGHILKMFPSTWYV";
+pub(crate) const AA_ORDER: &[u8; 20] = b"ARNDCQEGHILKMFPSTWYV";
 
 /// BLOSUM62 substitution score for two amino-acid bytes (uppercase one-letter
 /// codes). Unknown / non-standard residues (including `*` and `X`) score as a
@@ -67,16 +67,9 @@ pub fn weighted_aa_distance(a: &[u8], b: &[u8], weights: &[f64]) -> f64 {
 /// single-residue substitutions to a different standard amino acid.
 /// Deterministic for the given `rng` state.
 pub fn make_mature_target(naive_aa: &[u8], m: u32, rng: &mut Rng) -> Vec<u8> {
-    let mut target = naive_aa.to_vec();
-    if target.is_empty() {
-        return target;
-    }
-    for _ in 0..m {
-        // Unbiased uniform draws (Lemire `range_u32`), matching the engine's
-        // RNG convention rather than `% len` modulo bias.
+    make_mature_target_with_choices(naive_aa, m, |target| {
         let pos = rng.range_u32(target.len() as u32) as usize;
         let cur = target[pos];
-        // Pick a standard amino acid uniformly among the 19 != cur (no skew).
         let pick = match AA_ORDER.iter().position(|&x| x == cur) {
             Some(ci) => {
                 let r = rng.range_u32(19) as usize;
@@ -84,9 +77,31 @@ pub fn make_mature_target(naive_aa: &[u8], m: u32, rng: &mut Rng) -> Vec<u8> {
             }
             None => AA_ORDER[rng.range_u32(20) as usize],
         };
+        Ok((pos, pick))
+    })
+    .expect("fresh target choices are in support")
+}
+
+pub(crate) fn make_mature_target_with_choices(
+    naive_aa: &[u8],
+    m: u32,
+    mut choose: impl FnMut(&[u8]) -> Result<(usize, u8), String>,
+) -> Result<Vec<u8>, String> {
+    let mut target = naive_aa.to_vec();
+    if target.is_empty() {
+        return Ok(target);
+    }
+    for _ in 0..m {
+        let (pos, pick) = choose(&target)?;
+        let cur = *target
+            .get(pos)
+            .ok_or("target choice position out of bounds")?;
+        if !AA_ORDER.contains(&pick) || (AA_ORDER.contains(&cur) && pick == cur) {
+            return Err("target choice outside positive replacement support".into());
+        }
         target[pos] = pick;
     }
-    target
+    Ok(target)
 }
 
 /// Translate a `Simulation` to its amino-acid sequence by concatenating the

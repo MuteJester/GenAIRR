@@ -124,7 +124,10 @@ impl InvertDPass {
         } else {
             ctx.rng.next_f64() < self.prob
         };
-        if replaying && productive.is_some() && !admits(inverted) {
+        if replaying
+            && (productive.is_some() || crate::family_replay::is_replaying())
+            && !admits(inverted)
+        {
             return Err(PassError::constraint_sampling(
                 self.name(),
                 choice_name,
@@ -159,6 +162,10 @@ impl InvertDPass {
 }
 
 impl Pass for InvertDPass {
+    fn family_replay_spec(&self)->Option<crate::family_replay::plan::ReplayPassSpecV1>{
+        #[allow(unused_imports)] use crate::family_replay::plan::{ReplayPassSpecV1 as P,CountSpec,KernelSpecV1,bits,rate_bits,subregion_bits};
+        Some(P::InvertD{probability:bits(self.prob)?})
+    }
     fn name(&self) -> &str {
         address::INVERT_D
     }
@@ -176,6 +183,15 @@ impl Pass for InvertDPass {
         &self,
         sim: &Simulation,
         ctx: &mut PassContext,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx)
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        _strict: bool,
     ) -> Result<Simulation, PassError> {
         self.execute_with_sampling_mode(sim, ctx)
     }
@@ -485,16 +501,33 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "permissive execution must not return PassError")]
-    fn invert_d_permissive_run_with_no_d_panics_documenting_caller_bug() {
-        // Permissive `execute` propagates `InvalidPlanState` through
-        // `.expect(...)`. The pin is: this is a caller bug (plan
-        // built without SampleAllele(D)) and the error message has
-        // to be loud. Matches the existing AssembleSegmentPass
-        // convention.
-        let mut plan = PassPlan::new();
-        plan.push(Box::new(InvertDPass::new(0.0)));
-        let _ = PassRuntime::execute(&plan, Simulation::new(), 0);
+    fn invert_d_permissive_dispatch_with_no_d_returns_missing_assignment() {
+        let pass = InvertDPass::new(0.0);
+        let mut trace = Trace::new();
+        let mut rng = Rng::new(0);
+        let mut ctx = PassContext {
+            trace: &mut trace,
+            rng: &mut rng,
+            pass_index: 0,
+            refdata: None,
+            contracts: None,
+            feasibility: None,
+            reference_index: None,
+            replay_cursor: None,
+            event_log_sink: None,
+        };
+        let error = pass
+            .execute_with_policy(&Simulation::new(), &mut ctx, false)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            PassError::MissingAssignment {
+                segment: Segment::D,
+                ..
+            }
+        ));
+        assert!(trace.is_empty());
+        assert_eq!(rng.words_consumed(), 0);
     }
 
     // ── Event log ────────────────────────────────────────────────

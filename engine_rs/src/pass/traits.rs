@@ -37,6 +37,10 @@ pub trait Pass: std::any::Any {
     /// - Default implementation returns `""` (the pass has no
     ///   compile-time parameters or chooses not to participate in
     ///   the signature). Passes with parameters MUST override.
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        None
+    }
+
     fn parameter_signature(&self) -> String {
         String::new()
     }

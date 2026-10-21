@@ -211,6 +211,7 @@ fn grow_core(
     mutator: Option<&dyn Pass>,
     affinity: Option<&AffinityModel>,
     context: Option<&LineageMutationContext<'_>>,
+    mut replay: Option<&mut super::replay_receipt::FamilyReplayDriver<'_>>,
 ) -> Result<
     (
         LineageTree,
@@ -223,6 +224,16 @@ fn grow_core(
 > {
     validate_duplex_founder(founder, context, mutator)?;
     require_productive(founder, context)?;
+    if let Some(driver) = replay.as_deref_mut() {
+        driver
+            .budget
+            .charge_nodes(1)
+            .map_err(super::replay_receipt::error)?;
+        driver
+            .budget
+            .charge_bases(founder.pool.len() as u64)
+            .map_err(super::replay_receipt::error)?;
+    }
     let retain_edges = founder.duplex_provenance.is_some();
     let mut edges = if retain_edges { vec![None] } else { Vec::new() };
     let mut nodes: Vec<LineageNode> = Vec::new();
@@ -249,6 +260,7 @@ fn grow_core(
     let mut live: Vec<u32> = vec![0];
     let mut next_id: u32 = 1;
     let mut peak_live: usize = live.len();
+    let mut completed_generations = 0;
 
     for gen in 1..=params.max_generations {
         if live.is_empty() {
@@ -265,7 +277,11 @@ fn grow_core(
                 Some(m) => eff_lambda * m.fitness_from_affinity(nodes[parent_id as usize].affinity),
                 None => eff_lambda,
             };
-            let k = poisson_sample(&mut rng, cell_lambda);
+            let k = if let Some(driver) = replay.as_deref_mut() {
+                driver.offspring(gen, parent_id, cell_lambda, &mut rng)?
+            } else {
+                poisson_sample(&mut rng, cell_lambda)
+            };
             for _ in 0..k {
                 // Hard cap: a Poisson draw can still overshoot near saturation.
                 if next_live.len() >= params.n_max as usize {
@@ -274,14 +290,55 @@ fn grow_core(
                 let parent_mut_count = sims[parent_id as usize].mutation_count;
                 let (child_sim, edge) = match mutator {
                     Some(m) => {
-                        let child_seed = rng.next_u64();
-                        mutate_child(
-                            &sims[parent_id as usize],
-                            m,
-                            child_seed,
-                            context,
-                            retain_edges,
-                        )?
+                        if let Some(driver) = replay.as_deref_mut() {
+                            let parent = &sims[parent_id as usize];
+                            let (child_seed, recorded) =
+                                driver.begin_edge(next_id, parent_id, gen, parent, &mut rng)?;
+                            let (child, edge) = if let Some(trace) = recorded {
+                                let any: &dyn std::any::Any = m;
+                                let s5f = any
+                                    .downcast_ref::<crate::passes::S5FMutationPass>()
+                                    .ok_or_else(|| {
+                                        super::replay_receipt::error(
+                                            "unsupported replay division mutator",
+                                        )
+                                    })?;
+                                let edge = execute_mutation_choices(
+                                    parent,
+                                    &trace,
+                                    s5f,
+                                    context.ok_or_else(|| {
+                                        super::replay_receipt::error(
+                                            "missing replay division context",
+                                        )
+                                    })?,
+                                )?;
+                                (edge.final_simulation().clone(), Some(edge))
+                            } else {
+                                mutate_child(parent, m, child_seed, context, true)?
+                            };
+                            driver.commit_edge(
+                                next_id,
+                                parent_id,
+                                gen,
+                                child_seed,
+                                edge.as_ref().ok_or_else(|| {
+                                    super::replay_receipt::error(
+                                        "division did not retain its event history",
+                                    )
+                                })?,
+                            )?;
+                            (child, edge)
+                        } else {
+                            let child_seed = rng.next_u64();
+                            mutate_child(
+                                &sims[parent_id as usize],
+                                m,
+                                child_seed,
+                                context,
+                                retain_edges,
+                            )?
+                        }
                     }
                     None => (sims[parent_id as usize].clone(), None),
                 };
@@ -305,12 +362,23 @@ fn grow_core(
                     edges.push(edge);
                 }
                 next_live.push(next_id);
-                next_id += 1;
+                next_id = next_id
+                    .checked_add(1)
+                    .ok_or_else(|| super::replay_receipt::error("lineage node ID overflow"))?;
             }
         }
         live = next_live;
+        completed_generations = gen;
         if live.len() > peak_live {
             peak_live = live.len();
+        }
+    }
+    if let Some(driver) = replay.as_deref_mut() {
+        driver.finish_growth(&live, completed_generations, peak_live)?;
+        if driver.is_replay() && rng.words_consumed() != 0 {
+            return Err(super::replay_receipt::error(
+                "semantic growth replay consumed RNG",
+            ));
         }
     }
 
@@ -328,7 +396,7 @@ pub fn grow_lineage(
     params: &BranchingParams,
     mutator: &dyn Pass,
 ) -> LineageTree {
-    grow_core(founder, params, Some(mutator), None, None)
+    grow_core(founder, params, Some(mutator), None, None, None)
         .expect("unconstrained lineage")
         .0
 }
@@ -336,7 +404,7 @@ pub fn grow_lineage(
 /// Grow the lineage TOPOLOGY only (children are exact clones of their parent
 /// `Simulation`; no mutation — a later task layers mutation on top).
 pub fn grow_topology(founder: &Simulation, params: &BranchingParams) -> LineageTree {
-    grow_core(founder, params, None, None, None)
+    grow_core(founder, params, None, None, None, None)
         .expect("unconstrained lineage")
         .0
 }
@@ -349,7 +417,7 @@ pub fn grow_topology_with_live(
     params: &BranchingParams,
 ) -> (LineageTree, Vec<u32>) {
     let (tree, _peak, _sims, live, _edges) =
-        grow_core(founder, params, None, None, None).expect("unconstrained lineage");
+        grow_core(founder, params, None, None, None, None).expect("unconstrained lineage");
     (tree, live)
 }
 
@@ -361,7 +429,7 @@ pub fn grow_lineage_with_affinity(
     mutator: &dyn Pass,
     model: &AffinityModel,
 ) -> LineageTree {
-    grow_core(founder, params, Some(mutator), Some(model), None)
+    grow_core(founder, params, Some(mutator), Some(model), None, None)
         .expect("unconstrained lineage")
         .0
 }
@@ -377,7 +445,8 @@ pub fn grow_lineage_retaining_sims(
     affinity: Option<&AffinityModel>,
 ) -> (LineageTree, Vec<Simulation>, Vec<u32>) {
     let (tree, _peak, sims, live, _edges) =
-        grow_core(founder, params, Some(mutator), affinity, None).expect("unconstrained lineage");
+        grow_core(founder, params, Some(mutator), affinity, None, None)
+            .expect("unconstrained lineage");
     (tree, sims, live)
 }
 
@@ -388,8 +457,14 @@ pub fn grow_lineage_retaining_sims_with_context(
     affinity: Option<&AffinityModel>,
     context: &LineageMutationContext<'_>,
 ) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>), PassError> {
-    let (tree, _peak, sims, live, _edges) =
-        grow_core(founder, params, Some(mutator), affinity, Some(context))?;
+    let (tree, _peak, sims, live, _edges) = grow_core(
+        founder,
+        params,
+        Some(mutator),
+        affinity,
+        Some(context),
+        None,
+    )?;
     Ok((tree, sims, live))
 }
 
@@ -402,38 +477,46 @@ pub fn grow_lineage_retaining_edges_with_context(
     affinity: Option<&AffinityModel>,
     context: &LineageMutationContext<'_>,
 ) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>, Vec<Option<Outcome>>), PassError> {
-    let (tree, _peak, sims, live, edges) =
-        grow_core(founder, params, Some(mutator), affinity, Some(context))?;
+    let (tree, _peak, sims, live, edges) = grow_core(
+        founder,
+        params,
+        Some(mutator),
+        affinity,
+        Some(context),
+        None,
+    )?;
+    Ok((tree, sims, live, edges))
+}
+
+pub(crate) fn grow_lineage_with_receipt(
+    founder: &Simulation,
+    params: &BranchingParams,
+    mutator: &dyn Pass,
+    affinity: Option<&AffinityModel>,
+    context: &LineageMutationContext<'_>,
+    driver: &mut super::replay_receipt::FamilyReplayDriver<'_>,
+) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>, Vec<Option<Outcome>>), PassError> {
+    let (tree, _, sims, live, edges) = grow_core(
+        founder,
+        params,
+        Some(mutator),
+        affinity,
+        Some(context),
+        Some(driver),
+    )?;
     Ok((tree, sims, live, edges))
 }
 
 /// Replay one stored division. All choices come from the recorded trace;
 /// even a hidden fallback draw is rejected by the RNG consumption fence.
-pub fn replay_mutation_edge(
+pub(crate) fn execute_mutation_choices(
     parent: &Simulation,
-    recorded: &Outcome,
+    choices: &Trace,
     mutator: &crate::passes::S5FMutationPass,
     context: &LineageMutationContext<'_>,
 ) -> Result<Outcome, PassError> {
     let fail = |reason: String| PassError::invalid_plan_state("lineage.replay", reason);
-    let boundary = Outcome {
-        revisions: vec![parent.clone()],
-        pass_names: vec![],
-        trace: Trace::new(),
-        events: vec![],
-    };
-    boundary
-        .with_continuation(recorded)
-        .map_err(|s| fail(s.into()))?;
-    if recorded.pass_names != [mutator.name()]
-        || recorded.revisions.len() != 2
-        || recorded.events.len() != 1
-    {
-        return Err(fail(
-            "recorded division has an invalid pass/revision/event layout".into(),
-        ));
-    }
-    let mut cursor = crate::replay::TraceCursor::new(recorded.trace.choices());
+    let mut cursor = crate::replay::TraceCursor::new(choices.choices());
     let mut trace = Trace::new();
     let mut rng = Rng::new(1);
     let mut events = Vec::new();
@@ -466,11 +549,46 @@ pub fn replay_mutation_edge(
         0,
         mutator.name(),
         mutator.effects(),
-        TraceSpan::new(0, recorded.trace.len()),
+        TraceSpan::new(0, choices.len()),
         StateSummary::from_simulation(parent),
         StateSummary::from_simulation(&child),
         events,
     );
+    Ok(Outcome {
+        revisions: vec![parent.clone(), child],
+        pass_names: vec![mutator.name().into()],
+        trace: choices.clone(),
+        events: vec![event],
+    })
+}
+
+pub fn replay_mutation_edge(
+    parent: &Simulation,
+    recorded: &Outcome,
+    mutator: &crate::passes::S5FMutationPass,
+    context: &LineageMutationContext<'_>,
+) -> Result<Outcome, PassError> {
+    let fail = |reason: String| PassError::invalid_plan_state("lineage.replay", reason);
+    let boundary = Outcome {
+        revisions: vec![parent.clone()],
+        pass_names: vec![],
+        trace: Trace::new(),
+        events: vec![],
+    };
+    boundary
+        .with_continuation(recorded)
+        .map_err(|s| fail(s.into()))?;
+    if recorded.pass_names != [mutator.name()]
+        || recorded.revisions.len() != 2
+        || recorded.events.len() != 1
+    {
+        return Err(fail(
+            "recorded division has an invalid pass/revision/event layout".into(),
+        ));
+    }
+    let replayed = execute_mutation_choices(parent, &recorded.trace, mutator, context)?;
+    let child = replayed.final_simulation();
+    let event = &replayed.events[0];
     let expected = recorded.final_simulation();
     if child.pool.as_slice() != expected.pool.as_slice()
         || child.sequence.regions != expected.sequence.regions
@@ -480,20 +598,13 @@ pub fn replay_mutation_edge(
         || child.live_call_support != expected.live_call_support
         || child.mutation_count != expected.mutation_count
         || child.mutation_burden.to_bits() != expected.mutation_burden.to_bits()
-        || event != recorded.events[0]
+        || event != &recorded.events[0]
     {
         return Err(fail(
             "division replay differs from stored state or event evidence".into(),
         ));
     }
-    // Replay passes consume rather than re-record choices. Retain the exact
-    // validated original addresses and diagnostics in the returned Outcome.
-    Ok(Outcome {
-        revisions: vec![parent.clone(), child],
-        pass_names: recorded.pass_names.clone(),
-        trace: recorded.trace.clone(),
-        events: vec![event],
-    })
+    Ok(replayed)
 }
 
 #[cfg(test)]
@@ -623,7 +734,7 @@ mod tests {
             seed: 7,
         };
         let (_tree, peak_live, _sims, _live, _edges) =
-            grow_core(&founder(), &params, None, None, None).unwrap();
+            grow_core(&founder(), &params, None, None, None, None).unwrap();
         // hard cap: live population never exceeds n_max
         assert!(
             peak_live <= params.n_max as usize,

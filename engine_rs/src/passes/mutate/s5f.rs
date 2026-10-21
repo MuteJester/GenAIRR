@@ -155,6 +155,10 @@ impl S5FMutationPass {
 }
 
 impl Pass for S5FMutationPass {
+    fn family_replay_spec(&self)->Option<crate::family_replay::plan::ReplayPassSpecV1>{
+        #[allow(unused_imports)] use crate::family_replay::plan::{ReplayPassSpecV1 as P,CountSpec,KernelSpecV1,bits,rate_bits,subregion_bits};
+        Some(P::S5fMutation{count:CountSpec::capture(&self.count_source)?,kernel:KernelSpecV1::capture(&self.kernel)?,kernel_name:self.kernel_name.clone(),segment_rates:rate_bits(self.segment_rates)?,v_subregion_rates:subregion_bits(self.v_subregion_rates)?})
+    }
     fn name(&self) -> &str {
         address::MUTATE_S5F
     }
@@ -203,6 +207,15 @@ impl Pass for S5FMutationPass {
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         self.execute_with_sampling_mode(sim, ctx, true)
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {

@@ -29,6 +29,7 @@ pub mod compiled;
 pub mod contract;
 pub mod duplex_repair;
 pub mod event;
+pub mod family_replay;
 pub mod lineage;
 pub mod outcome;
 pub mod plan;
@@ -73,6 +74,8 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<compiled::PyCompiledSimulator>()?;
     m.add_class::<trace_file::PyTraceFile>()?;
     contract::register(m)?;
+    family_replay::register(m)?;
+    m.add_function(pyo3::wrap_pyfunction!(lineage::replay_family_outcomes,m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(duplex_repair::duplex_repair, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(
         duplex_repair::coupled_duplex_repair,

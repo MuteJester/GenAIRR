@@ -494,10 +494,11 @@ Write through a same-directory temporary file, flush/sync and close it, then
 publish atomically. Default publication must use a race-safe no-clobber operation,
 not an existence check followed by an overwriting rename. Explicit replacement
 uses an atomic replacement path. Sync the containing directory on qualified
-platforms where required for crash persistence. Failure cleans the temporary
-file and leaves the previous artifact intact. A failed or cancelled run cannot
-leave an apparently complete family file. No multi-file transaction or archive
-path handling is needed.
+platforms where required for crash persistence. Prepublication failure cleans
+the temporary file and leaves the previous artifact intact. If directory sync
+fails after publication, report the I/O error; the destination may already hold
+the complete new file, with crash persistence unconfirmed. No partial artifact
+is published. No multi-file transaction or archive path handling is needed.
 
 ## 9. Compatibility and extension boundaries
 
@@ -542,7 +543,7 @@ reader that share the same faulty helper is insufficient.
 | Output/sealing | Exact generated types; lossless tagged values including Boolean/int/float distinctions, signed zero and hex-looking strings; deferred Experiment versus direct-compiled sealing; unused non-JSON compiled metadata; nested-object mutation cannot change the envelope and causes rejection if it changes actual records; removed/reordered/edited rows and cross-clone/node namespace swaps |
 | Strong identity | Same-name different S5F arrays; changed source weights/model/locks; same-size different references; changed annotation/phase/rules; delimiter/newline reference-identity aliases distinguished by the new typed digest |
 | Hostile/malformed input | Duplicate keys/IDs, future versions, extra/missing/reordered stages, cyclic/dangling references, Boolean IDs, overflow, nonfinite or malformed bit encodings, truncated choices and digests recomputed over semantically invalid payloads |
-| Resource behavior | Byte/depth/node/choice/base/history/work limits fail before excess charged allocation/execution; deep-tree copied ancestor prefixes, temporary states and rejected attempts charged; interrupted/failed atomic writes preserve the previous target |
+| Resource behavior | Byte/depth/node/choice/base/history/work limits fail before excess charged allocation/execution; deep-tree copied ancestor prefixes, temporary states and rejected attempts charged; prepublication failures preserve the previous target; postpublication sync errors report uncertain crash persistence |
 | Numerical/compatibility | Qualified numeric profile fixtures and exact mismatch errors; current v1–v4 trace goldens unchanged; capture-on/off seeded choices and records equal |
 
 Tamper tests must exercise semantic checks after recomputing all content hashes,

@@ -62,6 +62,15 @@ impl RevCompPass {
         } else {
             ctx.rng.next_f64() < self.apply_prob
         };
+        if crate::family_replay::is_replaying()
+            && ctx.replay_cursor.is_some()
+            && ((applied && self.apply_prob == 0.0) || (!applied && self.apply_prob == 1.0))
+        {
+            return Err(PassError::invalid_plan_state(
+                self.name(),
+                "family replay orientation has zero natural probability",
+            ));
+        }
         ctx.trace.record_choice(
             address::ChoiceAddress::CorruptRevCompApplied,
             ChoiceValue::Bool(applied),
@@ -87,6 +96,15 @@ impl RevCompPass {
 }
 
 impl Pass for RevCompPass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::RevComp {
+            probability: bits(self.apply_prob)?,
+        })
+    }
     fn name(&self) -> &str {
         address::CORRUPT_REV_COMP
     }
@@ -98,6 +116,15 @@ impl Pass for RevCompPass {
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx)
             .expect("RevCompPass permissive execution must not return PassError")
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        _strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx)
     }
 
     fn execute_checked(

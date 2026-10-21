@@ -192,6 +192,18 @@ impl UniformMutationPass {
 }
 
 impl Pass for UniformMutationPass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::UniformMutation {
+            count: CountSpec::capture(&self.count_source)?,
+            base: self.base_dist.family_replay_spec()?,
+            segment_rates: rate_bits(self.segment_rates)?,
+            v_subregion_rates: subregion_bits(self.v_subregion_rates)?,
+        })
+    }
     fn name(&self) -> &str {
         address::MUTATE_UNIFORM
     }
@@ -211,6 +223,15 @@ impl Pass for UniformMutationPass {
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("UniformMutationPass permissive execution must not return PassError")
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn execute_checked(

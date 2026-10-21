@@ -80,6 +80,8 @@ impl Component {
         let mut top = BTreeMap::new();
         let mut bottom = BTreeMap::new();
         for (p, value) in sequence.chars().enumerate() {
+            crate::family_replay::primitive_work(1);
+            crate::family_replay::primitive_bases(2);
             for (strand, base) in [(Strand::Top, value), (Strand::Bottom, complement(value))] {
                 let nucleotide = Base {
                     id: *next,

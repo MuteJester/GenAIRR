@@ -373,6 +373,8 @@ impl<O: Clone> End<O> {
         let (start, end) = bounds(target)?;
         let mut position = if step == 1 { end } else { start - 1 };
         for base in sequence.chars() {
+            crate::family_replay::primitive_work(1);
+            crate::family_replay::primitive_bases(1);
             let id = *next;
             *next += 1;
             let base = Base {
@@ -498,6 +500,7 @@ fn execute_join<O: Clone>(
     let mut shift = None;
     let mut sealed = false;
     for (ordinal, operation) in history.iter().enumerate() {
+        crate::family_replay::primitive_work(1);
         if sealed {
             return Err("no operation may follow complete ligation".into());
         }
@@ -628,6 +631,7 @@ fn execute_join<O: Clone>(
                 }
                 let mut additions = Vec::new();
                 for p in begin..end {
+                    crate::family_replay::primitive_bases(1);
                     let template = match strand {
                         Strand::Top => l.bottom.get(&p).or_else(|| r.bottom.get(&p)),
                         Strand::Bottom => l.top.get(&p).or_else(|| r.top.get(&p)),

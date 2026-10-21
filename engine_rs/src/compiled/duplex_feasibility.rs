@@ -66,6 +66,7 @@ pub(super) fn build(
     let mut source_passes = [usize::MAX; 3];
     let mut marginals = [Vec::new(), Vec::new(), Vec::new()];
     for (index, segment) in segments.into_iter().enumerate() {
+        crate::family_replay::primitive_work(1);
         let Some(passes) = facts
             .allele_sample_passes
             .get(&segment)
@@ -132,6 +133,7 @@ pub(super) fn build(
     let mut flat_weights = Vec::new();
     let mut numeric_checks = 0u64;
     for (index, pass) in plan.passes().iter().enumerate() {
+        crate::family_replay::primitive_work(1);
         let id = pass.as_ref().type_id();
         if let Some(source) =
             (pass.as_ref() as &dyn std::any::Any).downcast_ref::<crate::passes::SampleAllelePass>()
@@ -225,6 +227,7 @@ pub(super) fn build(
             for &d in &group[1] {
                 for &j in &group[2] {
                     for &d_inverted in &orientations {
+                        crate::family_replay::primitive_work(1);
                         if contexts.insert(DuplexContextKey {
                             v,
                             d,
@@ -304,6 +307,7 @@ pub(super) fn build(
         return None;
     }
     for indices in context_rows.values() {
+        crate::family_replay::primitive_work(indices.len() as u64);
         if let Err(reason) = model.validate_weight_support(indices) {
             errors.push(invalid(reason));
         }
@@ -315,6 +319,7 @@ pub(super) fn build(
     let mut prepared = Vec::new();
     let model_digest = model.digest();
     for index in active_rows {
+        crate::family_replay::primitive_work(1);
         match model.prepare_row_with_digest(index, refdata, &model_digest) {
             Ok(row) => prepared.push(row),
             Err(reason) => errors.push(invalid(reason)),
@@ -350,12 +355,14 @@ pub(super) fn build(
     });
     let mut accepted_context_rows: BTreeMap<DuplexContextKey, Vec<usize>> = BTreeMap::new();
     for row in &prepared {
+        crate::family_replay::primitive_work(1);
         accepted_context_rows
             .entry(row.context)
             .or_default()
             .push(row.row_index);
     }
     for indices in accepted_context_rows.values() {
+        crate::family_replay::primitive_work(indices.len() as u64);
         if let Err(reason) = model.validate_weight_support(indices) {
             errors.push(invalid(reason));
         }
@@ -368,6 +375,7 @@ pub(super) fn build(
     // Full-support CDF advancement alone does not prove every masked support:
     // removing a preceding half-ULP atom can change round-to-even tie parity.
     for (owner, segment, weights) in flat_weights {
+        crate::family_replay::primitive_work(weights.len() as u64 + 1);
         let slot = segments
             .iter()
             .position(|s| *s == segment)
@@ -395,6 +403,7 @@ pub(super) fn build(
             .map(|ids| ids.into_iter().collect())
             .collect();
         for allowed in masks {
+            crate::family_replay::primitive_work(allowed.len() as u64 + 1);
             // Charge every advertised entry examined, including excluded
             // entries, once for each distinct candidate mask at this source.
             operations = operations.saturating_add(weights.len() as u64);

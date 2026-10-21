@@ -23,6 +23,7 @@ use super::trace::PyTrace;
 pub struct PyOutcome {
     pub(crate) inner: Outcome,
     pub(crate) duplex_execution: Option<std::sync::Arc<DuplexExecutionBinding>>,
+    pub(crate) family_execution: Option<FamilyExecutionContext>,
 }
 
 /// Trusted Python execution context; computed once per compiled duplex plan.
@@ -35,12 +36,25 @@ pub(crate) struct DuplexExecutionBinding {
     pub active_contracts: Vec<String>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct FamilyExecutionContext {
+    pub binding: std::sync::Arc<super::compiled::FamilyPlanBinding>,
+    pub strict: bool,
+    pub seed: u64,
+}
+
 impl PyOutcome {
     pub(crate) fn new(inner: Outcome) -> Self {
         Self {
             inner,
             duplex_execution: None,
+            family_execution: None,
         }
+    }
+
+    pub(crate) fn with_family_execution(mut self, context: Option<FamilyExecutionContext>) -> Self {
+        self.family_execution = context;
+        self
     }
 
     pub(crate) fn with_duplex_execution(
@@ -206,7 +220,7 @@ impl PyOutcome {
     ///
     /// See `docs/airr_record_validator.md` for the check catalogue.
     #[pyo3(signature = (refdata, *, sequence_id = ""))]
-    fn validate_record<'py>(
+    pub(crate) fn validate_record<'py>(
         &self,
         py: Python<'py>,
         refdata: &PyRefDataConfig,

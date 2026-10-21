@@ -15,8 +15,10 @@ from . import _engine
 
 from ._duplex_projection_export import export_duplex_projection
 from ._duplex_model import DuplexHistory, DuplexRepairModel
+from ._family_replay import FamilyReplayBundle, FamilyReplayError, FamilyReplayLimits
 
-__all__ = ["DuplexHistory", "DuplexRepairModel", "DuplexRepair", "DuplexJoin", "CoupledDuplexRepair", "export_duplex_projection", "project_duplex_simulation"]
+__all__ = ["DuplexHistory", "DuplexRepairModel", "DuplexRepair", "DuplexJoin", "CoupledDuplexRepair", "export_duplex_projection", "project_duplex_simulation",
+           "FamilyReplayBundle", "FamilyReplayError", "FamilyReplayLimits"]
 
 
 def project_duplex_simulation(simulation, refdata):

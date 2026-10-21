@@ -280,7 +280,7 @@ class _ResultValidation:
 
     __slots__ = ()
 
-    def validate_records(self, refdata: Any) -> "ValidationReport":
+    def validate_records(self, refdata: Any, *, _family_replay_budget=None) -> "ValidationReport":
         """**Public AIRR output correctness check.**
 
         Run the postcondition validator over every record in this
@@ -349,8 +349,17 @@ class _ResultValidation:
             })
         for i, (outcome, record) in enumerate(zip(self._outcomes, self._records)):
             sequence_id = str(record.get("sequence_id", ""))
-            issues = outcome.validate_record(refdata, sequence_id=sequence_id)
-            expected = outcome.airr_record(refdata, sequence_id=sequence_id)
+            if _family_replay_budget is None:
+                issues = outcome.validate_record(refdata, sequence_id=sequence_id)
+                expected = outcome.airr_record(refdata, sequence_id=sequence_id)
+            else:
+                from . import _engine
+                from ._family_replay import _native
+
+                issues = _native(f"records[{i}].validation", _engine._family_replay_validate_record,
+                                 outcome, refdata, sequence_id, budget=_family_replay_budget)
+                expected = _native(f"records[{i}].projection", _engine._family_replay_airr_record,
+                                   outcome, refdata, sequence_id, budget=_family_replay_budget)
             for field, value in expected.items():
                 if field not in record:
                     issues.append({
@@ -521,7 +530,7 @@ class _ResultValidation:
         )
 
     def validate_families_with_parents(
-        self, refdata: Any = None
+        self, refdata: Any = None, *, _family_replay_budget=None
     ) -> "FamilyValidationReport":
         """**Parent-aware clonal-family validator** — the deeper
         diagnostic that compares every descendant against its
@@ -732,12 +741,18 @@ class _ResultValidation:
             from ._airr_record import outcome_to_airr_record
 
             for pid in by_parent:
-                proj = outcome_to_airr_record(
-                    parents[pid],
-                    refdata,
-                    sequence_id=f"parent{pid}",
-                )
-                _inject_truth_columns(parents[pid], refdata, proj)
+                if _family_replay_budget is None:
+                    proj = outcome_to_airr_record(
+                        parents[pid], refdata, sequence_id=f"parent{pid}",
+                    )
+                    _inject_truth_columns(parents[pid], refdata, proj)
+                else:
+                    from . import _engine
+                    from ._family_replay import _native, _truth_aliases
+
+                    proj = _native(f"parents[{pid}].projection", _engine._family_replay_airr_record,
+                                   parents[pid], refdata, f"parent{pid}", budget=_family_replay_budget)
+                    _truth_aliases(proj)
                 parent_projections[pid] = proj
 
         # The (field, issue_kind) pairs the parent-aware validator

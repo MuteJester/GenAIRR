@@ -46,6 +46,7 @@ pub mod duplex_repair;
 pub mod end_processing;
 pub mod event;
 pub mod feasibility;
+pub mod family_replay;
 pub mod genotype;
 pub mod ir;
 pub mod junction;

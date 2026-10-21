@@ -63,6 +63,10 @@ pub trait Distribution {
     /// to return their full support.
     ///
     /// Weights need not be normalized; the caller renormalizes.
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::DistributionSpec> {
+        None
+    }
+
     fn support(&self) -> Option<Vec<(Self::Output, f64)>> {
         None
     }

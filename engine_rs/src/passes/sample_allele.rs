@@ -403,6 +403,10 @@ impl SampleAllelePass {
 }
 
 impl Pass for SampleAllelePass {
+    fn family_replay_spec(&self)->Option<crate::family_replay::plan::ReplayPassSpecV1>{
+        #[allow(unused_imports)] use crate::family_replay::plan::{ReplayPassSpecV1 as P,CountSpec,KernelSpecV1,bits,rate_bits,subregion_bits};
+        Some(P::SampleAllele{segment:self.segment.into(),distribution:self.distribution.family_replay_spec()?})
+    }
     fn name(&self) -> &str {
         self.address()
     }
@@ -445,6 +449,15 @@ impl Pass for SampleAllelePass {
         ctx: &mut PassContext,
     ) -> Result<Simulation, PassError> {
         self.execute_with_sampling_mode(sim, ctx, true)
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn declared_choice_patterns(&self) -> Vec<address::ChoiceAddressPattern> {

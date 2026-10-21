@@ -14,6 +14,10 @@ use crate::rng::Rng;
 pub struct UniformBase;
 
 impl Distribution for UniformBase {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::DistributionSpec> {
+        use crate::family_replay::plan::DistributionSpec as D;
+        Some(D::UniformBase)
+    }
     type Output = u8;
 
     fn sample(&self, rng: &mut Rng) -> u8 {

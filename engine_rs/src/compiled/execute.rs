@@ -236,6 +236,7 @@ pub(crate) fn execute_transactional(
     }
 
     for node in inputs.sorted_order {
+        crate::family_replay::primitive_work(1);
         let pass = &inputs.plan.passes()[node.index()];
         let prev = revisions.last().expect("non-empty by construction");
         let pass_index = pass_names.len();
@@ -273,13 +274,10 @@ pub(crate) fn execute_transactional(
             event_log_sink: Some(&mut simulation_events),
         };
 
-        // Replay-mode forces the strict dispatch path even when the
-        // policy is permissive. Replay errors are structural — they
-        // mean "this trace doesn't match this plan" — and silently
-        // panicking inside `execute().expect(...)` would erase the
-        // structured diagnostic. With `replay_records: Some(_)` set,
-        // every pass goes through `execute_checked` so any
-        // `PassError::Replay` propagates cleanly.
+        // Historical source-trace replay forces strict sampling. Family
+        // replay instead preserves the captured policy, including legal
+        // permissive no-ops. Its audited passes use fallible dispatch in
+        // either mode and its scope forbids replacement RNG draws.
         // Productive initial allele/genotype selection must also
         // surface empty support instead of falling back to a coding
         // stop. Later revision passes retain their own no-op policy.
@@ -306,7 +304,8 @@ pub(crate) fn execute_transactional(
         let structural_assembly = compile_effects
             .iter()
             .any(|effect| matches!(effect, PassEffect::AssembleSegment(_)));
-        let effective_policy = if inputs.replay_records.is_some()
+        let effective_policy = if (inputs.replay_records.is_some()
+            && !crate::family_replay::is_replaying())
             || productive_assignment
             || p_productive_recombination
             || structural_assembly

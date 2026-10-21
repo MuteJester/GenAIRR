@@ -135,6 +135,35 @@ pub(crate) fn sample_validated_count(
     } else {
         count_source.sample(ctx.rng, pool_len)
     };
+    if crate::family_replay::is_replaying() && ctx.replay_cursor.is_some() {
+        let supported = match count_source {
+            CountSource::Rate(rate) => {
+                let lambda = *rate * f64::from(pool_len);
+                count_raw == 0
+                    || (count_raw > 0
+                        && count_raw <= POISSON_ITERATION_CAP as i64
+                        && lambda.is_finite()
+                        && lambda > 0.0
+                        && (-lambda).exp() < 1.0)
+            }
+            CountSource::Distribution(d) => d
+                .family_replay_spec()
+                .ok_or_else(|| {
+                    PassError::invalid_plan_state(
+                        pass_name,
+                        "unsupported family count distribution",
+                    )
+                })?
+                .supports_integer(count_raw)
+                .map_err(|e| PassError::invalid_plan_state(pass_name, e))?,
+        };
+        if count_raw < 0 || count_raw > u32::MAX as i64 || !supported {
+            return Err(PassError::invalid_plan_state(
+                pass_name,
+                "family replay count has no positive natural support",
+            ));
+        }
+    }
     if strict && count_raw < 0 {
         return Err(PassError::invalid_distribution_output(
             pass_name,
@@ -178,6 +207,8 @@ pub(crate) fn sample_validated_count(
 /// expected, so the algorithm is unsuitable for large `lambda` —
 /// but for the genuinely-immunological regime where rate × len is
 /// at most a few dozen, it's the right pick.
+const POISSON_ITERATION_CAP: u32 = 1_000_001;
+
 fn poisson_sample(rng: &mut Rng, lambda: f64) -> u32 {
     if !lambda.is_finite() || lambda <= 0.0 {
         return 0;
@@ -195,7 +226,7 @@ fn poisson_sample(rng: &mut Rng, lambda: f64) -> u32 {
         // very generous bound so we never spin forever. The real
         // engine guard is the upstream `count_raw > u32::MAX` check
         // in the pass; here we just stop the loop.
-        if k > 1_000_000 {
+        if k >= POISSON_ITERATION_CAP {
             return k;
         }
     }

@@ -58,15 +58,37 @@ pub fn sample_and_collapse(
 /// even when independent branches have the same observed DNA sequence.
 /// Only repeated draws of the very same cell contribute to its abundance.
 pub fn sample_cells(tree: &mut LineageTree, sampleable_ids: &[u32], n_sample: u32, rng: &mut Rng) {
+    sample_cells_with_choices(tree, sampleable_ids, n_sample, |live| {
+        Ok(rng.range_u32(live.len() as u32) as usize)
+    })
+    .expect("fresh uniform cell choices are in support");
+}
+
+pub(crate) fn sample_cells_with_choices(
+    tree: &mut LineageTree,
+    sampleable_ids: &[u32],
+    n_sample: u32,
+    mut choose: impl FnMut(&[u32]) -> Result<usize, String>,
+) -> Result<(), String> {
     if sampleable_ids.is_empty() {
-        return;
+        return Ok(());
     }
     for _ in 0..n_sample {
-        let id = sampleable_ids[rng.range_u32(sampleable_ids.len() as u32) as usize];
-        let node = &mut tree.nodes[id as usize];
-        node.abundance += 1;
+        let index = choose(sampleable_ids)?;
+        let id = *sampleable_ids
+            .get(index)
+            .ok_or("sample index outside final-live population")?;
+        let node = tree
+            .nodes
+            .get_mut(id as usize)
+            .ok_or("sampled node is absent")?;
+        node.abundance = node
+            .abundance
+            .checked_add(1)
+            .ok_or("sample abundance overflow")?;
         node.observed = true;
     }
+    Ok(())
 }
 
 #[cfg(test)]

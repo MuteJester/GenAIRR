@@ -235,6 +235,22 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                     ),
                 ));
             }
+            if crate::family_replay::is_replaying() {
+                let support = base_dist.support().ok_or_else(|| {
+                    PassError::invalid_plan_state(
+                        self.pass_name.clone(),
+                        "missing family base support",
+                    )
+                })?;
+                if !support.iter().any(|(base, weight)| {
+                    weight.is_finite() && *weight > 0.0 && transform(*base) == base_byte
+                }) {
+                    return Err(PassError::invalid_plan_state(
+                        self.pass_name.clone(),
+                        "family replay base has zero natural probability",
+                    ));
+                }
+            }
             let site = site_idx as u32;
             // Segment-rate replay validation. A site recorded under
             // rates that excluded zero-rate sites from support must
@@ -313,12 +329,8 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         // branches record exactly one site choice + one base
         // choice (so the trace contract is unchanged); the only
         // difference is the site selection distribution.
-        let segment_rates_active = segment_rates
-            .map(|r| !r.is_default())
-            .unwrap_or(false);
-        let v_subregion_rates_active = v_subregion_rates
-            .map(|r| !r.is_default())
-            .unwrap_or(false);
+        let segment_rates_active = segment_rates.map(|r| !r.is_default()).unwrap_or(false);
+        let v_subregion_rates_active = v_subregion_rates.map(|r| !r.is_default()).unwrap_or(false);
         let any_rate_weighting = segment_rates_active || v_subregion_rates_active;
         if self.ctx.contracts.is_none() {
             let site = if any_rate_weighting {
@@ -327,13 +339,8 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                 let mut site_weights: Vec<f64> = Vec::with_capacity(pool_len as usize);
                 let mut total = 0.0;
                 for s in 0..pool_len {
-                    let w = combined_site_factor(
-                        s,
-                        sim_ref,
-                        refdata,
-                        segment_rates,
-                        v_subregion_rates,
-                    );
+                    let w =
+                        combined_site_factor(s, sim_ref, refdata, segment_rates, v_subregion_rates);
                     site_weights.push(w);
                     total += w;
                 }
@@ -430,13 +437,8 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                     })
                     .map(|(_, w)| *w)
                     .sum();
-                let rate_factor = combined_site_factor(
-                    site,
-                    sim,
-                    refdata,
-                    segment_rates,
-                    v_subregion_rates,
-                );
+                let rate_factor =
+                    combined_site_factor(site, sim, refdata, segment_rates, v_subregion_rates);
                 let weighted = mass * rate_factor;
                 site_weights.push(weighted);
                 total += weighted;
@@ -699,9 +701,7 @@ pub(crate) fn combined_site_factor(
     v_subregion_rates: Option<&crate::passes::mutate::VSubregionRateWeights>,
 ) -> f64 {
     let seg_active = segment_rates.map(|r| !r.is_default()).unwrap_or(false);
-    let v_sub_active = v_subregion_rates
-        .map(|r| !r.is_default())
-        .unwrap_or(false);
+    let v_sub_active = v_subregion_rates.map(|r| !r.is_default()).unwrap_or(false);
     if !seg_active && !v_sub_active {
         return 1.0;
     }
@@ -715,16 +715,11 @@ pub(crate) fn combined_site_factor(
     let v_sub_factor = if v_sub_active && segment == Some(crate::ir::Segment::V) {
         let rates = v_subregion_rates.expect("active check");
         if let Some(rd) = refdata {
-            crate::passes::mutate::v_subregion_at_position(
-                &sim.sequence,
-                &sim.assignments,
-                rd,
-                pos,
-            )
-            .map(|label| rates.rate_for(label))
-            // No annotation under this V allele OR position in the
-            // V-side CDR3 stretch → identity factor.
-            .unwrap_or(1.0)
+            crate::passes::mutate::v_subregion_at_position(&sim.sequence, &sim.assignments, rd, pos)
+                .map(|label| rates.rate_for(label))
+                // No annotation under this V allele OR position in the
+                // V-side CDR3 stretch → identity factor.
+                .unwrap_or(1.0)
         } else {
             // No refdata in scope → can't look up subregions; treat
             // as if unannotated. (Should not happen under the DSL
@@ -757,11 +752,8 @@ mod replay_tests {
     fn make_sim(bases: &[u8]) -> Simulation {
         let mut sim = Simulation::new();
         for (i, b) in bases.iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
-                *b,
-                i as u16,
-                Segment::V,
-            ));
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
         sim
@@ -957,11 +949,8 @@ mod replay_tests {
         });
         let mut sim = Simulation::new();
         for (i, b) in b"TGG".iter().enumerate() {
-            let (next, _) = sim.with_nucleotide_pushed(Nucleotide::germline(
-                *b,
-                i as u16,
-                Segment::V,
-            ));
+            let (next, _) =
+                sim.with_nucleotide_pushed(Nucleotide::germline(*b, i as u16, Segment::V));
             sim = next;
         }
         sim = sim.with_region_added(crate::ir::Region::new(
@@ -1045,10 +1034,7 @@ mod replay_tests {
         // recorded base flows through unchanged.
         let sim = make_sim(b"AAAA");
         let records = vec![
-            rec(
-                ChoiceAddress::CorruptQualitySite(0),
-                ChoiceValue::Int(2),
-            ),
+            rec(ChoiceAddress::CorruptQualitySite(0), ChoiceValue::Int(2)),
             rec(
                 ChoiceAddress::CorruptQualityBase(0),
                 ChoiceValue::Base(b'c'),

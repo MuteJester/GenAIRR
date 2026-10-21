@@ -313,8 +313,9 @@ pub(crate) fn simulate_lineage(
 #[pyclass(name = "FamilyOutcome", module = "GenAIRR._engine")]
 pub struct PyFamilyOutcome {
     tree: LineageTree,
-    node_outcomes: Vec<Option<Outcome>>, // index == node id
+    pub(crate) node_outcomes: Vec<Option<Outcome>>, // index == node id
     duplex_replay: Option<DuplexFamilyReplay>,
+    captured_receipt: Option<crate::lineage::replay_receipt::FamilyAttemptReceipt>,
 }
 
 /// Private immutable evidence for in-memory branch replay. This is deliberately
@@ -419,17 +420,152 @@ fn duplex_node_outcome(
     Ok(outcome)
 }
 
+fn run_captured_family(
+    founder: &PyOutcome,
+    refdata: &PyRefDataConfig,
+    config: crate::lineage::replay_receipt::AttemptConfig,
+    expected: Option<&crate::lineage::replay_receipt::FamilyAttemptReceipt>,
+    budget: &mut crate::family_replay::FamilyReplayBudget,
+) -> PyResult<PyFamilyOutcome> {
+    crate::family_replay::with_budget_scope(budget, |budget| {
+        let mut execute = || {
+            config.validate()?;
+            let (tree, edges, receipt) = crate::lineage::family::simulate_family_receipt(
+                &founder.inner,
+                refdata.inner(),
+                config.clone(),
+                expected,
+                budget,
+            )
+            .map_err(|e| e.to_string())?;
+            let contracts = config.contract_set()?;
+            let evidence = DuplexFamilyReplay {
+                founder: founder.inner.clone(),
+                edges,
+                kernel: S5FKernel::new(
+                    config.mutability.iter().map(|x| x.get()).collect(),
+                    config.substitution.iter().map(|x| x.get()).collect(),
+                ),
+                rate: config.rate.get(),
+                contract_kinds: contracts
+                    .as_ref()
+                    .map(|c| c.iter().map(|c| c.kind()).collect()),
+                strict: config.strict,
+                reference_hash: crate::trace_file::refdata_content_hash(refdata.inner()),
+            };
+            let node_outcomes = tree
+                .nodes
+                .iter()
+                .map(|node| {
+                    if node.observed {
+                        budget.charge_work(u64::from(node.generation) + 1)?;
+                        budget.charge_history(founder.inner.final_simulation())?;
+                        duplex_node_outcome(&tree, &evidence, node.id, refdata.inner(), false)
+                            .map(Some)
+                            .map_err(|e| e.to_string())
+                    } else {
+                        Ok(None)
+                    }
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(PyFamilyOutcome {
+                tree,
+                node_outcomes,
+                duplex_replay: Some(evidence),
+                captured_receipt: Some(receipt),
+            })
+        };
+        if expected.is_some() {
+            crate::family_replay::with_replay_scope(execute)
+        } else {
+            execute()
+        }
+    })
+    .map_err(pyo3::exceptions::PyValueError::new_err)
+}
+
+#[pyfunction]
+#[pyo3(signature=(founder,refdata,receipt_json,budget=None))]
+pub(crate) fn replay_family_outcomes(
+    founder: &PyOutcome,
+    refdata: &PyRefDataConfig,
+    receipt_json: &str,
+    budget: Option<&super::family_replay::PyFamilyReplayBudget>,
+) -> PyResult<PyFamilyOutcome> {
+    use pyo3::exceptions::PyValueError;
+    if founder.duplex_execution.is_none() {
+        return Err(PyValueError::new_err(
+            "family replay requires a source-bound reconstructed founder",
+        ));
+    }
+    let execute = |budget: &mut crate::family_replay::FamilyReplayBudget| {
+        let value=crate::family_replay::strict_json::parse(receipt_json,&budget.limits).map_err(PyValueError::new_err)?;
+        let receipt: crate::lineage::replay_receipt::FamilyAttemptReceipt=serde_json::from_value(value.clone()).map_err(|e|PyValueError::new_err(e.to_string()))?;
+        // Legacy Trace DTOs remain forward-compatible for ordinary traces.
+        // At the closed family boundary no nested field may disappear.
+        if serde_json::to_value(&receipt).map_err(|e|PyValueError::new_err(e.to_string()))?!=value {
+            return Err(PyValueError::new_err("unknown/noncanonical family attempt receipt fields"));
+        }
+        run_captured_family(
+            founder,
+            refdata,
+            receipt.config.clone(),
+            Some(&receipt),
+            budget,
+        )
+    };
+    if let Some(budget) = budget {
+        let mut lock = budget
+            .inner
+            .lock()
+            .map_err(|_| PyValueError::new_err("family replay budget lock poisoned"))?;
+        execute(&mut lock)
+    } else {
+        execute(&mut crate::family_replay::FamilyReplayBudget::default())
+    }
+}
+
 #[pymethods]
 impl PyFamilyOutcome {
+    /// Closed native receipt for this one attempt; unavailable on uncaptured runs.
+    fn capture_receipt(&self) -> PyResult<String> {
+        let receipt = self.captured_receipt.as_ref().ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err("family replay capture was not enabled")
+        })?;
+        serde_json::to_string(receipt)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    }
     /// Replay a duplex node from its stored founder and exact division choices.
     /// No new random choices are drawn. Available only while this family object
     /// retains its immutable in-memory evidence.
-    fn replay_node(&self, node_id: u32, refdata: &PyRefDataConfig) -> PyResult<PyOutcome> {
+    #[pyo3(signature=(node_id, refdata, budget=None))]
+    fn replay_node(
+        &self,
+        node_id: u32,
+        refdata: &PyRefDataConfig,
+        budget: Option<&super::family_replay::PyFamilyReplayBudget>,
+    ) -> PyResult<PyOutcome> {
         let evidence = self.duplex_replay.as_ref().ok_or_else(|| pyo3::exceptions::PyValueError::new_err(
             "replay_node is available for duplex families; legacy families retain their existing synthesized outcomes"
         ))?;
-        duplex_node_outcome(&self.tree, evidence, node_id, refdata.inner(), true)
-            .map(PyOutcome::new)
+        if let Some(budget) = budget {
+            let mut guard = budget
+                .inner
+                .lock()
+                .map_err(|_| pyo3::exceptions::PyValueError::new_err("budget lock poisoned"))?;
+            crate::family_replay::with_budget_scope(&mut guard, |budget| {
+                budget.charge_work(self.tree.nodes.len() as u64 + 4096)?;
+                crate::family_replay::with_replay_scope(|| {
+                    duplex_node_outcome(&self.tree, evidence, node_id, refdata.inner(), true)
+                        .map(PyOutcome::new)
+                        .map_err(|error| error.to_string())
+                })
+            })
+            .map_err(pyo3::exceptions::PyValueError::new_err)
+        } else {
+            duplex_node_outcome(&self.tree, evidence, node_id, refdata.inner(), true)
+                .map(PyOutcome::new)
+        }
     }
     /// The ground-truth lineage tree.
     fn tree(&self) -> PyLineageTree {
@@ -594,7 +730,7 @@ pub(crate) fn merge_lineage_corruption(
 #[pyo3(signature = (
     founder, refdata, mutability, substitution, rate,
     lambda_base, lambda_mut, max_generations, n_max, n_sample, seed,
-    selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5, respect=None, strict=false
+    selection_strength=0.0, beta=1.0, target_aa=None, mature_substitutions=5, respect=None, strict=false, capture_family_replay=false, budget=None
 ))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn simulate_family_outcomes(
@@ -615,6 +751,8 @@ pub(crate) fn simulate_family_outcomes(
     mature_substitutions: u32,
     respect: Option<&super::contract::PyContractSet>,
     strict: bool,
+    capture_family_replay: bool,
+    budget: Option<&super::family_replay::PyFamilyReplayBudget>,
 ) -> PyResult<PyFamilyOutcome> {
     use pyo3::exceptions::PyValueError;
 
@@ -679,6 +817,50 @@ pub(crate) fn simulate_family_outcomes(
         return Err(PyValueError::new_err(format!(
             "simulate_family_outcomes: selection_strength must be finite and >= 0, got {selection_strength}"
         )));
+    }
+
+    if capture_family_replay {
+        if founder.duplex_execution.is_none() {
+            return Err(PyValueError::new_err(
+                "family capture requires a source-bound duplex founder",
+            ));
+        }
+        use crate::family_replay::F64Bits;
+        let bits = |x| F64Bits::new(x).map_err(PyValueError::new_err);
+        let config = crate::lineage::replay_receipt::AttemptConfig {
+            rate: bits(rate)?,
+            lambda_base: bits(lambda_base)?,
+            lambda_mut: bits(lambda_mut)?,
+            max_generations,
+            n_max,
+            n_sample,
+            seed_label: seed.to_string(),
+            selection_strength: bits(selection_strength)?,
+            beta: bits(beta)?,
+            target_aa,
+            mature_substitutions,
+            mutability: mutability.into_iter().map(bits).collect::<PyResult<_>>()?,
+            substitution: substitution
+                .into_iter()
+                .map(bits)
+                .collect::<PyResult<_>>()?,
+            contracts: respect.map(|c| c.inner().iter().map(|c| c.name().to_owned()).collect()),
+            strict,
+        };
+        if let Some(budget) = budget {
+            let mut lock = budget
+                .inner
+                .lock()
+                .map_err(|_| PyValueError::new_err("family replay budget lock poisoned"))?;
+            return run_captured_family(founder, refdata, config, None, &mut lock);
+        }
+        return run_captured_family(
+            founder,
+            refdata,
+            config,
+            None,
+            &mut crate::family_replay::FamilyReplayBudget::default(),
+        );
     }
 
     let founder_sim = founder.inner.final_simulation().clone();
@@ -761,6 +943,7 @@ pub(crate) fn simulate_family_outcomes(
             tree,
             node_outcomes,
             duplex_replay: Some(evidence),
+            captured_receipt: None,
         });
     }
 
@@ -830,6 +1013,7 @@ pub(crate) fn simulate_family_outcomes(
         tree,
         node_outcomes,
         duplex_replay: None,
+        captured_receipt: None,
     })
 }
 

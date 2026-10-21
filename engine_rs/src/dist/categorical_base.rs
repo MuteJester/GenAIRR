@@ -63,7 +63,10 @@ impl CategoricalBase {
             running += weights[i];
             cumulative[i] = running;
         }
-        Self { weights, cumulative }
+        Self {
+            weights,
+            cumulative,
+        }
     }
 
     /// Construct from a `(base, weight)` pair list. Bases not in the
@@ -90,6 +93,14 @@ impl CategoricalBase {
 }
 
 impl Distribution for CategoricalBase {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::DistributionSpec> {
+        use crate::family_replay::plan::DistributionSpec as D;
+        Some(D::CategoricalBase {
+            weights: self
+                .weights
+                .map(|v| crate::family_replay::F64Bits::new(v).expect("finite weight")),
+        })
+    }
     type Output = u8;
 
     fn sample(&self, rng: &mut Rng) -> u8 {

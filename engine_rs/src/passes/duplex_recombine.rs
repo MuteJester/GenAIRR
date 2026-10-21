@@ -155,6 +155,15 @@ impl DuplexRecombinePass {
 mod tests;
 
 impl Pass for DuplexRecombinePass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::DuplexSource {
+            model: crate::family_replay::plan::DuplexModelSpecV1::capture(&self.model)?,
+        })
+    }
     fn name(&self) -> &str {
         "duplex.recombine"
     }

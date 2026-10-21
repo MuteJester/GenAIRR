@@ -227,7 +227,7 @@ pub struct DuplexAttemptSummary {
     pub edit_ordinal: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DuplexProvenance {
     pub founder: Arc<DuplexFounder>,
     pub links: Vec<DuplexQueryLink>,
@@ -238,6 +238,21 @@ pub struct DuplexProvenance {
     /// Latest explicit output-orientation decision, matching the normal
     /// reverse-complement pass (the coding-oriented pool is never reversed).
     pub rev_comp: bool,
+}
+
+impl Clone for DuplexProvenance {
+    fn clone(&self) -> Self {
+        crate::family_replay::primitive_provenance(self);
+        Self {
+            founder: self.founder.clone(),
+            links: self.links.clone(),
+            removed: self.removed.clone(),
+            next_edit_ordinal: self.next_edit_ordinal,
+            edits: self.edits.clone(),
+            attempt_stages: self.attempt_stages.clone(),
+            rev_comp: self.rev_comp,
+        }
+    }
 }
 
 impl DuplexProvenance {

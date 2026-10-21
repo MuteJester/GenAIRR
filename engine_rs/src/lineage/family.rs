@@ -112,6 +112,91 @@ pub fn simulate_family_edges_with_context(
     Ok((tree, sims, edges))
 }
 
+/// One attempt through shared target/growth/sampling control flow, recording
+/// existing choices or consuming the complete captured receipt without draws.
+pub fn simulate_family_receipt(
+    founder: &crate::pass::Outcome,
+    refdata: &crate::refdata::RefDataConfig,
+    config: super::replay_receipt::AttemptConfig,
+    expected: Option<&super::replay_receipt::FamilyAttemptReceipt>,
+    budget: &mut crate::family_replay::FamilyReplayBudget,
+) -> Result<
+    (
+        LineageTree,
+        Vec<Option<crate::pass::Outcome>>,
+        super::replay_receipt::FamilyAttemptReceipt,
+    ),
+    crate::pass::PassError,
+> {
+    use super::replay_receipt::{error, FamilyReplayDriver};
+    config.validate().map_err(error)?;
+    if founder.final_simulation().duplex_provenance.is_none() {
+        return Err(error("durable family receipt requires duplex ancestry"));
+    }
+    budget.charge_attempts(1).map_err(error)?;
+    let params = config.params().map_err(error)?;
+    let contracts = config.contract_set().map_err(error)?;
+    let context = super::branching::LineageMutationContext {
+        refdata,
+        contracts: contracts.as_ref(),
+        strict: config.strict,
+    };
+    let kernel = crate::s5f::S5FKernel::new(
+        config.mutability.iter().map(|x| x.get()).collect(),
+        config.substitution.iter().map(|x| x.get()).collect(),
+    );
+    let mutator = crate::passes::S5FMutationPass::new_rate(kernel, config.rate.get());
+    let mut driver = FamilyReplayDriver::new(config.clone(), founder, expected, budget)?;
+    let sim = founder.final_simulation();
+    super::branching::validate_duplex_founder(sim, Some(&context), Some(&mutator))?;
+    let mut target_rng = Rng::new(params.seed ^ 0x7461_7267_6574_0001);
+    let model = if config.selection_strength.get() == 0.0 && config.target_aa.is_none() {
+        driver.resolved_target(None)?;
+        None
+    } else {
+        let aa = super::affinity::duplex_sim_to_aa(sim, refdata).map_err(error)?;
+        let target = if let Some(t) = &config.target_aa {
+            t.as_bytes().to_vec()
+        } else {
+            super::affinity::make_mature_target_with_choices(
+                &aa,
+                config.mature_substitutions,
+                |target| driver.target_choice(target, &mut target_rng),
+            )
+            .map_err(error)?
+        };
+        driver.resolved_target(Some(&target))?;
+        Some(AffinityModel::new(
+            target,
+            vec![1.0; aa.len()],
+            config.beta.get(),
+            config.selection_strength.get(),
+            &aa,
+        ))
+    };
+    if driver.is_replay() && target_rng.words_consumed() != 0 {
+        return Err(error("semantic target replay consumed RNG"));
+    }
+    let (mut tree, _sims, live, edges) = super::branching::grow_lineage_with_receipt(
+        sim,
+        &params,
+        &mutator,
+        model.as_ref(),
+        &context,
+        &mut driver,
+    )?;
+    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    super::sampling::sample_cells_with_choices(&mut tree, &live, params.n_sample, |live| {
+        driver.sample(live, &mut sample_rng)
+    })
+    .map_err(error)?;
+    if driver.is_replay() && sample_rng.words_consumed() != 0 {
+        return Err(error("semantic sampling replay consumed RNG"));
+    }
+    driver.finish(&tree)?;
+    Ok((tree, edges, driver.receipt))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

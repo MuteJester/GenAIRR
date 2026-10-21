@@ -113,6 +113,16 @@ impl PCRErrorPass {
 }
 
 impl Pass for PCRErrorPass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::Pcr {
+            count: CountSpec::capture(&self.count_source)?,
+            base: self.base_dist.family_replay_spec()?,
+        })
+    }
     fn name(&self) -> &str {
         address::CORRUPT_PCR
     }
@@ -128,6 +138,15 @@ impl Pass for PCRErrorPass {
     fn execute(&self, sim: &Simulation, ctx: &mut PassContext) -> Simulation {
         self.execute_with_sampling_mode(sim, ctx, false)
             .expect("PCRErrorPass permissive execution must not return PassError")
+    }
+
+    fn execute_with_policy(
+        &self,
+        sim: &Simulation,
+        ctx: &mut PassContext,
+        strict: bool,
+    ) -> Result<Simulation, PassError> {
+        self.execute_with_sampling_mode(sim, ctx, strict)
     }
 
     fn execute_checked(

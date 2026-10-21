@@ -11,17 +11,27 @@ use crate::rng::Rng;
 /// Suitable for the small lambdas used in clonal branching (offspring ~1.5,
 /// mutations ~<1). Not optimized for very large lambda.
 pub fn poisson_sample(rng: &mut Rng, lambda: f64) -> u32 {
+    poisson_sample_with_work(rng, lambda, || Ok(())).expect("unbounded sampler work")
+}
+
+/// Same sampler and stream consumption, with a fence before every loop word.
+pub fn poisson_sample_with_work(
+    rng: &mut Rng,
+    lambda: f64,
+    mut charge: impl FnMut() -> Result<(), String>,
+) -> Result<u32, String> {
     if !(lambda.is_finite() && lambda > 0.0) {
-        return 0;
+        return Ok(0);
     }
     let l = (-lambda).exp();
     let mut k: u32 = 0;
     let mut p: f64 = 1.0;
     loop {
-        k += 1;
+        charge()?;
+        k = k.checked_add(1).ok_or("Poisson loop counter overflow")?;
         p *= rng.next_f64();
         if p <= l {
-            return k - 1;
+            return Ok(k - 1);
         }
     }
 }

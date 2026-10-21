@@ -405,7 +405,8 @@ Source-backed durable traces bind references, model content, the complete
 upstream sampling law and active policy/contracts. Replay checks positive
 support in the recorded context and executes the same kernel without a new
 history draw. External-seed `run_from` traces still require an initial-snapshot
-format; a durable full-family package and measured calibration remain later steps.
+format. Captured source-backed duplex lineage bundles are described below;
+measured biochemical calibration remains a separate step.
 
 ### Families with unfitted history weights
 
@@ -419,7 +420,8 @@ alone do not establish how a model was obtained.
 
 Repair is sampled once per clone. Flat expansion and lineage branches inherit
 the immutable founder ledger while retaining independent observed histories.
-Lineage survival retries reuse that founder and retry only growth. Existing
+Lineage survival retries reuse that founder and retry the growth/selection
+attempt, including a new automatic target when that mode is active. Existing
 neutral growth and mutation parameters remain explicit model controls.
 
 ```python
@@ -464,11 +466,62 @@ Local insertion identities require their enclosing clone/node/read context.
 `replay_node` accepts any retained node, including roots and unsampled cells.
 It consumes the recorded division choices without replacement draws
 and returns the cellular state before any per-read observation passes. It is
-an in-memory API requiring the matching bound reference; it does not claim a
-durable whole-family format. Ordinary compiled trace writers continue to reject
-merged family outcomes. Affinity scoring, when requested, translates the
+an in-memory API requiring the matching bound reference. Ordinary compiled
+trace writers continue to reject merged family outcomes; the separate captured
+bundle below preserves the complete family workflow. Affinity scoring translates the
 contiguous certified coding span across junction boundaries; unresolved coding
 phase cannot be replaced with an invented affinity.
+
+### Saving and replaying a complete lineage
+
+Enable capture when generating a source-backed duplex `clonal_lineage` run.
+The bundle contains the complete effective reference, numeric mutation kernels,
+typed execution plans, one founder per clone, every survival attempt, target/
+offspring/sample choices, actual division mutations and observed-read stages.
+Another process can replay it without the original experiment or cartridge.
+
+```python
+from GenAIRR.experimental import FamilyReplayBundle
+
+captured_family = (
+    Experiment.on(refs)
+    .with_metadata(repair_weight_source="unfitted_uniform_authored")
+    .recombine(duplex_repair=equal_model)
+    .clonal_lineage(n_clones=1, max_generations=2, n_max=8, n_sample=6,
+                    rate=0.05, lambda_base=3)
+    .pcr_amplify(count=1).end_loss_3prime(length=1)
+    .productive_only()
+    .run_records(seed=42, strict=True, capture_family_replay=True)
+)
+captured_family.save_family_replay("duplex-lineage.gafamily.json")
+saved_family = FamilyReplayBundle.read_from("duplex-lineage.gafamily.json")
+restored_family = saved_family.replay_records()
+assert restored_family.records == captured_family.records
+assert restored_family.validate_records(saved_family.refdata).ok
+root_cell = saved_family.replay_node(clone_id=0, node_id=0)
+assert root_cell.validate_record(saved_family.refdata) == []
+restored_family.to_tsv("duplex-lineage-replayed.tsv")
+```
+
+`replay_records()` validates all attempts, topology, sampled abundances, ancestry
+and output before returning native families and ordinary nullable records.
+`replay_node()` returns cellular state before read corruption. Choices are
+consumed without fresh random draws; replay does not certify the original seed
+stream, authentic authorship or measured biochemical rates. Numeric compatibility
+is checked explicitly.
+
+Old uncaptured results lack required evidence and cannot be exported as complete
+bundles. Capture currently covers source-backed duplex lineage trees. Fixed
+expansion, repertoire bundles and arbitrary external initial snapshots need
+separate adapters. Captured configurations use a conservative computational
+bound `lambda_base * (1 + selection_strength) <= 64`; this is not a biological
+rate prior. `FamilyReplayLimits` controls file, history and execution budgets.
+Exhaustion raises an error rather than changing the sampled history.
+
+Declared JSON metadata is frozen after the appropriate entry point applies it.
+Editing records or nested annotations afterwards causes save-time validation
+to reject the result. Files are published atomically; an existing target needs
+explicit `replace=True`.
 
 ### Bounded substrate contract
 

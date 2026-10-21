@@ -65,6 +65,7 @@ impl Rng {
     /// Advance the stream and return the next 64-bit word.
     /// SplitMix64 finalizer — see Vigna 2014.
     pub fn next_u64(&mut self) -> u64 {
+        crate::family_replay::primitive_random_word();
         self.words_consumed = self.words_consumed.saturating_add(1);
         self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.state;

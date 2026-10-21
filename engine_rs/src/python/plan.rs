@@ -123,6 +123,9 @@ pub struct PyPassPlan {
 }
 
 impl PyPassPlan {
+    pub(crate) fn from_native(plan: PassPlan) -> Self {
+        Self { inner: Some(plan) }
+    }
     /// Borrow the inner `PassPlan`. Used by runners.
     pub(crate) fn inner(&self) -> PyResult<&PassPlan> {
         self.inner.as_ref().ok_or_else(consumed_plan_err)

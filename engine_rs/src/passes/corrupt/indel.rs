@@ -296,6 +296,20 @@ impl IndelPass {
 }
 
 impl Pass for IndelPass {
+    fn family_replay_spec(&self) -> Option<crate::family_replay::plan::ReplayPassSpecV1> {
+        #[allow(unused_imports)]
+        use crate::family_replay::plan::{
+            bits, rate_bits, subregion_bits, CountSpec, KernelSpecV1, ReplayPassSpecV1 as P,
+        };
+        Some(P::Indel {
+            count: CountSpec::capture(&self.count_source)?,
+            base: self.base_dist.family_replay_spec()?,
+            insertion_probability: bits(self.insertion_prob)?,
+            rejection_attempts: self.sampling_options.rejection_attempts,
+            exact_node_budget: self.sampling_options.exact_node_budget,
+            legacy_replay_sentinels: self.sampling_options.legacy_replay_sentinels,
+        })
+    }
     fn name(&self) -> &str {
         address::CORRUPT_INDEL
     }
