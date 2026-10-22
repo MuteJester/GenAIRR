@@ -1,10 +1,10 @@
 {
   "schema": "genairr_reference_source_expectations",
   "schema_version": 1,
-  "description": "Expected values for the committed OGRDB fixtures, none produced by GenAIRR code. Provenance differs by section: j_examples and v_examples were read off printed position rulers (one base per position, gapped columns counted by eye); igl4_airr_ex_coding_end_observations match an earlier independently authored table and were confirmed against printed record substrings; the set-level aggregates under sets (record and segment counts, '_ext' counts, paralog-only identities, label differences, extension suffixes, identical-coding groups, V RSS gap counts, gapped record counts) were computed by standalone standard-library scripts and transcribed. 'anchor_coding0' is a zero-based index into the record's coding_sequence; 'phase' is the zero-based offset of the first complete codon in coding_sequence; 'same_offset_in_sequence' is the codon found when the same number is applied to the record's sequence field instead (the wrong coordinate space, kept as a contrast).",
+  "description": "Expected values for the committed OGRDB fixtures, none produced by GenAIRR code. Provenance differs by section: j_examples and v_examples were read off printed position rulers (one base per position, gapped columns counted by eye); igl4_airr_ex_coding_end_observations match an earlier independently authored table and were confirmed against printed record substrings; the set-level aggregates under sets (record and segment counts, '_ext' counts, paralog-only identities, label differences, extension suffixes, identical-coding groups, V RSS gap counts, gapped record counts) were computed by standalone standard-library scripts and transcribed. 'anchor_coding0' is a zero-based index into the record's coding_sequence; 'phase' is the reported phase value converted from j_codon_frame (zero-based offset of the first complete codon as stated by the provider; a reported value, not independent phase evidence); 'same_offset_in_sequence' is the codon found when the same number is applied to the record's sequence field instead (the wrong coordinate space, kept as a contrast).",
   "rules_under_test": {
     "j_anchor_coding0": "j_cdr3_end - 1",
-    "j_phase": "j_codon_frame - 1",
+    "j_reported_phase": "j_codon_frame - 1",
     "j_airr_prose_anchor_coding0": "j_cdr3_end - gene_start",
     "j_airr_prose_phase": "(1 - j_codon_frame) % 3",
     "v_anchor_coding0": "cdr3_start - 4",

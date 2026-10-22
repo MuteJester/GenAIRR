@@ -275,10 +275,17 @@ EXTENDED_AND_TRUNCATED = (
     "IGHV1-69*18", "IGHV4-4*09", "IGHV4-4*10", "IGHV4-30-4*i02", "IGHV4-39*i03", "IGHV4-59*11",
     "IGHV4-61*10", "IGHV4-61*i04", "IGHV5-51*06",
 )
-PARALOG_ONLY_IN_AIRR_EX = (
-    "IGHD4-11*01", "IGHD5-18*01", "IGHV1-69D*01", "IGHV2-70*04", "IGHV3-23D*01", "IGHV3-30-3*03",
-    "IGHV3-30-5*01", "IGHV3-30-5*02", "IGHV4-30-4*09",
-)
+RETAINED_IDENTICAL_SEQUENCE_IDENTITIES = {
+    # label with its own record only in 'airr': the 'airr_ex' record that names it as a paralog
+    "IGHD4-11*01": "IGHD4-4*01", "IGHD5-18*01": "IGHD5-5*01", "IGHV1-69D*01": "IGHV1-69*01",
+    "IGHV2-70*04": "IGHV2-70D*04", "IGHV3-23D*01": "IGHV3-23*01", "IGHV3-30-3*03": "IGHV3-30*04",
+    "IGHV3-30-5*01": "IGHV3-30*18", "IGHV3-30-5*02": "IGHV3-30*02", "IGHV4-30-4*09": "IGHV4-31*03",
+}
+IDENTICAL_SEQUENCE_GROUPS_SELECTED = [
+    ["IGHD4-11*01", "IGHD4-4*01"], ["IGHD5-18*01", "IGHD5-5*01"], ["IGHV1-69*01", "IGHV1-69D*01"],
+    ["IGHV2-70*04", "IGHV2-70D*04"], ["IGHV3-23*01", "IGHV3-23D*01"], ["IGHV3-30*02", "IGHV3-30-5*02"],
+    ["IGHV3-30*04", "IGHV3-30-3*03"], ["IGHV3-30*18", "IGHV3-30-5*01"], ["IGHV4-30-4*09", "IGHV4-31*03"],
+]
 FUNCTIONAL_FALSE = ("IGHV3-19*01", "IGHV3-25*02", "IGHV3-25*03", "IGHV3-25*05", "IGHV3-62*03", "IGHV6-1*03",
                     "IGHV8-51-1*02", "IGHV8-51-1*03")
 
@@ -290,38 +297,84 @@ def _differing(record, other):
 def test_igh_candidate_selection_accounts_for_every_record():
     key = "9606.IGH_VDJ/10"
     airr, airr_ex = _by_label(key, "airr"), _by_label(key, "airr_ex")
+    gapped, gapped_ex = _fasta(key, "gapped"), _fasta(key, "gapped_ex")
     selected = SELECTION["selected"]
     omitted = {row["label"]: row for row in SELECTION["omitted"]}
     chosen = [label for segment in "VDJ" for label in selected[segment]]
     assert len(set(chosen)) == len(chosen)
     assert not set(chosen) & omitted.keys()
     assert set(chosen) | omitted.keys() == airr.keys()
-    assert SELECTION["counts"] == {"V": 183, "D": 31, "J": 7, "omitted": 28, "inventory": 249}
-    assert SELECTION["distinct_genes_selected"] == {"V": 61, "D": 26, "J": 6}
-    assert {segment: len(selected[segment]) for segment in "VDJ"} == {"V": 183, "D": 31, "J": 7}
+    assert SELECTION["counts"] == {"V": 190, "D": 33, "J": 7, "omitted": 19, "inventory": 249}
+    assert SELECTION["distinct_genes_selected"] == {"V": 64, "D": 27, "J": 6}
+    assert {segment: len(selected[segment]) for segment in "VDJ"} == {"V": 190, "D": 33, "J": 7}
     assert selected["J"] == ["IGHJ1*01", "IGHJ2*01", "IGHJ3*02", "IGHJ4*02", "IGHJ5*02", "IGHJ6*02", "IGHJ6*03"]
+    assert set(RETAINED_IDENTICAL_SEQUENCE_IDENTITIES) <= set(chosen)
     choices = {row["label"]: row for row in SELECTION["record_choices"]}
     for segment in "VDJ":
         assert selected[segment] == sorted(selected[segment], key=_natural)
         for label in selected[segment]:
-            record, other = airr[label], airr_ex[label]
+            record = airr[label]
             assert record["sequence_type"] == segment
-            difference = _differing(record, other)
-            if label in CHOSEN_AIRR_RECORDS:
-                assert difference == {"coding_sequence"}
+            # Variant-specific gapped matching: 'airr' with 'gapped', 'airr_ex' with 'gapped_ex'.
+            assert gapped[label].replace(".", "") == record["coding_sequence"]
+            if label in airr_ex:
+                difference = _differing(record, airr_ex[label])
+                assert gapped_ex[label].replace(".", "") == airr_ex[label]["coding_sequence"]
+                if label in CHOSEN_AIRR_RECORDS:
+                    assert difference == {"coding_sequence"}
+                else:
+                    assert difference == set() and label not in choices
             else:
-                assert difference == set() and label not in choices
+                assert label in RETAINED_IDENTICAL_SEQUENCE_IDENTITIES and label not in gapped_ex
             assert record["functional"] is True
             assert "likely_truncated" not in (record["curational_tags"] or [])
-    sequences = [airr[label]["coding_sequence"] for label in chosen]
-    assert len(set(sequences)) == len(sequences)
+    # Identical DNA under distinct identities is retained and pinned, not hidden.
+    groups = {}
+    for segment in "VDJ":
+        for label in selected[segment]:
+            groups.setdefault((segment, airr[label]["coding_sequence"]), []).append(label)
+    shared = sorted(sorted(group) for group in groups.values() if len(group) > 1)
+    assert shared == IDENTICAL_SEQUENCE_GROUPS_SELECTED
+    assert SELECTION["identical_coding_sequence_groups_selected"] == IDENTICAL_SEQUENCE_GROUPS_SELECTED
     for label in selected["V"]:
-        start = airr[label]["v_gene_delineations"][0]["cdr3_start"] - 4
-        assert airr[label]["coding_sequence"][start:start + 3] in CYS
+        record = airr[label]
+        start = record["v_gene_delineations"][0]["cdr3_start"] - 4
+        assert record["coding_sequence"][start:start + 3] in CYS
+        assert record["v_gene_delineations"][0]["cdr3_start"] == 1 + sum(ch != "." for ch in gapped[label][:312])
     for label in selected["J"]:
         record = airr[label]
         anchor = record["j_cdr3_end"] - 1
         assert record["coding_sequence"][anchor:anchor + 3] == "TGG"
+
+
+def test_retained_identical_sequence_identities_keep_only_their_own_evidence():
+    key = "9606.IGH_VDJ/10"
+    airr, airr_ex = _by_label(key, "airr"), _by_label(key, "airr_ex")
+    notes = {row["label"]: row for row in SELECTION["selected_record_observations"]
+             if row["observation"] == "identical_coding_sequence_identity_without_airr_ex_record"}
+    assert set(notes) == set(RETAINED_IDENTICAL_SEQUENCE_IDENTITIES)
+    assert "uniformly over allele identities" in SELECTION["identity_policy"]
+    assert "nothing is copied" in SELECTION["identity_policy"]
+    for label, counterpart in RETAINED_IDENTICAL_SEQUENCE_IDENTITIES.items():
+        record, note = airr[label], notes[label]
+        assert label not in airr_ex and counterpart in airr_ex
+        assert label in airr_ex[counterpart]["paralogs"]
+        assert record["coding_sequence"] == airr[counterpart]["coding_sequence"]
+        assert note["identical_coding_sequence_to"] == counterpart and note["counterpart_selected"] is True
+        assert "no evidence transferred" in note["detail"]
+        own = note["own_evidence"]
+        assert own["allele_description_id"] == record["allele_description_id"] != airr[counterpart]["allele_description_id"]
+        assert own["functional"] is record["functional"] is True
+        assert own["curational_tags"] == record["curational_tags"]
+        assert own["unrearranged_support_entries"] == len(record["unrearranged_support"] or [])
+        assert own["rearranged_support_entries"] == len(record["rearranged_support"] or [])
+        assert own["gapped_record"] == "gapped"
+        if record["sequence_type"] == "V":
+            assert own["cdr3_start"] == record["v_gene_delineations"][0]["cdr3_start"]
+    # Example of evidence that differs between identical-sequence identities and is not copied.
+    assert airr["IGHV2-70*04"]["curational_tags"] == ["likely_full_length"]
+    assert airr["IGHV2-70D*04"]["curational_tags"] is None
+    assert notes["IGHV2-70*04"]["own_evidence"]["curational_tags"] == ["likely_full_length"]
 
 
 def test_igh_record_choices_take_the_airr_record_and_keep_the_extension_as_alternative():
@@ -329,8 +382,10 @@ def test_igh_record_choices_take_the_airr_record_and_keep_the_extension_as_alter
     airr, airr_ex = _by_label(key, "airr"), _by_label(key, "airr_ex")
     choices = {row["label"]: row for row in SELECTION["record_choices"]}
     assert set(choices) == set(CHOSEN_AIRR_RECORDS)
-    assert "ends at gene_end" in SELECTION["record_choice_reason"]
-    assert "trimming" in SELECTION["record_choice_reason"]
+    reason = SELECTION["record_choice_reason"]
+    assert reason.startswith("Explicit observed-span policy")
+    assert "ends at gene_end" in reason and "trimming" in reason
+    assert "does not establish which end is biologically correct" in reason
     for label, extension in CHOSEN_AIRR_RECORDS.items():
         row, record = choices[label], airr[label]
         sequence, coding, end = record["sequence"], record["coding_sequence"], record["gene_end"]
@@ -347,25 +402,27 @@ def test_igh_record_choices_take_the_airr_record_and_keep_the_extension_as_alter
             assert row["extension_reaches_rss_minus_1"] is True
             assert sequence[end:record["v_rs_start"] - 1] == "A"
             assert sequence[record["v_rs_start"] - 1:record["v_rs_start"] + 6] == "CACAGTG"
-            assert "IGL two-base class" in row["observation"]
+            assert "immediately before the declared RSS" in row["observation"]
+            assert "IGL two-base class" in row["observation"] and "remains unresolved" in row["observation"]
         else:
             assert record["v_rs_start"] is None and row["extension_reaches_rss_minus_1"] is None
 
 
 def test_igh_omissions_list_every_failed_rule():
     omitted = {row["label"]: [f["rule"] for f in row["failed_rules"]] for row in SELECTION["omitted"]}
-    expected = {label: ["explicit_record_in_both_variants"] for label in PARALOG_ONLY_IN_AIRR_EX}
-    expected.update({label: ["explicit_record_choice", "not_tagged_likely_truncated"]
-                     for label in EXTENDED_AND_TRUNCATED})
+    expected = {label: ["explicit_record_choice", "not_tagged_likely_truncated"] for label in EXTENDED_AND_TRUNCATED}
     expected.update({label: ["provider_functional_true"] for label in FUNCTIONAL_FALSE})
     expected["IGHV3-38*01"] = ["not_tagged_likely_truncated"]
     expected["IGHV1-38-4*01"] = ["v_imgt_104_is_cys"]
-    assert omitted == expected
+    assert omitted == expected and len(omitted) == 19
     rules = [rule["rule"] for rule in SELECTION["rules"]]
-    assert rules == ["explicit_record_in_both_variants", "explicit_record_choice", "provider_functional_true",
-                     "not_tagged_likely_truncated", "v_gapped_record_matches", "v_imgt_104_is_cys",
-                     "j_landmark_consistent"]
-    cys_rule = next(rule["requirement"] for rule in SELECTION["rules"] if rule["rule"] == "v_imgt_104_is_cys")
+    assert rules == ["explicit_record_choice", "provider_functional_true", "not_tagged_likely_truncated",
+                     "v_gapped_record_matches", "v_imgt_104_is_cys", "j_landmark_consistent"]
+    texts = {rule["rule"]: rule["requirement"] for rule in SELECTION["rules"]}
+    assert "usage weight" not in json.dumps(SELECTION)
+    assert "variant-specific" in texts["v_gapped_record_matches"]
+    assert "not required to appear in 'gapped_ex'" in texts["v_gapped_record_matches"]
+    cys_rule = texts["v_imgt_104_is_cys"]
     assert "canonical_productive" in cys_rule and "no user view narrowing" in cys_rule
     assert "IGHV3-20*02" in cys_rule and "IGHV3-25*04" in cys_rule
     selected_v = set(SELECTION["selected"]["V"])
@@ -379,8 +436,12 @@ def test_igh_capability_target():
     assert target["required"] == ["observed_span_simulation"]
     assert target["targeted"] == ["source_annotated_junction", "canonical_productive"]
     assert set(target["required"]) | set(target["targeted"]) <= set(CAPABILITIES)
-    basis = target["basis_for_target"]["canonical_productive"]
-    assert "below source certification" in basis and "'assertion'" in basis and "'none'" in basis
+    basis = target["basis_for_target"]
+    assert "Source-supported junction anchors" in basis["source_annotated_junction"]
+    assert "below source certification" in basis["canonical_productive"]
+    assert "'assertion'" in basis["canonical_productive"] and "'none'" in basis["canonical_productive"]
+    assert "does not promise that every generated sequence is productive" in basis["canonical_productive"]
+    assert "confirmed later by projection tests" in basis["confirmation"]
     assert "canonical_productive_source_certified" in target["not_targeted"]
     assert "original_coding_ends" in target["not_targeted"]
 
@@ -392,8 +453,9 @@ def test_recorded_observations_read_off_the_raw_bytes():
     assert (record["gene_start"], record["gene_end"], record["v_rs_start"]) == (143, 438, 324)
     assert sequence[438:445] == "CACAGTG"
     assert sequence[323:330] == "CACAGAA"
-    (note,) = SELECTION["selected_record_observations"]
-    assert note["label"] == "IGHV1-58*01" and note["observation"] == "v_rss_start_inside_coding_interval"
+    (note,) = [row for row in SELECTION["selected_record_observations"]
+               if row["observation"] == "v_rss_start_inside_coding_interval"]
+    assert note["label"] == "IGHV1-58*01"
     assert (note["sequence_after_gene_end"], note["sequence_at_v_rs_start"]) == ("CACAGTG", "CACAGAA")
 
     igl = _by_label("9606.IGLambda_VJ/4", "airr_ex")["IGLV3-2*03"]
@@ -441,3 +503,27 @@ def test_interpretation_evidence_names_the_binding_requirement_and_zero_coordina
                 for delineation in record["v_gene_delineations"] or []:
                     assert all(value not in (0, None) for name, value in delineation.items()
                                if name.endswith(("_start", "_end")))
+
+
+def test_interpretation_evidence_counts_occurrences_and_limits_phase_claims():
+    conventions = EVIDENCE["conventions"]
+    binding = next(item for item in conventions["v_landmark"]["evidence"] if item.startswith("Record binding"))
+    assert "746 V record occurrences across the six JSON exports" in binding and "not unique alleles" in binding
+    assert "'airr' records against 'gapped', 'airr_ex' records against 'gapped_ex'" in binding
+    assert "same variant" in conventions["v_landmark"]["scope"]
+    j_evidence = " ".join(conventions["j_landmark"]["evidence"])
+    assert "47 J record occurrences in the six JSON exports" in j_evidence and "not unique alleles" in j_evidence
+    assert "reported zero-based coding phase value" in conventions["j_landmark"]["rule"]
+    assert "not independent phase evidence" in conventions["j_landmark"]["phase_scope"]
+    assert conventions["gapped_alignment"]["matching"].startswith("Variant-specific")
+    unresolved = {item["id"]: item["detail"] for item in EVIDENCE["unresolved"]}
+    assert "not independent phase evidence" in unresolved["j_phase_derivation"]
+    assert "a reported value, not independent phase evidence" in EXPECT["description"]
+    # The occurrence counts themselves.
+    counts = {"V": 0, "J": 0}
+    for key in EXPECT["sets"]:
+        for export in ("airr", "airr_ex"):
+            for record in _records(key, export):
+                if record["sequence_type"] in counts:
+                    counts[record["sequence_type"]] += 1
+    assert counts == {"V": 746, "J": 47}

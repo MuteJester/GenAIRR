@@ -1,7 +1,7 @@
 {
   "schema": "genairr_reference_source_selection_candidate",
   "schema_version": 1,
-  "description": "Candidate allele selection for a human IGH observed-span reference built from OGRDB IGH_VDJ release 10. Every record of the 'airr' export is either selected or omitted with the rules it fails. Selected alleles use their 'airr' record; for alleles whose 'airr' and 'airr_ex' records differ, record_choices states the choice per allele. Selection order within each segment is natural label order (numeric runs compared as integers). Labels are the provider labels, unchanged.",
+  "description": "Candidate allele selection for a human IGH observed-span reference built from OGRDB IGH_VDJ release 10. Every record of the 'airr' export is either selected or omitted with the rules it fails. Every selected allele uses its own 'airr' record; for alleles whose 'airr' and 'airr_ex' records differ, record_choices states the choice per allele. Selection order within each segment is natural label order (numeric runs compared as integers). Labels are the provider labels, unchanged.",
   "source": {
     "set_id": "9606.IGH_VDJ",
     "release": 10,
@@ -13,14 +13,11 @@
     "gapped_sha256": "681db69932757bd09253cbef990a64959f8c8745e46f364bcb35963ea4f16a65",
     "gapped_ex_sha256": "2321eb5b788bf95103a2221eb327ef327c735e3e9427713c71285dcc6df81d9a"
   },
+  "identity_policy": "Alleles with identical DNA under distinct gene or allele identities are retained as separate identities. The default samples uniformly over allele identities, so their combined probability of contributing that sequence reflects distinct, legitimate identities rather than accidental duplicate records. Each identity is selected from its own 'airr' record and keeps only its own evidence (anchor fields, functional, curational_tags, gapped record, support entries); nothing is copied from an identical-sequence counterpart.",
   "rules": [
     {
-      "rule": "explicit_record_in_both_variants",
-      "requirement": "The label has its own record in both 'airr' and 'airr_ex'. 'airr_ex' keeps one record per identical coding sequence and names the others only as paralogs; selecting both identities would add usage weight to one sequence."
-    },
-    {
       "rule": "explicit_record_choice",
-      "requirement": "Where the 'airr' and 'airr_ex' records of a label differ, the label is selectable only with a per-allele record choice recorded in record_choices, and only if the records differ in nothing but coding_sequence (and allele_description_ref, which always carries the '_ext' suffix in 'airr_ex'). Choices are recorded only for alleles that pass every other rule."
+      "requirement": "Where a label has records in both 'airr' and 'airr_ex' and they differ, the label is selectable only with a per-allele record choice recorded in record_choices, and only if the records differ in nothing but coding_sequence (and allele_description_ref, which always carries the '_ext' suffix in 'airr_ex'). Choices are recorded only for alleles that pass every other rule. A label with a record only in 'airr' needs no choice."
     },
     {
       "rule": "provider_functional_true",
@@ -32,7 +29,7 @@
     },
     {
       "rule": "v_gapped_record_matches",
-      "requirement": "V only: label-identical records in both gapped exports whose ungapped bytes equal the coding_sequence of the same-suffix JSON record, and whose non-gap count before IMGT column 313, plus one, equals cdr3_start."
+      "requirement": "V only, variant-specific: the chosen 'airr' record has a label-identical record in the 'gapped' export whose ungapped bytes equal its coding_sequence, and 1 + the non-gap count in gapped columns 1-312 equals its cdr3_start. Where the label also has an 'airr_ex' record, that record must match its label-identical 'gapped_ex' record exactly (kept as evidence). A label absent from 'airr_ex' is not required to appear in 'gapped_ex'."
     },
     {
       "rule": "v_imgt_104_is_cys",
@@ -43,7 +40,7 @@
       "requirement": "J only: the codon at coding_sequence[j_cdr3_end-1 : j_cdr3_end+2] is TGG and (j_cdr3_end-1) - (j_codon_frame-1) is a multiple of 3."
     }
   ],
-  "record_choice_reason": "The 'airr' record is chosen: its coding_sequence ends at gene_end, the same span definition used by every other selected V. The 'airr_ex' 3' extension is a provider candidate physical-end interpretation and is not adopted; it is kept as the recorded alternative. The choice matters because the unfitted defaults disable trimming, so V 3' bases appear in junctions.",
+  "record_choice_reason": "Explicit observed-span policy: for these alleles the 'airr' record is chosen because its coding_sequence ends at gene_end, the same span definition used by every other selected V. The 'airr_ex' 3' extension is a provider candidate physical-end interpretation; it is not adopted and is kept as the recorded alternative. Because the unfitted defaults disable trimming, V 3' bases appear in junctions, which is why the choice changes simulated sequences; that explains its effect, it does not establish which end is biologically correct.",
   "record_choices": [
     {
       "label": "IGHV1-58*03",
@@ -92,7 +89,7 @@
       "record_context_after_gene_end": "A",
       "v_rs_start": 457,
       "extension_reaches_rss_minus_1": true,
-      "observation": "The extension 'A' fills the record exactly up to RSS-1 (v_rs_start 457; heptamer CACAGTG follows): the IGH analogue of the IGL two-base class coding_end_before_declared_v_rss."
+      "observation": "The additional 'A' in the 'airr_ex' record matches the supplied record context immediately before the declared RSS (v_rs_start 457; heptamer CACAGTG follows), the IGH analogue of the IGL two-base class coding_end_before_declared_v_rss. The 'airr' record is used under the observed-span policy; the longer alternative stays recorded and whether it is the physical coding end remains unresolved."
     },
     {
       "label": "IGHV3-9*04",
@@ -280,8 +277,9 @@
       "canonical_productive"
     ],
     "basis_for_target": {
-      "source_annotated_junction": "Every selected V has a cdr3_start whose meaning and record binding are verified against the matching gapped exports; every selected J has j_cdr3_end/j_codon_frame consistent with the producer convention. Anchors are therefore source-stated positions, not motif searches.",
-      "canonical_productive": "Targeted below source certification only: every selected V anchor codon is Cys and every selected J anchor codon is TGG, so the capability is available, but its evidence is 'assertion' with phase support 'none' because V coding phase is at most anchor-derived."
+      "source_annotated_junction": "Source-supported junction anchors: every selected V has its own cdr3_start, whose meaning and record binding are verified against the 'gapped' export; every selected J has its own j_cdr3_end/j_codon_frame consistent with the producer convention. Anchors are source-stated positions, not motif searches.",
+      "canonical_productive": "Targeted below source certification only: every selected V anchor codon is Cys and every selected J anchor codon is TGG, so the capability is expected to be available with evidence 'assertion' and phase support 'none' (V coding phase is at most anchor-derived). The capability concerns the reference's anchors; it does not promise that every generated sequence is productive.",
+      "confirmation": "This file states a target. Actual availability is confirmed later by projection tests on the built reference."
     },
     "not_targeted": {
       "original_coding_ends": "no reviewed boundary claim; provider tags and RSS adjacency do not establish complete coding ends",
@@ -290,17 +288,55 @@
     }
   },
   "counts": {
-    "V": 183,
-    "D": 31,
+    "V": 190,
+    "D": 33,
     "J": 7,
-    "omitted": 28,
+    "omitted": 19,
     "inventory": 249
   },
   "distinct_genes_selected": {
-    "V": 61,
-    "D": 26,
+    "V": 64,
+    "D": 27,
     "J": 6
   },
+  "identical_coding_sequence_groups_selected": [
+    [
+      "IGHD4-11*01",
+      "IGHD4-4*01"
+    ],
+    [
+      "IGHD5-18*01",
+      "IGHD5-5*01"
+    ],
+    [
+      "IGHV1-69*01",
+      "IGHV1-69D*01"
+    ],
+    [
+      "IGHV2-70*04",
+      "IGHV2-70D*04"
+    ],
+    [
+      "IGHV3-23*01",
+      "IGHV3-23D*01"
+    ],
+    [
+      "IGHV3-30*02",
+      "IGHV3-30-5*02"
+    ],
+    [
+      "IGHV3-30*04",
+      "IGHV3-30-3*03"
+    ],
+    [
+      "IGHV3-30*18",
+      "IGHV3-30-5*01"
+    ],
+    [
+      "IGHV4-30-4*09",
+      "IGHV4-31*03"
+    ]
+  ],
   "selected": {
     "V": [
       "IGHV1-2*02",
@@ -343,6 +379,7 @@
       "IGHV1-69*20",
       "IGHV1-69*i04",
       "IGHV1-69-2*01",
+      "IGHV1-69D*01",
       "IGHV2-5*01",
       "IGHV2-5*02",
       "IGHV2-5*05",
@@ -350,6 +387,7 @@
       "IGHV2-26*02",
       "IGHV2-26*04",
       "IGHV2-70*01",
+      "IGHV2-70*04",
       "IGHV2-70*05",
       "IGHV2-70*15",
       "IGHV2-70*20",
@@ -388,6 +426,7 @@
       "IGHV3-23*01",
       "IGHV3-23*03",
       "IGHV3-23*04",
+      "IGHV3-23D*01",
       "IGHV3-25*04",
       "IGHV3-30*01",
       "IGHV3-30*02",
@@ -397,6 +436,9 @@
       "IGHV3-30*20",
       "IGHV3-30*i02",
       "IGHV3-30-3*01",
+      "IGHV3-30-3*03",
+      "IGHV3-30-5*01",
+      "IGHV3-30-5*02",
       "IGHV3-33*01",
       "IGHV3-33*06",
       "IGHV3-33*08",
@@ -455,6 +497,7 @@
       "IGHV4-30-4*01",
       "IGHV4-30-4*07",
       "IGHV4-30-4*08",
+      "IGHV4-30-4*09",
       "IGHV4-31*01",
       "IGHV4-31*03",
       "IGHV4-31*11",
@@ -508,10 +551,12 @@
       "IGHD3-16*03",
       "IGHD3-22*01",
       "IGHD4-4*01",
+      "IGHD4-11*01",
       "IGHD4-17*01",
       "IGHD4-23*01",
       "IGHD5-5*01",
       "IGHD5-12*01",
+      "IGHD5-18*01",
       "IGHD5-18*02",
       "IGHD5-24*01",
       "IGHD6-6*01",
@@ -540,29 +585,178 @@
       "sequence_after_gene_end": "CACAGTG",
       "sequence_at_v_rs_start": "CACAGAA",
       "detail": "The heptamer CACAGTG follows gene_end directly, while v_rs_start points at an internal CACAG in FR3, so the RSS coordinate field is the faulty one. RSS coordinates are not used by the observed-span projection; the record is kept and the observation retained."
+    },
+    {
+      "label": "IGHV1-69D*01",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHV1-69*01",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHV1-69*01, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02674",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 2,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped",
+        "cdr3_start": 289
+      }
+    },
+    {
+      "label": "IGHV2-70*04",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHV2-70D*04",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHV2-70D*04, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02965",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 1,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped",
+        "cdr3_start": 292
+      }
+    },
+    {
+      "label": "IGHV3-23D*01",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHV3-23*01",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHV3-23*01, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02702",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 3,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped",
+        "cdr3_start": 289
+      }
+    },
+    {
+      "label": "IGHV3-30-3*03",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHV3-30*04",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHV3-30*04, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02706",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 4,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped",
+        "cdr3_start": 289
+      }
+    },
+    {
+      "label": "IGHV3-30-5*01",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHV3-30*18",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHV3-30*18, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02707",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 3,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped",
+        "cdr3_start": 289
+      }
+    },
+    {
+      "label": "IGHV3-30-5*02",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHV3-30*02",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHV3-30*02, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02708",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 3,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped",
+        "cdr3_start": 289
+      }
+    },
+    {
+      "label": "IGHV4-30-4*09",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHV4-31*03",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHV4-31*03, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02982",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 1,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped",
+        "cdr3_start": 292
+      }
+    },
+    {
+      "label": "IGHD4-11*01",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHD4-4*01",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHD4-4*01, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02626",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 4,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped"
+      }
+    },
+    {
+      "label": "IGHD5-18*01",
+      "observation": "identical_coding_sequence_identity_without_airr_ex_record",
+      "identical_coding_sequence_to": "IGHD5-5*01",
+      "counterpart_selected": true,
+      "detail": "Own record only in 'airr'; identical coding_sequence to IGHD5-5*01, which 'airr_ex' keeps as the record naming this label as a paralog. Selected on its own 'airr' record; no evidence transferred from the counterpart.",
+      "own_evidence": {
+        "allele_description_id": "OGRDB:A02631",
+        "functional": true,
+        "curational_tags": [
+          "likely_full_length"
+        ],
+        "inference_type": null,
+        "unrearranged_support_entries": 4,
+        "rearranged_support_entries": 0,
+        "gapped_record": "gapped"
+      }
     }
   ],
   "omitted": [
-    {
-      "segment": "D",
-      "label": "IGHD4-11*01",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHD4-4*01, which 'airr_ex' keeps as the record naming this label as a paralog"
-        }
-      ]
-    },
-    {
-      "segment": "D",
-      "label": "IGHD5-18*01",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHD5-5*01, which 'airr_ex' keeps as the record naming this label as a paralog"
-        }
-      ]
-    },
     {
       "segment": "V",
       "label": "IGHV1-38-4*01",
@@ -589,41 +783,11 @@
     },
     {
       "segment": "V",
-      "label": "IGHV1-69D*01",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHV1-69*01, which 'airr_ex' keeps as the record naming this label as a paralog"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV2-70*04",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHV2-70D*04, which 'airr_ex' keeps as the record naming this label as a paralog"
-        }
-      ]
-    },
-    {
-      "segment": "V",
       "label": "IGHV3-19*01",
       "failed_rules": [
         {
           "rule": "provider_functional_true",
           "detail": "functional is false"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV3-23D*01",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHV3-23*01, which 'airr_ex' keeps as the record naming this label as a paralog"
         }
       ]
     },
@@ -654,36 +818,6 @@
         {
           "rule": "provider_functional_true",
           "detail": "functional is false"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV3-30-3*03",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHV3-30*04, which 'airr_ex' keeps as the record naming this label as a paralog"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV3-30-5*01",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHV3-30*18, which 'airr_ex' keeps as the record naming this label as a paralog"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV3-30-5*02",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHV3-30*02, which 'airr_ex' keeps as the record naming this label as a paralog"
         }
       ]
     },
@@ -732,16 +866,6 @@
         {
           "rule": "not_tagged_likely_truncated",
           "detail": "curational_tags is [\"likely_truncated\"]"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV4-30-4*09",
-      "failed_rules": [
-        {
-          "rule": "explicit_record_in_both_variants",
-          "detail": "own record only in 'airr'; identical coding_sequence to IGHV4-31*03, which 'airr_ex' keeps as the record naming this label as a paralog"
         }
       ]
     },
