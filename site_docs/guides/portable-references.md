@@ -315,6 +315,12 @@ repertoire. `exp.describe()` names the portable reference and the profile, and
 `ref.report()` lists the defaults. Every result records
 `reference_content_hash`, the content hash of the reference it ran against.
 
+When the reference admitted curatable engine findings (listed in
+`ref.admission`, for example a V allele without an anchor), runs use the
+lenient validation mode by default. `exp.allow_curatable_refdata(False)` or
+`compile(allow_curatable_refdata=False)` asks for strict validation instead,
+which then rejects those findings.
+
 Override any default per run with the usual arguments:
 
 ```python
@@ -338,6 +344,7 @@ ran against. A genotype run with novel alleles must be validated against
 | Use | Behaviour |
 |---|---|
 | `with_genotype(...)` or `run_cohort(...)` on a `Reference` | Raises `GenAIRR.ReferenceCapabilityError` (a subclass of `ReferenceArtifactError`, `kind == "capability"`): "genotype- and cohort-constrained runs are not yet supported for portable references". |
+| `curate_refdata(...)` on an experiment started from a `Reference` | Raises `GenAIRR.ReferenceCapabilityError` (`kind == "capability"`) at the call: portable references cannot be curated in place, and allele selection is not yet supported for portable references. |
 | Family-replay capture (`capture_family_replay=True`) | Rejected before sampling with `GenAIRR.experimental.FamilyReplayError` (category `"unsupported"`): "family-replay capture is not yet supported for portable references". |
 
 ## Errors

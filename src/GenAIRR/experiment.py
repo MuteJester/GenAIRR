@@ -199,8 +199,10 @@ class Experiment(
         # pass. Production users opt in via
         # ``.allow_curatable_refdata()`` when sampling from a real
         # catalogue (bundled mouse_igh / human_tcrb) that includes
-        # pseudogene/ORF alleles.
-        self._allow_curatable_refdata: bool = False
+        # pseudogene/ORF alleles. ``None`` means never set: strict,
+        # except on a portable Reference that admitted curatable
+        # findings.
+        self._allow_curatable_refdata: Optional[bool] = None
         # Single-subject diploid genotype attached via ``with_genotype``.
         # ``None`` => the flat (uniform/usage-weighted) allele path runs
         # unchanged. When set, recombination lowers to the phased

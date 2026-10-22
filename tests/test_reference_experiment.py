@@ -44,7 +44,7 @@ def _entry(segment, label, seq, **annotations):
     return base
 
 
-def build_reference(directory, *, name="lab_igh", version="1"):
+def build_reference(directory, *, name="lab_igh", version="1", v2_anchor=True):
     directory.mkdir(parents=True, exist_ok=True)
     files = {"v": f">IGHV1-2*02\n{V1}\n>IGHV1-3*01\n{V2}\n",
              "d": f">IGHD3-10*01\n{D1}\n>IGHD2-2*01\n{D2}\n",
@@ -60,7 +60,7 @@ def build_reference(directory, *, name="lab_igh", version="1"):
                       "build_date": None},
         "conventions": {"coordinates": "zero_based_half_open", "v_alignment": "none"},
         "alleles": [_entry("V", "IGHV1-2*02", V1, anchor=_assertion(285)),
-                    _entry("V", "IGHV1-3*01", V2, anchor=_assertion(285)),
+                    _entry("V", "IGHV1-3*01", V2, anchor=_assertion(285) if v2_anchor else None),
                     _entry("J", "IGHJ4*02", J1, anchor=_assertion(14)),
                     _entry("J", "IGHJ6*02", J2, anchor=_assertion(29))],
         "relationships": [], "suggestions": [],
@@ -193,14 +193,46 @@ def test_explicit_defaults_drive_np_and_trim(ref):
     assert custom.reference_content_hash == ref.execution_hash
 
 
-def test_curate_refdata_on_reference_rejected_at_compile(ref):
-    exp = Experiment.on(ref).curate_refdata("raw").recombine()
+def test_curate_refdata_on_reference_rejected_at_the_call(ref):
+    exp = Experiment.on(ref).recombine()
+    for policy in ("raw", "functional_anchors_only", "functional_status"):
+        with pytest.raises(ReferenceArtifactError) as excinfo:
+            exp.curate_refdata(policy)
+        assert excinfo.value.kind == "capability"
+        message = str(excinfo.value)
+        assert "cannot be curated in place" in message
+        assert "allele selection is not yet supported for portable references" in message
+    assert exp.refdata is ref.native_refdata()
+    assert exp.run_records(n=1, seed=0).reference_content_hash == ref.execution_hash
+
+
+def test_replaced_native_reference_rejected_at_compile(ref):
+    exp = Experiment.on(ref).recombine()
+    exp._refdata = ref.native_refdata().curated("raw")
     with pytest.raises(ReferenceArtifactError) as excinfo:
         exp.compile()
     assert excinfo.value.kind == "integrity"
     assert ref.execution_hash in str(excinfo.value)
     with pytest.raises(ReferenceArtifactError):
         exp.run_records(n=1, seed=0)
+
+
+def test_instance_curatable_flag_overrides_the_admission_default(tmp_path):
+    admitted = build_reference(tmp_path / "admitted", v2_anchor=False)
+    assert "MissingAnchor" in {f["kind"] for f in admitted.admission["accepted_curatable_findings"]}
+    # Not set: the reference's admitted findings select the lenient mode.
+    Experiment.on(admitted).recombine().compile()
+    # Explicitly set to False: strict validation rejects the admitted finding.
+    strict = Experiment.on(admitted).allow_curatable_refdata(False).recombine()
+    with pytest.raises(ValueError, match="V allele 1 has no anchor"):
+        strict.compile()
+    with pytest.raises(ValueError, match="V allele 1 has no anchor"):
+        strict.run_records(n=1, seed=0)
+    # The compile() argument still wins over both.
+    strict.compile(allow_curatable_refdata=True)
+    with pytest.raises(ValueError, match="V allele 1 has no anchor"):
+        Experiment.on(admitted).recombine().compile(allow_curatable_refdata=False)
+    Experiment.on(admitted).allow_curatable_refdata(True).recombine().compile()
 
 
 def test_genotype_and_cohort_rejected_with_capability_error(ref):

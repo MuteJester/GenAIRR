@@ -85,14 +85,15 @@ class _CompileMixin:
         bounds) still reject, but Curatable issues (pseudogene-shape
         anchor anomalies) pass.
 
-        On a portable :class:`GenAIRR.Reference`, ``None`` selects the
-        lenient mode when the reference admitted curatable findings
-        (see ``reference.admission``) or the instance flag is set.
-        Compilation raises :class:`GenAIRR.ReferenceArtifactError`
-        (kind ``"integrity"``) when the experiment's native reference
-        no longer matches the reference's execution hash, for example
-        after :meth:`curate_refdata`, and (kind ``"capability"``) when
-        a genotype is attached.
+        On a portable :class:`GenAIRR.Reference`, when neither this
+        argument nor the instance flag is set, the lenient mode is
+        selected if the reference admitted curatable findings (see
+        ``reference.admission``) and the strict mode otherwise; an
+        explicit instance flag wins over that default. Compilation
+        raises :class:`GenAIRR.ReferenceArtifactError` (kind
+        ``"integrity"``) when the experiment's native reference no
+        longer matches the reference's execution hash, and (kind
+        ``"capability"``) when a genotype is attached.
         """
         from .duplex import validate_duplex_steps
         validate_duplex_steps(self._steps)
@@ -101,10 +102,13 @@ class _CompileMixin:
         if reference is not None:
             _check_reference_binding(self, reference)
 
+        # The compile() argument wins, then an explicitly set instance flag,
+        # then a portable reference's admitted curatable findings.
         if allow_curatable_refdata is None:
             allow_curatable_refdata = self._allow_curatable_refdata
-            if reference is not None and reference.admission["accepted_curatable_findings"]:
-                allow_curatable_refdata = True
+        if allow_curatable_refdata is None:
+            allow_curatable_refdata = bool(
+                reference is not None and reference.admission["accepted_curatable_findings"])
 
         # Receptor revision with a phased genotype is now haplotype-aware:
         # the lowering builds a genotype-aware ReceptorRevisionPass that
