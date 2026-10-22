@@ -155,8 +155,9 @@ class ReferenceReport:
     """A human- and machine-readable account of a reference.
 
     ``str(report)`` covers identity, hashes, FASTA record accounting, the allele table
-    with recorded support levels, findings, the defaults profile and the capability
-    explanation; ``to_dict()`` gives the same content as plain JSON-compatible data.
+    with recorded support levels, allele notes, entities and relationships, findings,
+    the defaults profile and the capability explanation; ``to_dict()`` gives the same
+    content as plain JSON-compatible data.
     """
     name: str
     version: Optional[str]

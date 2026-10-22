@@ -63,8 +63,9 @@ print(ref.capabilities().available())
 ```
 
 `print(ref.report())` shows the record accounting (accepted, duplicate,
-rejected, with reasons), the per-allele annotations with their support, named
-entities, findings, the defaults profile and the capabilities. `report()` also
+rejected, with reasons), the per-allele annotations with their support, your
+notes, named entities, relationships between alleles, findings, the defaults
+profile and the capabilities. `report()` also
 has `to_dict()` for JSON. `ref.records`, `ref.alleles`, `ref.entities`
 and `ref.findings` expose the same information as objects.
 
