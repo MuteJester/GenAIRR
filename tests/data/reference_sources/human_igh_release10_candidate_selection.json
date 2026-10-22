@@ -1,7 +1,7 @@
 {
   "schema": "genairr_reference_source_selection_candidate",
   "schema_version": 1,
-  "description": "Candidate allele selection for a human IGH observed-span reference built from OGRDB IGH_VDJ release 10. Every record of the 'airr' export is either selected or omitted with the rules it fails. Selection order within each segment is natural label order (numeric runs compared as integers). Labels are the provider labels, unchanged.",
+  "description": "Candidate allele selection for a human IGH observed-span reference built from OGRDB IGH_VDJ release 10. Every record of the 'airr' export is either selected or omitted with the rules it fails. Selected alleles use their 'airr' record; for alleles whose 'airr' and 'airr_ex' records differ, record_choices states the choice per allele. Selection order within each segment is natural label order (numeric runs compared as integers). Labels are the provider labels, unchanged.",
   "source": {
     "set_id": "9606.IGH_VDJ",
     "release": 10,
@@ -19,8 +19,8 @@
       "requirement": "The label has its own record in both 'airr' and 'airr_ex'. 'airr_ex' keeps one record per identical coding sequence and names the others only as paralogs; selecting both identities would add usage weight to one sequence."
     },
     {
-      "rule": "variant_invariant_record",
-      "requirement": "The 'airr' and 'airr_ex' records are equal in every field except allele_description_ref. Records whose 'airr_ex' coding_sequence carries a provider 3' extension are left out instead of choosing a variant."
+      "rule": "explicit_record_choice",
+      "requirement": "Where the 'airr' and 'airr_ex' records of a label differ, the label is selectable only with a per-allele record choice recorded in record_choices, and only if the records differ in nothing but coding_sequence (and allele_description_ref, which always carries the '_ext' suffix in 'airr_ex'). Choices are recorded only for alleles that pass every other rule."
     },
     {
       "rule": "provider_functional_true",
@@ -32,15 +32,243 @@
     },
     {
       "rule": "v_gapped_record_matches",
-      "requirement": "V only: label-identical records in both gapped exports whose ungapped bytes equal coding_sequence and whose non-gap count before IMGT column 313, plus one, equals cdr3_start."
+      "requirement": "V only: label-identical records in both gapped exports whose ungapped bytes equal the coding_sequence of the same-suffix JSON record, and whose non-gap count before IMGT column 313, plus one, equals cdr3_start."
     },
     {
       "rule": "v_imgt_104_is_cys",
-      "requirement": "V only: the codon at coding_sequence[cdr3_start-4 : cdr3_start-1] (IMGT codon 104 in the source alignment) is TGT or TGC. Non-Cys residues stay in the inventory unrelocated; they are only not selected for this starter."
+      "requirement": "V only: the junction anchor codon coding_sequence[cdr3_start-4 : cdr3_start-1] (IMGT codon 104 in the source alignment) is TGT or TGC. This rule exists so that canonical_productive stays available for the starter: the reference API has no user view narrowing, so one V whose anchor codon is not Cys would make that capability unavailable for the whole reference. It concerns the junction anchor codon only, not domain integrity: alleles with non-canonical residues at IMGT 23 or 41 (IGHV3-20*02, IGHV3-25*04) are kept because no declared capability depends on them. Non-Cys anchor codons stay in the inventory unrelocated."
     },
     {
       "rule": "j_landmark_consistent",
       "requirement": "J only: the codon at coding_sequence[j_cdr3_end-1 : j_cdr3_end+2] is TGG and (j_cdr3_end-1) - (j_codon_frame-1) is a multiple of 3."
+    }
+  ],
+  "record_choice_reason": "The 'airr' record is chosen: its coding_sequence ends at gene_end, the same span definition used by every other selected V. The 'airr_ex' 3' extension is a provider candidate physical-end interpretation and is not adopted; it is kept as the recorded alternative. The choice matters because the unfitted defaults disable trimming, so V 3' bases appear in junctions.",
+  "record_choices": [
+    {
+      "label": "IGHV1-58*03",
+      "chosen_export": "airr",
+      "chosen_coding_length": 295,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 296,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV1-69*20",
+      "chosen_export": "airr",
+      "chosen_coding_length": 295,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 296,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV3-7*04",
+      "chosen_export": "airr",
+      "chosen_coding_length": 295,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 296,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": 457,
+      "extension_reaches_rss_minus_1": true,
+      "observation": "The extension 'A' fills the record exactly up to RSS-1 (v_rs_start 457; heptamer CACAGTG follows): the IGH analogue of the IGL two-base class coding_end_before_declared_v_rss."
+    },
+    {
+      "label": "IGHV3-9*04",
+      "chosen_export": "airr",
+      "chosen_coding_length": 295,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 298,
+        "extension_3prime": "ATA",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "ATA",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV3-21*05",
+      "chosen_export": "airr",
+      "chosen_coding_length": 295,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 296,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV3-30*20",
+      "chosen_export": "airr",
+      "chosen_coding_length": 295,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 296,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV3-30*i02",
+      "chosen_export": "airr",
+      "chosen_coding_length": 295,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 296,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV3-53*05",
+      "chosen_export": "airr",
+      "chosen_coding_length": 292,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 293,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV4-31*11",
+      "chosen_export": "airr",
+      "chosen_coding_length": 298,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 299,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV4-39*08",
+      "chosen_export": "airr",
+      "chosen_coding_length": 298,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 299,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV4-39*09",
+      "chosen_export": "airr",
+      "chosen_coding_length": 298,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 299,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV4-59*12",
+      "chosen_export": "airr",
+      "chosen_coding_length": 292,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 293,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV4-59*i03",
+      "chosen_export": "airr",
+      "chosen_coding_length": 292,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 293,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
+    },
+    {
+      "label": "IGHV4-61*11",
+      "chosen_export": "airr",
+      "chosen_coding_length": 298,
+      "chosen_coding_ends_at_gene_end": true,
+      "alternative": {
+        "export": "airr_ex",
+        "coding_length": 299,
+        "extension_3prime": "A",
+        "kept_for": "dossier"
+      },
+      "extension_matches_record_context_after_gene_end": true,
+      "record_context_after_gene_end": "A",
+      "v_rs_start": null,
+      "extension_reaches_rss_minus_1": null
     }
   ],
   "capability_target": {
@@ -48,9 +276,13 @@
       "observed_span_simulation"
     ],
     "targeted": [
-      "source_annotated_junction"
+      "source_annotated_junction",
+      "canonical_productive"
     ],
-    "basis_for_target": "Every selected V has a cdr3_start whose meaning and record binding are verified against the matching gapped exports; every selected J has j_cdr3_end/j_codon_frame consistent with the producer convention. Anchors are therefore source-stated positions, not motif searches.",
+    "basis_for_target": {
+      "source_annotated_junction": "Every selected V has a cdr3_start whose meaning and record binding are verified against the matching gapped exports; every selected J has j_cdr3_end/j_codon_frame consistent with the producer convention. Anchors are therefore source-stated positions, not motif searches.",
+      "canonical_productive": "Targeted below source certification only: every selected V anchor codon is Cys and every selected J anchor codon is TGG, so the capability is available, but its evidence is 'assertion' with phase support 'none' because V coding phase is at most anchor-derived."
+    },
     "not_targeted": {
       "original_coding_ends": "no reviewed boundary claim; provider tags and RSS adjacency do not establish complete coding ends",
       "complete_reference_span": "no reviewed boundary claim",
@@ -58,10 +290,10 @@
     }
   },
   "counts": {
-    "V": 169,
+    "V": 183,
     "D": 31,
     "J": 7,
-    "omitted": 42,
+    "omitted": 28,
     "inventory": 249
   },
   "distinct_genes_selected": {
@@ -94,6 +326,7 @@
       "IGHV1-46*04",
       "IGHV1-58*01",
       "IGHV1-58*02",
+      "IGHV1-58*03",
       "IGHV1-69*01",
       "IGHV1-69*02",
       "IGHV1-69*04",
@@ -107,6 +340,7 @@
       "IGHV1-69*15",
       "IGHV1-69*17",
       "IGHV1-69*19",
+      "IGHV1-69*20",
       "IGHV1-69*i04",
       "IGHV1-69-2*01",
       "IGHV2-5*01",
@@ -123,10 +357,12 @@
       "IGHV2-70D*14",
       "IGHV3-7*01",
       "IGHV3-7*03",
+      "IGHV3-7*04",
       "IGHV3-7*05",
       "IGHV3-9*01",
       "IGHV3-9*02",
       "IGHV3-9*03",
+      "IGHV3-9*04",
       "IGHV3-11*01",
       "IGHV3-11*04",
       "IGHV3-11*05",
@@ -146,6 +382,7 @@
       "IGHV3-20*05",
       "IGHV3-21*01",
       "IGHV3-21*03",
+      "IGHV3-21*05",
       "IGHV3-21*06",
       "IGHV3-21*07",
       "IGHV3-23*01",
@@ -157,6 +394,8 @@
       "IGHV3-30*03",
       "IGHV3-30*04",
       "IGHV3-30*18",
+      "IGHV3-30*20",
+      "IGHV3-30*i02",
       "IGHV3-30-3*01",
       "IGHV3-33*01",
       "IGHV3-33*06",
@@ -183,6 +422,7 @@
       "IGHV3-53*01",
       "IGHV3-53*02",
       "IGHV3-53*04",
+      "IGHV3-53*05",
       "IGHV3-64*01",
       "IGHV3-64*02",
       "IGHV3-64*07",
@@ -217,14 +457,20 @@
       "IGHV4-30-4*08",
       "IGHV4-31*01",
       "IGHV4-31*03",
+      "IGHV4-31*11",
       "IGHV4-34*01",
       "IGHV4-38-2*01",
       "IGHV4-38-2*02",
       "IGHV4-39*01",
       "IGHV4-39*07",
+      "IGHV4-39*08",
+      "IGHV4-39*09",
       "IGHV4-59*01",
+      "IGHV4-59*12",
+      "IGHV4-59*i03",
       "IGHV4-61*01",
       "IGHV4-61*02",
+      "IGHV4-61*11",
       "IGHV4-NL1*01",
       "IGHV5-10-1*01",
       "IGHV5-10-1*03",
@@ -288,7 +534,12 @@
     {
       "label": "IGHV1-58*01",
       "observation": "v_rss_start_inside_coding_interval",
-      "detail": "v_rs_start 324 lies inside the declared coding interval (gene_end - (v_rs_start - 1) = 115); RSS coordinates are not used by the observed-span projection, so the record is kept and the observation is retained"
+      "gene_start": 143,
+      "gene_end": 438,
+      "v_rs_start": 324,
+      "sequence_after_gene_end": "CACAGTG",
+      "sequence_at_v_rs_start": "CACAGAA",
+      "detail": "The heptamer CACAGTG follows gene_end directly, while v_rs_start points at an internal CACAG in FR3, so the RSS coordinate field is the faulty one. RSS coordinates are not used by the observed-span projection; the record is kept and the observation retained."
     }
   ],
   "omitted": [
@@ -318,17 +569,7 @@
       "failed_rules": [
         {
           "rule": "v_imgt_104_is_cys",
-          "detail": "IMGT codon 104 is TAT"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV1-58*03",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "detail": "junction anchor codon (IMGT 104) is TAT"
         }
       ]
     },
@@ -337,22 +578,12 @@
       "label": "IGHV1-69*18",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",
           "detail": "curational_tags is [\"likely_truncated\"]"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV1-69*20",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
         }
       ]
     },
@@ -378,41 +609,11 @@
     },
     {
       "segment": "V",
-      "label": "IGHV3-7*04",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV3-9*04",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
       "label": "IGHV3-19*01",
       "failed_rules": [
         {
           "rule": "provider_functional_true",
           "detail": "functional is false"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV3-21*05",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
         }
       ]
     },
@@ -458,26 +659,6 @@
     },
     {
       "segment": "V",
-      "label": "IGHV3-30*20",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV3-30*i02",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
       "label": "IGHV3-30-3*03",
       "failed_rules": [
         {
@@ -518,16 +699,6 @@
     },
     {
       "segment": "V",
-      "label": "IGHV3-53*05",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
       "label": "IGHV3-62*03",
       "failed_rules": [
         {
@@ -541,8 +712,8 @@
       "label": "IGHV4-4*09",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",
@@ -555,8 +726,8 @@
       "label": "IGHV4-4*10",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",
@@ -579,8 +750,8 @@
       "label": "IGHV4-30-4*i02",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",
@@ -590,41 +761,11 @@
     },
     {
       "segment": "V",
-      "label": "IGHV4-31*11",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV4-39*08",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV4-39*09",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
       "label": "IGHV4-39*i03",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",
@@ -637,32 +778,12 @@
       "label": "IGHV4-59*11",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",
           "detail": "curational_tags is [\"likely_truncated\"]"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV4-59*12",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
-      "label": "IGHV4-59*i03",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
         }
       ]
     },
@@ -671,8 +792,8 @@
       "label": "IGHV4-61*10",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",
@@ -682,21 +803,11 @@
     },
     {
       "segment": "V",
-      "label": "IGHV4-61*11",
-      "failed_rules": [
-        {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
-        }
-      ]
-    },
-    {
-      "segment": "V",
       "label": "IGHV4-61*i04",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",
@@ -709,8 +820,8 @@
       "label": "IGHV5-51*06",
       "failed_rules": [
         {
-          "rule": "variant_invariant_record",
-          "detail": "'airr_ex' differs in coding_sequence"
+          "rule": "explicit_record_choice",
+          "detail": "records differ in coding_sequence; no per-allele record choice recorded"
         },
         {
           "rule": "not_tagged_likely_truncated",

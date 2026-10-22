@@ -94,7 +94,8 @@
           "339-343": "extend = True when the requested format contains '_ex'",
           "349": "AIRR JSON exports are built by germline_set_to_airr",
           "360": "FASTA exports are built by descs_to_fasta with fake_allele=True",
-          "542-578": "served delineations copy the numeric fields only; unaligned_sequence and aligned_sequence are not passed on, so they are null in the served JSON"
+          "542-578": "served delineations copy the numeric fields only; unaligned_sequence and aligned_sequence are not passed on, so they are null in the served JSON",
+          "560-570": "a delineation coordinate stored as None is served as 0; since the coordinates are 1-based, an adapter must treat 0 as missing (no V record in the fixtures has a 0 or null coordinate)"
         }
       },
       {
@@ -112,7 +113,9 @@
         "lines": {
           "1821-1825": "default IMGT ranges over the gapped sequence, zero-based half-open: FR1 (0,78), CDR1 (78,114), FR2 (114,165), CDR2 (165,195), FR3 (195,312)",
           "1828-1868": "delineate_v_gene: cdr3_start = 1 + number of non-gap characters in gapped columns before index 312, i.e. the first nucleotide after IMGT codon 104",
-          "1203": "bulk upload stores cdr3_start as a full-sequence coordinate: feats['cdr3_start'] + gene_start - 1"
+          "1203": "bulk upload stores cdr3_start as a full-sequence coordinate: feats['cdr3_start'] + gene_start - 1",
+          "1107-1108": "bulk upload derives the feature ranges from form-supplied gapped CDR coordinates (FR3 ends at gapped_cdr3_start - 1), so the default IMGT ranges are a form default, not a guarantee",
+          "2085-2090": "cdr3_start can be entered manually; it is checked only for lying on a codon boundary from gene_start and inside gene_start..gene_end"
         }
       },
       {
@@ -174,22 +177,58 @@
     "v_landmark": {
       "status": "established_for_listed_fixtures",
       "rule": "v_gene_delineations[0].cdr3_start (delineation_scheme 'IMGT', sequence_delineation_id '1') is a 1-based coordinate in coding_sequence naming the first nucleotide after IMGT codon 104; zero-based anchor of the IMGT codon-104 landmark in coding_sequence = cdr3_start - 4",
-      "scope": "Records of the six JSON fixtures listed in sources.json whose label-identical record in the matching gapped export ungaps to exactly coding_sequence and has a complete codon at gapped columns 310-312. Every V record in these fixtures meets that condition. Other releases or sets are unsupported until the same checks pass.",
+      "scope": "Records of the six JSON fixtures listed in sources.json whose label-identical record in the matching gapped export ungaps to exactly coding_sequence and has a complete codon at gapped columns 310-312. Every V record in these fixtures meets that condition. Other releases or sets are unsupported until a reviewed profile extension.",
       "evidence": [
         "Producer code: cdr3_start is converted to a 1-based coordinate in the delineation's unaligned_sequence, which is built from the same string as coding_sequence; the default IMGT ranges put it immediately after gapped column 312.",
+        "Why record binding is mandatory: the producer lets uploaders configure the gapped feature ranges (sequence_routes.py:1107-1108) and edit cdr3_start by hand (sequence_routes.py:2085-2090), and the exported numbers are stored database values rather than being derived from the gapped sequence at export time, so the code alone does not guarantee that any record follows the default IMGT ranges. Each record's number must be bound to its own gapped sequence.",
         "Record binding: for all 746 V records (IGH 209 + 202, IGK 82 + 77, IGL 88 + 88), 1 + the number of non-gap characters in gapped columns 1-312 equals cdr3_start, the codon at gapped columns 310-312 has no gap, and it starts at ungapped index cdr3_start - 4. All ten numeric delineation fields agree with the default IMGT ranges in every record.",
-        "Alignment origin: no gapped V record starts with a gap, and columns 67-69, 121-123 and 310-312 carry the conserved first Cys 23, Trp 41 and Cys 104 except in the records listed under conserved_position_exceptions_in_unsuffixed_gapped_exports, consistent with IMGT unique numbering starting at column 1.",
+        "Alignment origin: no gapped V record starts with a gap, and columns 67-69 and 121-123 carry the conserved first Cys 23 and Trp 41 except in the records listed under imgt_23_41_exceptions_in_both_gapped_exports, consistent with IMGT unique numbering starting at column 1. Residues at columns 310-312 are not used for this.",
         "The fraction of records with a Cys at the anchor is not used as evidence; non-Cys residues at IMGT 104 are reported as found."
       ],
-      "conserved_position_exceptions_in_unsuffixed_gapped_exports": {
-        "IGH_VDJ.10": {"IGHV1-38-4*01": {"104": "TAT"}, "IGHV3-20*02": {"23": "TTT"}, "IGHV3-25*02": {"41": "TGT"}, "IGHV3-25*03": {"41": "TGT"}, "IGHV3-25*04": {"41": "TGT"}, "IGHV3-25*05": {"41": "TGT"}},
-        "IGKappa_VJ.5": {"IGKV1-13*01": {"41": "TGA"}, "IGKV1D-37*01": {"104": "GGT"}, "IGKV2-29*01": {"104": "TGA"}, "IGKV2D-24*01": {"23": "TTC"}},
-        "IGLambda_VJ.4": {"IGLV3-2*03": {"41": "TCG", "104": "GCT"}, "IGLV3-32*01": {"104": "TAT"}}
+      "imgt_23_41_exceptions_in_both_gapped_exports": {
+        "IGH_VDJ.10": {
+          "IGHV3-20*02": {
+            "23": "TTT"
+          },
+          "IGHV3-25*02": {
+            "41": "TGT"
+          },
+          "IGHV3-25*03": {
+            "41": "TGT"
+          },
+          "IGHV3-25*04": {
+            "41": "TGT"
+          },
+          "IGHV3-25*05": {
+            "41": "TGT"
+          }
+        },
+        "IGKappa_VJ.5": {
+          "IGKV1-13*01": {
+            "41": "TGA"
+          },
+          "IGKV2D-24*01": {
+            "23": "TTC"
+          }
+        },
+        "IGLambda_VJ.4": {
+          "IGLV3-2*03": {
+            "41": "TCG"
+          }
+        }
       },
       "residues_other_than_cys_at_imgt_104": {
-        "IGH_VDJ.10": {"IGHV1-38-4*01": "TAT"},
-        "IGKappa_VJ.5": {"IGKV1D-37*01": "GGT", "IGKV2-29*01": "TGA"},
-        "IGLambda_VJ.4": {"IGLV3-2*03": "GCT", "IGLV3-32*01": "TAT"}
+        "IGH_VDJ.10": {
+          "IGHV1-38-4*01": "TAT"
+        },
+        "IGKappa_VJ.5": {
+          "IGKV1D-37*01": "GGT",
+          "IGKV2-29*01": "TGA"
+        },
+        "IGLambda_VJ.4": {
+          "IGLV3-2*03": "GCT",
+          "IGLV3-32*01": "TAT"
+        }
       }
     },
     "gapped_alignment": {
@@ -198,6 +237,30 @@
       "matching": "every JSON record has exactly one label-identical gapped record in the export of the same suffix, and the ungapped bytes are equal (IGH 249/249 and 240/240, IGK 89/89 and 84/84, IGL 98/98 and 97/97)"
     }
   },
+  "record_observations": [
+    {
+      "set": "9606.IGLambda_VJ/4",
+      "label": "IGLV3-2*03",
+      "observation": "non_cys_imgt_104_with_out_of_frame_tgt_nearby",
+      "detail": "The source alignment places GCT at IMGT codon 104 (coding_sequence[258:261]). A TGT occurs at coding_sequence[254:257], 4 nt upstream of codon 104 and in a different reading frame (254 % 3 == 2); the next Cys codon downstream is TGC at coding_sequence[272:275], also out of frame. Neither is used as the landmark, even though the record has functional=true and curational_tags ['likely_full_length']; the landmark stays at codon 104 and its residue is reported.",
+      "coding_sequence_250_271": "TTACTGTCGCTCGGAACAGCA"
+    },
+    {
+      "set": "9606.IGH_VDJ/10",
+      "label": "IGHV1-58*01",
+      "observation": "v_rss_start_inside_coding_interval",
+      "detail": "The heptamer CACAGTG starts immediately after gene_end 438 (sequence positions 439-445, 1-based), while v_rs_start 324 points at an internal CACAG in FR3 (sequence positions 324-330 read CACAGAA). The RSS coordinate field is the faulty one; the coding interval and the cdr3_start binding are consistent.",
+      "sequence_after_gene_end": "CACAGTG",
+      "sequence_at_v_rs_start": "CACAGAA"
+    },
+    {
+      "set": "9606.IGH_VDJ/10",
+      "label": "IGHV3-7*04",
+      "observation": "coding_end_before_declared_v_rss",
+      "detail": "The 'airr_ex' 3' extension 'A' fills the record exactly from gene_end 455 up to RSS-1 (v_rs_start 457; heptamer CACAGTG follows). This is the IGH analogue of the IGL two-base class; the 'airr' record ends at gene_end.",
+      "sequence_after_gene_end": "ACACAGTG"
+    }
+  ],
   "unresolved": [
     {
       "id": "v_coding_phase_independence",
@@ -221,7 +284,7 @@
     },
     {
       "id": "v_rss_coordinates",
-      "detail": "IGHV1-58*01 (IGH_VDJ.10) declares v_rs_start 324 inside its coding interval 143-438, and IGHV3-38*01 declares v_rs_start 452 before gene_end 460; RSS coordinates are retained as observations only."
+      "detail": "IGHV1-58*01 (IGH_VDJ.10) declares v_rs_start 324 inside its coding interval 143-438 (see record_observations), and IGHV3-38*01 declares v_rs_start 452 before gene_end 460; RSS coordinates are retained as observations only."
     },
     {
       "id": "server_revision",

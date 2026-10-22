@@ -265,6 +265,28 @@ def test_v_examples(row):
 
 # --- candidate IGH selection --------------------------------------------------------------
 
+CHOSEN_AIRR_RECORDS = {
+    # label: 3' extension carried only by the 'airr_ex' record (the alternative not adopted)
+    "IGHV1-58*03": "A", "IGHV1-69*20": "A", "IGHV3-7*04": "A", "IGHV3-9*04": "ATA", "IGHV3-21*05": "A",
+    "IGHV3-30*20": "A", "IGHV3-30*i02": "A", "IGHV3-53*05": "A", "IGHV4-31*11": "A", "IGHV4-39*08": "A",
+    "IGHV4-39*09": "A", "IGHV4-59*12": "A", "IGHV4-59*i03": "A", "IGHV4-61*11": "A",
+}
+EXTENDED_AND_TRUNCATED = (
+    "IGHV1-69*18", "IGHV4-4*09", "IGHV4-4*10", "IGHV4-30-4*i02", "IGHV4-39*i03", "IGHV4-59*11",
+    "IGHV4-61*10", "IGHV4-61*i04", "IGHV5-51*06",
+)
+PARALOG_ONLY_IN_AIRR_EX = (
+    "IGHD4-11*01", "IGHD5-18*01", "IGHV1-69D*01", "IGHV2-70*04", "IGHV3-23D*01", "IGHV3-30-3*03",
+    "IGHV3-30-5*01", "IGHV3-30-5*02", "IGHV4-30-4*09",
+)
+FUNCTIONAL_FALSE = ("IGHV3-19*01", "IGHV3-25*02", "IGHV3-25*03", "IGHV3-25*05", "IGHV3-62*03", "IGHV6-1*03",
+                    "IGHV8-51-1*02", "IGHV8-51-1*03")
+
+
+def _differing(record, other):
+    return {k for k in record.keys() | other.keys() if record.get(k) != other.get(k)} - {"allele_description_ref"}
+
+
 def test_igh_candidate_selection_accounts_for_every_record():
     key = "9606.IGH_VDJ/10"
     airr, airr_ex = _by_label(key, "airr"), _by_label(key, "airr_ex")
@@ -274,15 +296,21 @@ def test_igh_candidate_selection_accounts_for_every_record():
     assert len(set(chosen)) == len(chosen)
     assert not set(chosen) & omitted.keys()
     assert set(chosen) | omitted.keys() == airr.keys()
-    assert all(row["failed_rules"] for row in omitted.values())
-    rule_names = {rule["rule"] for rule in SELECTION["rules"]}
-    assert {f["rule"] for row in omitted.values() for f in row["failed_rules"]} <= rule_names
+    assert SELECTION["counts"] == {"V": 183, "D": 31, "J": 7, "omitted": 28, "inventory": 249}
+    assert SELECTION["distinct_genes_selected"] == {"V": 61, "D": 26, "J": 6}
+    assert {segment: len(selected[segment]) for segment in "VDJ"} == {"V": 183, "D": 31, "J": 7}
+    assert selected["J"] == ["IGHJ1*01", "IGHJ2*01", "IGHJ3*02", "IGHJ4*02", "IGHJ5*02", "IGHJ6*02", "IGHJ6*03"]
+    choices = {row["label"]: row for row in SELECTION["record_choices"]}
     for segment in "VDJ":
         assert selected[segment] == sorted(selected[segment], key=_natural)
         for label in selected[segment]:
             record, other = airr[label], airr_ex[label]
             assert record["sequence_type"] == segment
-            assert {k for k in record.keys() | other.keys() if record.get(k) != other.get(k)} == {"allele_description_ref"}
+            difference = _differing(record, other)
+            if label in CHOSEN_AIRR_RECORDS:
+                assert difference == {"coding_sequence"}
+            else:
+                assert difference == set() and label not in choices
             assert record["functional"] is True
             assert "likely_truncated" not in (record["curational_tags"] or [])
     sequences = [airr[label]["coding_sequence"] for label in chosen]
@@ -294,7 +322,122 @@ def test_igh_candidate_selection_accounts_for_every_record():
         record = airr[label]
         anchor = record["j_cdr3_end"] - 1
         assert record["coding_sequence"][anchor:anchor + 3] == "TGG"
-    assert SELECTION["counts"] == {"V": len(selected["V"]), "D": len(selected["D"]), "J": len(selected["J"]),
-                                   "omitted": len(omitted), "inventory": len(airr)}
+
+
+def test_igh_record_choices_take_the_airr_record_and_keep_the_extension_as_alternative():
+    key = "9606.IGH_VDJ/10"
+    airr, airr_ex = _by_label(key, "airr"), _by_label(key, "airr_ex")
+    choices = {row["label"]: row for row in SELECTION["record_choices"]}
+    assert set(choices) == set(CHOSEN_AIRR_RECORDS)
+    assert "ends at gene_end" in SELECTION["record_choice_reason"]
+    assert "trimming" in SELECTION["record_choice_reason"]
+    for label, extension in CHOSEN_AIRR_RECORDS.items():
+        row, record = choices[label], airr[label]
+        sequence, coding, end = record["sequence"], record["coding_sequence"], record["gene_end"]
+        assert row["chosen_export"] == "airr"
+        assert row["alternative"] == {"export": "airr_ex", "coding_length": len(coding) + len(extension),
+                                      "extension_3prime": extension, "kept_for": "dossier"}
+        assert airr_ex[label]["coding_sequence"] == coding + extension
+        assert sequence[record["gene_start"] - 1:end] == coding and row["chosen_coding_ends_at_gene_end"] is True
+        assert row["chosen_coding_length"] == len(coding)
+        assert row["extension_matches_record_context_after_gene_end"] is True
+        assert row["record_context_after_gene_end"] == sequence[end:end + len(extension)] == extension
+        if label == "IGHV3-7*04":
+            assert (end, record["v_rs_start"]) == (455, 457)
+            assert row["extension_reaches_rss_minus_1"] is True
+            assert sequence[end:record["v_rs_start"] - 1] == "A"
+            assert sequence[record["v_rs_start"] - 1:record["v_rs_start"] + 6] == "CACAGTG"
+            assert "IGL two-base class" in row["observation"]
+        else:
+            assert record["v_rs_start"] is None and row["extension_reaches_rss_minus_1"] is None
+
+
+def test_igh_omissions_list_every_failed_rule():
+    omitted = {row["label"]: [f["rule"] for f in row["failed_rules"]] for row in SELECTION["omitted"]}
+    expected = {label: ["explicit_record_in_both_variants"] for label in PARALOG_ONLY_IN_AIRR_EX}
+    expected.update({label: ["explicit_record_choice", "not_tagged_likely_truncated"]
+                     for label in EXTENDED_AND_TRUNCATED})
+    expected.update({label: ["provider_functional_true"] for label in FUNCTIONAL_FALSE})
+    expected["IGHV3-38*01"] = ["not_tagged_likely_truncated"]
+    expected["IGHV1-38-4*01"] = ["v_imgt_104_is_cys"]
+    assert omitted == expected
+    rules = [rule["rule"] for rule in SELECTION["rules"]]
+    assert rules == ["explicit_record_in_both_variants", "explicit_record_choice", "provider_functional_true",
+                     "not_tagged_likely_truncated", "v_gapped_record_matches", "v_imgt_104_is_cys",
+                     "j_landmark_consistent"]
+    cys_rule = next(rule["requirement"] for rule in SELECTION["rules"] if rule["rule"] == "v_imgt_104_is_cys")
+    assert "canonical_productive" in cys_rule and "no user view narrowing" in cys_rule
+    assert "IGHV3-20*02" in cys_rule and "IGHV3-25*04" in cys_rule
+    selected_v = set(SELECTION["selected"]["V"])
+    assert {"IGHV3-20*02", "IGHV3-25*04"} <= selected_v   # non-canonical IMGT 23/41 residues are kept
+    (tyr,) = [row for row in SELECTION["omitted"] if row["label"] == "IGHV1-38-4*01"]
+    assert tyr["failed_rules"][0]["detail"] == "junction anchor codon (IMGT 104) is TAT"
+
+
+def test_igh_capability_target():
     target = SELECTION["capability_target"]
+    assert target["required"] == ["observed_span_simulation"]
+    assert target["targeted"] == ["source_annotated_junction", "canonical_productive"]
     assert set(target["required"]) | set(target["targeted"]) <= set(CAPABILITIES)
+    basis = target["basis_for_target"]["canonical_productive"]
+    assert "below source certification" in basis and "'assertion'" in basis and "'none'" in basis
+    assert "canonical_productive_source_certified" in target["not_targeted"]
+    assert "original_coding_ends" in target["not_targeted"]
+
+
+def test_recorded_observations_read_off_the_raw_bytes():
+    igh = _by_label("9606.IGH_VDJ/10", "airr")
+    record = igh["IGHV1-58*01"]
+    sequence = record["sequence"]
+    assert (record["gene_start"], record["gene_end"], record["v_rs_start"]) == (143, 438, 324)
+    assert sequence[438:445] == "CACAGTG"
+    assert sequence[323:330] == "CACAGAA"
+    (note,) = SELECTION["selected_record_observations"]
+    assert note["label"] == "IGHV1-58*01" and note["observation"] == "v_rss_start_inside_coding_interval"
+    assert (note["sequence_after_gene_end"], note["sequence_at_v_rs_start"]) == ("CACAGTG", "CACAGAA")
+
+    igl = _by_label("9606.IGLambda_VJ/4", "airr_ex")["IGLV3-2*03"]
+    coding = igl["coding_sequence"]
+    assert igl["functional"] is True and igl["curational_tags"] == ["likely_full_length"]
+    assert coding[250:271] == "TTACTGTCGCTCGGAACAGCA"
+    assert (coding[254:257], coding[258:261], coding[272:275]) == ("TGT", "GCT", "TGC")
+    assert 254 % 3 == 272 % 3 == 2 and 258 % 3 == 0
+
+    observations = {row["label"]: row for row in EVIDENCE["record_observations"]}
+    assert set(observations) == {"IGLV3-2*03", "IGHV1-58*01", "IGHV3-7*04"}
+    assert observations["IGLV3-2*03"]["coding_sequence_250_271"] == coding[250:271]
+    assert observations["IGHV1-58*01"]["sequence_after_gene_end"] == sequence[438:445]
+    assert observations["IGHV1-58*01"]["sequence_at_v_rs_start"] == sequence[323:330]
+    v37 = igh["IGHV3-7*04"]
+    assert observations["IGHV3-7*04"]["sequence_after_gene_end"] == v37["sequence"][455:463] == "ACACAGTG"
+
+
+def test_interpretation_evidence_names_the_binding_requirement_and_zero_coordinates():
+    files = {entry["path"]: entry["lines"] for entry in EVIDENCE["producer_code"]["files"]}
+    assert "treat 0 as missing" in files["api_v2/api.py"]["560-570"]
+    assert {"1107-1108", "2085-2090"} <= set(files["ogrdb/sequence/sequence_routes.py"])
+    v_landmark = EVIDENCE["conventions"]["v_landmark"]
+    assert v_landmark["scope"].endswith("unsupported until a reviewed profile extension.")
+    evidence = " ".join(v_landmark["evidence"])
+    assert "sequence_routes.py:1107-1108" in evidence and "sequence_routes.py:2085-2090" in evidence
+    origin = next(item for item in v_landmark["evidence"] if item.startswith("Alignment origin"))
+    assert "310-312 are not used" in origin and "Cys 104" not in origin
+    exceptions = v_landmark["imgt_23_41_exceptions_in_both_gapped_exports"]
+    assert all(set(codons) <= {"23", "41"} for per_set in exceptions.values() for codons in per_set.values())
+    for key in EXPECT["sets"]:
+        short = key.replace("9606.", "").replace("/", ".")
+        for export in ("gapped", "gapped_ex"):
+            found = {}
+            for label, aligned in _fasta(key, export).items():
+                if "V" in label[:4]:
+                    codons = {"23": aligned[66:69], "41": aligned[120:123]}
+                    odd = {pos: c for pos, c in codons.items() if c not in ({"TGT", "TGC"} if pos == "23" else {"TGG"})}
+                    if odd:
+                        found[label] = odd
+            assert found == exceptions[short]
+    for key in EXPECT["sets"]:
+        for export in ("airr", "airr_ex"):
+            for record in _records(key, export):
+                for delineation in record["v_gene_delineations"] or []:
+                    assert all(value not in (0, None) for name, value in delineation.items()
+                               if name.endswith(("_start", "_end")))
