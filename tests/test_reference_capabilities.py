@@ -2,7 +2,7 @@ import hashlib
 
 from GenAIRR._reference.capabilities import CAPABILITIES, evaluate
 from GenAIRR._reference.model import (
-    Allele, Catalogue, Claim, ReferenceHeader, Taxon,
+    Allele, Catalogue, Claim, RecordEntry, ReferenceHeader, SourceFile, Taxon,
 )
 
 V_SEQ = "AAATGTAAAGGG"   # TGT (C) at 3
@@ -13,7 +13,11 @@ VIEW = {"V": ["V:V1"], "D": ["D:D1"], "J": ["J:J1"]}
 
 def _allele(seg, label, seq):
     return Allele(f"{seg}:{label}", seg, label, label, "declared", seq,
-                  "sha256:" + hashlib.sha256(seq.encode("ascii")).hexdigest(), None, (), ())
+                  "sha256:" + hashlib.sha256(seq.encode("ascii")).hexdigest(), None, (), (f"rec:{seg}:0",))
+
+
+def _record(allele):
+    return RecordEntry(allele.records[0], "src", 0, allele.label, allele.label, "accepted", None, allele.id, None)
 
 
 def claim(subject, predicate, value, support="source", derivation="stated", status="accepted"):
@@ -28,7 +32,8 @@ def build(claims=(), locus="IGH", chain="vdj"):
     cat = Catalogue(
         ReferenceHeader("t", "1", Taxon("Homo sapiens", 9606), locus, chain, None),
         {"coordinates": "zero_based_half_open", "v_alignment": "none"},
-        (), (), tuple(alleles), tuple(claims), (), (), ())
+        (SourceFile("src", "v", "v.fasta", "sha256:" + "0" * 64, 1),), tuple(_record(a) for a in alleles),
+        tuple(alleles), tuple(claims), (), (), ())
     return Catalogue.from_dict(cat.to_dict())
 
 

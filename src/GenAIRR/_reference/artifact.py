@@ -7,6 +7,14 @@ claims, conflict statuses, entities and findings; hashes, view, defaults, admiss
 projection, context and execution hash) from base data and compares each one for exact
 equality, so an artifact whose hashes were recomputed over inconsistent content is still
 rejected.
+
+Because a stored artifact loads only if this regeneration reproduces it exactly, the
+outputs of the derivation are part of the version 1 file format: the motif resolver's
+anchor positions and method strings, the IMGT region boundary table, the kinds of native
+validation findings, the serialization of the native reference spec (``ReferenceSpecV1``)
+and the unfitted defaults profile.  Changing any of them changes which version 1
+artifacts load, so it is a schema change and must be treated as one; the golden artifact
+read test (``tests/golden/reference``) guards against changing them by accident.
 """
 from __future__ import annotations
 
@@ -67,7 +75,8 @@ class ReferenceAllele:
     """An executable allele of the reference with its accepted annotations.
 
     Each annotation is ``None`` when no accepted claim establishes it (unknown,
-    candidate-only or conflicting).
+    candidate-only or conflicting).  ``notes`` are the author's free-text notes from
+    the annotation sidecar, in sidecar order.
     """
     segment: str
     label: str
@@ -79,6 +88,7 @@ class ReferenceAllele:
     coding_phase: Optional[ClaimSummary]
     boundary_5: Optional[ClaimSummary]
     boundary_3: Optional[ClaimSummary]
+    notes: tuple = ()
 
     def to_dict(self):
         out = {"segment": self.segment, "label": self.label, "gene": self.gene,
@@ -86,6 +96,7 @@ class ReferenceAllele:
         for name in ANNOTATIONS:
             summary = getattr(self, name)
             out[name] = None if summary is None else summary.to_dict()
+        out["notes"] = list(self.notes)
         return out
 
 
@@ -227,6 +238,10 @@ class ReferenceReport:
         if sources:
             lines.append("Sources")
             lines.extend(sources)
+        notes = [f"  {a.segment}:{a.label}: {note}" for a in self.alleles for note in a.notes]
+        if notes:
+            lines.append("Notes")
+            lines.extend(notes)
         lines.append("Entities (named, not executable)")
         for e in self.entities:
             links = [f"{r.kind} of {r.allele}" for r in self.relationships if r.entity == e.id]
@@ -378,7 +393,7 @@ class Reference:
         commitment = typed_digest(body, DIGEST_DOMAIN)
         alleles = tuple(
             ReferenceAllele(a.segment, a.label, a.gene, len(a.sequence), a.sequence_sha256,
-                            *(_summary(catalogue, a.id, p) for p in ANNOTATIONS))
+                            *(_summary(catalogue, a.id, p) for p in ANNOTATIONS), notes=a.notes)
             for a in (catalogue.allele(aid) for ids in view.values() for aid in ids))
         self = object.__new__(cls)
         for name, value in (

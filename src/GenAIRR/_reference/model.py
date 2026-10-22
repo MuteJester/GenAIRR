@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+from pathlib import PurePath, PureWindowsPath
 import re
 import unicodedata
 from typing import Any, Optional
@@ -30,6 +31,7 @@ SUBREGION_LABELS = ("FWR1", "CDR1", "FWR2", "CDR2", "FWR3")
 GENE_BASES = ("declared", "label_prefix", "label")
 RECORD_STATUSES = ("accepted", "duplicate", "rejected")
 RELATIONSHIP_KINDS = ("alias", "paralog")
+MAX_NOTE = 4096
 
 _SEQ_RE = re.compile(r"[ACGT]{1,65535}")
 _DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
@@ -146,6 +148,20 @@ def _list(value, path):
 
 def _str_tuple(value, path):
     return tuple(_str(v, f"{path}[{i}]") for i, v in enumerate(_list(value, path)))
+
+
+def check_notes(value, path) -> tuple:
+    """Free-text notes: an array of strings, each at most ``MAX_NOTE`` characters."""
+    notes = _str_tuple(value, path)
+    for i, note in enumerate(notes):
+        if len(note) > MAX_NOTE:
+            raise _bad(f"{path}[{i}]", f"note of {len(note)} characters exceeds {MAX_NOTE}")
+    return notes
+
+
+def _bare_file_name(name: str) -> bool:
+    return (name not in ("", ".", "..") and "/" not in name and "\\" not in name
+            and not PureWindowsPath(name).drive and PurePath(name).name == name)
 
 
 def check_claim_value(predicate: str, value: Any, length: Optional[int], path: str) -> None:
@@ -323,17 +339,19 @@ class Allele:
     gapped_sequence: Optional[str]
     transforms: tuple
     records: tuple
+    notes: tuple = ()
 
     def to_dict(self):
         return {"id": self.id, "segment": self.segment, "label": self.label, "gene": self.gene,
                 "gene_basis": self.gene_basis, "sequence": self.sequence,
                 "sequence_sha256": self.sequence_sha256, "gapped_sequence": self.gapped_sequence,
-                "transforms": _tuple_dicts(self.transforms), "records": list(self.records)}
+                "transforms": _tuple_dicts(self.transforms), "records": list(self.records),
+                "notes": list(self.notes)}
 
     @classmethod
     def from_dict(cls, d, path="allele"):
         keys = ("id", "segment", "label", "gene", "gene_basis", "sequence", "sequence_sha256",
-                "gapped_sequence", "transforms", "records")
+                "gapped_sequence", "transforms", "records", "notes")
         _obj(d, keys, path)
         transforms = tuple(Transform.from_dict(t, f"{path}.transforms[{i}]")
                            for i, t in enumerate(_list(d["transforms"], f"{path}.transforms")))
@@ -342,7 +360,8 @@ class Allele:
                    _enum(d["gene_basis"], GENE_BASES, f"{path}.gene_basis"),
                    _str(d["sequence"], f"{path}.sequence"), _str(d["sequence_sha256"], f"{path}.sequence_sha256"),
                    _str(d["gapped_sequence"], f"{path}.gapped_sequence", optional=True),
-                   transforms, _str_tuple(d["records"], f"{path}.records"))
+                   transforms, _str_tuple(d["records"], f"{path}.records"),
+                   check_notes(d["notes"], f"{path}.notes"))
 
 
 @dataclass(frozen=True)
@@ -492,6 +511,11 @@ class Catalogue:
         alleles = {a.id: a for a in self.alleles}
         gapped_ok = self.conventions["v_alignment"] == "imgt_gapped"
 
+        for i, source in enumerate(self.sources):
+            if not _bare_file_name(source.file_name):
+                raise _bad(f"sources[{i}].file_name", f"{source.file_name!r} is not a bare file name",
+                           "integrity")
+
         for i, a in enumerate(self.alleles):
             p = f"alleles[{i}]"
             if a.segment not in allowed_segments:
@@ -524,6 +548,13 @@ class Catalogue:
                     raise _bad(f"{p}.records", f"unknown record {rid!r}", "integrity")
                 if records[rid].allele != a.id:
                     raise _bad(f"{p}.records", f"record {rid!r} does not point back at {a.id!r}", "integrity")
+            accepted = [rid for rid in a.records if records[rid].status == "accepted"]
+            if len(accepted) != 1 or any(
+                    records[rid].status != "accepted"
+                    and (records[rid].status, records[rid].duplicate_of) != ("duplicate", accepted[0])
+                    for rid in a.records):
+                raise _bad(f"{p}.records", "an allele lists exactly one accepted record plus any duplicates "
+                           "of that record", "integrity")
 
         for i, r in enumerate(self.records):
             p = f"records[{i}]"
@@ -548,6 +579,9 @@ class Catalogue:
                 target = records.get(r.duplicate_of)
                 if target is None or target.status != "accepted":
                     raise _bad(f"{p}.duplicate_of", "must point at an accepted record", "integrity")
+                if r.label != target.label:
+                    raise _bad(f"{p}.label", f"duplicate label {r.label!r} differs from the label "
+                               f"{target.label!r} of {target.id!r}", "integrity")
             else:
                 if not r.reason or not r.reason.strip():
                     raise _bad(f"{p}.reason", "rejected record needs a reason", "integrity")

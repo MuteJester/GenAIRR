@@ -794,6 +794,90 @@ def test_paralog_between_executable_alleles_links_alleles_without_an_entity(tmp_
     assert err.path.startswith("catalogue.relationships")
 
 
+def test_recommitted_allele_with_two_accepted_records_rejected(ref):
+    doc = doc_of(ref)
+    records = doc["catalogue"]["records"]
+    assert (records[1]["status"], records[1]["duplicate_of"]) == ("duplicate", "rec:V:0")
+    records[1].update(status="accepted", duplicate_of=None)
+    err = rejected(_full_recommit(doc), "integrity", "exactly one accepted record")
+    assert err.path == "catalogue.alleles[0].records"
+
+
+def test_recommitted_duplicate_with_another_label_rejected(ref):
+    doc = doc_of(ref)
+    doc["catalogue"]["records"][1]["label"] = "IGHV1-2_other"
+    err = rejected(_full_recommit(doc), "integrity", "label")
+    assert err.path == "catalogue.records[1].label"
+
+
+@pytest.mark.parametrize("file_name", ["lab/v.fasta", "..\\v.fasta", "C:v.fasta", "/abs/v.fasta",
+                                       "\\\\server\\share\\v.fasta", "..", ".", ""])
+def test_recommitted_source_path_rejected(ref, file_name):
+    doc = doc_of(ref)
+    doc["catalogue"]["sources"][0]["file_name"] = file_name
+    err = rejected(_full_recommit(doc), "integrity", "bare file name")
+    assert err.path == "catalogue.sources[0].file_name"
+
+
+def test_out_of_bounds_sidecar_anchor_is_located(tmp_path):
+    alleles = default_alleles()
+    alleles[1]["anchor"] = ann(900)
+    with pytest.raises(ReferenceArtifactError) as e:
+        build(tmp_path, alleles=alleles)
+    assert e.value.kind == "conflict"
+    assert e.value.path == "alleles[1].anchor"
+    assert all(text in e.value.message for text in ("V:IGHV1-3*01", "900", f"length {len(V2)}")), \
+        e.value.message
+    alleles[1]["anchor"] = ann(len(V2) - 2)     # the codon would run past the end
+    with pytest.raises(ReferenceArtifactError) as e:
+        build(tmp_path / "edge", alleles=alleles)
+    assert (e.value.kind, e.value.path) == ("conflict", "alleles[1].anchor")
+    alleles[1]["anchor"] = ann(len(V2) - 3)     # the last codon fits
+    assert build(tmp_path / "fits", alleles=alleles).alleles[1].anchor.value == len(V2) - 3
+
+
+def test_allele_notes_round_trip_and_reach_the_report(tmp_path):
+    alleles = default_alleles()
+    alleles[0]["notes"] = ["second 5' UTR variant seen in lab clone 17", "re-sequenced 2026"]
+    alleles[4]["notes"] = ["low coverage"]
+    ref = build(tmp_path / "build", alleles=alleles)
+    plain = build(tmp_path / "plain")
+    assert ref.catalogue_hash != plain.catalogue_hash      # notes are part of the catalogue
+    stored = {a["id"]: a["notes"] for a in doc_of(ref)["catalogue"]["alleles"]}
+    assert stored["V:IGHV1-2*02"] == alleles[0]["notes"]
+    assert stored["J:IGHJ6*02"] == ["low coverage"]
+    assert stored["V:IGHV1-3*01"] == []
+    path = tmp_path / "notes.genairr-ref.json"
+    ref.write(path)
+    again = Reference.read(path)
+    assert again.to_json() == ref.to_json()
+    assert [a.notes for a in again.alleles] == [tuple(alleles[0]["notes"]), (), (), (), (), (), ("low coverage",)]
+    text = str(again.report())
+    lines = text.splitlines()
+    notes_at = lines.index("Notes")
+    assert lines[notes_at + 1:notes_at + 4] == [
+        "  V:IGHV1-2*02: second 5' UTR variant seen in lab clone 17",
+        "  V:IGHV1-2*02: re-sequenced 2026",
+        "  J:IGHJ6*02: low coverage"]
+    assert again.report().to_dict()["alleles"][0]["notes"] == alleles[0]["notes"]
+    assert "Notes" not in str(plain.report()).splitlines()
+    # Notes are base data: a recommitted edit changes the catalogue rather than failing regeneration.
+    doc = doc_of(ref)
+    doc["catalogue"]["alleles"][0]["notes"] = ["edited"]
+    assert load(_full_recommit(doc)).alleles[0].notes == ("edited",)
+
+
+def test_recommitted_malformed_notes_rejected(ref):
+    for bad, match in ((None, "expected an array"), ([1], "expected a string"), (["x" * 4097], "4096")):
+        doc = doc_of(ref)
+        doc["catalogue"]["alleles"][0]["notes"] = bad
+        err = rejected(_recommit(doc), "malformed", match)
+        assert err.path.startswith("catalogue.alleles[0].notes")
+    doc = doc_of(ref)
+    del doc["catalogue"]["alleles"][0]["notes"]
+    rejected(_recommit(doc), "malformed", "missing keys")
+
+
 # ── Empty selections ─────────────────────────────────────────────────
 
 EMPTY = {"V": f">v_n\n{V_BAD}\n>v_e\n\n>v,comma\n{V1}\n>v_n2\nACGN\n",

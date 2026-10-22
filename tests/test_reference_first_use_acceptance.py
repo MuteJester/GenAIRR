@@ -31,8 +31,8 @@ GOLDEN = TESTS / "golden" / "reference" / "human_igh.genairr-ref.json"
 ARTIFACT_DOMAIN = "genairr_reference_artifact_v1"
 
 # Pasted from the golden artifact (see the module docstring for how it is regenerated).
-IGH_CATALOGUE_HASH = "sha256:4c5bf663c62557176859f0245067cac8ad5560e0906a793cb889d850bad8b5ff"
-IGH_EXECUTION_HASH = "sha256:c5e0197899f6e208a034711613bfbc57551f33a78c5cbf8bb02c286c10912e1c"
+IGH_CATALOGUE_HASH = "sha256:08362156352554255239a4882a6738e430ac1c26dd38cbb8ce9c6238a1d1873c"
+IGH_EXECUTION_HASH = "sha256:843f9736d07894e36a9da363ebf1ccc9c4390741f4794870f086d9e4f07eaad9"
 
 IGH_V = ("IGHV1-2*02", "IGHV3-23*01", "IGHV4-34*01")
 IGH_D = ("IGHD3-10*01", "IGHD2-2*01")

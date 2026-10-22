@@ -223,12 +223,12 @@ def catalogue_dict():
             {"id": "V:kv_a", "segment": "V", "label": "kv_a", "gene": "kv", "gene_basis": "declared",
              "sequence": V_SEQ, "sequence_sha256": digest(V_SEQ),
              "gapped_sequence": "ACGT..ACGT" + V_SEQ[8:],
-             "transforms": [], "records": ["rec:V:0"]},
+             "transforms": [], "records": ["rec:V:0"], "notes": []},
             {"id": "J:kj_a", "segment": "J", "label": "kj_a", "gene": "kj", "gene_basis": "declared",
              "sequence": J_SEQ, "sequence_sha256": digest(J_SEQ), "gapped_sequence": None,
              "transforms": [{"kind": "uppercase", "input_sha256": digest("acgt"),
                              "output_sha256": digest(J_SEQ)}],
-             "records": ["rec:J:0"]},
+             "records": ["rec:J:0"], "notes": ["a note"]},
         ],
         "claims": [
             {"subject": "V:kv_a", "predicate": "anchor", "value": 6, "support": "source",
@@ -286,7 +286,7 @@ CASES = {
     "source_without_source": _set(("claims", 0, "source"), " "),
     "digest_mismatch": _set(("alleles", 0, "sequence_sha256"), digest("ACGT")),
     "alias_targets_executable": lambda d: (
-        d["alleles"].append(dict(d["alleles"][0], id="V:kv_b", label="kv_b", records=[])),
+        _with_second_v(d),
         d["entities"].__setitem__(0, {"id": "ent:lab_v1", "name": "kv_a", "executable": False}),
         d["relationships"].__setitem__(0, {"kind": "alias", "allele": "V:kv_b",
                                            "entity": "ent:lab_v1", "source": None})),
@@ -451,3 +451,15 @@ def test_relationship_entity_name_validated_in_sidecar():
         with pytest.raises(ReferenceArtifactError) as e:
             load(d)
         assert e.value.kind == "malformed" and e.value.path == "relationships[0].entity", name
+
+
+def test_sidecar_notes_are_bounded_strings():
+    d = minimal_sidecar()
+    d["alleles"][0]["notes"] = ["x" * 4096, ""]
+    assert load(d)["alleles"][0]["notes"] == ["x" * 4096, ""]
+    for bad in (["x" * 4097], [1], "note"):
+        d = minimal_sidecar()
+        d["alleles"][0]["notes"] = bad
+        with pytest.raises(ReferenceArtifactError) as e:
+            load(d)
+        assert e.value.kind == "malformed" and e.value.path.startswith("alleles[0].notes"), bad

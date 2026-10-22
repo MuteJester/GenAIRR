@@ -130,6 +130,10 @@ The citation below is illustrative. `support: "source"` requires a real, checkab
 }
 ```
 
+`notes` is a list of free-text strings (each at most 4096 characters). Notes
+are stored with the allele, count towards the catalogue hash, and are listed in
+the report; they are never interpreted as evidence.
+
 ### Support levels
 
 Every annotation is either `null` (unknown) or an object with `value`,

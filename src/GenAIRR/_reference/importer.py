@@ -369,11 +369,17 @@ def import_local(*, v, j, d, annotations) -> Catalogue:
                 "conflict", f"{path}.sequence_sha256",
                 f"sequence digest mismatch for {allele_id}: sidecar has {side_entry['sequence_sha256']}, "
                 f"FASTA gives {allele.sequence_sha256}; digest is over the uppercase ungapped A/C/G/T sequence")
+        anchor = side_entry["anchor"]
+        length = len(allele.sequence)
+        if anchor is not None and anchor["value"] > length - 3:
+            raise ReferenceArtifactError(
+                "conflict", f"{path}.anchor",
+                f"{allele_id}: anchor {anchor['value']} is out of bounds for sequence length {length}; "
+                "the 3-base anchor codon must lie within the ungapped sequence (0 <= anchor <= length - 3)")
+        updates = {"notes": tuple(side_entry["notes"])}
         if side_entry["gene"] is not None:
-            gene, basis = _gene_of(allele.label, side_entry["gene"])
-            replaced[allele_id] = Allele(allele.id, allele.segment, allele.label, gene, basis,
-                                         allele.sequence, allele.sequence_sha256, allele.gapped_sequence,
-                                         allele.transforms, allele.records)
+            updates["gene"], updates["gene_basis"] = _gene_of(allele.label, side_entry["gene"])
+        replaced[allele_id] = replace(allele, **updates)
         claims.extend(_stated_claims(allele_id, side_entry))
     alleles = [replaced.get(a.id, a) for a in alleles]
 

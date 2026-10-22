@@ -378,15 +378,16 @@ def _import_scenarios(tmp):
 
 # Catalogue digests captured from import_local before its derivation was shared with the loader.
 # "paralog" was re-pinned when a relationship to an accepted label of the same segment began
-# to name that allele ("V:b") instead of a non-executable entity of the same name.
+# to name that allele ("V:b") instead of a non-executable entity of the same name; all were
+# re-pinned when alleles began to carry their sidecar notes (empty in every scenario here).
 _IMPORT_DIGESTS = {
-    "accounting": "sha256:79a8ef54b0e7987a61af84bb99747671489fb93a2cdbf82cc66af0c2df4ee0c7",
-    "aligned_agree": "sha256:220270433ffb217fe4388118e58d538c661d72c56565d76d98f74201fd4ffc6f",
-    "aligned_conflict": "sha256:cece9b910d86a8950a9ec06a68c69318b665e6899681452ddb0709ce6063a2ec",
-    "motif": "sha256:6373c71b44c3a99e73393332c6f352ba82d3a23a1a2c396ca68e013fabca5b4e",
-    "paralog": "sha256:10d684fd9c54e9dd1be260025dd37394111b5e20ac4cce491b00c5eae4b77ce1",
-    "genes": "sha256:af1af89d5361371db83f098bd0b4a4334c65ddad89ff2dfbe722bc86ac481d04",
-    "vdj": "sha256:4f6b36bd6023f6416c61b23dd59a8d662581a3d2b13737d1fdd45757b0c89f88",
+    "accounting": "sha256:cebc24aa8a1569496cdd259464301e37e3f9406960a827cab135a92689834d15",
+    "aligned_agree": "sha256:03f1c86eddc3658c96abc0a98515bc182a375d863244c88b881797cb1e570269",
+    "aligned_conflict": "sha256:76ca48a71ac3e5e651c8f4594d639085f18869d8c330a8d77877e7d872517905",
+    "motif": "sha256:16b24689d58889f6be5b9d338fd952cab77d9a1018475694761401cdc0f6823b",
+    "paralog": "sha256:4be3a62ba869a57b8d8899ff74bf4f9b9e76437fce87b269dcb38919680fb342",
+    "genes": "sha256:e1b7000ebe1f7f30e547eb227ba586c6d179b6471eda495b4ed539c8df887b93",
+    "vdj": "sha256:bd6890f44c5b0ace7e4c136424fbaaee9ff95e8a59abdb7be84d6c72b0d5112a",
 }
 
 

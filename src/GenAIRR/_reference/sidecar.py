@@ -10,7 +10,7 @@ from GenAIRR._artifact_io import ArtifactIOError, strict_loads
 from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference.model import (
     CHAIN_TYPES, DERIVATIONS, PREDICATES, SEGMENTS, V_ALIGNMENTS,
-    _bad, _enum, _int, _list, _obj, _str, check_claim_value, check_label,
+    _bad, _enum, _int, _list, _obj, _str, check_claim_value, check_label, check_notes,
 )
 
 SCHEMA_NAME = "genairr_reference_annotations"
@@ -114,8 +114,7 @@ def load_sidecar(text: str) -> dict:
                 raise _bad(f"{path}.gene", problem)
         for name in ANNOTATIONS:
             _annotation(entry[name], name, f"{path}.{name}")
-        for j, note in enumerate(_list(entry["notes"], f"{path}.notes")):
-            _str(note, f"{path}.notes[{j}]")
+        check_notes(entry["notes"], f"{path}.notes")
         key = (segment, entry["label"])
         if key in seen:
             raise _bad(path, f"duplicate allele entry {segment}:{entry['label']}")
