@@ -184,7 +184,7 @@ def test_fatal_native_findings_block_observed_span():
     assert r.available() == ("catalogue_inspection",)
 
 
-def test_c4_capabilities_unavailable_with_note():
+def test_unsupported_capabilities_unavailable_with_note():
     r = evaluate(build(anchors()), VIEW)
     for n in ("genotype_constrained", "duplex_family_replay"):
         st = r.status(n)
