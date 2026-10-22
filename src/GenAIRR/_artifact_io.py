@@ -35,7 +35,7 @@ def typed_digest(value, domain: str) -> str:
 def strict_loads(text: str, *, max_bytes: int) -> Any:
     if not isinstance(text, str):
         raise ArtifactIOError("format", "expected JSON text")
-    if text.startswith("﻿"):
+    if text.startswith("\ufeff"):
         text = text[1:]
     try:
         normalized = _engine._family_replay_parse_json(text, json.dumps({"max_file_bytes": max_bytes}))
@@ -80,10 +80,42 @@ def _create_temporary(destination: Path):
     raise FileExistsError(errno.EEXIST, "no unused temporary file name", str(destination.parent))
 
 
+# ``os.link`` errors meaning the filesystem has no hard links (FAT/exFAT, some SMB shares).
+_NO_HARD_LINK_ERRNOS = frozenset(
+    getattr(errno, name) for name in ("EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV")
+    if hasattr(errno, name))
+
+
+def _hard_links_unsupported(exc: OSError) -> bool:
+    if isinstance(exc, FileExistsError):
+        return False
+    return isinstance(exc, PermissionError) or exc.errno in _NO_HARD_LINK_ERRNOS
+
+
+def _publish_without_link(temporary: Path, destination: Path) -> None:
+    """No-clobber publish where hard links are unavailable.
+
+    The destination is claimed by exclusive creation (an existing file raises
+    ``FileExistsError``), then the complete temporary file replaces the empty claim.
+    """
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
+    os.close(os.open(destination, flags, 0o666))
+    try:
+        os.replace(temporary, destination)
+    except OSError:
+        try:
+            os.unlink(destination)   # the empty claim made above
+        except OSError:
+            pass
+        raise
+
+
 def write_atomic(path, data: bytes, *, replace: bool) -> None:
     """Publish atomically, refusing to replace an existing file unless ``replace``.
 
-    The published file's permissions follow the user's umask.
+    The published file's permissions follow the user's umask.  Without ``replace``
+    the file is published by a hard link; on filesystems without hard links the
+    destination is claimed by exclusive creation and then replaced by the complete file.
     """
     if type(replace) is not bool:
         raise TypeError("replace must be Boolean")
@@ -98,8 +130,14 @@ def write_atomic(path, data: bytes, *, replace: bool) -> None:
         if replace:
             os.replace(temporary, destination)
         else:
-            os.link(temporary, destination)
-            os.unlink(temporary)
+            try:
+                os.link(temporary, destination)
+            except OSError as exc:
+                if not _hard_links_unsupported(exc):
+                    raise
+                _publish_without_link(temporary, destination)
+            else:
+                os.unlink(temporary)
         temporary = None
         if hasattr(os, "O_DIRECTORY"):
             directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)

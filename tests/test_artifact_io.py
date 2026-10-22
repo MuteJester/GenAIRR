@@ -1,4 +1,5 @@
 import contextlib
+import errno
 import json
 import os
 import stat
@@ -130,3 +131,79 @@ def test_write_atomic_skips_an_existing_temporary_name(tmp_path, monkeypatch):
     assert other.read_bytes() == b"not ours"       # never opened, truncated or removed
     assert sorted(p.name for p in tmp_path.iterdir()) == [".out.json.taken.tmp", "out.json"]
 
+
+
+def test_artifact_io_source_has_no_literal_byte_order_mark():
+    source = open(_artifact_io.__file__, "rb").read()
+    assert b"\xef\xbb\xbf" not in source
+
+
+# ── Filesystems without hard links (FAT/exFAT, some SMB shares) ────────
+
+
+NO_LINK_ERRORS = [PermissionError(errno.EPERM, "Operation not permitted"),
+                  OSError(errno.ENOTSUP, "Operation not supported"),
+                  OSError(errno.EOPNOTSUPP, "Operation not supported"),
+                  OSError(errno.ENOSYS, "Function not implemented"),
+                  OSError(errno.EXDEV, "Invalid cross-device link")]
+
+
+def _no_hard_links(monkeypatch, error):
+    calls = []
+
+    def link(source, destination, *args, **kwargs):
+        calls.append(destination)
+        raise error
+
+    monkeypatch.setattr(os, "link", link)
+    return calls
+
+
+def _temporaries(directory):
+    return [p.name for p in directory.iterdir() if p.name.endswith(".tmp")]
+
+
+@pytest.mark.parametrize("error", NO_LINK_ERRORS, ids=["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"])
+def test_write_atomic_without_hard_links(tmp_path, monkeypatch, error):
+    calls = _no_hard_links(monkeypatch, error)
+    target = tmp_path / "out.json"
+    write_atomic(target, b"data", replace=False)
+    assert calls == [target]
+    assert target.read_bytes() == b"data"
+    assert _temporaries(tmp_path) == []
+
+
+def test_write_atomic_without_hard_links_still_refuses_to_overwrite(tmp_path, monkeypatch):
+    _no_hard_links(monkeypatch, NO_LINK_ERRORS[0])
+    target = tmp_path / "out.json"
+    write_atomic(target, b"first", replace=False)
+    with pytest.raises(ArtifactIOError) as info:
+        write_atomic(target, b"second", replace=False)
+    assert info.value.kind == "io"
+    assert target.read_bytes() == b"first"
+    assert _temporaries(tmp_path) == []
+    write_atomic(target, b"third", replace=True)
+    assert target.read_bytes() == b"third"
+    assert _temporaries(tmp_path) == []
+
+
+def test_write_atomic_other_link_errors_are_io_errors(tmp_path, monkeypatch):
+    _no_hard_links(monkeypatch, OSError(errno.EIO, "Input/output error"))
+    target = tmp_path / "out.json"
+    with pytest.raises(ArtifactIOError) as info:
+        write_atomic(target, b"data", replace=False)
+    assert info.value.kind == "io"
+    assert not target.exists()
+    assert _temporaries(tmp_path) == []
+
+
+def test_family_replay_write_without_hard_links(tmp_path, monkeypatch):
+    _no_hard_links(monkeypatch, NO_LINK_ERRORS[0])
+    bundle = FamilyReplayBundle.__new__(FamilyReplayBundle)
+    bundle._text = "{}"
+    target = tmp_path / "b.json"
+    bundle.write_to(target)
+    assert target.read_text() == "{}"
+    with pytest.raises(FamilyReplayError) as info:
+        bundle.write_to(target)
+    assert "family_replay[io]" in str(info.value)
