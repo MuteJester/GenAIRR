@@ -6,6 +6,7 @@ import pytest
 from GenAIRR import data
 from GenAIRR._refdata_resolver import dataconfig_to_refdata
 from GenAIRR._reference import lowering
+from GenAIRR._reference.capabilities import evaluate
 from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference.lowering import PROFILE_ID, default_view, lower, seal
 from GenAIRR._reference.model import (
@@ -128,6 +129,22 @@ def test_stated_phase_boundaries_functionality_projected():
     assert ev["notes"] == sorted(["boundary_3=assertion:stated", "boundary_5=source:stated",
                                   "coding_phase=source:stated", "functionality=source:stated"])
     assert low.spec["v"][0]["functionality"] == "orf"
+
+
+@pytest.mark.parametrize("phase_claims,projected,phase_support", [
+    ([claim("V:V1", "coding_phase", 0), claim("J:J1", "coding_phase", 0)], (0, 0), "independent_source"),
+    ([claim("V:V1", "coding_phase", 0), claim("V:V1", "coding_phase", 1), claim("J:J1", "coding_phase", 0)],
+     (None, 0), "none"),
+    ([claim("V:V1", "coding_phase", 0), claim("V:V1", "coding_phase", 0, status="conflict"),
+      claim("J:J1", "coding_phase", 0)], (None, 0), "none"),
+], ids=["agreeing", "disagreeing", "conflict"])
+def test_phase_support_and_projection_agree_on_usable_phases(phase_claims, projected, phase_support):
+    # A phase the lowering drops as ambiguous never counts towards phase support.
+    cat = build(anchors() + phase_claims)
+    view = default_view(cat)
+    low = lower(cat, view)
+    assert (evidence(low, "V")["coding_phase"], evidence(low, "J")["coding_phase"]) == projected
+    assert evaluate(cat, view).phase_support == phase_support
 
 
 GAPPED = "AAA...TGTAAAGGG"

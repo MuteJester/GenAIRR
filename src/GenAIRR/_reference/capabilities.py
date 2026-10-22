@@ -115,9 +115,15 @@ def _weakest(claims):
 
 
 def _phase_support(catalogue, ids):
+    """How the coding phase of every allele in ``ids`` (the view's V and J) is supported.
+
+    An allele has a phase only when it is unambiguous: its accepted claims agree on one
+    value and none is in conflict (``_usable``, the rule lowering applies too).  Any allele
+    without one gives "none".
+    """
     if not ids:
         return "none"
-    claims = [_accepted(catalogue, i, "coding_phase") for i in ids]
+    claims = [_usable(catalogue, i, "coding_phase") for i in ids]
     if not all(claims):
         return "none"
     flat = [c for cs in claims for c in cs]
@@ -185,7 +191,9 @@ def evaluate(catalogue: Catalogue, view: dict, *, native_fatal: Sequence[dict] =
             junction_unmet.append(missing)
     add("source_annotated_junction", junction_unmet, "source")
 
-    # Canonical productive.
+    # Canonical productive: available from accepted anchors of any support plus canonical
+    # codons.  Source-certified only when every anchor relied on is source-backed and every
+    # V and J phase is independently source-supported, so the phase does not rest on the anchor.
     expected = _J_RESIDUE.get(catalogue.header.locus, {"F", "W"})
     canon = list(missing_unmet)
     for aid in vs:
@@ -197,7 +205,8 @@ def evaluate(catalogue: Catalogue, view: dict, *, native_fatal: Sequence[dict] =
             canon.append(Unmet(aid, f"J anchor codon encodes {' or '.join(sorted(expected))}",
                                "check the anchor position or leave this allele out of the view"))
     phase = _phase_support(catalogue, vs + js)
-    add("canonical_productive", canon, _weakest(anchor_claims), note=f"phase support: {phase}")
+    certified = _weakest(anchor_claims) == "source" and phase == "independent_source"
+    add("canonical_productive", canon, "source" if certified else "assertion", note=f"phase support: {phase}")
 
     # Boundaries.
     def boundaries(required):

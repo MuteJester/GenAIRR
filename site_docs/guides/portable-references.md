@@ -159,11 +159,21 @@ assertion to source. Use `method` to say how you arrived at the value.
 `coding_phase` additionally carries a `derivation`: `"independent"` when
 the phase is supported on its own, or `"anchor_derived"` when you computed
 it from the anchor. An **anchor-derived phase is not independent evidence**:
-it can only be as strong as the anchor it came from, so it does not upgrade
-any capability. `ref.capabilities().phase_support` reports which kind the
-reference has (`"none"`, `"anchor_derived"`, `"independent_assertion"` or `"independent_source"`). Anchors
-derived from a declared IMGT alignment are recorded with the derivation
-`"imgt_alignment"`.
+it can only be as strong as the anchor it came from, so it never raises a
+capability's evidence level. Anchors derived from a declared IMGT alignment are
+recorded with the derivation `"imgt_alignment"`.
+
+`ref.capabilities().phase_support` summarizes the coding phases of the V and J
+alleles. An allele's phase counts only when it is unambiguous: all of its phase
+annotations give the same value and none is marked as a conflict. Disagreeing
+or conflicting phases are listed among the report's conflicts.
+
+| `phase_support` | When |
+|---|---|
+| `"independent_source"` | Every V and J allele has an unambiguous independent phase, and every annotation for it has `support: "source"`. |
+| `"independent_assertion"` | Every V and J allele has an unambiguous independent phase, and at least one of them is an assertion. |
+| `"anchor_derived"` | Every V and J allele has an unambiguous phase, and at least one of them is anchor-derived. |
+| `"none"` | At least one V or J allele has no phase, or an ambiguous one. |
 
 ### The sequence digest
 
@@ -233,8 +243,12 @@ the sequence.
 
 Each available capability carries an evidence level, `"source"` or
 `"assertion"`, equal to the weakest support among the claims it relies on.
-`available(evidence="source")` lists only source-backed capabilities. Use
-`require` to fail early:
+`canonical_productive` is the exception that asks for more: its evidence is
+`"source"` only when every V and J anchor is source-backed **and**
+`phase_support` is `"independent_source"`, so that the reading frame does not
+rest on the anchor alone. Otherwise it is `"assertion"`, even with source-backed
+anchors. Its note reports the phase support. `available(evidence="source")`
+lists only source-backed capabilities. Use `require` to fail early:
 
 ```python
 ref.require("observed_span_simulation", "canonical_productive")  # raises if unavailable

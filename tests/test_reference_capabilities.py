@@ -1,5 +1,7 @@
 import hashlib
 
+import pytest
+
 from GenAIRR._reference.capabilities import CAPABILITIES, evaluate
 from GenAIRR._reference.model import (
     Allele, Catalogue, Claim, RecordEntry, ReferenceHeader, SourceFile, Taxon,
@@ -41,6 +43,12 @@ def anchors(support="source", v=3, j=0):
     return [claim("V:V1", "anchor", v, support), claim("J:J1", "anchor", j, support)]
 
 
+def phases(support="source", derivation="stated", v=0, j=0):
+    # Phase 0 agrees with the default anchors (V at 3, J at 0).
+    return [claim("V:V1", "coding_phase", v, support, derivation),
+            claim("J:J1", "coding_phase", j, support, derivation)]
+
+
 def test_bare_catalogue_supports_only_inspection_and_observed_span():
     r = evaluate(build(), VIEW)
     assert r.available() == ("catalogue_inspection", "observed_span_simulation")
@@ -48,12 +56,65 @@ def test_bare_catalogue_supports_only_inspection_and_observed_span():
     assert tuple(s.name for s in r.statuses) == CAPABILITIES
 
 
-def test_source_anchors_give_source_evidence():
-    r = evaluate(build(anchors()), VIEW)
+def test_source_anchors_and_independent_source_phases_give_source_evidence():
+    r = evaluate(build(anchors() + phases()), VIEW)
+    assert r.phase_support == "independent_source"
     assert r.status("source_annotated_junction").evidence == "source"
-    assert r.status("canonical_productive").available
-    assert r.status("canonical_productive").evidence == "source"
+    st = r.status("canonical_productive")
+    assert st.available and st.evidence == "source"
+    assert st.note == "phase support: independent_source"
     assert "canonical_productive" in r.available(evidence="source")
+    # Asserted anchors still cap it, however strong the phases.
+    st = evaluate(build(anchors(support="assertion") + phases()), VIEW).status("canonical_productive")
+    assert st.available and st.evidence == "assertion"
+
+
+@pytest.mark.parametrize("phase_claims,phase_support", [
+    ([], "none"),
+    (phases(support="assertion", derivation="anchor_derived"), "anchor_derived"),
+    (phases(derivation="anchor_derived"), "anchor_derived"),
+    (phases()[:1] + phases(derivation="anchor_derived")[1:], "anchor_derived"),
+    (phases(support="assertion"), "independent_assertion"),
+    (phases()[:1] + phases(support="assertion")[1:], "independent_assertion"),
+    (phases()[:1], "none"),
+], ids=["no-phases", "anchor-derived", "anchor-derived-source", "one-anchor-derived",
+        "asserted", "one-asserted", "one-missing"])
+def test_phase_support_caps_canonical_productive_evidence(phase_claims, phase_support):
+    # Source-backed anchors alone do not make canonical productivity source-certified: that
+    # also needs every V and J phase stated independently with source support.
+    r = evaluate(build(anchors() + phase_claims), VIEW)
+    assert r.phase_support == phase_support
+    assert r.status("source_annotated_junction").evidence == "source"
+    st = r.status("canonical_productive")
+    assert st.available and st.evidence == "assertion"
+    assert st.note == f"phase support: {phase_support}"
+    assert "canonical_productive" in r.available()
+    assert "canonical_productive" not in r.available(evidence="source")
+    assert "source_annotated_junction" in r.available(evidence="source")
+
+
+def test_disagreeing_accepted_phase_claims_give_no_phase_support():
+    # Every phase claim is stated and source-supported, but V:V1's two claims disagree.
+    r = evaluate(build(anchors() + phases() + [claim("V:V1", "coding_phase", 1)]), VIEW)
+    assert r.phase_support == "none"
+    st = r.status("canonical_productive")
+    assert st.available and st.evidence == "assertion" and st.note == "phase support: none"
+    assert "canonical_productive" not in r.available(evidence="source")
+    assert r.explain().splitlines()[-1] == "phase support: none"
+    # Agreeing claims are one unambiguous phase.
+    r = evaluate(build(anchors() + phases() + [claim("V:V1", "coding_phase", 0)]), VIEW)
+    assert r.phase_support == "independent_source"
+    # An anchor-derived claim that disagrees with a stated one is just as ambiguous.
+    r = evaluate(build(anchors() + phases(j=1) + phases(derivation="anchor_derived")[1:]), VIEW)
+    assert r.phase_support == "none"
+
+
+@pytest.mark.parametrize("value", [0, 1])
+def test_conflict_status_phase_claim_gives_no_phase_support(value):
+    r = evaluate(build(anchors() + phases() + [claim("J:J1", "coding_phase", value, status="conflict")]), VIEW)
+    assert r.phase_support == "none"
+    assert r.status("canonical_productive").evidence == "assertion"
+    assert "canonical_productive" not in r.available(evidence="source")
 
 
 def test_assertion_anchor_downgrades_evidence():
@@ -127,7 +188,7 @@ def test_anchor_derived_phase_is_not_independent():
     assert "anchor_derived" in r.status("canonical_productive").note
 
 
-def test_phase_claims_do_not_change_capabilities():
+def test_phase_claims_do_not_change_availability():
     base = evaluate(build(), VIEW)
     cl = [claim("V:V1", "coding_phase", 0), claim("J:J1", "coding_phase", 1)]
     r = evaluate(build(cl), VIEW)
@@ -136,8 +197,10 @@ def test_phase_claims_do_not_change_capabilities():
     assert not r.status("canonical_productive").available
     cl = [claim("V:V1", "coding_phase", 0, "assertion"), claim("J:J1", "coding_phase", 1, "source")]
     assert evaluate(build(cl), VIEW).phase_support == "independent_assertion"
+    # An asserted phase leaves canonical productivity available, at assertion evidence.
     r2 = evaluate(build(anchors() + cl), VIEW)
-    assert r2.status("canonical_productive").evidence == "source"
+    assert r2.status("canonical_productive").available
+    assert r2.status("canonical_productive").evidence == "assertion"
 
 
 def test_conflict_blocks_junction():

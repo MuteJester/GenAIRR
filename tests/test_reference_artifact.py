@@ -5,6 +5,7 @@ import errno
 import hashlib
 import json
 import os
+import pathlib
 import re
 import stat
 
@@ -39,6 +40,7 @@ D_FASTA = f">IGHD3-10*01\n{D1}\n>IGHD2-2*01\n{D2}\n"
 J_FASTA = f">IGHJ4*02\n{J1}\n>IGHJ6*02\n{J2}\n"
 SOURCE = "doi:10.1000/lab-reference"
 ARTIFACT_DOMAIN = "genairr_reference_artifact_v1"
+GOLDEN = pathlib.Path(__file__).parent / "golden" / "reference" / "human_igh.genairr-ref.json"
 
 
 def digest(seq):
@@ -732,6 +734,43 @@ def test_recommitted_anchor_derived_phase_disagreeing_with_anchor_rejected(ref):
     claim_of(doc, "V:IGHV1-2*02", "coding_phase", "anchor_derived")["value"] = 1
     err = rejected(_full_recommit(doc), "integrity", "anchor-derived coding phase 1")
     assert "285" in str(err) and "V:IGHV1-2*02" in str(err)
+
+
+def _golden_with_stated_source_phases(disagreeing):
+    """The golden artifact with each anchor-derived phase restated as a source-supported
+    independent phase, plus (if ``disagreeing``) a second such claim of another value."""
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    claims = []
+    for c in doc["catalogue"]["claims"]:
+        if c["predicate"] != "coding_phase":
+            claims.append(c)
+            continue
+        stated = {**c, "derivation": "stated", "support": "source", "source": SOURCE}
+        claims.append(stated)
+        if disagreeing:
+            claims.append({**stated, "value": (c["value"] + 1) % 3})
+    doc["catalogue"]["claims"] = claims
+    return doc
+
+
+def test_recommitted_conflicting_phases_are_not_source_phase_support():
+    # Every V and J carries two stated, source-supported phases that disagree: the report
+    # lists five phase conflicts, so no allele has a usable phase.
+    reference = load(_full_recommit(_golden_with_stated_source_phases(disagreeing=True)))
+    v_and_j = [f"{a.segment}:{a.label}" for a in reference.alleles if a.segment != "D"]
+    assert len(v_and_j) == 5
+    assert reference.report().conflicts == tuple((a, "coding_phase") for a in v_and_j)
+    assert all(a.coding_phase is None for a in reference.alleles)
+    caps = reference.capabilities()
+    assert caps.phase_support == "none"
+    assert caps.status("canonical_productive").note == "phase support: none"
+    assert "phase support: none" in str(reference.report())
+    # The same phases without the disagreeing copies are independent source support.
+    agreeing = load(_full_recommit(_golden_with_stated_source_phases(disagreeing=False)))
+    assert agreeing.report().conflicts == ()
+    assert agreeing.capabilities().phase_support == "independent_source"
+    # Its anchors are assertions, so canonical productivity stays assertion-level.
+    assert agreeing.capabilities().status("canonical_productive").evidence == "assertion"
 
 
 def test_recommitted_motif_candidate_moved_rejected(ref):
