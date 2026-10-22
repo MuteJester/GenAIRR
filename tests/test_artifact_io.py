@@ -296,6 +296,53 @@ def test_write_atomic_without_hard_links_on_windows_refuses_an_existing_file(tmp
     assert _temporaries(tmp_path) == []
 
 
+def _windows_link_error(winerror):
+    # Windows reports FAT/exFAT (ERROR_INVALID_FUNCTION, 1) and many SMB shares
+    # (ERROR_NOT_SUPPORTED, 50) without hard links; CPython maps both to EINVAL.
+    error = OSError(errno.EINVAL, {1: "Incorrect function", 50: "The request is not supported"}[winerror])
+    error.winerror = winerror
+    return error
+
+
+@pytest.mark.parametrize("winerror", [1, 50])
+def test_write_atomic_windows_no_hard_link_errors_publish_by_rename(tmp_path, monkeypatch, windows, winerror):
+    _no_hard_links(monkeypatch, _windows_link_error(winerror))
+    target = tmp_path / "out.json"
+    write_atomic(target, b"data", replace=False)
+    assert target.read_bytes() == b"data"
+    assert [destination for _, destination in windows] == [target]
+    assert _temporaries(tmp_path) == []
+
+
+@pytest.mark.parametrize("winerror", [1, 50])
+def test_write_atomic_windows_no_hard_link_errors_refuse_an_existing_file(tmp_path, monkeypatch, windows, winerror):
+    _no_hard_links(monkeypatch, _windows_link_error(winerror))
+    target = tmp_path / "out.json"
+    target.write_bytes(b"existing")
+    with pytest.raises(ArtifactIOError) as info:
+        write_atomic(target, b"second", replace=False)
+    assert info.value.kind == "io"
+    assert [destination for _, destination in windows] == [target]
+    assert target.read_bytes() == b"existing"
+    assert _temporaries(tmp_path) == []
+
+
+@pytest.mark.parametrize("error", [OSError(errno.EINVAL, "Invalid argument"), _windows_link_error(1)],
+                         ids=["EINVAL", "EINVAL-with-winerror"])
+def test_write_atomic_einval_from_link_off_windows_is_a_generic_io_error(tmp_path, monkeypatch, posix, error):
+    # EINVAL means "links unsupported" only through the Windows error codes, on Windows.
+    _no_hard_links(monkeypatch, error)
+    renamed = _recorded(monkeypatch, "rename")
+    target = tmp_path / "out.json"
+    with pytest.raises(ArtifactIOError) as info:
+        write_atomic(target, b"data", replace=False)
+    assert info.value.kind == "io"
+    assert NO_ATOMIC_NO_OVERWRITE not in str(info.value)
+    assert renamed == []
+    assert not target.exists()
+    assert _temporaries(tmp_path) == []
+
+
 @pytest.mark.parametrize("platform", ["posix", "windows"])
 def test_write_atomic_replace_works_without_hard_links(tmp_path, monkeypatch, request, platform):
     request.getfixturevalue(platform)

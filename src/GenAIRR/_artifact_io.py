@@ -88,10 +88,17 @@ _NO_HARD_LINK_ERRNOS = frozenset(
 # Windows ``os.rename`` refuses to overwrite an existing file: an atomic no-replace publish.
 _WINDOWS = os.name == "nt"
 
+# Windows ``os.link`` errors meaning no hard links: ERROR_INVALID_FUNCTION (FAT/exFAT) and
+# ERROR_NOT_SUPPORTED (many SMB shares).  CPython maps both to EINVAL, which elsewhere
+# means something else, so they count only on Windows.
+_WINDOWS_NO_HARD_LINK_ERRORS = frozenset({1, 50})
+
 
 def _hard_links_unsupported(exc: OSError) -> bool:
     if isinstance(exc, FileExistsError):
         return False
+    if _WINDOWS and getattr(exc, "winerror", None) in _WINDOWS_NO_HARD_LINK_ERRORS:
+        return True
     return isinstance(exc, PermissionError) or exc.errno in _NO_HARD_LINK_ERRNOS
 
 
