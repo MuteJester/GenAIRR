@@ -825,6 +825,16 @@ def test_empty_selection_names_segment_and_accounting(tmp_path, monkeypatch, seg
     assert positions == sorted(positions)
 
 
+def test_empty_selection_counts_same_label_conflicts(tmp_path):
+    fastas = {"v": f">IGHV1-2*02\n{V_BAD}\n>IGHV1-2*02\n{V1}\n", "d": D_FASTA, "j": J_FASTA}
+    alleles = [a for a in default_alleles() if a["segment"] != "V"]
+    with pytest.raises(ReferenceArtifactError) as e:
+        build(tmp_path, alleles=alleles, **fastas)
+    assert e.value.kind == "empty_selection" and e.value.path == "V"
+    assert "0 accepted, 0 duplicate, 2 rejected" in e.value.message
+    assert "rejection reasons: conflicting_sequence_for_label (2)" in e.value.message
+
+
 # ── Untampered round trips with a declared IMGT alignment ───────────
 
 

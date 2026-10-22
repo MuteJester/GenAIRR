@@ -117,7 +117,7 @@ def _scan_segment(path, segment: str, v_alignment: str):
         label = _label_of(header)
         entry = {"id": f"rec:{segment}:{index}", "index": index, "header": header, "label": label,
                  "status": "rejected", "reason": None, "sequence": None, "gapped": None,
-                 "transforms": (), "duplicate_of": None}
+                 "transforms": (), "duplicate_of": None, "content": raw.upper()}
         problem = check_label(label)
         if problem:
             entry["label"] = None
@@ -130,19 +130,23 @@ def _scan_segment(path, segment: str, v_alignment: str):
                 entry.update(sequence=seq, gapped=gapped, transforms=transforms, status="accepted")
         entries.append(entry)
 
+    # Every labelled record counts towards its label, including records rejected for their
+    # bases, length or gaps: a label naming two different sequences is a conflict for all copies.
     by_label: dict = {}
     for entry in entries:
-        if entry["status"] == "accepted":
+        if entry["label"] is not None:
             by_label.setdefault(entry["label"], []).append(entry)
-    for label, group in by_label.items():
-        if len({(e["sequence"], e["gapped"]) for e in group}) > 1:
+    for group in by_label.values():
+        if len({e["content"] for e in group}) > 1:
             for e in group:
-                e.update(status="rejected", reason="conflicting_sequence_for_label")
-                e["sequence"] = e["gapped"] = None
-                e["transforms"] = ()
+                reason = "conflicting_sequence_for_label"
+                if e["reason"] is not None:
+                    reason += f" (also: {e['reason']})"
+                e.update(status="rejected", reason=reason, sequence=None, gapped=None, transforms=())
         else:
-            for e in group[1:]:
-                e.update(status="duplicate", duplicate_of=group[0]["id"])
+            accepted = _accepted(group)
+            for e in accepted[1:]:
+                e.update(status="duplicate", duplicate_of=accepted[0]["id"])
     return source, entries
 
 

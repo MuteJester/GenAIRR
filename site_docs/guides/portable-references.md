@@ -171,7 +171,11 @@ is never renamed. A label must be 1 to 256 characters with no whitespace,
 control or format characters and no comma (commas separate multiple calls in
 AIRR fields). A record whose label breaks the rule is rejected with a reason in
 the report. Identical sequences under two labels, or the same label twice, are
-reported as findings or duplicates rather than merged silently.
+reported as findings or duplicates rather than merged silently. A label that
+names two different sequences rejects every copy as
+`conflicting_sequence_for_label`, including a copy already rejected for another
+reason, which is kept in the text (for example
+`conflicting_sequence_for_label (also: unsupported_base: 'N' at position 100)`).
 
 ### Relationships
 

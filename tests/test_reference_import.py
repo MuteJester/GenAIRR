@@ -78,6 +78,44 @@ def test_conflicting_label_rejects_all_copies(tmp_path):
     assert [a.label for a in cat.alleles if a.segment == "V"] == ["b"]
 
 
+def test_same_label_conflict_includes_rejected_copies(tmp_path):
+    # One copy has an unsupported base, the other is clean: the label names two sequences.
+    cat = run(tmp_path, f">x\n{V_SEQ[:3]}N{V_SEQ[4:]}\n>x\n{V_SEQ}\n>y\n{V_SEQ}AC\n")
+    vrecs = [r for r in cat.records if r.id.startswith("rec:V:")]
+    assert [(r.label, r.status, r.reason) for r in vrecs] == [
+        ("x", "rejected", "conflicting_sequence_for_label (also: unsupported_base: 'N' at position 3)"),
+        ("x", "rejected", "conflicting_sequence_for_label"),
+        ("y", "accepted", None)]
+    assert all(r.allele is None and r.duplicate_of is None for r in vrecs[:2])
+    assert [a.label for a in cat.alleles if a.segment == "V"] == ["y"]
+
+
+def test_same_label_conflict_covers_gap_length_and_empty_rejections(tmp_path, monkeypatch):
+    from GenAIRR._reference import importer
+
+    cat = run(tmp_path, f">x\n{V_SEQ}\n>x\nACGT...ACGT\n>z\n{V_SEQ}\n>z\n\n")
+    assert [(r.label, r.status, r.reason) for r in cat.records if r.id.startswith("rec:V:")] == [
+        ("x", "rejected", "conflicting_sequence_for_label"),
+        ("x", "rejected", "conflicting_sequence_for_label (also: gap_without_declared_alignment)"),
+        ("z", "rejected", "conflicting_sequence_for_label"),
+        ("z", "rejected", "conflicting_sequence_for_label (also: empty_sequence)")]
+    monkeypatch.setattr(importer, "MAX_SEQUENCE", 12)
+    cat = run(tmp_path / ".", f">x\nACGTACGTACGTA\n>x\nACGTACGTACGT\n", j=f">J1\n{J_SEQ[:12]}\n")
+    assert [r.reason for r in cat.records if r.id.startswith("rec:V:")] == [
+        "conflicting_sequence_for_label (also: too_long: 13 bases exceeds 12)",
+        "conflicting_sequence_for_label"]
+
+
+def test_identical_rejected_copies_keep_their_reason(tmp_path):
+    bad = f"{V_SEQ[:3]}N{V_SEQ[4:]}"
+    cat = run(tmp_path, f">x\n{bad}\n>x\n{bad.lower()}\n>y\n{V_SEQ}\n>y\n{V_SEQ.lower()}\n")
+    assert [(r.label, r.status, r.reason, r.duplicate_of) for r in cat.records if r.id.startswith("rec:V:")] == [
+        ("x", "rejected", "unsupported_base: 'N' at position 3", None),
+        ("x", "rejected", "unsupported_base: 'N' at position 3", None),
+        ("y", "accepted", None, None),
+        ("y", "duplicate", None, "rec:V:2")]
+
+
 def test_crlf_fasta_matches_lf(tmp_path):
     lf = run(tmp_path, f">a desc\n{V_SEQ}\n")
     crlf_dir = tmp_path / "crlf"

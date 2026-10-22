@@ -309,7 +309,7 @@ def _require_selection(catalogue: Catalogue, view: dict) -> None:
         reasons: Dict[str, int] = {}
         for r in records:
             if r.status == "rejected":
-                key = r.reason.split(":", 1)[0]
+                key = r.reason.split(":", 1)[0].split(" ", 1)[0]
                 reasons[key] = reasons.get(key, 0) + 1
         detail = ("rejection reasons: " + ", ".join(f"{k} ({n})" for k, n in reasons.items())
                   if reasons else "the FASTA file has no records")
