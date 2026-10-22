@@ -1,0 +1,752 @@
+{
+  "schema": "genairr_reference_source_selection_candidate",
+  "schema_version": 1,
+  "description": "Candidate allele selection for a human IGH observed-span reference built from OGRDB IGH_VDJ release 10. Every record of the 'airr' export is either selected or omitted with the rules it fails. Selection order within each segment is natural label order (numeric runs compared as integers). Labels are the provider labels, unchanged.",
+  "source": {
+    "set_id": "9606.IGH_VDJ",
+    "release": 10,
+    "germline_set_ref": "OGRDB:IGH_VDJ.10",
+    "record_export": "airr",
+    "record_export_sha256": "6889fea1e2da71ff2bde50f8b5e055613319408977e913631c8e6d04f53d44b1",
+    "comparison_export": "airr_ex",
+    "comparison_export_sha256": "251c5f13705b74f3bdaf6fc6f593616f433c710a766d8e54f9cbc9c2f1ac95d3",
+    "gapped_sha256": "681db69932757bd09253cbef990a64959f8c8745e46f364bcb35963ea4f16a65",
+    "gapped_ex_sha256": "2321eb5b788bf95103a2221eb327ef327c735e3e9427713c71285dcc6df81d9a"
+  },
+  "rules": [
+    {
+      "rule": "explicit_record_in_both_variants",
+      "requirement": "The label has its own record in both 'airr' and 'airr_ex'. 'airr_ex' keeps one record per identical coding sequence and names the others only as paralogs; selecting both identities would add usage weight to one sequence."
+    },
+    {
+      "rule": "variant_invariant_record",
+      "requirement": "The 'airr' and 'airr_ex' records are equal in every field except allele_description_ref. Records whose 'airr_ex' coding_sequence carries a provider 3' extension are left out instead of choosing a variant."
+    },
+    {
+      "rule": "provider_functional_true",
+      "requirement": "Provider field functional is true. A false value is not interpreted further (not mapped to pseudogene)."
+    },
+    {
+      "rule": "not_tagged_likely_truncated",
+      "requirement": "Provider curational_tags does not contain likely_truncated."
+    },
+    {
+      "rule": "v_gapped_record_matches",
+      "requirement": "V only: label-identical records in both gapped exports whose ungapped bytes equal coding_sequence and whose non-gap count before IMGT column 313, plus one, equals cdr3_start."
+    },
+    {
+      "rule": "v_imgt_104_is_cys",
+      "requirement": "V only: the codon at coding_sequence[cdr3_start-4 : cdr3_start-1] (IMGT codon 104 in the source alignment) is TGT or TGC. Non-Cys residues stay in the inventory unrelocated; they are only not selected for this starter."
+    },
+    {
+      "rule": "j_landmark_consistent",
+      "requirement": "J only: the codon at coding_sequence[j_cdr3_end-1 : j_cdr3_end+2] is TGG and (j_cdr3_end-1) - (j_codon_frame-1) is a multiple of 3."
+    }
+  ],
+  "capability_target": {
+    "required": [
+      "observed_span_simulation"
+    ],
+    "targeted": [
+      "source_annotated_junction"
+    ],
+    "basis_for_target": "Every selected V has a cdr3_start whose meaning and record binding are verified against the matching gapped exports; every selected J has j_cdr3_end/j_codon_frame consistent with the producer convention. Anchors are therefore source-stated positions, not motif searches.",
+    "not_targeted": {
+      "original_coding_ends": "no reviewed boundary claim; provider tags and RSS adjacency do not establish complete coding ends",
+      "complete_reference_span": "no reviewed boundary claim",
+      "canonical_productive_source_certified": "V coding phase is not independently source-supported; at most anchor-derived"
+    }
+  },
+  "counts": {
+    "V": 169,
+    "D": 31,
+    "J": 7,
+    "omitted": 42,
+    "inventory": 249
+  },
+  "distinct_genes_selected": {
+    "V": 61,
+    "D": 26,
+    "J": 6
+  },
+  "selected": {
+    "V": [
+      "IGHV1-2*02",
+      "IGHV1-2*04",
+      "IGHV1-2*05",
+      "IGHV1-2*06",
+      "IGHV1-2*07",
+      "IGHV1-3*01",
+      "IGHV1-3*02",
+      "IGHV1-3*04",
+      "IGHV1-3*05",
+      "IGHV1-8*01",
+      "IGHV1-8*02",
+      "IGHV1-8*03",
+      "IGHV1-18*01",
+      "IGHV1-18*03",
+      "IGHV1-18*04",
+      "IGHV1-24*01",
+      "IGHV1-45*02",
+      "IGHV1-45*03",
+      "IGHV1-46*01",
+      "IGHV1-46*03",
+      "IGHV1-46*04",
+      "IGHV1-58*01",
+      "IGHV1-58*02",
+      "IGHV1-69*01",
+      "IGHV1-69*02",
+      "IGHV1-69*04",
+      "IGHV1-69*05",
+      "IGHV1-69*06",
+      "IGHV1-69*09",
+      "IGHV1-69*10",
+      "IGHV1-69*12",
+      "IGHV1-69*13",
+      "IGHV1-69*14",
+      "IGHV1-69*15",
+      "IGHV1-69*17",
+      "IGHV1-69*19",
+      "IGHV1-69*i04",
+      "IGHV1-69-2*01",
+      "IGHV2-5*01",
+      "IGHV2-5*02",
+      "IGHV2-5*05",
+      "IGHV2-26*01",
+      "IGHV2-26*02",
+      "IGHV2-26*04",
+      "IGHV2-70*01",
+      "IGHV2-70*05",
+      "IGHV2-70*15",
+      "IGHV2-70*20",
+      "IGHV2-70D*04",
+      "IGHV2-70D*14",
+      "IGHV3-7*01",
+      "IGHV3-7*03",
+      "IGHV3-7*05",
+      "IGHV3-9*01",
+      "IGHV3-9*02",
+      "IGHV3-9*03",
+      "IGHV3-11*01",
+      "IGHV3-11*04",
+      "IGHV3-11*05",
+      "IGHV3-11*06",
+      "IGHV3-13*01",
+      "IGHV3-13*04",
+      "IGHV3-13*05",
+      "IGHV3-13*06",
+      "IGHV3-15*01",
+      "IGHV3-15*07",
+      "IGHV3-16*02",
+      "IGHV3-16*03",
+      "IGHV3-16*04",
+      "IGHV3-20*01",
+      "IGHV3-20*02",
+      "IGHV3-20*04",
+      "IGHV3-20*05",
+      "IGHV3-21*01",
+      "IGHV3-21*03",
+      "IGHV3-21*06",
+      "IGHV3-21*07",
+      "IGHV3-23*01",
+      "IGHV3-23*03",
+      "IGHV3-23*04",
+      "IGHV3-25*04",
+      "IGHV3-30*01",
+      "IGHV3-30*02",
+      "IGHV3-30*03",
+      "IGHV3-30*04",
+      "IGHV3-30*18",
+      "IGHV3-30-3*01",
+      "IGHV3-33*01",
+      "IGHV3-33*06",
+      "IGHV3-33*08",
+      "IGHV3-35*01",
+      "IGHV3-35*02",
+      "IGHV3-38*02",
+      "IGHV3-38*03",
+      "IGHV3-38-3*01",
+      "IGHV3-43*01",
+      "IGHV3-43*02",
+      "IGHV3-43D*03",
+      "IGHV3-43D*04",
+      "IGHV3-43D*05",
+      "IGHV3-47*01",
+      "IGHV3-47*02",
+      "IGHV3-48*01",
+      "IGHV3-48*02",
+      "IGHV3-48*03",
+      "IGHV3-48*04",
+      "IGHV3-49*03",
+      "IGHV3-49*04",
+      "IGHV3-49*05",
+      "IGHV3-53*01",
+      "IGHV3-53*02",
+      "IGHV3-53*04",
+      "IGHV3-64*01",
+      "IGHV3-64*02",
+      "IGHV3-64*07",
+      "IGHV3-64D*06",
+      "IGHV3-64D*08",
+      "IGHV3-64D*09",
+      "IGHV3-66*01",
+      "IGHV3-66*02",
+      "IGHV3-66*03",
+      "IGHV3-69-1*01",
+      "IGHV3-69-1*02",
+      "IGHV3-72*01",
+      "IGHV3-73*01",
+      "IGHV3-73*02",
+      "IGHV3-74*01",
+      "IGHV3-NL1*01",
+      "IGHV4-4*01",
+      "IGHV4-4*02",
+      "IGHV4-4*03",
+      "IGHV4-4*07",
+      "IGHV4-4*08",
+      "IGHV4-28*01",
+      "IGHV4-28*02",
+      "IGHV4-28*03",
+      "IGHV4-28*05",
+      "IGHV4-28*07",
+      "IGHV4-30-2*01",
+      "IGHV4-30-2*05",
+      "IGHV4-30-2*06",
+      "IGHV4-30-4*01",
+      "IGHV4-30-4*07",
+      "IGHV4-30-4*08",
+      "IGHV4-31*01",
+      "IGHV4-31*03",
+      "IGHV4-34*01",
+      "IGHV4-38-2*01",
+      "IGHV4-38-2*02",
+      "IGHV4-39*01",
+      "IGHV4-39*07",
+      "IGHV4-59*01",
+      "IGHV4-61*01",
+      "IGHV4-61*02",
+      "IGHV4-NL1*01",
+      "IGHV5-10-1*01",
+      "IGHV5-10-1*03",
+      "IGHV5-51*01",
+      "IGHV5-51*03",
+      "IGHV5-51*07",
+      "IGHV6-1*01",
+      "IGHV7-4-1*01",
+      "IGHV7-4-1*02",
+      "IGHV7-4-1*04",
+      "IGHV7-4-1*05",
+      "IGHV7-81*01",
+      "IGHV7-81*02",
+      "IGHV8-51-1*04",
+      "IGHV8-51-1*05"
+    ],
+    "D": [
+      "IGHD1-1*01",
+      "IGHD1-7*01",
+      "IGHD1-14*01",
+      "IGHD1-20*01",
+      "IGHD1-26*01",
+      "IGHD2-2*01",
+      "IGHD2-2*02",
+      "IGHD2-8*01",
+      "IGHD2-8*02",
+      "IGHD2-15*01",
+      "IGHD2-21*01",
+      "IGHD2-21*02",
+      "IGHD3-3*01",
+      "IGHD3-9*01",
+      "IGHD3-10*01",
+      "IGHD3-10*03",
+      "IGHD3-16*02",
+      "IGHD3-16*03",
+      "IGHD3-22*01",
+      "IGHD4-4*01",
+      "IGHD4-17*01",
+      "IGHD4-23*01",
+      "IGHD5-5*01",
+      "IGHD5-12*01",
+      "IGHD5-18*02",
+      "IGHD5-24*01",
+      "IGHD6-6*01",
+      "IGHD6-13*01",
+      "IGHD6-19*01",
+      "IGHD6-25*01",
+      "IGHD7-27*01"
+    ],
+    "J": [
+      "IGHJ1*01",
+      "IGHJ2*01",
+      "IGHJ3*02",
+      "IGHJ4*02",
+      "IGHJ5*02",
+      "IGHJ6*02",
+      "IGHJ6*03"
+    ]
+  },
+  "selected_record_observations": [
+    {
+      "label": "IGHV1-58*01",
+      "observation": "v_rss_start_inside_coding_interval",
+      "detail": "v_rs_start 324 lies inside the declared coding interval (gene_end - (v_rs_start - 1) = 115); RSS coordinates are not used by the observed-span projection, so the record is kept and the observation is retained"
+    }
+  ],
+  "omitted": [
+    {
+      "segment": "D",
+      "label": "IGHD4-11*01",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHD4-4*01, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "D",
+      "label": "IGHD5-18*01",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHD5-5*01, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV1-38-4*01",
+      "failed_rules": [
+        {
+          "rule": "v_imgt_104_is_cys",
+          "detail": "IMGT codon 104 is TAT"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV1-58*03",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV1-69*18",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV1-69*20",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV1-69D*01",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHV1-69*01, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV2-70*04",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHV2-70D*04, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-7*04",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-9*04",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-19*01",
+      "failed_rules": [
+        {
+          "rule": "provider_functional_true",
+          "detail": "functional is false"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-21*05",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-23D*01",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHV3-23*01, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-25*02",
+      "failed_rules": [
+        {
+          "rule": "provider_functional_true",
+          "detail": "functional is false"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-25*03",
+      "failed_rules": [
+        {
+          "rule": "provider_functional_true",
+          "detail": "functional is false"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-25*05",
+      "failed_rules": [
+        {
+          "rule": "provider_functional_true",
+          "detail": "functional is false"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-30*20",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-30*i02",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-30-3*03",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHV3-30*04, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-30-5*01",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHV3-30*18, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-30-5*02",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHV3-30*02, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-38*01",
+      "failed_rules": [
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-53*05",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV3-62*03",
+      "failed_rules": [
+        {
+          "rule": "provider_functional_true",
+          "detail": "functional is false"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-4*09",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-4*10",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-30-4*09",
+      "failed_rules": [
+        {
+          "rule": "explicit_record_in_both_variants",
+          "detail": "own record only in 'airr'; identical coding_sequence to IGHV4-31*03, which 'airr_ex' keeps as the record naming this label as a paralog"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-30-4*i02",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-31*11",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-39*08",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-39*09",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-39*i03",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-59*11",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-59*12",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-59*i03",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-61*10",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-61*11",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV4-61*i04",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV5-51*06",
+      "failed_rules": [
+        {
+          "rule": "variant_invariant_record",
+          "detail": "'airr_ex' differs in coding_sequence"
+        },
+        {
+          "rule": "not_tagged_likely_truncated",
+          "detail": "curational_tags is [\"likely_truncated\"]"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV6-1*03",
+      "failed_rules": [
+        {
+          "rule": "provider_functional_true",
+          "detail": "functional is false"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV8-51-1*02",
+      "failed_rules": [
+        {
+          "rule": "provider_functional_true",
+          "detail": "functional is false"
+        }
+      ]
+    },
+    {
+      "segment": "V",
+      "label": "IGHV8-51-1*03",
+      "failed_rules": [
+        {
+          "rule": "provider_functional_true",
+          "detail": "functional is false"
+        }
+      ]
+    }
+  ]
+}

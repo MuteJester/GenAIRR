@@ -1,0 +1,561 @@
+{
+  "schema": "genairr_reference_source_fixtures",
+  "schema_version": 1,
+  "description": "Exact OGRDB API v2 germline-set responses used as reference-import test fixtures. Every committed fixture is the complete response body as served, byte for byte; sha256 and bytes cover those bytes. Retrieval times describe acquisition only and are not part of any fixture's identity. Assets marked not_committed are recorded by digest only.",
+  "provider": {
+    "name": "Open Germline Receptor Database (OGRDB)",
+    "api": "OGRDB API v2.0.0",
+    "base_url": "https://ogrdb.airr-community.org/api_v2",
+    "url_pattern": "https://ogrdb.airr-community.org/api_v2/germline/set/{set_id}/{release}/{format}",
+    "documented_formats": [
+      "airr",
+      "airr_ex",
+      "gapped",
+      "gapped_ex",
+      "ungapped",
+      "ungapped_ex"
+    ],
+    "acquisition_client": "Python standard library urllib, 30 s socket timeout, 16 MiB read limit, no retries"
+  },
+  "data_licence": {
+    "applies_to": "germline-set content served by OGRDB (sequences, annotations, exports)",
+    "statement": "Information provided on this site is published under a CC0 (Creative Commons 0) license.",
+    "licence": "CC0 1.0 Universal",
+    "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+    "statement_url": "https://ogrdb.airr-community.org/render_page/licensing_statement.html",
+    "statement_retrieved_at_utc": "2026-10-22T10:01:37Z",
+    "statement_page_sha256": "1cf20853b6302f5ea3d55f322592821c513842f79ba8b61604931a2cdec7dbe7"
+  },
+  "software_licence": {
+    "applies_to": "OGRDB website and API source code, not the germline data. Each JSON export's 'Info.license' object names this software licence.",
+    "statement": "The website source code is published under a European Union Public License v. 1.2",
+    "licence": "European Union Public Licence 1.2",
+    "licence_url": "https://perma.cc/DK5U-NDVE",
+    "source_repository": "https://github.com/airr-community/ogrdb"
+  },
+  "citation": {
+    "requested_by_provider": "The current landscape of adaptive immune receptor genomic and repertoire data: OGRDB and VDJbase. Lees, Peres, Klein, Amos et al., Nucleic Acids Research, November 2025.",
+    "doi": "10.1093/nar/gkaf1094",
+    "statement_url": "https://ogrdb.airr-community.org/help",
+    "statement_retrieved_at_utc": "2026-10-22",
+    "statement_page_sha256": "99519094d6883fe8c29ac761b4073a45c187fc4e73746955fff8db34b3eebbc1",
+    "provider_note": "Individual sequences and submissions may have additional citation requirements listed on their respective pages.",
+    "set_level_pub_ids": "null in all three germline-set records"
+  },
+  "sets": [
+    {
+      "set_id": "9606.IGH_VDJ",
+      "release": 10,
+      "locus": "IGH",
+      "germline_set_id": "OGRDB:G00060",
+      "germline_set_ref": "OGRDB:IGH_VDJ.10",
+      "germline_set_name": {
+        "airr": "IGH_VDJ",
+        "airr_ex": "IGH_VDJ_extended"
+      },
+      "release_version": 10.0,
+      "release_date": "2026-05-27T00:00:00",
+      "release_description": "Added genomic evidence from VDJbase study P25 (PMID37479682)",
+      "author": "William Lees",
+      "species": {
+        "id": "NCBITAXON:9606",
+        "label": "Homo sapiens"
+      },
+      "pub_ids": null,
+      "assets": [
+        {
+          "format": "airr",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/airr",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/airr",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGH_VDJ_rev_10.json",
+          "retrieved_at_utc": "2026-10-22T09:58:15.582987+00:00",
+          "sha256": "6889fea1e2da71ff2bde50f8b5e055613319408977e913631c8e6d04f53d44b1",
+          "bytes": 1272259,
+          "role": "record export (AIRR germline JSON, no 3' extension, every identity as its own record)",
+          "fixture": "ogrdb/9606.IGH_VDJ/10/airr.json",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "airr_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/airr_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/airr_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGH_VDJ_rev_10_ex.json",
+          "retrieved_at_utc": "2026-10-22T09:58:18.217905+00:00",
+          "sha256": "251c5f13705b74f3bdaf6fc6f593616f433c710a766d8e54f9cbc9c2f1ac95d3",
+          "bytes": 1229243,
+          "role": "record export (AIRR germline JSON, '_ex' variant: identical coding sequences collapsed to one record naming the others as paralogs, provider 3' coding extensions appended)",
+          "fixture": "ogrdb/9606.IGH_VDJ/10/airr_ex.json",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "gapped",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/gapped",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/gapped",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGH_VDJ_rev_10_gapped.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:20.799409+00:00",
+          "sha256": "681db69932757bd09253cbef990a64959f8c8745e46f364bcb35963ea4f16a65",
+          "bytes": 72614,
+          "role": "V landmark corroboration (IMGT-gapped FASTA matching the 'airr' records)",
+          "fixture": "ogrdb/9606.IGH_VDJ/10/gapped.fasta",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "gapped_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/gapped_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/gapped_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGH_VDJ_rev_10_gapped_ex.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:21.815451+00:00",
+          "sha256": "2321eb5b788bf95103a2221eb327ef327c735e3e9427713c71285dcc6df81d9a",
+          "bytes": 70192,
+          "role": "V landmark corroboration (IMGT-gapped FASTA matching the 'airr_ex' records)",
+          "fixture": "ogrdb/9606.IGH_VDJ/10/gapped_ex.fasta",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "ungapped",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/ungapped",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/ungapped",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGH_VDJ_rev_10_ungapped.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:22.849927+00:00",
+          "sha256": "bd3266ed3e9cdb1ff93d993ad0a1eddb5e95e6af8d7ce8710cf4a778ebbcaf55",
+          "bytes": 67484,
+          "role": "observed only; not used by the interpretation profile",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only"
+        },
+        {
+          "format": "ungapped_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/ungapped_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10/ungapped_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGH_VDJ_rev_10_ungapped_ex.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:23.869731+00:00",
+          "sha256": "5beb005256e702a41ef78c359481d645ca7bcf7bb400b598830058aa278bb520",
+          "bytes": 65230,
+          "role": "observed only; not used by the interpretation profile",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only"
+        },
+        {
+          "format": null,
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/10",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGH_VDJ_rev_10_ex.json",
+          "retrieved_at_utc": "2026-10-22T09:58:24.929043+00:00",
+          "sha256": "251c5f13705b74f3bdaf6fc6f593616f433c710a766d8e54f9cbc9c2f1ac95d3",
+          "bytes": 1229243,
+          "role": "observed only; the release endpoint without a format suffix",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only",
+          "identical_bytes_to_format": "airr_ex"
+        }
+      ],
+      "repeat_observations": [
+        {
+          "format": "airr",
+          "retrieved_at_utc": "2026-10-22T10:10:32.986529+00:00",
+          "sha256": "6889fea1e2da71ff2bde50f8b5e055613319408977e913631c8e6d04f53d44b1",
+          "bytes": 1272259
+        },
+        {
+          "format": "airr_ex",
+          "retrieved_at_utc": "2026-10-22T10:10:35.436449+00:00",
+          "sha256": "251c5f13705b74f3bdaf6fc6f593616f433c710a766d8e54f9cbc9c2f1ac95d3",
+          "bytes": 1229243
+        },
+        {
+          "format": "gapped",
+          "retrieved_at_utc": "2026-10-22T10:10:38.035074+00:00",
+          "sha256": "681db69932757bd09253cbef990a64959f8c8745e46f364bcb35963ea4f16a65",
+          "bytes": 72614
+        },
+        {
+          "format": "gapped_ex",
+          "retrieved_at_utc": "2026-10-22T10:10:39.074540+00:00",
+          "sha256": "2321eb5b788bf95103a2221eb327ef327c735e3e9427713c71285dcc6df81d9a",
+          "bytes": 70192
+        },
+        {
+          "format": "airr_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/latest/airr_ex",
+          "retrieved_at_utc": "2026-10-22T10:04:32.639228+00:00",
+          "sha256": "251c5f13705b74f3bdaf6fc6f593616f433c710a766d8e54f9cbc9c2f1ac95d3",
+          "bytes": 1229243,
+          "note": "'latest' alias; identical bytes to this explicit release"
+        }
+      ]
+    },
+    {
+      "set_id": "9606.IGKappa_VJ",
+      "release": 5,
+      "locus": "IGK",
+      "germline_set_id": "OGRDB:G00061",
+      "germline_set_ref": "OGRDB:IGKappa_VJ.5",
+      "germline_set_name": {
+        "airr": "IGKappa_VJ",
+        "airr_ex": "IGKappa_VJ_extended"
+      },
+      "release_version": 5.0,
+      "release_date": "2026-05-27T00:00:00",
+      "release_description": "Added genomic evidence from VDJbase study P27 (PMID38844673)",
+      "author": "William Lees",
+      "species": {
+        "id": "NCBITAXON:9606",
+        "label": "Homo sapiens"
+      },
+      "pub_ids": null,
+      "assets": [
+        {
+          "format": "airr",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/airr",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/airr",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGKappa_VJ_rev_5.json",
+          "retrieved_at_utc": "2026-10-22T09:58:27.743633+00:00",
+          "sha256": "21e2b15a0a6d5a2e3f07ef00b4f3b03205b2182dbc1c5a32bdf7e803bf21178e",
+          "bytes": 433226,
+          "role": "record export (AIRR germline JSON, no 3' extension, every identity as its own record)",
+          "fixture": "ogrdb/9606.IGKappa_VJ/5/airr.json",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "airr_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/airr_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/airr_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGKappa_VJ_rev_5_ex.json",
+          "retrieved_at_utc": "2026-10-22T09:58:29.448748+00:00",
+          "sha256": "9a74d2a62626cd8b407aa8b9a97b7bbbe5f9362d4788500208354246823a66a0",
+          "bytes": 398897,
+          "role": "record export (AIRR germline JSON, '_ex' variant: identical coding sequences collapsed to one record naming the others as paralogs, provider 3' coding extensions appended)",
+          "fixture": "ogrdb/9606.IGKappa_VJ/5/airr_ex.json",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "gapped",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/gapped",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/gapped",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGKappa_VJ_rev_5_gapped.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:31.380515+00:00",
+          "sha256": "592ed2724a9f6c92d1f1c75ad900fd9de4389b6d8d5f32049f865613729a943f",
+          "bytes": 29388,
+          "role": "V landmark corroboration (IMGT-gapped FASTA matching the 'airr' records)",
+          "fixture": "ogrdb/9606.IGKappa_VJ/5/gapped.fasta",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "gapped_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/gapped_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/gapped_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGKappa_VJ_rev_5_gapped_ex.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:32.207834+00:00",
+          "sha256": "85718d1bc31ae718232f0eb042579a6aef8d8e9f85e9b69f0e52b33876737860",
+          "bytes": 27619,
+          "role": "V landmark corroboration (IMGT-gapped FASTA matching the 'airr_ex' records)",
+          "fixture": "ogrdb/9606.IGKappa_VJ/5/gapped_ex.fasta",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "ungapped",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/ungapped",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/ungapped",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGKappa_VJ_rev_5_ungapped.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:33.057614+00:00",
+          "sha256": "30a81704fa7614d8f1b758f3a28ac5f86b5ed890a8fd0ac5887fad21904e4ffd",
+          "bytes": 25768,
+          "role": "observed only; not used by the interpretation profile",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only"
+        },
+        {
+          "format": "ungapped_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/ungapped_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5/ungapped_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGKappa_VJ_rev_5_ungapped_ex.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:33.885819+00:00",
+          "sha256": "78f24cd89d3a9ff2bcd58efb82c4cb4f85dc56c7453bbda6c4840ee2acf3434c",
+          "bytes": 24209,
+          "role": "observed only; not used by the interpretation profile",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only"
+        },
+        {
+          "format": null,
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/5",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGKappa_VJ_rev_5_ex.json",
+          "retrieved_at_utc": "2026-10-22T09:58:34.694921+00:00",
+          "sha256": "9a74d2a62626cd8b407aa8b9a97b7bbbe5f9362d4788500208354246823a66a0",
+          "bytes": 398897,
+          "role": "observed only; the release endpoint without a format suffix",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only",
+          "identical_bytes_to_format": "airr_ex"
+        }
+      ],
+      "repeat_observations": [
+        {
+          "format": "airr",
+          "retrieved_at_utc": "2026-10-22T10:10:40.159870+00:00",
+          "sha256": "21e2b15a0a6d5a2e3f07ef00b4f3b03205b2182dbc1c5a32bdf7e803bf21178e",
+          "bytes": 433226
+        },
+        {
+          "format": "airr_ex",
+          "retrieved_at_utc": "2026-10-22T10:10:42.045495+00:00",
+          "sha256": "9a74d2a62626cd8b407aa8b9a97b7bbbe5f9362d4788500208354246823a66a0",
+          "bytes": 398897
+        },
+        {
+          "format": "gapped",
+          "retrieved_at_utc": "2026-10-22T10:10:43.935924+00:00",
+          "sha256": "592ed2724a9f6c92d1f1c75ad900fd9de4389b6d8d5f32049f865613729a943f",
+          "bytes": 29388
+        },
+        {
+          "format": "gapped_ex",
+          "retrieved_at_utc": "2026-10-22T10:10:44.777515+00:00",
+          "sha256": "85718d1bc31ae718232f0eb042579a6aef8d8e9f85e9b69f0e52b33876737860",
+          "bytes": 27619
+        },
+        {
+          "format": "airr_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/latest/airr_ex",
+          "retrieved_at_utc": "2026-10-22T10:04:30.887983+00:00",
+          "sha256": "9a74d2a62626cd8b407aa8b9a97b7bbbe5f9362d4788500208354246823a66a0",
+          "bytes": 398897,
+          "note": "'latest' alias; identical bytes to this explicit release"
+        }
+      ]
+    },
+    {
+      "set_id": "9606.IGLambda_VJ",
+      "release": 4,
+      "locus": "IGL",
+      "germline_set_id": "OGRDB:G00062",
+      "germline_set_ref": "OGRDB:IGLambda_VJ.4",
+      "germline_set_name": {
+        "airr": "IGLambda_VJ",
+        "airr_ex": "IGLambda_VJ_extended"
+      },
+      "release_version": 4.0,
+      "release_date": "2026-05-27T00:00:00",
+      "release_description": "Added genomic evidence from VDJbase study P26, including leaders/RSS for many sequences and additional alleles that currently have IUIS/IMGT names",
+      "author": "William Lees",
+      "species": {
+        "id": "NCBITAXON:9606",
+        "label": "Homo sapiens"
+      },
+      "pub_ids": null,
+      "assets": [
+        {
+          "format": "airr",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/airr",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/airr",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGLambda_VJ_rev_4.json",
+          "retrieved_at_utc": "2026-10-22T09:58:36.388751+00:00",
+          "sha256": "9e69fdb59d28cdd133a4ca502a87135f73e3dbd90a8d46eb82af98d36fb138fa",
+          "bytes": 488641,
+          "role": "record export (AIRR germline JSON, no 3' extension, every identity as its own record)",
+          "fixture": "ogrdb/9606.IGLambda_VJ/4/airr.json",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "airr_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/airr_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/airr_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGLambda_VJ_rev_4_ex.json",
+          "retrieved_at_utc": "2026-10-22T09:58:38.485889+00:00",
+          "sha256": "48aaf90d81377836901dda1013f4244cb00ecf1437092ab76d764534d647e9c5",
+          "bytes": 487033,
+          "role": "record export (AIRR germline JSON, '_ex' variant: identical coding sequences collapsed to one record naming the others as paralogs, provider 3' coding extensions appended)",
+          "fixture": "ogrdb/9606.IGLambda_VJ/4/airr_ex.json",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "gapped",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/gapped",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/gapped",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGLambda_VJ_rev_4_gapped.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:40.387427+00:00",
+          "sha256": "28533d72a46f343c95fc04a30a823a74b2591ab570fd185f57b73cce4f6deb1a",
+          "bytes": 32012,
+          "role": "V landmark corroboration (IMGT-gapped FASTA matching the 'airr' records)",
+          "fixture": "ogrdb/9606.IGLambda_VJ/4/gapped.fasta",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "gapped_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/gapped_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/gapped_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGLambda_VJ_rev_4_gapped_ex.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:41.236208+00:00",
+          "sha256": "7f956d8ebc9ccdd97e9f60460068f687360ef78fcf3b4df4e1bcfa061a36f41a",
+          "bytes": 31978,
+          "role": "V landmark corroboration (IMGT-gapped FASTA matching the 'airr_ex' records)",
+          "fixture": "ogrdb/9606.IGLambda_VJ/4/gapped_ex.fasta",
+          "fixture_content": "exact_full_response_bytes"
+        },
+        {
+          "format": "ungapped",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/ungapped",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/ungapped",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGLambda_VJ_rev_4_ungapped.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:42.049160+00:00",
+          "sha256": "178a6bd79a2f1777eac96a103c4eeaaa6834eee781e84755dd1d597ba626858f",
+          "bytes": 28289,
+          "role": "observed only; not used by the interpretation profile",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only"
+        },
+        {
+          "format": "ungapped_ex",
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/ungapped_ex",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4/ungapped_ex",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGLambda_VJ_rev_4_ungapped_ex.fasta",
+          "retrieved_at_utc": "2026-10-22T09:58:42.858269+00:00",
+          "sha256": "d3a9949dac9b48be4758d69d4f44c2047087d1708101a0c295b328e82ead86ec",
+          "bytes": 28255,
+          "role": "observed only; not used by the interpretation profile",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only"
+        },
+        {
+          "format": null,
+          "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4",
+          "final_url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/4",
+          "http_status": 200,
+          "content_type": "application/octet-stream",
+          "content_disposition": "attachment; filename=Homo sapiens_IGLambda_VJ_rev_4_ex.json",
+          "retrieved_at_utc": "2026-10-22T09:58:43.667916+00:00",
+          "sha256": "48aaf90d81377836901dda1013f4244cb00ecf1437092ab76d764534d647e9c5",
+          "bytes": 487033,
+          "role": "observed only; the release endpoint without a format suffix",
+          "fixture": null,
+          "fixture_content": "not_committed_digest_only",
+          "identical_bytes_to_format": "airr_ex"
+        }
+      ],
+      "repeat_observations": [
+        {
+          "format": "airr_ex",
+          "retrieved_at_utc": "2026-10-21T09:13:25.021920+00:00",
+          "sha256": "48aaf90d81377836901dda1013f4244cb00ecf1437092ab76d764534d647e9c5",
+          "bytes": 487033
+        },
+        {
+          "format": "airr",
+          "retrieved_at_utc": "2026-10-21T09:13:26.918350+00:00",
+          "sha256": "9e69fdb59d28cdd133a4ca502a87135f73e3dbd90a8d46eb82af98d36fb138fa",
+          "bytes": 488641
+        },
+        {
+          "format": null,
+          "retrieved_at_utc": "2026-10-21T09:13:28.833211+00:00",
+          "sha256": "48aaf90d81377836901dda1013f4244cb00ecf1437092ab76d764534d647e9c5",
+          "bytes": 487033
+        }
+      ]
+    }
+  ],
+  "listings": [
+    {
+      "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGH_VDJ/versions",
+      "retrieved_by_utc": "2026-10-22T09:57:52Z",
+      "sha256": "6fe9c017e69ea1d255b21a90f87a276bdb9d4cf74eb903698f0e9b20bd207738",
+      "bytes": 114,
+      "versions": [
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0
+      ]
+    },
+    {
+      "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGKappa_VJ/versions",
+      "retrieved_by_utc": "2026-10-22T09:57:52Z",
+      "sha256": "54fe6b1dd6c05ab887aec9b67f274eaadf49a13047f2f47153a11ddcd8a0f85a",
+      "bytes": 68,
+      "versions": [
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0
+      ]
+    },
+    {
+      "url": "https://ogrdb.airr-community.org/api_v2/germline/set/9606.IGLambda_VJ/versions",
+      "retrieved_by_utc": "2026-10-22T09:57:52Z",
+      "sha256": "cfc37bce64d1140fef9dd6264927ffee41094884d53d49eccc50a71e5ea2f81c",
+      "bytes": 59,
+      "versions": [
+        1.0,
+        2.0,
+        3.0,
+        4.0
+      ]
+    },
+    {
+      "url": "https://ogrdb.airr-community.org/api_v2/germline/sets/9606",
+      "retrieved_by_utc": "2026-10-22T09:57:52Z",
+      "sha256": "63707ebd2c6b485c3442e427a8f49ffae0545384248fd35913334ed22eec9237",
+      "bytes": 1095
+    },
+    {
+      "url": "https://ogrdb.airr-community.org/api_v2/germline/species",
+      "retrieved_by_utc": "2026-10-22T09:57:52Z",
+      "sha256": "81dfbeed061ac3dc95ef77d59a7112681434564f1c39492f0bf278090a4d1413",
+      "bytes": 355
+    },
+    {
+      "url": "https://ogrdb.airr-community.org/api_v2/info",
+      "retrieved_by_utc": "2026-10-22T09:57:52Z",
+      "sha256": "bf497fc317e6db33f9ae9bdc54e0f0f7db77e7c1e42ad94ac12f9f1799e4e786",
+      "bytes": 722
+    }
+  ]
+}
