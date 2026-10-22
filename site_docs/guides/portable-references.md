@@ -95,8 +95,10 @@ print(len(result), result.reference_content_hash == again.execution_hash)
 print(result.validate_records(again).ok)
 ```
 
-A path string is never read implicitly: `Experiment.on("my_igh.genairr-ref.json")`
-fails with an error that points you to `GenAIRR.Reference.read(path)`.
+A path is never read implicitly. `Experiment.on("my_igh.genairr-ref.json")`
+(any string ending in `.json`) or `Experiment.on(Path(...))` raises `TypeError`,
+and any other unknown name raises `ValueError`; both messages point you to
+`GenAIRR.Reference.read(path)`.
 
 ## The annotation sidecar
 
@@ -104,6 +106,8 @@ The sidecar is a JSON file with `"schema": "genairr_reference_annotations"`
 and `"schema_version": 1`. It has a `reference` header (name, version,
 locus, chain type, taxon, build date), a `conventions` block and an `alleles`
 list:
+
+The citation below is illustrative. `support: "source"` requires a real, checkable source.
 
 ```json
 {
@@ -288,8 +292,8 @@ ran against. A genotype run with novel alleles must be validated against
 
 | Use | Behaviour |
 |---|---|
-| `with_genotype(...)` or `run_cohort(...)` on a `Reference` | Raises `ReferenceArtifactError` (`kind == "capability"`): "genotype- and cohort-constrained runs are not yet supported for portable references". |
-| Family-replay capture (`capture_family_replay=True`) | Rejected before sampling: "not yet supported for portable references". |
+| `with_genotype(...)` or `run_cohort(...)` on a `Reference` | Raises `GenAIRR.ReferenceCapabilityError` (a subclass of `ReferenceArtifactError`, `kind == "capability"`): "genotype- and cohort-constrained runs are not yet supported for portable references". |
+| Family-replay capture (`capture_family_replay=True`) | Rejected before sampling with `GenAIRR.experimental.FamilyReplayError` (category `"unsupported"`): "family-replay capture is not yet supported for portable references". |
 
 ## Errors
 
@@ -302,7 +306,7 @@ ran against. A genotype run with novel alleles must be validated against
 | `unsupported_convention` | A declared convention (coordinates, alignment) is not supported. |
 | `conflict` | An annotation contradicts the catalogue, for example a sidecar entry whose digest matches no accepted sequence. |
 | `integrity` | A value is inconsistent with its sequence (for example an anchor out of bounds) or a stored file fails its checksum. |
-| `capability` | A requested use is not supported. |
+| `capability` | A requested use is not supported (raised as the subclass `ReferenceCapabilityError`). |
 | `empty_selection` | No allele of a segment was accepted, so nothing can run. |
 | `io` | A file cannot be read or written (including refusing to overwrite an existing file). |
 
