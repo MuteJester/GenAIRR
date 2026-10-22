@@ -88,6 +88,27 @@ def test_crlf_fasta_matches_lf(tmp_path):
     assert all("\r" not in r.header for r in crlf.records)
 
 
+def test_bom_fasta_matches_plain(tmp_path):
+    plain = run(tmp_path, f">a desc\n{V_SEQ}\n")
+    bom_dir = tmp_path / "bom"
+    bom_dir.mkdir()
+    bom = run(bom_dir, f"\ufeff>a desc\n{V_SEQ}\n", j=f"\ufeff>J1\n{J_SEQ}\n")
+
+    def without_source_bytes(cat):
+        out = cat.to_dict()
+        for source in out["sources"]:
+            del source["sha256"], source["bytes"]
+        return out
+
+    assert without_source_bytes(bom) == without_source_bytes(plain)
+    # The source digest stays over the raw bytes, BOM included.
+    raw = (bom_dir / "v.fasta").read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+    (v_source,) = [s for s in bom.sources if s.id == "src:V"]
+    assert v_source.sha256 == "sha256:" + hashlib.sha256(raw).hexdigest()
+    assert v_source.bytes == len(raw) == len((tmp_path / "v.fasta").read_bytes()) + 3
+
+
 def test_imgt_pipe_header_label(tmp_path):
     header = ">X1|IGHV1-2*02|Homo sapiens|F|V-REGION|1..296|296 nt|1| | | | |296+0=296| | |"
     cat = run(tmp_path, f"{header}\n{V_SEQ.lower()}\n")

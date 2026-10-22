@@ -21,7 +21,9 @@ set. For the cartridge route (with fitted models and the full builder), see
 
 The examples below assume four files in the working directory: `v.fasta`,
 `d.fasta`, `j.fasta` and `annotations.json`. Omit `d` for a VJ chain
-(light chain, TRA, TRG).
+(light chain, TRA, TRG). FASTA files are read as UTF-8. A leading byte-order
+mark and Windows (CRLF) line endings are accepted and do not change the
+alleles; the recorded source digest is still over the file's exact bytes.
 
 ### 1. Generate a template
 

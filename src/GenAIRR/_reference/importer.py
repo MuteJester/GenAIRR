@@ -52,7 +52,12 @@ def _label_of(header: str) -> str:
 
 
 def _parse_fasta(text: str, name: str):
-    """Yield ``(header, raw_sequence)`` pairs in file order."""
+    """Yield ``(header, raw_sequence)`` pairs in file order.
+
+    One leading UTF-8 byte-order mark is ignored; the source digest stays over the raw bytes.
+    """
+    if text.startswith("﻿"):
+        text = text[1:]
     records = []
     header = None
     parts: list = []
