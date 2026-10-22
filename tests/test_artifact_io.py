@@ -2,6 +2,7 @@ import contextlib
 import errno
 import json
 import os
+import pathlib
 import stat
 
 import pytest
@@ -33,9 +34,9 @@ def test_strict_loads_rejects_trailing_and_nonfinite():
 
 
 def test_strict_loads_strips_one_bom():
-    assert strict_loads("﻿" + '{"a":1}', max_bytes=1000) == {"a": 1}
+    assert strict_loads("\ufeff" + '{"a":1}', max_bytes=1000) == {"a": 1}
     with pytest.raises(ArtifactIOError):
-        strict_loads("﻿﻿" + '{"a":1}', max_bytes=1000)
+        strict_loads("\ufeff\ufeff" + '{"a":1}', max_bytes=1000)
 
 
 def test_typed_digest_ignores_key_order():
@@ -133,9 +134,12 @@ def test_write_atomic_skips_an_existing_temporary_name(tmp_path, monkeypatch):
 
 
 
-def test_artifact_io_source_has_no_literal_byte_order_mark():
-    source = open(_artifact_io.__file__, "rb").read()
-    assert b"\xef\xbb\xbf" not in source
+def test_package_sources_have_no_literal_byte_order_mark():
+    # An invisible U+FEFF in source is easy to lose or duplicate; it is spelled as an escape.
+    package = pathlib.Path(_artifact_io.__file__).parent
+    sources = sorted(package.rglob("*.py"))
+    assert pathlib.Path(_artifact_io.__file__) in sources
+    assert [str(p.relative_to(package)) for p in sources if b"\xef\xbb\xbf" in p.read_bytes()] == []
 
 
 # ── Filesystems without hard links (FAT/exFAT, some SMB shares) ────────

@@ -57,7 +57,7 @@ def test_minimal_sidecar_loads():
 
 
 def test_sidecar_with_bom_loads():
-    assert load_sidecar("﻿" + json.dumps(minimal_sidecar()))["schema_version"] == 1
+    assert load_sidecar("\ufeff" + json.dumps(minimal_sidecar()))["schema_version"] == 1
 
 
 def test_unknown_key_rejected_at_every_level():

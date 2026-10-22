@@ -56,7 +56,7 @@ def _parse_fasta(text: str, name: str):
 
     One leading UTF-8 byte-order mark is ignored; the source digest stays over the raw bytes.
     """
-    if text.startswith("﻿"):
+    if text.startswith("\ufeff"):
         text = text[1:]
     records = []
     header = None
