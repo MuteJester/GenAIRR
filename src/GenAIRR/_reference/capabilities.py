@@ -22,6 +22,8 @@ CAPABILITIES = (
 _EVIDENCE_RANK = {"assertion": 1, "source": 2}
 _UNSUPPORTED_NOTE = "not yet supported for portable references"
 _ANCHOR_HINT = 'add an "anchor" annotation (support "source" with a citation, or "assertion")'
+_ASSERTED_ANCHOR_HINT = ('anchor is an author assertion; add support "source" with a citation '
+                         'to reach a source-backed annotation')
 _BOUNDARY_HINT = 'add "{p}": {{"value": "complete", ...}} with its support'
 _J_RESIDUE = {"IGH": {"W"}, "IGK": {"F"}, "IGL": {"F"}, "TRA": {"F"}, "TRB": {"F"},
               "TRG": {"F"}, "TRD": {"F"}}
@@ -166,20 +168,26 @@ def evaluate(catalogue: Catalogue, view: dict, *, native_fatal: Sequence[dict] =
     view_unmet = [u for u in unmet if u.requirement.startswith("at least one") and
                   not u.requirement.endswith("D allele")]
 
-    # Junction anchors.
-    junction_unmet, anchor_claims, anchors = list(view_unmet), [], {}
+    # Junction anchors: every V and J needs an accepted anchor of any support; a
+    # source-annotated junction additionally needs every accepted anchor claim to be
+    # source-supported.
+    missing_unmet, junction_unmet, anchor_claims, anchors = list(view_unmet), list(view_unmet), [], {}
     for aid in vs + js:
         claims = _usable(catalogue, aid, "anchor")
         if claims:
             anchor_claims.extend(claims)
             anchors[aid] = claims[0].value
+            if _weakest(claims) != "source":
+                junction_unmet.append(Unmet(aid, "anchor", _ASSERTED_ANCHOR_HINT))
         else:
-            junction_unmet.append(Unmet(aid, "accepted anchor", _anchor_hint(catalogue, aid)))
-    add("source_annotated_junction", junction_unmet, _weakest(anchor_claims))
+            missing = Unmet(aid, "accepted anchor", _anchor_hint(catalogue, aid))
+            missing_unmet.append(missing)
+            junction_unmet.append(missing)
+    add("source_annotated_junction", junction_unmet, "source")
 
     # Canonical productive.
     expected = _J_RESIDUE.get(catalogue.header.locus, {"F", "W"})
-    canon = list(junction_unmet)
+    canon = list(missing_unmet)
     for aid in vs:
         if aid in anchors and _codon(catalogue, aid, anchors[aid]) != "C":
             canon.append(Unmet(aid, "V anchor codon encodes C",

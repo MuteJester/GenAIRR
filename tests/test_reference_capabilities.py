@@ -60,6 +60,50 @@ def test_assertion_anchor_downgrades_evidence():
     assert r.available(evidence="source") == ("catalogue_inspection", "observed_span_simulation")
 
 
+ASSERTED_ANCHOR_HINT = ('anchor is an author assertion; add support "source" with a citation '
+                        'to reach a source-backed annotation')
+
+
+def test_source_annotated_junction_requires_source_backed_anchors():
+    r = evaluate(build(anchors(support="assertion")), VIEW)
+    st = r.status("source_annotated_junction")
+    assert not st.available and st.evidence is None
+    assert [(u.allele, u.requirement, u.hint) for u in st.unmet] == [
+        ("V:V1", "anchor", ASSERTED_ANCHOR_HINT), ("J:J1", "anchor", ASSERTED_ANCHOR_HINT)]
+    assert "source_annotated_junction" not in r.available()
+    assert f"- V:V1: anchor — {ASSERTED_ANCHOR_HINT}" in r.explain()
+    # One assertion-only anchor is enough to make it unavailable; only that allele is named.
+    r = evaluate(build([claim("V:V1", "anchor", 3, "source"), claim("J:J1", "anchor", 0, "assertion")]), VIEW)
+    st = r.status("source_annotated_junction")
+    assert not st.available
+    assert [(u.allele, u.requirement) for u in st.unmet] == [("J:J1", "anchor")]
+    # A source anchor that agrees with an assertion is still not source-backed.
+    r = evaluate(build(anchors() + [claim("J:J1", "anchor", 0, "assertion")]), VIEW)
+    assert [(u.allele, u.requirement) for u in r.status("source_annotated_junction").unmet] == [
+        ("J:J1", "anchor")]
+    # Source anchors: available, with source evidence.
+    st = evaluate(build(anchors()), VIEW).status("source_annotated_junction")
+    assert st.available and st.evidence == "source"
+
+
+def test_canonical_productive_does_not_need_source_backed_anchors():
+    r = evaluate(build(anchors(support="assertion")), VIEW)
+    st = r.status("canonical_productive")
+    assert st.available and st.evidence == "assertion" and st.unmet == ()
+    assert st.note == "phase support: none"
+    assert r.available() == ("catalogue_inspection", "observed_span_simulation", "canonical_productive")
+
+
+def test_missing_and_asserted_anchors_are_listed_separately():
+    r = evaluate(build([claim("V:V1", "anchor", 3, "assertion")]), VIEW)
+    junction = r.status("source_annotated_junction")
+    assert [(u.allele, u.requirement) for u in junction.unmet] == [
+        ("V:V1", "anchor"), ("J:J1", "accepted anchor")]
+    canonical = r.status("canonical_productive")
+    assert not canonical.available
+    assert [(u.allele, u.requirement) for u in canonical.unmet] == [("J:J1", "accepted anchor")]
+
+
 def test_unsupported_complete_boundary_is_assertion_level_only():
     cl = [claim("V:V1", "boundary_3", "complete", "assertion"),
           claim("J:J1", "boundary_5", "complete", "source"),

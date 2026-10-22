@@ -208,8 +208,8 @@ the sequence.
 |---|---|
 | `catalogue_inspection` | Always available. |
 | `observed_span_simulation` | At least one accepted V and J allele (and D for a VDJ chain). |
-| `source_annotated_junction` | An accepted anchor for every V and J allele. |
-| `canonical_productive` | Accepted anchors, with the V anchor codon encoding C and the J anchor codon encoding the locus residue (W for IGH, F otherwise). |
+| `source_annotated_junction` | A source-backed anchor for every V and J allele: every accepted anchor claim has `support: "source"` with a citation. Assertion-only anchors do not count. |
+| `canonical_productive` | An accepted anchor of any support for every V and J allele, with the V anchor codon encoding C and the J anchor codon encoding the locus residue (W for IGH, F otherwise). |
 | `original_coding_ends` | `boundary_3: "complete"` on V and `boundary_5: "complete"` on J (and complete D ends). |
 | `complete_reference_span` | Complete `boundary_5` and `boundary_3` on every V and J allele. |
 | `genotype_constrained` | Not yet supported for portable references. |
@@ -228,10 +228,22 @@ ref.require("observed_span_simulation", evidence="source")       # needs source-
 `require` raises `GenAIRR.ReferenceCapabilityError` with the full
 explanation when a capability is missing or too weakly supported.
 
+For example, a human IGH reference whose annotations are all assertions, with
+anchors on every V and J, complete V 3′ ends, complete J 5′ ends and complete D
+ends, gives:
+
+```text
+('catalogue_inspection', 'observed_span_simulation', 'canonical_productive', 'original_coding_ends')
+```
+
+`source_annotated_junction` is not in that list because its anchors are
+assertions. Each V and J allele is listed as unmet with the hint
+`anchor is an author assertion; add support "source" with a citation to reach a source-backed annotation`.
+
 ### Worked example: a light chain with partial evidence
 
 This IGK example has two V and two J alleles, but only
-`kappa_v_a` and `kappa_j_1` have anchors.
+`kappa_v_a` and `kappa_j_1` have anchors, and both are assertions.
 
 ```python
 igk = Reference.from_fasta(v="igk/v.fasta", j="igk/j.fasta", annotations="igk/annotations.json")
@@ -241,8 +253,10 @@ print(igk.capabilities().explain())
 ```text
 available   catalogue_inspection
 available   observed_span_simulation
-unavailable source_annotated_junction: 2 requirement(s) unmet
+unavailable source_annotated_junction: 4 requirement(s) unmet
+- V:kappa_v_a: anchor — anchor is an author assertion; add support "source" with a citation to reach a source-backed annotation
 - V:kappa_v_b: accepted anchor — add an "anchor" annotation (support "source" with a citation, or "assertion")
+- J:kappa_j_1: anchor — anchor is an author assertion; add support "source" with a citation to reach a source-backed annotation
 - J:kappa_j_2: accepted anchor — add an "anchor" annotation (support "source" with a citation, or "assertion"); candidate at 8 (unique J motif) — copy it only if your evidence confirms it
 unavailable canonical_productive: 2 requirement(s) unmet
 - V:kappa_v_b: accepted anchor — add an "anchor" annotation (support "source" with a citation, or "assertion")

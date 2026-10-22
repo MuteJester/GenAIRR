@@ -186,8 +186,8 @@ def test_igh_identity_and_annotations(igh):
 
 def test_igh_capabilities_and_evidence_levels(igh):
     caps = igh.capabilities()
-    assert caps.available() == ("catalogue_inspection", "observed_span_simulation", "source_annotated_junction",
-                                "canonical_productive", "original_coding_ends")
+    assert caps.available() == ("catalogue_inspection", "observed_span_simulation", "canonical_productive",
+                                "original_coding_ends")
     for name in caps.available():
         status = caps.status(name)
         if name in ("catalogue_inspection", "observed_span_simulation"):
@@ -203,10 +203,18 @@ def test_igh_capabilities_and_evidence_levels(igh):
         [(f"V:{label}", 'accepted boundary_5 == "complete"') for label in IGH_V]
         + [(f"J:{label}", 'accepted boundary_3 == "complete"') for label in IGH_J])
 
+    # Every anchor is an assertion, so the junction is not source-annotated.
+    junction = caps.status("source_annotated_junction")
+    assert not junction.available and junction.evidence is None
+    assert [(u.allele, u.requirement) for u in junction.unmet] == (
+        [(f"V:{label}", "anchor") for label in IGH_V] + [(f"J:{label}", "anchor") for label in IGH_J])
+
     igh.require("observed_span_simulation", "canonical_productive", "original_coding_ends")
     igh.require("observed_span_simulation", evidence="source")
     with pytest.raises(ReferenceCapabilityError):
         igh.require("canonical_productive", evidence="source")
+    with pytest.raises(ReferenceCapabilityError):
+        igh.require("source_annotated_junction")
     with pytest.raises(ReferenceCapabilityError):
         igh.require("complete_reference_span")
 

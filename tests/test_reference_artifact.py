@@ -568,13 +568,16 @@ def test_require_evidence_levels(tmp_path):
     ref = build(tmp_path / "mixed")
     ref.require()
     ref.require("catalogue_inspection", "observed_span_simulation", evidence="source")
-    ref.require("source_annotated_junction", "canonical_productive")
-    assert ref.capabilities().status("source_annotated_junction").evidence == "assertion"
-    with pytest.raises(ReferenceCapabilityError) as e:
-        ref.require("catalogue_inspection", "source_annotated_junction", evidence="source")
-    assert isinstance(e.value, ReferenceArtifactError)
-    assert e.value.kind == "capability" and e.value.path == "source_annotated_junction"
-    assert e.value.message == ref.capabilities().explain()
+    ref.require("canonical_productive")
+    assert ref.capabilities().status("canonical_productive").evidence == "assertion"
+    # Most anchors are the author's assertions, so the junction is not source-annotated.
+    assert not ref.capabilities().status("source_annotated_junction").available
+    for evidence in ("assertion", "source"):
+        with pytest.raises(ReferenceCapabilityError) as e:
+            ref.require("catalogue_inspection", "source_annotated_junction", evidence=evidence)
+        assert isinstance(e.value, ReferenceArtifactError)
+        assert e.value.kind == "capability" and e.value.path == "source_annotated_junction"
+        assert e.value.message == ref.capabilities().explain()
     with pytest.raises(ReferenceCapabilityError) as e:
         ref.require("original_coding_ends")
     assert e.value.path == "original_coding_ends"
