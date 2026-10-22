@@ -589,15 +589,25 @@ class Catalogue:
         for i, e in enumerate(self.entities):
             if e.executable:
                 raise _bad(f"entities[{i}].executable", "entities are not executable", "integrity")
+            problem = check_label(e.name)
+            if problem:
+                raise _bad(f"entities[{i}].name", problem, "integrity")
         for i, rel in enumerate(self.relationships):
             p = f"relationships[{i}]"
             allele = alleles.get(rel.allele)
             if allele is None:
                 raise _bad(f"{p}.allele", f"unknown allele {rel.allele!r}", "integrity")
-            entity = entities.get(rel.entity)
-            if entity is None:
-                raise _bad(f"{p}.entity", f"unknown entity {rel.entity!r}", "integrity")
-            if rel.kind == "alias" and entity.name != allele.label:
-                if any(o.segment == allele.segment and o.label == entity.name for o in self.alleles):
-                    raise _bad(f"{p}.entity", f"alias {entity.name!r} targets another executable allele label",
-                               "integrity")
+            # The target is a named entity, or an executable allele of the same segment.
+            if rel.entity in entities:
+                name = entities[rel.entity].name
+            elif rel.entity in alleles and alleles[rel.entity].segment == allele.segment:
+                name = alleles[rel.entity].label
+            else:
+                raise _bad(f"{p}.entity", f"unknown entity {rel.entity!r}; expected an entity id or an "
+                           f"executable {allele.segment} allele id", "integrity")
+            if name == allele.label:
+                raise _bad(f"{p}.entity", f"{rel.kind} of {allele.id} names its own label", "integrity")
+            if rel.kind == "alias" and any(o.segment == allele.segment and o.label == name
+                                           for o in self.alleles):
+                raise _bad(f"{p}.entity", f"alias {name!r} targets another executable allele label",
+                           "integrity")

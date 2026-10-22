@@ -180,6 +180,45 @@ def test_paralogs_with_identical_sequences_stay_separate(tmp_path):
     assert [r.kind for r in cat.relationships] == ["paralog"]
 
 
+def test_paralog_to_an_executable_allele_links_the_two_alleles(tmp_path):
+    # "b" is an accepted V label, so the relationship names the allele V:b; no entity is created.
+    side = sidecar(relationships=[{"kind": "paralog", "allele": "V:a", "entity": "b", "source": "s"}])
+    cat = run(tmp_path, f">a\n{V_SEQ}\n>b\n{V_SEQ}AC\n", side=side)
+    assert [a.id for a in cat.alleles if a.segment == "V"] == ["V:a", "V:b"]
+    assert cat.entities == ()
+    assert [r.to_dict() for r in cat.relationships] == [
+        {"kind": "paralog", "allele": "V:a", "entity": "V:b", "source": "s"}]
+    assert Catalogue.from_dict(copy.deepcopy(cat.to_dict())).digest() == cat.digest()
+    # A J label "b" is a different allele: the V-side relationship still names V:b.
+    other = run(tmp_path / ".", f">a\n{V_SEQ}\n>b\n{V_SEQ}AC\n", j=f">b\n{J_SEQ}\n", side=side)
+    assert other.relationships[0].entity == "V:b" and other.entities == ()
+
+
+def test_paralog_to_a_name_in_another_segment_is_an_entity(tmp_path):
+    side = sidecar(relationships=[{"kind": "paralog", "allele": "V:a", "entity": "J1", "source": None}])
+    cat = run(tmp_path, f">a\n{V_SEQ}\n", side=side)
+    assert [(e.id, e.name, e.executable) for e in cat.entities] == [("entity:J1", "J1", False)]
+    assert cat.relationships[0].entity == "entity:J1"
+
+
+@pytest.mark.parametrize("kind", ["alias", "paralog"])
+def test_relationship_to_its_own_label_is_conflict(tmp_path, kind):
+    side = sidecar(relationships=[{"kind": kind, "allele": "V:a", "entity": "a", "source": None}])
+    with pytest.raises(ReferenceArtifactError) as err:
+        run(tmp_path, f">a\n{V_SEQ}\n", side=side)
+    assert err.value.kind == "conflict"
+    assert err.value.path == "relationships[0].entity"
+    assert "V:a" in err.value.message and "its own label" in err.value.message
+
+
+def test_relationship_entity_name_must_be_a_valid_label(tmp_path):
+    for name in ("lab name", "a,b", "x" * 257):
+        side = sidecar(relationships=[{"kind": "alias", "allele": "V:a", "entity": name, "source": None}])
+        with pytest.raises(ReferenceArtifactError) as err:
+            run(tmp_path, f">a\n{V_SEQ}\n", side=side)
+        assert err.value.kind == "malformed" and err.value.path == "relationships[0].entity", name
+
+
 def test_relationship_only_entity_not_executable(tmp_path):
     side = sidecar(relationships=[{"kind": "alias", "allele": "V:a", "entity": "lab_name", "source": "s"}])
     cat = run(tmp_path, f">a\n{V_SEQ}\n", side=side)
@@ -279,12 +318,14 @@ def _import_scenarios(tmp):
 
 
 # Catalogue digests captured from import_local before its derivation was shared with the loader.
+# "paralog" was re-pinned when a relationship to an accepted label of the same segment began
+# to name that allele ("V:b") instead of a non-executable entity of the same name.
 _IMPORT_DIGESTS = {
     "accounting": "sha256:79a8ef54b0e7987a61af84bb99747671489fb93a2cdbf82cc66af0c2df4ee0c7",
     "aligned_agree": "sha256:220270433ffb217fe4388118e58d538c661d72c56565d76d98f74201fd4ffc6f",
     "aligned_conflict": "sha256:cece9b910d86a8950a9ec06a68c69318b665e6899681452ddb0709ce6063a2ec",
     "motif": "sha256:6373c71b44c3a99e73393332c6f352ba82d3a23a1a2c396ca68e013fabca5b4e",
-    "paralog": "sha256:ba2ed73b136db9d4bd60d2971b51c1346eecf9affcc212e4ef9bf27698417dee",
+    "paralog": "sha256:10d684fd9c54e9dd1be260025dd37394111b5e20ac4cce491b00c5eae4b77ce1",
     "genes": "sha256:af1af89d5361371db83f098bd0b4a4334c65ddad89ff2dfbe722bc86ac481d04",
     "vdj": "sha256:4f6b36bd6023f6416c61b23dd59a8d662581a3d2b13737d1fdd45757b0c89f88",
 }

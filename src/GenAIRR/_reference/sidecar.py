@@ -126,7 +126,9 @@ def load_sidecar(text: str) -> dict:
         _obj(rel, ("kind", "allele", "entity", "source"), path)
         _enum(rel["kind"], ("alias", "paralog"), f"{path}.kind")
         _allele_id(rel["allele"], f"{path}.allele")
-        _str(rel["entity"], f"{path}.entity", nonblank=True)
+        problem = check_label(_str(rel["entity"], f"{path}.entity"))
+        if problem:
+            raise _bad(f"{path}.entity", problem)
         _str(rel["source"], f"{path}.source", optional=True)
 
     for i, sug in enumerate(_list(doc.get("suggestions", []), "suggestions")):

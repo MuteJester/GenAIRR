@@ -763,6 +763,34 @@ def test_recommitted_entities_relationships_and_genes_regenerated(tmp_path):
     assert err.path == "catalogue.alleles[0].gene"
 
 
+
+def test_paralog_between_executable_alleles_links_alleles_without_an_entity(tmp_path):
+    from GenAIRR._reference.importer import regenerate
+
+    rel = {"kind": "paralog", "allele": "V:IGHV1-2*02", "entity": "IGHV1-3*01", "source": None}
+    ref = build(tmp_path, relationships=[rel])
+    assert ref.entities == ()
+    assert {"V:IGHV1-2*02", "V:IGHV1-3*01"} <= {f"{a.segment}:{a.label}" for a in ref.alleles}
+    report = ref.report()
+    assert [r.to_dict() for r in report.relationships] == [
+        {"kind": "paralog", "allele": "V:IGHV1-2*02", "entity": "V:IGHV1-3*01", "source": None}]
+    lines = str(report).splitlines()
+    assert "  V:IGHV1-2*02 paralog of V:IGHV1-3*01" in lines
+    entities_at = lines.index("Entities (named, not executable)")
+    assert lines[entities_at + 1] == "  (none)"
+    assert not any(line.startswith("  IGHV1-3*01:") for line in lines)
+    again = Reference.from_json(ref.to_json())
+    assert again.to_json() == ref.to_json()
+    derived = regenerate(ref._catalogue)
+    assert (derived.relationships, derived.entities) == (ref._catalogue.relationships, ())
+    # The earlier representation (a phantom entity named like the allele) does not load.
+    doc = doc_of(ref)
+    doc["catalogue"]["entities"] = [{"id": "entity:IGHV1-3*01", "name": "IGHV1-3*01", "executable": False}]
+    doc["catalogue"]["relationships"][0]["entity"] = "entity:IGHV1-3*01"
+    err = rejected(_full_recommit(doc), "integrity", "relationship")
+    assert err.path.startswith("catalogue.relationships")
+
+
 # ── Empty selections ─────────────────────────────────────────────────
 
 EMPTY = {"V": f">v_n\n{V_BAD}\n>v_e\n\n>v,comma\n{V1}\n>v_n2\nACGN\n",

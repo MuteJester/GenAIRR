@@ -400,3 +400,54 @@ def test_derived_gene_must_follow_label():
     d["alleles"][0].update(gene="kv", gene_basis="label")
     with pytest.raises(ReferenceArtifactError):
         Catalogue.from_dict(d)
+
+
+def _with_second_v(d):
+    """Add an accepted V allele ``kv_b`` with its own record."""
+    d["records"].append({"id": "rec:V:3", "source": "src:V", "index": 3, "header": "kv_b", "label": "kv_b",
+                         "status": "accepted", "reason": None, "allele": "V:kv_b", "duplicate_of": None})
+    d["alleles"].insert(1, dict(copy.deepcopy(d["alleles"][0]), id="V:kv_b", label="kv_b",
+                                gapped_sequence=None, records=["rec:V:3"]))
+    return d
+
+
+def test_relationship_may_name_an_executable_allele_of_the_same_segment():
+    d = _with_second_v(catalogue_dict())
+    d["relationships"].append({"kind": "paralog", "allele": "V:kv_a", "entity": "V:kv_b", "source": None})
+    cat = Catalogue.from_dict(d)
+    assert [r.entity for r in cat.relationships] == ["ent:lab_v1", "V:kv_b"]
+
+
+@pytest.mark.parametrize("change, message", [
+    # A relationship naming its own allele, by id or through an entity of the same name.
+    (lambda d: d["relationships"].__setitem__(0, dict(d["relationships"][0], entity="V:kv_a")), "own label"),
+    (lambda d: d["entities"][0].__setitem__("name", "kv_a"), "own label"),
+    (lambda d: d["relationships"].__setitem__(0, dict(d["relationships"][0], kind="paralog", entity="V:kv_a")),
+     "own label"),
+    # An alias naming another executable allele, by id or through an entity of that name.
+    (lambda d: d["relationships"].__setitem__(0, dict(d["relationships"][0], entity="V:kv_b")),
+     "another executable allele"),
+    (lambda d: d["entities"][0].__setitem__("name", "kv_b"), "another executable allele"),
+    # An allele id from another segment is neither an entity nor an allele of this segment.
+    (lambda d: d["relationships"].__setitem__(0, dict(d["relationships"][0], kind="paralog", entity="J:kj_a")),
+     "unknown entity"),
+    # Entity names follow the label rules.
+    (lambda d: d["entities"][0].__setitem__("name", "lab v1"), "whitespace"),
+])
+def test_relationship_targets_checked_on_load(change, message):
+    d = _with_second_v(catalogue_dict())
+    Catalogue.from_dict(copy.deepcopy(d))
+    change(d)
+    with pytest.raises(ReferenceArtifactError) as e:
+        Catalogue.from_dict(d)
+    assert e.value.kind == "integrity", str(e.value)
+    assert message in e.value.message, str(e.value)
+
+
+def test_relationship_entity_name_validated_in_sidecar():
+    for name in ("lab v1", "a,b", "x" * 257, "a​b"):
+        d = minimal_sidecar()
+        d["relationships"][0]["entity"] = name
+        with pytest.raises(ReferenceArtifactError) as e:
+            load(d)
+        assert e.value.kind == "malformed" and e.value.path == "relationships[0].entity", name

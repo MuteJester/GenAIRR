@@ -233,6 +233,11 @@ class ReferenceReport:
             lines.append(f"  {e.name}: {', '.join(links) or 'no relationship'}")
         if not self.entities:
             lines.append("  (none)")
+        entity_ids = {e.id for e in self.entities}
+        allele_links = [r for r in self.relationships if r.entity not in entity_ids]
+        if allele_links:
+            lines.append("Relationships between alleles (both executable)")
+            lines.extend(f"  {r.allele} {r.kind} of {r.entity}" for r in allele_links)
         lines.append("Findings")
         lines.extend(f"  {f.kind}: {', '.join(f.subjects)} — {f.detail}" for f in self.findings)
         if not self.findings:

@@ -255,12 +255,14 @@ def derive_content(*, alleles, sidecar_claims, sidecar_relationships, locus: str
     """Compute every derived part of a catalogue from its base data.
 
     ``sidecar_claims`` are the author's annotations (all ``accepted``), in sidecar order;
-    ``sidecar_relationships`` are sidecar-shaped relationship dicts naming entities.
-    Claims are the sidecar claims followed, in allele order, by the anchor and subregion
-    claims of a declared IMGT alignment (V) and unique-motif anchor candidates (J);
-    stated and alignment anchors that disagree are all marked ``conflict``.  Entities are
-    one non-executable entity per distinct relationship name, in relationship order.
-    Findings flag identical sequences under different labels, per segment.
+    ``sidecar_relationships`` are sidecar-shaped relationship dicts, each naming its
+    target by name.  Claims are the sidecar claims followed, in allele order, by the
+    anchor and subregion claims of a declared IMGT alignment (V) and unique-motif anchor
+    candidates (J); stated and alignment anchors that disagree are all marked
+    ``conflict``.  A relationship whose name is the label of an allele in the same
+    segment targets that allele's id; any other name targets a non-executable entity,
+    one per distinct name, in relationship order.  Findings flag identical sequences
+    under different labels, per segment.
     """
     claims = list(sidecar_claims)
     for allele in alleles:
@@ -271,11 +273,16 @@ def derive_content(*, alleles, sidecar_claims, sidecar_relationships, locus: str
             if result["position"] is not None:
                 claims.append(Claim(allele.id, "anchor", result["position"], "none", "unique_motif",
                                     "candidate", None, result["method"]))
+    labels = {(a.segment, a.label) for a in alleles}
     entities, relationships = {}, []
     for rel in sidecar_relationships:
-        entity_id = f"{ENTITY_PREFIX}{rel['entity']}"
-        entities.setdefault(entity_id, Entity(entity_id, rel["entity"], False))
-        relationships.append(Relationship(rel["kind"], rel["allele"], entity_id, rel["source"]))
+        segment = rel["allele"].partition(":")[0]
+        if (segment, rel["entity"]) in labels:
+            target = f"{segment}:{rel['entity']}"
+        else:
+            target = f"{ENTITY_PREFIX}{rel['entity']}"
+            entities.setdefault(target, Entity(target, rel["entity"], False))
+        relationships.append(Relationship(rel["kind"], rel["allele"], target, rel["source"]))
     return Derived(tuple(_mark_anchor_conflicts(claims)), tuple(relationships), tuple(entities.values()),
                    _identical_sequence_findings(alleles))
 
@@ -285,13 +292,20 @@ def regenerate(catalogue: Catalogue) -> Derived:
 
     The base data are the alleles, the sidecar-sourced claims (derivation ``stated`` or
     ``anchor_derived``, taken as accepted before conflict marking), the relationships with
-    their entity names, the V alignment convention and the locus.
+    the names they target (an allele's label, or an entity id without its prefix), the V
+    alignment convention and the locus.
     """
     sidecar_claims = [replace(c, status="accepted") for c in catalogue.claims
                       if c.derivation in SIDECAR_DERIVATIONS]
+    labels = {a.id: a.label for a in catalogue.alleles}
+
+    def target_name(entity: str) -> str:
+        if entity in labels:
+            return labels[entity]
+        return entity[len(ENTITY_PREFIX):] if entity.startswith(ENTITY_PREFIX) else entity
+
     sidecar_relationships = [
-        {"kind": r.kind, "allele": r.allele, "source": r.source,
-         "entity": r.entity[len(ENTITY_PREFIX):] if r.entity.startswith(ENTITY_PREFIX) else r.entity}
+        {"kind": r.kind, "allele": r.allele, "source": r.source, "entity": target_name(r.entity)}
         for r in catalogue.relationships]
     return derive_content(alleles=catalogue.alleles, sidecar_claims=sidecar_claims,
                           sidecar_relationships=sidecar_relationships, locus=catalogue.header.locus,
@@ -360,7 +374,11 @@ def import_local(*, v, j, d, annotations) -> Catalogue:
         if (segment, label) not in labels:
             raise ReferenceArtifactError("conflict", f"relationships[{i}].allele",
                                          f"relationship names {rel['allele']}, which has no accepted allele")
-        if rel["kind"] == "alias" and rel["entity"] != label and (segment, rel["entity"]) in labels:
+        if rel["entity"] == label:
+            raise ReferenceArtifactError("conflict", f"relationships[{i}].entity",
+                                         f"{rel['kind']} of {rel['allele']} names its own label; a "
+                                         "relationship must name another allele or a separate name")
+        if rel["kind"] == "alias" and (segment, rel["entity"]) in labels:
             raise ReferenceArtifactError("conflict", f"relationships[{i}].entity", _ALIAS_EXECUTABLE)
 
     derived = derive_content(alleles=alleles, sidecar_claims=claims, sidecar_relationships=side["relationships"],

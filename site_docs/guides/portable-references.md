@@ -171,6 +171,27 @@ AIRR fields). A record whose label breaks the rule is rejected with a reason in
 the report. Identical sequences under two labels, or the same label twice, are
 reported as findings or duplicates rather than merged silently.
 
+### Relationships
+
+The optional `relationships` list links an allele to another name:
+
+```json
+{"kind": "paralog", "allele": "V:IGHV1-2*02", "entity": "IGHV1-3*01", "source": null}
+```
+
+`kind` is `"alias"` or `"paralog"`, `allele` names an accepted allele as
+`<segment>:<label>`, and `entity` is a name that follows the label rules.
+
+- If `entity` is the label of another accepted allele in the same segment, the
+  relationship links the two alleles and both stay executable. The report lists
+  it under "Relationships between alleles" as
+  `V:IGHV1-2*02 paralog of V:IGHV1-3*01`. An `alias` cannot name another
+  accepted allele: keep one record and declare the other name as an alias.
+- Any other name becomes a named entity that is never simulated. The report
+  lists it under "Entities (named, not executable)", for example
+  `lab_name: alias of V:IGHV1-2*02`.
+- A relationship cannot name its own allele's label.
+
 ### Conventions
 
 `conventions.coordinates` is `"zero_based_half_open"`. IMGT alignment is
