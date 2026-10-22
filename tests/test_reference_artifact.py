@@ -3,7 +3,9 @@ import dataclasses
 import datetime
 import hashlib
 import json
+import os
 import re
+import stat
 
 import pytest
 
@@ -455,6 +457,21 @@ def test_write_refuses_overwrite_unless_replace(ref, tmp_path):
     with pytest.raises(ReferenceArtifactError) as e:
         ref.write(tmp_path / "no_such_dir" / "x.genairr-ref.json")
     assert e.value.kind == "io"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+@pytest.mark.parametrize("mask,mode", [(0o022, 0o644), (0o077, 0o600)])
+def test_written_artifact_mode_follows_umask(ref, tmp_path, mask, mode):
+    # A reference written on a shared host is as readable as any file the user writes.
+    path = tmp_path / "lab.genairr-ref.json"
+    previous = os.umask(mask)
+    try:
+        ref.write(path)
+        ref.write(path, replace=True)
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(path.stat().st_mode) == mode
+    assert Reference.read(path).to_json() == ref.to_json()
 
 
 # ── Object contract ──────────────────────────────────────────────────

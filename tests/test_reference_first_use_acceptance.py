@@ -40,7 +40,7 @@ IGH_J = ("IGHJ4*02", "IGHJ6*02")
 IGH_METHOD = "software fixture copied from GenAIRR HUMAN_IGH_IMGT; not independent evidence"
 SUBREGIONS = ["FWR1", "CDR1", "FWR2", "CDR2", "FWR3"]
 
-# Runs in a fresh interpreter: no network, every warning is an error.
+# Runs in a fresh interpreter: no network (every attempt is counted), every warning is an error.
 SCRIPT = r'''
 import json
 import socket
@@ -48,7 +48,11 @@ import sys
 import warnings
 
 
+NETWORK_CALLS = []
+
+
 def _offline(*args, **kwargs):
+    NETWORK_CALLS.append(args)   # counted even if a caller swallows the error below
     raise OSError("network access is disabled in this acceptance test")
 
 
@@ -66,6 +70,7 @@ print(json.dumps({
     "reference_content_hash": result.reference_content_hash,
     "n": len(result),
     "productive_unknown": sum(1 for record in result if record["productive"] is None),
+    "network_calls": len(NETWORK_CALLS),
 }))
 '''
 
@@ -144,6 +149,7 @@ def test_igh_first_use_offline_fresh_process(igh, tmp_path):
         "reference_content_hash": igh.execution_hash,
         "n": 200,
         "productive_unknown": 0,
+        "network_calls": 0,
     }
 
 

@@ -6,10 +6,11 @@ format uses one implementation.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 from pathlib import Path
-import tempfile
+from secrets import token_hex
 from typing import Any
 
 from GenAIRR import _engine
@@ -59,14 +60,37 @@ def read_text_bounded(path, *, max_bytes: int) -> str:
         raise ArtifactIOError("format", str(exc)) from exc
 
 
+_TEMPORARY_ATTEMPTS = 100
+
+
+def _create_temporary(destination: Path):
+    """Create ``.<name>.<random>.tmp`` beside ``destination``; return ``(descriptor, path)``.
+
+    The file is created with mode 0o666 so the user's umask applies, as for any
+    ordinary file write (``tempfile.mkstemp`` would force 0o600).  ``O_EXCL`` never
+    opens an existing file, so a name already taken is skipped, never reused.
+    """
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
+    for _ in range(_TEMPORARY_ATTEMPTS):
+        candidate = destination.parent / f".{destination.name}.{token_hex(8)}.tmp"
+        try:
+            return os.open(candidate, flags, 0o666), candidate
+        except FileExistsError:
+            continue
+    raise FileExistsError(errno.EEXIST, "no unused temporary file name", str(destination.parent))
+
+
 def write_atomic(path, data: bytes, *, replace: bool) -> None:
-    """Publish atomically, refusing to replace an existing file unless ``replace``."""
+    """Publish atomically, refusing to replace an existing file unless ``replace``.
+
+    The published file's permissions follow the user's umask.
+    """
     if type(replace) is not bool:
         raise TypeError("replace must be Boolean")
     destination = Path(path)
     temporary = None
     try:
-        descriptor, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
+        descriptor, temporary = _create_temporary(destination)
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(data)
             handle.flush()
