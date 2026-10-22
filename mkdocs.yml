@@ -218,6 +218,7 @@ nav:
       - Targeted SHM rates: guides/shm-targeting.md
       - Corruption + sequencing artefacts: guides/corruption-sequencing.md
       - Paired-end reads and FASTQ: guides/paired-end-fastq.md
+      - Portable local references: guides/portable-references.md
   - Reference Cartridge Authoring:
       - cartridges/index.md
       - Reference evidence and quarantine: cartridges/reference-evidence.md
@@ -232,6 +233,7 @@ nav:
       - Overview: reference/index.md
       - Experiment: reference/experiment.md
       - SimulationResult: reference/simulation-result.md
+      - Reference (portable): reference/reference.md
       - ReferenceCartridgeBuilder: reference/reference-cartridge-builder.md
       - Reference models and rules: reference/reference-models.md
   - Architecture (Contributor):
