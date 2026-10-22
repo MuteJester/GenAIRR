@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import datetime
+import errno
 import hashlib
 import json
 import os
@@ -457,6 +458,28 @@ def test_write_refuses_overwrite_unless_replace(ref, tmp_path):
     with pytest.raises(ReferenceArtifactError) as e:
         ref.write(tmp_path / "no_such_dir" / "x.genairr-ref.json")
     assert e.value.kind == "io"
+
+
+def test_write_without_hard_links_is_an_io_error_unless_replacing(ref, tmp_path, monkeypatch):
+    # A filesystem without hard links (FAT/exFAT, some SMB shares) offers no atomic
+    # no-overwrite publication outside Windows.
+    from GenAIRR import _artifact_io
+
+    def link(source, destination, *args, **kwargs):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(_artifact_io, "_WINDOWS", False, raising=False)
+    monkeypatch.setattr(os, "link", link)
+    out = tmp_path / "out"
+    out.mkdir()
+    path = out / "lab.genairr-ref.json"
+    with pytest.raises(ReferenceArtifactError) as e:
+        ref.write(path)
+    assert e.value.kind == "io" and e.value.path == path.name
+    assert "does not support atomic no-overwrite publication" in e.value.message
+    assert list(out.iterdir()) == []
+    ref.write(path, replace=True)
+    assert path.read_bytes() == ref.to_json().encode("utf-8")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")

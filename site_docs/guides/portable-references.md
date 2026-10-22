@@ -81,6 +81,11 @@ assert again.execution_hash == ref.execution_hash
 `write` refuses to overwrite an existing file unless you pass
 `replace=True`. The file contains no local paths and does not depend on
 where it was built. Written files follow your umask (for example mode 0644).
+The file appears only once it is complete. On a filesystem without hard links
+(FAT/exFAT, some network shares) a write without `replace=True` works on
+Windows; elsewhere it raises `GenAIRR.ReferenceArtifactError` with
+`kind == "io"` and leaves the destination untouched. Write to a local disk and
+copy the file, or pass `replace=True` if overwriting is intended.
 `Reference.read` verifies the file's integrity and raises
 `GenAIRR.ReferenceArtifactError` for a malformed or modified file.
 
@@ -361,6 +366,6 @@ ran against. A genotype run with novel alleles must be validated against
 | `integrity` | A stored reference file is inconsistent: its contents do not match their hashes or commitment, a value does not fit its sequence, or a derived section does not follow from the file's base data. |
 | `capability` | A requested use is not supported (raised as the subclass `ReferenceCapabilityError`). |
 | `empty_selection` | No allele of a segment was accepted, so nothing can run. |
-| `io` | A file cannot be read or written (including refusing to overwrite an existing file). |
+| `io` | A file cannot be read or written (including refusing to overwrite an existing file, and a write without `replace=True` to a filesystem without hard links, except on Windows). |
 
 See the [Reference API](../reference/reference.md) for every method.

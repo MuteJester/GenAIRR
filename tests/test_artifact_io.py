@@ -74,11 +74,11 @@ def test_family_replay_write_errors_stay_family_replay_errors(tmp_path):
     bundle = FamilyReplayBundle.__new__(FamilyReplayBundle)
     bundle._text = "{}"
     target = tmp_path / "b.json"
-    target.write_text("existing")
+    target.write_text("existing", encoding="utf-8")
     with pytest.raises(FamilyReplayError) as info:
         bundle.write_to(target)
     assert "family_replay[io]" in str(info.value)
-    assert target.read_text() == "existing"
+    assert target.read_text(encoding="utf-8") == "existing"
 
 
 # ── File permissions follow the umask, as an ordinary file write would ─────
@@ -143,6 +143,10 @@ def test_package_sources_have_no_literal_byte_order_mark():
 
 
 # ── Filesystems without hard links (FAT/exFAT, some SMB shares) ────────
+#
+# Without hard links POSIX has no portable atomic no-overwrite publish, so ``replace=False``
+# fails with a typed error and never creates the destination.  Windows ``os.rename`` refuses
+# to overwrite an existing file, so it publishes there.
 
 
 NO_LINK_ERRORS = [PermissionError(errno.EPERM, "Operation not permitted"),
@@ -150,6 +154,8 @@ NO_LINK_ERRORS = [PermissionError(errno.EPERM, "Operation not permitted"),
                   OSError(errno.EOPNOTSUPP, "Operation not supported"),
                   OSError(errno.ENOSYS, "Function not implemented"),
                   OSError(errno.EXDEV, "Invalid cross-device link")]
+NO_LINK_IDS = ["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"]
+NO_ATOMIC_NO_OVERWRITE = "does not support atomic no-overwrite publication"
 
 
 def _no_hard_links(monkeypatch, error):
@@ -167,27 +173,139 @@ def _temporaries(directory):
     return [p.name for p in directory.iterdir() if p.name.endswith(".tmp")]
 
 
-@pytest.mark.parametrize("error", NO_LINK_ERRORS, ids=["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"])
-def test_write_atomic_without_hard_links(tmp_path, monkeypatch, error):
-    calls = _no_hard_links(monkeypatch, error)
+def _recorded(monkeypatch, name):
+    """Wrap ``os.<name>`` so every call's positional arguments are recorded."""
+    real, calls = getattr(os, name), []
+
+    def wrapper(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(os, name, wrapper)
+    return calls
+
+
+def _names(args, path):
+    return any(isinstance(a, (str, os.PathLike)) and os.fspath(a) == os.fspath(path) for a in args)
+
+
+@pytest.fixture
+def posix(monkeypatch):
+    monkeypatch.setattr(_artifact_io, "_WINDOWS", False, raising=False)
+
+
+@pytest.fixture
+def windows(monkeypatch):
+    """Simulated Windows: the platform hook, and an ``os.rename`` that refuses an existing file."""
+    monkeypatch.setattr(_artifact_io, "_WINDOWS", True, raising=False)
+    real_rename, calls = os.rename, []
+
+    def rename(source, destination, *args, **kwargs):
+        calls.append((pathlib.Path(source), pathlib.Path(destination)))
+        if os.path.lexists(destination):
+            raise FileExistsError(errno.EEXIST, "Cannot create a file when that file already exists",
+                                  os.fspath(destination))
+        real_rename(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(os, "rename", rename)
+    return calls
+
+
+@pytest.mark.parametrize("error", NO_LINK_ERRORS, ids=NO_LINK_IDS)
+def test_write_atomic_without_hard_links_fails_typed_and_never_creates_the_destination(
+        tmp_path, monkeypatch, posix, error):
+    links = _no_hard_links(monkeypatch, error)
+    opened = _recorded(monkeypatch, "open")
+    replaced = _recorded(monkeypatch, "replace")
     target = tmp_path / "out.json"
-    write_atomic(target, b"data", replace=False)
-    assert calls == [target]
-    assert target.read_bytes() == b"data"
+    with pytest.raises(ArtifactIOError) as info:
+        write_atomic(target, b"data", replace=False)
+    assert info.value.kind == "io"
+    message = str(info.value)
+    assert NO_ATOMIC_NO_OVERWRITE in message
+    assert "local disk" in message and "replace=True" in message
+    assert links == [target]
+    assert not target.exists()
+    assert not any(_names(call, target) for call in opened)    # never created, not even empty
+    assert replaced == []
     assert _temporaries(tmp_path) == []
 
 
-def test_write_atomic_without_hard_links_still_refuses_to_overwrite(tmp_path, monkeypatch):
+def test_write_atomic_without_hard_links_never_removes_another_writers_artifact(tmp_path, monkeypatch, posix):
+    # Another writer completes the destination while this call is running.  This call
+    # fails, and the other writer's complete artifact must survive it.
+    target = tmp_path / "out.json"
+    real_replace, real_unlink = os.replace, os.unlink
+    theirs = b"another writer's complete artifact"
+    armed, removed = [], []
+
+    def other_writer_finishes():
+        if armed:
+            armed.clear()
+            staged = tmp_path / "theirs.staged"
+            staged.write_bytes(theirs)
+            real_replace(staged, target)
+
+    def link(source, destination, *args, **kwargs):
+        armed.append(True)                  # from here the other writer may finish at any step
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    def replace(source, destination, *args, **kwargs):
+        other_writer_finishes()
+        if pathlib.Path(source).name.startswith(".out.json."):
+            raise OSError(errno.EIO, "Input/output error")      # publishing our file fails
+        return real_replace(source, destination, *args, **kwargs)
+
+    def unlink(path, *args, **kwargs):
+        other_writer_finishes()
+        removed.append(pathlib.Path(path))
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", link)
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(os, "unlink", unlink)
+    with pytest.raises(ArtifactIOError) as info:
+        write_atomic(target, b"ours", replace=False)
+    assert info.value.kind == "io"
+    assert target.read_bytes() == theirs
+    assert target not in removed
+    assert _temporaries(tmp_path) == []
+
+
+def test_write_atomic_without_hard_links_on_windows_publishes_by_rename(tmp_path, monkeypatch, windows):
+    _no_hard_links(monkeypatch, NO_LINK_ERRORS[0])
+    replaced = _recorded(monkeypatch, "replace")
+    target = tmp_path / "out.json"
+    write_atomic(target, b"data", replace=False)
+    assert target.read_bytes() == b"data"
+    ((source, destination),) = windows
+    assert destination == target and source.name.startswith(".out.json.") and source.name.endswith(".tmp")
+    assert replaced == []
+    assert _temporaries(tmp_path) == []
+
+
+def test_write_atomic_without_hard_links_on_windows_refuses_an_existing_file(tmp_path, monkeypatch, windows):
     _no_hard_links(monkeypatch, NO_LINK_ERRORS[0])
     target = tmp_path / "out.json"
-    write_atomic(target, b"first", replace=False)
+    target.write_bytes(b"existing")
     with pytest.raises(ArtifactIOError) as info:
         write_atomic(target, b"second", replace=False)
     assert info.value.kind == "io"
-    assert target.read_bytes() == b"first"
+    assert [destination for _, destination in windows] == [target]
+    assert target.read_bytes() == b"existing"
     assert _temporaries(tmp_path) == []
-    write_atomic(target, b"third", replace=True)
-    assert target.read_bytes() == b"third"
+
+
+@pytest.mark.parametrize("platform", ["posix", "windows"])
+def test_write_atomic_replace_works_without_hard_links(tmp_path, monkeypatch, request, platform):
+    request.getfixturevalue(platform)
+    links = _no_hard_links(monkeypatch, NO_LINK_ERRORS[0])
+    target = tmp_path / "out.json"
+    write_atomic(target, b"first", replace=True)
+    assert target.read_bytes() == b"first"
+    write_atomic(target, b"second", replace=True)
+    assert target.read_bytes() == b"second"
+    assert links == []
     assert _temporaries(tmp_path) == []
 
 
@@ -201,13 +319,16 @@ def test_write_atomic_other_link_errors_are_io_errors(tmp_path, monkeypatch):
     assert _temporaries(tmp_path) == []
 
 
-def test_family_replay_write_without_hard_links(tmp_path, monkeypatch):
+def test_family_replay_write_without_hard_links_is_a_family_replay_io_error(tmp_path, monkeypatch, posix):
     _no_hard_links(monkeypatch, NO_LINK_ERRORS[0])
     bundle = FamilyReplayBundle.__new__(FamilyReplayBundle)
     bundle._text = "{}"
     target = tmp_path / "b.json"
-    bundle.write_to(target)
-    assert target.read_text() == "{}"
     with pytest.raises(FamilyReplayError) as info:
         bundle.write_to(target)
-    assert "family_replay[io]" in str(info.value)
+    assert info.value.category == "io"
+    assert NO_ATOMIC_NO_OVERWRITE in str(info.value)
+    assert not target.exists()
+    assert _temporaries(tmp_path) == []
+    bundle.write_to(target, replace=True)
+    assert target.read_text(encoding="utf-8") == "{}"

@@ -85,6 +85,9 @@ _NO_HARD_LINK_ERRNOS = frozenset(
     getattr(errno, name) for name in ("EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV")
     if hasattr(errno, name))
 
+# Windows ``os.rename`` refuses to overwrite an existing file: an atomic no-replace publish.
+_WINDOWS = os.name == "nt"
+
 
 def _hard_links_unsupported(exc: OSError) -> bool:
     if isinstance(exc, FileExistsError):
@@ -92,30 +95,35 @@ def _hard_links_unsupported(exc: OSError) -> bool:
     return isinstance(exc, PermissionError) or exc.errno in _NO_HARD_LINK_ERRNOS
 
 
-def _publish_without_link(temporary: Path, destination: Path) -> None:
-    """No-clobber publish where hard links are unavailable.
+def _publish_without_replacing(temporary: Path, destination: Path) -> None:
+    """Publish the complete temporary file at ``destination`` only if nothing is there.
 
-    The destination is claimed by exclusive creation (an existing file raises
-    ``FileExistsError``), then the complete temporary file replaces the empty claim.
+    The destination is never created before this single atomic step: a hard link, or on
+    Windows a rename.  Elsewhere, a filesystem without hard links offers no atomic
+    no-overwrite step, so the write fails instead.
     """
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
-    os.close(os.open(destination, flags, 0o666))
     try:
-        os.replace(temporary, destination)
-    except OSError:
-        try:
-            os.unlink(destination)   # the empty claim made above
-        except OSError:
-            pass
-        raise
+        os.link(temporary, destination)
+    except OSError as exc:
+        if not _hard_links_unsupported(exc):
+            raise
+        if not _WINDOWS:
+            raise ArtifactIOError(
+                "io", f"cannot write {destination.name}: the destination filesystem does not support "
+                      f"atomic no-overwrite publication (hard links are unavailable: {exc}); write to a "
+                      "local disk and copy the file, or pass replace=True if overwriting is intended") from exc
+        os.rename(temporary, destination)
+    else:
+        os.unlink(temporary)
 
 
 def write_atomic(path, data: bytes, *, replace: bool) -> None:
     """Publish atomically, refusing to replace an existing file unless ``replace``.
 
-    The published file's permissions follow the user's umask.  Without ``replace``
-    the file is published by a hard link; on filesystems without hard links the
-    destination is claimed by exclusive creation and then replaced by the complete file.
+    The published file's permissions follow the user's umask.  Without ``replace`` the
+    complete file is published by a hard link (by a rename on Windows); where that is
+    impossible the write fails with ``ArtifactIOError("io")`` and the destination is left
+    untouched.  Only this call's temporary file is ever removed.
     """
     if type(replace) is not bool:
         raise TypeError("replace must be Boolean")
@@ -130,14 +138,7 @@ def write_atomic(path, data: bytes, *, replace: bool) -> None:
         if replace:
             os.replace(temporary, destination)
         else:
-            try:
-                os.link(temporary, destination)
-            except OSError as exc:
-                if not _hard_links_unsupported(exc):
-                    raise
-                _publish_without_link(temporary, destination)
-            else:
-                os.unlink(temporary)
+            _publish_without_replacing(temporary, destination)
         temporary = None
         if hasattr(os, "O_DIRECTORY"):
             directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)

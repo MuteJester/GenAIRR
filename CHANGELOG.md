@@ -45,8 +45,12 @@ All notable changes to GenAIRR are documented here.
   be validated against `compiled.refdata` (the effective reference).
 - Artifact files written by GenAIRR (portable references and family-replay
   bundles) now follow the user's umask (for example 0644) instead of owner-only
-  0600, and can be written on filesystems without hard links (FAT/exFAT, some
-  SMB shares); an existing file is still never overwritten without `replace=True`.
+  0600. An existing file is still never overwritten without `replace=True`, and
+  the destination appears only once complete. On a filesystem without hard links
+  (FAT/exFAT, some SMB shares) a write without `replace=True` publishes by rename
+  on Windows; elsewhere it fails with an `io` error and leaves the destination
+  untouched, because such a filesystem has no atomic no-overwrite step. Write to
+  a local disk and copy the file, or pass `replace=True` to overwrite.
 - `Experiment.on("<unknown name>")` errors now point to
   `GenAIRR.Reference.read(path)`; a path string is never read implicitly.
   `Experiment.on("x.json")` (any string ending in `.json`) now raises
