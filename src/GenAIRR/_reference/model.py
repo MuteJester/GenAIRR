@@ -575,6 +575,9 @@ class Catalogue:
             if r.status == "accepted":
                 if r.allele not in alleles:
                     raise _bad(f"{p}.allele", "accepted record must point at an existing allele", "integrity")
+                if r.label != alleles[r.allele].label:
+                    raise _bad(f"{p}.label", f"accepted record label {r.label!r} differs from the label "
+                               f"{alleles[r.allele].label!r} of its allele {r.allele!r}", "integrity")
             elif r.status == "duplicate":
                 target = records.get(r.duplicate_of)
                 if target is None or target.status != "accepted":

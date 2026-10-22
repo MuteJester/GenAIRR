@@ -865,6 +865,17 @@ def test_recommitted_allele_with_two_accepted_records_rejected(ref):
     assert err.path == "catalogue.alleles[0].records"
 
 
+def test_recommitted_accepted_record_with_another_label_rejected():
+    # An accepted record names its executable allele: it carries that allele's label.
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    record = doc["catalogue"]["records"][0]
+    assert (record["status"], record["allele"], record["label"]) == ("accepted", "V:IGHV1-2*02", "IGHV1-2*02")
+    record["label"] = "invented_alias"
+    err = rejected(_full_recommit(doc), "integrity", "invented_alias")
+    assert err.path == "catalogue.records[0].label"
+    assert "IGHV1-2*02" in err.message
+
+
 def test_recommitted_duplicate_with_another_label_rejected(ref):
     doc = doc_of(ref)
     doc["catalogue"]["records"][1]["label"] = "IGHV1-2_other"
