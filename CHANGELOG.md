@@ -45,9 +45,14 @@ All notable changes to GenAIRR are documented here.
   be validated against `compiled.refdata` (the effective reference).
 - Artifact files written by GenAIRR (portable references and family-replay
   bundles) now follow the user's umask (for example 0644) instead of owner-only
-  0600.
+  0600, and can be written on filesystems without hard links (FAT/exFAT, some
+  SMB shares); an existing file is still never overwritten without `replace=True`.
 - `Experiment.on("<unknown name>")` errors now point to
   `GenAIRR.Reference.read(path)`; a path string is never read implicitly.
+  `Experiment.on("x.json")` (any string ending in `.json`) now raises
+  `TypeError` where it previously raised `ValueError`; a path object such as
+  `Experiment.on(Path("x.json"))` still raises `TypeError`, now with the same
+  pointer.
 
 ### Fixed
 

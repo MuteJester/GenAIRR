@@ -221,7 +221,7 @@ the sequence.
 | `source_annotated_junction` | A source-backed anchor for every V and J allele: every accepted anchor claim has `support: "source"` with a citation. Assertion-only anchors do not count. |
 | `canonical_productive` | An accepted anchor of any support for every V and J allele, with the V anchor codon encoding C and the J anchor codon encoding the locus residue (W for IGH, F otherwise). |
 | `original_coding_ends` | `boundary_3: "complete"` on V and `boundary_5: "complete"` on J (and complete D ends). |
-| `complete_reference_span` | Complete `boundary_5` and `boundary_3` on every V and J allele. |
+| `complete_reference_span` | Complete `boundary_5` and `boundary_3` on every V and J allele, and on every D allele for a VDJ chain. |
 | `genotype_constrained` | Not yet supported for portable references. |
 | `duplex_family_replay` | Not yet supported for portable references. |
 
@@ -354,10 +354,10 @@ ran against. A genotype run with novel alleles must be validated against
 | `kind` | Raised when |
 |---|---|
 | `malformed` | The sidecar or file is not valid JSON of the expected shape (the error names the path inside the document). |
-| `unsupported_schema` | The schema name or version is not understood. |
+| `unsupported_schema` | The sidecar's or the reference file's `schema_version` is one this GenAIRR does not read (for example a file written by a newer GenAIRR). A wrong sidecar `schema` name or file `artifact` value is `malformed`. |
 | `unsupported_convention` | A declared convention (coordinates, alignment) is not supported. |
-| `conflict` | An annotation contradicts the catalogue, for example a sidecar entry whose digest matches no accepted sequence. |
-| `integrity` | A value is inconsistent with its sequence (for example an anchor out of bounds) or a stored file fails its checksum. |
+| `conflict` | An annotation contradicts the catalogue, for example a sidecar entry whose digest matches no accepted sequence, or an anchor whose codon does not fit within its sequence. |
+| `integrity` | A stored reference file is inconsistent: its contents do not match their hashes or commitment, a value does not fit its sequence, or a derived section does not follow from the file's base data. |
 | `capability` | A requested use is not supported (raised as the subclass `ReferenceCapabilityError`). |
 | `empty_selection` | No allele of a segment was accepted, so nothing can run. |
 | `io` | A file cannot be read or written (including refusing to overwrite an existing file). |
