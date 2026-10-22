@@ -52,7 +52,7 @@ def build_reference(directory, *, name="lab_igh", version="1", v2_anchor=True):
     paths = {}
     for segment, text in files.items():
         paths[segment] = directory / f"{segment}.fasta"
-        paths[segment].write_text(text, encoding="utf-8")
+        paths[segment].write_bytes(text.encode("utf-8"))
     sidecar = {
         "schema": "genairr_reference_annotations", "schema_version": 1,
         "reference": {"name": name, "version": version, "locus": "IGH", "chain_type": "vdj",
@@ -66,7 +66,7 @@ def build_reference(directory, *, name="lab_igh", version="1", v2_anchor=True):
         "relationships": [], "suggestions": [],
     }
     annotations = directory / "annotations.json"
-    annotations.write_text(json.dumps(sidecar), encoding="utf-8")
+    annotations.write_bytes(json.dumps(sidecar).encode("utf-8"))
     return Reference.from_fasta(v=paths["v"], d=paths["d"], j=paths["j"], annotations=annotations)
 
 

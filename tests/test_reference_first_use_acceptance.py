@@ -312,7 +312,7 @@ def test_unlisted_species_reference_runs(tmp_path, igk):
     directory.mkdir()
     for name in ("v.fasta", "j.fasta"):
         shutil.copyfile(IGK / name, directory / name)
-    (directory / "annotations.json").write_text(json.dumps(side, indent=2) + "\n", encoding="utf-8")
+    (directory / "annotations.json").write_bytes((json.dumps(side, indent=2) + "\n").encode("utf-8"))
     ref = build_igk(directory)
 
     assert ref.name == "synthetic_unlisted_species_fixture"

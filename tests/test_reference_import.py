@@ -46,7 +46,9 @@ def write(tmp_path, name, text, binary=False):
     if binary:
         p.write_bytes(text)
     else:
-        p.write_text(text, encoding="utf-8")
+        # Explicit bytes: text mode would translate "\n" to os.linesep and change the
+        # raw-byte source digests the catalogue records.
+        p.write_bytes(text.encode("utf-8"))
     return p
 
 
@@ -114,6 +116,29 @@ def test_identical_rejected_copies_keep_their_reason(tmp_path):
         ("x", "rejected", "unsupported_base: 'N' at position 3", None),
         ("y", "accepted", None, None),
         ("y", "duplicate", None, "rec:V:2")]
+
+
+def test_crlf_source_changes_only_source_identity(tmp_path):
+    def build(directory, eol):
+        directory.mkdir()
+        v = f">a desc\n{V_SEQ}\n".replace("\n", eol).encode("utf-8")
+        j = f">J1\n{J_SEQ}\n".replace("\n", eol).encode("utf-8")
+        return import_local(
+            v=write(directory, "v.fasta", v, binary=True), j=write(directory, "j.fasta", j, binary=True), d=None,
+            annotations=write(directory, "ann.json", json.dumps(sidecar(chain_type="vj"))))
+    lf = build(tmp_path / "lf", "\n").to_dict()
+    crlf = build(tmp_path / "crlf", "\r\n").to_dict()
+    assert lf != crlf
+    strip = lambda d: {**d, "sources": [{k: v for k, v in s.items() if k not in ("sha256", "bytes")}
+                                        for s in d["sources"]]}
+    assert strip(lf) == strip(crlf)
+    for a, b in zip(lf["sources"], crlf["sources"]):
+        if a["file_name"] != "ann.json":
+            assert (a["sha256"], a["bytes"]) != (b["sha256"], b["bytes"])
+
+
+def test_write_helper_emits_lf_bytes(tmp_path):
+    assert write(tmp_path, "x.fasta", ">a\nAC\n").read_bytes() == b">a\nAC\n"
 
 
 def test_crlf_fasta_matches_lf(tmp_path):

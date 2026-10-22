@@ -95,7 +95,7 @@ def fasta_files(directory, *, v=V_FASTA, d=D_FASTA, j=J_FASTA):
     for name, text in (("v", v), ("d", d), ("j", j)):
         if text is not None:
             paths[name] = directory / f"{name}.fasta"
-            paths[name].write_text(text, encoding="utf-8")
+            paths[name].write_bytes(text.encode("utf-8"))
     return paths
 
 
@@ -103,7 +103,7 @@ def build(directory, *, alleles=None, v=V_FASTA, d=D_FASTA, j=J_FASTA, **side_kw
     paths = fasta_files(directory, v=v, d=d, j=j)
     side = sidecar(default_alleles() if alleles is None else alleles, **side_kw)
     annotations = directory / "annotations.json"
-    annotations.write_text(json.dumps(side), encoding="utf-8")
+    annotations.write_bytes(json.dumps(side).encode("utf-8"))
     return Reference.from_fasta(v=paths["v"], j=paths["j"], d=paths.get("d"), annotations=annotations)
 
 
@@ -448,7 +448,7 @@ def test_read_missing_file_is_io_error(tmp_path):
 
 def test_write_refuses_overwrite_unless_replace(ref, tmp_path):
     path = tmp_path / "lab.genairr-ref.json"
-    path.write_text("previous", encoding="utf-8")
+    path.write_bytes(b"previous")
     with pytest.raises(ReferenceArtifactError) as e:
         ref.write(path)
     assert e.value.kind == "io"
@@ -666,7 +666,7 @@ def test_template_load_build_round_trip(tmp_path):
                                                                             ("J:IGHJ6*02", 29)}
     assert template["conventions"] == {"coordinates": "zero_based_half_open", "v_alignment": "none"}
     annotations = tmp_path / "annotations.json"
-    annotations.write_text(canonical_json(template), encoding="utf-8")
+    annotations.write_bytes(canonical_json(template).encode("utf-8"))
     ref = Reference.from_fasta(v=paths["v"], d=paths["d"], j=paths["j"], annotations=annotations)
     caps = ref.capabilities()
     assert caps.available() == ("catalogue_inspection", "observed_span_simulation")

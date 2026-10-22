@@ -74,7 +74,7 @@ def test_family_replay_write_errors_stay_family_replay_errors(tmp_path):
     bundle = FamilyReplayBundle.__new__(FamilyReplayBundle)
     bundle._text = "{}"
     target = tmp_path / "b.json"
-    target.write_text("existing", encoding="utf-8")
+    target.write_bytes(b"existing")
     with pytest.raises(FamilyReplayError) as info:
         bundle.write_to(target)
     assert "family_replay[io]" in str(info.value)
