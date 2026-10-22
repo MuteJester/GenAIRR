@@ -11,6 +11,11 @@ Three input shapes flow through this module:
 - A bare :class:`GenAIRR._engine.RefDataConfig` — already engine-
   native, passed through unchanged.
 
+A portable :class:`GenAIRR.Reference` is dispatched by
+:meth:`Experiment.on` itself. A string or path naming a ``.json`` file
+is rejected with a pointer to ``GenAIRR.Reference.read(path)``; the
+file is not opened.
+
 Output is the typed pair ``(RefDataConfig, Optional[DataConfig])`` —
 the DataConfig is retained when available because ``recombine()``
 reads its empirical NP-length and per-gene trim distributions for
@@ -19,12 +24,16 @@ and falls through to the synthetic ``[0..6]`` placeholder.
 """
 from __future__ import annotations
 
-from typing import Optional, Tuple, Union
+import os
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 from GenAIRR import _engine  # private Rust extension submodule
 
 from .dataconfig import DataConfig
 from .dataconfig.enums import ChainType
+
+if TYPE_CHECKING:
+    from ._reference.artifact import Reference
 
 
 # Short aliases (preferred defaults). Heavy / light / TCR for human
@@ -118,7 +127,8 @@ def _resolve_config_name(name: str) -> DataConfig:
             f"Available configs ({len(available)} total): "
             f"{', '.join(a.lower() for a in available[:10])}... "
             f"Use GenAIRR.list_configs() for the full list, "
-            f"or pass a DataConfig object directly."
+            f"or pass a DataConfig object directly. "
+            f"To load a portable reference file, use GenAIRR.Reference.read(path)."
         )
     from . import data as _data
 
@@ -330,12 +340,20 @@ def dataconfig_to_refdata(cfg: DataConfig) -> "_engine.RefDataConfig":
         # allele-name inference last (partial/synthetic catalogues).
         # Unknown locus leaves the lenient default in place.
         locus = refdata.identity().get("locus") or _infer_locus_prefix(cfg)
-        if locus == "IGH":
-            refdata.set_j_anchor_rule(expected_aa=["W"])
-        elif locus in ("IGK", "IGL", "TRA", "TRB", "TRG", "TRD"):
-            refdata.set_j_anchor_rule(expected_aa=["F"])
+        residues = _j_anchor_residues_for_locus(locus)
+        if residues is not None:
+            refdata.set_j_anchor_rule(expected_aa=residues)
 
     return refdata
+
+
+def _j_anchor_residues_for_locus(locus: Optional[str]) -> Optional[List[str]]:
+    """Expected J anchor residues for ``locus``, or ``None`` when unknown."""
+    if locus == "IGH":
+        return ["W"]
+    if locus in ("IGK", "IGL", "TRA", "TRB", "TRG", "TRD"):
+        return ["F"]
+    return None
 
 
 # Map ``ChainType.value`` strings (from
@@ -420,8 +438,17 @@ def _infer_locus_prefix(cfg: DataConfig) -> Optional[str]:
     return None
 
 
-# Anything :meth:`Experiment.on` accepts.
-ExperimentInput = Union[str, DataConfig, "_engine.RefDataConfig"]
+# Anything :meth:`Experiment.on` accepts. A ``Reference`` is dispatched by
+# ``Experiment.on`` itself, because it also supplies the run's defaults.
+ExperimentInput = Union[str, DataConfig, "_engine.RefDataConfig", "Reference"]
+
+
+def _reference_path_error(source) -> TypeError:
+    return TypeError(
+        f"Experiment.on({str(source)!r}): Experiment.on does not read files. "
+        f"Load a reference artifact with GenAIRR.Reference.read(path) and pass "
+        f"the Reference to Experiment.on."
+    )
 
 
 def _coerce_to_refdata_and_dataconfig(
@@ -438,12 +465,19 @@ def _coerce_to_refdata_and_dataconfig(
     if isinstance(source, _engine.RefDataConfig):
         return source, None
     if isinstance(source, str):
+        # A path to a reference artifact is never opened here; the
+        # artifact must be loaded (and checked) by Reference.read.
+        if (source.lower().replace("-", "_") not in _CONFIG_ALIASES
+                and source.lower().endswith(".json")):
+            raise _reference_path_error(source)
         cfg = _resolve_config_name(source)
         return dataconfig_to_refdata(cfg), cfg
     if isinstance(source, DataConfig):
         return dataconfig_to_refdata(source), source
+    if isinstance(source, os.PathLike):
+        raise _reference_path_error(os.fspath(source))
     raise TypeError(
         f"Experiment.on(...): expected a config-name string, "
-        f"GenAIRR.DataConfig, or GenAIRR._engine.RefDataConfig, "
-        f"got {type(source).__name__}"
+        f"GenAIRR.DataConfig, GenAIRR._engine.RefDataConfig or "
+        f"GenAIRR.Reference, got {type(source).__name__}"
     )

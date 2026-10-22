@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ._result_common import _inject_truth_columns
+from ._result_common import _as_native_refdata, _inject_truth_columns, _require_same_reference
 
 
 def _same_generated_value(reported, expected):
@@ -311,8 +311,10 @@ class _ResultValidation:
         failures point at a real projection-layer bug.
 
         ``refdata`` must be the same :class:`RefDataConfig` the
-        outcomes were produced against; passing a different refdata
-        will misreport mismatches against an unrelated allele pool.
+        outcomes were produced against, or the portable
+        :class:`GenAIRR.Reference` they were produced with. A result
+        produced by a simulation is bound to that reference's content
+        hash; passing a different reference raises ``ValueError``.
 
         Raises ``RuntimeError`` when this result was built without
         attached outcomes (e.g. loaded from a TSV); the validator
@@ -327,6 +329,8 @@ class _ResultValidation:
                 "Experiment.run_records() to get a result with attached "
                 "outcomes."
             )
+        refdata = _as_native_refdata(refdata)
+        _require_same_reference(self.reference_content_hash, refdata)
         failures: List[Dict[str, Any]] = []
         if len(self._records) != len(self._outcomes):
             failures.append({
@@ -574,6 +578,10 @@ class _ResultValidation:
           immutable repair ledger, bindings, selection and founder identity
           must match the actual parent, including required field presence.
 
+        ``refdata`` may be the native :class:`RefDataConfig` or the
+        portable :class:`GenAIRR.Reference` the records were produced
+        with; a different reference raises ``ValueError``.
+
         **Without ``refdata``:** only the structural checks
         (``ParentsMissing`` / ``ParentIdMissing`` /
         ``ParentIdOutOfRange``) run. All value comparisons —
@@ -624,6 +632,9 @@ class _ResultValidation:
         (the latter two are ``None`` / ``[]`` for structural
         failures that don't compare values).
         """
+        if refdata is not None:
+            refdata = _as_native_refdata(refdata)
+            _require_same_reference(self.reference_content_hash, refdata)
         records = self._records
         total = len(records)
 

@@ -52,6 +52,10 @@ from .reference_rules import AnchorRuleSpec, ReferenceRulesSpec
 from .cartridge_builder import CartridgeBuildReport, ReferenceCartridgeBuilder
 from .coding_end_models import CodingEndOutcomeModel
 
+# Portable references built from local FASTA and an annotation sidecar.
+from ._reference.artifact import Reference
+from ._reference.errors import ReferenceArtifactError, ReferenceCapabilityError
+
 # Reproducibility helpers.
 from .seed import get_seed, reset_seed, set_seed
 
@@ -123,6 +127,10 @@ __all__ = [
     "HUMAN_IGK_OGRDB",
     "HUMAN_IGL_OGRDB",
     "HUMAN_TCRB_IMGT",
+    # Portable references
+    "Reference",
+    "ReferenceArtifactError",
+    "ReferenceCapabilityError",
     # Reproducibility
     "set_seed",
     "get_seed",

@@ -470,6 +470,51 @@ pub struct RefDataConfig {
     pub c_pool: AllelePool,
     /// Optional sequence-bound evidence; empty preserves legacy trace hashes.
     pub evidence: std::collections::HashMap<(Segment, String), AlleleEvidence>,
+    /// Optional sealed reference context. `None` preserves legacy hashes.
+    pub reference_context: Option<ReferenceContext>,
+}
+
+/// Typed provenance of a sealed reference: which catalogue, view, profile and
+/// models produced this config. Participates in the content hash only when set.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReferenceContext {
+    pub schema_version: u32,
+    pub catalogue_hash: String,
+    pub view: String,
+    pub profile: String,
+    pub models_hash: String,
+}
+
+impl ReferenceContext {
+    /// Human-readable validation problems; empty when the context is valid.
+    pub fn problems(&self) -> Vec<String> {
+        fn is_sha256(h: &str) -> bool {
+            h.strip_prefix("sha256:").is_some_and(|hex| {
+                hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            })
+        }
+        let mut out = Vec::new();
+        if self.schema_version != 1 {
+            out.push(format!(
+                "schema_version must be 1, got {}",
+                self.schema_version
+            ));
+        }
+        if !is_sha256(&self.catalogue_hash) {
+            out.push("catalogue_hash must match sha256:<64 lowercase hex>".to_string());
+        }
+        if !is_sha256(&self.models_hash) {
+            out.push("models_hash must match sha256:<64 lowercase hex>".to_string());
+        }
+        if self.view.trim().is_empty() {
+            out.push("view must be non-blank".to_string());
+        }
+        if self.profile.trim().is_empty() {
+            out.push("profile must be non-blank".to_string());
+        }
+        out
+    }
 }
 
 impl RefDataConfig {
@@ -488,6 +533,7 @@ impl RefDataConfig {
             j_pool: AllelePool::new(),
             c_pool: AllelePool::new(),
             evidence: std::collections::HashMap::new(),
+            reference_context: None,
         }
     }
 
@@ -545,6 +591,8 @@ impl RefDataConfig {
     /// functional simulation under these rules).
     pub fn curated(&self, policy: RefDataCurationPolicy) -> RefDataConfig {
         let mut out = self.clone();
+        // A curated copy is a different reference; it must be re-sealed.
+        out.reference_context = None;
         match &policy {
             RefDataCurationPolicy::Raw => {
                 // No filtering, no provenance tag. A no-op pass; the

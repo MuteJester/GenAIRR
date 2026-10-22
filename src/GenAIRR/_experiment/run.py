@@ -43,7 +43,15 @@ class _RunMixin:
         expression). :meth:`receptor_revision` is supported (each subject's
         replacement V is restricted to its carried alleles on the drawn
         chromosome); clonal forks are not supported in this release.
+
+        Raises :class:`GenAIRR.ReferenceCapabilityError` on an experiment
+        started from a portable :class:`GenAIRR.Reference`: cohort runs are
+        not yet supported for portable references.
         """
+        if self._reference is not None:
+            from .compile import _reject_genotype_constrained
+
+            _reject_genotype_constrained()
         import copy as _copy
         import random as _random
 
@@ -160,8 +168,9 @@ class _RunMixin:
         ``capture_family_replay=True`` additionally seals the complete history
         of a source-backed duplex ``clonal_lineage`` run, including applied
         metadata, for ``result.save_family_replay(path)``. Other workflows reject
-        this option before sampling. ``family_replay_limits`` sets optional
-        computational ceilings for capture.
+        this option before sampling, as do experiments on a portable
+        :class:`GenAIRR.Reference` (not yet supported for portable references).
+        ``family_replay_limits`` sets optional computational ceilings for capture.
 
         For non-clonal experiments ``n`` defaults to 1. For clonal
         experiments (when the pipeline contains :meth:`with_clonal
@@ -203,6 +212,10 @@ class _RunMixin:
             raise TypeError("capture_family_replay must be Boolean")
         if family_replay_limits is not None and not capture_family_replay:
             raise ValueError("family_replay_limits requires capture_family_replay=True")
+        if capture_family_replay and self._reference is not None:
+            from .._family_replay import _reject_portable_reference_capture
+
+            _reject_portable_reference_capture()
         compiled = self.compile(allow_curatable_refdata=allow_curatable_refdata)
         capture_request = None
         if capture_family_replay:

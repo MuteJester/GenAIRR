@@ -565,6 +565,9 @@ def test_pin_present_imgt_regions_consumed_by_bridge_and_mcp() -> None:
         # IMGT-alignment declaration rule is shared with subregion
         # derivation (it derives no regions itself).
         "src/GenAIRR/_reference_annotations.py",
+        # Local FASTA import maps the fixed IMGT boundaries onto V alleles
+        # whose sidecar declares an IMGT-gapped alignment.
+        "src/GenAIRR/_reference/importer.py",
     }
     assert set(consumers) == expected, (
         f"imgt_regions consumers changed: got {consumers}, expected "

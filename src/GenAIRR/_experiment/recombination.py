@@ -162,8 +162,10 @@ class _RecombinationMixin:
         # historically silent — and surface a warning so the synthetic
         # default isn't mistaken for real biology. The trim warning is
         # emitted at compile() time instead, after .trim() has had a
-        # chance to disable trim explicitly.
-        if self._dataconfig is None:
+        # chance to disable trim explicitly. A portable Reference
+        # declares its NP-length and trim defaults explicitly, so
+        # neither warning applies to it.
+        if self._dataconfig is None and self._reference is None:
             if np1_lengths is None or (
                 self._refdata.chain_type == "vdj" and np2_lengths is None
             ):
@@ -233,6 +235,24 @@ class _RecombinationMixin:
             p_d_3_lengths = None
             p_j_5_lengths = None
 
+        # Which settings a portable Reference's defaults profile supplies,
+        # recorded before the defaults are filled in below (describe()
+        # labels them by profile and everything else as user-specified).
+        defaults_profile = None
+        profile_defaults: Tuple[str, ...] = ()
+        if self._reference is not None and defaults is not None:
+            from .._reference.defaults import PROFILE as defaults_profile
+
+            profile_defaults = tuple(
+                f"allele_usage_{segment}"
+                for segment, user in (("V", v_allele_weights), ("D", d_allele_weights), ("J", j_allele_weights))
+                if user is None and defaults.get(f"allele_usage_{segment.lower()}") is not None
+            )
+            if np1_lengths is None:
+                profile_defaults += ("np1_lengths",)
+            if np2_lengths is None and self._refdata.chain_type == "vdj":
+                profile_defaults += ("np2_lengths",)
+
         # Precedence (Slice — Allele Usage Estimation v1):
         #
         #   1. explicit `*_allele_weights=` kwarg
@@ -272,6 +292,8 @@ class _RecombinationMixin:
             p_d_3_lengths=p_d_3_lengths,
             p_j_5_lengths=p_j_5_lengths,
             np_lengths_overridden=np1_lengths is not None or np2_lengths is not None,
+            defaults_profile=defaults_profile,
+            profile_defaults=profile_defaults,
         )
         self._steps.append(step)
         return self
@@ -808,10 +830,14 @@ class _RecombinationMixin:
         return self
 
     def _recombine_defaults(self):
-        """Lazy-extract the empirical distributions for this
-        experiment's DataConfig. Returns ``None`` for raw-RefDataConfig
-        experiments. Cached on first call.
+        """The default sampling distributions for :meth:`recombine`.
+
+        A portable Reference supplies its explicit unfitted defaults;
+        a DataConfig supplies its empirical distributions. Returns
+        ``None`` for raw-RefDataConfig experiments.
         """
+        if self._reference is not None:
+            return self._reference.recombine_defaults()
         if self._dataconfig is None:
             return None
         from .._dataconfig_extract import extract_recombine_defaults

@@ -53,6 +53,24 @@ def declares_imgt_gaps(gapped_seq: Optional[str]) -> bool:
     return bool(gapped_seq) and '.' in gapped_seq
 
 
+def imgt_region_boundaries(gapped_seq: str) -> Dict[str, Tuple[int, int]]:
+    """Map the fixed IMGT gapped boundaries onto ungapped coordinates.
+
+    Performs no declaration check: the caller must already know that
+    ``gapped_seq`` is IMGT-numbered.  Returns ``(ungapped_start, ungapped_end)``
+    half-open intervals for each region.
+    """
+    result = {}
+    for region, (g_start, g_end) in IMGT_GAPPED_BOUNDARIES.items():
+        # Clamp to actual gapped sequence length
+        g_start_safe = min(g_start, len(gapped_seq))
+        g_end_safe = min(g_end, len(gapped_seq))
+        ug_start = gapped_to_ungapped_pos(gapped_seq, g_start_safe)
+        ug_end = gapped_to_ungapped_pos(gapped_seq, g_end_safe)
+        result[region] = (ug_start, ug_end)
+    return result
+
+
 def compute_v_region_boundaries(v_allele) -> Dict[str, Tuple[int, int]]:
     """Compute ungapped V-allele-relative boundaries for each IMGT region.
 
@@ -76,15 +94,7 @@ def compute_v_region_boundaries(v_allele) -> Dict[str, Tuple[int, int]]:
             f"{v_allele.name}: gapped_seq declares no IMGT gap alignment; "
             "IMGT subregions cannot be derived from an ungapped sequence"
         )
-    result = {}
-    for region, (g_start, g_end) in IMGT_GAPPED_BOUNDARIES.items():
-        # Clamp to actual gapped sequence length
-        g_start_safe = min(g_start, len(gapped))
-        g_end_safe = min(g_end, len(gapped))
-        ug_start = gapped_to_ungapped_pos(gapped, g_start_safe)
-        ug_end = gapped_to_ungapped_pos(gapped, g_end_safe)
-        result[region] = (ug_start, ug_end)
-    return result
+    return imgt_region_boundaries(gapped)
 
 
 def classify_position(

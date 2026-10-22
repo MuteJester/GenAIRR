@@ -10,12 +10,11 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
-import tempfile
 from typing import Any
 
 from GenAIRR import _engine
+from GenAIRR._artifact_io import ArtifactIOError, write_atomic
 
 
 _ARTIFACT = "genairr_family_replay"
@@ -446,7 +445,17 @@ def _capture_request(annotations, limits=None, *, deferred=False):
     return _CaptureRequest(annotations, limits, deferred=deferred)
 
 
+def _reject_portable_reference_capture():
+    raise FamilyReplayError(
+        "unsupported", "capture.reference",
+        "family-replay capture is not yet supported for portable references "
+        "(reference_spec_v1 cannot encode a reference sealed by a portable reference context)",
+    )
+
+
 def _start_capture(compiled, request, strict, expose_provenance, seed):
+    if compiled._refdata.is_sealed():
+        _reject_portable_reference_capture()
     if type(strict) is not bool:
         raise FamilyReplayError("format", "capture.strict", "expected Boolean")
     if type(expose_provenance) is not bool:
@@ -543,34 +552,10 @@ class FamilyReplayBundle:
         """Publish atomically, refusing to replace an existing file by default."""
         if type(replace) is not bool:
             raise TypeError("replace must be Boolean")
-        destination = Path(path)
-        temporary = None
         try:
-            descriptor, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(self._text.encode("utf-8"))
-                handle.flush()
-                os.fsync(handle.fileno())
-            if replace:
-                os.replace(temporary, destination)
-            else:
-                os.link(temporary, destination)
-                os.unlink(temporary)
-            temporary = None
-            if hasattr(os, "O_DIRECTORY"):
-                directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
-        except OSError as exc:
+            write_atomic(path, self._text.encode("utf-8"), replace=replace)
+        except ArtifactIOError as exc:
             raise FamilyReplayError("io", str(path), str(exc)) from exc
-        finally:
-            if temporary is not None:
-                try:
-                    os.unlink(temporary)
-                except FileNotFoundError:
-                    pass
 
     def replay_records(self, *, limits=None):
         """Validate every source, attempt and observed read before returning truth."""
@@ -711,7 +696,8 @@ class FamilyReplayBundle:
         if _pack(records, "records", selected_limits) != _pack(expected_records, "records.expected", selected_limits):
             raise FamilyReplayError("record_mismatch", "records", "replayed records differ in fields, values, types or order")
         result = SimulationResultWithLineages(records, outcomes=outcomes, parents=parents, lineage_trees=trees,
-                                             families=families, lineage_record_origins=origins)
+                                             families=families, lineage_record_origins=origins,
+                                             reference_content_hash=refdata.content_hash())
         for report in (result.validate_records(refdata, _family_replay_budget=budget), result.validate_families(),
                        result.validate_families_with_parents(refdata, _family_replay_budget=budget)):
             if not report.ok:

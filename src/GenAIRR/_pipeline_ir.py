@@ -126,6 +126,13 @@ class _RecombineStep:
     duplex_repair_json: Optional[str] = None
     # Capture explicit intent before empirical/default normalization.
     np_lengths_overridden: bool = False
+    # Provenance for describe(): when the experiment runs on a portable
+    # Reference, the name of its explicit defaults profile and the settings
+    # that profile supplied ("allele_usage_V", "allele_usage_D",
+    # "allele_usage_J", "np1_lengths", "np2_lengths"). Settings not listed
+    # were given by the user. Lowering ignores both fields.
+    defaults_profile: Optional[str] = None
+    profile_defaults: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

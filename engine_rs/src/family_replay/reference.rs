@@ -137,6 +137,11 @@ pub struct ReferenceSpecV1 {
 }
 impl ReferenceSpecV1 {
     pub fn capture(r: &RefDataConfig) -> Result<Self, String> {
+        if r.reference_context.is_some() {
+            return Err(
+                "reference_spec_v1 cannot encode a config sealed by a reference context".into(),
+            );
+        }
         let pools = [&r.v_pool, &r.d_pool, &r.j_pool, &r.c_pool];
         let mut keys = std::collections::HashSet::new();
         for pool in pools {

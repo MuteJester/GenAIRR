@@ -194,11 +194,51 @@ def extract_recombine_defaults(cfg: Any) -> Dict[str, Optional[List[Tuple[int, f
        (raw-RefDataConfig path).
     """
     explicit = _explicit_models(cfg)
+    chain_type = _chain_type_label(cfg)
+    min_lengths = {
+        "V": _min_allele_length(getattr(cfg, "v_alleles", None)),
+        "D": _min_allele_length(getattr(cfg, "d_alleles", None)),
+        "J": _min_allele_length(getattr(cfg, "j_alleles", None)),
+    }
+    out = recombine_defaults_from_models(
+        explicit, chain_type=chain_type, min_allele_lengths=min_lengths
+    )
+    # Legacy nested-dict fallbacks for the keys that have one.
+    for key, segment, end, np_key in (
+        ("np1", None, None, "NP1"),
+        ("np2", None, None, "NP2"),
+        ("trim_v_3", "V", "3", None),
+        ("trim_d_5", "D", "5", None),
+        ("trim_d_3", "D", "3", None),
+        ("trim_j_5", "J", "5", None),
+    ):
+        if out[key]:
+            continue
+        if np_key is not None:
+            out[key] = extract_np_lengths(cfg, np_key)
+        else:
+            cap = _trim_cap(min_lengths[segment], two_sided=(segment == "D"))
+            out[key] = extract_trim_distribution(cfg, segment, end, cap=cap)
+    return out
+
+
+def recombine_defaults_from_models(
+    explicit: Any,
+    *,
+    chain_type: Optional[str],
+    min_allele_lengths: Dict[str, Optional[int]],
+) -> Dict[str, Any]:
+    """Model-driven half of :func:`extract_recombine_defaults`.
+
+    ``explicit`` is a ``ReferenceEmpiricalModels`` (or ``None``);
+    ``min_allele_lengths`` maps ``"V"`` / ``"D"`` / ``"J"`` to the
+    shortest allele length (or ``None``) and drives the trim caps.
+    No legacy ``DataConfig`` fallback happens here.
+    """
     if explicit:
         # Validate before consuming. Catches malformed user-authored
         # specs before they propagate into the engine, with a
         # cartridge-tagged error.
-        chain_type = _chain_type_label(cfg)
         try:
             explicit.validate(chain_type=chain_type)
         except ValueError as exc:
@@ -206,13 +246,13 @@ def extract_recombine_defaults(cfg: Any) -> Dict[str, Optional[List[Tuple[int, f
                 f"DataConfig.reference_models failed shape validation: {exc}"
             ) from exc
 
-    cap_v = _trim_cap(_min_allele_length(getattr(cfg, "v_alleles", None)), two_sided=False)
-    cap_d = _trim_cap(_min_allele_length(getattr(cfg, "d_alleles", None)), two_sided=True)
-    cap_j = _trim_cap(_min_allele_length(getattr(cfg, "j_alleles", None)), two_sided=False)
+    cap_v = _trim_cap(min_allele_lengths.get("V"), two_sided=False)
+    cap_d = _trim_cap(min_allele_lengths.get("D"), two_sided=True)
+    cap_j = _trim_cap(min_allele_lengths.get("J"), two_sided=False)
 
     return {
-        "np1": _np_lengths_from_models(explicit, "NP1") or extract_np_lengths(cfg, "NP1"),
-        "np2": _np_lengths_from_models(explicit, "NP2") or extract_np_lengths(cfg, "NP2"),
+        "np1": _np_lengths_from_models(explicit, "NP1"),
+        "np2": _np_lengths_from_models(explicit, "NP2"),
         # NP base sampling distributions. Slice — Typed NP base
         # model. Cascade is `typed → uniform` (the legacy auto-lift
         # of `NP_first_bases` / `NP_transitions` is deliberately
@@ -250,14 +290,10 @@ def extract_recombine_defaults(cfg: Any) -> Dict[str, Optional[List[Tuple[int, f
         "p_j_5_lengths": _p_nucleotide_lengths_from_models(
             explicit, "J_5"
         ),
-        "trim_v_3": _trim_from_models(explicit, "V_3", cap=cap_v)
-            or extract_trim_distribution(cfg, "V", "3", cap=cap_v),
-        "trim_d_5": _trim_from_models(explicit, "D_5", cap=cap_d)
-            or extract_trim_distribution(cfg, "D", "5", cap=cap_d),
-        "trim_d_3": _trim_from_models(explicit, "D_3", cap=cap_d)
-            or extract_trim_distribution(cfg, "D", "3", cap=cap_d),
-        "trim_j_5": _trim_from_models(explicit, "J_5", cap=cap_j)
-            or extract_trim_distribution(cfg, "J", "5", cap=cap_j),
+        "trim_v_3": _trim_from_models(explicit, "V_3", cap=cap_v),
+        "trim_d_5": _trim_from_models(explicit, "D_5", cap=cap_d),
+        "trim_d_3": _trim_from_models(explicit, "D_3", cap=cap_d),
+        "trim_j_5": _trim_from_models(explicit, "J_5", cap=cap_j),
         # Per-segment allele usage weights (Slice — Allele Usage
         # Estimation v1). Each is a ``{allele_name: weight}`` dict
         # OR ``None``. ``None`` means "no cartridge default for

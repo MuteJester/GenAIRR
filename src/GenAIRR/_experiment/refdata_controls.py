@@ -60,7 +60,21 @@ class _RefdataControlsMixin:
         ``|curated:<policy>`` so trace files and content hashes
         distinguish raw from curated artefacts. Returns ``self`` so
         the call chains fluently. See ``docs/reference_cartridge.md``.
+
+        Raises :class:`GenAIRR.ReferenceCapabilityError` (kind
+        ``"capability"``) on an experiment started from a portable
+        :class:`GenAIRR.Reference`: a portable reference runs only on its
+        own sealed configuration, and allele selection is not yet
+        supported for portable references.
         """
+        if self._reference is not None:
+            from .._reference.errors import ReferenceCapabilityError
+
+            raise ReferenceCapabilityError(
+                "capability", "curate_refdata",
+                "portable references cannot be curated in place; allele selection is "
+                "not yet supported for portable references",
+            )
         kwargs = {}
         if allowed is not None:
             kwargs["allowed"] = list(allowed)
@@ -99,6 +113,10 @@ class _RefdataControlsMixin:
         :meth:`curate_refdata`; if you want to *sample from* them
         explicitly, use this method. See
         ``docs/reference_cartridge.md``.
+
+        On a portable :class:`GenAIRR.Reference` an explicit call, including
+        ``allow_curatable_refdata(False)``, wins over the default chosen from
+        the reference's admitted curatable findings.
         """
         self._allow_curatable_refdata = bool(enabled)
         return self

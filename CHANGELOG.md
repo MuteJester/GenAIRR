@@ -6,6 +6,17 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- `GenAIRR.Reference`: portable local germline references built from V/D/J
+  FASTA and a versioned annotation sidecar (`Reference.annotation_template`,
+  `from_fasta`, `report`, `capabilities`, `require`, `write`, `read`). Every
+  annotation is unknown or carries its support (`source` with a citation, or
+  `assertion`) and, for coding phase, whether it is anchor-derived. Capabilities
+  report their evidence level and never upgrade an assertion to source.
+  `Experiment.on(reference)` runs offline with the explicit
+  `genairr.unfitted_defaults.v1` profile; genotype- and cohort-constrained runs
+  and family-replay capture are not yet supported for portable references.
+  New errors `ReferenceArtifactError` and `ReferenceCapabilityError`. See the
+  "Portable local references" guide.
 - Experimental `CoupledDuplexRepair` and `DuplexJoin` scripts for successive
   V-D/D-J joins on one shared two-strand D substrate, including inversion,
   canonical source ancestry, a global nucleotide ledger and cumulative budgets.
@@ -24,6 +35,28 @@ All notable changes to GenAIRR are documented here.
   replaces automatic trim/P settings, preserves per-base origin provenance,
   and supports productive completion constraints. It does not claim calibrated
   microscopic hairpin-opening probabilities.
+
+### Changed
+
+- Every simulated `SimulationResult` (bundled references included) now records
+  the content hash of the reference it ran against. `validate_records` and
+  `validate_families_with_parents` against a different reference now raise
+  `ValueError` instead of misreporting. A genotype run with novel alleles must
+  be validated against `compiled.refdata` (the effective reference).
+- Artifact files written by GenAIRR (portable references and family-replay
+  bundles) now follow the user's umask (for example 0644) instead of owner-only
+  0600. An existing file is still never overwritten without `replace=True`, and
+  the destination appears only once complete. On a filesystem without hard links
+  (FAT/exFAT, some SMB shares) a write without `replace=True` publishes by rename
+  on Windows; elsewhere it fails with an `io` error and leaves the destination
+  untouched, because such a filesystem has no atomic no-overwrite step. Write to
+  a local disk and copy the file, or pass `replace=True` to overwrite.
+- `Experiment.on("<unknown name>")` errors now point to
+  `GenAIRR.Reference.read(path)`; a path string is never read implicitly.
+  `Experiment.on("x.json")` (any string ending in `.json`) now raises
+  `TypeError` where it previously raised `ValueError`; a path object such as
+  `Experiment.on(Path("x.json"))` still raises `TypeError`, now with the same
+  pointer.
 
 ### Fixed
 

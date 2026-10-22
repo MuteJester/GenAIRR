@@ -24,16 +24,23 @@ def append_duplex_recombine(experiment, model, *, np1_lengths, np2_lengths,
     # Keep cartridge allele usage as an upstream rule. Junction defaults are
     # deliberately absent from this immutable step: the authored history owns
     # the complete repair product, rather than a second N/P/trim model.
-    defaults = experiment._recombine_defaults() if experiment._dataconfig is not None else {}
+    defaults = experiment._recombine_defaults() or {}
     values = []
+    profile_defaults = []
     for segment, weights in (("V", v_allele_weights), ("D", d_allele_weights), ("J", j_allele_weights)):
         if weights is None:
             weights = defaults.get(f"allele_usage_{segment.lower()}")
+            if weights is not None and experiment._reference is not None:
+                profile_defaults.append(f"allele_usage_{segment}")
         values.append(experiment._resolve_allele_weights(segment, weights))
+    defaults_profile = None
+    if experiment._reference is not None:
+        from .._reference.defaults import PROFILE as defaults_profile
     step = _RecombineStep(
         np1_lengths=(), np2_lengths=(), trim_v_3=None, trim_d_5=None,
         trim_d_3=None, trim_j_5=None, weights_v=values[0], weights_d=values[1],
         weights_j=values[2], duplex_repair_json=model.to_json(),
+        defaults_profile=defaults_profile, profile_defaults=tuple(profile_defaults),
     )
     if explicit_weights:
         experiment._user_allele_weights_set = True

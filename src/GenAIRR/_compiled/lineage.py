@@ -329,6 +329,7 @@ class CompiledLineageExperiment:
             records, outcomes=outcomes, parents=parents,
             lineage_trees=lineage_trees, families=families,
             lineage_record_origins=lineage_record_origins,
+            reference_content_hash=self._refdata.content_hash(),
         )
         if capture is not None:
             result._family_replay_capture = capture
