@@ -403,8 +403,9 @@ class _Build:
                 raise bad(ptr("/selection", i), f"{self.entries[i].allele_id}: claims "
                                                 f"{[c.id for c, *_ in items]} would project different {predicate} "
                                                 f"values {sorted(values)}", "projection")
+            supports = {support for _, _, support, _, _ in items}     # the weaker one when they differ
             annotation = {"value": items[0][1],
-                          "support": "source" if all(s == "source" for _, _, s, _, _ in items) else "assertion",
+                          "support": supports.pop() if len(supports) == 1 else "assertion",
                           "source": "; ".join(dict.fromkeys(source for *_, source, _ in items)),
                           "method": "; ".join(dict.fromkeys(method for *_, method in items))}
             if predicate == "coding_phase":
