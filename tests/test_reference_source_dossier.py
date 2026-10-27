@@ -121,6 +121,24 @@ def test_a_failure_after_the_manifest_is_published_says_the_dossier_is_complete(
     assert ReferenceBuild.read_dossier(tmp_path / "dossier").manifest == build.manifest
 
 
+def test_a_manifest_published_by_another_writer_is_never_claimed(igl, tmp_path, monkeypatch):
+    _, build = igl
+    foreign = b'{"written":"by another process"}\n'
+    real = _artifact_io.write_atomic
+
+    def racing(path, data, *, replace):
+        if pathlib.Path(path).name == "manifest.json":
+            pathlib.Path(path).write_bytes(foreign)              # another writer wins the race
+        real(path, data, replace=replace)
+
+    monkeypatch.setattr(build_module, "write_atomic", racing)
+    exc = error("io", build.write_dossier, tmp_path / "dossier")
+    assert exc.path == "/manifest.json"
+    assert "blocked by an existing manifest.json that this writer did not publish" in exc.message
+    assert "complete" not in exc.message.replace("incomplete", "")
+    assert (tmp_path / "dossier" / "manifest.json").read_bytes() == foreign
+
+
 def test_a_dossier_is_written_into_a_new_directory_only(igl, tmp_path):
     _, build = igl
     existing = tmp_path / "existing"

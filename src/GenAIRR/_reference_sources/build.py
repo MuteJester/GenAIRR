@@ -176,6 +176,14 @@ def _read_file(root: Path, name: str, limit: int) -> bytes:
         return handle.read(limit + 1)
 
 
+def _holds(root: Path, name: str, data: bytes) -> bool:
+    """Whether the file ``name`` below ``root`` holds exactly ``data`` (read without following links)."""
+    try:
+        return _read_file(root, name, len(data)) == data
+    except ReferenceSourceError:
+        return False
+
+
 def _text(name: str, data: bytes) -> str:
     try:
         return data.decode("utf-8")
@@ -455,9 +463,14 @@ class ReferenceBuild:
                     write_atomic(target, data, replace=False)
             except (OSError, ArtifactIOError, ReferenceArtifactError) as exc:
                 if name == MANIFEST_NAME and os.path.lexists(root / MANIFEST_NAME):
+                    if _holds(root, MANIFEST_NAME, data):
+                        raise ReferenceSourceError("io", "/" + name, (
+                            f"{MANIFEST_NAME} was published into {root}, so the dossier is complete, but finishing "
+                            f"its publication failed: {exc}. Check the dossier with ReferenceBuild.read_dossier")) from exc
                     raise ReferenceSourceError("io", "/" + name, (
-                        f"{MANIFEST_NAME} was published into {root}, so the dossier is complete, but finishing its "
-                        f"publication failed: {exc}. Check the dossier with ReferenceBuild.read_dossier")) from exc
+                        f"publication into {root} was blocked by an existing {MANIFEST_NAME} that this writer did "
+                        f"not publish ({exc}); it was left as it is. This dossier is incomplete; write the build into "
+                        "a new directory")) from exc
                 raise ReferenceSourceError("io", "/" + name, (
                     f"cannot write dossier member {name} into {root}: {exc}. The dossier is incomplete: it has no "
                     f"{MANIFEST_NAME}, so it cannot be read. The files already written are kept; write the build "
