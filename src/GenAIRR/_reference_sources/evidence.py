@@ -47,6 +47,15 @@ _EXTENDS = re.compile(r"(airr|airr_ex)_extends_([35])prime")
 _EXTENSION_CODES = {"matches": "coding_extension_matches_record_context",
                     "without_record_context": "coding_extension_without_record_context",
                     "disagrees": "coding_extension_disagrees_with_record_context"}
+# The record fields a boundary claim considers (none of them establishes a complete end).
+_BOUNDARY_FIELDS = {
+    ("V", "boundary_5"): ("gene_start", "curational_tags"),
+    ("V", "boundary_3"): ("gene_end", "v_rs_start", "v_rs_end", "curational_tags"),
+    ("D", "boundary_5"): ("gene_start", "d_rs_5_prime_start", "d_rs_5_prime_end", "curational_tags"),
+    ("D", "boundary_3"): ("gene_end", "d_rs_3_prime_start", "d_rs_3_prime_end", "curational_tags"),
+    ("J", "boundary_5"): ("gene_start", "j_rs_start", "j_rs_end", "curational_tags"),
+    ("J", "boundary_3"): ("gene_end", "j_donor_splice", "curational_tags"),
+}
 
 # code -> (severity, category, affected capabilities, meaning).
 FINDING_CODES = {
@@ -128,6 +137,16 @@ FINDING_CODES = {
         "info", "informational", _ENDS,
         "A reviewed historical note, bound to its exact text and sequence, maps through the record's exact "
         "gapped alignment to an affirmed interval of the coding sequence (not a physical coding end)."),
+    "provider_functionality_unclassified": (
+        "info", "unsupported_interpretation", (),
+        "Per record export: the provider's functional values, kept raw.  The profile establishes no "
+        "classification from them (a Boolean says neither functional, ORF nor pseudogene), so every "
+        "functionality claim is unresolved."),
+    "source_evidence_lineage": (
+        "info", "informational", (),
+        "All locked exports of one provider set are one evidence lineage: agreement between them (a record and "
+        "its gapped alignment, or the two record exports) is consistency within that lineage, not independent "
+        "confirmation.  Embedded support entries are kept as given, never retrieved or verified."),
 }
 
 
@@ -195,6 +214,8 @@ class _Interpretation:
         self.support: dict = {}          # record id -> [SupportReference]
         for reference in inventory.support:
             self.support.setdefault(reference.record.id, []).append(reference)
+        self.lineage_id = _lineage(lock)
+        self.observations = {o.id: o for o in inventory.observations}
         self.gapped: dict = {}
         for observation in inventory.observations:
             if observation.locator.role == "gapped_alignment":
@@ -205,7 +226,7 @@ class _Interpretation:
     # -- reading ---------------------------------------------------------
 
     def value(self, locator: Locator) -> Any:
-        observation = self.inventory.observation(locator)
+        observation = self.observations[locator.id]
         return c.ABSENT if observation.presence == "absent" else observation.value.get()
 
     def field(self, record, *tokens) -> tuple:
@@ -246,6 +267,7 @@ class _Interpretation:
     # -- the interpretation ----------------------------------------------
 
     def run(self) -> None:
+        self.lineage()
         if self.scope_problem is not None:
             self.findings.add("coordinate_profile_out_of_scope",
                               locators=[Locator(a, EXPORT_ANCHOR) for a in self.exports],
@@ -253,12 +275,14 @@ class _Interpretation:
                                             "problem": self.scope_problem})
         for asset in self.exports:
             labels = Counter(r.label for r in self.parsed[asset])
+            self.functionality(asset)
             for record in self.parsed[asset]:
                 candidates = self.inventory.candidates_of(record.locator)
                 if not candidates:
                     continue
                 (candidate,) = candidates
                 self.intervals[record.id] = self.coding_interval(record, candidate)
+                self.boundaries(record, candidate)
                 if record.segment == "V":
                     self.v_landmark(record, candidate, labels[record.label])
                 elif record.segment == "J":
@@ -289,6 +313,38 @@ class _Interpretation:
                          gene_start=start, gene_end=end, declared_length=found.end - found.start,
                          coding_length=len(candidate.sequence), relation=found.relation, extra=found.extra)
         return found
+
+    def boundaries(self, record, candidate) -> None:
+        """Both coding boundaries, unresolved: no provider field or tag establishes a complete end."""
+        for predicate in ("boundary_5", "boundary_3"):
+            self.claim(candidate.locator, predicate, None, None, "stated", self.status(False),
+                       [_locator(record, name) for name in _BOUNDARY_FIELDS[(record.segment, predicate)]])
+
+    def functionality(self, asset: str) -> None:
+        """An unresolved functionality claim per parsed record, and the raw values per export."""
+        values = {"true": 0, "false": 0, "null": 0, "absent": 0, "other": 0}
+        for record in self.inventory.records:
+            if record.locator.asset != asset:
+                continue
+            at = _locator(record, "functional")
+            observation = self.observations.get(at.id)    # none for a record that is not an object
+            value = c.ABSENT if observation is None or observation.presence == "absent" else observation.value.get()
+            values["absent" if value is c.ABSENT else "null" if value is None else
+                   str(value).lower() if type(value) is bool else "other"] += 1
+            if record.status == "parsed":
+                self.claim(record.locator, "functionality", None, None, "stated", self.status(False), (at,))
+        self.findings.add("provider_functionality_unclassified", locators=[Locator(asset, EXPORT_ANCHOR)],
+                          observations={"asset": asset, "values": values, "classified": 0,
+                                        "reason": f"profile {self.profile.id} establishes no functionality "
+                                                  "classification from the provider's values"})
+
+    def lineage(self) -> None:
+        assets = [a.asset_id for a in self.lock.assets if a.role != "data_terms"]
+        self.findings.add("source_evidence_lineage", locators=[Locator(a, EXPORT_ANCHOR) for a in self.exports],
+                          observations={"lineage": self.lineage_id, "provider": self.lock.provider,
+                                        "assets": assets, "independent_lineages": 1,
+                                        "support_references": len(self.inventory.support),
+                                        "support_status": "embedded_unretrieved"})
 
     def gapped_record(self, record, carriers: int) -> tuple:
         """``(locator, gapped sequence, None)`` of the one record of the same variant's gapped
@@ -433,7 +489,7 @@ class _Interpretation:
             "label": longer.label, "segment": longer.segment, "extending_export": longer.locator.asset,
             "side": side, "extension": extra, "record_context": bases, "reason": reason, "gene_start": _raw(start),
             "gene_end": _raw(end), "v_rs_start": _raw(rs) if longer.segment == "V" else None,
-            "extension_end_vs_v_rss": versus_rss})
+            "extension_end_vs_v_rss": versus_rss, "lineage": self.lineage_id})
         self.extensions[(longer.segment, longer.label)] = {"export": longer.locator.asset, "side": side,
                                                            "bases": extra,
                                                            "matches_record_context": status == "matches"}
@@ -531,7 +587,7 @@ class _Interpretation:
                      bases_through_rss_minus_1=sequence[interval.end:rs - 1], extension=extension,
                      historical_note=note, genomic_support=[
                          {"repository": s.repository, "reference": s.reference, "status": s.status}
-                         for s in support])
+                         for s in support], lineage=self.lineage_id)
 
     def landmark_codon(self, record, candidate, anchor: int, evidence) -> None:
         expected = self.profile.landmark_residues[record.segment].get(self.locus, ())
@@ -575,6 +631,22 @@ def interpret(lock: SourceLock, assets: Mapping[str, bytes], inventory: SourceIn
         raise exc.under("/inventory") from None
     consistency.check_inventory(result, lock)
     return result
+
+
+def _lineage(lock: SourceLock) -> str:
+    return f"{lock.provider}:{lock.set_id}/{lock.release}"
+
+
+def evidence_lineage(lock: SourceLock, locator: Locator) -> str:
+    """The evidence lineage of a locator into ``lock``'s assets: every asset of one provider set
+    is one lineage (``<provider>:<set id>/<release>``), so evidence roots in several of its
+    exports never count as independent confirmations."""
+    require_type(lock, SourceLock, "lock")
+    require_type(locator, Locator, "locator")
+    if locator.asset not in lock.asset_ids:
+        raise bad("/asset", f"asset {locator.asset!r} is not in the lock (locked: {list(lock.asset_ids)})",
+                  "identity_mismatch")
+    return _lineage(lock)
 
 
 def _raw(value: Any) -> Any:

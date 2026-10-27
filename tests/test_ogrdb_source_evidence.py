@@ -26,7 +26,7 @@ from GenAIRR._reference_sources import model as m
 from GenAIRR._reference_sources import ogrdb
 from GenAIRR._reference_sources import profiles
 from tests.test_ogrdb_source_coordinates import (
-    GAPPED, NOTE_LABELS, assert_status, at, candidate_of, claim_of, findings, interpret,
+    GAPPED, NOTE_LABELS, assert_status, at, candidate_of, claim_of, claims, findings, interpret,
     interpreted, raw_gapped, raw_record, record_of, small,
 )
 from tests.test_ogrdb_source_inventory import (
@@ -430,3 +430,152 @@ def test_only_genomic_support_entries_are_listed_as_genomic_support():
     assert [(s["repository"], s["reference"]) for s in listed] == [
         (s["repository_name"], s["repository_ref"]) for s in raw_support]
     assert ("VDJbase", "P1") not in [(s["repository"], s["reference"]) for s in listed]
+
+
+# ── boundaries, functionality, lineage and support ───────────────────
+
+
+BOUNDARY_FIELDS = {
+    ("V", "boundary_5"): ("gene_start", "curational_tags"),
+    ("V", "boundary_3"): ("gene_end", "v_rs_start", "v_rs_end", "curational_tags"),
+    ("D", "boundary_5"): ("gene_start", "d_rs_5_prime_start", "d_rs_5_prime_end", "curational_tags"),
+    ("D", "boundary_3"): ("gene_end", "d_rs_3_prime_start", "d_rs_3_prime_end", "curational_tags"),
+    ("J", "boundary_5"): ("gene_start", "j_rs_start", "j_rs_end", "curational_tags"),
+    ("J", "boundary_3"): ("gene_end", "j_donor_splice", "curational_tags"),
+}
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_no_coding_boundary_is_ever_claimed_complete(source):
+    _, inventory = interpreted(source)
+    parsed = [r for r in inventory.records if r.status == "parsed"]
+    for record in parsed:
+        (candidate,) = inventory.candidates_of(record.locator)
+        for predicate in ("boundary_5", "boundary_3"):
+            claim = claim_of(inventory, candidate, predicate)
+            assert_status(claim, "unresolved", "none", "stated")
+            assert claim.value.get() is None and claim.mappings == ()
+            assert set(claim.evidence) == {at(record, name) for name in BOUNDARY_FIELDS[(record.segment, predicate)]}
+    assert len(claims(inventory, "boundary_5")) == len(claims(inventory, "boundary_3")) == len(parsed)
+
+
+def test_tags_functionality_rss_adjacency_and_exact_slices_set_no_boundary():
+    _, inventory = interpreted(IGL)
+    for label in NOTE_LABELS:       # likely_full_length, functional, adjacent context, exact airr slice
+        raw_rec = raw_record(IGL, "airr", label)
+        assert raw_rec["curational_tags"] == ["likely_full_length"] and raw_rec["functional"] is True
+        candidate = candidate_of(inventory, "airr", label)
+        assert claim_of(inventory, candidate, "coding_interval").status == "accepted"
+        assert claim_of(inventory, candidate, "boundary_3").status == "unresolved"
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_provider_functionality_stays_raw_and_unclassified(source):
+    _, inventory = interpreted(source)
+    for record in [r for r in inventory.records if r.status == "parsed"]:
+        claim = claim_of(inventory, record, "functionality")
+        assert_status(claim, "unresolved", "none", "stated")
+        assert claim.evidence == (at(record, "functional"),)
+    assert not [x for x in inventory.claims if x.predicate == "functionality" and x.value.get() is not None]
+    summaries = {f.observations.get()["asset"]: f.observations.get()
+                 for f in findings(inventory, "provider_functionality_unclassified")}
+    assert set(summaries) == set(GAPPED)
+    for fmt, observations in summaries.items():
+        values = [r.get("functional", "absent") for r in raw_records(source, fmt)]
+        assert observations["values"] == {"true": values.count(True), "false": values.count(False),
+                                          "null": values.count(None), "absent": values.count("absent"),
+                                          "other": len(values) - sum(values.count(v) for v in (True, False, None,
+                                                                                               "absent"))}
+        assert observations["classified"] == 0
+
+
+def test_a_false_provider_functional_is_not_a_pseudogene():
+    _, inventory = interpreted(IGK)
+    record = record_of(inventory, "airr", "IGKV2-29*01")
+    assert raw_record(IGK, "airr", "IGKV2-29*01")["functional"] is False
+    assert inventory.observation(at(record, "functional")).value.get() is False
+    assert claim_of(inventory, record, "functionality").status == "unresolved"
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_all_exports_of_one_provider_set_are_one_evidence_lineage(source):
+    lock, inventory = interpreted(source)
+    lineage = f"ogrdb:{source[0]}/{source[1]}"
+    (finding,) = findings(inventory, "source_evidence_lineage")
+    observations = finding.observations.get()
+    assert observations["lineage"] == lineage
+    assert observations["assets"] == ["airr", "airr_ex", "gapped", "gapped_ex"]
+    assert observations["independent_lineages"] == 1
+    assert observations["support_status"] == "embedded_unretrieved"
+    assert observations["support_references"] == len(inventory.support)
+    for claim in inventory.claims:
+        roots = list(claim.evidence) + [inventory.mapping(x).output for x in claim.mappings]
+        assert {evidence.evidence_lineage(lock, root) for root in roots} == {lineage}
+    anchors = claims(inventory, "anchor", "airr", "V")
+    assert anchors and all({root.asset for root in a.evidence} == {"airr", "gapped"} for a in anchors)
+    for code in ("coding_extension_matches_record_context", "coding_end_before_declared_v_rss"):
+        for item in findings(inventory, code):
+            assert item.observations.get()["lineage"] == lineage
+    error("identity_mismatch", evidence.evidence_lineage, interpreted(IGL, ("airr", "airr_ex"))[0],
+          m.Locator("gapped", "/0"))
+
+
+def test_embedded_support_is_never_retrieved_or_upgraded():
+    _, inventory = interpreted(IGL)
+    assert {s.status for s in inventory.support} == {"embedded_unretrieved"}
+    record = record_of(inventory, "airr", "IGLV6-57*04")
+    found = {(s.repository, s.reference) for s in inventory.support if s.record == record.locator}
+    assert ("GenBank", "Gibson:HG01106") in found              # a repository label with an opaque study id
+    support = {s.locator for s in inventory.support}
+    assert not [x for x in inventory.claims if set(x.evidence) & support]
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_support_derivation_and_status_are_honest_for_every_claim(source):
+    _, inventory = interpreted(source)
+    rules = {   # predicate -> {(segment, status, support, derivation)}
+        "anchor": {("V", "accepted", "source", "stated"), ("J", "accepted", "source", "stated")},
+        "coding_phase": {("V", "accepted", "assertion", "anchor_derived"), ("J", "accepted", "source", "stated")},
+        "phase_independence": {("V", "accepted", "assertion", "anchor_derived"), ("J", "unresolved", "none", "stated")},
+        "coding_interval": {(s, "accepted", "source", "stated") for s in "VDJ"} | {
+            (s, "unresolved", "none", "stated") for s in "VDJ"},
+        "extension": {(s, "accepted", "source", "variant_comparison") for s in "VDJ"},
+        "boundary_5": {(s, "unresolved", "none", "stated") for s in "VDJ"},
+        "boundary_3": {(s, "unresolved", "none", "stated") for s in "VDJ"},
+        "functionality": {(s, "unresolved", "none", "stated") for s in "VDJ"},
+    }
+    seen = set()
+    for claim in inventory.claims:
+        segment = inventory.subject_record(claim).segment
+        key = (segment, claim.status, claim.support, claim.derivation)
+        assert key in rules[claim.predicate], (claim.predicate, key)
+        seen.add(claim.predicate)
+        if claim.predicate == "phase_independence":
+            assert claim.value.get() != "independent"
+    assert seen == set(rules)
+    assert not [x for x in inventory.claims if inventory.subject_record(x).segment == "D"
+                and x.predicate in ("anchor", "coding_phase", "phase_independence")]
+
+
+def test_outside_the_validated_scope_no_claim_is_accepted():
+    blobs = pinned(IGL)
+    blobs["airr_ex"] = blobs["airr_ex"] + b"\n"           # drifted bytes of a validated release
+    lock, inventory = interpret(blobs)
+    assert {x.status for x in inventory.claims} == {"candidate", "unresolved"}
+    extension = claim_of(inventory, candidate_of(inventory, "airr_ex", "IGLV10-54*04"), "extension")
+    assert_status(extension, "candidate", "none", "variant_comparison")
+
+
+def test_identical_dna_identities_cite_only_their_own_records():
+    _, inventory = interpreted(IGL)
+    j2, j3 = record_of(inventory, "airr", "IGLJ2*01"), record_of(inventory, "airr", "IGLJ3*01")
+    assert candidate_of(inventory, "airr", "IGLJ2*01").sha256 == candidate_of(inventory, "airr", "IGLJ3*01").sha256
+    for record, other in ((j2, j3), (j3, j2)):
+        mine = [x for x in inventory.claims if inventory.subject_record(x) == record]
+        assert mine
+        for claim in mine:
+            assert all(root.is_under(record.locator) for root in claim.evidence)
+            assert not any(root.is_under(other.locator) for root in claim.evidence)
+    assert [r for r in inventory.records if r.locator.asset == "airr_ex" and r.label == "IGLJ3*01"] == []
+    assert not [x for x in inventory.claims if x.subject.asset == "airr_ex"
+                and inventory.subject_record(x).label == "IGLJ3*01"]
