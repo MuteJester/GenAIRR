@@ -126,6 +126,33 @@ def withhold(claims, digest, reason="withheld for this test") -> dict:
             "reason": reason, "evidence": []}
 
 
+def rewrite_claims(monkeypatch, label, predicate, change):
+    """Replace the real interpretation by one whose ``predicate`` claims about ``label`` (in both
+    record exports) become ``change(claim)``, a list of claims; returns the replacement.  This
+    reaches claim statuses the shipped profile never emits in scope."""
+    real = evidence.interpret
+
+    def interpret(lock_, assets, inventory):
+        result = real(lock_, assets, inventory)
+        claims = []
+        for claim in result.claims:
+            hit = claim.predicate == predicate and result.subject_record(claim).label == label
+            claims.extend(change(claim) if hit else [claim])
+        fields = {name: getattr(result, name) for name in ("source_lock_hash", "adapter", "records", "candidates",
+                                                           "mentioned_identities", "observations", "support",
+                                                           "mappings", "findings")}
+        return m.SourceInventory.assemble(claims=tuple(claims), **fields)
+
+    monkeypatch.setattr(evidence, "interpret", interpret)
+    return interpret
+
+
+def _conflicting(claim) -> list:
+    """Two disagreeing claims in place of one."""
+    return [dataclasses.replace(claim, status="conflicting"),
+            dataclasses.replace(claim, status="conflicting", value=claim.value.get() - 3)]
+
+
 def claim_id(inventory, fmt, label, predicate) -> str:
     (record,) = [r for r in inventory.records if r.locator.asset == fmt and r.label == label]
     (candidate,) = inventory.candidates_of(record.locator)
@@ -827,21 +854,9 @@ def test_accept_claim_cannot_force_a_phase_without_a_projected_anchor(monkeypatc
 
 def test_a_candidate_named_by_accept_claim_is_projected_as_an_assertion_citing_the_decision(monkeypatch):
     blobs, lock = mini(monkeypatch)
-    real = evidence.interpret
-
-    def demoted(lock_, assets, inventory):
-        """The real interpretation with the V anchor demoted to a candidate (a value whose meaning a
-        profile has not established), so a decision can accept it."""
-        result = real(lock_, assets, inventory)
-        claims = tuple(dataclasses.replace(c, status="candidate", support="none")
-                       if c.predicate == "anchor" and result.subject_record(c).label == V_LABEL else c
-                       for c in result.claims)
-        fields = {name: getattr(result, name) for name in ("source_lock_hash", "adapter", "records", "candidates",
-                                                           "mentioned_identities", "observations", "support",
-                                                           "mappings", "findings")}
-        return m.SourceInventory.assemble(claims=claims, **fields)
-
-    monkeypatch.setattr(evidence, "interpret", demoted)
+    # the V anchor demoted to a candidate (a value whose meaning a profile has not established)
+    demoted = rewrite_claims(monkeypatch, V_LABEL, "anchor",
+                             lambda c: [dataclasses.replace(c, status="candidate", support="none")])
     inventory = demoted(lock, blobs, ogrdb.build_inventory(lock, blobs))
     anchor = claim_id(inventory, "airr", V_LABEL, "anchor")
     (index,) = [i for i, r in enumerate(records_in(blobs, "airr")) if r["label"] == V_LABEL]
@@ -993,24 +1008,7 @@ def test_a_record_declaring_another_taxon_or_locus_cannot_be_selected(monkeypatc
 
 def test_conflicting_claims_stay_null_at_runtime_and_keep_their_values_in_the_report(monkeypatch):
     blobs, lock = mini(monkeypatch)
-    real = evidence.interpret
-
-    def conflicting(lock_, assets, inventory):
-        """The real interpretation with the V anchor replaced by two disagreeing claims."""
-        result = real(lock_, assets, inventory)
-        claims = []
-        for claim in result.claims:
-            if claim.predicate == "anchor" and result.subject_record(claim).label == V_LABEL:
-                claims.append(dataclasses.replace(claim, status="conflicting"))
-                claims.append(dataclasses.replace(claim, status="conflicting", value=claim.value.get() - 3))
-            else:
-                claims.append(claim)
-        fields = {name: getattr(result, name) for name in ("source_lock_hash", "adapter", "records", "candidates",
-                                                           "mentioned_identities", "observations", "support",
-                                                           "mappings", "findings")}
-        return m.SourceInventory.assemble(claims=tuple(claims), **fields)
-
-    monkeypatch.setattr(evidence, "interpret", conflicting)
+    rewrite_claims(monkeypatch, V_LABEL, "anchor", _conflicting)
     result = build(lock, blobs, mini_recipe(blobs, lock))
     v = result.reference.alleles[0]
     assert (v.label, v.anchor, v.coding_phase) == (V_LABEL, None, None)
