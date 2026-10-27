@@ -829,7 +829,7 @@ class SourceInventory:
                  "identities": identities, "by_record": {k: tuple(v) for k, v in by_record.items()}}
         object.__setattr__(self, "_index", index)
         self._check_items(records, candidates, observations)
-        self._check_mappings(candidates, observations)
+        self._check_mappings(records, candidates, observations)
         self._check_claims(records, candidates, observations, mappings)
         for i, finding in enumerate(self.findings):
             for j, subject in enumerate(finding.subjects):
@@ -884,7 +884,7 @@ class SourceInventory:
                     raise bad(path, f"{identity.label} is mentioned by {record.segment} record {record.label}, "
                                     f"not as segment {identity.segment}")
 
-    def _check_mappings(self, candidates, observations) -> None:
+    def _check_mappings(self, records, candidates, observations) -> None:
         inputs, outputs = set(), set()
         for i, mapping in enumerate(self.mappings):
             path = ptr("/mappings", i)
@@ -912,17 +912,22 @@ class SourceInventory:
             if end is not None and end != len(candidate.sequence):
                 raise bad(ptr(path, "blocks"), f"blocks cover {end} bases of candidate {candidate.id} "
                                                f"({len(candidate.sequence)} bases)")
-            self._verify_mapping(mapping, candidate, observations, path)
+            self._verify_mapping(mapping, candidate, records[candidate.record.id], observations, path)
             key = (mapping.kind, candidate.id)
             if key in inputs:
                 raise bad(path, f"candidate {candidate.id} has more than one {mapping.kind} mapping")
             inputs.add(key)
 
     @staticmethod
-    def _verify_mapping(mapping, candidate, observations, path) -> None:
-        """Recompute a mapping from the observed values: digests, exactness and blocks."""
+    def _verify_mapping(mapping, candidate, record, observations, path) -> None:
+        """Recompute a mapping from the observed values: label, digests, exactness and blocks."""
         if mapping.kind == "gapped_alignment":
-            gapped = observations[mapping.output.id].value.get()["sequence"]
+            observed = observations[mapping.output.id].value.get()
+            if observed["header"] != record.label:
+                raise bad(ptr(path, "output"), f"gapped record {mapping.output.id} is labelled "
+                                               f"{observed['header']!r}; it binds only to a record labelled exactly "
+                                               f"that, not {record.id} ({record.label!r})")
+            gapped = observed["sequence"]
             if mapping.output_sha256 != text_digest(gapped):
                 raise bad(ptr(path, "output_sha256"), f"digest {mapping.output_sha256} is not that of the observed "
                                                       f"gapped sequence {mapping.output.id} ({text_digest(gapped)})",

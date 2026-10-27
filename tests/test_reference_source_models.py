@@ -2393,10 +2393,12 @@ def test_mention_locators_are_observed_fields(inv):
 
 def test_alignment_derived_claims_rest_on_exact_mappings(inv):
     cand, rec = inv.cand["airr", "IGHV1-69*01"], inv.rec["airr", "IGHV1-69*01"]
-    gindex, gapped = _gapped_index("IGHV1-2*02", "gapped")
+    gindex, gapped = _gapped_index("IGHV1-69*01", "gapped")
+    last = max(i for i, char in enumerate(gapped) if char != ".")
+    gapped = gapped[:last] + ("A" if gapped[last] != "A" else "C") + gapped[last + 1:]   # one base differs
     gloc = L("gapped", f"/{gindex}")
     observation = m.Observation(locator=gloc, record=None, presence="present",
-                                value={"header": "IGHV1-2*02", "sequence": gapped}, interpretation="interpreted")
+                                value={"header": "IGHV1-69*01", "sequence": gapped}, interpretation="interpreted")
     mismatch = m.Mapping(source_lock_hash=inv.lock.commitment, kind="gapped_alignment", input=cand, output=gloc,
                          input_sha256=m.sequence_digest(_find("IGHV1-69*01")[1]["coding_sequence"]),
                          output_sha256=m.text_digest(gapped), input_space="coding_sequence",
@@ -2554,3 +2556,47 @@ def test_selection_checks_scale_linearly():
     m.check_decisions(recipe, inventory)
     assert len(m.selected_subjects(recipe, inventory)) == 40_000
     assert time.perf_counter() - started < 2.0
+
+
+
+# ── gapped records bind only to their own label ──────────────────────
+
+
+@pytest.mark.parametrize("set_id", [IGH, "9606.IGKappa_VJ", "9606.IGLambda_VJ"])
+def test_pinned_gapped_headers_are_exactly_record_labels(set_id):
+    for fmt, gapped_fmt in (("airr", "gapped"), ("airr_ex", "gapped_ex")):
+        labels = {r["label"] for r in _records(fmt, set_id)}
+        headers = [name for name, _ in _fasta(gapped_fmt, set_id)]
+        assert headers and all(h in labels for h in headers)
+
+
+def test_gapped_mapping_header_must_equal_the_subject_label(inv):
+    cand = inv.cand["airr", "IGHV1-58*03"]
+    # The real gapped IGHV1-58*01 record: its header differs only by the allele suffix.
+    gindex, gapped = _gapped_index("IGHV1-58*01", "gapped")
+    gloc = L("gapped", f"/{gindex}")
+    sibling = m.Observation(locator=gloc, record=None, presence="present",
+                            value={"header": "IGHV1-58*01", "sequence": gapped}, interpretation="interpreted")
+    mapping = m.Mapping(source_lock_hash=inv.lock.commitment, kind="gapped_alignment", input=cand, output=gloc,
+                        input_sha256=inv.build().candidate(cand).sha256, output_sha256=m.text_digest(gapped),
+                        input_space="coding_sequence", output_space="imgt_gapped", blocks=(),
+                        transform="remove_imgt_gaps", validation="mismatch")
+    with _raises("malformed") as caught:
+        inv.build(observations=inv.observations + [sibling], mappings=[mapping, inv.mappings[1]],
+                  claims=[c for c in inv.claims if not c.mappings])
+    assert caught.error.path.startswith("/mappings/") and caught.error.path.endswith("/output")
+    assert "IGHV1-58*01" in caught.error.message and "IGHV1-58*03" in caught.error.message
+    # The exact own-label alignment is accepted; relabelling its header is not.
+    own = inv.mappings[0].output
+    relabelled = []
+    for observation in inv.observations:
+        if observation.locator == own:
+            value = observation.value.get()
+            observation = m.Observation(locator=own, record=None, presence="present",
+                                        value={"header": "IGHV1-58*01", "sequence": value["sequence"]},
+                                        interpretation="interpreted")
+        relabelled.append(observation)
+    with _raises("malformed") as caught:
+        inv.build(observations=relabelled)
+    assert caught.error.path.endswith("/output")
+
