@@ -1496,10 +1496,11 @@ def test_check_decisions_accepts_current_ids_and_digests(inventory, inv):
     finding = _finding(inventory, "variant_coding_sequence_differs")
     jcand = inv.cand["airr", "IGHJ4*02"]
     j_sha = inventory.candidate(jcand).sha256
-    independence = _claim(inventory, "phase_independence", jcand)
+    dcand = inv.cand["airr", "IGHD1-1*01"]
+    boundary = _claim(inventory, "boundary_3", dcand)
     phase = _claim(inventory, "coding_phase", jcand)
     decisions = [decision(findings=[finding.id]),
-                 decision("withhold_claim", claims=[independence.id], sequence_sha256=j_sha),
+                 decision("withhold_claim", claims=[boundary.id], sequence_sha256=inventory.candidate(dcand).sha256),
                  decision("accept_claim", claims=[phase.id], sequence_sha256=j_sha,
                           evidence=[inv.obs_at(inv.rec["airr", "IGHJ4*02"], "j_codon_frame").to_dict()])]
     m.check_decisions(_recipe(inventory, decisions=decisions), inventory)
@@ -2429,3 +2430,60 @@ def test_manifest_holds_one_blob_for_assets_with_identical_bytes(report):
     with _raises("missing_asset", "/members") as caught:
         m.check_manifest(m.BuildManifest.from_dict(d), lock)
     assert "gapped" in caught.error.message
+
+
+# ── decision and accounting rules ────────────────────────────────────
+
+
+def test_withholding_a_claim_the_runtime_cannot_hold_is_a_projection_error(inventory, inv):
+    ex = inv.cand["airr_ex", "IGHV1-58*03"]
+    extension = _claim(inventory, "extension", ex)
+    selected = tuple(label for label in SELECTED if label != "IGHV1-58*03")
+
+    def edit(d):
+        d["selection"].insert(0, selection_entry("IGHV1-58*03", fmt="airr_ex"))
+    entry = decision("withhold_claim", claims=[extension.id], sequence_sha256=inventory.candidate(ex).sha256,
+                     reason="do not trust the extension")
+    recipe = _recipe(inventory, selected=selected, decisions=[entry], edit=edit)
+    with _raises("projection", "/decisions/0/claims/0"):
+        m.check_decisions(recipe, inventory)
+    with _raises("projection", "/decisions/0/claims/0"):
+        m.build_input_hash(m.SourceLock.from_dict(lock_dict()), inventory, recipe)
+
+
+def test_record_claim_decisions_carry_the_selected_sequence_digest(inv):
+    rec = inv.rec["airr", "IGHV1-69*01"]
+    other_seq = "ACGT" * 30
+    extra = m.SequenceCandidate(locator=L("airr", rec.pointer + "/sequence"), record=rec, sequence=other_seq,
+                                sha256=m.sequence_digest(other_seq))
+    inventory = inv.build(candidates=list(inv.candidates) + [extra])
+    functional = _claim(inventory, "functionality", rec)
+    with _raises("stale_decision", "/decisions/0/sequence_sha256"):
+        m.check_decisions(_recipe(inventory, decisions=[
+            decision("withhold_claim", claims=[functional.id], sequence_sha256=extra.sha256)]), inventory)
+    selected_sha = selection_entry("IGHV1-69*01")["sequence_sha256"]
+    m.check_decisions(_recipe(inventory, decisions=[
+        decision("withhold_claim", claims=[functional.id], sequence_sha256=selected_sha)]), inventory)
+
+
+def test_independent_phase_is_never_anchor_derived(inv):
+    jcand = inv.cand["airr", "IGHJ4*02"]
+    frame = inv.obs_at(inv.rec["airr", "IGHJ4*02"], "j_codon_frame")
+    with _raises("malformed", "/derivation"):
+        inv.claim(jcand, "phase_independence", "independent", [frame], derivation="anchor_derived")
+    inv.claim(jcand, "phase_independence", "independent", [frame])
+
+
+def test_a_record_of_a_selected_identity_is_an_alternative_or_duplicate(report_d):
+    d = copy.deepcopy(report_d)
+    (index,) = [i for i, r in enumerate(d["records"]) if r["exclusion"] == "duplicate_occurrence"][:1]
+    d["records"][index].update(exclusion="outside_explicit_selection", related=None)
+    with _raises("malformed", f"/records/{index}/exclusion"):
+        m.BuildReport.from_dict(d)
+
+
+def test_one_finding_is_resolved_by_one_selection_decision():
+    d = recipe_dict()
+    d["decisions"] = [decision(reason="first"), decision(reason="second")]
+    with _raises("malformed", "/decisions"):
+        m.Recipe.from_dict(d)

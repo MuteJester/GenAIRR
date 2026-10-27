@@ -223,6 +223,14 @@ class Recipe:
         check_unique([e.record.id for e in self.selection], "/selection", "selected record",
                      "unresolved_selection")
         check_unique([r.capability for r in self.requires], "/requires", "required capability")
+        resolved: dict = {}
+        for i, decision in enumerate(self.decisions):
+            if decision.action == "select_alternative":
+                for finding in decision.findings:
+                    if finding in resolved:
+                        raise bad("/decisions", f"finding {finding} is resolved by select_alternative decisions "
+                                                f"{resolved[finding]} and {i}")
+                    resolved[finding] = i
         decided = {}
         for i, decision in enumerate(self.decisions):
             for claim in decision.claims:

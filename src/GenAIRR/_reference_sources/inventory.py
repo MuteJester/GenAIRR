@@ -665,6 +665,8 @@ class Claim:
             if value is None:
                 raise bad("/value", f"a {self.status} claim needs a value")
             check_claim_value(self.predicate, value, "/value")
+            if (self.predicate, value, self.derivation) == ("phase_independence", "independent", "anchor_derived"):
+                raise bad("/derivation", "a phase derived from the anchor is not independent of it")
         locator_tuple(self.evidence, "/evidence", MAX_REFS, canonical=True)
         if not self.evidence:
             raise bad("/evidence", "a claim names its evidence roots")

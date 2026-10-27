@@ -505,6 +505,7 @@ class BuildReport:
         if len(self.records) != len(inventory.records):
             raise bad("/records", f"{len(self.records)} outcomes for {len(inventory.records)} source records")
         entries = {e.record.id: e for e in self.recipe.selection}
+        identities = {(e.segment, e.label): e for e in self.recipe.selection}
         for i, (outcome, record) in enumerate(zip(self.records, inventory.records)):
             path = ptr("/records", i)
             if outcome.record != record.locator:
@@ -516,6 +517,11 @@ class BuildReport:
                                                 f"not {outcome.outcome}")
             if entry is not None and outcome.allele != entry.allele_id:
                 raise bad(ptr(path, "allele"), f"expected allele {entry.allele_id!r}")
+            if (expected == "excluded" and outcome.exclusion not in RELATED_EXCLUSIONS
+                    and (record.segment, record.label) in identities):
+                raise bad(ptr(path, "exclusion"), f"{record.label} is the identity selected at "
+                                                  f"{identities[(record.segment, record.label)].record.id}; it is "
+                                                  f"excluded as one of {list(RELATED_EXCLUSIONS)}")
             if outcome.related is None:
                 continue
             related = entries.get(outcome.related.id)

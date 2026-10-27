@@ -151,36 +151,46 @@ def check_selection(recipe: Recipe, inventory: SourceInventory) -> None:
                                                     f"digest {entry.sequence_sha256}", "unresolved_selection")
 
 
+def _selected_candidates(recipe: Recipe, inventory: SourceInventory) -> dict:
+    """``{record id: the selected candidate of that record}`` for every selection entry."""
+    chosen = {}
+    for entry in recipe.selection:
+        for candidate in inventory.candidates_of(entry.record):
+            if candidate.sha256 == entry.sequence_sha256:
+                chosen[entry.record.id] = candidate
+    return chosen
+
+
 def selected_subjects(recipe: Recipe, inventory: SourceInventory) -> set:
     """Ids of the selected records and of the one selected candidate of each."""
-    found = set()
-    for entry in recipe.selection:
-        found.add(entry.record.id)
-        found.update(c.id for c in inventory.candidates_of(entry.record) if c.sha256 == entry.sequence_sha256)
-    return found
-
-
-def _subject_digests(inventory: SourceInventory, claim) -> set:
-    try:
-        return {inventory.candidate(claim.subject).sha256}
-    except KeyError:
-        return {c.sha256 for c in inventory.candidates_of(claim.subject)}
+    return {e.record.id for e in recipe.selection} | {c.id for c in _selected_candidates(recipe, inventory).values()}
 
 
 def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
     """Every decision still names current findings, claims, evidence and subject digest.
 
-    ``identity_mismatch``: ``accept_claim`` evidence that is not bound to every decided
-    claim's subject (same rule as claim evidence roots).
-    ``stale_decision``: an unknown finding/claim id, an evidence locator that is not an
-    observation, a subject digest that changed, a claim about an unselected record or
-    candidate, or a ``select_alternative`` whose digest is not a selected candidate among
-    its findings' subjects.  ``projection``: an
-    ``accept_claim`` of a claim the runtime reference cannot represent or that has no value.
+    Checked per decision, in order:
+
+    * ``stale_decision``: an unknown finding or claim id, or evidence that is not an
+      observed source field;
+    * ``projection``: ``withhold_claim``/``accept_claim`` of a claim the runtime reference
+      cannot represent, or ``accept_claim`` of an unresolved claim (no value);
+    * ``stale_decision``: a claim about an unselected record or candidate, or a
+      ``sequence_sha256`` that is not the subject's selected sequence (a candidate's own
+      digest; for a record, its selection entry's digest);
+    * ``identity_mismatch``: ``accept_claim`` evidence not bound to every decided claim's
+      subject (the claim evidence-root rule);
+    * ``stale_decision``: a ``select_alternative`` whose digest is not a selected candidate
+      among its findings' subjects.
     """
     _require(recipe, Recipe, "recipe")
     _require(inventory, SourceInventory, "inventory")
-    selected = selected_subjects(recipe, inventory)
+    entries = {e.record.id: e for e in recipe.selection}
+    chosen = _selected_candidates(recipe, inventory)
+    selected = set(entries) | {c.id for c in chosen.values()}
+    by_digest: dict = {}
+    for entry in recipe.selection:
+        by_digest.setdefault(entry.sequence_sha256, []).append(entry)
     for i, decision in enumerate(recipe.decisions):
         path = ptr("/decisions", i)
         findings, claims = [], []
@@ -188,8 +198,8 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
             try:
                 findings.append(inventory.finding(finding_id))
             except KeyError:
-                raise bad(ptr(ptr(path, "findings"), j), f"finding {finding_id} no longer exists", "stale_decision") \
-                    from None
+                raise bad(ptr(ptr(path, "findings"), j), f"finding {finding_id} no longer exists",
+                          "stale_decision") from None
         for j, claim_id in enumerate(decision.claims):
             try:
                 claims.append(inventory.claim(claim_id))
@@ -201,10 +211,24 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
             except KeyError:
                 raise bad(ptr(ptr(path, "evidence"), j), f"evidence {locator.id} is not an observed source field",
                           "stale_decision") from None
+        for j, claim in enumerate(claims):
+            where = ptr(ptr(path, "claims"), j)
+            if claim.predicate not in RUNTIME_PREDICATES:
+                raise bad(where, f"{decision.action}: {claim.predicate} claims are not representable in a runtime "
+                                 f"reference ({list(RUNTIME_PREDICATES)})", "projection")
+            if decision.action == "accept_claim" and claim.status == "unresolved":
+                raise bad(where, f"claim {claim.id} is unresolved and has no value to accept", "projection")
+        for j, claim in enumerate(claims):
+            if claim.subject.id not in selected:
+                raise bad(ptr(ptr(path, "claims"), j), f"claim {claim.id} is about {claim.subject.id}, which is not "
+                                                       "a selected record or candidate", "stale_decision")
         for claim in claims:
-            if decision.sequence_sha256 not in _subject_digests(inventory, claim):
+            record = inventory.subject_record(claim)
+            expected = entries[record.id].sequence_sha256
+            if decision.sequence_sha256 != expected:
                 raise bad(ptr(path, "sequence_sha256"), f"claim {claim.id} is about {claim.subject.id}, whose "
-                                                        f"sequence is not {decision.sequence_sha256}", "stale_decision")
+                                                        f"selected sequence is {expected}, not "
+                                                        f"{decision.sequence_sha256}", "stale_decision")
         if decision.action == "accept_claim":
             for j, locator in enumerate(decision.evidence):
                 for claim in claims:
@@ -212,24 +236,10 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
                     if problem:
                         raise bad(ptr(ptr(path, "evidence"), j), f"claim {claim.id}: {problem}",
                                   "identity_mismatch")
-            for j, claim in enumerate(claims):
-                if claim.predicate not in RUNTIME_PREDICATES:
-                    raise bad(ptr(ptr(path, "claims"), j), f"{claim.predicate} claims are not representable in a "
-                                                           f"runtime reference ({list(RUNTIME_PREDICATES)})",
-                              "projection")
-                if claim.status == "unresolved":
-                    raise bad(ptr(ptr(path, "claims"), j), f"claim {claim.id} is unresolved and has no value to "
-                                                           "accept", "projection")
-        for j, claim in enumerate(claims):
-            if claim.subject.id not in selected:
-                raise bad(ptr(ptr(path, "claims"), j), f"claim {claim.id} is about {claim.subject.id}, which is not "
-                                                       "a selected record or candidate", "stale_decision")
         if decision.action == "select_alternative":
             subjects = {s.id for f in findings for s in f.subjects}
-            chosen = [e for e in recipe.selection if e.sequence_sha256 == decision.sequence_sha256 and (
-                e.record.id in subjects or any(c.id in subjects and c.sha256 == e.sequence_sha256
-                                               for c in inventory.candidates_of(e.record)))]
-            if not chosen:
+            if not any(e.record.id in subjects or (e.record.id in chosen and chosen[e.record.id].id in subjects)
+                       for e in by_digest.get(decision.sequence_sha256, ())):
                 raise bad(ptr(path, "sequence_sha256"), f"no selected record with digest {decision.sequence_sha256} "
                                                         "is a subject of the decision's findings", "stale_decision")
 
