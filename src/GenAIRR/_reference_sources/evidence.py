@@ -17,10 +17,25 @@ Every claim says how strong it is:
   the profile's validated scope or one that disagrees with a related value; otherwise
   ``unresolved`` with no value.
 
+What is claimed:
+
+* J: the anchor and the reported phase value are source-stated.  Whether that phase was
+  derived independently of the landmark is unresolved (``phase_independence``), so a J
+  phase is not independent phase evidence even though its derivation is ``stated``.
+* V: the anchor is source-stated and accepted only when the record's own gapped record
+  binds it; the phase is at most anchor-derived (``assertion``).
+* Coding intervals are accepted only where they reproduce the coding sequence;
+  provider extensions are recorded by comparing the two record exports.
+* Both coding boundaries and the provider functionality are always unresolved: no tag,
+  Boolean, RSS adjacency or exact slice establishes a complete end or a functionality
+  class.
+
 Coordinate values are never repaired, relocated, extended or chosen by vote: a value that
 fails a check stays unresolved (or a candidate) with a finding that says why.  Each claim
 cites only the fields of its own record and the gapped record its own exact mapping binds,
-so identities with identical DNA never share evidence.
+so identities with identical DNA never share evidence.  All exports of one provider set
+are one evidence lineage (:func:`evidence_lineage`): their agreement is consistency, not
+independent confirmation, and embedded support entries are never retrieved or verified.
 """
 from __future__ import annotations
 
