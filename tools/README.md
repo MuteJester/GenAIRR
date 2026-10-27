@@ -55,19 +55,26 @@ python tools/build_published_reference.py \
     --output src/GenAIRR/data/published_references/human_igh_ogrdb_10_observed_v1.zip
 ```
 
-The dossier records the GenAIRR version that ran the script as its builder,
-so its manifest hash and the archive digest change with the version, and a test
-fails while the packaged builder differs from `[project].version` in
-`pyproject.toml`. For a release:
+The dossier records as its builder the installed GenAIRR version
+(`GenAIRR.__version__`, the package metadata that maturin takes from
+`[project].version` in `pyproject.toml`; the version in `engine_rs/Cargo.toml`
+does not enter it). The manifest hash and the archive digest therefore change
+with that version, and a test fails while the packaged builder differs from
+`[project].version` in `pyproject.toml`. For a release:
 
-1. Set the release version in both `pyproject.toml` and `engine_rs/Cargo.toml`
-   and commit it.
-2. Build and install that version (for example `maturin develop`), so that
-   `GenAIRR.__version__` is the release version.
-3. Remove the packaged archive and regenerate it with the command above.
-4. Pin the printed manifest hash in `src/GenAIRR/_reference_sources/bundled.py`
-   and in `tests/test_published_reference_resources.py` (`MANIFEST_PIN`), and the
-   printed archive digest in the same test file (`ARCHIVE_PIN`).
-5. The printed runtime execution, catalogue and models hashes must equal
-   `RUNTIME_PINS` unchanged: a pure version bump does not change them. If any of
-   them changes, stop and investigate before pinning anything.
+1. Set the release version in `pyproject.toml`, commit it, and install that
+   build (for example `maturin develop`), so that `GenAIRR.__version__` is the
+   release version.
+2. Remove the packaged archive and regenerate it with the command above.
+3. Pin what the closing line names: the manifest hash in
+   `src/GenAIRR/_reference_sources/bundled.py` and in `MANIFEST_PIN`, the
+   archive digest in `ARCHIVE_PIN` (both in
+   `tests/test_published_reference_resources.py`). The printed runtime
+   execution, catalogue and models hashes must equal `RUNTIME_PINS` and the
+   printed lock `LOCK_PIN`: a version change alone does not move them, so if
+   one does, stop and investigate before pinning anything.
+
+The release workflow writes its version into `pyproject.toml` before its test
+gate, so a release, or a release dry run, must use exactly the version that was
+committed and regenerated: with any other version the builder test fails. This
+is intended.
