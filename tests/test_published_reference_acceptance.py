@@ -32,7 +32,7 @@ import pathlib
 import re
 import shutil
 import socket
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import pytest
 
@@ -423,10 +423,17 @@ def translate(sequence: str) -> str:
 # ── record truth against the generating source alleles ───────────────
 
 
-def walk(record, segment: str, allele: SourceAllele) -> tuple:
+class Walk(NamedTuple):
+    mapped: dict           # germline position -> sequence position, for aligned (M) bases
+    differs: list          # sequence positions of aligned bases that differ from the source base
+    edits: collections.Counter    # CIGAR operation -> count
+    inserted: list         # sequence positions of inserted (I) bases
+    deleted: list          # germline positions of deleted (D) bases
+
+
+def walk(record, segment: str, allele: SourceAllele) -> Walk:
     """Walk the segment's CIGAR over the record's alignment strings against the generating allele's raw
-    source sequence.  Returns (germline position -> sequence position for aligned bases, sequence positions
-    whose base differs from the source base, edit counts by CIGAR operation)."""
+    source sequence."""
     s = segment.lower()
     cigar = record[f"{s}_cigar"]
     assert re.fullmatch(r"(?:[0-9]+[MID])+", cigar), cigar
@@ -434,7 +441,7 @@ def walk(record, segment: str, allele: SourceAllele) -> tuple:
     start, end = record[f"{s}_alignment_start"], record[f"{s}_alignment_end"]
     query, position, column = record[f"{s}_sequence_start"], record[f"{s}_germline_start"], start
     assert position == record[f"{s}_trim_5"] == 0 and record[f"{s}_trim_3"] == 0     # trimming is off
-    mapped, differs, edits = {}, [], collections.Counter()
+    mapped, differs, edits, inserted, deleted = {}, [], collections.Counter(), [], []
     for count, op in re.findall(r"([0-9]+)([MID])", cigar):
         for _ in range(int(count)):
             assert germline[column] == (allele.sequence[position] if op in "MD" else "-"), (cigar, column)
@@ -443,6 +450,10 @@ def walk(record, segment: str, allele: SourceAllele) -> tuple:
                 mapped[position] = query
                 if sequence[query] != allele.sequence[position]:
                     differs.append(query)
+            elif op == "I":
+                inserted.append(query)
+            else:
+                deleted.append(position)
             edits[op] += 1
             query += op in "MI"
             position += op in "MD"
@@ -450,7 +461,7 @@ def walk(record, segment: str, allele: SourceAllele) -> tuple:
     assert (column, query) == (end, record[f"{s}_sequence_end"])
     assert position == record[f"{s}_germline_end"] == len(allele.sequence)
     assert germline[start:end].replace("-", "") == allele.sequence
-    return mapped, differs, edits
+    return Walk(mapped, differs, edits, inserted, deleted)
 
 
 def check_calls(record, alleles: dict, segments: str, outcome, native) -> None:
@@ -482,6 +493,7 @@ def check_junction(record, mapped: dict, alleles: dict) -> str:
     intact = None not in j_codon and j_codon[2] - j_codon[0] == 2
     if intact:
         assert record["junction_end"] == j_codon[2] + 1
+    # The reported junction end when an indel lies inside the J landmark codon is not asserted here.
     assert record["junction"] == record["sequence"][record["junction_start"]:record["junction_end"]]
     assert record["junction_length"] == len(record["junction"])
     if record["junction_length"] % 3 == 0:
@@ -520,7 +532,7 @@ def check_record(record, alleles: dict, segments: str, outcome, native, *, indel
     assert record["sequence_length"] == len(record["sequence"])
     walks = {s.upper(): walk(record, s, alleles[record[f"{s}_call"]]) for s in segments}
     for s in segments:
-        _, _, edits = walks[s.upper()]
+        edits = walks[s.upper()].edits
         assert record[f"n_{s}_indels"] == edits["I"] + edits["D"]          # every edit is in the alignment
     assert record["n_indels"] >= sum(record[f"n_{s}_indels"] for s in segments)
     assert record["n_v_unannotated_mutations"] == record["n_v_mutations"]
@@ -575,7 +587,7 @@ def check_shm(record, outcome, walks: dict, alleles: dict) -> bool:
         s = segment_of(site)
         if s != "np" and base != alleles[record[f"{s}_call"]].sequence[site - regions[s][0]]:
             expected.add(site)
-    assert {q for _, differs, _ in walks.values() for q in differs} == expected
+    assert {q for w in walks.values() for q in w.differs} == expected
     call, recalled = record["v_call"], record["recalled_v_call"].split(",")
     if call in recalled:
         return False
@@ -583,6 +595,59 @@ def check_shm(record, outcome, walks: dict, alleles: dict) -> bool:
     assert all(alleles[name].sequence != generating for name in recalled)
     assert record["germline_alignment"][record["v_alignment_start"]:record["v_alignment_end"]] == generating
     return True
+
+
+def indel_events(outcome) -> tuple:
+    """(drawn count, [(kind "I" or "D", sequence position when the event happened, inserted base or None)]) for
+    the polymerase indel step, in order, from the trace."""
+    count, found = None, collections.defaultdict(dict)
+    for choice in outcome.trace().prefix_query("corrupt.indel."):
+        if choice.address == "corrupt.indel.count":
+            count = choice.value
+            continue
+        match = re.fullmatch(r"corrupt\.indel\.(kind|site|base)\[([0-9]+)\]", choice.address)
+        assert match, choice.address
+        found[int(match.group(2))][match.group(1)] = choice.value
+    events = []
+    for i in sorted(found):
+        event = found[i]
+        assert ("base" in event) is event["kind"]                         # an insertion draws its base
+        events.append(("I", event["site"], event["base"].decode("ascii")) if event["kind"]
+                      else ("D", event["site"], None))
+    return count, events
+
+
+def check_indels(record, outcome, walks: dict, segments: str, low: int, high: int) -> None:
+    """The trace's indel events, replayed in order over the bases present before the indel step, are exactly
+    the record's alignment edits: each inserted base sits at an I column (with its drawn base), each deleted
+    segment base is a D column at its germline position, every aligned base is the base that preceded the
+    indel step at that germline position, and the number of events is within the configured count range."""
+    count, events = indel_events(outcome)
+    assert low <= count <= high and count == len(events) == record["n_indels"], (count, record["n_indels"])
+    insertions = sum(kind == "I" for kind, _, _ in events)
+    before = len(record["sequence"]) - insertions + (len(events) - insertions)
+    tokens, removed = list(range(before)), []               # positions before the indel step; inserted bases
+    for kind, site, base in events:
+        if kind == "I":
+            tokens.insert(site, ("inserted", base))
+        else:
+            removed.append(tokens.pop(site))
+    assert len(tokens) == len(record["sequence"])
+    new = [q for q, token in enumerate(tokens) if isinstance(token, tuple)]
+    assert all(record["sequence"][q] == tokens[q][1] for q in new)
+    offsets = {}
+    for s in segments:
+        w = walks[s.upper()]
+        start, end = record[f"{s}_sequence_start"], record[f"{s}_sequence_end"]
+        assert w.inserted == [q for q in new if start <= q < end], s
+        assert all(isinstance(tokens[q], int) for q in w.mapped.values()), s
+        layout = {tokens[q] - g for g, q in w.mapped.items()}
+        assert len(layout) == 1, s                                      # one layout before the indel step
+        (offsets[s],) = layout
+        length = record[f"{s}_germline_end"]
+        assert w.deleted == sorted(i - offsets[s] for i in removed
+                                   if isinstance(i, int) and 0 <= i - offsets[s] < length), s
+    assert offsets[segments[0]] == 0 and offsets[segments[-1]] + record[f"{segments[-1]}_germline_end"] == before
 
 
 # ── the IGK VJ build: pinned IGK release 5, a mechanical recipe ──────
@@ -832,10 +897,10 @@ def test_igk_simulation_is_validated_against_the_selected_source_alleles(igk):
     shapes = collections.Counter()
     for outcome, record in zip(result.outcomes, result):
         walks = check_record(record, alleles, "vj", outcome, reference.native_refdata(), indels=False)
-        assert all(not differs for _, differs, _ in walks.values())          # no mutation step: exact source DNA
+        assert all(not w.differs for w in walks.values())                     # no mutation step: exact source DNA
         v, j = alleles[record["v_call"]], alleles[record["j_call"]]
         assert CODONS[v.sequence[v.anchor:v.anchor + 3]] == "C" and CODONS[j.sequence[j.anchor:j.anchor + 3]] == "F"
-        shapes[check_junction(record, {s: walks[s][0] for s in "VJ"}, alleles)] += 1
+        shapes[check_junction(record, {s: walks[s].mapped for s in "VJ"}, alleles)] += 1
         check_np(record, "vj")
         assert record["v_call"] in record["recalled_v_call"].split(",")
         assert record["j_call"] in record["recalled_j_call"].split(",")
@@ -879,8 +944,8 @@ def test_ordinary_igh_generation_uses_the_exact_selected_source_alleles(starter,
     siblings, shapes, listed = identical_dna_siblings(), collections.Counter(), collections.Counter()
     for outcome, record in zip(result.outcomes, result):
         walks = check_record(record, igh_alleles, "vdj", outcome, reference.native_refdata(), indels=False)
-        assert all(not differs for _, differs, _ in walks.values())
-        shapes[check_junction(record, {s: walks[s][0] for s in "VJ"}, igh_alleles)] += 1
+        assert all(not w.differs for w in walks.values())
+        shapes[check_junction(record, {s: walks[s].mapped for s in "VJ"}, igh_alleles)] += 1
         check_np(record, "vdj")
         for s in "vdj":
             call, recalled = record[f"{s}_call"], set(record[f"recalled_{s}_call"].split(","))
@@ -902,7 +967,7 @@ def test_shm_is_recorded_against_the_generating_allele_and_never_against_a_recal
     recalled_elsewhere = 0
     for outcome, record in zip(result.outcomes, result):
         walks = check_record(record, igh_alleles, "vdj", outcome, reference.native_refdata(), indels=False)
-        assert check_junction(record, {s: walks[s][0] for s in "VJ"}, igh_alleles) == "intact"
+        assert check_junction(record, {s: walks[s].mapped for s in "VJ"}, igh_alleles) == "intact"
         recalled_elsewhere += check_shm(record, outcome, walks, igh_alleles)
     assert recalled_elsewhere > 0, "exercise records whose V recall is another allele"
 
@@ -916,11 +981,11 @@ def test_polymerase_indels_keep_every_alignment_edit_against_the_generating_alle
     edits, shapes = collections.Counter(), collections.Counter()
     for outcome, record in zip(result.outcomes, result):
         walks = check_record(record, igh_alleles, "vdj", outcome, reference.native_refdata(), indels=True)
+        check_indels(record, outcome, walks, "vdj", 1, 3)
         for s in "VDJ":
-            _, differs, counted = walks[s]
-            assert len(differs) <= record[f"n_{s.lower()}_mutations"]  # only SHM changes an aligned base
-            edits.update({(s, op): n for op, n in counted.items() if op in "ID"})
-        shapes[check_junction(record, {s: walks[s][0] for s in "VJ"}, igh_alleles)] += 1
+            assert len(walks[s].differs) <= record[f"n_{s.lower()}_mutations"]  # only SHM changes an aligned base
+            edits.update({(s, op): n for op, n in walks[s].edits.items() if op in "ID"})
+        shapes[check_junction(record, {s: walks[s].mapped for s in "VJ"}, igh_alleles)] += 1
     assert sum(record["n_indels"] for record in result) > 300
     assert all(edits[(s, op)] > 0 for s in "VJ" for op in "ID"), edits
     assert shapes["intact"] >= 280 and set(shapes) <= {"intact", "landmark_codon_edited", "undefined"}
