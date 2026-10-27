@@ -652,3 +652,67 @@ def test_a_paralog_name_without_a_selected_record_stays_a_named_entity_without_w
         ("paralog", "J:IGLJ2*01", "entity:IGLJ3*01")]
     assert catalogue["entities"] == [{"id": "entity:IGLJ3*01", "name": "IGLJ3*01", "executable": False}]
     assert artifact(result.reference)["models"]["allele_usage"]["J"] == ["IGLJ2*01"]
+
+
+# ── what the runtime cannot hold is refused in Python, before the native layer ──
+
+
+def _coding(label, change):
+    def edit(fmt, record):
+        if record["label"] == label:
+            record["coding_sequence"] = change(record["coding_sequence"])
+    return edit
+
+
+def test_a_selected_coding_sequence_of_65535_bases_builds(monkeypatch):
+    blobs, lock = mini(monkeypatch, edit=_coding(J1, lambda s: s + "A" * (65535 - len(s))))
+    (long,) = [r["coding_sequence"] for r in records_in(blobs, "airr") if r["label"] == J1]
+    assert len(long) == 65535
+    result = build(lock, blobs, mini_recipe(blobs, lock))
+    assert result.fasta_of("J") == expected_fasta([(J1, long)])
+    j = result.reference.alleles[-1]
+    assert (j.label, j.length, j.sequence_sha256) == (J1, 65535, sha(long))
+
+
+@pytest.mark.parametrize("change, problem", [
+    (lambda s: s + "A" * (65536 - len(s)), "65536 bases"),
+    (lambda s: s[:5] + "N" + s[6:], "'N' at position 5"),
+    (lambda s: s.lower(), "at position 0"),
+])
+def test_a_selected_coding_sequence_the_runtime_cannot_hold_is_refused_before_native_entry(monkeypatch, change,
+                                                                                          problem):
+    blobs, lock = mini(monkeypatch, edit=_coding(J1, change))
+    no_native(monkeypatch)
+    document = recipe(lock, [entry(blobs, "airr", V_LABEL), entry(blobs, "airr", J1)])
+    found = error("projection", build, lock, blobs, document)
+    assert found.path == "/selection/1" and f"J:{J1}" in found.message and problem in found.message
+
+
+def test_an_unselected_record_the_runtime_cannot_hold_is_a_structural_exclusion(monkeypatch):
+    blobs, lock = mini(monkeypatch, (V_LABEL, J1, J7), edit=_coding(J7, lambda s: s[:5] + "N" + s[6:]))
+    result = build(lock, blobs, mini_recipe(blobs, lock))
+    outcomes = [o for o in result.report.records if result.report.inventory.record(o.record).label == J7]
+    assert [o.exclusion for o in outcomes] == ["structural_incompatibility"] * 2
+    assert all("'N' at position 5" in o.detail for o in outcomes)
+
+
+PIPED = "x|IGLJ7*02|x|x|J-REGION"      # an IMGT-style header: read back as the second field
+
+
+def _relabel(fmt, record):
+    if record["label"] == J7:
+        record["label"] = PIPED
+
+
+def test_a_label_that_a_fasta_header_would_not_give_back_is_refused_or_excluded(monkeypatch):
+    blobs, lock = mini(monkeypatch, (V_LABEL, J1, J7), edit=_relabel)
+    no_native(monkeypatch)
+    document = recipe(lock, [entry(blobs, "airr", V_LABEL), entry(blobs, "airr", PIPED)])
+    found = error("projection", build, lock, blobs, document)
+    assert found.path == "/selection/1" and PIPED in found.message and "'IGLJ7*02'" in found.message
+    monkeypatch.undo()
+    blobs, lock = mini(monkeypatch, (V_LABEL, J1, J7), edit=_relabel)
+    result = build(lock, blobs, mini_recipe(blobs, lock))
+    outcomes = [o for o in result.report.records if result.report.inventory.record(o.record).label == PIPED]
+    assert [o.exclusion for o in outcomes] == ["structural_incompatibility"] * 2
+    assert all("'IGLJ7*02'" in o.detail for o in outcomes)

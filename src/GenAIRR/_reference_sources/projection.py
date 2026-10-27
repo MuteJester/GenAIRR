@@ -53,8 +53,11 @@ from typing import Mapping, Optional
 from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference.artifact import Reference
 from GenAIRR._reference.errors import ReferenceArtifactError
+from GenAIRR._reference.importer import FASTA_MAX_BYTES, MAX_SEQUENCE as RUNTIME_MAX_SEQUENCE, _label_of
 from GenAIRR._reference.model import check_label as runtime_label_problem
-from GenAIRR._reference.sidecar import SCHEMA_NAME as SIDECAR_SCHEMA, SCHEMA_VERSION as SIDECAR_VERSION
+from GenAIRR._reference.sidecar import (
+    MAX_BYTES as SIDECAR_MAX_BYTES, SCHEMA_NAME as SIDECAR_SCHEMA, SCHEMA_VERSION as SIDECAR_VERSION,
+)
 from GenAIRR._reference_sources import evidence, ogrdb
 from GenAIRR._reference_sources._fields import MAX_TEXT, bad, digest, ptr, require_type
 from GenAIRR._reference_sources.common import RECORD_EXPORT_FORMATS, Generator, Locator, RuntimeHashes
@@ -91,6 +94,7 @@ FASTA_LINE_WIDTH = 80
 SIDECAR_CONVENTIONS = MappingProxyType({"coordinates": "zero_based_half_open", "v_alignment": "none"})
 
 _SIDECAR_ANNOTATIONS = ("functionality", "anchor", "coding_phase", "boundary_5", "boundary_3")
+_BASES = frozenset("ACGT")
 _WITHHELD = {
     "unresolved": "unresolved: the source establishes no value for it",
     "conflicting": "conflicting source claims; the competing values stay in the build report",
@@ -174,6 +178,59 @@ def _require_record_exports(lock: SourceLock) -> None:
                                          + (f" ({why})" if why else ""), "missing_asset")
 
 
+def _sequence_problem(value) -> Optional[str]:
+    """Why a supplied coding sequence cannot be a runtime allele's sequence, or ``None``."""
+    if type(value) is not str:
+        return "its coding_sequence is not text"
+    if not 1 <= len(value) <= RUNTIME_MAX_SEQUENCE:
+        return f"its coding sequence has {len(value)} bases; a runtime allele holds 1 to {RUNTIME_MAX_SEQUENCE}"
+    for position, char in enumerate(value):
+        if char not in _BASES:
+            return (f"its coding sequence holds {char!r} at position {position}; a runtime allele holds only "
+                    "uppercase A, C, G and T")
+    return None
+
+
+def _label_problem(label) -> Optional[str]:
+    """Why a label cannot be a runtime allele's label, written as a FASTA header, or ``None``."""
+    problem = runtime_label_problem(label)
+    if problem is not None:
+        return f"label {label!r} {problem}"
+    read = _label_of(label)
+    if read != label:
+        return f"a FASTA header >{label} is read back as the label {read!r}, so the label would not be kept"
+    return None
+
+
+def _supplied_sequence_problem(inventory: SourceInventory, record) -> str:
+    """Why a parsed record supplies no candidate sequence, from its observed coding_sequence."""
+    try:
+        observation = inventory.observation(Locator(record.locator.asset,
+                                                    ptr(record.locator.pointer, "coding_sequence")))
+    except KeyError:
+        return "the record has no coding_sequence field"
+    if observation.presence == "absent":
+        return "the record has no coding_sequence"
+    return _sequence_problem(observation.value.get()) or "the record supplies no coding sequence candidate"
+
+
+def _check_supplied_sequences(recipe: Recipe, inventory: SourceInventory) -> None:
+    """A selected record whose coding sequence the runtime cannot hold is refused in Python,
+    before any native work, naming the allele (the inventory forms no candidate for it)."""
+    reference = recipe.reference
+    for i, entry in enumerate(recipe.selection):
+        try:
+            record = inventory.record(entry.record)
+        except KeyError:
+            continue
+        if (record.status != "parsed" or (record.segment, record.label) != (entry.segment, entry.label)
+                or (record.taxonomy_id, record.locus) != (reference.taxon.taxonomy_id, reference.locus)
+                or inventory.candidates_of(record.locator)):
+            continue                # check_selection decides these
+        raise bad(ptr("/selection", i), f"{entry.allele_id}: record {record.id} cannot be projected: "
+                                        f"{_supplied_sequence_problem(inventory, record)}", "projection")
+
+
 def _require_segments(recipe: Recipe) -> None:
     present = {entry.segment for entry in recipe.selection}
     absent = [s for s in recipe.reference.identity.segments if s not in present]
@@ -237,6 +294,15 @@ class _Build:
                 f"build inputs {self.build_input_hash}, projection {projection.id} version {projection.version}"]
 
     # -- checks -----------------------------------------------------------
+
+    def check_projectable(self) -> None:
+        """Every selected label survives a FASTA header and every sequence is one the runtime holds,
+        checked here in Python so that nothing unrepresentable reaches the native layer."""
+        for i in self.order:
+            entry = self.entries[i]
+            problem = _label_problem(entry.label) or _sequence_problem(self.chosen[i].sequence)
+            if problem is not None:
+                raise bad(ptr("/selection", i), f"{entry.allele_id} cannot be projected: {problem}", "projection")
 
     def check_frameshifts(self) -> None:
         """A selected allele whose stated phase is not its stated landmark modulo 3 needs both
@@ -438,11 +504,13 @@ class _Build:
         return "outside_explicit_selection", None, None
 
     def _structural_problem(self, record, candidates) -> Optional[str]:
+        """Why the record could not be projected at all, or ``None``."""
         if record.segment not in self.segments:
             return f"segment {record.segment} is not part of a {self.lock.identity.chain_type} reference"
-        if not candidates:
-            return "the record supplies no coding sequence the runtime reference can hold"
-        return None
+        problem = _label_problem(record.label)
+        if problem is None and not candidates:
+            problem = _supplied_sequence_problem(self.inventory, record)
+        return problem
 
     def _missing_evidence(self, record, candidates) -> str:
         """Which recipe requirement this record's own claims cannot meet, if any."""
@@ -513,6 +581,17 @@ class _Build:
 # ── the runtime reference ────────────────────────────────────────────
 
 
+def _check_sizes(fasta: tuple, annotations: bytes) -> None:
+    """The projected files fit the runtime importer's byte limits."""
+    for segment, data in fasta:
+        if len(data) > FASTA_MAX_BYTES:
+            raise bad("/selection", f"{FASTA_MEMBERS[segment]} would hold {len(data)} bytes; the runtime importer "
+                                    f"reads at most {FASTA_MAX_BYTES}", "resource_limit")
+    if len(annotations) > SIDECAR_MAX_BYTES:
+        raise bad("/selection", f"{ANNOTATIONS_MEMBER} would hold {len(annotations)} bytes; the runtime importer "
+                                f"reads at most {SIDECAR_MAX_BYTES}", "resource_limit")
+
+
 def _runtime(fasta: tuple, annotations: bytes) -> Reference:
     """Build through the public ``Reference.from_fasta`` from files in a private temporary directory."""
     with tempfile.TemporaryDirectory(prefix="genairr_projection_") as root:
@@ -568,6 +647,7 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     check_recipe(recipe, lock)
     inventory = evidence.interpret(lock, assets, ogrdb.build_inventory(lock, assets))
     _under("/inventory", check_inventory, inventory, lock)
+    _check_supplied_sequences(recipe, inventory)
     check_selection(recipe, inventory)
     check_decisions(recipe, inventory)
     _require_segments(recipe)
@@ -575,12 +655,14 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     build_input_hash = digest(inputs, BUILD_INPUTS_DOMAIN)
 
     build = _Build(lock, inventory, recipe, build_input_hash)
+    build.check_projectable()
     build.check_frameshifts()
     claims = build.claims()
     relationships = build.relationships()
     records = build.records()
     fasta = build.fasta()
     annotations = build.sidecar(relationships)
+    _check_sizes(fasta, annotations)
 
     reference = _runtime(fasta, annotations)
     document = json.loads(reference.to_json())
