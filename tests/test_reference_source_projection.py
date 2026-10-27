@@ -972,3 +972,57 @@ def test_unicode_labels_are_kept_literally_in_utf8_files_and_the_runtime(monkeyp
     v = result.reference.alleles[0]
     assert v.label == UNICODE and v.anchor is not None and v.anchor.support == "source"
     assert Reference.from_json(result.reference.to_json()).alleles[0].label == UNICODE
+
+
+# ── further refusals and withheld annotations ────────────────────────
+
+
+@pytest.mark.parametrize("field_name, value", [
+    ("species", {"id": "NCBITAXON:10090", "label": "Mus musculus"}), ("locus", "IGK"),
+])
+def test_a_record_declaring_another_taxon_or_locus_cannot_be_selected(monkeypatch, field_name, value):
+    def edit(fmt, record):
+        if record["label"] == V_LABEL:
+            record[field_name] = value
+    blobs, lock = mini(monkeypatch, edit=edit)
+    no_native(monkeypatch)
+    found = error("identity_mismatch", build, lock, blobs, mini_recipe(blobs, lock))
+    assert found.path == "/selection/0/record"
+
+
+def test_conflicting_claims_stay_null_at_runtime_and_keep_their_values_in_the_report(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    real = evidence.interpret
+
+    def conflicting(lock_, assets, inventory):
+        """The real interpretation with the V anchor replaced by two disagreeing claims."""
+        result = real(lock_, assets, inventory)
+        claims = []
+        for claim in result.claims:
+            if claim.predicate == "anchor" and result.subject_record(claim).label == V_LABEL:
+                claims.append(dataclasses.replace(claim, status="conflicting"))
+                claims.append(dataclasses.replace(claim, status="conflicting", value=claim.value.get() - 3))
+            else:
+                claims.append(claim)
+        fields = {name: getattr(result, name) for name in ("source_lock_hash", "adapter", "records", "candidates",
+                                                           "mentioned_identities", "observations", "support",
+                                                           "mappings", "findings")}
+        return m.SourceInventory.assemble(claims=tuple(claims), **fields)
+
+    monkeypatch.setattr(evidence, "interpret", conflicting)
+    result = build(lock, blobs, mini_recipe(blobs, lock))
+    v = result.reference.alleles[0]
+    assert (v.label, v.anchor, v.coding_phase) == (V_LABEL, None, None)
+    inventory, outcomes = result.report.inventory, {o.claim: o for o in result.report.claims}
+    disputed = [c for c in inventory.claims if c.status == "conflicting" and c.subject.asset == "airr"]
+    assert len({c.value.get() for c in disputed}) == 2
+    for claim in disputed:
+        assert outcomes[claim.id].outcome == "withheld" and "conflicting" in outcomes[claim.id].reason
+
+
+def test_the_starter_reports_honest_blockers_for_coding_ends_it_does_not_establish(starter):
+    _, result = starter
+    ends = result.report.capabilities.status("original_coding_ends")
+    v, d, j = (SELECTION["counts"][s] for s in ("V", "D", "J"))
+    assert not ends.available and len(ends.unmet) == v + j + 2 * d     # V 3', J 5', both D ends
+    assert all('"complete"' in u.requirement and u.hint for u in ends.unmet)
