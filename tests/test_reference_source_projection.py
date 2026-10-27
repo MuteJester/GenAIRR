@@ -29,7 +29,7 @@ from tests.test_ogrdb_source_inventory import (
     EXPECT, IGH, IGL, RECORDS, SELECTION, error, pinned, raw, raw_records, seal,
 )
 
-J1 = "IGLJ1*01"
+J1, J7 = "IGLJ1*01", "IGLJ7*02"
 MINI = (V_LABEL, J1)
 CHOICES = {row["label"]: row for row in SELECTION["record_choices"]}
 OMITTED = {row["label"]: [rule["rule"] for rule in row["failed_rules"]] for row in SELECTION["omitted"]}
@@ -116,6 +116,11 @@ def expected_fasta(items) -> bytes:
 
 def artifact(reference) -> dict:
     return json.loads(reference.to_json())
+
+
+def withhold(claims, digest, reason="withheld for this test") -> dict:
+    return {"action": "withhold_claim", "findings": [], "claims": list(claims), "sequence_sha256": digest,
+            "reason": reason, "evidence": []}
 
 
 def claim_id(inventory, fmt, label, predicate) -> str:
@@ -512,11 +517,6 @@ def test_stale_decisions_are_rejected(monkeypatch):
     inventory = interpreted(blobs, lock)
     anchor = claim_id(inventory, "airr", V_LABEL, "anchor")
     v_digest, j_digest = (entry(blobs, "airr", label)["sequence_sha256"] for label in MINI)
-
-    def withhold(claims, digest):
-        return {"action": "withhold_claim", "findings": [], "claims": claims, "sequence_sha256": digest,
-                "reason": "test decision", "evidence": []}
-
     # another sequence digest than the subject's selected one
     found = error("stale_decision", build, lock, blobs, mini_recipe(blobs, lock, decisions=[withhold([anchor], j_digest)]))
     assert found.path == "/decisions/0/sequence_sha256"
@@ -531,3 +531,56 @@ def test_stale_decisions_are_rejected(monkeypatch):
     in_scope(monkeypatch, other_lock)
     document = mini_recipe(changed, other_lock, decisions=[withhold([anchor], v_digest)])
     assert error("stale_decision", build, other_lock, changed, document).path == "/decisions/0/claims/0"
+
+
+# ── a frameshifted source: a stated phase that is not its landmark modulo 3 ──
+
+
+def _frameshift(fmt, record):
+    """IGLJ7*02 states j_codon_frame 3 (phase 2) at j_cdr3_end 8 (anchor 7, and 7 % 3 = 1): a valid
+    pair of source observations that the runtime's single phase scalar cannot hold together."""
+    if record["label"] == J7:
+        record["j_codon_frame"] = 3
+
+
+def _frameshifted(monkeypatch):
+    blobs, lock = mini(monkeypatch, (V_LABEL, J7), edit=_frameshift)
+    inventory = interpreted(blobs, lock)
+    (finding,) = [f for f in inventory.findings if f.code == "phase_landmark_projection_unsupported"]
+    anchor, phase = (claim_id(inventory, "airr", J7, p) for p in ("anchor", "coding_phase"))
+    return blobs, lock, finding, anchor, phase, entry(blobs, "airr", J7)["sequence_sha256"]
+
+
+def test_a_frameshifted_selected_allele_without_a_withholding_decision_is_refused(monkeypatch):
+    blobs, lock, finding, anchor, phase, digest = _frameshifted(monkeypatch)
+    no_native(monkeypatch)
+    found = error("projection", build, lock, blobs, mini_recipe(blobs, lock, (V_LABEL, J7)))
+    assert found.path == "/selection/1"
+    for part in (f"J:{J7}", finding.id, "phase_landmark_projection_unsupported", anchor, phase):
+        assert part in found.message
+    assert "exclude the allele" in found.message.lower() and "withhold_claim" in found.message
+    # withholding only one of the two observations is not enough
+    for claims in ([anchor], [phase]):
+        document = mini_recipe(blobs, lock, (V_LABEL, J7), decisions=[withhold(claims, digest)])
+        assert error("projection", build, lock, blobs, document).path == "/selection/1"
+
+
+def test_a_frameshifted_allele_whose_anchor_and_phase_are_withheld_builds_with_null_annotations(monkeypatch):
+    blobs, lock, finding, anchor, phase, digest = _frameshifted(monkeypatch)
+    document = mini_recipe(blobs, lock, (V_LABEL, J7), decisions=[withhold([anchor, phase], digest)])
+    result = build(lock, blobs, document)
+    j = result.reference.alleles[-1]
+    assert (j.label, j.anchor, j.coding_phase) == (J7, None, None)
+    capabilities = result.reference.capabilities()
+    assert capabilities.status("observed_span_simulation").available
+    junction = capabilities.status("source_annotated_junction")
+    assert not junction.available and f"J:{J7}" in {u.allele for u in junction.unmet}
+    outcomes = {o.claim: o for o in result.report.claims}
+    for claim in (anchor, phase):
+        assert (outcomes[claim].outcome, outcomes[claim].decision) == ("withheld", 0)
+    # neither source observation is shifted or replaced: both stay in the report as stated
+    (raw_j,) = [r for r in records_in(blobs, "airr") if r["label"] == J7]
+    kept = result.report.inventory
+    assert kept.claim(anchor).value.get() == raw_j["j_cdr3_end"] - 1
+    assert kept.claim(phase).value.get() == raw_j["j_codon_frame"] - 1
+    assert finding in kept.findings

@@ -32,7 +32,10 @@ What reaches the runtime reference, per selected allele:
 * notes citing the source record (asset, raw digest, pointer), the build-input hash and the
   projection.
 
-Everything the runtime reference cannot hold stays in the build report:
+A selected allele carrying ``phase_landmark_projection_unsupported`` (a stated phase that is
+not its stated landmark modulo 3) needs a ``withhold_claim`` decision covering its anchor and
+coding-phase claims; neither value is ever shifted or replaced.  Everything the runtime
+reference cannot hold stays in the build report:
 :data:`PROJECTION_LOSSES` and the claim and record outcomes say what and why.
 """
 from __future__ import annotations
@@ -225,6 +228,30 @@ class _Build:
         record, projection = self.entries[i].record, self.recipe.projection
         return [f"source record {record.asset} {self.assets[record.asset].sha256} {record.pointer}",
                 f"build inputs {self.build_input_hash}, projection {projection.id} version {projection.version}"]
+
+    # -- checks -----------------------------------------------------------
+
+    def check_frameshifts(self) -> None:
+        """A selected allele whose stated phase is not its stated landmark modulo 3 needs both
+        observations withheld: the runtime holds one phase, the anchor modulo 3."""
+        withheld = {c for d in self.recipe.decisions if d.action == "withhold_claim" for c in d.claims}
+        for finding in self.inventory.findings:
+            if finding.code != "phase_landmark_projection_unsupported":
+                continue
+            observed = finding.observations.get()
+            for i in sorted({self.by_subject[s.id] for s in finding.subjects if s.id in self.by_subject}):
+                claims = [c for c in self.claims_of.get(self.chosen[i].id, ())
+                          if c.predicate in ("anchor", "coding_phase")]
+                open_ = [c.id for c in claims if c.id not in withheld]
+                if open_:
+                    raise bad(ptr("/selection", i), (
+                        f"{self.entries[i].allele_id} carries finding {finding.id} (phase_landmark_projection_"
+                        f"unsupported: the stated phase {observed.get('phase')} is not the stated anchor "
+                        f"{observed.get('anchor')} modulo 3, {observed.get('anchor_modulo_3')}); the runtime "
+                        "reference holds a phase only as its anchor modulo 3, and neither source value is shifted "
+                        "or replaced. Exclude the allele from the selection, or withhold its anchor and coding_phase "
+                        f"claims with a withhold_claim decision (not yet withheld: {', '.join(open_)})"),
+                        "projection")
 
     # -- claims -----------------------------------------------------------
 
@@ -507,6 +534,7 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     build_input_hash = digest(inputs, BUILD_INPUTS_DOMAIN)
 
     build = _Build(lock, inventory, recipe, build_input_hash)
+    build.check_frameshifts()
     claims = build.claims()
     relationships = build.relationships()
     records = build.records()
