@@ -28,7 +28,7 @@ from GenAIRR._reference_sources import ogrdb
 from GenAIRR._reference_sources import profiles
 from tests.test_ogrdb_source_coordinates import (
     EVIDENCE, GAPPED, NOTE_LABELS, assert_status, at, candidate_of, claim_of, claims, findings, interpret,
-    interpreted, raw_gapped, raw_record, record_of, small, span_limiting_notes,
+    interpret_in_scope, interpreted, raw_gapped, raw_record, record_of, small, span_limiting_notes,
 )
 from tests.test_ogrdb_source_inventory import (
     EXPECT, IGH, IGK, IGL, SELECTION, SETS, _key, build, error, inventory_of, pinned, raw_records, seal,
@@ -205,6 +205,39 @@ def test_only_ighv3_7_04_and_the_igl_matches_have_bases_beyond_the_extension():
         ["IGHV3-7*04"] + list(NOTE_LABELS))
     assert sum(1 for label, value in terminus.items() if value and label.startswith("IGHV")) == 14
     assert terminus["IGKV1D-8*04"] is True
+
+
+@pytest.mark.parametrize("prefix_length, terminus", [(28, True), (3, False)])
+def test_a_5prime_extension_context_is_a_terminus_only_where_the_record_starts(monkeypatch, prefix_length,
+                                                                                terminus):
+    label = "IGLJ1*01"
+    record = raw_record(IGL, "airr_ex", label)
+    assert record["gene_start"] == 29                 # 28 record bases before the coding interval
+    prefix = record["sequence"][28 - prefix_length:28]
+
+    def edit(fmt, rec):
+        if fmt == "airr_ex" and rec["label"] == label:
+            rec["coding_sequence"] = prefix + rec["coding_sequence"]
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {label}, edit=edit))
+    ((code, finding),) = extension_findings(inventory).values()
+    observations = finding.observations.get()
+    assert code == "coding_extension_matches_record_context"
+    assert (observations["side"], observations["extension"], observations["record_context"]) == ("5", prefix, prefix)
+    assert observations["context_is_sequence_terminus"] is terminus
+
+
+def test_a_partial_disagreeing_context_that_reaches_the_record_end_is_a_terminus():
+    label = "IGHV4-4*09"                              # airr_ex adds GA; the record ends at gene_end
+
+    def edit(fmt, record):
+        if record["label"] == label:
+            record["sequence"] = record["sequence"] + "T"
+    lock, inventory = interpret(small(IGH, {label, "IGHJ1*01"}, edit=edit), IGH)
+    ((code, finding),) = extension_findings(inventory).values()
+    observations = finding.observations.get()
+    assert (code, observations["extension"], observations["record_context"]) == (
+        "coding_extension_disagrees_with_record_context", "GA", "T")
+    assert observations["context_is_sequence_terminus"] is True
 
 
 def test_igh_extensions_split_15_with_matching_context_8_without_and_none_disagreeing():
@@ -430,6 +463,18 @@ def test_a_declared_v_rss_start_beyond_the_record_sequence_gives_no_position():
         assert summary.observations.get()["unusable"] == ["IGLV10-54*04"] and summary.observations.get()["gaps"] == {}
     assert findings(inventory, "coding_end_before_declared_v_rss") == []
     assert findings(inventory, "declared_v_rss_start_without_cac") == []
+
+
+def test_a_declared_v_rss_start_too_close_to_the_record_end_is_not_judged_for_a_cac_core():
+    def edit(fmt, record):
+        if record["label"] == "IGLV10-54*04":
+            record["v_rs_start"] = len(record["sequence"]) - 1          # two record bases from the start
+    lock, inventory = interpret(small(IGL, {"IGLV10-54*04", "IGLJ1*01"}, edit=edit))
+    assert findings(inventory, "declared_v_rss_start_without_cac") == []
+    for summary in findings(inventory, "v_rss_gap_after_coding_end"):
+        observations = summary.observations.get()
+        assert observations["starts_without_cac"] == []
+        assert observations["starts_too_close_to_sequence_end"] == ["IGLV10-54*04"]
 
 
 def test_a_v_rss_start_inside_the_coding_interval_is_recorded_and_nothing_moves():

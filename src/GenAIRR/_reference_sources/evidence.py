@@ -161,7 +161,8 @@ FINDING_CODES = {
         "info", "informational", (),
         "Per record export: the gap between the declared coding end and the declared V RSS start (how many V "
         "records have none, the labels at every other gap), the labels without a declared or usable RSS start, "
-        "and those whose declared RSS start does not begin with a heptamer-like CAC."),
+        "those whose declared RSS start does not begin with a heptamer-like CAC, and those whose start has fewer "
+        "than three record bases, so the core cannot be judged."),
     "declared_v_rss_start_without_cac": (
         "info", "informational", (),
         "The record bases at the declared V RSS start do not begin with CAC, the core of the heptamer CACAGTG; "
@@ -521,8 +522,8 @@ class _Interpretation:
         # A context ending (or starting) exactly where the record sequence does is only the record's
         # own terminal bases, not genomic flank around the extension.
         terminus = None
-        if status != "without_record_context":
-            terminus = (interval.end + len(extra) == len(sequence)) if side == "3" else (interval.start == len(extra))
+        if status != "without_record_context":     # judged on the record bases actually present
+            terminus = (interval.end + len(bases) == len(sequence)) if side == "3" else (interval.start == len(bases))
         evidence = [long_candidate.locator, short_candidate.locator, seq_at, start_at, end_at]
         rs_at, rs = self.field(longer, "v_rs_start")
         versus_rss = None
@@ -616,7 +617,8 @@ class _Interpretation:
         """Declared V RSS coordinates against the declared coding interval of one record export:
         the gap between the coding end and the RSS start, the bases the RSS starts with, and
         coordinates beyond the record sequence.  Nothing here is projected."""
-        counts = {"adjacent": 0, "gaps": {}, "no_v_rs_start": [], "unusable": [], "starts_without_cac": []}
+        counts = {"adjacent": 0, "gaps": {}, "no_v_rs_start": [], "unusable": [], "starts_without_cac": [],
+                  "starts_too_close_to_sequence_end": []}
         v_records = 0
         for record in self.parsed[asset]:
             if record.segment != "V":
@@ -644,7 +646,9 @@ class _Interpretation:
                 counts["gaps"].setdefault(str(position.gap), []).append(record.label)
             (candidate,) = candidates
             at_start = sequence[rs - 1:rs + 6]
-            if not at_start.startswith(_HEPTAMER_CORE):
+            if len(at_start) < len(_HEPTAMER_CORE):        # too few record bases to judge the core
+                counts["starts_too_close_to_sequence_end"].append(record.label)
+            elif not at_start.startswith(_HEPTAMER_CORE):
                 counts["starts_without_cac"].append(record.label)
                 self.finding("declared_v_rss_start_without_cac", record, candidate, locators=(rs_at, seq_at),
                              v_rs_start=rs, gap=position.gap, record_bases_at_v_rs_start=at_start)
@@ -660,7 +664,8 @@ class _Interpretation:
             "asset": asset, "v_records": v_records, "adjacent": counts["adjacent"],
             "gaps": {gap: sorted(labels) for gap, labels in sorted(counts["gaps"].items(), key=lambda x: int(x[0]))},
             "no_v_rs_start": sorted(counts["no_v_rs_start"]), "unusable": sorted(counts["unusable"]),
-            "starts_without_cac": sorted(counts["starts_without_cac"])})
+            "starts_without_cac": sorted(counts["starts_without_cac"]),
+            "starts_too_close_to_sequence_end": sorted(counts["starts_too_close_to_sequence_end"])})
 
     def coding_end_before_rss(self, record, candidate, interval, rs: int, gap: int) -> None:
         (seq_at, sequence), (end_at, _), (rs_at, _) = (self.field(record, name) for name in
