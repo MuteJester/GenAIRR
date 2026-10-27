@@ -153,6 +153,8 @@ def test_a_failed_write_leaves_an_incomplete_dossier_and_removes_nothing(igl, tm
         assert set(written) == set(member_names(directory, calls)[:step])
         for name, data in written.items():
             assert data == expected[name]
+        error("incomplete_dossier", ReferenceBuild.read_dossier, directory)
+        assert tree(directory) == written
         assert (tmp_path / "foreign.txt").read_bytes() == b"another writer's file"
 
 
@@ -190,16 +192,6 @@ def test_only_an_existing_directory_is_a_dossier(tmp_path):
     error("io", ReferenceBuild.read_dossier, tmp_path / "file")
     with pytest.raises(TypeError):
         ReferenceBuild.read_dossier(None)
-
-
-def test_every_publication_failure_leaves_a_dossier_that_cannot_be_read(igl, tmp_path, monkeypatch):
-    _, build = igl
-    for step in (0, 4, 10, 15):              # a blob, the lock, the reference, the manifest
-        directory = tmp_path / f"failed-{step}"
-        recording_writer(monkeypatch, fail_at=step)
-        error("io", build.write_dossier, directory)
-        monkeypatch.undo()
-        error("incomplete_dossier", ReferenceBuild.read_dossier, directory)
 
 
 def test_a_listed_member_that_is_absent_is_named(igl, tmp_path):
@@ -584,12 +576,12 @@ def test_a_clean_cache_build_and_a_moved_offline_dossier_agree(tmp_path, offline
     (tmp_path / "igl-build").rename(tmp_path / "moved")
     for path in sorted((tmp_path / "clean-cache").rglob("*"), reverse=True):
         path.unlink() if path.is_file() else path.rmdir()
-    dossier = tmp_path / "moved"
-    checked = ReferenceBuild.read_dossier(dossier)
+    checked = ReferenceBuild.read_dossier(str(tmp_path / "moved"))
     assert checked.reference.execution_hash == build.reference.execution_hash
+    dossier = pathlib.Path(str(tmp_path / "moved"))
     locked = OgrdbSource.read(dossier / "source.lock.json", cache=dossier / "cache")
     rebuilt = locked.build(dossier / "recipe.json")
-    rebuilt.write_dossier(tmp_path / "igl-rebuilt")
+    rebuilt.write_dossier(str(tmp_path / "igl-rebuilt"))
     original, again = tree(dossier), tree(tmp_path / "igl-rebuilt")
     listed = {member["name"] for member in load_manifest(dossier)["members"]} | {"manifest.json"}
     assert {k: original[k] for k in listed} == {k: again[k] for k in listed}
@@ -814,3 +806,54 @@ def test_a_registry_entry_names_a_resource_below_its_package(resource):
     with pytest.raises(Exception) as info:
         bundled.BundledDossier("GenAIRR", resource, "sha256:" + "0" * 64)
     assert getattr(info.value, "kind", None) in ("malformed", "resource_limit")
+
+
+# ── manifests that cannot be trusted ────────────────────────────────
+
+
+@pytest.mark.parametrize("name", ["/etc/passwd", "../outside.json", "inputs\\v.fasta", "C:/report.json",
+                                  "inputs/../report.json", "receipts/0.json", "manifest.json"])
+def test_a_manifest_naming_an_unsafe_member_is_refused(mini, name):
+    _, dossier = mini
+    manifest = load_manifest(dossier)
+    manifest["members"].insert(0, {"name": name, "sha256": "sha256:" + "0" * 64, "bytes": 1})
+    save_manifest(dossier, manifest)
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/manifest.json/members/0/name"
+
+
+@pytest.mark.parametrize("field, value, kind, path", [
+    ("versions", {"report": 2}, "unsupported_schema", "/manifest.json/versions/report"),
+    ("projection", {"version": 2}, "unsupported_profile", "/manifest.json/projection"),
+    ("adapter", {"version": 2}, "unsupported_profile", "/manifest.json/adapter"),
+    ("builder", {"version": "0.0.1"}, "identity_mismatch", "/manifest.json/builder"),
+    ("runtime", {"execution_hash": "sha256:" + "1" * 64}, "digest_mismatch", "/manifest.json/runtime"),
+    ("hashes", {"report": "sha256:" + "2" * 64}, "digest_mismatch", "/manifest.json/hashes/report"),
+])
+def test_a_manifest_that_does_not_commit_to_its_members_is_refused(mini, field, value, kind, path):
+    _, dossier = mini
+    manifest = load_manifest(dossier)
+    manifest[field].update(value)
+    save_manifest(dossier, manifest)
+    exc = error(kind, ReferenceBuild.read_dossier, dossier)
+    assert exc.path == path
+
+
+def test_a_blob_absent_from_the_dossier_and_its_manifest_is_a_missing_asset(mini):
+    build, dossier = mini
+    gapped = build.lock.asset("gapped")
+    name = "cache/blobs/sha256/" + gapped.blob_name
+    (dossier / name).unlink()
+    manifest = load_manifest(dossier)
+    manifest["members"] = [m for m in manifest["members"] if m["name"] != name]
+    save_manifest(dossier, manifest)
+    exc = error("missing_asset", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/manifest.json/members" and gapped.sha256 in exc.message
+
+
+def test_a_dossier_outside_this_versions_validated_scope_is_unsupported(mini, monkeypatch):
+    from GenAIRR._reference_sources import common, consistency
+    _, dossier = mini
+    monkeypatch.setattr(consistency, "PROFILE_SCOPES", common.PROFILE_SCOPES)
+    exc = error("unsupported_profile", ReferenceBuild.read_dossier, dossier)
+    assert exc.path.startswith("/report.json/source_lock") and "not been validated" in exc.message
