@@ -746,8 +746,10 @@ def packaged(tmp_path, monkeypatch, dossier: pathlib.Path, *, name="genairr_test
 
 
 def register(monkeypatch, entry):
+    """Register ``entry`` as the only packaged dossier, with an empty cache of checked builds."""
     from GenAIRR._reference_sources import bundled
     monkeypatch.setattr(bundled, "REGISTRY", __import__("types").MappingProxyType({STARTER_ID: entry}))
+    monkeypatch.setattr(build_module, "_BUNDLED", {})
 
 
 def test_a_registered_dossier_loads_through_the_dossier_reader(mini, tmp_path, monkeypatch):
@@ -794,13 +796,52 @@ def test_a_dossier_packaged_in_an_archive_is_read_from_a_private_copy(mini, tmp_
     assert tmp_path not in copy.parents
 
 
-def test_a_packaged_dossier_must_have_its_registered_manifest(mini, tmp_path, monkeypatch):
+def test_a_packaged_dossier_must_have_its_registered_manifest_before_it_is_checked(mini, tmp_path, monkeypatch):
     from GenAIRR._reference_sources import bundled
     _, dossier = mini
     packaged(tmp_path, monkeypatch, dossier, name="genairr_other_pkg")
     register(monkeypatch, bundled.BundledDossier("genairr_other_pkg", "builds/starter", "sha256:" + "0" * 64))
+    checks = []
+    real = ReferenceBuild.read_dossier.__func__
+    monkeypatch.setattr(ReferenceBuild, "read_dossier",
+                        classmethod(lambda cls, directory: checks.append(directory) or real(cls, directory)))
     exc = error("digest_mismatch", ReferenceBuild.bundled, STARTER_ID)
-    assert "sha256:" + "0" * 64 in exc.message
+    assert "sha256:" + "0" * 64 in exc.message and exc.path == "/manifest.json"
+    assert checks == []                                          # refused before the full check
+
+
+def test_concurrent_first_loads_check_a_packaged_dossier_once(mini, tmp_path, monkeypatch):
+    import threading
+    import time
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR._reference_sources.digests import manifest_hash
+    build, dossier = mini
+    packaged(tmp_path, monkeypatch, dossier, name="genairr_threaded_pkg")
+    register(monkeypatch, bundled.BundledDossier("genairr_threaded_pkg", "builds/starter",
+                                                 manifest_hash(build.manifest)))
+    checks = []
+    real = ReferenceBuild.read_dossier.__func__
+
+    def slow(cls, directory):
+        checks.append(directory)
+        time.sleep(0.3)
+        return real(cls, directory)
+
+    monkeypatch.setattr(ReferenceBuild, "read_dossier", classmethod(slow))
+    start = threading.Barrier(3)
+    results = []
+
+    def load():
+        start.wait()
+        results.append(ReferenceBuild.bundled(STARTER_ID))
+
+    threads = [threading.Thread(target=load) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    assert len(results) == 3 and len(checks) == 1
+    assert results[0] is results[1] is results[2]
 
 
 @pytest.mark.parametrize("resource", ["/abs", "../up", "a\\b", "", "C:/x", "a/../b"])

@@ -56,8 +56,10 @@ _MEMBER_LIMITS = {LOCK_MEMBER: MAX_LOCK_BYTES, RECIPE_MEMBER: MAX_RECIPE_BYTES, 
 _DIRECTORIES = ("cache", "cache/blobs", "cache/blobs/sha256", "inputs", "receipts")
 _RECEIPT_RE = re.compile(r"receipts/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.json")
 _ARTIFACT_KINDS = {"io": "io", "unsupported_schema": "unsupported_schema", "integrity": "digest_mismatch"}
-# Packaged builds already checked in this process, by (identifier, registry entry).
+# Packaged builds already checked in this process, by (identifier, registry entry); one lock per
+# key makes concurrent first loads run a single check.
 _BUNDLED: dict = {}
+_BUNDLED_LOCKS: dict = {}
 _BUNDLED_LOCK = threading.Lock()
 
 
@@ -222,6 +224,29 @@ def _regeneration_failed(exc: ReferenceSourceError, lock: SourceLock) -> Referen
         path = "/" + RECIPE_MEMBER + path
     return ReferenceSourceError(exc.kind, path, "the dossier's lock, blobs and recipe do not regenerate a build "
                                                 f"under this GenAIRR: {exc.message}")
+
+
+def _read_manifest(root: Path) -> BuildManifest:
+    """The dossier's manifest, read without following links, bounded and parsed strictly.
+
+    No manifest is ``incomplete_dossier``: it is published last, so its absence means an
+    unfinished write (or not a dossier)."""
+    if not root.is_dir():
+        raise bad("", f"{root} is not a directory; a dossier is a directory written by write_dossier", "io")
+    try:
+        info = os.lstat(root / MANIFEST_NAME)
+    except FileNotFoundError:
+        raise bad("", f"{root} has no {MANIFEST_NAME}: the dossier is incomplete (its writing did not finish) or "
+                      "is not a dossier, and it is never read", "incomplete_dossier") from None
+    except OSError as exc:
+        raise bad("/" + MANIFEST_NAME, f"cannot read {MANIFEST_NAME}: {exc}", "io") from exc
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise bad("/" + MANIFEST_NAME, f"{MANIFEST_NAME} is a symbolic link or not a regular file; links are "
+                                       "never followed", "io")
+    data = _read_file(root, MANIFEST_NAME, MAX_MANIFEST_BYTES)
+    if len(data) > MAX_MANIFEST_BYTES:
+        raise bad("/" + MANIFEST_NAME, f"{MANIFEST_NAME} exceeds {MAX_MANIFEST_BYTES} bytes", "resource_limit")
+    return _document(MANIFEST_NAME, data, BuildManifest.from_json)
 
 
 def _input_names(lock: SourceLock) -> tuple:
@@ -426,22 +451,7 @@ class ReferenceBuild:
         import GenAIRR
         checking = GenAIRR.__version__
         root = _path(directory)
-        if not root.is_dir():
-            raise bad("", f"{root} is not a directory; a dossier is a directory written by write_dossier", "io")
-        try:
-            info = os.lstat(root / MANIFEST_NAME)
-        except FileNotFoundError:
-            raise bad("", f"{root} has no {MANIFEST_NAME}: the dossier is incomplete (its writing did not finish) or "
-                          "is not a dossier, and it is never read", "incomplete_dossier") from None
-        except OSError as exc:
-            raise bad("/" + MANIFEST_NAME, f"cannot read {MANIFEST_NAME}: {exc}", "io") from exc
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-            raise bad("/" + MANIFEST_NAME, f"{MANIFEST_NAME} is a symbolic link or not a regular file; links are "
-                                           "never followed", "io")
-        data = _read_file(root, MANIFEST_NAME, MAX_MANIFEST_BYTES)
-        if len(data) > MAX_MANIFEST_BYTES:
-            raise bad("/" + MANIFEST_NAME, f"{MANIFEST_NAME} exceeds {MAX_MANIFEST_BYTES} bytes", "resource_limit")
-        manifest = _document(MANIFEST_NAME, data, BuildManifest.from_json)
+        manifest = _read_manifest(root)
 
         # Exactly the listed members (plus receipts) are present, as regular files.
         present = _scan(root)
@@ -579,22 +589,34 @@ class ReferenceBuild:
     def bundled(cls, exact_id: str) -> "ReferenceBuild":
         """The reference build packaged with GenAIRR under exactly ``exact_id``.
 
-        The packaged dossier is checked with :meth:`read_dossier` (offline, from local package
-        resources) and must have its registered manifest hash.  There are no aliases and no
-        downloads; an unknown identifier is an error listing the available ones.  A packaged
-        build is checked once per process and the same build is returned afterwards.
+        The packaged dossier's manifest must first have its registered manifest hash, so a
+        modified installation fails at once; the dossier is then checked with
+        :meth:`read_dossier` (offline, from local package resources).  There are no aliases and
+        no downloads; an unknown identifier is an error listing the available ones.  A packaged
+        build is checked once per process, concurrent first loads included, and the same build
+        is returned afterwards.
         """
         entry = bundled.entry(exact_id)
         key = (exact_id, entry)
         with _BUNDLED_LOCK:
             cached = _BUNDLED.get(key)
-        if cached is not None:
-            return cached
-        with bundled.dossier_directory(entry) as directory:
-            build = cls.read_dossier(directory)
-        found = manifest_hash(build.manifest)
-        if found != entry.manifest_hash:
-            raise bad("", f"the dossier packaged as {exact_id!r} has manifest {found}, not the registered "
-                          f"{entry.manifest_hash}", "digest_mismatch")
-        with _BUNDLED_LOCK:
-            return _BUNDLED.setdefault(key, build)
+            if cached is not None:
+                return cached
+            key_lock = _BUNDLED_LOCKS.setdefault(key, threading.Lock())
+        with key_lock:
+            with _BUNDLED_LOCK:
+                cached = _BUNDLED.get(key)
+            if cached is not None:
+                return cached
+            with bundled.dossier_directory(entry) as directory:
+                found = manifest_hash(_read_manifest(Path(directory)))       # a modified install fails at once
+                if found != entry.manifest_hash:
+                    raise bad("/" + MANIFEST_NAME, f"the dossier packaged as {exact_id!r} has manifest {found}, not "
+                                                   f"the registered {entry.manifest_hash}", "digest_mismatch")
+                build = cls.read_dossier(directory)
+            if manifest_hash(build.manifest) != entry.manifest_hash:
+                raise bad("/" + MANIFEST_NAME, f"the dossier packaged as {exact_id!r} changed while it was checked",
+                          "digest_mismatch")
+            with _BUNDLED_LOCK:
+                _BUNDLED[key] = build
+            return build
