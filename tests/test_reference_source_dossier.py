@@ -859,3 +859,13 @@ def test_a_dossier_outside_this_versions_validated_scope_is_unsupported(mini, mo
     monkeypatch.setattr(consistency, "PROFILE_SCOPES", common.PROFILE_SCOPES)
     exc = error("unsupported_profile", ReferenceBuild.read_dossier, dossier)
     assert exc.path.startswith("/report.json/source_lock") and "not been validated" in exc.message
+
+
+def test_a_windows_reparse_point_counts_as_a_link():
+    import stat
+    import types
+    attributes = types.SimpleNamespace(st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT)
+    junction = types.SimpleNamespace(is_symlink=lambda: False, stat=lambda follow_symlinks=True: attributes)
+    plain = types.SimpleNamespace(is_symlink=lambda: False, stat=lambda follow_symlinks=True: types.SimpleNamespace())
+    assert build_module._is_link(junction) is True
+    assert build_module._is_link(plain) is False

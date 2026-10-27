@@ -87,10 +87,11 @@ def _receipt_order(name: str) -> tuple:
 
 
 def _is_link(entry: os.DirEntry) -> bool:
+    """A symbolic link, or on Windows any reparse point (junctions included, on every version)."""
     if entry.is_symlink():
         return True
-    is_junction = getattr(entry, "is_junction", None)          # Windows directory junctions (Python 3.12+)
-    return bool(is_junction is not None and is_junction())
+    attributes = getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0)   # Windows only
+    return bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 def _scan(root: Path) -> dict:
@@ -119,8 +120,8 @@ def _scan(root: Path) -> dict:
         for item in sorted(entries, key=lambda e: e.name):
             name = f"{folder}/{item.name}" if folder else item.name
             if _is_link(item):
-                raise bad("/" + name, f"{name} is a symbolic link; dossier members are regular files and links are "
-                                      "never followed", "io")
+                raise bad("/" + name, f"{name} is a symbolic link or another reparse point; dossier members are "
+                                      "regular files and links are never followed", "io")
             if item.is_dir(follow_symlinks=False):
                 if name not in _DIRECTORIES:
                     raise bad("/" + name, f"unexpected directory {name}: it is not part of a dossier", "malformed")
