@@ -288,14 +288,20 @@ class HttpsTransport:
     """Standard-library HTTPS GET.
 
     Redirects are never followed here; the caller applies the redirect policy.  The
-    request carries no credentials and asks for the unencoded bytes.  Connecting (with the
-    TLS handshake), sending, receiving the status line and headers, and every body
-    receive each run under ``min(timeout, time left before deadline)`` on ``clock``; body
-    reads return after at most one receive.
+    request carries no credentials and asks for the unencoded bytes.  Certificates and host
+    names are always verified: a custom ``context`` that does not verify both is refused.
+    Connecting (with the TLS handshake), sending, receiving the status line and headers,
+    and every body receive each run under ``min(timeout, time left before deadline)`` on
+    ``clock``; body reads return after at most one receive.
     """
 
     def __init__(self, *, context: Optional[ssl.SSLContext] = None,
                  clock: Callable[[], float] = time.monotonic):
+        if context is not None:
+            if not isinstance(context, ssl.SSLContext):
+                raise TypeError(f"context must be an ssl.SSLContext, got {type(context).__name__}")
+            if context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
+                raise ValueError("the TLS context must verify certificates (CERT_REQUIRED) and host names")
         self._context = context
         self._clock = clock
 

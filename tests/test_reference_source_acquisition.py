@@ -1257,6 +1257,22 @@ def test_the_https_transport_drives_the_standard_library_client(monkeypatch):
     assert connection.simulated.closed
 
 
+def test_the_https_transport_verifies_certificates_and_host_names(monkeypatch):
+    clock = FakeClock()
+    data, head = http_response(b"x")
+    opened = simulate_connections(monkeypatch, clock, lambda: SimulatedSocket(clock, data, head))
+    HttpsTransport(clock=clock).get(_url(IGH, "airr"), timeout=30, deadline=clock.now + 120).close()
+    context = opened[0].given_context
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname is True
+    unverified = ssl.create_default_context()
+    unverified.check_hostname = False
+    with pytest.raises(ValueError):
+        HttpsTransport(context=unverified)
+    unverified.verify_mode = ssl.CERT_NONE
+    with pytest.raises(ValueError):
+        HttpsTransport(context=unverified)
+
+
 def test_the_https_transport_returns_after_one_receive(monkeypatch):
     clock = FakeClock()
     data, head = http_response(b"0123456789")
