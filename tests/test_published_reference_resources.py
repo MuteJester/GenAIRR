@@ -375,7 +375,8 @@ def test_the_bundled_starter_states_its_capabilities_truthfully(starter):
     assert blockers == {"original_coding_ends": 263, "complete_reference_span": 460}
     assert [r.to_dict() for r in starter.report.requirements] == [dict(r, satisfied=True) for r in REQUIRES]
     text = " ".join(str(starter.report).split())
-    assert len(PROJECTION_LOSSES) == 4
+    assert [code for code, _ in PROJECTION_LOSSES] == ["v_subregions", "gapped_sequences", "affirmed_spans",
+                                                       "genomic_context"]
     for code, loss in PROJECTION_LOSSES:
         assert f"{code}: {' '.join(loss.split())}" in text
     assert "functional alleles" not in text.lower()
@@ -440,23 +441,30 @@ def test_every_dossier_member_is_packaged_in_the_wheel_and_the_sdist(starter):
             assert not [path for path in matched if (REPO / "tests") in path.parents]
 
 
+# The built-in human_igh alias as it was before the starter was packaged.
+HUMAN_IGH_CARTRIDGE = "HUMAN_IGH_OGRDB"
+HUMAN_IGH_POOLS = (198, 33, 7)                                         # V, D, J alleles
+HUMAN_IGH_CONTENT_HASH = "sha256:a98f4dad00768fcb7cb28164f1646b538dbb42da51a19d618eeff01b48e05b66"
+
+
 def test_loading_the_starter_leaves_the_human_igh_alias_unchanged(starter):
     import GenAIRR
     from GenAIRR import Experiment
     from GenAIRR._refdata_resolver import _CONFIG_ALIASES
     from GenAIRR.reference_sources import ReferenceBuild
-    before = dict(_CONFIG_ALIASES)
     assert ReferenceBuild.bundled(STARTER_ID) is starter
-    assert dict(_CONFIG_ALIASES) == before and _CONFIG_ALIASES["human_igh"] == "HUMAN_IGH_OGRDB"
+    assert sorted(alias for alias, name in _CONFIG_ALIASES.items() if name == HUMAN_IGH_CARTRIDGE) == [
+        "human_igh", "human_igh_ogrdb"]
     assert not [alias for alias in _CONFIG_ALIASES if "observed" in alias or "published" in alias]
     with pytest.raises(ValueError, match="Unknown config name"):
         Experiment.on(STARTER_ID)
-    alias, cartridge = Experiment.on("human_igh"), Experiment.on(GenAIRR.HUMAN_IGH_OGRDB)
-    assert (alias.refdata.v_pool_size(), alias.refdata.j_pool_size()) == (
-        cartridge.refdata.v_pool_size(), cartridge.refdata.j_pool_size())
+    alias = Experiment.on("human_igh")
+    pools = (alias.refdata.v_pool_size(), alias.refdata.d_pool_size(), alias.refdata.j_pool_size())
+    assert pools == HUMAN_IGH_POOLS
     first = alias.recombine().run_records(n=20, seed=3)
-    second = Experiment.on(GenAIRR.HUMAN_IGH_OGRDB).recombine().run_records(n=20, seed=3)
-    assert first.reference_content_hash == second.reference_content_hash != starter.reference.execution_hash
+    second = Experiment.on(getattr(GenAIRR, HUMAN_IGH_CARTRIDGE)).recombine().run_records(n=20, seed=3)
+    assert first.reference_content_hash == second.reference_content_hash == HUMAN_IGH_CONTENT_HASH
+    assert HUMAN_IGH_CONTENT_HASH != starter.reference.execution_hash
     assert [record["sequence"] for record in first] == [record["sequence"] for record in second]
 
 
