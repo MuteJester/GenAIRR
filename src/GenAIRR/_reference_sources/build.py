@@ -8,16 +8,21 @@ publishes exactly the members it lists.
 from __future__ import annotations
 
 import hashlib
+import os
+from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, Optional
 
-from GenAIRR._artifact_io import canonical_json
+from GenAIRR._artifact_io import ArtifactIOError, canonical_json, write_atomic
 from GenAIRR._reference.artifact import Reference
+from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference_sources._fields import require_type
 from GenAIRR._reference_sources.digests import report_hash
+from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.lock import SourceLock
 from GenAIRR._reference_sources.manifest import (
-    BLOB_PREFIX, MEMBER_SCHEMA_VERSIONS, BuildManifest, ManifestHashes, Member, MemberVersions, check_manifest,
+    BLOB_PREFIX, MANIFEST_NAME, MEMBER_SCHEMA_VERSIONS, RECEIPTS_PREFIX, BuildManifest, ManifestHashes, Member,
+    MemberVersions, check_manifest,
 )
 from GenAIRR._reference_sources.projection import ANNOTATIONS_MEMBER, FASTA_MEMBERS
 from GenAIRR._reference_sources.recipe import Recipe
@@ -37,6 +42,16 @@ def document_bytes(document: dict) -> bytes:
 
 def _sha256(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _path(directory) -> Path:
+    if isinstance(directory, bool) or not isinstance(directory, (str, os.PathLike)):
+        raise TypeError(f"directory must be a filesystem path, got {type(directory).__name__}")
+    return Path(directory)
+
+
+def _receipt_name(index: int) -> str:
+    return f"{RECEIPTS_PREFIX}{index}.json"
 
 
 def _input_names(lock: SourceLock) -> tuple:
@@ -162,3 +177,47 @@ class ReferenceBuild:
         """The GenAIRR version that checked this build's dossier, or ``None`` for a build made in
         this process.  It is a property of the check, never recorded in a dossier."""
         return self._checked_with
+
+    # Dossiers ----------------------------------------------------------
+
+    def write_dossier(self, directory) -> None:
+        """Write the build as a portable dossier into the new directory ``directory``.
+
+        The directory must not exist (its parent must).  Every member is published with the
+        atomic file writer: each locked source asset under ``cache/blobs/sha256/<digest>``, then
+        ``source.lock.json``, ``recipe.json``, the exact projected ``inputs/``,
+        ``reference.genairr-ref.json``, ``report.json`` and the acquisition receipts
+        (``receipts/<n>.json``, outside the manifest), and ``manifest.json`` last.  A directory
+        without ``manifest.json`` is incomplete and is never read.  If writing fails, the files
+        already written are kept and nothing is removed or replaced.
+        """
+        root = _path(directory)
+        try:
+            os.mkdir(root)
+        except OSError as exc:
+            raise ReferenceSourceError("io", "", f"cannot create the dossier directory {root}: {exc}; a dossier is "
+                                                 "written into a new directory only, never into or over an existing "
+                                                 "one") from exc
+        files = dict(self._files)
+        for index, receipt in enumerate(self._receipts):
+            files[_receipt_name(index)] = document_bytes(receipt.to_dict())
+        files[MANIFEST_NAME] = document_bytes(self._manifest.to_dict())
+        created = set()
+        for name, data in files.items():
+            try:
+                parts = name.split("/")
+                for depth in range(1, len(parts)):
+                    folder = "/".join(parts[:depth])
+                    if folder not in created:
+                        os.mkdir(root.joinpath(*parts[:depth]))
+                        created.add(folder)
+                target = root.joinpath(*parts)
+                if name == REFERENCE_MEMBER:
+                    self._reference.write(target)          # the artifact's own writer: the same bytes
+                else:
+                    write_atomic(target, data, replace=False)
+            except (OSError, ArtifactIOError, ReferenceArtifactError) as exc:
+                raise ReferenceSourceError("io", "/" + name, (
+                    f"cannot write dossier member {name} into {root}: {exc}. The dossier is incomplete: it has no "
+                    f"{MANIFEST_NAME}, so it cannot be read. The files already written are kept; write the build "
+                    "into a new directory")) from exc
