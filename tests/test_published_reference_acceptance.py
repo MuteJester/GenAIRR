@@ -605,6 +605,8 @@ def igk_rule() -> tuple:
          either would need an explicit record choice);
       3. its landmark codon does not encode the residue canonical_productive needs, which the recipe requires:
          Cys at cdr3_start - 4 for V (IMGT 104), Phe at j_cdr3_end - 1 for an IGK J (IMGT 118).
+    The provider's 'functional' field is deliberately not a selection criterion: the profile cannot classify it
+    and the runtime claims no functionality, so alleles the provider marks false are selected like any other.
     Returns (selection entries, {excluded label: reason})."""
     records, extended = raw_records(IGK, "airr"), raw_records(IGK, "airr_ex")
     landmarks = gapped_landmarks(IGK)
@@ -719,6 +721,12 @@ def test_the_igk_build_states_its_capabilities_and_keeps_unknowns_null(igk):
     _, build, _, selection, _ = igk
     landmarks = gapped_landmarks(IGK)
     records = raw_records(IGK, "airr")
+    # The provider marks three V false; the rule ignores that field, so the two with a Cys landmark are selected.
+    provider_false = {record["label"] for record in records if record["functional"] is False}
+    assert provider_false == {"IGKV1-13*01", "IGKV2-29*01", "IGKV3D-15*02"}
+    alleles = {a.label: a for a in build.reference.alleles}
+    assert provider_false & set(alleles) == {"IGKV1-13*01", "IGKV3D-15*02"}
+    assert all(alleles[label].functionality is None for label in ("IGKV1-13*01", "IGKV3D-15*02"))
     pointer = {e["label"]: int(e["record"]["pointer"].rsplit("/", 1)[1]) for e in selection}
     for capabilities in (build.reference.capabilities(), build.report.capabilities):
         status = capabilities.status
