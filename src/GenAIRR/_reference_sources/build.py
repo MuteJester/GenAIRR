@@ -24,8 +24,10 @@ from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference.importer import FASTA_MAX_BYTES
 from GenAIRR._reference.sidecar import MAX_BYTES as SIDECAR_MAX_BYTES
 from GenAIRR._reference_sources import bundled
-from GenAIRR._reference_sources._fields import MAX_ASSET_BYTES, MAX_ASSETS, bad, ptr, require_type, show
-from GenAIRR._reference_sources.digests import manifest_hash, report_hash
+from GenAIRR._reference_sources._fields import (
+    MAX_ASSET_BYTES, MAX_ASSETS, bad, parse_json, ptr, require_type, show,
+)
+from GenAIRR._reference_sources.digests import manifest_hash, recipe_hash, report_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.lock import MAX_LOCK_BYTES, SourceLock
 from GenAIRR._reference_sources.manifest import (
@@ -227,12 +229,19 @@ def _input_names(lock: SourceLock) -> tuple:
     return tuple(FASTA_MEMBERS[segment] for segment in lock.identity.segments) + (ANNOTATIONS_MEMBER,)
 
 
-def _members(lock: SourceLock, recipe: Recipe, assets: Mapping[str, bytes], inputs: Mapping[str, bytes],
-             reference: Reference, report: BuildReport) -> dict:
-    """``{member name: exact bytes}`` of every deterministic member, in publication order.
+def _member_names(lock: SourceLock) -> tuple:
+    """Every deterministic member name of a build of ``lock``, in publication order.
 
     Assets with identical bytes share one content-addressed blob.  Receipts and the manifest
     are not members."""
+    blobs = tuple(dict.fromkeys(BLOB_PREFIX + asset.blob_name for asset in lock.assets))
+    return blobs + (LOCK_MEMBER, RECIPE_MEMBER) + tuple(INPUTS_PREFIX + name for name in _input_names(lock)) + (
+        REFERENCE_MEMBER, REPORT_MEMBER)
+
+
+def _members(lock: SourceLock, recipe: Recipe, assets: Mapping[str, bytes], inputs: Mapping[str, bytes],
+             reference: Reference, report: BuildReport) -> dict:
+    """``{member name: exact bytes}`` of every deterministic member, in publication order."""
     files = {}
     for asset in lock.assets:
         files.setdefault(BLOB_PREFIX + asset.blob_name, assets[asset.asset_id])
@@ -245,8 +254,8 @@ def _members(lock: SourceLock, recipe: Recipe, assets: Mapping[str, bytes], inpu
     return files
 
 
-def _manifest(lock: SourceLock, recipe: Recipe, report: BuildReport, files: Mapping[str, bytes]) -> BuildManifest:
-    """The manifest of exactly ``files``: member digests and sizes, schema versions, adapter and
+def _manifest(lock: SourceLock, recipe: Recipe, report: BuildReport, members) -> BuildManifest:
+    """The manifest of a build: ``members`` (``(name, digest, size)``), schema versions, adapter and
     projection, the input and report hashes, the runtime hashes and the builder of the report."""
     hashes = report.hashes
     return BuildManifest(
@@ -255,7 +264,7 @@ def _manifest(lock: SourceLock, recipe: Recipe, report: BuildReport, files: Mapp
         hashes=ManifestHashes(source_lock=hashes.source_lock, inventory=hashes.inventory, recipe=hashes.recipe,
                               build_inputs=hashes.build_inputs, report=report_hash(report)),
         runtime=report.runtime,
-        members=tuple(Member(name, _sha256(data), len(data)) for name, data in sorted(files.items())))
+        members=tuple(Member(name, digest, size) for name, digest, size in sorted(members)))
 
 
 class ReferenceBuild:
@@ -301,8 +310,16 @@ class ReferenceBuild:
         require_type(reference, Reference, "reference")
         require_type(report, BuildReport, "report")
         files = _members(lock, recipe, assets, inputs, reference, report)
-        manifest = _manifest(lock, recipe, report, files)
+        manifest = _manifest(lock, recipe, report, ((n, _sha256(d), len(d)) for n, d in files.items()))
         check_manifest(manifest, lock, report)
+        return cls._assemble(lock=lock, recipe=recipe, reference=reference, report=report, manifest=manifest,
+                             files=files, receipts=receipts, checked_with=checked_with)
+
+    @classmethod
+    def _assemble(cls, *, lock: SourceLock, recipe: Recipe, reference: Reference, report: BuildReport,
+                  manifest: BuildManifest, files: dict, receipts: tuple,
+                  checked_with: Optional[str]) -> "ReferenceBuild":
+        """A build from parts that are already consistent (``files`` in publication order)."""
         self = object.__new__(cls)
         for name, value in (("_reference", reference), ("_report", report), ("_lock", lock), ("_recipe", recipe),
                             ("_manifest", manifest), ("_files", MappingProxyType(files)),
@@ -464,29 +481,27 @@ class ReferenceBuild:
                                       f"{MAX_RECEIPT_BYTES}", "resource_limit")
 
         # Every member's digest.
-        files = {}
+        files, observed_digests = {}, {}
         for member in manifest.members:
             data = _read_file(root, member.name, member.bytes)
-            observed = _sha256(data)
+            observed = observed_digests[member.name] = _sha256(data)
             if len(data) != member.bytes or observed != member.sha256:
                 raise bad("/" + member.name, f"{member.name} holds {len(data)} bytes with digest {observed}; "
                                              f"{MANIFEST_NAME} lists {member.bytes} bytes with {member.sha256}",
                           "digest_mismatch")
             files[member.name] = data
 
-        # The documents, and the manifest's commitments to them.
+        # The lock and the recipe, and the manifest's commitments to them.
         lock = _document(LOCK_MEMBER, files[LOCK_MEMBER], SourceLock.from_json)
         recipe = _document(RECIPE_MEMBER, files[RECIPE_MEMBER], Recipe.from_json)
-        report = _document(REPORT_MEMBER, files[REPORT_MEMBER], BuildReport.from_json)
         try:
-            check_manifest(manifest, lock, report)
+            check_manifest(manifest, lock)          # lock commitment, adapter, every locked blob, D input
         except ReferenceSourceError as exc:
             raise exc.under("/" + MANIFEST_NAME) from None
-        if report.recipe != recipe:
-            where = _difference(recipe.to_dict(), report.recipe.to_dict())
-            raise bad("/" + RECIPE_MEMBER + (where or ""), f"{RECIPE_MEMBER} is not the recipe embedded in "
-                                                           f"{REPORT_MEMBER} (first difference at {where})",
-                      "identity_mismatch")
+        found = recipe_hash(recipe)
+        if found != manifest.hashes.recipe:
+            raise bad("/" + RECIPE_MEMBER, f"{RECIPE_MEMBER} has recipe hash {found}, but {MANIFEST_NAME} commits to "
+                                           f"{manifest.hashes.recipe}", "digest_mismatch")
         locked = {(a.format, a.sha256, a.bytes) for a in lock.assets}
         stored_receipts = []
         for name in receipts:
@@ -504,8 +519,8 @@ class ReferenceBuild:
         except ReferenceSourceError as exc:
             raise _regeneration_failed(exc, lock) from None
         regenerated = projection.inputs
-        inputs = {name: files[INPUTS_PREFIX + name] for name in _input_names(lock)}
-        for name, stored in inputs.items():
+        for name in _input_names(lock):
+            stored = files[INPUTS_PREFIX + name]
             if regenerated.get(name) != stored:
                 raise bad("/" + INPUTS_PREFIX + name, (
                     f"{INPUTS_PREFIX}{name} ({_sha256(stored)}) is not what the dossier's lock, blobs and recipe "
@@ -527,19 +542,38 @@ class ReferenceBuild:
         _compared(REFERENCE_MEMBER, stored_document, expected_document,
                   "the runtime reference the dossier's lock, blobs and recipe regenerate (every field but the "
                   "generator and the commitment)")
+
+        # The report: the regenerated one, stated for the stored artifact and the recorded builder, must
+        # be byte for byte the stored report.  Equal canonical bytes of a validated report prove the
+        # stored report valid, so it is parsed only to locate a difference.
         expected = report_for(projection.report, stored, manifest.builder)
-        _compared(REPORT_MEMBER, report.to_dict(), expected.to_dict(),
-                  "the report regenerated for the stored reference and the recorded builder")
+        expected_dict = expected.to_dict()
+        if document_bytes(expected_dict) != files[REPORT_MEMBER]:
+            try:
+                stored_report = parse_json(_text(REPORT_MEMBER, files[REPORT_MEMBER]), max_bytes=MAX_REPORT_BYTES)
+            except ReferenceSourceError as exc:
+                raise exc.under("/" + REPORT_MEMBER) from None
+            _compared(REPORT_MEMBER, stored_report, expected_dict,
+                      "the report regenerated for the stored reference and the recorded builder")
+            raise bad("/" + REPORT_MEMBER, f"{REPORT_MEMBER} is not in canonical form (canonical JSON, UTF-8, one LF); "
+                                           "a dossier stores each generated document exactly as written")
         if generator != manifest.builder.to_dict():
             raise bad("/" + REFERENCE_MEMBER + "/generator", (
                 f"the stored reference names its generator GenAIRR {show(generator.get('version'))}, but "
                 f"{REPORT_MEMBER} and {MANIFEST_NAME} record the builder GenAIRR {manifest.builder.version}"),
                 "identity_mismatch")
-
-        build = cls._create(lock=lock, recipe=recipe, assets=assets, inputs=inputs, reference=stored, report=report,
-                            receipts=tuple(stored_receipts), checked_with=checking)
-        _compared(MANIFEST_NAME, manifest.to_dict(), build.manifest.to_dict(), "the manifest of its stored members")
-        return build
+        try:
+            check_manifest(manifest, lock, expected)
+        except ReferenceSourceError as exc:
+            raise exc.under("/" + MANIFEST_NAME) from None
+        # The manifest of exactly the members this build has, with the digests observed above, and of the
+        # expected report.
+        members = ((name, observed_digests[name], len(files[name])) for name in _member_names(lock))
+        _compared(MANIFEST_NAME, manifest.to_dict(), _manifest(lock, recipe, expected, members).to_dict(),
+                  "the manifest of its stored members")
+        return cls._assemble(lock=lock, recipe=recipe, reference=stored, report=expected, manifest=manifest,
+                             files={name: files[name] for name in _member_names(lock)},
+                             receipts=tuple(stored_receipts), checked_with=checking)
 
     @classmethod
     def bundled(cls, exact_id: str) -> "ReferenceBuild":

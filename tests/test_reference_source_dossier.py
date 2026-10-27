@@ -539,7 +539,8 @@ def test_a_recipe_that_is_not_the_reports_recipe_is_rejected(mini):
     recipe = json.loads((dossier / "recipe.json").read_bytes())
     recipe["selection"][0]["reason"] = "a reason edited after the build"
     rewrite(dossier, "recipe.json", canonical(recipe))
-    rejected(dossier, "identity_mismatch", "recipe.json")
+    exc = rejected(dossier, "digest_mismatch", "recipe.json")
+    assert "manifest.json commits to" in exc.message
 
 
 # ── acquisition receipts never enter an identity ─────────────────────
@@ -828,7 +829,7 @@ def test_a_manifest_naming_an_unsafe_member_is_refused(mini, name):
     ("versions", {"report": 2}, "unsupported_schema", "/manifest.json/versions/report"),
     ("projection", {"version": 2}, "unsupported_profile", "/manifest.json/projection"),
     ("adapter", {"version": 2}, "unsupported_profile", "/manifest.json/adapter"),
-    ("builder", {"version": "0.0.1"}, "identity_mismatch", "/manifest.json/builder"),
+    ("builder", {"version": "0.0.1"}, "digest_mismatch", "/report.json/generator/version"),
     ("runtime", {"execution_hash": "sha256:" + "1" * 64}, "digest_mismatch", "/manifest.json/runtime"),
     ("hashes", {"report": "sha256:" + "2" * 64}, "digest_mismatch", "/manifest.json/hashes/report"),
 ])
@@ -858,7 +859,7 @@ def test_a_dossier_outside_this_versions_validated_scope_is_unsupported(mini, mo
     _, dossier = mini
     monkeypatch.setattr(consistency, "PROFILE_SCOPES", common.PROFILE_SCOPES)
     exc = error("unsupported_profile", ReferenceBuild.read_dossier, dossier)
-    assert exc.path.startswith("/report.json/source_lock") and "not been validated" in exc.message
+    assert exc.path == "/source.lock.json" and "not been validated" in exc.message
 
 
 def test_a_windows_reparse_point_counts_as_a_link():
@@ -869,3 +870,53 @@ def test_a_windows_reparse_point_counts_as_a_link():
     plain = types.SimpleNamespace(is_symlink=lambda: False, stat=lambda follow_symlinks=True: types.SimpleNamespace())
     assert build_module._is_link(junction) is True
     assert build_module._is_link(plain) is False
+
+
+# ── the cost of a check ──────────────────────────────────────────────
+
+
+def count_report_work(monkeypatch) -> dict:
+    """Count stored-report parses, report-hash computations and report serialisations."""
+    from GenAIRR._reference_sources import _fields, digests
+    from GenAIRR._reference_sources.report import ARTIFACT, BuildReport
+    counts = {"parsed": 0, "hashed": 0, "serialised": 0}
+    real_from_dict = BuildReport.from_dict.__func__
+
+    def from_dict(cls, d, path=""):
+        counts["parsed"] += 1
+        return real_from_dict(cls, d, path)
+
+    real_digest = digests.digest
+
+    def digest(value, domain):
+        counts["hashed"] += domain == digests.REPORT_DOMAIN
+        return real_digest(value, domain)
+
+    real_bytes = build_module.document_bytes
+
+    def document_bytes(document):
+        counts["serialised"] += document.get("artifact") == ARTIFACT
+        return real_bytes(document)
+
+    monkeypatch.setattr(BuildReport, "from_dict", classmethod(from_dict))
+    monkeypatch.setattr(digests, "digest", digest)
+    monkeypatch.setattr(build_module, "document_bytes", document_bytes)
+    assert _fields.digest is real_digest
+    return counts
+
+
+def test_a_successful_check_compares_report_bytes_and_hashes_the_report_once(igl, tmp_path, monkeypatch):
+    _, build = igl
+    build.write_dossier(tmp_path / "dossier")
+    counts = count_report_work(monkeypatch)
+    checked = ReferenceBuild.read_dossier(tmp_path / "dossier")
+    assert counts == {"parsed": 0, "hashed": 1, "serialised": 1}
+    assert checked.report.to_dict() == build.report.to_dict() and checked.manifest == build.manifest
+
+
+def test_a_build_hashes_its_report_once(igl, tmp_path, monkeypatch):
+    source, _ = igl
+    document = full_recipe(tmp_path, source)
+    counts = count_report_work(monkeypatch)
+    source.build(document)
+    assert (counts["hashed"], counts["serialised"]) == (1, 1)

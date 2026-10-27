@@ -49,10 +49,19 @@ def recipe_hash(recipe: Recipe) -> str:
     return digest(recipe.to_dict(), RECIPE_DOMAIN)
 
 
+def _memoised(document, name: str, compute) -> str:
+    """A digest of a frozen document, computed once per instance (the document never changes)."""
+    cached = document.__dict__.get(name)
+    if cached is None:
+        cached = compute()
+        object.__setattr__(document, name, cached)
+    return cached
+
+
 def inventory_hash(inventory: SourceInventory) -> str:
     """``genairr_reference_source_inventory_v1`` over the complete inventory (which holds the lock hash)."""
     require_type(inventory, SourceInventory, "inventory")
-    return digest(inventory.to_dict(), INVENTORY_DOMAIN)
+    return _memoised(inventory, "_inventory_hash", lambda: digest(inventory.to_dict(), INVENTORY_DOMAIN))
 
 
 def build_inputs(lock: SourceLock, inventory: SourceInventory, recipe: Recipe) -> dict:
@@ -86,7 +95,7 @@ def report_hash(report) -> str:
     """``genairr_reference_source_build_report_v1`` over the complete report (never stored in it)."""
     from GenAIRR._reference_sources.report import BuildReport
     require_type(report, BuildReport, "report")
-    return digest(report.to_dict(), REPORT_DOMAIN)
+    return _memoised(report, "_report_hash", lambda: digest(report.to_dict(), REPORT_DOMAIN))
 
 
 def manifest_hash(manifest) -> str:
