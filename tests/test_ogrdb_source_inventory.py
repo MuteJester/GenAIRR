@@ -1400,3 +1400,33 @@ def test_only_the_exact_ext_suffix_counts_as_the_extended_export_suffix():
                  for f in findings(inventory, "export_provider_ref_differs")}
     assert differing == {one: ("OGRDB:Homo sapiens:next", refs[one] + "_ext"),
                          two: (refs[two], refs[two] + "ext"), three: (refs[three], refs[three] + "_ext2")}
+
+
+def test_a_paralog_naming_an_alias_of_a_record_of_another_segment_is_flagged_twice():
+    raws = raw_records(IGL, "airr")
+    holder, alias = _alias_holder(raws)
+    j = next(i for i, item in enumerate(raws) if item["sequence_type"] == "J" and not item["paralogs"])
+
+    def edit(records):
+        records[j]["paralogs"] = [alias]
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    (declared,) = findings(inventory, "paralog_names_declared_alias")
+    assert declared.observations.get()["declared_alias_of"] == [raws[holder]["label"]]
+    (conflict,) = findings(inventory, "paralog_record_segment_conflict")
+    assert conflict.observations.get() == {"label": alias, "segments": ["J", "V"]}
+    assert set(conflict.subjects) == {m.Locator("airr", rec(j)), m.Locator("airr", rec(holder))}
+    assert conflict.locators == (m.Locator("airr", rec(j) + "/paralogs/0"),)
+    assert inventory.mentioned_identities == ()
+    assert ogrdb.account(lock, inventory).export("airr").paralog_names_of_aliases == 1
+
+
+def test_a_paralog_naming_an_alias_of_a_record_of_its_own_segment_is_no_segment_conflict():
+    raws = raw_records(IGL, "airr")
+    holder, alias = _alias_holder(raws)
+    v = next(i for i, item in enumerate(raws) if item["sequence_type"] == "V" and i != holder)
+
+    def edit(records):
+        records[v]["paralogs"] = [alias]
+    _, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    assert len(findings(inventory, "paralog_names_declared_alias")) == 1
+    assert findings(inventory, "paralog_record_segment_conflict") == []

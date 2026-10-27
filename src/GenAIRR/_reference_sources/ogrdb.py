@@ -367,7 +367,7 @@ FINDING_CODES = {
         "A relationship-only name is named by records of different segments; no mentioned identity is formed."),
     "paralog_record_segment_conflict": (
         "warning", "contradictory_evidence", (),
-        "A paralog name is the label of a record of another segment in the same export."),
+        "A paralog name is the label, or a declared alias, of a record of another segment in the same export."),
     "paralog_names_declared_alias": (
         "warning", "contradictory_evidence", (),
         "A name given as a paralog is declared as an alias by a record of the same export; it names that "
@@ -738,13 +738,17 @@ class _Builder:
                                  subjects=[entry.record.locator] + [r.locator for r in records_by_label.get(name, [])],
                                  locators=[locator], observations={"label": own, "alias": name})
             for name, locator in entry.relationships["paralog"]:
+                if name not in labels and name not in aliases:
+                    mentioned.setdefault(name, []).append((entry.record, locator))
+                    continue
                 if name not in labels:
-                    (declared if name in aliases else mentioned).setdefault(name, []).append((entry.record, locator))
-                elif records_by_label.get(name) and entry.record.segment not in {
-                        r.segment for r in records_by_label[name]}:
+                    declared.setdefault(name, []).append((entry.record, locator))
+                # The records the name stands for: those carrying it as label, else those declaring it an alias.
+                named = records_by_label.get(name) or [record for record, _ in aliases.get(name, ())]
+                if named and entry.record.segment not in {r.segment for r in named}:
                     crossing.setdefault(name, []).append((entry.record, locator))
         for name, mentions in sorted(crossing.items()):
-            named = records_by_label[name]
+            named = records_by_label.get(name) or [record for record, _ in aliases[name]]
             self.finding("paralog_record_segment_conflict",
                          subjects=[record.locator for record, _ in mentions] + [r.locator for r in named],
                          locators=[locator for _, locator in mentions],
