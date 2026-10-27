@@ -701,10 +701,27 @@ def test_the_record_budget_boundary_is_inclusive(monkeypatch):
     error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
 
 
+def _observation_total(document) -> int:
+    """Observations of a pinned export whose fields are all known and present, counted from the raw JSON."""
+    germline_set = document["GermlineSet"][0]
+    total = (len(document) - 1) + (len(germline_set) - 1)    # all but GermlineSet and allele_descriptions
+    for item in germline_set["allele_descriptions"]:
+        total += len(item) + len(_items(item, "aliases")) + len(_items(item, "paralogs"))
+        total += sum(len(d) for d in _items(item, "v_gene_delineations"))
+        total += len(item["unrearranged_support"]) + len(item["rearranged_support"])
+    return total
+
+
 def test_more_observations_than_an_inventory_holds_is_a_resource_limit(monkeypatch):
-    monkeypatch.setattr(ogrdb, "MAX_OBSERVATIONS", 100)
     blobs = pinned(IGL, ("airr",))
-    assert error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs).path == "/assets"
+    expected = _observation_total(payload(IGL, "airr"))
+    assert len(build(IGL, blobs)[1].observations) == expected
+    monkeypatch.setattr(ogrdb, "MAX_OBSERVATIONS", 100)
+    found = error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
+    assert found.path == "/assets"
+    assert found.message == f"{expected} observations exceed the limit of 100"
+    monkeypatch.setattr(ogrdb, "MAX_OBSERVATIONS", expected)
+    assert len(build(IGL, blobs)[1].observations) == expected
 
 
 def _nested(depth):

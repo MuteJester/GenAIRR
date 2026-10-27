@@ -438,15 +438,18 @@ class _Builder:
         self.entries: dict = {}          # asset -> [_Entry]
         self.unknown: dict = {}          # (asset, field pattern) -> [locator]
         self.observed: set = set()       # locators of every observation
+        self.observation_count = 0       # every observation, also those beyond the cap
 
     # -- items ---------------------------------------------------------
 
     def observe(self, asset: str, pointer: str, record: Optional[Locator], value: Any, interpretation: str,
                 presence: str = "present") -> Locator:
-        if len(self.observations) >= MAX_OBSERVATIONS:
-            raise bad("/assets", f"the inventory would hold more than {MAX_OBSERVATIONS} observations",
-                      "resource_limit")
+        """Add an observation.  Beyond ``MAX_OBSERVATIONS`` it is only counted, so that
+        :meth:`check_observations` can report the full count."""
         locator = Locator(asset, pointer)
+        self.observation_count += 1
+        if self.observation_count > MAX_OBSERVATIONS:
+            return locator
         try:
             self.observations.append(Observation(locator=locator, record=record, presence=presence,
                                                  value=value if presence == "present" else None,
@@ -457,7 +460,13 @@ class _Builder:
         return locator
 
     def finding(self, code: str, *, subjects=(), locators=(), observations: dict) -> None:
-        """Add a finding; one naming more than ``MAX_REFS`` subjects or locators is split into parts."""
+        """Add a finding; one naming more than ``MAX_REFS`` subjects or locators is split into parts.
+
+        Once the observation cap is exceeded the inventory cannot be built, so findings are
+        no longer formed while the remaining observations are counted.
+        """
+        if self.observation_count > MAX_OBSERVATIONS:
+            return
         severity, category, capabilities, _ = FINDING_CODES[code]
         subjects = sorted(set(subjects), key=Locator.sort_key)
         locators = sorted(set(locators), key=Locator.sort_key)
@@ -921,6 +930,11 @@ class _Builder:
             self.finding("unknown_provider_field", locators=locators,
                          observations={"asset": asset, "field": pattern, "occurrences": len(locators)})
 
+    def check_observations(self) -> None:
+        if self.observation_count > MAX_OBSERVATIONS:
+            raise bad("/assets", f"{self.observation_count} observations exceed the limit of {MAX_OBSERVATIONS}",
+                      "resource_limit")
+
     def inventory(self) -> SourceInventory:
         try:
             return SourceInventory.assemble(
@@ -1102,6 +1116,7 @@ def build_inventory(lock: SourceLock, assets: Mapping[str, bytes]) -> SourceInve
     for asset in lock.assets:
         if asset.format in _FASTA_FORMATS:
             builder.fasta(asset.asset_id, blobs[asset.asset_id])
+    builder.check_observations()
     builder.unknown_findings()
     return builder.inventory()
 
