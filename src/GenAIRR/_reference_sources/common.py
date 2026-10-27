@@ -52,16 +52,31 @@ SUPPORTED_ADAPTERS = {
 }
 SUPPORTED_PROJECTIONS = ((PROJECTION_ID, PROJECTION_VERSION),)
 
-# The sources each interpretation profile has been validated against:
-# (profile id, version) -> ((taxonomy id, set id, release, formats), ...).  A lock outside
-# its profile's scope may be acquired and inspected but not built from, and its inventory
-# may hold no accepted coordinate claims.
-_VALIDATED_FORMATS = ("airr", "airr_ex", "gapped", "gapped_ex")
+# The exact sources each interpretation profile has been validated against:
+# (profile id, version) -> ((taxonomy id, set id, release, ((format, sha256, bytes), ...)), ...).
+# Each validated export is pinned by the digest and size of its exact bytes.  A lock outside
+# its profile's scope (another set or release, or drifted bytes) may be acquired and inspected
+# but not built from, and its inventory holds coordinate claims only as candidates or unresolved.
 PROFILE_SCOPES = {
     (COORDINATE_PROFILE_ID, COORDINATE_PROFILE_VERSION): (
-        (9606, "9606.IGH_VDJ", 10, _VALIDATED_FORMATS),
-        (9606, "9606.IGKappa_VJ", 5, _VALIDATED_FORMATS),
-        (9606, "9606.IGLambda_VJ", 4, _VALIDATED_FORMATS),
+        (9606, "9606.IGH_VDJ", 10, (
+            ("airr", "sha256:6889fea1e2da71ff2bde50f8b5e055613319408977e913631c8e6d04f53d44b1", 1272259),
+            ("airr_ex", "sha256:251c5f13705b74f3bdaf6fc6f593616f433c710a766d8e54f9cbc9c2f1ac95d3", 1229243),
+            ("gapped", "sha256:681db69932757bd09253cbef990a64959f8c8745e46f364bcb35963ea4f16a65", 72614),
+            ("gapped_ex", "sha256:2321eb5b788bf95103a2221eb327ef327c735e3e9427713c71285dcc6df81d9a", 70192),
+        )),
+        (9606, "9606.IGKappa_VJ", 5, (
+            ("airr", "sha256:21e2b15a0a6d5a2e3f07ef00b4f3b03205b2182dbc1c5a32bdf7e803bf21178e", 433226),
+            ("airr_ex", "sha256:9a74d2a62626cd8b407aa8b9a97b7bbbe5f9362d4788500208354246823a66a0", 398897),
+            ("gapped", "sha256:592ed2724a9f6c92d1f1c75ad900fd9de4389b6d8d5f32049f865613729a943f", 29388),
+            ("gapped_ex", "sha256:85718d1bc31ae718232f0eb042579a6aef8d8e9f85e9b69f0e52b33876737860", 27619),
+        )),
+        (9606, "9606.IGLambda_VJ", 4, (
+            ("airr", "sha256:9e69fdb59d28cdd133a4ca502a87135f73e3dbd90a8d46eb82af98d36fb138fa", 488641),
+            ("airr_ex", "sha256:48aaf90d81377836901dda1013f4244cb00ecf1437092ab76d764534d647e9c5", 487033),
+            ("gapped", "sha256:28533d72a46f343c95fc04a30a823a74b2591ab570fd185f57b73cce4f6deb1a", 32012),
+            ("gapped_ex", "sha256:7f956d8ebc9ccdd97e9f60460068f687360ef78fcf3b4df4e1bcfa061a36f41a", 31978),
+        )),
     ),
 }
 

@@ -18,15 +18,23 @@ def profile_scope_problem(lock: SourceLock):
     profile = lock.adapter.coordinate_profile
     scope = PROFILE_SCOPES.get((profile.id, profile.version), ())
     key = (lock.identity.taxon.taxonomy_id, lock.set_id, lock.release)
-    formats = next((entry[3] for entry in scope if entry[:3] == key), None)
-    if formats is None:
+    pinned = next((entry[3] for entry in scope if entry[:3] == key), None)
+    if pinned is None:
         validated = [f"{s} release {r} (taxon {t})" for t, s, r, _ in scope]
         return (f"profile {profile.id} version {profile.version} has been validated only for {validated}; "
                 f"this lock is {lock.set_id} release {lock.release} (taxon {key[0]})")
-    unvalidated = [a.format for a in lock.assets if a.role in ("record_export", "gapped_alignment")
-                   and a.format not in formats]
-    if unvalidated:
-        return f"profile {profile.id} version {profile.version} has not been validated for formats {unvalidated}"
+    exact = {fmt: (sha256, size) for fmt, sha256, size in pinned}
+    for asset in lock.assets:
+        if asset.role not in ("record_export", "gapped_alignment"):
+            continue
+        if asset.format not in exact:
+            return (f"profile {profile.id} version {profile.version} has not been validated for format "
+                    f"{asset.format!r} of {lock.set_id} release {lock.release}")
+        if (asset.sha256, asset.bytes) != exact[asset.format]:
+            sha256, size = exact[asset.format]
+            return (f"{asset.asset_id} of {lock.set_id} release {lock.release} is {asset.sha256} ({asset.bytes} "
+                    f"bytes), not the validated {sha256} ({size} bytes); profile {profile.id} version "
+                    f"{profile.version} has not been validated for these bytes")
     return None
 
 
