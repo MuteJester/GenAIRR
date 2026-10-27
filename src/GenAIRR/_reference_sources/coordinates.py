@@ -42,6 +42,16 @@ class _Absent:
 
 ABSENT = _Absent()
 
+# The rules implemented here, in the notation of the producer's fields.
+RULES = {
+    "j_anchor_coding0": "j_cdr3_end - 1",
+    "j_reported_phase": "j_codon_frame - 1",
+    "v_anchor_coding0": "cdr3_start - 4",
+    "v_cdr3_start_from_gapped": "1 + count of non-gap characters in gapped columns 1..312",
+    "coding_interval": "sequence[gene_start - 1 : gene_end]",
+}
+# The value the provider serves for a missing delineation coordinate.
+MISSING_DELINEATION_VALUE = 0
 # IMGT codon 104 occupies gapped columns 310-312 (1-based); the CDR3 starts at column 313.
 LANDMARK_FIRST_COLUMN = 310
 LANDMARK_LAST_COLUMN = 312
@@ -71,10 +81,11 @@ class Position:
     problem: Optional[str]
 
 
-def stated_position(value: Any, *, minimum: Optional[int] = 1, zero_is_missing: bool = False) -> Position:
+def stated_position(value: Any, *, minimum: Optional[int] = 1, missing_value: Optional[int] = None) -> Position:
     """Read an integer coordinate field exactly: ``true`` and ``8.0`` are not positions.
 
-    ``zero_is_missing``: the provider serves a missing value as 0 (delineation coordinates).
+    ``missing_value``: the value the provider serves for a missing coordinate (0 for
+    delineation coordinates, :data:`MISSING_DELINEATION_VALUE`).
     """
     if value is ABSENT:
         return Position(None, "absent")
@@ -84,8 +95,8 @@ def stated_position(value: Any, *, minimum: Optional[int] = 1, zero_is_missing: 
         return Position(None, f"a Boolean ({str(value).lower()}), not an integer")
     if type(value) is not int:
         return Position(None, f"a JSON {_JSON_TYPES.get(type(value), type(value).__name__)}, not an integer")
-    if zero_is_missing and value == 0:
-        return Position(None, "0, which the provider serves for a missing coordinate")
+    if missing_value is not None and value == missing_value:
+        return Position(None, f"{value}, which the provider serves for a missing coordinate")
     if minimum is not None and value < minimum:
         return Position(None, f"{value} is below {minimum}")
     return Position(value, None)
@@ -176,7 +187,7 @@ class VLandmark:
 
 def v_landmark(coding: str, cdr3_start: Any, gapped: Optional[str]) -> VLandmark:
     """Apply ``anchor = cdr3_start - 4``, bound to the record's own gapped alignment."""
-    stated = stated_position(cdr3_start, zero_is_missing=True)
+    stated = stated_position(cdr3_start, missing_value=MISSING_DELINEATION_VALUE)
     if stated.value is None:
         return VLandmark(None, _named("cdr3_start", stated), "field", None, None)
     if stated.value < 4:

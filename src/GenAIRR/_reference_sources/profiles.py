@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping, Optional
 
+from GenAIRR._reference_sources import coordinates
 from GenAIRR._reference_sources._fields import bad, require_type
 from GenAIRR._reference_sources.common import (
     COORDINATE_PROFILE_ID, COORDINATE_PROFILE_VERSION, PROFILE_SCOPES, CoordinateProfileRef,
@@ -214,14 +215,6 @@ _EVIDENCE = ProfileEvidence(
     ),
 )
 
-# The rules, in the notation of the producer's fields; coordinates.py implements them.
-_RULES = {
-    "j_anchor_coding0": "j_cdr3_end - 1",
-    "j_reported_phase": "j_codon_frame - 1",
-    "v_anchor_coding0": "cdr3_start - 4",
-    "v_cdr3_start_from_gapped": "1 + count of non-gap characters in gapped columns 1..312",
-    "coding_interval": "sequence[gene_start - 1 : gene_end]",
-}
 _BASIS = {
     "j_anchor_coding0": ((_TO_AIRR, "179-180"), (_TOOL, "178")),
     "j_reported_phase": ((_TO_AIRR, "179-180"), (_TOOL, "163"), (_TOOL, "176")),
@@ -732,13 +725,13 @@ _NOTES = (
 PROFILE = CoordinateProfile(
     id=COORDINATE_PROFILE_ID,
     version=COORDINATE_PROFILE_VERSION,
-    rules=MappingProxyType(_RULES),
+    rules=MappingProxyType(dict(coordinates.RULES)),
     basis=MappingProxyType(_BASIS),
     landmark_residues=MappingProxyType({"V": {"IGH": ("C",), "IGK": ("C",), "IGL": ("C",)},
                                         "J": {"IGH": ("W",), "IGK": ("F",), "IGL": ("F",)}}),
     v_delineation_scheme="IMGT",
-    missing_delineation_value=0,
-    landmark_columns=(310, 312),
+    missing_delineation_value=coordinates.MISSING_DELINEATION_VALUE,
+    landmark_columns=(coordinates.LANDMARK_FIRST_COLUMN, coordinates.LANDMARK_LAST_COLUMN),
     j_phase_independence="unresolved",
     v_phase_derivation="anchor_derived",
     functionality_classes=MappingProxyType({}),

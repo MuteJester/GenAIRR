@@ -86,6 +86,20 @@ def test_the_profile_is_the_one_the_lock_names_and_is_never_chosen_from_data(mon
     error("unsupported_profile", evidence.interpret, lock, pinned(IGL), inventory)
 
 
+@pytest.mark.parametrize("field_name, value", [
+    ("j_phase_independence", "independent"), ("v_phase_derivation", "stated"),
+    ("functionality_classes", types.MappingProxyType({"false": "pseudogene"})), ("landmark_columns", (309, 311)),
+    ("missing_delineation_value", -1), ("rules", types.MappingProxyType({"j_anchor_coding0": "j_cdr3_end - gene_start"})),
+    ("v_delineation_scheme", "Kabat"),
+])
+def test_a_profile_declaring_conventions_the_code_does_not_implement_is_refused(monkeypatch, field_name, value):
+    profile = dataclasses.replace(profiles.PROFILE, **{field_name: value})
+    monkeypatch.setattr(profiles, "PROFILES", types.MappingProxyType({(profile.id, profile.version): profile}))
+    lock, inventory = inventory_of(IGL)
+    found = error("unsupported_profile", evidence.interpret, lock, pinned(IGL), inventory)
+    assert field_name in found.message
+
+
 @pytest.mark.parametrize("source", SETS, ids=_key)
 def test_interpretation_adds_claims_mappings_and_findings_and_keeps_the_inventory_stage(source):
     lock, before = inventory_of(source)

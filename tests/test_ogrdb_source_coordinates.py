@@ -162,6 +162,14 @@ def test_profile_keeps_the_unresolved_conventions_unresolved():
     assert profiles.PROFILE.functionality_classes == {}      # no provider value is classified
 
 
+def test_the_profile_declares_the_constants_the_rules_use():
+    assert profiles.PROFILE.rules == c.RULES
+    assert profiles.PROFILE.landmark_columns == (c.LANDMARK_FIRST_COLUMN, c.LANDMARK_LAST_COLUMN) == (310, 312)
+    assert profiles.PROFILE.missing_delineation_value == c.MISSING_DELINEATION_VALUE == 0
+    for name, implemented in evidence.IMPLEMENTED_CONVENTIONS.items():
+        assert getattr(profiles.PROFILE, name) == implemented, name
+
+
 def test_profile_landmark_residues():
     assert profiles.PROFILE.landmark_residues == {"V": {"IGH": ("C",), "IGK": ("C",), "IGL": ("C",)},
                                                   "J": {"IGH": ("W",), "IGK": ("F",), "IGL": ("F",)}}
@@ -235,8 +243,8 @@ def test_stated_positions_are_exact_integers(value, problem):
 
 
 def test_zero_is_a_missing_delineation_coordinate_only_where_the_profile_says_so():
-    assert c.stated_position(0, zero_is_missing=True).value is None
-    assert "missing" in c.stated_position(0, zero_is_missing=True).problem
+    assert c.stated_position(0, missing_value=0).value is None
+    assert "missing" in c.stated_position(0, missing_value=0).problem
     assert c.stated_position(0).value is None and "below 1" in c.stated_position(0).problem
     assert c.stated_position(8) == c.Position(8, None)
 

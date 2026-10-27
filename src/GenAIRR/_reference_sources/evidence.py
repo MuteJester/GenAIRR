@@ -48,7 +48,7 @@ from typing import Any, Mapping, Optional
 
 from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference_sources import consistency, coordinates as c, profiles
-from GenAIRR._reference_sources._fields import MAX_REFS, bad, ptr, require_type
+from GenAIRR._reference_sources._fields import MAX_REFS, bad, ptr, require_type, show
 from GenAIRR._reference_sources.common import GAPPED_VARIANT, RECORD_EXPORT_FORMATS, Locator
 from GenAIRR._reference_sources.digests import lock_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
@@ -75,6 +75,18 @@ _BOUNDARY_FIELDS = {
     ("D", "boundary_3"): ("gene_end", "d_rs_3_prime_start", "d_rs_3_prime_end", "curational_tags"),
     ("J", "boundary_5"): ("gene_start", "j_rs_start", "j_rs_end", "curational_tags"),
     ("J", "boundary_3"): ("gene_end", "j_donor_splice", "curational_tags"),
+}
+
+# The profile conventions this module implements.  A profile declaring any other value is refused
+# (``unsupported_profile``), so a profile field and the code that applies it cannot drift apart.
+IMPLEMENTED_CONVENTIONS = {
+    "rules": c.RULES,
+    "landmark_columns": (c.LANDMARK_FIRST_COLUMN, c.LANDMARK_LAST_COLUMN),
+    "missing_delineation_value": c.MISSING_DELINEATION_VALUE,
+    "v_delineation_scheme": "IMGT",
+    "j_phase_independence": "unresolved",
+    "v_phase_derivation": "anchor_derived",
+    "functionality_classes": {},
 }
 
 # code -> (severity, category, affected capabilities, meaning).
@@ -688,6 +700,13 @@ def interpret(lock: SourceLock, assets: Mapping[str, bytes], inventory: SourceIn
         raise bad("/source_lock_hash", f"the inventory was built under lock {inventory.source_lock_hash}, not this "
                                        f"lock {lock_hash(lock)}", "digest_mismatch")
     profile = profiles.profile_for(lock.adapter.coordinate_profile)
+    for name, implemented in IMPLEMENTED_CONVENTIONS.items():
+        declared = getattr(profile, name)
+        if declared != implemented:
+            raise bad("/coordinate_profile", f"profile {profile.id} version {profile.version} declares {name} "
+                                             f"{show(dict(declared) if isinstance(declared, Mapping) else declared)}; "
+                                             f"this interpretation implements {show(implemented)}",
+                      "unsupported_profile")
     if build_inventory(lock, assets) != inventory:
         raise bad("/inventory", "the inventory is not the uninterpreted inventory of these locked bytes",
                   "identity_mismatch")
