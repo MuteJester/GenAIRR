@@ -26,6 +26,7 @@ import GenAIRR
 from GenAIRR._reference.artifact import Reference
 from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference_sources import common, evidence, ogrdb, projection
+from GenAIRR._reference_sources import inventory as inventory_module
 from GenAIRR._reference_sources import model as m
 from tests.test_ogrdb_source_coordinates import V_LABEL, in_scope, small
 from tests.test_ogrdb_source_inventory import (
@@ -126,22 +127,27 @@ def withhold(claims, digest, reason="withheld for this test") -> dict:
             "reason": reason, "evidence": []}
 
 
-def rewrite_claims(monkeypatch, label, predicate, change):
-    """Replace the real interpretation by one whose ``predicate`` claims about ``label`` (in both
-    record exports) become ``change(claim)``, a list of claims; returns the replacement.  This
-    reaches claim statuses the shipped profile never emits in scope."""
+def rewrite_claims(monkeypatch, label, predicate, change, *, subjects=None):
+    """Replace the real interpretation by one whose ``predicate`` claims about ``label`` (any label
+    for ``None``; in both record exports) become ``change(claim)``, a list of claims; returns the
+    replacement.  This reaches claims the shipped profile never emits in scope.  ``subjects``
+    ({predicate: "record" | "candidate"}) changes the claim-subject vocabulary while the rewritten
+    inventory is assembled."""
     real = evidence.interpret
 
     def interpret(lock_, assets, inventory):
         result = real(lock_, assets, inventory)
         claims = []
         for claim in result.claims:
-            hit = claim.predicate == predicate and result.subject_record(claim).label == label
+            hit = claim.predicate == predicate and label in (None, result.subject_record(claim).label)
             claims.extend(change(claim) if hit else [claim])
         fields = {name: getattr(result, name) for name in ("source_lock_hash", "adapter", "records", "candidates",
                                                            "mentioned_identities", "observations", "support",
                                                            "mappings", "findings")}
-        return m.SourceInventory.assemble(claims=tuple(claims), **fields)
+        with monkeypatch.context() as patch:
+            for name, kind in (subjects or {}).items():
+                patch.setitem(inventory_module.PREDICATE_SUBJECTS, name, kind)
+            return m.SourceInventory.assemble(claims=tuple(claims), **fields)
 
     monkeypatch.setattr(evidence, "interpret", interpret)
     return interpret
@@ -1105,3 +1111,30 @@ def test_a_claim_projected_below_its_own_support_says_so(monkeypatch):
     weakened = outcomes[anchors["source"]]
     assert weakened.outcome == "projected" and "assertion" in weakened.reason and anchors["assertion"] in weakened.reason
     assert outcomes[anchors["assertion"]].reason is None
+
+
+def _about_the_record(claim) -> list:
+    """The same claim about the candidate's record: no mapping, only evidence inside the record."""
+    record = m.Locator(claim.subject.asset, claim.subject.pointer.rsplit("/", 1)[0])
+    return [dataclasses.replace(claim, subject=record, mappings=(),
+                                evidence=tuple(e for e in claim.evidence if e.is_under(record)))]
+
+
+def test_the_frameshift_gate_covers_claims_about_the_selected_record_too(monkeypatch):
+    # The frozen model admits only candidate subjects for coding phases; this test lets a phase be
+    # about the record, so that the gate is shown to cover every claim of the selected entry.
+    blobs, lock = mini(monkeypatch, (V_LABEL, J7), edit=_frameshift)
+    interpret = rewrite_claims(monkeypatch, None, "coding_phase", _about_the_record,
+                               subjects={"coding_phase": "record"})
+    inventory = interpret(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    anchor = claim_id(inventory, "airr", J7, "anchor")
+    (record,) = [r for r in inventory.records if r.locator.asset == "airr" and r.label == J7]
+    (phase,) = [c.id for c in inventory.claims if c.subject == record.locator and c.predicate == "coding_phase"]
+    digest = entry(blobs, "airr", J7)["sequence_sha256"]
+    document = mini_recipe(blobs, lock, (V_LABEL, J7), decisions=[withhold([anchor], digest)])
+    found = error("projection", build, lock, blobs, document)
+    assert found.path == "/selection/1" and phase in found.message
+    result = build(lock, blobs, mini_recipe(blobs, lock, (V_LABEL, J7), decisions=[withhold([anchor, phase], digest)]))
+    assert (result.reference.alleles[-1].anchor, result.reference.alleles[-1].coding_phase) == (None, None)
+    v = result.reference.alleles[0]                     # a phase about the record still meets its anchor
+    assert v.coding_phase is not None and v.coding_phase.value == v.anchor.value % 3

@@ -271,6 +271,10 @@ class _Build:
         for claim in inventory.claims:
             self.claims_of.setdefault(claim.subject.id, []).append(claim)
 
+    def entry_claims(self, i: int) -> list:
+        """Every claim about selection entry ``i``: about its record or its chosen candidate."""
+        return self.claims_of.get(self.entries[i].record.id, []) + self.claims_of.get(self.chosen[i].id, [])
+
     # -- citations ------------------------------------------------------
 
     def cite(self, locators) -> str:
@@ -320,8 +324,7 @@ class _Build:
                 continue
             observed = finding.observations.get()
             for i in sorted({self.by_subject[s.id] for s in finding.subjects if s.id in self.by_subject}):
-                claims = [c for c in self.claims_of.get(self.chosen[i].id, ())
-                          if c.predicate in ("anchor", "coding_phase")]
+                claims = [c for c in self.entry_claims(i) if c.predicate in ("anchor", "coding_phase")]
                 open_ = [c.id for c in claims if c.id not in withheld]
                 if open_:
                     raise bad(ptr("/selection", i), (
@@ -365,7 +368,7 @@ class _Build:
             return ClaimOutcome(claim.id, "withheld", index, f"withheld by recipe decision {index}")
         accepted_by = index if decision is not None and decision.action == "accept_claim" else None
         if accepted_by is not None and claim.status == "conflicting":
-            values = sorted({canonical_json(c.value.get()) for c in self.claims_of[claim.subject.id]
+            values = sorted({canonical_json(c.value.get()) for c in self.entry_claims(i)
                              if (c.predicate, c.coordinate_system, c.status)
                              == (claim.predicate, claim.coordinate_system, "conflicting")})
             raise bad(ptr("/decisions", accepted_by), (
@@ -375,7 +378,7 @@ class _Build:
         if claim.status != "accepted" and accepted_by is None:
             return ClaimOutcome(claim.id, "withheld", None, _WITHHELD[claim.status])
         value = claim.value.get()
-        problem = self._gate(claim, value, anchors)
+        problem = self._gate(claim, value, anchors.get(i))
         if problem is not None:
             if accepted_by is not None:
                 raise bad(ptr("/decisions", accepted_by), f"{entry.allele_id}: accept_claim names {claim.predicate} "
@@ -383,14 +386,14 @@ class _Build:
                           "projection")
             return ClaimOutcome(claim.id, "withheld", None, problem)
         # An anchor-derived phase also rests on the fields of the anchor it is derived from.
-        resting_on = anchors[claim.subject.id][1] if claim.predicate == "coding_phase" else ()
+        resting_on = anchors[i][1] if claim.predicate == "coding_phase" else ()
         if claim.status == "accepted":
             support, source = claim.support, self.cite(claim.evidence + resting_on)
         else:                               # a candidate named by an accept_claim decision
             support = "assertion"
             source = f"recipe decision {accepted_by}: {self.cite(decision.evidence + resting_on)}"
         if claim.predicate == "anchor":
-            anchors[claim.subject.id] = (value, claim.evidence)
+            anchors[i] = (value, claim.evidence)
         slots.setdefault((i, claim.predicate), []).append(
             (claim, value, support, source, self.method(claim, entry.segment, accepted_by)))
         reason = None
@@ -399,20 +402,20 @@ class _Build:
         return ClaimOutcome(claim.id, "projected", accepted_by, reason)
 
     @staticmethod
-    def _gate(claim, value, anchors: dict) -> Optional[str]:
-        """Why a claim with a value cannot become a runtime annotation, or ``None``."""
+    def _gate(claim, value, anchor: Optional[tuple]) -> Optional[str]:
+        """Why a claim with a value cannot become a runtime annotation, or ``None``; ``anchor`` is the
+        ``(value, evidence)`` of the anchor projected for the same allele, if any."""
         if claim.predicate == "v_subregions":
             return "the runtime projection holds no V subregions (its V alignment is 'none')"
         if claim.predicate in ("anchor", "coding_phase") and claim.coordinate_system != "coding_sequence":
             return (f"stated in {claim.coordinate_system} coordinates; the runtime reference takes coding-sequence "
                     "coordinates")
         if claim.predicate == "coding_phase":
-            if claim.subject.id not in anchors:
+            if anchor is None:
                 return "no anchor of this sequence is projected, and the runtime reference holds a phase only as " \
                        "the anchor modulo 3"
-            anchor = anchors[claim.subject.id][0]
-            if value != anchor % 3:
-                return f"phase {value} is not the projected anchor {anchor} modulo 3 ({anchor % 3})"
+            if value != anchor[0] % 3:
+                return f"phase {value} is not the projected anchor {anchor[0]} modulo 3 ({anchor[0] % 3})"
         return None
 
     def _annotations(self, slots: dict) -> tuple:
