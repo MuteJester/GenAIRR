@@ -170,6 +170,8 @@ def _subject_digests(inventory: SourceInventory, claim) -> set:
 def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
     """Every decision still names current findings, claims, evidence and subject digest.
 
+    ``identity_mismatch``: ``accept_claim`` evidence that is not bound to every decided
+    claim's subject (same rule as claim evidence roots).
     ``stale_decision``: an unknown finding/claim id, an evidence locator that is not an
     observation, a subject digest that changed, a claim about an unselected record or
     candidate, or a ``select_alternative`` whose digest is not a selected candidate among
@@ -204,6 +206,12 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
                 raise bad(ptr(path, "sequence_sha256"), f"claim {claim.id} is about {claim.subject.id}, whose "
                                                         f"sequence is not {decision.sequence_sha256}", "stale_decision")
         if decision.action == "accept_claim":
+            for j, locator in enumerate(decision.evidence):
+                for claim in claims:
+                    problem = inventory.evidence_binding_problem(claim, locator)
+                    if problem:
+                        raise bad(ptr(ptr(path, "evidence"), j), f"claim {claim.id}: {problem}",
+                                  "identity_mismatch")
             for j, claim in enumerate(claims):
                 if claim.predicate not in RUNTIME_PREDICATES:
                     raise bad(ptr(ptr(path, "claims"), j), f"{claim.predicate} claims are not representable in a "

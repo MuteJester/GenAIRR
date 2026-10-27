@@ -1069,12 +1069,70 @@ def test_inventory_counts_keep_occurrences_candidates_and_mentions_distinct(inve
     assert inventory.export_counts("airr")["record_occurrences"]["V"] == 3
 
 
-def test_identical_dna_identities_keep_their_own_records_and_evidence(inventory, inv):
-    a, b = inv.cand["airr", "IGHV1-69*01"], inv.cand["airr", "IGHV1-69D*01"]
-    assert inventory.candidate(a).sha256 == inventory.candidate(b).sha256
-    assert inventory.candidate(a).record != inventory.candidate(b).record
-    assert {c.subject for c in inventory.claims if c.predicate == "functionality"} >= {
-        inv.rec["airr", "IGHV1-69*01"], inv.rec["airr", "IGHV1-69D*01"]}
+def test_identical_dna_identities_cannot_cite_each_others_evidence(inventory, inv):
+    own, twin = inv.cand["airr", "IGHV1-69D*01"], inv.cand["airr", "IGHV1-69*01"]
+    assert inventory.candidate(own).sha256 == inventory.candidate(twin).sha256
+    assert inventory.candidate(own).record != inventory.candidate(twin).record
+    own_cdr3 = inv.obs_at(inv.rec["airr", "IGHV1-69D*01"], "v_gene_delineations/0/cdr3_start")
+    twin_cdr3 = inv.obs_at(inv.rec["airr", "IGHV1-69*01"], "v_gene_delineations/0/cdr3_start")
+    inv.build(claims=inv.claims + [inv.claim(own, "anchor", 285, [own_cdr3], system="coding_sequence")])
+    with _raises("malformed") as caught:
+        inv.build(claims=inv.claims + [inv.claim(own, "anchor", 285, [twin_cdr3], system="coding_sequence")])
+    assert caught.error.path.startswith("/claims/") and caught.error.path.endswith("/evidence/0")
+    assert "IGHV1-69" in caught.error.message or inv.rec["airr", "IGHV1-69D*01"].id in caught.error.message
+
+
+def test_evidence_roots_belong_to_the_claim_subject(inv):
+    target = inv.cand["airr", "IGHV1-69*01"]
+    foreign = inv.obs_at(inv.rec["airr", "IGHV1-58*03"], "v_gene_delineations/0/cdr3_start")
+    with _raises("malformed") as caught:
+        inv.build(claims=inv.claims + [inv.claim(target, "anchor", inv.anchor, [foreign], system="coding_sequence")])
+    assert caught.error.path.endswith("/evidence/0")
+    # A set-level field is not evidence about one allele.
+    with _raises("malformed"):
+        inv.build(claims=inv.claims + [inv.claim(target, "anchor", inv.anchor, [L("airr", "/Info/version")],
+                                                 system="coding_sequence")])
+    # The same-label record of the other export is citable only by a variant comparison.
+    ex, cand = inv.cand["airr_ex", "IGHV1-58*03"], inv.cand["airr", "IGHV1-58*03"]
+    with _raises("malformed"):
+        inv.build(claims=inv.claims + [inv.claim(ex, "boundary_5", "complete", [L("airr", cand.pointer)])])
+    inv.build(claims=inv.claims + [inv.claim(ex, "boundary_3", "partial", [L("airr", cand.pointer)],
+                                             derivation="variant_comparison")])
+    other_label = inv.cand["airr", "IGHV1-69*01"]
+    with _raises("malformed"):
+        inv.build(claims=inv.claims + [inv.claim(ex, "boundary_3", "partial", [L("airr", other_label.pointer)],
+                                                 derivation="variant_comparison")])
+
+
+def test_claims_cite_only_mappings_of_their_own_candidate(inv):
+    cand = inv.cand["airr", "IGHV1-58*03"]
+    ex_mapping = [x for x in inv.mappings if x.input.asset == "airr_ex"][0]
+    claims = [c for c in inv.claims if not (c.subject == cand and c.derivation == "imgt_alignment")]
+    crossed = inv.claim(cand, "anchor", inv.anchor, [ex_mapping.output], system="coding_sequence",
+                        derivation="imgt_alignment", mappings=[ex_mapping.id])
+    with _raises("malformed") as caught:
+        inv.build(claims=claims + [crossed])
+    assert caught.error.path.startswith("/claims/") and caught.error.path.endswith("/mappings/0")
+    record = inv.rec["airr", "IGHV1-58*03"]
+    functional = inv.claim(record, "functionality", "functional", [inv.obs_at(record, "functional")],
+                           mappings=[inv.mappings[0].id])
+    with _raises("malformed") as caught:
+        inv.build(claims=[c for c in inv.claims if c.subject != record] + [functional])
+    assert caught.error.path.endswith("/mappings/0")
+
+
+def test_accept_claim_evidence_is_bound_to_the_claim_subject(inventory, inv):
+    jcand, jrec = inv.cand["airr", "IGHJ4*02"], inv.rec["airr", "IGHJ4*02"]
+    phase = _claim(inventory, "coding_phase", jcand)
+    sha = inventory.candidate(jcand).sha256
+    for evidence in ({"asset": "airr", "pointer": "/Info/version"},
+                     inv.obs_at(inv.rec["airr", "IGHV1-58*03"], "functional").to_dict()):
+        entry = decision("accept_claim", claims=[phase.id], sequence_sha256=sha, evidence=[evidence])
+        with _raises("identity_mismatch", "/decisions/0/evidence/0"):
+            m.check_decisions(_recipe(inventory, decisions=[entry]), inventory)
+    entry = decision("accept_claim", claims=[phase.id], sequence_sha256=sha,
+                     evidence=[inv.obs_at(jrec, "j_codon_frame").to_dict()])
+    m.check_decisions(_recipe(inventory, decisions=[entry]), inventory)
 
 
 def test_phase_value_and_phase_independence_are_separate_claims(inventory, inv):

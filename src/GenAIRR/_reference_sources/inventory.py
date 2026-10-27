@@ -793,8 +793,13 @@ class SourceInventory:
         candidates = {c.id: c for c in self.candidates}
         observations = {o.id: o for o in self.observations}
         mappings = {x.id: x for x in self.mappings}
+        identities: dict = {}
+        for record in self.records:
+            if record.status == "parsed":
+                identities.setdefault((record.segment, record.label), []).append(record)
         index = {"records": records, "candidates": candidates, "observations": observations, "mappings": mappings,
-                 "claims": {c.id: c for c in self.claims}, "findings": {f.id: f for f in self.findings}}
+                 "claims": {c.id: c for c in self.claims}, "findings": {f.id: f for f in self.findings},
+                 "identities": identities}
         object.__setattr__(self, "_index", index)
         self._check_items(records, candidates, observations)
         self._check_mappings(candidates, observations)
@@ -893,6 +898,13 @@ class SourceInventory:
             for j, mapping in enumerate(claim.mappings):
                 if mapping not in mappings:
                     raise bad(ptr(ptr(path, "mappings"), j), f"unknown mapping {mapping}")
+                problem = self.mapping_binding_problem(claim, mappings[mapping])
+                if problem:
+                    raise bad(ptr(ptr(path, "mappings"), j), problem)
+            for j, locator in enumerate(claim.evidence):
+                problem = self.evidence_binding_problem(claim, locator)
+                if problem:
+                    raise bad(ptr(ptr(path, "evidence"), j), problem)
             value = claim.value.get()
             if value is not None and kind == "candidate" and claim.coordinate_system == "coding_sequence":
                 length = len(subject.sequence)
@@ -921,6 +933,49 @@ class SourceInventory:
                     and claim.subject.id in derived and claim.value.get() != "anchor_derived"):
                 raise bad(ptr(ptr("/claims", i), "value"),
                           f"the accepted coding phase of {claim.subject.id} is anchor-derived, not independent")
+
+    # -- subject binding ----------------------------------------------
+
+    def subject_record(self, claim: "Claim") -> SourceRecord:
+        """The record a claim is about (its subject, or its subject candidate's record)."""
+        index = self._index
+        subject = index["records"].get(claim.subject.id)
+        if subject is None:
+            subject = index["records"][index["candidates"][claim.subject.id].record.id]
+        return subject
+
+    def mapping_binding_problem(self, claim: "Claim", mapping: "Mapping"):
+        """``None`` if ``claim`` may cite ``mapping``: its candidate side is the claim's subject."""
+        side = mapping.input if mapping.kind == "gapped_alignment" else mapping.output
+        if PREDICATE_SUBJECTS[claim.predicate] == "record":
+            return f"a {claim.predicate} claim about a record cites no coordinate mapping ({mapping.id})"
+        if side != claim.subject:
+            return (f"mapping {mapping.id} maps candidate {side.id}, not the claim subject {claim.subject.id}; "
+                    "a claim cites only mappings of its own candidate")
+        return None
+
+    def evidence_binding_problem(self, claim: "Claim", locator: Locator):
+        """``None`` if ``locator`` may be an evidence root of ``claim``.
+
+        Allowed: a field of the subject's own record; the gapped record (or record field) a
+        cited mapping binds to the subject; and, for ``variant_comparison`` claims only, a
+        field of the same-label record in the other record export.
+        """
+        record = self.subject_record(claim)
+        if locator.is_under(record.locator):
+            return None
+        mappings = self._index["mappings"]
+        for mapping_id in claim.mappings:
+            mapping = mappings.get(mapping_id)
+            if mapping is not None and locator in (mapping.input, mapping.output):
+                return None
+        if claim.derivation == "variant_comparison":
+            for other in self._index["identities"].get((record.segment, record.label), ()):
+                if other.locator.asset != record.locator.asset and locator.is_under(other.locator):
+                    return None
+        return (f"evidence root {locator.id} is not a field of {record.id} ({record.label}), the record this "
+                "claim is about, nor bound to it by a cited mapping; evidence is never taken from another "
+                "record")
 
     # -- construction and views ---------------------------------------
 
