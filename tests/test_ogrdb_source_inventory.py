@@ -1324,3 +1324,28 @@ def test_an_alias_declared_by_an_unparsed_record_does_not_absorb_a_paralog_name(
     assert [i.label for i in inventory.mentioned_identities] == [alias]
     assert findings(inventory, "paralog_names_declared_alias") == []
     assert ogrdb.account(lock, inventory).export("airr").paralog_names_of_aliases == 0
+
+
+def test_a_paralog_naming_a_record_of_another_segment_is_flagged():
+    raws = raw_records(IGL, "airr")
+    j = next(i for i, item in enumerate(raws) if item["sequence_type"] == "J" and not item["paralogs"])
+    v = next(i for i, item in enumerate(raws) if item["sequence_type"] == "V")
+
+    def edit(records):
+        records[j]["paralogs"] = [records[v]["label"]]
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    (finding,) = findings(inventory, "paralog_record_segment_conflict")
+    assert finding.observations.get() == {"label": raws[v]["label"], "segments": ["J", "V"]}
+    assert finding.subjects == tuple(sorted((m.Locator("airr", rec(j)), m.Locator("airr", rec(v))),
+                                            key=m.Locator.sort_key))
+    assert finding.locators == (m.Locator("airr", rec(j) + "/paralogs/0"),)
+    assert (finding.severity, finding.category) == ("warning", "contradictory_evidence")
+    assert findings(inventory, "mentioned_identity_segment_conflict") == []
+    account = ogrdb.account(lock, inventory).export("airr")
+    assert (account.paralog_names, account.paralog_names_of_records) == (3, 3)
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_pinned_paralogs_name_records_of_their_own_segment(source):
+    _, inventory = inventory_of(source)
+    assert findings(inventory, "paralog_record_segment_conflict") == []

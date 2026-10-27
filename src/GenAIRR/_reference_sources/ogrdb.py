@@ -365,6 +365,9 @@ FINDING_CODES = {
     "mentioned_identity_segment_conflict": (
         "warning", "contradictory_evidence", (),
         "A relationship-only name is named by records of different segments; no mentioned identity is formed."),
+    "paralog_record_segment_conflict": (
+        "warning", "contradictory_evidence", (),
+        "A paralog name is the label of a record of another segment in the same export."),
     "paralog_names_declared_alias": (
         "warning", "contradictory_evidence", (),
         "A name given as a paralog is declared as an alias by a record of the same export; it names that "
@@ -704,30 +707,40 @@ class _Builder:
     # -- relationships and identities within one export ----------------
 
     def relationships(self, asset: str) -> None:
+        """Mentioned identities, and findings for relationships that contradict the records."""
         entries = self.entries[asset]
         labels = {e.record.label for e in entries if e.record.label is not None}
+        parsed = [e for e in entries if e.record.status == "parsed"]   # only these name relationships
         records_by_label: dict = {}
-        for entry in entries:
-            if entry.record.status == "parsed":
-                records_by_label.setdefault(entry.record.label, []).append(entry.record.locator)
-        parsed = [e for e in entries if e.record.status == "parsed"]
+        for entry in parsed:
+            records_by_label.setdefault(entry.record.label, []).append(entry.record)
         aliases: dict = {}
         for entry in parsed:
             for name, locator in entry.relationships["alias"]:
                 aliases.setdefault(name, []).append((entry.record, locator))
         mentioned: dict = {}
         declared: dict = {}
+        crossing: dict = {}
         for entry in parsed:
             own = entry.record.label
             for name, locator in entry.relationships["alias"]:
                 if name != own and name in labels:
                     self.finding("alias_names_explicit_record",
-                                 subjects=[entry.record.locator] + records_by_label.get(name, []),
+                                 subjects=[entry.record.locator] + [r.locator for r in records_by_label.get(name, [])],
                                  locators=[locator], observations={"label": own, "alias": name})
             for name, locator in entry.relationships["paralog"]:
-                if name in labels:
-                    continue
-                (declared if name in aliases else mentioned).setdefault(name, []).append((entry.record, locator))
+                if name not in labels:
+                    (declared if name in aliases else mentioned).setdefault(name, []).append((entry.record, locator))
+                elif records_by_label.get(name) and entry.record.segment not in {
+                        r.segment for r in records_by_label[name]}:
+                    crossing.setdefault(name, []).append((entry.record, locator))
+        for name, mentions in sorted(crossing.items()):
+            named = records_by_label[name]
+            self.finding("paralog_record_segment_conflict",
+                         subjects=[record.locator for record, _ in mentions] + [r.locator for r in named],
+                         locators=[locator for _, locator in mentions],
+                         observations={"label": name, "segments": sorted(
+                             {record.segment for record, _ in mentions} | {r.segment for r in named})})
         for name, mentions in sorted(declared.items()):
             both = mentions + aliases[name]
             self.finding("paralog_names_declared_alias", subjects=[record.locator for record, _ in both],
