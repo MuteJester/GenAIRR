@@ -1282,8 +1282,9 @@ def test_the_report_hash_of_its_member_bytes_is_the_report_hash(igl, tmp_path):
 # ── packaged archives ────────────────────────────────────────────────
 
 
-def archive_bytes(entries, *, compress=False) -> bytes:
-    """A zip of ``(name, bytes)`` entries in the given order (duplicates allowed on purpose)."""
+def archive_bytes(entries, *, compress=False, mode=0o100644, comment=b"") -> bytes:
+    """A zip of ``(name, bytes)`` entries in the given order (duplicates allowed on purpose), each
+    with the POSIX ``mode`` and central-directory ``comment`` given."""
     import io
     import warnings
     import zipfile
@@ -1293,13 +1294,16 @@ def archive_bytes(entries, *, compress=False) -> bytes:
         for name, data in entries:
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
-            info.external_attr = 0o100644 << 16
+            info.external_attr = mode << 16
+            info.comment = comment
             archive.writestr(info, data)
     return buffer.getvalue()
 
 
 def dossier_entries(dossier: pathlib.Path) -> list:
-    return [(name, data) for name, data in sorted(tree(dossier).items())]
+    """The dossier's members and manifest, sorted by name, as a packaged archive holds them (no receipts)."""
+    listed = {member["name"] for member in load_manifest(dossier)["members"]} | {"manifest.json"}
+    return [(name, data) for name, data in sorted(tree(dossier).items()) if name in listed]
 
 
 def zip_package(tmp_path, monkeypatch, data: bytes, *, name: str, zipped=False) -> None:
@@ -1352,7 +1356,7 @@ def test_a_packaged_zip_has_its_registered_manifest_before_anything_else_is_extr
     seen = []
     with bundled.dossier_directory(entry, lambda directory: seen.append(sorted(tree(directory)))) as directory:
         extracted = tree(directory)
-    assert seen == [["manifest.json"]] and extracted == tree(dossier)
+    assert seen == [["manifest.json"]] and extracted == dict(dossier_entries(dossier))
     register(monkeypatch, entry)
     checks = []
     real = ReferenceBuild.read_dossier.__func__
@@ -1383,6 +1387,13 @@ def _raw_name(placeholder: str, raw: bytes) -> bytes:
     return data.replace(placeholder.encode("ascii"), raw)
 
 
+def _eocd_entries(data: bytes, count: int) -> bytes:
+    """``data`` with both entry counts of its end-of-central-directory record set to ``count``."""
+    import struct
+    at = data.rindex(b"PK\x05\x06")
+    return data[:at + 8] + struct.pack("<HH", count, count) + data[at + 12:]
+
+
 def _flip_first_payload_byte(data: bytes, payload: bytes) -> bytes:
     at = data.index(payload)
     return data[:at] + bytes([payload[0] ^ 0x01]) + data[at + 1:]
@@ -1404,6 +1415,21 @@ ARCHIVE_DEFECTS = {
     "encrypted-flag": (lambda: _encrypted(archive_bytes([("manifest.json", b"{}\n")])), "malformed"),
     "bad-crc": (lambda: _flip_first_payload_byte(archive_bytes([("manifest.json", b"A" * 64 + b"\n")]), b"A" * 64),
                 "malformed"),
+    # Entry types other than a regular file.
+    "symlink-mode": (lambda: archive_bytes([("manifest.json", b"inputs/v.fasta")], mode=0o120777), "malformed"),
+    "directory-mode": (lambda: archive_bytes([("manifest.json", b"")], mode=0o040755), "malformed"),
+    # Names that clash or cannot exist on every platform.
+    "file-and-directory": (lambda: archive_bytes([("inputs", b"x"), ("inputs/v.fasta", b">a\n")]), "malformed"),
+    "nfc-collision": (lambda: archive_bytes([("inputs/caf\u00e9.fasta", b">a\n"), ("inputs/cafe\u0301.fasta", b">a\n")]),
+                      "malformed"),
+    "reserved-name": (lambda: archive_bytes([("inputs/CON.fasta", b">a\n")]), "malformed"),
+    "reserved-port": (lambda: archive_bytes([("cache/lpt1", b"x")]), "malformed"),
+    "trailing-dot": (lambda: archive_bytes([("inputs/v.fasta.", b">a\n")]), "malformed"),
+    "trailing-space": (lambda: archive_bytes([("inputs /v.fasta", b">a\n")]), "malformed"),
+    "windows-character": (lambda: archive_bytes([("inputs/v?.fasta", b">a\n")]), "malformed"),
+    # Anything beyond a plain entry: a comment.
+    "entry-comment": (lambda: archive_bytes([("manifest.json", b"{}\n")], comment=b"note"), "malformed"),
+    "zip64-count": (lambda: _eocd_entries(archive_bytes([("manifest.json", b"{}\n")]), 0xFFFF), "malformed"),
 }
 
 
@@ -1447,3 +1473,51 @@ def test_an_absent_packaged_zip_is_a_missing_asset(tmp_path, monkeypatch):
             pass
 
     error("missing_asset", enter)
+
+
+def test_a_packaged_zip_holds_exactly_the_manifest_members(mini, tmp_path, monkeypatch):
+    """After the manifest pin check, the archive's entries must be exactly its members and manifest.json:
+    nothing extra (no receipts, no file-manager metadata) and nothing missing."""
+    from GenAIRR._reference_sources import bundled
+    _, dossier = mini
+    entries = dossier_entries(dossier)
+    cases = {"extra-receipt": (entries + [("receipts/0.json", b"{}\n")], "malformed"),
+             "platform-metadata": (entries + [(".DS_Store", b"")], "malformed"),
+             "missing-member": ([e for e in entries if e[0] != "inputs/j.fasta"], "missing_asset")}
+    for case, (members, kind) in cases.items():
+        package = "genairr_zip_exact_" + case.replace("-", "_")
+        zip_package(tmp_path, monkeypatch, archive_bytes(sorted(members)), name=package)
+        entry = bundled.BundledDossier(package, "builds/starter.zip", "sha256:" + "0" * 64)
+        seen = []
+
+        def enter():
+            with bundled.dossier_directory(entry, lambda directory: seen.append(sorted(tree(directory)))):
+                pass
+
+        exc = error(kind, enter)
+        assert seen == [["manifest.json"]], case                    # checked after the pin check
+        assert ("receipts/0.json" if case == "extra-receipt" else ".DS_Store" if case == "platform-metadata"
+                else "inputs/j.fasta") in exc.message
+
+
+def test_a_packaged_zip_declaring_too_many_entries_is_refused_before_zipfile_reads_it(tmp_path, monkeypatch):
+    import zipfile
+    from GenAIRR._reference_sources import bundled
+    many = archive_bytes([("a", b"1"), ("b", b"2"), ("c", b"3")])
+    long_directory = archive_bytes([("a", b"1")], comment=b"x" * 4096)
+    zip_package(tmp_path, monkeypatch, many, name="genairr_zip_many_pkg")
+    zip_package(tmp_path, monkeypatch, long_directory, name="genairr_zip_long_pkg")
+    monkeypatch.setattr(bundled, "_MAX_ENTRIES", 2)
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("zipfile parsed the central directory")
+
+    monkeypatch.setattr(zipfile, "ZipFile", refuse)
+    for package in ("genairr_zip_many_pkg", "genairr_zip_long_pkg"):
+        entry = bundled.BundledDossier(package, "builds/starter.zip", "sha256:" + "0" * 64)
+
+        def enter():
+            with bundled.dossier_directory(entry):
+                pass
+
+        error("resource_limit", enter)
