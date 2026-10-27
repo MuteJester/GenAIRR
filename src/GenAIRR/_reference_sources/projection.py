@@ -27,8 +27,9 @@ What reaches the runtime reference, per selected allele:
   evidence (whether a source phase is independent of the landmark is not established);
 * functionality and coding boundaries only from accepted claims (none under the current
   interpretation profile: the provider's Boolean ``functional`` is never mapped);
-* a candidate or conflicting claim only through an ``accept_claim`` decision, as an
-  assertion citing that decision and its evidence; ``withhold_claim`` withholds a claim;
+* a candidate claim only through an ``accept_claim`` decision, as an assertion citing that
+  decision and its evidence; a conflicting claim never (it stays null and can only be
+  withheld); ``withhold_claim`` withholds a claim;
 * representable alias and paralog relationships, citing the fields that state them; a name
   that is not a selected allele stays a non-executable entity without sequence or weight;
 * notes citing the source record (asset, raw digest, pointer), the build-input hash and the
@@ -354,6 +355,14 @@ class _Build:
         if decision is not None and decision.action == "withhold_claim":
             return ClaimOutcome(claim.id, "withheld", index, f"withheld by recipe decision {index}")
         accepted_by = index if decision is not None and decision.action == "accept_claim" else None
+        if accepted_by is not None and claim.status == "conflicting":
+            values = sorted({canonical_json(c.value.get()) for c in self.claims_of[claim.subject.id]
+                             if (c.predicate, c.coordinate_system, c.status)
+                             == (claim.predicate, claim.coordinate_system, "conflicting")})
+            raise bad(ptr("/decisions", accepted_by), (
+                f"{entry.allele_id}: accept_claim names {claim.predicate} claim {claim.id}, which is conflicting: "
+                f"the source claims about this {claim.predicate} disagree (values {', '.join(values)}), and a "
+                "conflicting annotation can only be withheld (withhold_claim), never projected"), "projection")
         if claim.status != "accepted" and accepted_by is None:
             return ClaimOutcome(claim.id, "withheld", None, _WITHHELD[claim.status])
         value = claim.value.get()
@@ -368,7 +377,7 @@ class _Build:
         resting_on = anchors[claim.subject.id][1] if claim.predicate == "coding_phase" else ()
         if claim.status == "accepted":
             support, source = claim.support, self.cite(claim.evidence + resting_on)
-        else:
+        else:                               # a candidate named by an accept_claim decision
             support = "assertion"
             source = f"recipe decision {accepted_by}: {self.cite(decision.evidence + resting_on)}"
         if claim.predicate == "anchor":

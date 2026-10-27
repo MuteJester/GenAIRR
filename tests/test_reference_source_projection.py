@@ -1039,3 +1039,32 @@ def test_the_built_runtime_alleles_must_be_exactly_the_selection(monkeypatch):
     monkeypatch.setattr(Reference, "from_fasta", rejects)
     found = error("projection", build, lock, blobs, mini_recipe(blobs, lock, (V_LABEL, J7)))
     assert "conflict" in found.message and "alleles[0].anchor" in found.message
+
+
+# ── fix round: decisions, outcome reasons, error paths and details ───
+
+
+def _cdr3_start(blobs, label=V_LABEL) -> dict:
+    (index,) = [i for i, r in enumerate(records_in(blobs, "airr")) if r["label"] == label]
+    return {"asset": "airr", "pointer": f"{RECORDS}/{index}/v_gene_delineations/0/cdr3_start"}
+
+
+def accept(claims, digest, evidence_) -> dict:
+    return {"action": "accept_claim", "findings": [], "claims": list(claims), "sequence_sha256": digest,
+            "reason": "reviewed", "evidence": list(evidence_)}
+
+
+def test_accept_claim_cannot_project_a_conflicting_annotation(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    interpret = rewrite_claims(monkeypatch, V_LABEL, "anchor", _conflicting)
+    inventory = interpret(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    disputed = [c for c in inventory.claims if c.status == "conflicting" and c.subject.asset == "airr"]
+    assert len(disputed) == 2
+    no_native(monkeypatch)
+    decision = accept([disputed[0].id], entry(blobs, "airr", V_LABEL)["sequence_sha256"], [_cdr3_start(blobs)])
+    found = error("projection", build, lock, blobs, mini_recipe(blobs, lock, decisions=[decision]))
+    assert found.path == "/decisions/0"
+    for part in (disputed[0].id, f"V:{V_LABEL}", "conflicting", "only be withheld"):
+        assert part in found.message
+    for claim in disputed:
+        assert str(claim.value.get()) in found.message
