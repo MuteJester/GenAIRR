@@ -40,6 +40,17 @@ CODONS = {a + b + c: aa for (a, b, c), aa in zip(
     ((a, b, c) for a in "TCAG" for b in "TCAG" for c in "TCAG"),
     "FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG")}
 RESIDUES = {"C": "Cys", "W": "Trp", "F": "Phe"}
+ORF_SCOPE = ("ORF-like record feature (the starter checks only the CAC heptamer core at the declared V RSS start and "
+             "the IMGT 23, 41 and 104 codons; this is not a functionality classification): ")
+# The IMGT human IGHV set kept in the repository, and the IMGT functionality classes it states
+# (FASTA header field 4) that each selected V reason must disclose.
+IMGT_IGHV = DATA.parent / "IGHV.fasta"
+IMGT_IGHV_SHA256 = "sha256:e0756e5e1cfa6306289b335738a28339f3751cec2ab9f1de8a16a5ae8cb8f934"
+IMGT_DISCLOSED = {"ORF": "ORF", "P": "a pseudogene"}
+IMGT_CLAUSE = ("IMGT classes it as {word} in the IMGT human IGHV set kept in this repository as tests/data/IGHV.fasta "
+               "(" + IMGT_IGHV_SHA256 + "; its IMGT release is not recorded), whose entry has the same V-REGION "
+               "sequence, while the provider's functional field is true; it is selected under the starter's "
+               "provider-field rule, and no runtime functionality is claimed.")
 
 
 def sha(sequence: str) -> str:
@@ -203,13 +214,71 @@ def test_every_other_reason_states_the_starter_rules_and_each_specific_observati
     assert sorted(orf) == ["IGHV3-16*02", "IGHV3-16*03", "IGHV3-16*04", "IGHV3-20*02", "IGHV3-25*04",
                            "IGHV8-51-1*04", "IGHV8-51-1*05"]
     for label, observation in orf.items():
-        assert "ORF-like although the provider's functional field is true: " + observation in given[label]
-        assert "No runtime functionality is claimed." in given[label]
+        assert ORF_SCOPE + observation in given[label]
     assert sum("ORF-like" in text for text in given.values()) == 7
+    # The one selected V grouped with the record choices by its end, whose note does not call
+    # further bases likely.
+    assert ("Its coding sequence ends at IMGT gapped position 320, the last position of the span its curation note "
+            "affirms 'based on the convincing evidence of the sequence end'; unlike the notes of the 14 record "
+            "choices, it does not call further bases likely.") in given["IGHV3-21*07"]
+    assert "based on the convincing evidence of the sequence end" in airr["IGHV3-21*07"]["curation"]
     (observation,) = [row for row in SELECTION["selected_record_observations"]
                       if row["observation"] == "v_rss_start_inside_coding_interval"]
     assert (f"Its declared v_rs_start ({observation['v_rs_start']}) lies inside its coding interval, while the record "
             f"bases after gene_end read {observation['sequence_after_gene_end']}") in given[observation["label"]]
+
+
+def imgt_classes() -> dict:
+    """``{allele: (IMGT class, ungapped V-REGION)}`` read from the IMGT FASTA headers (field 4)."""
+    data = IMGT_IGHV.read_bytes()
+    assert "sha256:" + hashlib.sha256(data).hexdigest() == IMGT_IGHV_SHA256
+    entries = {}
+    for chunk in data.decode("ascii").split(">")[1:]:
+        header, _, body = chunk.partition("\n")
+        fields = header.split("|")
+        assert fields[1] not in entries
+        entries[fields[1]] = (fields[3], body.replace("\n", "").replace(".", "").upper())
+    return entries
+
+
+def test_each_v_that_imgt_classes_as_orf_or_pseudogene_says_so():
+    classes, airr, given = imgt_classes(), raw_by_label("airr"), reasons()
+    selected = SELECTION["selected"]["V"]
+    assert Counter(classes[label][0] if label in classes else "absent" for label in selected) == {
+        "F": 153, "(F)": 14, "ORF": 12, "P": 5, "absent": 6}
+    expected = {label for label in selected if label in classes and classes[label][0] in IMGT_DISCLOSED}
+    assert {label for label, text in given.items() if "IMGT classes it as" in text} == expected     # both ways
+    assert len(expected) == 17
+    for label in expected:
+        imgt_class, region = classes[label]
+        assert region == airr[label]["coding_sequence"] and airr[label]["functional"] is True
+        assert IMGT_CLAUSE.format(word=IMGT_DISCLOSED[imgt_class]) in given[label], label
+    assert classes["IGHV8-51-1*05"][0] == "P"
+
+
+def test_leader_observations_are_stated_exactly_where_the_record_fields_show_them():
+    airr, given = raw_by_label("airr"), reasons()
+    starts, frames, donors = {}, {}, {}
+    for label in SELECTION["selected"]["V"]:
+        record = airr[label]
+        sequence, first, end = record["sequence"], record["leader_1_start"], record["leader_1_end"]
+        if first is None or record["leader_2_start"] is None:
+            continue
+        if sequence[first - 1:first + 2] != "ATG":
+            starts[label] = (first, sequence[first - 1:first + 2])
+        lengths = (end - first + 1, record["leader_2_end"] - record["leader_2_start"] + 1)
+        if sum(lengths) % 3:
+            frames[label] = lengths
+        if sequence[end:end + 2] not in ("GT", "GC"):
+            donors[label] = sequence[end:end + 2]
+    assert starts == {"IGHV8-51-1*05": (1, "CTT")}
+    assert frames == {"IGHV3-38-3*01": (48, 11)} and donors == {"IGHV3-38-3*01": "GA"}
+    assert ("Its declared leader_1 starts at record position 1 with CTT, not ATG; the record begins at that base, so "
+            "an ATG upstream of it is not ruled out.") in given["IGHV8-51-1*05"]
+    assert ("Its declared leader exons total 59 nt (leader_1 48 nt, leader_2 11 nt), not a whole number of codons, "
+            "and the two record bases after leader_1_end read GA, not the GT of a canonical splice donor.") in \
+        given["IGHV3-38-3*01"]
+    assert sorted(label for label, text in given.items() if "leader" in text) == ["IGHV3-38-3*01", "IGHV8-51-1*05"]
 
 
 def test_every_reason_is_one_line_of_ascii_text_that_never_overstates_functionality():
@@ -328,9 +397,9 @@ def test_the_generator_writes_only_into_a_new_or_empty_directory(tmp_path, capsy
 
 # Pinned from the reviewed build: the typed manifest hash of the packaged dossier (it covers
 # the GenAIRR version that generated it) and the runtime hashes of its reference.
-MANIFEST_PIN = "sha256:6e9b8bab0f8959e5248cda915f7ea75a893fe5718f73f2d034019eaded037fde"
-RUNTIME_PINS = {"execution": "sha256:dac5bc5dea9061fdb1a038011f1ba5f022e4426646685d4cd2817d9a780771f0",
-                "catalogue": "sha256:3ff0281221b19ff5be4467848c73e40bae4b0a4c78b125b491c510573e72fc8e",
+MANIFEST_PIN = "sha256:7c306e4c3586c66639a5f37ecc56c9bcb1c75c1e297c3be465d51b22b186fafe"
+RUNTIME_PINS = {"execution": "sha256:5a51c07d0c7f410c36915987a177ed30247de474f18082638b98016e7cb1c981",
+                "catalogue": "sha256:c000add5d9a8cf573177e930e47adf3cb8e3b19052f62687e81b02af57117ae5",
                 "models": "sha256:e96b1404c64d36a55c0457163ef3a4aa706e1bc5114914147715cd0f964dffd8"}
 RECORD_OUTCOMES = {"selected": 230, "excluded": 259, "rejected": 0}
 PACKAGE, RESOURCE = "GenAIRR.data", f"published_references/{STARTER_ID}"
