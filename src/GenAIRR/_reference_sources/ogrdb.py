@@ -26,7 +26,12 @@ known fields are ``preserved`` uninterpreted, and fields this adapter does not k
 ``unsupported``: kept with their values and recorded by a finding, never an error.
 Records are identified by asset and JSON pointer, so duplicate or missing provider ids
 never merge records, and evidence never moves between identities because their DNA
-matches.  Only a malformed global envelope or an exceeded budget raises.
+matches.  The two record exports are compared label by label without preferring either;
+a lock with one record export is inspected with the comparison marked incomplete.  Only
+a malformed global envelope or an exceeded budget raises.
+
+:func:`account` reconciles an inventory to the exports it was built from, and
+:func:`comparison` gives the build report's comparison section.
 """
 from __future__ import annotations
 
@@ -61,6 +66,8 @@ RECORDS_POINTER = SET_POINTER + "/allele_descriptions"
 TAXON_PREFIX = "NCBITAXON:"
 # The extended export names its set with this suffix (``IGH_VDJ`` / ``IGH_VDJ_extended``).
 EXTENDED_SET_SUFFIX = "_extended"
+# The provider's suffix on record refs of the extended export.
+EXT_SUFFIX = "_ext"
 
 _TAXON_RE = re.compile(r"NCBITAXON:([1-9][0-9]{0,9})")
 _SET_ID_RE = re.compile(r"([1-9][0-9]{0,9})\.(.+)")
@@ -178,8 +185,8 @@ def _envelope(asset: str, data: bytes) -> _Envelope:
                      release=release)
 
 
-def _mismatch(envelope: _Envelope, field: str, message: str) -> ReferenceSourceError:
-    return bad(envelope.at(SET_POINTER + "/" + field), f"{envelope.asset}: {message}", "identity_mismatch")
+def _mismatch(envelope: _Envelope, name: str, message: str) -> ReferenceSourceError:
+    return bad(envelope.at(SET_POINTER + "/" + name), f"{envelope.asset}: {message}", "identity_mismatch")
 
 
 def _check_request(envelope: _Envelope, set_id: str, release: int) -> None:
@@ -547,7 +554,7 @@ class _Builder:
         if absent:
             return "invalid" if key in REQUIRED_RECORD_FIELDS else "interpreted"
         if key == "label":
-            return "invalid" if check_label_problem(value) else "interpreted"
+            return "invalid" if _label_problem(value) else "interpreted"
         if key == "sequence_type":
             return "interpreted" if type(value) is str and value else "invalid"
         if key == "coding_sequence":
@@ -572,7 +579,7 @@ class _Builder:
         segment = sequence_type if type(sequence_type) is str and sequence_type in SEGMENTS else None
         if "label" not in item:
             return "malformed", "the record has no label", segment
-        problem = check_label_problem(label)
+        problem = _label_problem(label)
         if problem:
             return "malformed", problem, segment
         if "sequence_type" not in item:
@@ -643,7 +650,7 @@ class _Builder:
             if value is not None and not isinstance(value, list):
                 self._invalid(record, fields[key], key, value, "an array of labels or null")
             for j, name in enumerate(value if isinstance(value, list) else ()):
-                valid = check_label_problem(name) is None
+                valid = _label_problem(name) is None
                 locator = self.observe(asset, ptr(fields[key].pointer, j), record, name,
                                        "interpreted" if valid else "invalid")
                 if valid:
@@ -895,7 +902,7 @@ class _Builder:
             raise exc.under("/inventory") from None
 
 
-def check_label_problem(value: Any) -> Optional[str]:
+def _label_problem(value: Any) -> Optional[str]:
     """``None`` for a valid runtime label, else the problem (as the runtime label rule states it)."""
     try:
         check_label(value, "")
@@ -1072,8 +1079,6 @@ def build_inventory(lock: SourceLock, assets: Mapping[str, bytes]) -> SourceInve
 
 # ── Accounting ──────────────────────────────────────────────────────
 
-# The provider's suffix on record refs of the extended export.
-EXT_SUFFIX = "_ext"
 _RELATIONSHIP_ITEM_RE = re.compile(r"/(aliases|paralogs)/(?:0|[1-9][0-9]*)")
 
 
