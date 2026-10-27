@@ -19,6 +19,7 @@ import hashlib
 import http.client
 import json
 import pathlib
+import re
 import shutil
 import socket
 
@@ -623,9 +624,10 @@ def test_the_report_text_counts_every_claim_and_points_to_the_provenance_of_unse
         tallies[key] = tallies.get(key, 0) + 1
     titles = {"projected": "projected", "withheld": "withheld", "not_representable": "not representable at runtime",
               "not_selected": "not selected"}
-    for (outcome, predicate, status), count in tallies.items():
-        line = next(line for line in claims.splitlines() if line.strip().startswith(titles[outcome] + ":"))
-        assert f"{predicate} {status} {count}" in line, (outcome, predicate, status)
+    for outcome, title in titles.items():
+        expected = sorted(f"{p} {s} {n}" for (o, p, s), n in tallies.items() if o == outcome)
+        (line,) = [line.strip() for line in claims.splitlines() if line.strip().startswith(title + ":")]
+        assert sorted(line[len(title) + 1:].strip().split(", ")) == expected, outcome
     flat = " ".join(claims.split())
     assert "full provenance" in flat and "to_dict()" in flat and "report.json" in flat
 
@@ -635,6 +637,24 @@ def raw_gapped_index(fmt: str, label: str) -> int:
                for chunk in fixture_bytes(IGH, fmt).decode("utf-8").split(">")[1:]]
     (index,) = [i for i, header in enumerate(headers) if header == label]
     return index
+
+
+RECORD_FIELD = re.compile(r"(/GermlineSet/0/allele_descriptions/[0-9]+)/(.+)")
+
+
+def expected_evidence(locators) -> str:
+    """Evidence as the report states it: ``asset#<record pointer>: field, field; asset#pointer``, with
+    consecutive fields of one record export record grouped under it."""
+    groups = []
+    for locator in locators:
+        match = RECORD_FIELD.fullmatch(locator.pointer) if locator.asset in ("airr", "airr_ex") else None
+        if match is None:
+            groups.append((None, f"{locator.asset}#{locator.pointer}"))
+        elif groups and groups[-1][0] == f"{locator.asset}#{match.group(1)}":
+            groups[-1][1].append(match.group(2))
+        else:
+            groups.append((f"{locator.asset}#{match.group(1)}", [match.group(2)]))
+    return "; ".join(text if head is None else f"{head}: {', '.join(text)}" for head, text in groups)
 
 
 def provenance_lines(text: str) -> dict:
@@ -665,8 +685,7 @@ def test_every_claim_of_a_selected_allele_has_its_provenance_line(igh_starter):
             assert f"recipe decision {outcome.decision}" in line
         if outcome.reason:
             assert line.endswith(f"reason: {outcome.reason}")
-        for locator in claim.evidence:
-            assert locator.pointer.split("/")[-1] in line
+        assert f"; evidence {expected_evidence(claim.evidence)}; mappings " in line
         for mapping_id in claim.mappings:
             mapping = report.inventory.mapping(mapping_id)
             assert f"{mapping_id} ({mapping.kind}, {mapping.validation})" in line
