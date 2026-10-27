@@ -156,7 +156,7 @@ def test_every_rule_names_the_pinned_lines_it_rests_on():
 
 
 def test_profile_keeps_the_unresolved_conventions_unresolved():
-    assert [u for u, _ in profiles.PROFILE.unresolved] == [u["id"] for u in EVIDENCE["unresolved"]]
+    assert profiles.PROFILE.unresolved == tuple((u["id"], u["detail"]) for u in EVIDENCE["unresolved"])
     assert profiles.PROFILE.j_phase_independence == "unresolved"
     assert profiles.PROFILE.v_phase_derivation == "anchor_derived"
     assert profiles.PROFILE.functionality_classes == {}      # no provider value is classified

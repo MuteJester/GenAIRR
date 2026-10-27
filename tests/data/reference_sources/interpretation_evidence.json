@@ -273,7 +273,7 @@
     },
     {
       "id": "functional_false_meaning",
-      "detail": "functional=false means the stored functionality string has no 'F'; it does not distinguish ORF from pseudogene."
+      "detail": "The producer sets functional = 'F' in functionality, and 'F' also occurs in 'ORF': functional=true conflates functional (F) and ORF alleles, and functional=false means only that the stored functionality text has no 'F' (for example P). Neither value classifies an allele as functional, ORF or pseudogene."
     },
     {
       "id": "coding_end_completeness",

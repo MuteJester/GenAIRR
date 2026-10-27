@@ -232,22 +232,33 @@ _BASIS = {
     "gapped_alignment": ((_FASTA, "87-91"), (_FASTA, "98-105"), (_API, "360")),
     "missing_delineation_value": ((_API, "560-570"),),
 }
+# Verbatim from the interpretation evidence: the conventions that stay unresolved.
 _UNRESOLVED = (
-    ("v_coding_phase_independence", "No source field states a V coding phase; a phase from the anchor is "
-                                    "anchor-derived, never independent."),
-    ("j_phase_derivation", "j_codon_frame converts to a reported phase value; whether the producer derived it "
-                           "independently of j_cdr3_end is not documented."),
-    ("functional_false_meaning", "functional is whether the stored functionality text contains 'F'; it does not "
-                                 "classify an allele as functional, ORF or pseudogene."),
-    ("coding_end_completeness", "Curational tags, functional, RSS adjacency and exact context slices do not "
-                                "establish complete physical coding ends; '_ex' extensions are provider "
-                                "inferences."),
-    ("historical_affirmed_spans", "Affirmation limits in curation notes use gapped numbering and have no "
-                                  "reviewed interpretation."),
-    ("v_rss_coordinates", "RSS coordinates are kept as observations only; some contradict the record's coding "
-                          "interval."),
-    ("server_revision", "The deployed producer revision is not observable; each record is checked against its "
-                        "own exports instead."),
+    ("v_coding_phase_independence",
+     "No source field states a V coding phase. Every V anchor is a multiple of 3, so a phase derived "
+     "from the anchor is 0, but that is anchor-derived, not independent source support."),
+    ("j_phase_derivation",
+     "Correct conversion of j_codon_frame establishes the reported phase value only. Whether the "
+     "producer derived it independently of j_cdr3_end is not documented, so it is not independent "
+     "phase evidence."),
+    ("functional_false_meaning",
+     "The producer sets functional = 'F' in functionality, and 'F' also occurs in 'ORF': "
+     "functional=true conflates functional (F) and ORF alleles, and functional=false means only that "
+     "the stored functionality text has no 'F' (for example P). Neither value classifies an allele as "
+     "functional, ORF or pseudogene."),
+    ("coding_end_completeness",
+     "Neither curational tags, functional=true, RSS adjacency nor exact context slices establish "
+     "complete physical coding ends; '_ex' 3' extensions are provider inferences."),
+    ("historical_affirmed_spans",
+     "Free-text affirmation limits in curation notes use gapped numbering; no reviewed note "
+     "interpretation exists for these fixtures."),
+    ("v_rss_coordinates",
+     "IGHV1-58*01 (IGH_VDJ.10) declares v_rs_start 324 inside its coding interval 143-438 (see "
+     "record_observations), and IGHV3-38*01 declares v_rs_start 452 before gene_end 460; RSS "
+     "coordinates are retained as observations only."),
+    ("server_revision",
+     "The deployed producer revision is not observable; conventions are bound to the fixture bytes by "
+     "the per-record checks above, not by the code alone."),
 )
 
 

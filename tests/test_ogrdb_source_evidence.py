@@ -27,7 +27,7 @@ from GenAIRR._reference_sources import model as m
 from GenAIRR._reference_sources import ogrdb
 from GenAIRR._reference_sources import profiles
 from tests.test_ogrdb_source_coordinates import (
-    GAPPED, NOTE_LABELS, assert_status, at, candidate_of, claim_of, claims, findings, interpret,
+    EVIDENCE, GAPPED, NOTE_LABELS, assert_status, at, candidate_of, claim_of, claims, findings, interpret,
     interpreted, raw_gapped, raw_record, record_of, small, span_limiting_notes,
 )
 from tests.test_ogrdb_source_inventory import (
@@ -557,6 +557,16 @@ def test_provider_functionality_stays_raw_and_unclassified(source):
                                           "other": len(values) - sum(values.count(v) for v in (True, False, None,
                                                                                                "absent"))}
         assert observations["classified"] == 0
+
+
+def test_the_meaning_of_the_functional_flag_is_recorded_as_unresolved():
+    detail = {u["id"]: u["detail"] for u in EVIDENCE["unresolved"]}["functional_false_meaning"]
+    # The producer sets functional = 'F' in functionality, and 'F' also occurs in 'ORF'.
+    assert "'F' in functionality" in detail and "'ORF'" in detail
+    assert "true conflates" in detail and "false means only" in detail
+    _, inventory = interpreted(IGL)
+    for finding in findings(inventory, "provider_functionality_unclassified"):
+        assert finding.observations.get()["reason"] == detail
 
 
 def test_a_false_provider_functional_is_not_a_pseudogene():

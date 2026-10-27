@@ -356,8 +356,7 @@ class _Interpretation:
                 self.claim(record.locator, "functionality", None, None, "stated", self.status(False), (at,))
         self.findings.add("provider_functionality_unclassified", locators=[Locator(asset, EXPORT_ANCHOR)],
                           observations={"asset": asset, "values": values, "classified": 0,
-                                        "reason": f"profile {self.profile.id} establishes no functionality "
-                                                  "classification from the provider's values"})
+                                        "reason": dict(self.profile.unresolved)["functional_false_meaning"]})
 
     def lineage(self) -> None:
         assets = [a.asset_id for a in self.lock.assets if a.role != "data_terms"]
