@@ -649,18 +649,26 @@ def test_an_older_generators_dossier_checks_and_rebuilds_under_the_installed_one
 # Runs in a fresh isolated interpreter: every network attempt is counted and refused before
 # GenAIRR is imported, and every warning is an error.
 OFFLINE_SCRIPT = r'''
+import _socket
 import json
 import socket
 import sys
 import warnings
 from pathlib import Path
 
+GUARD = "network access is disabled in this offline check"
 ATTEMPTS = []
 
 
 def _refuse(*args, **kwargs):
     ATTEMPTS.append(repr(args)[:200])          # counted even if a caller swallows the error
-    raise OSError("network access is disabled in this offline check")
+    raise OSError(GUARD)
+
+
+def _audit(event, args):
+    # Below the Python socket surface: every connection and name lookup raises an audit event.
+    if event in ("socket.connect", "socket.getaddrinfo", "socket.gethostbyname"):
+        _refuse(event, *args)
 
 
 class _NoSocket(socket.socket):
@@ -668,10 +676,25 @@ class _NoSocket(socket.socket):
         _refuse(*args)
 
 
+sys.addaudithook(_audit)
 socket.socket = _NoSocket
 socket.create_connection = _refuse
 socket.getaddrinfo = _refuse
 warnings.simplefilter("error")
+
+# Positive controls: each route fails with the guard's own error, and is counted.
+CONTROLS = []
+for name, attempt in (("raw socket connect", lambda: _socket.socket().connect(("127.0.0.1", 9))),
+                      ("name lookup", lambda: socket.gethostbyname("localhost")),
+                      ("address lookup", lambda: _socket.getaddrinfo("localhost", 443)),
+                      ("connection", lambda: socket.create_connection(("127.0.0.1", 9), timeout=1))):
+    try:
+        attempt()
+        CONTROLS.append((name, "connected"))
+    except OSError as exc:
+        CONTROLS.append((name, str(exc)))
+CONTROL_ATTEMPTS = len(ATTEMPTS)
+del ATTEMPTS[:]
 
 from GenAIRR import Experiment
 from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild
@@ -691,6 +714,8 @@ print(json.dumps({
     "records": len(result),
     "alleles": sorted({record["v_call"] for record in result} | {record["j_call"] for record in result}),
     "network_attempts": ATTEMPTS,
+    "controls": CONTROLS,
+    "control_attempts": CONTROL_ATTEMPTS,
 }))
 '''
 
@@ -710,6 +735,11 @@ def test_a_moved_dossier_checks_rebuilds_and_simulates_in_a_fresh_offline_proces
                              capture_output=True, timeout=600, cwd=tmp_path)
     assert process.returncode == 0, process.stderr.decode("utf-8", "replace")
     outcome = json.loads(process.stdout.decode("utf-8"))
+    guard = "network access is disabled in this offline check"
+    assert [name for name, _ in outcome["controls"]] == ["raw socket connect", "name lookup", "address lookup",
+                                                         "connection"]
+    assert all(message == guard for _, message in outcome["controls"]), outcome["controls"]
+    assert outcome["control_attempts"] >= 4
     assert outcome["network_attempts"] == []
     assert outcome["checked_execution_hash"] == outcome["rebuilt_execution_hash"] == build.reference.execution_hash
     assert outcome["reference_content_hash"] == outcome["execution_hash"] == build.reference.execution_hash
