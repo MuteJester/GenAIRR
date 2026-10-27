@@ -738,3 +738,249 @@ def test_provider_json_is_parsed_strictly(text):
     blobs = {"airr": text.encode("utf-8")}
     lock = seal(IGL, blobs)
     assert error("malformed", ogrdb.build_inventory, lock, blobs).path == "/assets/airr"
+
+
+# ── accounting: every count reconciles to the raw payloads ──────────
+
+
+def account_of(source, fmt, formats=ALL):
+    lock, inventory = inventory_of(source, formats)
+    return ogrdb.account(lock, inventory).export(fmt)
+
+
+def _items(item, field):
+    value = item.get(field)
+    return value if isinstance(value, list) else []
+
+
+@pytest.mark.parametrize("fmt", EXPORTS)
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_every_conservation_equation_reconciles_to_the_raw_payload(source, fmt):
+    lock, inventory = inventory_of(source)
+    account = ogrdb.account(lock, inventory).export(fmt)
+    raws = raw_records(source, fmt)
+    expected = EXPECT["sets"][_key(source)][fmt]
+    # Record occurrences: every raw record, by status and by segment.
+    assert account.record_occurrences == len(raws) == expected["records"]
+    assert account.record_occurrences == (account.parsed_records + account.malformed_records
+                                          + account.unsupported_records)
+    assert account.segments["record_occurrences"] == {"V": expected["V"], "D": expected["D"], "J": expected["J"],
+                                                     "unassigned": 0}
+    # Candidates: at most one per record.
+    assert account.record_occurrences == account.sequence_candidates + account.records_without_candidate
+    assert account.sequence_candidates == sum(1 for item in raws if item["coding_sequence"])
+    # Parsed records: first supply of each identity's sequence, repeats, or no candidate.
+    assert account.parsed_records == (account.identity_sequences + account.duplicate_occurrences
+                                      + account.parsed_without_candidate)
+    assert account.identity_sequences == (account.record_identities - account.identities_without_candidate
+                                          + account.alternative_sequences)
+    assert account.record_identities == len({(item["sequence_type"], item["label"]) for item in raws})
+    # Named identities: own records plus relationship-only names; aliases add none.
+    paralog_only = expected["paralog_only_identities"]
+    assert account.mentioned_only_identities == len(paralog_only)
+    assert account.named_identities == account.record_identities + account.mentioned_only_identities
+    assert account.alias_names == sum(len(_items(item, "aliases")) for item in raws)
+    assert account.paralog_names == sum(len(_items(item, "paralogs")) for item in raws)
+    assert account.paralog_names == (account.paralog_names_of_records + account.paralog_names_of_mentioned_only
+                                     + account.paralog_names_unresolved)
+    mentions = sum(len(i.mentions) for i in inventory.mentioned_identities if i.asset == fmt)
+    assert account.paralog_names_of_mentioned_only == mentions
+    labels = {item["label"] for item in raws}
+    assert account.paralog_names_of_records == sum(name in labels for item in raws for name in _items(item, "paralogs"))
+    assert account.paralog_names_unresolved == 0
+    # Support entries and provider refs.
+    assert account.support_references == sum(len(item["unrearranged_support"]) + len(item["rearranged_support"])
+                                              for item in raws)
+    assert account.provider_refs_with_ext_suffix == expected["refs_ending_ext"]
+    assert account.provider_refs_with_ext_suffix == sum(item["allele_description_ref"].endswith("_ext")
+                                                        for item in raws)
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_identity_counts_of_both_exports_close_over_relationship_only_names(source):
+    airr, airr_ex = account_of(source, "airr"), account_of(source, "airr_ex")
+    # The extended export names, as paralogs only, exactly the identities it has no record for.
+    assert airr_ex.named_identities == airr.named_identities == airr.record_occurrences
+    assert airr.mentioned_only_identities == 0
+
+
+def test_igl_release4_explicit_records_and_mentioned_identities():
+    airr, airr_ex = account_of(IGL, "airr"), account_of(IGL, "airr_ex")
+    assert (airr_ex.record_occurrences, airr_ex.sequence_candidates, airr_ex.named_identities,
+            airr_ex.mentioned_only_identities) == (97, 97, 98, 1)
+    assert (airr.record_occurrences, airr.sequence_candidates, airr.named_identities,
+            airr.mentioned_only_identities) == (98, 98, 98, 0)
+    # Executable alleles are chosen later, by an explicit selection; nothing here counts them.
+    assert not hasattr(airr, "selected_alleles")
+
+
+@pytest.mark.parametrize("fmt", EXPORTS)
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_paralog_only_names_are_the_expected_mentioned_identities(source, fmt):
+    _, inventory = inventory_of(source)
+    found = sorted(i.label for i in inventory.mentioned_identities if i.asset == fmt)
+    assert found == sorted(EXPECT["sets"][_key(source)][fmt]["paralog_only_identities"])
+    raws = raw_records(source, fmt)
+    labels = {item["label"] for item in raws}
+    for identity in (i for i in inventory.mentioned_identities if i.asset == fmt):
+        assert identity.label not in labels
+        assert inventory.candidates_of(m.Locator(fmt, "/" + identity.label)) == ()
+        for mention in identity.mentions:
+            item = raws[int(mention.record.pointer.rsplit("/", 1)[1])]
+            assert identity.label in item["paralogs"]
+            assert (mention.relationship, identity.segment) == ("paralog", item["sequence_type"])
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_identical_dna_under_distinct_labels_stays_distinct_identities(source):
+    lock, inventory = inventory_of(source)
+    expected = sorted(tuple(sorted(group)) for group in EXPECT["sets"][_key(source)]["airr_identical_coding_groups"])
+    assert ogrdb.account(lock, inventory).export("airr").shared_sequences == tuple(expected)
+    assert ogrdb.account(lock, inventory).export("airr_ex").shared_sequences == ()
+    found = findings(inventory, "identical_sequence_distinct_identities")
+    assert sorted(tuple(i["label"] for i in f.observations.get()["identities"]) for f in found) == expected
+    labels = {r.locator: r.label for r in inventory.records}
+    for finding in found:
+        records = [s for s in finding.subjects if s in labels]
+        candidates = [s for s in finding.subjects if s not in labels]
+        assert sorted(labels[r] for r in records) == sorted(i["label"] for i in finding.observations.get()["identities"])
+        assert sorted(c.pointer for c in candidates) == sorted(r.pointer + "/coding_sequence" for r in records)
+        assert len({inventory.candidate(c).sha256 for c in candidates}) == 1
+        assert (finding.severity, finding.category) == ("info", "informational")
+
+
+def test_j2_and_j3_keep_their_own_records_ids_and_support():
+    lock, inventory = inventory_of(IGL)
+    j2, j3 = by_label(inventory, "airr")["IGLJ2*01"], by_label(inventory, "airr")["IGLJ3*01"]
+    (j2,), (j3,) = j2, j3
+    (c2,), (c3,) = inventory.candidates_of(j2.locator), inventory.candidates_of(j3.locator)
+    assert c2.sha256 == c3.sha256 and c2.locator != c3.locator
+    assert (j2.provider_id, j3.provider_id) == ("OGRDB:A02870", "OGRDB:A02871")
+    own = {}
+    for support in inventory.support:
+        own.setdefault(support.record, []).append(support.reference)
+    assert own[j2.locator] == ["D87023", "Gibson:HG01106", "GRCh38:NC_000022.11"]
+    assert own[j3.locator] == ["Gibson:HG02572"]
+    # In airr_ex, IGLJ3*01 is only a paralog name: no record, candidate or support of its own.
+    (ex_j2,) = by_label(inventory, "airr_ex")["IGLJ2*01"]
+    assert [s.reference for s in inventory.support if s.record == ex_j2.locator] == own[j2.locator]
+    j2_entries = [inventory.observation(s.locator).value for s in inventory.support if s.record == j2.locator]
+    holders = {s.record for s in inventory.support if inventory.observation(s.locator).value in j2_entries}
+    assert holders == {j2.locator, ex_j2.locator}
+    (j3_mentioned,) = [i for i in inventory.mentioned_identities if i.label == "IGLJ3*01"]
+    assert j3_mentioned.asset == "airr_ex"
+    # No J2 field can be evidence about J3, in either export.
+    for target in (j3.locator, c3.locator):
+        claim = m.Claim(source_lock_hash=inventory.source_lock_hash, subject=target,
+                        predicate="functionality" if target == j3.locator else "boundary_3",
+                        value=None, coordinate_system=None, support="none", derivation="stated",
+                        status="unresolved", evidence=(m.Locator("airr", j3.locator.pointer + "/functional"),),
+                        mappings=())
+        for borrowed in (j2.locator.pointer + "/unrearranged_support/0", j2.locator.pointer + "/functional"):
+            for asset in EXPORTS:
+                assert inventory.evidence_binding_problem(claim, m.Locator(asset, borrowed)) is not None
+        assert inventory.evidence_binding_problem(claim, m.Locator("airr", j3.locator.pointer + "/functional")) is None
+
+
+def test_declared_aliases_are_names_of_their_own_record_not_identities():
+    _, inventory = inventory_of(IGL)
+    for fmt in EXPORTS:
+        raws = raw_records(IGL, fmt)
+        aliases = [(i, j, name) for i, item in enumerate(raws) for j, name in enumerate(_items(item, "aliases"))]
+        assert len(aliases) == 6
+        mentioned = {x.label for x in inventory.mentioned_identities}
+        for i, j, name in aliases:
+            assert observed(inventory, fmt, f"{rec(i)}/aliases/{j}").value.get() == name
+            assert name not in mentioned
+        assert account_of(IGL, fmt).alias_names == 6
+    assert findings(inventory, "alias_names_explicit_record") == []
+
+
+def test_an_alias_naming_another_record_is_flagged_and_merges_nothing():
+    def edit(records):
+        records[0]["aliases"] = [records[1]["label"]]
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    (finding,) = findings(inventory, "alias_names_explicit_record")
+    labels = raw_records(IGL, "airr")
+    assert finding.observations.get() == {"label": labels[0]["label"], "alias": labels[1]["label"]}
+    assert finding.subjects == (m.Locator("airr", rec(0)), m.Locator("airr", rec(1)))
+    assert ogrdb.account(lock, inventory).export("airr").record_identities == len(labels)
+
+
+def test_duplicate_occurrences_and_same_label_alternatives_are_counted_apart():
+    base = raw_records(IGL, "airr")
+    first = base[0]
+    def edit(records):
+        records.append(copy.deepcopy(first))
+        records.append(copy.deepcopy(first))
+        records.append(dict(copy.deepcopy(first), coding_sequence=first["coding_sequence"] + "A"))
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    account = ogrdb.account(lock, inventory).export("airr")
+    n = len(base)
+    assert (account.record_occurrences, account.sequence_candidates, account.record_identities) == (n + 3, n + 3, n)
+    assert (account.identity_sequences, account.duplicate_occurrences) == (n + 1, 2)
+    assert (account.alternative_identities, account.alternative_sequences) == (1, 1)
+    assert account.parsed_records == account.identity_sequences + account.duplicate_occurrences
+    (duplicate,) = findings(inventory, "duplicate_record_occurrence")
+    assert duplicate.observations.get()["occurrences"] == 3
+    assert [s.pointer for s in duplicate.subjects] == [rec(0), rec(0) + "/coding_sequence", rec(n),
+                                                       rec(n) + "/coding_sequence", rec(n + 1),
+                                                       rec(n + 1) + "/coding_sequence"]
+    (alternatives,) = findings(inventory, "same_label_sequence_alternatives")
+    observations = alternatives.observations.get()
+    assert (observations["label"], observations["segment"]) == (first["label"], first["sequence_type"])
+    assert sorted((a["length"], a["records"]) for a in observations["alternatives"]) == [
+        (len(first["coding_sequence"]), 3), (len(first["coding_sequence"]) + 1, 1)]
+    assert len(alternatives.subjects) == 8
+    assert (alternatives.severity, alternatives.category) == ("warning", "contradictory_evidence")
+    (shared,) = findings(inventory, "duplicate_provider_id")
+    assert shared.observations.get() == {"provider_id": first["allele_description_id"], "records": 4}
+
+
+def test_duplicate_or_missing_provider_ids_never_merge_records():
+    def edit(records):
+        records[0]["allele_description_id"] = None
+        records[1].pop("allele_description_id")
+        records[3]["allele_description_id"] = records[2]["allele_description_id"]
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    records = records_of(inventory, "airr")
+    assert len(records) == len(raw_records(IGL, "airr"))
+    assert [r.provider_id for r in records[:2]] == [None, None]
+    assert len({r.id for r in records}) == len(records)
+    (finding,) = findings(inventory, "duplicate_provider_id")
+    assert [s.pointer for s in finding.subjects] == [rec(2), rec(3)]
+    absent = observed(inventory, "airr", rec(1) + "/allele_description_id")
+    assert (absent.presence, absent.interpretation) == ("absent", "interpreted")
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_fasta_records_are_counted_per_export(source):
+    lock, inventory = inventory_of(source)
+    assert dict(ogrdb.account(lock, inventory).fasta) == EXPECT["sets"][_key(source)]["gapped_records"]
+
+
+def test_accounts_belong_to_the_inventory_of_their_lock():
+    lock, inventory = inventory_of(IGL)
+    other, _ = inventory_of(IGK)
+    error("digest_mismatch", ogrdb.account, other, inventory)
+    with pytest.raises(TypeError):
+        ogrdb.account(lock, inventory.to_dict())
+
+
+def test_paralog_names_that_resolve_to_nothing_are_counted_as_unresolved():
+    raws = raw_records(IGL, "airr")
+    assert [raws[i]["sequence_type"] for i in range(4)] == ["J", "V", "V", "V"]
+
+    def edit(records):
+        records[0]["paralogs"] = ["bad name", "IGLX*01", "IGLZ*01"]   # invalid; mentioned only; named by J ...
+        records[1]["paralogs"] = ["IGLZ*01"]                           # ... and by V: no single segment
+        records[3]["label"] = "bad label"                              # a malformed record naming a paralog
+        records[3]["paralogs"] = ["IGLY*01"]
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    account = ogrdb.account(lock, inventory).export("airr")
+    assert (account.paralog_names, account.paralog_names_of_records, account.paralog_names_of_mentioned_only,
+            account.paralog_names_unresolved) == (7, 2, 1, 4)
+    assert [(i.label, i.segment) for i in inventory.mentioned_identities] == [("IGLX*01", "J")]
+    (conflict,) = findings(inventory, "mentioned_identity_segment_conflict")
+    assert conflict.observations.get() == {"label": "IGLZ*01", "segments": ["J", "V"]}
+    assert [s.pointer for s in conflict.subjects] == [rec(0), rec(1)]

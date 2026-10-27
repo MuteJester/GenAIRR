@@ -863,3 +863,164 @@ def build_inventory(lock: SourceLock, assets: Mapping[str, bytes]) -> SourceInve
             builder.fasta(asset.asset_id, blobs[asset.asset_id])
     builder.unknown_findings()
     return builder.inventory()
+
+
+# ── Accounting ──────────────────────────────────────────────────────
+
+# The provider's suffix on record refs of the extended export.
+EXT_SUFFIX = "_ext"
+_RELATIONSHIP_ITEM_RE = re.compile(r"/(aliases|paralogs)/(?:0|[1-9][0-9]*)")
+
+
+@dataclass(frozen=True)
+class ExportAccount:
+    """Counts of one record export, each reconciling to its raw records.
+
+    Record occurrences, sequence candidates, identities and relationship-only names are
+    counted apart; executable alleles are chosen later by an explicit selection and are
+    not counted here.  For every export these hold:
+
+    * ``record_occurrences = parsed_records + malformed_records + unsupported_records``
+    * ``record_occurrences = sequence_candidates + records_without_candidate``
+    * ``parsed_records = identity_sequences + duplicate_occurrences + parsed_without_candidate``
+    * ``identity_sequences = record_identities - identities_without_candidate + alternative_sequences``
+    * ``named_identities = record_identities + mentioned_only_identities``
+    * ``paralog_names = paralog_names_of_records + paralog_names_of_mentioned_only + paralog_names_unresolved``
+
+    An identity is a parsed record's ``(segment, label)``.  ``identity_sequences`` counts
+    distinct supplied coding sequences per identity; ``duplicate_occurrences`` the parsed
+    records repeating one; ``alternative_sequences`` the sequences beyond the first of an
+    identity supplied with several.  ``shared_sequences`` lists, per coding sequence that
+    distinct identities share, their labels: they stay distinct identities.
+    ``named_identities`` are the identities an export names at all: its own record
+    identities plus the names it gives only as paralogs.  Declared aliases name their own
+    record and add no identity.  ``segments`` is :meth:`SourceInventory.export_counts`.
+    """
+
+    asset: str
+    record_occurrences: int
+    parsed_records: int
+    malformed_records: int
+    unsupported_records: int
+    sequence_candidates: int
+    records_without_candidate: int
+    record_identities: int
+    identities_without_candidate: int
+    identity_sequences: int
+    duplicate_occurrences: int
+    parsed_without_candidate: int
+    alternative_identities: int
+    alternative_sequences: int
+    shared_sequences: tuple
+    mentioned_only_identities: int
+    named_identities: int
+    alias_names: int
+    paralog_names: int
+    paralog_names_of_records: int
+    paralog_names_of_mentioned_only: int
+    paralog_names_unresolved: int
+    support_references: int
+    provider_refs_with_ext_suffix: int
+    segments: Mapping
+
+    def to_dict(self) -> dict:
+        d = {k: getattr(self, k) for k in self.__dataclass_fields__}
+        d["shared_sequences"] = [list(group) for group in self.shared_sequences]
+        d["segments"] = {k: dict(v) for k, v in self.segments.items()}
+        return d
+
+
+@dataclass(frozen=True)
+class SourceAccount:
+    """The accounting of one inventory: per record export and per FASTA export."""
+
+    exports: tuple                  # ExportAccount per record export of the lock, in lock order
+    fasta: tuple                    # (asset, records) per FASTA export of the lock, in lock order
+
+    def export(self, asset: str) -> ExportAccount:
+        for account in self.exports:
+            if account.asset == asset:
+                return account
+        raise KeyError(asset)
+
+    def to_dict(self) -> dict:
+        return {"exports": [a.to_dict() for a in self.exports], "fasta": [list(x) for x in self.fasta]}
+
+
+def _export_account(inventory: SourceInventory, asset: str) -> ExportAccount:
+    records = [r for r in inventory.records if r.locator.asset == asset]
+    statuses = {s: sum(1 for r in records if r.status == s) for s in ("parsed", "malformed", "unsupported")}
+    digests = {r.locator: [c.sha256 for c in inventory.candidates_of(r.locator)] for r in records}
+    parsed = [r for r in records if r.status == "parsed"]
+    identities: dict = {}
+    by_sequence: dict = {}
+    for record in parsed:
+        identities.setdefault((record.segment, record.label), []).append(record)
+        for sha256 in digests[record.locator]:
+            by_sequence.setdefault(sha256, set()).add((record.segment, record.label))
+    sequences = duplicates = without = alternatives = extra = bare = 0
+    for group in identities.values():
+        supplied = [d for r in group for d in digests[r.locator]]
+        distinct = len(set(supplied))
+        sequences += distinct
+        duplicates += len(supplied) - distinct
+        without += sum(1 for r in group if not digests[r.locator])
+        bare += distinct == 0
+        alternatives += distinct > 1
+        extra += max(0, distinct - 1)
+    shared = tuple(sorted(tuple(sorted(label for _, label in names)) for names in by_sequence.values()
+                          if len(names) > 1))
+    mentioned = [i for i in inventory.mentioned_identities if i.asset == asset]
+    by_locator = {r.locator: r for r in records}
+    labels = {r.label for r in records if r.label is not None}
+    mention_locators = {x.locator for i in mentioned for x in i.mentions}
+    aliases = paralogs = paralogs_of_records = unresolved = 0
+    for observation in inventory.observations:
+        record = observation.record
+        if record is None or record.asset != asset:
+            continue
+        match = _RELATIONSHIP_ITEM_RE.fullmatch(observation.locator.pointer[len(record.pointer):])
+        if match is None:
+            continue
+        if match.group(1) == "aliases":
+            aliases += 1
+            continue
+        paralogs += 1
+        if observation.interpretation != "interpreted" or by_locator[record].status != "parsed":
+            unresolved += 1
+        elif observation.value.get() in labels:
+            paralogs_of_records += 1
+        elif observation.locator not in mention_locators:
+            unresolved += 1
+    of_mentioned = sum(len(i.mentions) for i in mentioned)
+    return ExportAccount(
+        asset=asset, record_occurrences=len(records), parsed_records=statuses["parsed"],
+        malformed_records=statuses["malformed"], unsupported_records=statuses["unsupported"],
+        sequence_candidates=sum(len(d) for d in digests.values()),
+        records_without_candidate=sum(1 for d in digests.values() if not d),
+        record_identities=len(identities), identities_without_candidate=bare, identity_sequences=sequences,
+        duplicate_occurrences=duplicates, parsed_without_candidate=without, alternative_identities=alternatives,
+        alternative_sequences=extra, shared_sequences=shared, mentioned_only_identities=len(mentioned),
+        named_identities=len(identities) + len(mentioned), alias_names=aliases, paralog_names=paralogs,
+        paralog_names_of_records=paralogs_of_records, paralog_names_of_mentioned_only=of_mentioned,
+        paralog_names_unresolved=unresolved,
+        support_references=sum(1 for s in inventory.support if s.locator.asset == asset),
+        provider_refs_with_ext_suffix=sum(1 for r in records if (r.provider_ref or "").endswith(EXT_SUFFIX)),
+        segments=inventory.export_counts(asset))
+
+
+def _check_pair(lock: SourceLock, inventory: SourceInventory) -> None:
+    require_type(lock, SourceLock, "lock")
+    require_type(inventory, SourceInventory, "inventory")
+    if inventory.source_lock_hash != lock_hash(lock):
+        raise bad("/source_lock_hash", f"the inventory was built under lock {inventory.source_lock_hash}, not "
+                                       f"this lock {lock_hash(lock)}", "digest_mismatch")
+
+
+def account(lock: SourceLock, inventory: SourceInventory) -> SourceAccount:
+    """The accounting of ``inventory``, built from ``lock`` (``digest_mismatch`` otherwise)."""
+    _check_pair(lock, inventory)
+    exports = tuple(_export_account(inventory, a.asset_id) for a in lock.assets if a.format in RECORD_EXPORT_FORMATS)
+    fasta = tuple((a.asset_id, sum(1 for o in inventory.observations if o.locator.asset == a.asset_id))
+                  for a in lock.assets if a.format in _FASTA_FORMATS)
+    return SourceAccount(exports=exports, fasta=fasta)
