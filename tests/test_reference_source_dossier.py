@@ -1018,7 +1018,6 @@ def test_only_windows_name_surrogate_reparse_points_count_as_links(tag, link):
     assert build_module._is_link(plain) is False
 
 
-
 # ── the cost of a check ──────────────────────────────────────────────
 
 

@@ -35,7 +35,6 @@ from GenAIRR._reference_sources.recipe import MAX_RECIPE_BYTES, Recipe
 _now = None
 
 
-
 def _transport() -> Transport:
     """The transport of an explicit fetch: the standard-library HTTPS client."""
     return HttpsTransport()
