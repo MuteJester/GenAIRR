@@ -560,11 +560,16 @@ def test_a_runtime_body_resealed_under_another_generator_is_rejected(mini, tmp_p
         reference = rebuilt_reference(dossier, tmp_path)
     assert json.loads(reference.to_json())["generator"]["version"] == "0.0.1+forged"
     rewrite(dossier, "reference.genairr-ref.json", reference.to_json().encode("utf-8"))
-    exc = rejected(dossier, "digest_mismatch", "report.json")             # the report names the stored artifact
-    assert exc.path == "/report.json/runtime/artifact_hash"
+    exc = rejected(dossier, "identity_mismatch", "reference.genairr-ref.json")   # its generator is not the builder
+    assert exc.path == "/reference.genairr-ref.json/generator" and "0.0.1+forged" in exc.message
     rewrite_report(dossier, lambda report: with_runtime(report, reference))
-    exc = rejected(dossier, "identity_mismatch", "reference.genairr-ref.json")   # and its generator is not the builder
-    assert "0.0.1+forged" in exc.message
+    exc = rejected(dossier, "identity_mismatch", "reference.genairr-ref.json")   # still not, report rehashed too
+    assert exc.path == "/reference.genairr-ref.json/generator"
+    manifest = load_manifest(dossier)
+    manifest["builder"]["version"] = "0.0.1+forged"
+    save_manifest(dossier, manifest)
+    exc = rejected(dossier, "digest_mismatch", "report.json")             # the report names another generator
+    assert exc.path == "/report.json/generator/version"
 
 
 def test_a_recipe_that_is_not_the_reports_recipe_is_rejected(mini):
@@ -938,7 +943,7 @@ def test_a_manifest_naming_an_unsafe_member_is_refused(mini, name):
     ("versions", {"report": 2}, "unsupported_schema", "/manifest.json/versions/report"),
     ("projection", {"version": 2}, "unsupported_profile", "/manifest.json/projection"),
     ("adapter", {"version": 2}, "unsupported_profile", "/manifest.json/adapter"),
-    ("builder", {"version": "0.0.1"}, "digest_mismatch", "/report.json/generator/version"),
+    ("builder", {"version": "0.0.1"}, "identity_mismatch", "/reference.genairr-ref.json/generator"),
     ("runtime", {"execution_hash": "sha256:" + "1" * 64}, "digest_mismatch", "/manifest.json/runtime"),
     ("hashes", {"report": "sha256:" + "2" * 64}, "digest_mismatch", "/manifest.json/hashes/report"),
 ])

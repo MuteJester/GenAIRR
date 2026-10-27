@@ -613,6 +613,12 @@ class ReferenceBuild:
                   "the runtime reference the dossier's lock, blobs and recipe regenerate (every field but the "
                   "generator and the commitment)")
 
+        # The stored artifact names the recorded builder as its generator.
+        if generator != manifest.builder.to_dict():
+            raise bad("/" + REFERENCE_MEMBER + "/generator", (
+                f"the stored reference names its generator GenAIRR {show(generator.get('version'))}, but "
+                f"{MANIFEST_NAME} records the builder GenAIRR {manifest.builder.version}"), "identity_mismatch")
+
         # The report: the regenerated one, stated for the stored artifact and the recorded builder, must
         # be byte for byte the stored report.  Equal canonical bytes of a validated report prove the
         # stored report valid, so it is parsed only to locate a difference.
@@ -628,11 +634,6 @@ class ReferenceBuild:
                       "the report regenerated for the stored reference and the recorded builder")
             raise bad("/" + REPORT_MEMBER, f"{REPORT_MEMBER} is not in canonical form (canonical JSON, UTF-8, one LF); "
                                            "a dossier stores each generated document exactly as written")
-        if generator != manifest.builder.to_dict():
-            raise bad("/" + REFERENCE_MEMBER + "/generator", (
-                f"the stored reference names its generator GenAIRR {show(generator.get('version'))}, but "
-                f"{REPORT_MEMBER} and {MANIFEST_NAME} record the builder GenAIRR {manifest.builder.version}"),
-                "identity_mismatch")
         try:
             check_manifest(manifest, lock, expected)
         except ReferenceSourceError as exc:
