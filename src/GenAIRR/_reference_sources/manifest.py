@@ -215,18 +215,23 @@ def check_manifest(manifest: BuildManifest, lock: SourceLock, report: BuildRepor
                                          f"{lock.commitment}", "digest_mismatch")
     if manifest.adapter != lock.adapter:
         raise bad("/adapter", "manifest adapter differs from the lock adapter", "identity_mismatch")
-    blobs = {x.name: (i, x) for i, x in enumerate(manifest.members) if x.is_blob}
+    # Assets with identical bytes share one content-addressed blob (the lock fixes one size per digest).
+    needed: dict = {}
     for asset in lock.assets:
-        name = BLOB_PREFIX + asset.blob_name
+        needed.setdefault(BLOB_PREFIX + asset.blob_name, []).append(asset)
+    blobs = {x.name: (i, x) for i, x in enumerate(manifest.members) if x.is_blob}
+    for name, assets in needed.items():
+        owners = ", ".join(a.asset_id for a in assets)
         if name not in blobs:
-            raise bad("/members", f"locked asset {asset.asset_id} ({asset.sha256}) has no blob member {name}",
+            raise bad("/members", f"locked asset {owners} ({assets[0].sha256}) has no blob member {name}",
                       "missing_asset")
-        index, member = blobs.pop(name)
-        if member.bytes != asset.bytes:
-            raise bad(ptr(ptr("/members", index), "bytes"), f"blob of {asset.asset_id} has {member.bytes} bytes; "
-                                                            f"the lock says {asset.bytes}", "digest_mismatch")
+        index, member = blobs[name]
+        if member.bytes != assets[0].bytes:
+            raise bad(ptr(ptr("/members", index), "bytes"), f"blob of {owners} has {member.bytes} bytes; the lock "
+                                                            f"says {assets[0].bytes}", "digest_mismatch")
     for name, (index, _) in sorted(blobs.items()):
-        raise bad(ptr(ptr("/members", index), "name"), f"blob {name} is not a locked asset", "identity_mismatch")
+        if name not in needed:
+            raise bad(ptr(ptr("/members", index), "name"), f"blob {name} is not a locked asset", "identity_mismatch")
     has_d = any(x.name == "inputs/d.fasta" for x in manifest.members)
     if has_d != (lock.identity.chain_type == "vdj"):
         raise bad("/members", f"inputs/d.fasta is {'present' if has_d else 'absent'} for a "

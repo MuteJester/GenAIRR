@@ -206,6 +206,12 @@ class SourceLock:
         check_canonical_order([FORMATS.index(a.format) for a in self.assets], "/assets", "asset format")
         check_canonical_order([FORMATS.index(a.format) for a in self.missing_assets], "/missing_assets",
                               "missing asset format")
+        sizes = {}
+        for asset in self.assets:
+            if sizes.setdefault(asset.sha256, (asset.asset_id, asset.bytes))[1] != asset.bytes:
+                first, size = sizes[asset.sha256]
+                raise bad("/assets", f"{asset.asset_id} and {first} share digest {asset.sha256} but declare "
+                                     f"{asset.bytes} and {size} bytes")
         total = sum(a.bytes for a in self.assets)
         if total > MAX_SOURCE_PAYLOAD_BYTES:
             raise bad("/assets", f"assets total {total} bytes; the limit is {MAX_SOURCE_PAYLOAD_BYTES}",

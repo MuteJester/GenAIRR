@@ -2393,3 +2393,39 @@ def test_alignment_derived_claims_rest_on_exact_mappings(inv):
     with _raises("malformed") as caught:
         inv.build(claims=inv.claims + [claim], **fields)
     assert caught.error.path.endswith("/mappings/0") and "mismatch" in caught.error.message
+
+
+# ── identical locked bytes ───────────────────────────────────────────
+
+
+def _shared_bytes_lock(bytes_delta=0):
+    d = lock_dict()
+    (gapped,) = [a for a in d["assets"] if a["format"] == "gapped"]
+    for asset in d["assets"]:
+        if asset["format"] == "gapped_ex":
+            asset["sha256"], asset["bytes"] = gapped["sha256"], gapped["bytes"] + bytes_delta
+    return _reseal(d)
+
+
+def test_one_digest_has_one_size_in_a_lock():
+    m.SourceLock.from_dict(_shared_bytes_lock())
+    with _raises("malformed", "/assets") as caught:
+        m.SourceLock.from_dict(_shared_bytes_lock(bytes_delta=1))
+    assert "gapped" in caught.error.message
+
+
+def test_manifest_holds_one_blob_for_assets_with_identical_bytes(report):
+    lock = m.SourceLock.from_dict(_shared_bytes_lock())
+    d = manifest_dict(report)
+    d["hashes"]["source_lock"] = lock.commitment
+    names = {"cache/blobs/sha256/" + a.blob_name: a for a in lock.assets}
+    d["members"] = [x for x in d["members"] if not x["name"].startswith("cache/")]
+    d["members"] += [{"name": n, "sha256": a.sha256, "bytes": a.bytes} for n, a in names.items()]
+    d["members"].sort(key=lambda x: x["name"])
+    assert len(names) == 3
+    m.check_manifest(m.BuildManifest.from_dict(d), lock)
+    shared = "cache/blobs/sha256/" + lock.asset("gapped").blob_name
+    d["members"] = [x for x in d["members"] if x["name"] != shared]
+    with _raises("missing_asset", "/members") as caught:
+        m.check_manifest(m.BuildManifest.from_dict(d), lock)
+    assert "gapped" in caught.error.message
