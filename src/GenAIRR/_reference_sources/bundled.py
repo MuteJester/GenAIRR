@@ -119,7 +119,10 @@ def _archive_entries(archive: zipfile.ZipFile, where: str) -> list:
         raise bad("", f"{where} holds more than {_MAX_ENTRIES} entries", "resource_limit")
     names, folded, total = set(), set(), 0
     for entry_ in entries:
-        name = entry_.filename
+        name = entry_.orig_filename                     # as stored: zipfile cuts a NUL and, on Windows, maps '\\'
+        if name != entry_.filename:
+            raise bad("", f"{where} holds an entry stored as {name!r}, which is read back as "
+                          f"{entry_.filename!r} (a NUL or a backslash in its name)")
         if name.endswith("/"):
             raise bad("", f"{where} holds a directory entry {name!r}; it holds only the dossier's member files")
         try:

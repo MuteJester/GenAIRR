@@ -1374,6 +1374,15 @@ def _encrypted(data: bytes) -> bytes:
     return bytes(out)
 
 
+def _raw_name(placeholder: str, raw: bytes) -> bytes:
+    """An archive whose one entry is stored under the raw name ``raw``, patched into the bytes
+    after writing: the writer (and, on Windows, the reader) turns a backslash into '/', and
+    names are cut at a NUL when read, so such names cannot be passed through ``zipfile``."""
+    data = archive_bytes([(placeholder, b">a\n")])
+    assert len(placeholder.encode("ascii")) == len(raw) and data.count(placeholder.encode("ascii")) == 2
+    return data.replace(placeholder.encode("ascii"), raw)
+
+
 def _flip_first_payload_byte(data: bytes, payload: bytes) -> bytes:
     at = data.index(payload)
     return data[:at] + bytes([payload[0] ^ 0x01]) + data[at + 1:]
@@ -1386,7 +1395,8 @@ ARCHIVE_DEFECTS = {
     "parent-component": (lambda: archive_bytes([("../manifest.json", b"{}\n")]), "malformed"),
     "inner-parent": (lambda: archive_bytes([("inputs/../manifest.json", b"{}\n")]), "malformed"),
     "absolute": (lambda: archive_bytes([("/manifest.json", b"{}\n")]), "malformed"),
-    "backslash": (lambda: archive_bytes([("inputs\\v.fasta", b">a\n")]), "malformed"),
+    "backslash": (lambda: _raw_name("inputs_v.fasta", b"inputs\\v.fasta"), "malformed"),
+    "nul-in-name": (lambda: _raw_name("manifest.json_x", b"manifest.json\x00x"), "malformed"),
     "drive": (lambda: archive_bytes([("C:/manifest.json", b"{}\n")]), "malformed"),
     "colon": (lambda: archive_bytes([("inputs/v.fasta:stream", b">a\n")]), "malformed"),
     "duplicate": (lambda: archive_bytes([("manifest.json", b"{}\n"), ("manifest.json", b"[]\n")]), "malformed"),
