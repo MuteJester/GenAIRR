@@ -627,6 +627,24 @@ def _check_runtime(reference: Reference, build: _Build, document: dict) -> None:
                                        f"{build.recipe.defaults_profile!r}", "projection")
 
 
+def _check_requirements(recipe: Recipe, capabilities) -> None:
+    """Each recipe requirement is satisfied by the built reference's capabilities: available at an
+    evidence level at least the required one."""
+    for i, requirement in enumerate(recipe.requires):
+        if requirement.capability in capabilities.available(evidence=requirement.evidence):
+            continue
+        status = capabilities.status(requirement.capability)
+        parts = [f"required capability {requirement.capability} at evidence {requirement.evidence} is not "
+                 "available on the built reference"]
+        if status.available:
+            parts.append(f"it is available only at evidence {status.evidence}")
+        if status.unmet:
+            parts.append("unmet: " + "; ".join(f"{u.allele}: {u.requirement} ({u.hint})" for u in status.unmet))
+        if status.note:
+            parts.append(status.note)
+        raise bad(ptr("/requires", i), "; ".join(parts), "capability")
+
+
 # ── the entry point ──────────────────────────────────────────────────
 
 
@@ -668,6 +686,7 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     document = json.loads(reference.to_json())
     _check_runtime(reference, build, document)
     capabilities = reference.capabilities()
+    _check_requirements(recipe, capabilities)
     available = {level: capabilities.available(evidence=level) for level in ("assertion", "source")}
 
     comparison = ogrdb.comparison(lock, inventory)

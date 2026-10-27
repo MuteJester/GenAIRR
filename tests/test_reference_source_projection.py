@@ -14,6 +14,7 @@ endings) are registered as validated for one test only, by monkeypatching the pr
 from __future__ import annotations
 
 import collections
+import dataclasses
 import hashlib
 import json
 import re
@@ -22,7 +23,7 @@ import pytest
 
 import GenAIRR
 from GenAIRR._reference.artifact import Reference
-from GenAIRR._reference_sources import evidence, ogrdb, projection
+from GenAIRR._reference_sources import common, evidence, ogrdb, projection
 from GenAIRR._reference_sources import model as m
 from tests.test_ogrdb_source_coordinates import V_LABEL, in_scope, small
 from tests.test_ogrdb_source_inventory import (
@@ -716,3 +717,144 @@ def test_a_label_that_a_fasta_header_would_not_give_back_is_refused_or_excluded(
     outcomes = [o for o in result.report.records if result.report.inventory.record(o.record).label == PIPED]
     assert [o.exclusion for o in outcomes] == ["structural_incompatibility"] * 2
     assert all("'IGLJ7*02'" in o.detail for o in outcomes)
+
+
+# ── required capabilities, defaults and decisions ────────────────────
+
+
+@pytest.mark.parametrize("capability, level, parts", [
+    ("original_coding_ends", "assertion", (f"V:{V_LABEL}", f"J:{J1}", 'add "boundary_3"', 'add "boundary_5"')),
+    ("canonical_productive", "source", ("available only at evidence assertion", "phase support: anchor_derived")),
+    ("genotype_constrained", "assertion", ("not yet supported",)),
+])
+def test_an_unmet_required_capability_fails_the_build(monkeypatch, capability, level, parts):
+    blobs, lock = mini(monkeypatch)
+    document = mini_recipe(blobs, lock, requires=(("observed_span_simulation", "assertion"), (capability, level)))
+    found = error("capability", build, lock, blobs, document)
+    assert found.path == "/requires/1"
+    for part in (capability, f"evidence {level}") + parts:
+        assert part in found.message
+
+
+def test_a_withheld_accepted_anchor_withholds_its_phase_and_drops_the_junction(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    inventory = interpreted(blobs, lock)
+    anchor, phase = (claim_id(inventory, "airr", V_LABEL, p) for p in ("anchor", "coding_phase"))
+    v_digest = entry(blobs, "airr", V_LABEL)["sequence_sha256"]
+    decisions = [withhold([anchor], v_digest)]
+    result = build(lock, blobs, mini_recipe(blobs, lock, decisions=decisions))
+    v = result.reference.alleles[0]
+    assert (v.label, v.anchor, v.coding_phase) == (V_LABEL, None, None)
+    outcomes = {o.claim: o for o in result.report.claims}
+    assert (outcomes[anchor].outcome, outcomes[anchor].decision) == ("withheld", 0)
+    assert (outcomes[phase].outcome, outcomes[phase].decision) == ("withheld", None)
+    assert "anchor" in outcomes[phase].reason
+    status = result.reference.capabilities().status("source_annotated_junction")
+    assert not status.available and f"V:{V_LABEL}" in {u.allele for u in status.unmet}
+    document = mini_recipe(blobs, lock, decisions=decisions,
+                           requires=(("source_annotated_junction", "assertion"),))
+    found = error("capability", build, lock, blobs, document)
+    assert found.path == "/requires/0" and f"V:{V_LABEL}" in found.message and "anchor" in found.message
+
+
+def test_a_record_whose_own_claims_cannot_meet_a_requirement_is_excluded_for_missing_evidence(monkeypatch):
+    def drop_gapped(fmt, header, sequence):           # IGLV1-40*01 then has no bound anchor
+        return None if header == "IGLV1-40*01" else (header, sequence)
+    labels = (V_LABEL, "IGLV3-32*01", "IGLV1-40*01", J1)
+    blobs, lock = mini(monkeypatch, labels, gapped_edit=drop_gapped)
+    requires = (("source_annotated_junction", "source"), ("canonical_productive", "assertion"))
+    result = build(lock, blobs, mini_recipe(blobs, lock, requires=requires))
+    details = {}
+    for outcome in result.report.records:
+        label = result.report.inventory.record(outcome.record).label
+        if outcome.outcome == "excluded" and label != V_LABEL and label != J1:
+            assert outcome.exclusion == "missing_required_evidence"
+            details.setdefault(label, set()).add(outcome.detail)
+    assert set(details) == {"IGLV3-32*01", "IGLV1-40*01"}
+    (tyr,) = details["IGLV3-32*01"]                    # TAT at its anchor: not the conserved Cys
+    assert "canonical_productive" in tyr and "conserved residue" in tyr and "source_annotated_junction" not in tyr
+    (unbound,) = details["IGLV1-40*01"]
+    assert "source_annotated_junction at evidence source: no accepted anchor" in unbound
+    assert all(r.satisfied for r in result.report.requirements)
+
+
+def test_the_built_defaults_profile_must_be_the_recipe_profile(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    # a second registered defaults profile, so that a recipe can name one the build does not use
+    monkeypatch.setattr(common, "DEFAULTS_PROFILES", common.DEFAULTS_PROFILES + ("genairr.other_defaults.v1",))
+    document = mini_recipe(blobs, lock)
+    document["defaults_profile"] = "genairr.other_defaults.v1"
+    found = error("projection", build, lock, blobs, document)
+    assert found.path == "/defaults_profile" and "genairr.unfitted_defaults.v1" in found.message
+
+
+def _set_j(label, field_name, value):
+    def edit(fmt, record):
+        if record["label"] == label:
+            record[field_name] = value
+    return edit
+
+
+def test_an_accepted_claim_named_by_accept_claim_keeps_its_support_and_records_the_decision(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    inventory = interpreted(blobs, lock)
+    anchor = claim_id(inventory, "airr", J1, "anchor")
+    (index,) = [i for i, r in enumerate(records_in(blobs, "airr")) if r["label"] == J1]
+    accept = {"action": "accept_claim", "findings": [], "claims": [anchor],
+              "sequence_sha256": entry(blobs, "airr", J1)["sequence_sha256"], "reason": "reviewed",
+              "evidence": [{"asset": "airr", "pointer": f"{RECORDS}/{index}/j_cdr3_end"}]}
+    result = build(lock, blobs, mini_recipe(blobs, lock, decisions=[accept]))
+    (outcome,) = [o for o in result.report.claims if o.claim == anchor]
+    assert (outcome.outcome, outcome.decision) == ("projected", 0)
+    assert result.reference.alleles[-1].anchor.support == "source"
+
+
+def test_accept_claim_cannot_force_a_phase_without_a_projected_anchor(monkeypatch):
+    blobs, lock = mini(monkeypatch, edit=_set_j(J1, "j_cdr3_end", None))
+    no_native(monkeypatch)
+    inventory = interpreted(blobs, lock)
+    phase = claim_id(inventory, "airr", J1, "coding_phase")
+    assert inventory.claim(phase).status == "candidate"
+    (index,) = [i for i, r in enumerate(records_in(blobs, "airr")) if r["label"] == J1]
+    accept = {"action": "accept_claim", "findings": [], "claims": [phase],
+              "sequence_sha256": entry(blobs, "airr", J1)["sequence_sha256"], "reason": "reviewed",
+              "evidence": [{"asset": "airr", "pointer": f"{RECORDS}/{index}/j_codon_frame"}]}
+    found = error("projection", build, lock, blobs, mini_recipe(blobs, lock, decisions=[accept]))
+    assert found.path == "/decisions/0" and f"J:{J1}" in found.message and "anchor" in found.message
+
+
+def test_a_candidate_named_by_accept_claim_is_projected_as_an_assertion_citing_the_decision(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    real = evidence.interpret
+
+    def demoted(lock_, assets, inventory):
+        """The real interpretation with the V anchor demoted to a candidate (a value whose meaning a
+        profile has not established), so a decision can accept it."""
+        result = real(lock_, assets, inventory)
+        claims = tuple(dataclasses.replace(c, status="candidate", support="none")
+                       if c.predicate == "anchor" and result.subject_record(c).label == V_LABEL else c
+                       for c in result.claims)
+        fields = {name: getattr(result, name) for name in ("source_lock_hash", "adapter", "records", "candidates",
+                                                           "mentioned_identities", "observations", "support",
+                                                           "mappings", "findings")}
+        return m.SourceInventory.assemble(claims=claims, **fields)
+
+    monkeypatch.setattr(evidence, "interpret", demoted)
+    inventory = demoted(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    anchor = claim_id(inventory, "airr", V_LABEL, "anchor")
+    (index,) = [i for i, r in enumerate(records_in(blobs, "airr")) if r["label"] == V_LABEL]
+    cdr3 = {"asset": "airr", "pointer": f"{RECORDS}/{index}/v_gene_delineations/0/cdr3_start"}
+    accept = {"action": "accept_claim", "findings": [], "claims": [anchor],
+              "sequence_sha256": entry(blobs, "airr", V_LABEL)["sequence_sha256"], "reason": "reviewed",
+              "evidence": [cdr3]}
+    without = build(lock, blobs, mini_recipe(blobs, lock))
+    assert without.reference.alleles[0].anchor is None
+    result = build(lock, blobs, mini_recipe(blobs, lock, decisions=[accept]))
+    v = result.reference.alleles[0]
+    assert (v.anchor.value, v.anchor.support) == (inventory.claim(anchor).value.get(), "assertion")
+    assert v.anchor.source.startswith("recipe decision 0: airr ") and cdr3["pointer"] in v.anchor.source
+    assert v.coding_phase.value == v.anchor.value % 3
+    (outcome,) = [o for o in result.report.claims if o.claim == anchor]
+    assert (outcome.outcome, outcome.decision) == ("projected", 0)
+    status = result.reference.capabilities().status("source_annotated_junction")
+    assert not status.available and f"V:{V_LABEL}" in {u.allele for u in status.unmet}
