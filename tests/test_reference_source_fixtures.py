@@ -408,6 +408,56 @@ def test_igh_record_choices_take_the_airr_record_and_keep_the_extension_as_alter
             assert record["v_rs_start"] is None and row["extension_reaches_rss_minus_1"] is None
 
 
+AFFIRMED_UP_TO = re.compile(r"up to and including (?:nucleotide|base) (\d+)")
+SPAN_NOTE = re.compile(r"up to and including|insufficient evidence|trailing")
+
+
+def test_the_record_choice_reason_states_where_the_selected_v_end():
+    """Every number in the record-choice reason reads off the raw bytes: IMGT gapped end
+    positions, declared RSS starts, the first span a curation note affirms, the extensions."""
+    key = "9606.IGH_VDJ/10"
+    airr, airr_ex, gapped = _by_label(key, "airr"), _by_label(key, "airr_ex"), _fasta(key, "gapped")
+    selected_v = SELECTION["selected"]["V"]
+    choices = [row["label"] for row in SELECTION["record_choices"]]
+    reason = " ".join(SELECTION["record_choice_reason"].split())
+    assert "same span definition" not in reason
+    end = {label: len(gapped[label].rstrip(".")) for label in selected_v}
+    for label in selected_v:                                # every selected V ends at gene_end
+        record = airr[label]
+        assert record["sequence"][record["gene_start"] - 1:record["gene_end"]] == record["coding_sequence"]
+    assert {end[label] for label in choices} == {319} and len(choices) == 14
+    others = Counter(end[label] for label in selected_v if label not in choices)
+    assert sorted(others) == [320, 322]
+    assert (f"while the other {sum(others.values())} selected V end at position 320 ({others[320]}) or 322 "
+            f"({others[322]})") in reason
+    adjacent = sum(1 for label in selected_v if airr[label]["v_rs_start"] == airr[label]["gene_end"] + 1)
+    assert f"{adjacent} of the {len(selected_v)} have their declared V RSS start directly after gene_end" in reason
+    stated = {}
+    for label in selected_v:
+        match = AFFIRMED_UP_TO.search(airr[label]["curation"] or "")
+        if match:
+            stated[label] = int(match.group(1))
+    noted = [label for label in selected_v if SPAN_NOTE.search(airr[label]["curation"] or "")]
+    exact = sorted(label for label, column in stated.items() if end[label] == column)
+    beyond = sorted(label for label, column in stated.items() if end[label] > column)
+    assert sorted(exact) == sorted(choices + ["IGHV3-21*07"]) and len(exact) + len(beyond) == len(stated)
+    assert sorted(set(noted) - set(stated)) == ["IGHV1-3*04"] and set(stated) <= set(noted)
+    assert (f"of the {len(noted)} whose curation note limits the affirmed span or marks likely further bases, "
+            f"{len(exact)} end exactly at the affirmed position (these 14 and IGHV3-21*07), {len(beyond)} extend "
+            "past it and IGHV1-3*04's note names no position") in reason
+    extensions = {label: airr_ex[label]["coding_sequence"][len(airr[label]["coding_sequence"]):] for label in choices}
+    assert extensions.pop("IGHV3-9*04") == "ATA" and set(extensions.values()) == {"A"}
+    assert "1 nt (A; IGHV3-9*04: 3 nt, ATA)" in reason
+    assert "for IGHV3-7*04 that base lies directly before its declared V RSS start" in reason
+    terminal = [label for label in choices if airr[label]["v_rs_start"] is None
+                and airr[label]["sequence"][airr[label]["gene_end"]:] == airr_ex[label]["coding_sequence"][
+                    len(airr[label]["coding_sequence"]):]]
+    assert len(terminal) == 13 and "IGHV3-7*04" not in terminal
+    assert "for the other 13, which declare no V RSS start, the bases are the end of the record sequence itself" \
+        in reason
+    assert "stops 1 nt (IGHV3-9*04: 3 nt) short of its 'airr_ex' end" in reason
+
+
 def test_igh_omissions_list_every_failed_rule():
     omitted = {row["label"]: [f["rule"] for f in row["failed_rules"]] for row in SELECTION["omitted"]}
     expected = {label: ["explicit_record_choice", "not_tagged_likely_truncated"] for label in EXTENDED_AND_TRUNCATED}
