@@ -13,11 +13,20 @@ from GenAIRR._reference_sources.common import (  # noqa: F401
     ADAPTER_ID, ADAPTER_VERSION, CHAIN_TYPES, COORDINATE_PROFILE_ID, COORDINATE_PROFILE_VERSION,
     DEFAULTS_PROFILES, EVIDENCE_FORMATS, FORMAT_ROLES, FORMATS, GAPPED_VARIANT, LOCUS_CHAIN_TYPES,
     PROJECTION_ID, PROJECTION_VERSION, PROVIDERS, RECORD_EXPORT_FORMATS, ROLES, SEGMENTS,
-    SUPPORTED_ADAPTERS, SUPPORTED_PROJECTIONS, AdapterRef, CoordinateProfileRef, Generator, Locator,
+    SUPPORTED_ADAPTERS, SUPPORTED_PROJECTIONS, CLAIM_ID_RE, FINDING_ID_RE, MAPPING_ID_RE, AdapterRef, CoordinateProfileRef, Generator, Locator,
     ProjectionRef, RuntimeHashes, SourceIdentity, Taxon,
 )
 from GenAIRR._reference_sources.lock import (  # noqa: F401
     MAX_ASSET_BYTES, MAX_LOCK_BYTES, MISSING_REASONS, ORIGIN_KINDS, TERMS_STATUSES, Asset, MissingAsset,
     SourceLock, Terms,
 )
-from GenAIRR._reference_sources.digests import DOMAINS, lock_hash  # noqa: F401
+from GenAIRR._reference_sources.receipt import (  # noqa: F401
+    MAX_RECEIPT_BYTES, RECEIPT_HEADERS, RECEIPT_ORIGINS, AcquisitionReceipt,
+)
+from GenAIRR._reference_sources.recipe import (  # noqa: F401
+    DECISION_ACTIONS, EVIDENCE_LEVELS, MAX_RECIPE_BYTES, Decision, Recipe, RecipeReference, Requirement,
+    SelectionEntry,
+)
+from GenAIRR._reference_sources.consistency import check_recipe  # noqa: F401
+from GenAIRR._reference_sources.digests import DOMAINS, lock_hash, recipe_hash  # noqa: F401
+from GenAIRR._reference.model import sequence_digest  # noqa: F401

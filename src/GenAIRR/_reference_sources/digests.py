@@ -17,14 +17,21 @@ from __future__ import annotations
 
 from GenAIRR._reference_sources._fields import digest
 from GenAIRR._reference_sources.lock import DIGEST_DOMAIN as LOCK_DOMAIN, SourceLock
+from GenAIRR._reference_sources.recipe import Recipe
+
+INVENTORY_DOMAIN = "genairr_reference_source_inventory_v1"
+RECIPE_DOMAIN = "genairr_reference_source_recipe_v1"
+BUILD_INPUTS_DOMAIN = "genairr_reference_source_build_inputs_v1"
+REPORT_DOMAIN = "genairr_reference_source_build_report_v1"
+MANIFEST_DOMAIN = "genairr_reference_source_build_manifest_v1"
 
 DOMAINS = (
     LOCK_DOMAIN,
-    "genairr_reference_source_inventory_v1",
-    "genairr_reference_source_recipe_v1",
-    "genairr_reference_source_build_inputs_v1",
-    "genairr_reference_source_build_report_v1",
-    "genairr_reference_source_build_manifest_v1",
+    INVENTORY_DOMAIN,
+    RECIPE_DOMAIN,
+    BUILD_INPUTS_DOMAIN,
+    REPORT_DOMAIN,
+    MANIFEST_DOMAIN,
 )
 
 
@@ -37,3 +44,9 @@ def lock_hash(lock: SourceLock) -> str:
     """``genairr_reference_source_lock_v1`` over every lock field but the commitment (= the commitment)."""
     _require(lock, SourceLock, "lock")
     return digest(lock.body(), LOCK_DOMAIN)
+
+
+def recipe_hash(recipe: Recipe) -> str:
+    """``genairr_reference_source_recipe_v1`` over the complete recipe (which holds the lock hash)."""
+    _require(recipe, Recipe, "recipe")
+    return digest(recipe.to_dict(), RECIPE_DOMAIN)

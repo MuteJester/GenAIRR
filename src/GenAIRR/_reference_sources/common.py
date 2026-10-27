@@ -52,6 +52,11 @@ SUPPORTED_ADAPTERS = {
 }
 SUPPORTED_PROJECTIONS = ((PROJECTION_ID, PROJECTION_VERSION),)
 
+# Content-derived identifiers of inventory items (see the inventory module).
+CLAIM_ID_RE = re.compile(r"claim:[0-9a-f]{64}")
+FINDING_ID_RE = re.compile(r"finding:[0-9a-f]{64}")
+MAPPING_ID_RE = re.compile(r"mapping:[0-9a-f]{64}")
+
 _PROFILE_ID_RE = re.compile(r"[a-z][a-z0-9_.]{0,63}")
 _ASSET_ID_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _GENERATOR_VERSION_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}")
