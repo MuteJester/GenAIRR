@@ -22,17 +22,22 @@ difference; it is not a production path.
 """
 from __future__ import annotations
 
+import copy
 import dataclasses
+import functools
 import hashlib
 import json
 
 import pytest
 
+from GenAIRR._reference_sources import consistency
 from GenAIRR._reference_sources import coordinates as c
+from GenAIRR._reference_sources import evidence
 from GenAIRR._reference_sources import model as m
 from GenAIRR._reference_sources import profiles
 from tests.test_ogrdb_source_inventory import (
-    EXPECT, IGH, IGK, IGL, ROOT, error, raw, raw_records,
+    ALL, EXPECT, IGH, IGK, IGL, ROOT, SETS, _key, build, encode, error, inventory_of, payload, pinned, raw,
+    raw_records,
 )
 
 EVIDENCE = json.loads((ROOT / "interpretation_evidence.json").read_bytes().decode("utf-8"))
@@ -45,10 +50,18 @@ NOTE_LABELS = tuple(row["label"] for row in EXPECT["igl4_airr_ex_coding_end_obse
 # ── helpers ──────────────────────────────────────────────────────────
 
 
+@functools.lru_cache(maxsize=None)
+def _raw_by_label(source, fmt) -> dict:
+    found: dict = {}
+    for record in raw_records(source, fmt):
+        found.setdefault(record["label"], []).append(record)
+    return found
+
+
 def raw_record(source, fmt, label) -> dict:
-    """One record of a raw export, read with the standard library JSON reader."""
-    (record,) = [r for r in raw_records(source, fmt) if r["label"] == label]
-    return record
+    """One record of a raw export, read with the standard library JSON reader (a fresh copy)."""
+    (record,) = _raw_by_label(source, fmt)[label]
+    return copy.deepcopy(record)
 
 
 def raw_gapped(source, fmt, label) -> str:
@@ -478,3 +491,529 @@ def test_a_reviewed_note_stays_unresolved_without_a_matching_alignment_or_sequen
                                             ("GCT", "A"), ("TAT", "Y"), ("TGA", "*"), ("GGT", "G")])
 def test_landmark_codons_translate_with_the_standard_code(codon, residue):
     assert c.residue(codon) == residue
+
+
+# ── interpreted inventories ──────────────────────────────────────────
+
+GAPPED = {"airr": "gapped", "airr_ex": "gapped_ex"}
+J_CODONS = {"9606.IGH_VDJ": {"TGG"}, "9606.IGKappa_VJ": {"TTT", "TTC"}, "9606.IGLambda_VJ": {"TTT", "TTC"}}
+_INTERPRETED: dict = {}
+
+
+def interpreted(source, formats=ALL):
+    """(lock, interpreted inventory) of the pinned bytes, built once per module run."""
+    key = (source, tuple(formats))
+    if key not in _INTERPRETED:
+        lock, inventory = inventory_of(source, formats)
+        _INTERPRETED[key] = (lock, evidence.interpret(lock, pinned(source, formats), inventory))
+    return _INTERPRETED[key]
+
+
+def interpret(blobs, source=IGL):
+    lock, inventory = build(source, blobs)
+    return lock, evidence.interpret(lock, blobs, inventory)
+
+
+def record_of(inventory, fmt, label):
+    (record,) = [r for r in inventory.records if r.locator.asset == fmt and r.label == label]
+    return record
+
+
+def candidate_of(inventory, fmt, label):
+    (candidate,) = inventory.candidates_of(record_of(inventory, fmt, label).locator)
+    return candidate
+
+
+def claim_of(inventory, subject, predicate):
+    locator = subject.locator
+    (claim,) = [x for x in inventory.claims if x.subject == locator and x.predicate == predicate]
+    return claim
+
+
+def claims(inventory, predicate, fmt=None, segment=None):
+    found = []
+    for claim in inventory.claims:
+        if claim.predicate != predicate or (fmt is not None and claim.subject.asset != fmt):
+            continue
+        if segment is not None and inventory.subject_record(claim).segment != segment:
+            continue
+        found.append(claim)
+    return found
+
+
+def findings(inventory, code) -> list:
+    return [f for f in inventory.findings if f.code == code]
+
+
+def labels_in(inventory, finding) -> set:
+    return {inventory.record(s).label for s in finding.subjects if s.id in {r.id for r in inventory.records}}
+
+
+def at(record, *tokens) -> m.Locator:
+    return m.Locator(record.locator.asset, "/".join((record.locator.pointer,) + tuple(str(t) for t in tokens)))
+
+
+def small(source, labels, *, formats=ALL, edit=None, gapped_edit=None) -> dict:
+    """The pinned exports restricted to ``labels`` (JSON records and gapped records), then
+    edited: ``edit(fmt, record)`` for each kept JSON record, ``gapped_edit(fmt, header, sequence)``
+    returning ``(header, sequence)`` or ``None`` (drop) for each kept gapped record."""
+    blobs = {}
+    for fmt in formats:
+        if fmt in GAPPED:
+            document = payload(source, fmt)
+            germline_set = document["GermlineSet"][0]
+            germline_set["allele_descriptions"] = [r for r in germline_set["allele_descriptions"]
+                                                   if r["label"] in labels]
+            for record in germline_set["allele_descriptions"]:
+                if edit is not None:
+                    edit(fmt, record)
+            blobs[fmt] = encode(document)
+            continue
+        lines = []
+        for chunk in raw(source, fmt).decode("utf-8").split(">")[1:]:
+            header, _, body = chunk.partition("\n")
+            header = header.rstrip("\r")
+            if header not in labels:
+                continue
+            kept = (header, "".join(line.rstrip("\r") for line in body.split("\n")))
+            if gapped_edit is not None:
+                kept = gapped_edit(fmt, *kept)
+            if kept is not None:
+                lines.append(f">{kept[0]}\n{kept[1]}\n")
+        blobs[fmt] = "".join(lines).encode("utf-8")
+    return blobs
+
+
+def in_scope(monkeypatch, lock) -> None:
+    """Register this (synthetic) lock's exact bytes as validated, as a reviewed profile extension would."""
+    pinned_assets = tuple((a.format, a.sha256, a.bytes) for a in lock.assets
+                          if a.role in ("record_export", "gapped_alignment"))
+    key = ("ogrdb_api_v2_human_ig_observed_v1", 1)
+    release = (lock.identity.taxon.taxonomy_id, lock.set_id, lock.release)
+    scopes = dict(consistency.PROFILE_SCOPES)
+    scopes[key] = tuple(e for e in scopes[key] if e[:3] != release) + (release + (pinned_assets,),)
+    monkeypatch.setattr(consistency, "PROFILE_SCOPES", scopes)
+    assert m.profile_scope_problem(lock) is None
+
+
+def interpret_in_scope(monkeypatch, blobs, source=IGL):
+    lock, inventory = build(source, blobs)
+    in_scope(monkeypatch, lock)
+    return lock, evidence.interpret(lock, blobs, inventory)
+
+
+def assert_status(claim, status, support, derivation, value=None):
+    assert (claim.status, claim.support, claim.derivation) == (status, support, derivation), claim
+    if value is not None:
+        assert claim.value.get() == value
+
+
+# ── J in the pinned exports ──────────────────────────────────────────
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_every_j_occurrence_gets_a_source_stated_anchor_and_phase_value(source):
+    lock, inventory = interpreted(source)
+    key = f"{source[0]}/{source[1]}"
+    for fmt in GAPPED:
+        anchors = claims(inventory, "anchor", fmt, "J")
+        assert len(anchors) == EXPECT["sets"][key][fmt]["J"]
+        for anchor in anchors:
+            record = inventory.subject_record(anchor)
+            raw_j = raw_record(source, fmt, record.label)
+            assert_status(anchor, "accepted", "source", "stated", raw_j["j_cdr3_end"] - 1)
+            assert anchor.coordinate_system == "coding_sequence"
+            assert anchor.evidence == (at(record, "j_cdr3_end"),) and anchor.mappings == ()
+            candidate = inventory.candidate(anchor.subject)
+            assert candidate.sequence[anchor.value.get():anchor.value.get() + 3] in J_CODONS[source[0]]
+            phase = claim_of(inventory, candidate, "coding_phase")
+            assert_status(phase, "accepted", "source", "stated", raw_j["j_codon_frame"] - 1)
+            assert phase.evidence == (at(record, "j_codon_frame"),)
+            independence = claim_of(inventory, candidate, "phase_independence")
+            assert_status(independence, "unresolved", "none", "stated")
+            assert independence.value.get() is None
+            assert set(independence.evidence) == {at(record, "j_cdr3_end"), at(record, "j_codon_frame")}
+
+
+@pytest.mark.parametrize("example", EXPECT["j_examples"], ids=lambda e: e["label"])
+def test_j_examples_in_the_interpreted_inventory(example):
+    _, inventory = interpreted(SET_KEYS[example["set"]])
+    candidate = candidate_of(inventory, example["export"], example["label"])
+    assert claim_of(inventory, candidate, "anchor").value.get() == example["anchor_coding0"]
+    assert claim_of(inventory, candidate, "coding_phase").value.get() == example["phase"]
+
+
+def test_no_j_phase_is_ever_claimed_independent():
+    for source in SETS:
+        _, inventory = interpreted(source)
+        for claim in claims(inventory, "phase_independence", segment="J"):
+            assert claim.status == "unresolved" and claim.value.get() is None
+
+
+# ── V in the pinned exports ──────────────────────────────────────────
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_every_v_occurrence_is_bound_to_its_own_gapped_record_and_accepted(source):
+    lock, inventory = interpreted(source)
+    key = f"{source[0]}/{source[1]}"
+    mappings = {x.id: x for x in inventory.mappings}
+    for fmt in GAPPED:
+        anchors = claims(inventory, "anchor", fmt, "V")
+        assert len(anchors) == EXPECT["sets"][key][fmt]["V"]
+        for anchor in anchors:
+            record = inventory.subject_record(anchor)
+            cdr3_start = imgt_cdr3_start(raw_record(source, fmt, record.label))
+            assert_status(anchor, "accepted", "source", "stated", cdr3_start - 4)
+            (mapping_id,) = anchor.mappings
+            mapping = mappings[mapping_id]
+            assert (mapping.kind, mapping.validation, mapping.input, mapping.output.asset) == (
+                "gapped_alignment", "exact", anchor.subject, GAPPED[fmt])
+            gapped = inventory.observation(mapping.output).value.get()
+            assert gapped["header"] == record.label
+            assert gapped["sequence"] == raw_gapped(source, GAPPED[fmt], record.label)
+            (delineation,) = [j for j, d in enumerate(raw_record(source, fmt, record.label)["v_gene_delineations"])
+                              if d["delineation_scheme"] == "IMGT"]
+            assert set(anchor.evidence) == {at(record, "v_gene_delineations", delineation, "cdr3_start"),
+                                            at(record, "v_gene_delineations", delineation, "delineation_scheme"),
+                                            mapping.output}
+
+
+@pytest.mark.parametrize("example", EXPECT["v_examples"], ids=lambda e: f"{e['label']}-{e['export']}")
+def test_v_examples_in_the_interpreted_inventory(example):
+    _, inventory = interpreted(SET_KEYS[example["set"]])
+    candidate = candidate_of(inventory, example["export"], example["label"])
+    anchor = claim_of(inventory, candidate, "anchor")
+    assert anchor.value.get() == example["anchor_coding0"]
+    assert candidate.sequence[example["anchor_coding0"]:example["anchor_coding0"] + 3] == example["anchor_codon"]
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_a_v_phase_is_only_ever_anchor_derived(source):
+    _, inventory = interpreted(source)
+    for anchor in claims(inventory, "anchor", segment="V"):
+        candidate = inventory.candidate(anchor.subject)
+        phase = claim_of(inventory, candidate, "coding_phase")
+        # Every V anchor in these exports is a multiple of 3 (interpretation evidence), so the
+        # anchor-derived phase is 0; it is GenAIRR's derivation, not a source-stated phase.
+        assert_status(phase, "accepted", "assertion", "anchor_derived", 0)
+        assert anchor.value.get() % 3 == 0
+        independence = claim_of(inventory, candidate, "phase_independence")
+        assert_status(independence, "accepted", "assertion", "anchor_derived", "anchor_derived")
+    assert not [x for x in inventory.claims if x.predicate == "phase_independence"
+                and x.value.get() == "independent"]
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_noncanonical_landmark_codons_are_findings_and_never_relocated(source):
+    _, inventory = interpreted(source)
+    expected = EVIDENCE["conventions"]["v_landmark"]["residues_other_than_cys_at_imgt_104"][
+        f"{source[0].split('.', 1)[1]}.{source[1]}"]
+    found = {}
+    for finding in findings(inventory, "noncanonical_landmark_codon"):
+        observations = finding.observations.get()
+        assert finding.capabilities == ("canonical_productive",)
+        assert observations["segment"] == "V" and observations["expected_residues"] == ["C"]
+        found[observations["label"]] = observations["codon"]
+        for subject in finding.subjects:
+            if subject.id in {c.id for c in inventory.candidates}:
+                anchor = claim_of(inventory, inventory.candidate(subject), "anchor")
+                assert anchor.status == "accepted" and anchor.value.get() == observations["anchor"]
+                assert inventory.candidate(subject).sequence[observations["anchor"]:observations["anchor"] + 3] == \
+                    observations["codon"]
+        carried_by = {fmt for fmt in GAPPED if any(r["label"] == observations["label"]
+                                                   for r in raw_records(source, fmt))}
+        assert {s.asset for s in finding.subjects} == carried_by
+    assert found == expected
+
+
+def test_iglv3_2_03_keeps_its_landmark_at_codon_104():
+    _, inventory = interpreted(IGL)
+    for fmt in GAPPED:
+        candidate = candidate_of(inventory, fmt, "IGLV3-2*03")
+        anchor = claim_of(inventory, candidate, "anchor")
+        assert anchor.status == "accepted" and anchor.value.get() == 258
+        assert candidate.sequence[258:261] == "GCT"
+    (finding,) = [f for f in findings(inventory, "noncanonical_landmark_codon")
+                  if f.observations.get()["label"] == "IGLV3-2*03"]
+    assert finding.observations.get() == {"label": "IGLV3-2*03", "segment": "V", "anchor": 258, "codon": "GCT",
+                                          "residue": "A", "expected_residues": ["C"],
+                                          "coordinate_system": "coding_sequence"}
+
+
+def test_identical_dna_identities_keep_their_own_gapped_records():
+    _, inventory = interpreted(IGH)
+    outputs = {}
+    for label in ("IGHV1-69*01", "IGHV1-69D*01"):
+        anchor = claim_of(inventory, candidate_of(inventory, "airr", label), "anchor")
+        (mapping_id,) = anchor.mappings
+        output = inventory.mapping(mapping_id).output
+        assert inventory.observation(output).value.get()["header"] == label
+        outputs[label] = output
+        for root in anchor.evidence:
+            assert root.is_under(record_of(inventory, "airr", label).locator) or root == output
+    assert outputs["IGHV1-69*01"] != outputs["IGHV1-69D*01"]
+    assert candidate_of(inventory, "airr", "IGHV1-69*01").sha256 == candidate_of(inventory, "airr",
+                                                                                 "IGHV1-69D*01").sha256
+
+
+def test_gapped_alignments_never_cross_export_variants():
+    for source in SETS:
+        _, inventory = interpreted(source)
+        for mapping in inventory.mappings:
+            if mapping.kind == "gapped_alignment":
+                assert mapping.output.asset == GAPPED[mapping.input.asset]
+
+
+# ── coding intervals in the pinned exports ───────────────────────────
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_the_coding_interval_is_accepted_only_where_it_reproduces_the_coding_sequence(source):
+    _, inventory = interpreted(source)
+    extended = EXPECT["sets"][f"{source[0]}/{source[1]}"]["airr_ex_coding_suffix_beyond_airr"]
+    mappings = {x.id: x for x in inventory.mappings}
+    for fmt in GAPPED:
+        for claim in claims(inventory, "coding_interval", fmt):
+            record = inventory.subject_record(claim)
+            raw_rec = raw_record(source, fmt, record.label)
+            (mapping_id,) = claim.mappings
+            mapping = mappings[mapping_id]
+            assert (mapping.kind, mapping.input, mapping.output) == ("coding_interval", at(record, "sequence"),
+                                                                    claim.subject)
+            assert set(claim.evidence) == {at(record, "gene_start"), at(record, "gene_end"), at(record, "sequence")}
+            if fmt == "airr_ex" and record.label in extended:
+                assert_status(claim, "unresolved", "none", "stated")
+                assert mapping.validation == "mismatch"
+            else:
+                assert_status(claim, "accepted", "source", "stated", [raw_rec["gene_start"] - 1, raw_rec["gene_end"]])
+                assert claim.coordinate_system == "record_sequence"
+                assert mapping.validation == "exact"
+                assert mapping.blocks == (m.Block((raw_rec["gene_start"] - 1, raw_rec["gene_end"]),
+                                                  (0, len(raw_rec["coding_sequence"]))),)
+    not_reproduced = findings(inventory, "coding_interval_not_reproduced")
+    assert {f.observations.get()["label"]: f.observations.get()["extra"] for f in not_reproduced} == extended
+    for finding in not_reproduced:
+        assert {s.asset for s in finding.subjects} == {"airr_ex"}
+        assert finding.observations.get()["relation"] == "candidate_extends_interval_3prime"
+
+
+# ── scope ────────────────────────────────────────────────────────────
+
+
+def test_a_lock_outside_the_profile_scope_gets_no_accepted_coordinate_claim():
+    blobs = pinned(IGL)
+    document = json.loads(blobs["airr"].decode("utf-8"))
+    blobs["airr"] = json.dumps(document, indent=1).encode("utf-8")       # same content, drifted bytes
+    lock, inventory = interpret(blobs)
+    assert m.profile_scope_problem(lock) is not None
+    m.check_inventory(inventory, lock)
+    coordinate = [x for x in inventory.claims if x.predicate in m.COORDINATE_PREDICATES]
+    assert coordinate and {x.status for x in coordinate} == {"candidate", "unresolved"}
+    j7 = candidate_of(inventory, "airr_ex", "IGLJ7*02")
+    assert_status(claim_of(inventory, j7, "anchor"), "candidate", "none", "stated", 7)
+    v32 = candidate_of(inventory, "airr", "IGLV3-2*03")
+    assert_status(claim_of(inventory, v32, "anchor"), "candidate", "none", "stated", 258)
+    (finding,) = findings(inventory, "coordinate_profile_out_of_scope")
+    assert finding.observations.get()["problem"] == m.profile_scope_problem(lock)
+    assert finding.capabilities == ("source_annotated_junction", "canonical_productive")
+
+
+def test_without_gapped_exports_no_v_anchor_is_accepted():
+    lock, inventory = interpreted(IGL, ("airr", "airr_ex"))
+    assert m.profile_scope_problem(lock) is None
+    for anchor in claims(inventory, "anchor", segment="V"):
+        assert_status(anchor, "unresolved", "none", "stated")
+        assert anchor.mappings == ()
+    for anchor in claims(inventory, "anchor", segment="J"):
+        assert anchor.status == "accepted"
+    unavailable = findings(inventory, "v_landmark_alignment_unavailable")
+    assert len({f.observations.get()["label"] for f in unavailable}) == 88
+    assert {f.observations.get()["reason"] for f in unavailable} == {"the gapped export is not locked",
+                                                                     "the gapped_ex export is not locked"}
+
+
+# ── V failures through the whole interpretation ──────────────────────
+
+
+V_LABEL = "IGLV1-36*01"
+
+
+def _set_cdr3(value):
+    def edit(fmt, record):
+        if record["label"] == V_LABEL:
+            record["v_gene_delineations"][0]["cdr3_start"] = value
+    return edit
+
+
+@pytest.mark.parametrize("value, problem", [
+    (0, "missing"), (None, "null"), (True, "Boolean"), (268.0, "not an integer"), (3, "below 4"),
+])
+def test_an_unusable_cdr3_start_leaves_the_v_anchor_unresolved_even_in_scope(monkeypatch, value, problem):
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {V_LABEL}, edit=_set_cdr3(value)))
+    for fmt in GAPPED:
+        candidate = candidate_of(inventory, fmt, V_LABEL)
+        assert_status(claim_of(inventory, candidate, "anchor"), "unresolved", "none", "stated")
+        assert_status(claim_of(inventory, candidate, "coding_phase"), "unresolved", "none", "anchor_derived")
+        assert claim_of(inventory, candidate, "phase_independence").status == "unresolved"
+    (finding,) = findings(inventory, "v_landmark_field_unusable")
+    assert problem in finding.observations.get()["reason"]
+    assert labels_in(inventory, finding) == {V_LABEL}
+
+
+def test_a_cdr3_start_the_gapped_record_does_not_bind_is_unresolved_even_in_scope(monkeypatch):
+    raw_v = raw_record(IGL, "airr", V_LABEL)
+    lock, inventory = interpret_in_scope(monkeypatch,
+                                         small(IGL, {V_LABEL}, edit=_set_cdr3(imgt_cdr3_start(raw_v) + 3)))
+    candidate = candidate_of(inventory, "airr", V_LABEL)
+    anchor = claim_of(inventory, candidate, "anchor")
+    assert_status(anchor, "unresolved", "none", "stated")
+    (mapping_id,) = anchor.mappings
+    assert inventory.mapping(mapping_id).validation == "exact"         # the alignment itself is fine
+    (finding,) = findings(inventory, "v_landmark_binding_failed")
+    assert "differs" in finding.observations.get()["reason"]
+
+
+def test_a_gapped_record_that_differs_from_the_coding_sequence_is_a_mismatch_mapping(monkeypatch):
+    def change(fmt, header, sequence):
+        if fmt == "gapped" and header == V_LABEL:
+            position = sequence.index("A")
+            sequence = sequence[:position] + "C" + sequence[position + 1:]
+        return header, sequence
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {V_LABEL}, gapped_edit=change))
+    anchor = claim_of(inventory, candidate_of(inventory, "airr", V_LABEL), "anchor")
+    assert_status(anchor, "unresolved", "none", "stated")
+    (mapping_id,) = anchor.mappings
+    mapping = inventory.mapping(mapping_id)
+    assert (mapping.validation, mapping.blocks) == ("mismatch", ())
+    assert claim_of(inventory, candidate_of(inventory, "airr_ex", V_LABEL), "anchor").status == "accepted"
+
+
+@pytest.mark.parametrize("gapped_edit, reason", [
+    (lambda fmt, h, s: None if fmt == "gapped" else (h, s), "no gapped record is labelled exactly"),
+    (lambda fmt, h, s: (h + "_x", s) if fmt == "gapped" else (h, s), "no gapped record is labelled exactly"),
+    (lambda fmt, h, s: (h.lower(), s) if fmt == "gapped" else (h, s), "no gapped record is labelled exactly"),
+])
+def test_only_an_exactly_labelled_gapped_record_of_the_same_variant_binds(monkeypatch, gapped_edit, reason):
+    def edit_v_only(fmt, header, sequence):
+        return gapped_edit(fmt, header, sequence) if header == V_LABEL else (header, sequence)
+    blobs = small(IGL, {V_LABEL, "IGLJ1*01"}, gapped_edit=edit_v_only)
+    lock, inventory = interpret_in_scope(monkeypatch, blobs)
+    anchor = claim_of(inventory, candidate_of(inventory, "airr", V_LABEL), "anchor")
+    assert_status(anchor, "unresolved", "none", "stated")
+    assert anchor.mappings == ()
+    (finding,) = findings(inventory, "v_landmark_alignment_unavailable")
+    assert reason in finding.observations.get()["reason"]
+    assert claim_of(inventory, candidate_of(inventory, "airr_ex", V_LABEL), "anchor").status == "accepted"
+
+
+def test_an_ambiguous_gapped_label_binds_nothing(monkeypatch):
+    blobs = small(IGL, {V_LABEL})
+    blobs["gapped"] = blobs["gapped"] + blobs["gapped"]
+    lock, inventory = interpret_in_scope(monkeypatch, blobs)
+    anchor = claim_of(inventory, candidate_of(inventory, "airr", V_LABEL), "anchor")
+    assert anchor.status == "unresolved" and anchor.mappings == ()
+    (finding,) = findings(inventory, "v_landmark_alignment_unavailable")
+    assert "2 gapped records are labelled" in finding.observations.get()["reason"]
+
+
+def test_a_label_carried_by_two_records_of_one_export_binds_no_gapped_record(monkeypatch):
+    blobs = small(IGL, {V_LABEL})
+    document = json.loads(blobs["airr"].decode("utf-8"))
+    records = document["GermlineSet"][0]["allele_descriptions"]
+    records.append(dict(records[0], allele_description_id="X1"))
+    blobs["airr"] = encode(document)
+    lock, inventory = interpret_in_scope(monkeypatch, blobs)
+    for record in [r for r in inventory.records if r.locator.asset == "airr"]:
+        (candidate,) = inventory.candidates_of(record.locator)
+        assert claim_of(inventory, candidate, "anchor").status == "unresolved"
+    (finding,) = findings(inventory, "v_landmark_alignment_unavailable")
+    assert "2 records of airr carry the label" in finding.observations.get()["reason"]
+
+
+def test_a_landmark_codon_with_a_gap_in_the_gapped_record_is_unresolved(monkeypatch):
+    def shift(fmt, header, sequence):
+        return header, (sequence[:310] + "." + sequence[310:] if fmt == "gapped" else sequence)
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {V_LABEL}, gapped_edit=shift))
+    assert claim_of(inventory, candidate_of(inventory, "airr", V_LABEL), "anchor").status == "unresolved"
+    (finding,) = findings(inventory, "v_landmark_binding_failed")
+    assert "310-312" in finding.observations.get()["reason"]
+
+
+@pytest.mark.parametrize("value, problem", [(None, "no IMGT delineation"), ([], "no IMGT delineation"),
+                                            ("x", "no IMGT delineation")])
+def test_a_v_record_without_a_single_imgt_delineation_is_unresolved(monkeypatch, value, problem):
+    def edit(fmt, record):
+        if record["label"] == V_LABEL:
+            record["v_gene_delineations"] = value
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {V_LABEL}, edit=edit))
+    anchor = claim_of(inventory, candidate_of(inventory, "airr", V_LABEL), "anchor")
+    assert anchor.status == "unresolved"
+    assert anchor.evidence[0] == at(record_of(inventory, "airr", V_LABEL), "v_gene_delineations")
+    (finding,) = findings(inventory, "v_landmark_field_unusable")
+    assert problem in finding.observations.get()["reason"]
+
+
+def test_two_imgt_delineations_are_not_chosen_between(monkeypatch):
+    def edit(fmt, record):
+        if record["label"] == V_LABEL:
+            record["v_gene_delineations"] = record["v_gene_delineations"] * 2
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {V_LABEL}, edit=edit))
+    assert claim_of(inventory, candidate_of(inventory, "airr", V_LABEL), "anchor").status == "unresolved"
+    (finding,) = findings(inventory, "v_landmark_field_unusable")
+    assert "2 IMGT delineations" in finding.observations.get()["reason"]
+
+
+# ── J failures through the whole interpretation ──────────────────────
+
+
+J_LABEL = "IGLJ7*02"
+
+
+def _set_j(field_name, value):
+    def edit(fmt, record):
+        if record["label"] == J_LABEL:
+            record[field_name] = value
+    return edit
+
+
+def test_a_stated_phase_that_disagrees_with_the_landmark_is_unsupported_even_in_scope(monkeypatch):
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {J_LABEL}, edit=_set_j("j_codon_frame", 3)))
+    for fmt in GAPPED:
+        candidate = candidate_of(inventory, fmt, J_LABEL)
+        assert_status(claim_of(inventory, candidate, "anchor"), "candidate", "none", "stated", 7)
+        assert_status(claim_of(inventory, candidate, "coding_phase"), "candidate", "none", "stated", 2)
+    (finding,) = findings(inventory, "phase_landmark_projection_unsupported")
+    assert finding.observations.get() == {"label": J_LABEL, "segment": "J", "anchor": 7, "phase": 2,
+                                          "anchor_modulo_3": 1}
+    assert finding.capabilities == ("source_annotated_junction", "canonical_productive")
+
+
+@pytest.mark.parametrize("field_name, value, problem", [
+    ("j_cdr3_end", True, "Boolean"), ("j_cdr3_end", None, "null"), ("j_cdr3_end", 8.0, "not an integer"),
+    ("j_cdr3_end", 40, "beyond"), ("j_codon_frame", False, "Boolean"), ("j_codon_frame", 4, "1, 2 or 3"),
+])
+def test_unusable_j_fields_are_unresolved_and_never_reinterpreted(monkeypatch, field_name, value, problem):
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {J_LABEL}, edit=_set_j(field_name, value)))
+    candidate = candidate_of(inventory, "airr_ex", J_LABEL)
+    unresolved, other = ("anchor", "coding_phase") if field_name == "j_cdr3_end" else ("coding_phase", "anchor")
+    assert_status(claim_of(inventory, candidate, unresolved), "unresolved", "none", "stated")
+    other_claim = claim_of(inventory, candidate, other)
+    if other == "anchor":
+        assert_status(other_claim, "accepted", "source", "stated", 7)     # the landmark stands on its own
+    else:
+        assert_status(other_claim, "candidate", "none", "stated", 1)     # a phase needs a consistent landmark
+    (finding,) = findings(inventory, "j_landmark_field_unusable")
+    observations = finding.observations.get()
+    assert observations["field"] == field_name and problem in observations["reason"]
+
+
+def test_a_noncanonical_j_codon_is_reported_where_the_source_puts_it(monkeypatch):
+    lock, inventory = interpret_in_scope(monkeypatch, small(IGL, {J_LABEL}, edit=_set_j("j_cdr3_end", 11)))
+    candidate = candidate_of(inventory, "airr_ex", J_LABEL)
+    anchor = claim_of(inventory, candidate, "anchor")
+    assert_status(anchor, "accepted", "source", "stated", 10)
+    (finding,) = findings(inventory, "noncanonical_landmark_codon")
+    observations = finding.observations.get()
+    assert (observations["anchor"], observations["codon"], observations["expected_residues"]) == (
+        10, candidate.sequence[10:13], ["F"])
