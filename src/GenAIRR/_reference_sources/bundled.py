@@ -56,21 +56,38 @@ def entry(exact_id: str) -> BundledDossier:
                   "missing_asset") from None
 
 
+def _entry_name(item, seen: set) -> str:
+    """A packaged entry's name, safe as one path component and not repeated in its directory."""
+    name = item.name
+    if (not isinstance(name, str) or name in ("", ".", "..") or "/" in name or "\\" in name or ":" in name
+            or any(ord(char) < 32 for char in name)):
+        raise bad("", f"the packaged dossier holds an entry named {name!r}, which is not a plain file or directory "
+                      "name", "malformed")
+    if name in seen:
+        raise bad("", f"the packaged dossier holds an entry named {name!r} twice", "malformed")
+    seen.add(name)
+    return name
+
+
 def _copy(source, target: Path, budget: list) -> None:
-    """Copy a packaged directory tree (any importlib resource) into ``target``, within bounds."""
+    """Copy a packaged directory tree (any importlib resource) into ``target``, within bounds: no
+    entry is read beyond the remaining byte budget."""
     target.mkdir()
-    for item in sorted(source.iterdir(), key=lambda x: x.name):
+    seen: set = set()
+    for item in sorted(source.iterdir(), key=lambda x: str(x.name)):
+        name = _entry_name(item, seen)
         budget[0] -= 1
         if budget[0] < 0:
             raise bad("", f"the packaged dossier holds more than {_MAX_ENTRIES} entries", "resource_limit")
         if item.is_dir():
-            _copy(item, target / item.name, budget)
-        else:
-            data = item.read_bytes()
-            budget[1] -= len(data)
-            if budget[1] < 0:
-                raise bad("", f"the packaged dossier holds more than {_MAX_BYTES} bytes", "resource_limit")
-            (target / item.name).write_bytes(data)
+            _copy(item, target / name, budget)
+            continue
+        with item.open("rb") as handle:
+            data = handle.read(budget[1] + 1)
+        if len(data) > budget[1]:
+            raise bad("", f"the packaged dossier holds more than {_MAX_BYTES} bytes", "resource_limit")
+        budget[1] -= len(data)
+        (target / name).write_bytes(data)
 
 
 @contextmanager
@@ -79,20 +96,25 @@ def dossier_directory(dossier: BundledDossier) -> Iterator[Path]:
 
     Where the package's resources are plain files this is the packaged directory itself;
     otherwise the dossier is copied into a private temporary directory, removed afterwards.
-    Nothing is ever written into the package.
+    Nothing is ever written into the package.  An absent dossier is ``missing_asset``.
     """
     try:
-        root = importlib.resources.files(dossier.package)
+        resource = importlib.resources.files(dossier.package)
     except (ImportError, TypeError) as exc:
         raise bad("", f"the package {dossier.package!r} of the bundled dossier cannot be found: {exc}",
                   "missing_asset") from exc
-    resource = root.joinpath(*dossier.resource.split("/"))
+    for part in dossier.resource.split("/"):         # one name per call, as resources join on Python 3.9
+        resource = resource.joinpath(part)
+    if not resource.is_dir():
+        raise bad("", f"the bundled dossier {dossier.resource} is not packaged in {dossier.package}", "missing_asset")
     if isinstance(resource, Path):
         yield resource
         return
-    if not resource.is_dir():
-        raise bad("", f"the bundled dossier {dossier.resource} is not packaged in {dossier.package}", "missing_asset")
     with tempfile.TemporaryDirectory(prefix="genairr_bundled_") as temporary:
         target = Path(temporary) / "dossier"
-        _copy(resource, target, [_MAX_ENTRIES, _MAX_BYTES])
+        try:
+            _copy(resource, target, [_MAX_ENTRIES, _MAX_BYTES])
+        except OSError as exc:
+            raise bad("", f"the bundled dossier {dossier.resource} cannot be copied out of {dossier.package}: {exc}",
+                      "io") from exc
         yield target

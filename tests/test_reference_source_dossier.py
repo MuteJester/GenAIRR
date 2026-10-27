@@ -736,20 +736,25 @@ def test_the_bundled_registry_is_closed_and_exact():
         ReferenceBuild.bundled(None)
 
 
-def packaged(tmp_path, monkeypatch, dossier: pathlib.Path, *, name="genairr_test_pkg", zipped=False):
-    """``dossier`` packaged as resource ``builds/starter`` of a throwaway importable package."""
+def packaged(tmp_path, monkeypatch, dossier: pathlib.Path, *, name="genairr_test_pkg", zipped=False, extra=()):
+    """``dossier`` packaged as resource ``builds/starter`` of a throwaway importable package; ``extra``
+    adds ``(entry name below the package, bytes)`` entries to a zipped package."""
     import shutil
     import sys
+    import warnings
     import zipfile
     root = tmp_path / "site"
     root.mkdir()
     if zipped:
         archive = root / "packages.zip"
-        with zipfile.ZipFile(archive, "w") as bundle:
+        with zipfile.ZipFile(archive, "w") as bundle, warnings.catch_warnings():
+            warnings.simplefilter("ignore")            # duplicate entry names are written on purpose
             bundle.writestr(f"{name}/__init__.py", "")
             for path in sorted(dossier.rglob("*")):
                 if path.is_file():
                     bundle.write(path, f"{name}/builds/starter/{path.relative_to(dossier).as_posix()}")
+            for entry_name, data in extra:
+                bundle.writestr(f"{name}/{entry_name}", data)
         monkeypatch.syspath_prepend(str(archive))
     else:
         (root / name).mkdir()
@@ -1078,3 +1083,103 @@ def test_a_fifo_swapped_in_after_the_scan_never_blocks_the_reader(mini, monkeypa
         pytest.fail("opening a dossier member blocked on a FIFO")
     (exc,) = outcome
     assert (exc.kind, exc.path) == ("io", "/inputs/v.fasta") and "regular file" in exc.message
+
+
+def test_a_packaged_resource_path_is_joined_one_part_at_a_time(mini, tmp_path, monkeypatch):
+    """Resource directories join one name per call, as importlib resources do on Python 3.9."""
+    import importlib.resources
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR._reference_sources.digests import manifest_hash
+    build, dossier = mini
+    packaged(tmp_path, monkeypatch, dossier, name="genairr_joined_pkg", zipped=True)
+    register(monkeypatch, bundled.BundledDossier("genairr_joined_pkg", "builds/starter", manifest_hash(build.manifest)))
+    real_files = importlib.resources.files
+
+    class OneName:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def joinpath(self, child):
+            return OneName(self._inner.joinpath(child))
+
+        def iterdir(self):
+            return (OneName(x) for x in self._inner.iterdir())
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    monkeypatch.setattr(bundled.importlib.resources, "files", lambda package: OneName(real_files(package)))
+    assert ReferenceBuild.bundled(STARTER_ID).manifest == build.manifest
+
+
+def test_a_packaged_copy_never_reads_beyond_its_byte_budget(mini, tmp_path, monkeypatch):
+    import importlib.resources
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR._reference_sources.digests import manifest_hash
+    build, dossier = mini
+    packaged(tmp_path, monkeypatch, dossier, name="genairr_budget_pkg", zipped=True)
+    register(monkeypatch, bundled.BundledDossier("genairr_budget_pkg", "builds/starter", manifest_hash(build.manifest)))
+    monkeypatch.setattr(bundled, "_MAX_BYTES", 4096)
+    real_files = importlib.resources.files
+    delivered = []
+
+    class Counted:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def joinpath(self, child):
+            return Counted(self._inner.joinpath(child))
+
+        def iterdir(self):
+            return (Counted(x) for x in self._inner.iterdir())
+
+        def read_bytes(self):
+            data = self._inner.read_bytes()
+            delivered.append(len(data))
+            return data
+
+        def open(self, mode="r", *args, **kwargs):
+            handle = self._inner.open(mode, *args, **kwargs)
+            real_read = handle.read
+
+            def read(size=-1):
+                data = real_read(size)
+                delivered.append(len(data))
+                return data
+
+            handle.read = read
+            return handle
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    monkeypatch.setattr(bundled.importlib.resources, "files", lambda package: Counted(real_files(package)))
+    error("resource_limit", ReferenceBuild.bundled, STARTER_ID)
+    assert delivered and max(delivered) <= 4096 + 1
+
+
+@pytest.mark.parametrize("extra, fragment", [
+    ((("builds/starter/../escaped.txt", b"x"),), "'..'"),
+    ((("builds/starter/inputs/v.fasta", b">again\nACGT\n"),), "twice"),
+])
+def test_a_packaged_entry_with_an_unsafe_or_repeated_name_is_a_typed_error(mini, tmp_path, monkeypatch, extra,
+                                                                             fragment):
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR._reference_sources.digests import manifest_hash
+    build, dossier = mini
+    packaged(tmp_path, monkeypatch, dossier, name="genairr_unsafe_pkg", zipped=True, extra=extra)
+    register(monkeypatch, bundled.BundledDossier("genairr_unsafe_pkg", "builds/starter", manifest_hash(build.manifest)))
+    exc = error("malformed", ReferenceBuild.bundled, STARTER_ID)
+    assert fragment in exc.message
+    assert not (tmp_path / "escaped.txt").exists()
+
+
+@pytest.mark.parametrize("zipped", [False, True])
+def test_an_absent_packaged_dossier_is_a_missing_asset(mini, tmp_path, monkeypatch, zipped):
+    from GenAIRR._reference_sources import bundled
+    build, dossier = mini
+    name = "genairr_absent_zip" if zipped else "genairr_absent_pkg"
+    packaged(tmp_path, monkeypatch, dossier, name=name, zipped=zipped)
+    register(monkeypatch, bundled.BundledDossier(name, "builds/elsewhere", "sha256:" + "0" * 64))
+    exc = error("missing_asset", ReferenceBuild.bundled, STARTER_ID)
+    assert "builds/elsewhere" in exc.message
