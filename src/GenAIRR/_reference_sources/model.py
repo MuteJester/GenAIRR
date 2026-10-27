@@ -39,7 +39,19 @@ from GenAIRR._reference_sources.inventory import (  # noqa: F401
 from GenAIRR._reference_sources.consistency import (  # noqa: F401
     check_build_inputs, check_decisions, check_inventory, check_recipe, check_selection,
 )
+from GenAIRR._reference_sources.consistency import selected_subjects  # noqa: F401
 from GenAIRR._reference_sources.digests import (  # noqa: F401
-    DOMAINS, build_input_hash, build_inputs, inventory_hash, lock_hash, recipe_hash,
+    BUILD_INPUTS_DOMAIN, DOMAINS, INVENTORY_DOMAIN, LOCK_DOMAIN, MANIFEST_DOMAIN, RECIPE_DOMAIN, REPORT_DOMAIN,
+    build_input_hash, build_inputs, inventory_hash, lock_hash, manifest_hash, recipe_hash, report_hash,
+)
+from GenAIRR._reference_sources.report import (  # noqa: F401
+    CLAIM_OUTCOMES, EXCLUSION_REASONS, MAX_REPORT_BYTES, PHASE_SUPPORTS, RECORD_OUTCOMES, RELATED_EXCLUSIONS,
+    BuildHashes, BuildReport, CapabilityStatus, ClaimOutcome, Comparison, Counts, ExportCounts, OutcomeCounts,
+    RecordOutcome, RequirementOutcome, RuntimeCapabilities, SegmentCounts, SelectedAllele, UnmetRequirement,
+)
+from GenAIRR._reference_sources.manifest import (  # noqa: F401
+    BLOB_PREFIX, FIXED_MEMBERS, MANIFEST_NAME, MAX_MANIFEST_BYTES, MAX_MEMBER_NAME, MAX_MEMBERS,
+    MEMBER_SCHEMA_VERSIONS, OPTIONAL_MEMBERS, RECEIPTS_PREFIX, BuildManifest, ManifestHashes, Member,
+    MemberVersions, check_manifest, check_member_name,
 )
 from GenAIRR._reference.model import sequence_digest  # noqa: F401

@@ -1472,3 +1472,466 @@ def test_accepted_claims_must_be_representable_by_the_runtime_reference(inventor
                          evidence=[claim.evidence[0].to_dict()])
         with _raises("projection", "/decisions/0/claims/0"):
             m.check_decisions(_recipe(inventory, decisions=[entry]), inventory)
+
+
+def test_decisions_on_unselected_sequences_are_stale(inventory, inv):
+    ex = inv.cand["airr_ex", "IGHJ4*02"]
+    record = inv.rec["airr_ex", "IGHJ4*02"]
+    functionality = _claim(inventory, "functionality", record)
+    entry = decision("withhold_claim", claims=[functionality.id], sequence_sha256=inventory.candidate(ex).sha256)
+    selected = tuple(label for label in SELECTED if label != "IGHJ4*02")
+    with _raises("stale_decision", "/decisions/0/claims/0"):
+        m.check_decisions(_recipe(inventory, selected=selected, decisions=[entry]), inventory)
+
+
+# ── build report ─────────────────────────────────────────────────────
+
+RUNTIME = {"catalogue_hash": "sha256:" + "1" * 64, "models_hash": "sha256:" + "2" * 64,
+           "execution_hash": "sha256:" + "3" * 64, "artifact_hash": "sha256:" + "4" * 64}
+GENERATOR = {"name": "GenAIRR", "version": "2.3.1"}
+
+
+def _capabilities():
+    def status(name, available, evidence=None, unmet=(), note=None):
+        return {"name": name, "available": available, "evidence": evidence,
+                "unmet": [{"allele": a, "requirement": r, "hint": h} for a, r, h in unmet], "note": note}
+    blocker = ("V:IGHV1-69*01", 'accepted boundary_3 == "complete"', 'add "boundary_3": {"value": "complete", ...}')
+    return {"statuses": [
+        status("catalogue_inspection", True), status("observed_span_simulation", True),
+        status("source_annotated_junction", True, "source"),
+        status("canonical_productive", True, "assertion", note="phase support: anchor_derived"),
+        status("original_coding_ends", False, unmet=[blocker]),
+        status("complete_reference_span", False, unmet=[blocker]),
+        status("genotype_constrained", False, note="not yet supported for portable references"),
+        status("duplex_family_replay", False, note="not yet supported for portable references")],
+        "phase_support": "anchor_derived"}
+
+
+def report_decisions(inventory, inv):
+    jcand, dcand = inv.cand["airr", "IGHJ4*02"], inv.cand["airr", "IGHD1-1*01"]
+    return [decision(findings=[_finding(inventory, "variant_coding_sequence_differs").id]),
+            decision("withhold_claim", claims=[_claim(inventory, "boundary_3", dcand).id],
+                     sequence_sha256=inventory.candidate(dcand).sha256,
+                     reason="The physical 3' end of this D is not established by the source"),
+            decision("accept_claim", claims=[_claim(inventory, "coding_phase", jcand).id],
+                     sequence_sha256=inventory.candidate(jcand).sha256,
+                     evidence=[inv.obs_at(inv.rec["airr", "IGHJ4*02"], "j_codon_frame").to_dict()],
+                     reason="j_codon_frame - 1 is the reported phase under the pinned producer profile")]
+
+
+def report_dict(inventory, inv, *, decisions=None) -> dict:
+    lock = m.SourceLock.from_dict(lock_dict())
+    recipe = _recipe(inventory, decisions=report_decisions(inventory, inv) if decisions is None else decisions)
+    selected = {e.record.id: e for e in recipe.selection}
+    chosen = {}
+    for e in recipe.selection:
+        (c,) = [c for c in inventory.candidates_of(e.record) if c.sha256 == e.sequence_sha256]
+        chosen[e.record.id] = c
+    by_label = {(e.segment, e.label): e for e in recipe.selection}
+    records = []
+    for r in inventory.records:
+        if r.id in selected:
+            records.append({"record": r.locator.to_dict(), "outcome": "selected", "allele": selected[r.id].allele_id,
+                            "exclusion": None, "related": None, "detail": None})
+            continue
+        if r.status != "parsed":
+            records.append({"record": r.locator.to_dict(), "outcome": "rejected", "allele": None,
+                            "exclusion": None, "related": None, "detail": r.problem})
+            continue
+        entry = by_label.get((r.segment, r.label))
+        if entry is None:
+            records.append({"record": r.locator.to_dict(), "outcome": "excluded", "allele": None,
+                            "exclusion": "outside_explicit_selection", "related": None, "detail": None})
+            continue
+        same = any(c.sha256 == entry.sequence_sha256 for c in inventory.candidates_of(r.locator))
+        records.append({"record": r.locator.to_dict(), "outcome": "excluded", "allele": None,
+                        "exclusion": "duplicate_occurrence" if same else "alternative_for_selected_identity",
+                        "related": entry.record.to_dict(), "detail": None})
+    decided = {cid: i for i, d in enumerate(recipe.decisions) for cid in d.claims}
+    selected_subjects = set(selected) | {c.id for c in chosen.values()}
+    claims = []
+    for c in inventory.claims:
+        if c.subject.id not in selected_subjects:
+            outcome, reason = "not_selected", None
+        elif c.predicate not in m.RUNTIME_PREDICATES:
+            outcome, reason = "not_representable", "the runtime reference has no such claim"
+        elif c.id in decided and recipe.decisions[decided[c.id]].action == "withhold_claim":
+            outcome, reason = "withheld", recipe.decisions[decided[c.id]].reason
+        elif c.status == "unresolved":
+            outcome, reason = "withheld", "unresolved"
+        else:
+            outcome, reason = "projected", None
+        claims.append({"claim": c.id, "outcome": outcome, "decision": decided.get(c.id), "reason": reason})
+    exports = [{"asset": a, **inventory.export_counts(a)} for a in ("airr", "airr_ex")]
+    seg = {"V": 0, "D": 0, "J": 0, "unassigned": 0}
+    for e in recipe.selection:
+        seg[e.segment] += 1
+    outcomes = {k: sum(r["outcome"] == k for r in records) for k in ("selected", "excluded", "rejected")}
+    return {
+        "artifact": "genairr_reference_source_build_report", "schema_version": 1,
+        "generator": dict(GENERATOR), "source_lock": lock.to_dict(), "recipe": recipe.to_dict(),
+        "inventory": inventory.to_dict(),
+        "hashes": {"source_lock": m.lock_hash(lock), "inventory": m.inventory_hash(inventory),
+                   "recipe": m.recipe_hash(recipe), "build_inputs": m.build_input_hash(lock, inventory, recipe)},
+        "runtime": dict(RUNTIME),
+        "comparison": {"complete": True, "exports": ["airr", "airr_ex"], "missing": [],
+                       "findings": [_finding(inventory, "variant_coding_sequence_differs").id]},
+        "counts": {"exports": exports, "selected_alleles": seg, "record_outcomes": outcomes},
+        "selection": [{"allele": e.allele_id, "candidate": chosen[e.record.id].locator.to_dict()}
+                      for e in recipe.selection],
+        "records": records, "claims": claims, "capabilities": _capabilities(),
+        "requirements": [{"capability": "observed_span_simulation", "evidence": "assertion", "satisfied": True}],
+    }
+
+
+@pytest.fixture(scope="module")
+def report_d(inventory, inv):
+    return report_dict(inventory, inv)
+
+
+@pytest.fixture(scope="module")
+def report(report_d):
+    return m.BuildReport.from_dict(report_d)
+
+
+def test_report_round_trips_and_is_byte_stable(report, report_d):
+    assert report.to_dict() == report_d
+    text = canonical_json(report_d)
+    assert canonical_json(m.BuildReport.from_json(text).to_dict()) == text
+    assert m.report_hash(report) == typed_digest(report_d, "genairr_reference_source_build_report_v1")
+
+
+def test_report_exposes_every_record_claim_and_distinct_count(report):
+    d = report.to_dict()
+    assert len(d["records"]) == len(d["inventory"]["records"])
+    assert len(d["claims"]) == len(d["inventory"]["claims"])
+    airr_ex = d["counts"]["exports"][1]
+    assert airr_ex["record_occurrences"]["V"] == 2 and airr_ex["mentioned_identities"]["V"] == 1
+    assert d["counts"]["selected_alleles"] == {"V": 3, "D": 1, "J": 1, "unassigned": 0}
+    assert d["counts"]["record_outcomes"] == {"selected": 5, "excluded": 4, "rejected": 0}
+    outcomes = {c["outcome"] for c in d["claims"]}
+    assert outcomes == {"projected", "withheld", "not_representable", "not_selected"}
+    assert {r["exclusion"] for r in d["records"] if r["outcome"] == "excluded"} == {
+        "alternative_for_selected_identity", "duplicate_occurrence"}
+
+
+def _edited_report(report_d, edit):
+    d = copy.deepcopy(report_d)
+    edit(d)
+    return d
+
+
+def _record_index(d, label, asset):
+    for i, r in enumerate(d["records"]):
+        rec = [x for x in d["inventory"]["records"] if x["locator"] == r["record"]][0]
+        if rec["label"] == label and r["record"]["asset"] == asset:
+            return i
+    raise AssertionError(label)
+
+
+def _claim_outcome_index(d, outcome):
+    return [i for i, c in enumerate(d["claims"]) if c["outcome"] == outcome][0]
+
+
+@pytest.mark.parametrize("edit,kind,path", [
+    (lambda d: d["hashes"].update(build_inputs="sha256:" + "9" * 64), "digest_mismatch", "/hashes/build_inputs"),
+    (lambda d: d["hashes"].update(inventory="sha256:" + "9" * 64), "digest_mismatch", "/hashes/inventory"),
+    (lambda d: d["recipe"].update(source_lock_hash="sha256:" + "9" * 64), "digest_mismatch", "/recipe/source_lock_hash"),
+    (lambda d: d["recipe"]["reference"].update(locus="TRB"), "identity_mismatch", "/recipe/reference/locus"),
+    (lambda d: d["runtime"].update(execution_hash="sha256:XYZ"), "malformed", "/runtime/execution_hash"),
+    (lambda d: d["generator"].update(name="NotGenAIRR"), "malformed", "/generator/name"),
+    (lambda d: d.update(schema_version=2), "unsupported_schema", "/schema_version"),
+    (lambda d: d.update(report_hash="sha256:" + "0" * 64), "malformed", ""),
+    (lambda d: d["comparison"].update(complete=False), "malformed", "/comparison/complete"),
+    (lambda d: d["comparison"].update(findings=["finding:" + "0" * 64]), "malformed", "/comparison/findings/0"),
+    (lambda d: d["counts"]["exports"][0]["record_occurrences"].update(V=209), "malformed", "/counts/exports"),
+    (lambda d: d["counts"]["selected_alleles"].update(V=190), "malformed", "/counts/selected_alleles"),
+    (lambda d: d["counts"]["record_outcomes"].update(rejected=1), "malformed", "/counts/record_outcomes"),
+    (lambda d: d["counts"]["selected_alleles"].update(V=True), "malformed", "/counts/selected_alleles/V"),
+    (lambda d: d["counts"]["selected_alleles"].update(V=-1), "malformed", "/counts/selected_alleles/V"),
+    (lambda d: d["selection"].pop(), "malformed", "/selection"),
+    (lambda d: d["selection"][0].update(allele="V:IGHV1-58*04"), "malformed", "/selection/0/allele"),
+    (lambda d: d["selection"][0].update(candidate=d["selection"][1]["candidate"]), "malformed",
+     "/selection/0/candidate"),
+    (lambda d: d["records"].reverse(), "malformed", "/records/0/record"),
+    (lambda d: d["records"][_record_index(d, "IGHV1-58*03", "airr")].update(
+        outcome="excluded", allele=None, exclusion="outside_explicit_selection"), "malformed", "/records/"),
+    (lambda d: d["records"][_record_index(d, "IGHV1-58*03", "airr_ex")].update(exclusion="duplicate_occurrence"),
+     "malformed", "/records/"),
+    (lambda d: d["records"][_record_index(d, "IGHV1-69*01", "airr_ex")].update(
+        exclusion="alternative_for_selected_identity"), "malformed", "/records/"),
+    (lambda d: d["records"][_record_index(d, "IGHV1-69*01", "airr_ex")].update(related=None), "malformed",
+     "/records/"),
+    (lambda d: d["records"][_record_index(d, "IGHV1-69*01", "airr_ex")].update(exclusion="looked_odd"), "malformed",
+     "/records/"),
+    (lambda d: d["records"][_record_index(d, "IGHV1-69*01", "airr_ex")].update(outcome="rejected", exclusion=None,
+                                                                              related=None), "malformed", "/records/"),
+    (lambda d: d["claims"][_claim_outcome_index(d, "not_representable")].update(outcome="projected"), "malformed",
+     "/claims/"),
+    (lambda d: d["claims"][_claim_outcome_index(d, "not_selected")].update(outcome="projected"), "malformed",
+     "/claims/"),
+    (lambda d: d["claims"][_claim_outcome_index(d, "projected")].update(outcome="not_selected"), "malformed",
+     "/claims/"),
+    (lambda d: d["claims"][_claim_outcome_index(d, "withheld")].update(reason=None), "malformed", "/claims/"),
+    (lambda d: d["claims"][_claim_outcome_index(d, "withheld")].update(outcome="projected", reason=None), "malformed",
+     "/claims/"),
+    (lambda d: d["claims"][_claim_outcome_index(d, "projected")].update(decision=0), "malformed", "/claims/"),
+    (lambda d: d["claims"][_claim_outcome_index(d, "projected")].update(decision=7), "malformed", "/claims/"),
+    (lambda d: d["claims"][_claim_outcome_index(d, "projected")].update(decision=True), "malformed", "/claims/"),
+    (lambda d: d["claims"].reverse(), "malformed", "/claims/0/claim"),
+    (lambda d: d["capabilities"]["statuses"].reverse(), "malformed", "/capabilities/statuses"),
+    (lambda d: d["capabilities"]["statuses"][4].update(available=True), "malformed", "/capabilities/statuses/4"),
+    (lambda d: d["capabilities"]["statuses"][6].update(evidence="source"), "malformed",
+     "/capabilities/statuses/6/evidence"),
+    (lambda d: d["capabilities"].update(phase_support="guessed"), "malformed", "/capabilities/phase_support"),
+    (lambda d: d["requirements"][0].update(satisfied=False), "malformed", "/requirements/0/satisfied"),
+    (lambda d: d["requirements"][0].update(evidence="source"), "malformed", "/requirements/0"),
+    (lambda d: d["requirements"].append({"capability": "original_coding_ends", "evidence": "assertion",
+                                         "satisfied": False}), "malformed", "/requirements"),
+])
+def test_report_rejects_inconsistent_content(report_d, edit, kind, path):
+    with _raises(kind) as caught:
+        m.BuildReport.from_dict(_edited_report(report_d, edit))
+    assert caught.error.path.startswith(path), caught.error
+
+
+def test_report_withheld_and_accepted_claims_follow_the_decision_ledger(report_d):
+    d = report_d
+    decided = {c["claim"]: c for c in d["claims"] if c["decision"] is not None}
+    actions = [x["action"] for x in d["recipe"]["decisions"]]
+    assert sorted((actions[c["decision"]], c["outcome"]) for c in decided.values()) == [
+        ("accept_claim", "projected"), ("withhold_claim", "withheld")]
+    bad = copy.deepcopy(d)
+    (index,) = [i for i, c in enumerate(bad["claims"]) if c["decision"] == 1]
+    bad["claims"][index].update(decision=None, reason="unresolved")
+    with _raises("malformed", "/claims"):
+        m.BuildReport.from_dict(bad)
+
+
+def test_report_records_rejected_source_records_apart_from_exclusions(inventory, inv):
+    loc = L("airr", _pointer(0))
+    odd = m.SourceRecord(locator=loc, status="malformed", problem="coding_sequence is not a string", label=None,
+                         provider_id=None, provider_ref=None, segment=None, taxonomy_id=None, locus=None)
+    _, raw = _find("IGHV1-2*02")
+    other = m.SourceRecord(locator=L("airr", _pointer(_find("IGHV1-2*02")[0])), status="parsed", problem=None,
+                           label=raw["label"], provider_id=raw["allele_description_id"],
+                           provider_ref=raw["allele_description_ref"], segment="V", taxonomy_id=9606, locus="IGH")
+    d = report_dict(inv.build(records=inv.records + [odd, other]), inv, decisions=[])
+    report = m.BuildReport.from_dict(d)
+    by_record = {r.record: r for r in report.records}
+    assert by_record[loc].outcome == "rejected" and by_record[loc].detail == "coding_sequence is not a string"
+    assert by_record[other.locator].exclusion == "outside_explicit_selection"
+    assert report.counts.record_outcomes.to_dict() == {"selected": 5, "excluded": 5, "rejected": 1}
+    (index,) = [i for i, r in enumerate(d["records"]) if r["record"] == loc.to_dict()]
+    d["records"][index].update(outcome="excluded", exclusion="outside_explicit_selection")
+    d["counts"]["record_outcomes"] = {"selected": 5, "excluded": 6, "rejected": 0}
+    with _raises("malformed", f"/records/{index}/outcome"):
+        m.BuildReport.from_dict(d)
+
+
+def test_report_incomplete_comparison_lists_the_missing_export():
+    lock = m.SourceLock.from_dict(lock_dict(formats=("airr", "gapped")))
+    comparison = m.Comparison(complete=False, exports=("airr",), missing=("airr_ex",), findings=())
+    comparison.check(lock, None)
+    with _raises("malformed", "/complete"):
+        m.Comparison(complete=True, exports=("airr",), missing=("airr_ex",), findings=())
+
+
+# ── dossier manifest ─────────────────────────────────────────────────
+
+FIXED = ("inputs/annotations.json", "inputs/d.fasta", "inputs/j.fasta", "inputs/v.fasta", "recipe.json",
+         "reference.genairr-ref.json", "report.json", "source.lock.json")
+
+
+def manifest_dict(report, *, d_fasta=True) -> dict:
+    members = [{"name": name, "sha256": "sha256:" + format(i, "064x"), "bytes": 100 + i}
+               for i, name in enumerate(FIXED) if d_fasta or name != "inputs/d.fasta"]
+    for asset in report.source_lock.assets:
+        members.append({"name": "cache/blobs/sha256/" + asset.blob_name, "sha256": asset.sha256, "bytes": asset.bytes})
+    members.sort(key=lambda x: x["name"])
+    hashes = report.to_dict()["hashes"]
+    return {"artifact": "genairr_reference_source_build_manifest", "schema_version": 1,
+            "builder": dict(GENERATOR),
+            "versions": {"source_lock": 1, "recipe": 1, "report": 1, "reference": 1, "annotations": 1},
+            "adapter": copy.deepcopy(ADAPTER), "projection": {"id": "observed_span", "version": 1},
+            "hashes": {**hashes, "report": m.report_hash(report)}, "runtime": dict(RUNTIME), "members": members}
+
+
+def test_manifest_round_trips_and_binds_the_report(report):
+    d = manifest_dict(report)
+    manifest = m.BuildManifest.from_dict(d)
+    assert manifest.to_dict() == d
+    assert canonical_json(m.BuildManifest.from_json(canonical_json(d)).to_dict()) == canonical_json(d)
+    assert m.manifest_hash(manifest) == typed_digest(d, "genairr_reference_source_build_manifest_v1")
+    m.check_manifest(manifest, report.source_lock, report)
+
+
+@pytest.mark.parametrize("name", ["", "/report.json", "../report.json", "inputs/../report.json", "inputs\\v.fasta",
+                                  "C:report.json", "c:/report.json", "inputs//v.fasta", "./report.json",
+                                  "inputs/v.fasta/", "x" * 256, "receipts/2026-10-22T09:58:15Z.json",
+                                  "manifest.json", "notes.txt", "cache/blobs/sha256/" + "A" * 64,
+                                  "cache/blobs/sha256/abc", "inputs/v.fasta\x00", None])
+def test_manifest_member_names_are_closed_and_relative(report, name):
+    d = manifest_dict(report)
+    d["members"][0]["name"] = name
+    with _raises("malformed", "/members/0/name"):
+        m.BuildManifest.from_dict(d)
+
+
+@pytest.mark.parametrize("edit,kind,path", [
+    (lambda d: d["members"].reverse(), "malformed", "/members"),
+    (lambda d: d["members"].insert(0, copy.deepcopy(d["members"][0])), "malformed", "/members"),
+    (lambda d: d["members"].pop(_member(d, "report.json")), "malformed", "/members"),
+    (lambda d: d["members"][_member(d, "report.json")].update(bytes=-1), "malformed", "/members/"),
+    (lambda d: d["members"][_member(d, "report.json")].update(bytes=True), "malformed", "/members/"),
+    (lambda d: d["members"][_member(d, "report.json")].update(sha256="sha256:x"), "malformed", "/members/"),
+    (lambda d: d["members"][_blob(d)].update(sha256="sha256:" + "0" * 64), "digest_mismatch", "/members/"),
+    (lambda d: d["versions"].update(report=2), "unsupported_schema", "/versions/report"),
+    (lambda d: d["versions"].update(reference=True), "malformed", "/versions/reference"),
+    (lambda d: d["projection"].update(version=9), "unsupported_profile", "/projection"),
+    (lambda d: d["builder"].update(version=""), "malformed", "/builder/version"),
+    (lambda d: d.update(commitment="sha256:" + "0" * 64), "malformed", ""),
+    (lambda d: d["hashes"].pop("report"), "malformed", "/hashes"),
+])
+def test_manifest_fields_are_strict(report, edit, kind, path):
+    d = manifest_dict(report)
+    edit(d)
+    with _raises(kind) as caught:
+        m.BuildManifest.from_dict(d)
+    assert caught.error.path.startswith(path), caught.error
+
+
+def _member(d, name):
+    return [i for i, x in enumerate(d["members"]) if x["name"] == name][0]
+
+
+def _blob(d):
+    return [i for i, x in enumerate(d["members"]) if x["name"].startswith("cache/")][0]
+
+
+def test_check_manifest_against_lock_and_report(report, report_d, inventory, inv):
+    lock = report.source_lock
+    d = manifest_dict(report)
+    d["members"].pop(_blob(d))
+    with _raises("missing_asset", "/members"):
+        m.check_manifest(m.BuildManifest.from_dict(d), lock, report)
+    d = manifest_dict(report)
+    d["members"].append({"name": "cache/blobs/sha256/" + "e" * 64, "sha256": "sha256:" + "e" * 64, "bytes": 5})
+    d["members"].sort(key=lambda x: x["name"])
+    with _raises("identity_mismatch"):
+        m.check_manifest(m.BuildManifest.from_dict(d), lock, report)
+    d = manifest_dict(report)
+    d["members"][_blob(d)]["bytes"] += 1
+    with _raises("digest_mismatch"):
+        m.check_manifest(m.BuildManifest.from_dict(d), lock, report)
+    d = manifest_dict(report, d_fasta=False)
+    with _raises("identity_mismatch", "/members"):
+        m.check_manifest(m.BuildManifest.from_dict(d), lock, report)
+    d = manifest_dict(report)
+    d["hashes"]["source_lock"] = "sha256:" + "0" * 64
+    with _raises("digest_mismatch", "/hashes/source_lock"):
+        m.check_manifest(m.BuildManifest.from_dict(d), lock, report)
+    d = manifest_dict(report)
+    d["builder"]["version"] = "2.4.0"
+    with _raises("identity_mismatch", "/builder"):
+        m.check_manifest(m.BuildManifest.from_dict(d), lock, report)
+
+
+def test_tampered_report_runtime_body_and_report_hash_are_both_caught(report, report_d):
+    """Rewrite the stored report's runtime hashes and rehash it: the manifest still binds the
+    original report hash; rehashing the manifest's report hash too still leaves its runtime."""
+    lock = report.source_lock
+    manifest = m.BuildManifest.from_dict(manifest_dict(report))
+    tampered_d = copy.deepcopy(report_d)
+    tampered_d["runtime"]["execution_hash"] = "sha256:" + "5" * 64
+    tampered = m.BuildReport.from_dict(tampered_d)
+    with _raises("digest_mismatch", "/hashes/report"):
+        m.check_manifest(manifest, lock, tampered)
+    rehashed = manifest_dict(report)
+    rehashed["hashes"]["report"] = m.report_hash(tampered)
+    with _raises("digest_mismatch", "/runtime"):
+        m.check_manifest(m.BuildManifest.from_dict(rehashed), lock, tampered)
+
+
+# ── the digest graph ─────────────────────────────────────────────────
+
+
+def test_digest_domains_are_the_six_distinct_graph_domains():
+    assert m.DOMAINS == ("genairr_reference_source_lock_v1", "genairr_reference_source_inventory_v1",
+                         "genairr_reference_source_recipe_v1", "genairr_reference_source_build_inputs_v1",
+                         "genairr_reference_source_build_report_v1", "genairr_reference_source_build_manifest_v1")
+    assert len(set(m.DOMAINS)) == 6
+    assert not {m.CLAIM_ID_DOMAIN, m.FINDING_ID_DOMAIN, m.MAPPING_ID_DOMAIN} & set(m.DOMAINS)
+
+
+def test_each_digest_takes_only_its_upstream_models():
+    params = {f.__name__: list(inspect.signature(f).parameters)
+              for f in (m.lock_hash, m.inventory_hash, m.recipe_hash, m.build_input_hash, m.report_hash,
+                        m.manifest_hash)}
+    assert params == {"lock_hash": ["lock"], "inventory_hash": ["inventory"], "recipe_hash": ["recipe"],
+                      "build_input_hash": ["lock", "inventory", "recipe"], "report_hash": ["report"],
+                      "manifest_hash": ["manifest"]}
+
+
+def test_build_input_identity_is_upstream_of_report_and_manifest(report, report_d, inventory):
+    lock, recipe = report.source_lock, report.recipe
+    before = m.build_input_hash(lock, inventory, recipe)
+    other_d = copy.deepcopy(report_d)
+    other_d["runtime"]["artifact_hash"] = "sha256:" + "6" * 64
+    other_d["generator"]["version"] = "9.9.9"
+    other = m.BuildReport.from_dict(other_d)
+    assert m.report_hash(other) != m.report_hash(report)
+    assert m.build_input_hash(other.source_lock, other.inventory, other.recipe) == before
+    assert report.hashes.build_inputs == before
+    inputs = m.build_inputs(lock, inventory, recipe)
+    assert set(inputs) == {"source_lock", "inventory", "recipe", "adapter", "projection"}
+    assert typed_digest(inputs, "genairr_reference_source_build_inputs_v1") == before
+    text = canonical_json(inputs)
+    assert m.report_hash(report) not in text and "runtime" not in text and "generator" not in text
+
+
+def test_lock_inventory_recipe_and_build_input_chain(report, inventory):
+    lock, recipe = report.source_lock, report.recipe
+    assert inventory.source_lock_hash == m.lock_hash(lock) == recipe.source_lock_hash
+    inputs = m.build_inputs(lock, inventory, recipe)
+    assert (inputs["source_lock"], inputs["inventory"], inputs["recipe"]) == (
+        m.lock_hash(lock), m.inventory_hash(inventory), m.recipe_hash(recipe))
+
+
+def test_report_and_manifest_hashes_are_downstream(report, report_d):
+    manifest = m.BuildManifest.from_dict(manifest_dict(report))
+    assert manifest.hashes.report == m.report_hash(report)
+    assert m.report_hash(report) not in canonical_json(report.to_dict())
+    assert m.manifest_hash(manifest) not in canonical_json(manifest.to_dict())
+    changed = manifest_dict(report)
+    changed["runtime"]["models_hash"] = "sha256:" + "7" * 64
+    assert m.manifest_hash(m.BuildManifest.from_dict(changed)) != m.manifest_hash(manifest)
+
+
+def test_receipts_enter_no_digest(report, inventory):
+    receipt = m.AcquisitionReceipt.from_dict(receipt_dict())
+    for function in (m.lock_hash, m.inventory_hash, m.recipe_hash, m.report_hash, m.manifest_hash):
+        with pytest.raises(TypeError):
+            function(receipt)
+    with pytest.raises(TypeError):
+        m.build_input_hash(report.source_lock, inventory, receipt)
+    for document in (report.source_lock, report.recipe, inventory, report):
+        text = canonical_json(document.to_dict())
+        assert "event_time_utc" not in text and "genairr_reference_source_receipt" not in text
+
+
+def test_build_input_digest_refuses_inconsistent_inputs(report, inventory):
+    other = m.SourceLock.from_dict(lock_dict(origin="local_file"))
+    with _raises("digest_mismatch", "/source_lock_hash"):
+        m.build_input_hash(other, inventory, report.recipe)
+
+
+def test_recipe_or_provenance_changes_move_the_build_input_identity_without_dna_changes(report, inventory):
+    """Runtime notes may cite the build-input hash, so a changed recipe can legitimately
+    change runtime identity even when every selected sequence is unchanged."""
+    d = report.recipe.to_dict()
+    d["selection"][0]["reason"] = "Same supplied sequence, reviewed again"
+    changed = m.Recipe.from_dict(d)
+    assert [e.sequence_sha256 for e in changed.selection] == [e.sequence_sha256 for e in report.recipe.selection]
+    assert m.build_input_hash(report.source_lock, inventory, changed) != \
+        m.build_input_hash(report.source_lock, inventory, report.recipe)

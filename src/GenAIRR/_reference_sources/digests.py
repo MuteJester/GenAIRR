@@ -80,3 +80,17 @@ def build_input_hash(lock: SourceLock, inventory: SourceInventory, recipe: Recip
     report, manifest or receipt.
     """
     return digest(build_inputs(lock, inventory, recipe), BUILD_INPUTS_DOMAIN)
+
+
+def report_hash(report) -> str:
+    """``genairr_reference_source_build_report_v1`` over the complete report (never stored in it)."""
+    from GenAIRR._reference_sources.report import BuildReport
+    _require(report, BuildReport, "report")
+    return digest(report.to_dict(), REPORT_DOMAIN)
+
+
+def manifest_hash(manifest) -> str:
+    """``genairr_reference_source_build_manifest_v1`` over the complete manifest (never stored in it)."""
+    from GenAIRR._reference_sources.manifest import BuildManifest
+    _require(manifest, BuildManifest, "manifest")
+    return digest(manifest.to_dict(), MANIFEST_DOMAIN)

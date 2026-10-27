@@ -119,6 +119,15 @@ def check_selection(recipe: Recipe, inventory: SourceInventory) -> None:
                                                     f"digest {entry.sequence_sha256}", "unresolved_selection")
 
 
+def selected_subjects(recipe: Recipe, inventory: SourceInventory) -> set:
+    """Ids of the selected records and of the one selected candidate of each."""
+    found = set()
+    for entry in recipe.selection:
+        found.add(entry.record.id)
+        found.update(c.id for c in inventory.candidates_of(entry.record) if c.sha256 == entry.sequence_sha256)
+    return found
+
+
 def _subject_digests(inventory: SourceInventory, claim) -> set:
     try:
         return {inventory.candidate(claim.subject).sha256}
@@ -130,12 +139,14 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
     """Every decision still names current findings, claims, evidence and subject digest.
 
     ``stale_decision``: an unknown finding/claim id, an evidence locator that is not an
-    observation, a subject digest that changed, or a ``select_alternative`` whose digest
-    is not a selected candidate among its findings' subjects.  ``projection``: an
+    observation, a subject digest that changed, a claim about an unselected record or
+    candidate, or a ``select_alternative`` whose digest is not a selected candidate among
+    its findings' subjects.  ``projection``: an
     ``accept_claim`` of a claim the runtime reference cannot represent or that has no value.
     """
     _require(recipe, Recipe, "recipe")
     _require(inventory, SourceInventory, "inventory")
+    selected = selected_subjects(recipe, inventory)
     for i, decision in enumerate(recipe.decisions):
         path = ptr("/decisions", i)
         findings, claims = [], []
@@ -169,6 +180,10 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
                 if claim.status == "unresolved":
                     raise bad(ptr(ptr(path, "claims"), j), f"claim {claim.id} is unresolved and has no value to "
                                                            "accept", "projection")
+        for j, claim in enumerate(claims):
+            if claim.subject.id not in selected:
+                raise bad(ptr(ptr(path, "claims"), j), f"claim {claim.id} is about {claim.subject.id}, which is not "
+                                                       "a selected record or candidate", "stale_decision")
         if decision.action == "select_alternative":
             subjects = {s.id for f in findings for s in f.subjects}
             chosen = [e for e in recipe.selection if e.sequence_sha256 == decision.sequence_sha256 and (
