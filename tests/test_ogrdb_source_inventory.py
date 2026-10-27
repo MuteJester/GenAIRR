@@ -530,3 +530,211 @@ def test_relationship_only_names_are_mentioned_identities_without_sequence():
         (j2, j2 + "/paralogs/0", "paralog")]
     assert "IGLJ3*01" not in by_label(inventory, "airr_ex")
     assert [r.label for r in records_of(inventory, "airr")].count("IGLJ3*01") == 1
+
+
+# ── malformed, unsupported and unknown content ──────────────────────
+
+
+def with_records(source, fmt, edit) -> bytes:
+    return edited(source, fmt, lambda d: edit(d["GermlineSet"][0]["allele_descriptions"]))
+
+
+def _broken_records(records):
+    j1 = copy.deepcopy(records[0])
+    absent = copy.deepcopy(j1)
+    absent.pop("label")
+    records.extend([
+        "not a record",
+        dict(j1, label=None),
+        absent,
+        dict(j1, label="IGLJ1 *01"),
+        dict(j1, label="IGLJX*01", sequence_type="C"),
+        dict(j1, label="IGLDX*01", sequence_type="D"),
+        dict(j1, label="IGLJX*02", sequence_type=7),
+        dict(j1, label="IGLJX*03", coding_sequence="ACGN"),
+        dict(j1, label="IGLJX*04", coding_sequence=None),
+        dict(j1, label="IGLJX*05", allele_description_id=17, locus="IG\nL", species={"id": "taxon"}),
+    ])
+
+
+def test_malformed_and_unsupported_records_are_kept_with_diagnostics():
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", _broken_records)})
+    m.check_inventory(inventory, lock)
+    n = len(raw_records(IGL, "airr"))
+    records = records_of(inventory, "airr")
+    assert len(records) == n + 10
+    assert [(r.status, r.label, r.segment) for r in records[n:]] == [
+        ("malformed", None, None),
+        ("malformed", None, "J"),
+        ("malformed", None, "J"),
+        ("malformed", "IGLJ1 *01", "J"),
+        ("unsupported", "IGLJX*01", None),
+        ("unsupported", "IGLDX*01", "D"),
+        ("malformed", "IGLJX*02", None),
+        ("parsed", "IGLJX*03", "J"),
+        ("parsed", "IGLJX*04", "J"),
+        ("parsed", "IGLJX*05", "J"),
+    ]
+    for record in records[n:n + 7]:
+        assert record.problem
+        (finding,) = [f for f in inventory.findings if record.locator in f.subjects
+                      and f.code == f"{record.status}_record"]
+        assert finding.observations.get() == {"problem": record.problem}
+    assert records[n].problem == "the record is a JSON string, not an object"
+    assert records[n + 2].problem == "the record has no label"
+    assert "D record cannot belong to a IGL (vj) set" in records[n + 5].problem
+    without = {f.subjects[0].pointer: f.observations.get()["reason"]
+               for f in findings(inventory, "record_without_sequence_candidate")}
+    assert without == {rec(n + 7): "not a sequence of A, C, G and T", rec(n + 8): "null"}
+    candidates = {c.record.pointer for c in inventory.candidates if c.locator.asset == "airr"}
+    assert candidates == {rec(i) for i in range(n + 10)} - {rec(n), rec(n + 7), rec(n + 8)}
+    assert observed(inventory, "airr", rec(n + 1) + "/label").interpretation == "invalid"
+    absent = observed(inventory, "airr", rec(n + 2) + "/label")
+    assert (absent.presence, absent.value.get(), absent.interpretation) == ("absent", None, "invalid")
+    assert observed(inventory, "airr", rec(n + 7) + "/coding_sequence").value.get() == "ACGN"
+    last = records[n + 9]
+    assert (last.provider_id, last.locus, last.taxonomy_id) == (None, None, None)
+    invalid = {f.observations.get()["field"] for f in findings(inventory, "invalid_field_value")
+               if f.subjects == (last.locator,)}
+    assert invalid == {"allele_description_id", "locus", "species"}
+    with pytest.raises(KeyError):
+        observed(inventory, "airr", rec(n) + "/label")
+
+
+def test_relationship_and_support_values_of_the_wrong_form_are_kept_and_flagged():
+    def edit(records):
+        records[0]["aliases"] = "IGLJ1*01x"
+        records[1]["paralogs"] = ["ok*01", "not ok", 5]
+        records[2]["unrearranged_support"] = ["entry", {"repository_name": "", "repository_ref": "R1"}]
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    assert observed(inventory, "airr", rec(0) + "/aliases").interpretation == "invalid"
+    assert [observed(inventory, "airr", rec(1) + f"/paralogs/{j}").interpretation for j in range(3)] == [
+        "interpreted", "invalid", "invalid"]
+    (identity,) = [i for i in inventory.mentioned_identities if i.asset == "airr"]
+    assert identity.label == "ok*01"
+    support = [s for s in inventory.support if s.record == m.Locator("airr", rec(2))]
+    assert [(s.locator.pointer, s.repository, s.reference) for s in support] == [
+        (rec(2) + "/unrearranged_support/1", None, "R1")]
+    assert observed(inventory, "airr", rec(2) + "/unrearranged_support/0").interpretation == "invalid"
+    flagged = {(f.subjects[0].pointer, f.observations.get()["field"]) for f in findings(inventory, "invalid_field_value")}
+    assert flagged == {(rec(0), "aliases"), (rec(1), "paralogs"), (rec(2), "unrearranged_support"),
+                       (rec(2), "unrearranged_support/repository_name")}
+
+
+def test_a_record_whose_identity_differs_from_its_set_stays_a_record():
+    def edit(records):
+        records[0]["locus"] = "IGK"
+        records[1]["species"] = {"id": "NCBITAXON:10090", "label": "Mus musculus"}
+    _, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    found = {f.subjects[0].pointer: f.observations.get() for f in findings(inventory, "record_identity_differs_from_set")}
+    assert found == {rec(0): {"locus": {"record": "IGK", "set": "IGL"}},
+                     rec(1): {"taxonomy_id": {"record": 10090, "set": 9606}}}
+    assert [r.status for r in records_of(inventory, "airr")[:2]] == ["parsed", "parsed"]
+    assert records_of(inventory, "airr")[1].taxonomy_id == 10090
+
+
+def test_unknown_provider_fields_are_kept_as_unsupported_observations_and_recorded():
+    def edit(d):
+        d["Extra"] = {"note": 1}
+        d["GermlineSet"][0]["new_set_field"] = [1, 2]
+        d["GermlineSet"][0]["species"]["authority"] = "x"
+        records = d["GermlineSet"][0]["allele_descriptions"]
+        for i in range(3):
+            records[i]["new_record_field"] = {"v": i}
+        records[3]["species"]["rank"] = "species"
+        v = next(r for r in records if r["v_gene_delineations"])
+        v["v_gene_delineations"][0]["new_delineation_field"] = 5
+        supported = next(r for r in records if r["unrearranged_support"])
+        supported["unrearranged_support"][0]["new_support_field"] = "s"
+    lock, inventory = build(IGL, {"airr": edited(IGL, "airr", edit)})
+    m.check_inventory(inventory, lock)
+    extra = observed(inventory, "airr", "/Extra")
+    assert (extra.record, extra.value.get(), extra.interpretation) == (None, {"note": 1}, "unsupported")
+    assert observed(inventory, "airr", "/GermlineSet/0/new_set_field").interpretation == "unsupported"
+    for i in range(3):
+        found = observed(inventory, "airr", rec(i) + "/new_record_field")
+        assert (found.record, found.value.get(), found.interpretation) == (m.Locator("airr", rec(i)), {"v": i},
+                                                                           "unsupported")
+    recorded = {f.observations.get()["field"]: f for f in findings(inventory, "unknown_provider_field")}
+    assert set(recorded) == {"/Extra", "/GermlineSet/0/new_set_field", "/GermlineSet/0/species/authority",
+                             RECORDS + "/*/new_record_field", RECORDS + "/*/species/rank",
+                             RECORDS + "/*/v_gene_delineations/*/new_delineation_field",
+                             RECORDS + "/*/unrearranged_support/*/new_support_field"}
+    many = recorded[RECORDS + "/*/new_record_field"]
+    assert many.observations.get()["occurrences"] == 3
+    assert [x.pointer for x in many.locators] == [rec(i) + "/new_record_field" for i in range(3)]
+    assert {(f.severity, f.category) for f in recorded.values()} == {("info", "informational")}
+    assert [r.status for r in records_of(inventory, "airr")] == ["parsed"] * len(raw_records(IGL, "airr"))
+
+
+def test_unknown_fields_no_pointer_can_name_are_recorded_at_their_record():
+    long_key, control_key = "k" * 2000, "bad\u0001key"
+    def edit(records):
+        records[0][long_key] = 1
+        records[0][control_key] = 2
+    _, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    recorded = {f.observations.get()["field"]: f for f in findings(inventory, "unknown_provider_field")}
+    for key in (long_key, control_key):
+        finding = recorded[RECORDS + "/*/" + key]
+        assert finding.locators == (m.Locator("airr", rec(0)),)
+
+
+def test_the_aggregate_source_record_budget_spans_both_record_exports():
+    from GenAIRR._reference_sources import _fields
+    assert ogrdb.MAX_SOURCE_RECORDS == _fields.MAX_SOURCE_RECORDS == 100_000
+
+    def sized(fmt, count):
+        return edited(IGL, fmt, lambda d: d["GermlineSet"][0].update(allele_descriptions=[{}] * count))
+    blobs = {"airr": sized("airr", 50_000), "airr_ex": sized("airr_ex", 50_001)}
+    found = error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
+    assert found.path == "/assets" and "100001" in found.message
+
+
+def test_the_record_budget_boundary_is_inclusive(monkeypatch):
+    monkeypatch.setattr(ogrdb, "MAX_SOURCE_RECORDS", 4)
+    blobs = {fmt: edited(IGL, fmt, lambda d: d["GermlineSet"][0].update(
+        allele_descriptions=d["GermlineSet"][0]["allele_descriptions"][:2])) for fmt in EXPORTS}
+    _, inventory = build(IGL, blobs)
+    assert len(inventory.records) == 4
+    blobs["airr"] = edited(IGL, "airr", lambda d: d["GermlineSet"][0].update(
+        allele_descriptions=d["GermlineSet"][0]["allele_descriptions"][:3]))
+    error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
+
+
+def test_more_observations_than_an_inventory_holds_is_a_resource_limit(monkeypatch):
+    monkeypatch.setattr(ogrdb, "MAX_OBSERVATIONS", 100)
+    blobs = pinned(IGL, ("airr",))
+    assert error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs).path == "/assets"
+
+
+def _nested(depth):
+    value = 1
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+def test_provider_values_are_kept_to_the_parser_depth_limit():
+    # A record field sits five containers deep; 59 more reach the 64-level parser limit.
+    blobs = {"airr": with_records(IGL, "airr", lambda records: records[0].update(curation=_nested(59)))}
+    _, inventory = build(IGL, blobs)
+    assert observed(inventory, "airr", rec(0) + "/curation").value.get() == _nested(59)
+    blobs = {"airr": with_records(IGL, "airr", lambda records: records[0].update(curation=_nested(60)))}
+    found = error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
+    assert found.path == "/assets/airr"
+
+
+def test_an_envelope_value_nested_beyond_a_preserved_value_is_a_resource_limit():
+    blobs = {"airr": edited(IGL, "airr", lambda d: d.update(Info=_nested(62)))}
+    found = error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
+    assert found.path.startswith("/assets/airr/Info")
+
+
+@pytest.mark.parametrize("text", [
+    '{"GermlineSet": [{"allele_descriptions": [{"label": "a", "label": "b"}]}]}',
+    '{"GermlineSet": [{"allele_descriptions": [{"gene_start": Infinity}]}]}',
+], ids=["duplicate-key-in-a-record", "non-finite-number"])
+def test_provider_json_is_parsed_strictly(text):
+    blobs = {"airr": text.encode("utf-8")}
+    lock = seal(IGL, blobs)
+    assert error("malformed", ogrdb.build_inventory, lock, blobs).path == "/assets/airr"
