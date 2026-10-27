@@ -445,6 +445,13 @@ def test_the_record_choice_reason_states_where_the_selected_v_end():
     assert (f"of the {len(noted)} whose curation note limits the affirmed span or marks likely further bases, "
             f"{len(exact)} end exactly at the affirmed position (these 14 and IGHV3-21*07), {len(beyond)} extend "
             "past it and IGHV1-3*04's note names no position") in reason
+    # IGHV3-21*07 is grouped with the 14 by its end, but its note gives evidence for that end and,
+    # unlike theirs, does not call further bases likely.
+    evidence = "based on the convincing evidence of the sequence end"
+    assert all("likely" in airr[label]["curation"] for label in choices)
+    assert evidence in airr["IGHV3-21*07"]["curation"] and "likely" not in airr["IGHV3-21*07"]["curation"]
+    assert (f"The note of IGHV3-21*07 affirms position {stated['IGHV3-21*07']} '{evidence}' and, unlike those of "
+            "these 14, does not call further bases likely.") in reason
     extensions = {label: airr_ex[label]["coding_sequence"][len(airr[label]["coding_sequence"]):] for label in choices}
     assert extensions.pop("IGHV3-9*04") == "ATA" and set(extensions.values()) == {"A"}
     assert "1 nt (A; IGHV3-9*04: 3 nt, ATA)" in reason
