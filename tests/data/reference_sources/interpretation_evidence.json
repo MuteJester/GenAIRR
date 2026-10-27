@@ -1,0 +1,295 @@
+{
+  "schema": "genairr_reference_source_interpretation_evidence",
+  "schema_version": 1,
+  "description": "Pinned documentation and producer source code used to interpret the OGRDB fixtures in this directory, with the coordinate conventions they support and the conventions that remain unresolved. Digests cover the exact bytes retrieved; mutable URLs alone do not fix a historical interpretation.",
+  "documents": [
+    {
+      "id": "ogrdb_api_v2_guide",
+      "url": "https://raw.githubusercontent.com/airr-community/ogrdb/master/schema/ogrdb_api_v2_guide.md",
+      "pinned_url": "https://raw.githubusercontent.com/airr-community/ogrdb/c572507728789eb6436d2747a872ce434077ae5f/schema/ogrdb_api_v2_guide.md",
+      "retrieved_at_utc": "2026-10-22T09:57Z",
+      "sha256": "ea7d9c78b34916cd8103a0d130a1c23453b0b8909794fb70f1cb4b072e35d8a5",
+      "bytes": 6990,
+      "statements": [
+        "gapped: FASTA format with IMGT-gapped sequences",
+        "To download 'Source' sets, which contain all sequences without optimisation, append _ex to the format (gapped_ex, ungapped_ex, airr_ex).",
+        "The germline set is returned in JSON format. For human sets, the source set is returned."
+      ]
+    },
+    {
+      "id": "ogrdb_germline_set_formats",
+      "url": "https://wordpress.vdjbase.org/index.php/ogrdb/explanation-of-germline-set-formats/",
+      "retrieved_at_utc": "2026-10-22T10:01:37Z",
+      "sha256": "9201dceff16a465338e3ac667a49648299e9fef1de8536fcbd5120ff26fb3a5b",
+      "bytes": 57094,
+      "statements": [
+        "In particular, duplicate sequences are removed and sequences inferred from transcripts are extended to their likely full length, as inferred from other alleles of the same gene, even if this full-length sequence is not fully supported by the transcripts.",
+        "'Source' sets, which do contain duplicates and do not have such extensions, are also available.",
+        "In the 'gapped' set, V- sequences are aligned and gapped, following IMGT conventions, whereas in the 'ungapped' set they are not aligned. Other sequences are identical in the two sets."
+      ],
+      "observed_against_fixtures": "The fixture bytes contradict the documented label mapping: the '_ex' exports are the ones that collapse identical coding sequences (one record naming the others as paralogs) and append 3' coding extensions, while the unsuffixed exports keep every identity as its own record without extensions. The producer code below does the same (extend=True when the format contains '_ex'). Endpoint names are therefore not treated as per-record guarantees."
+    },
+    {
+      "id": "airr_germline_schema",
+      "url": "https://docs.airr-community.org/en/stable/datarep/germline.html",
+      "schema_version_shown": "AIRR Standards 2.0",
+      "retrieved_at_utc": "2026-10-22T10:01:37Z",
+      "sha256": "8b83d03e62cbba14f2f715b7bc861207c75dd8802cd41b519433da803f34a54b",
+      "bytes": 82899,
+      "statements": [
+        "cdr3_start: CDR3 start co-ordinate in the 'unaligned sequence' field",
+        "unaligned_sequence: entire V-sequence covered by this delineation",
+        "j_cdr3_end: In the case of a J-gene, the co-ordinate in the sequence field of the first nucelotide of the conserved PHE or TRP (IMGT codon position 118).",
+        "j_codon_frame: Codon position of the first nucleotide in the 'coding_sequence' field. Mandatory for J genes. Not used for V or D genes. '1' means the sequence is in-frame, '2' means that the first bp is missing from the first codon, and '3' means that the first 2 bp are missing.",
+        "gene_start: Co-ordinate in the sequence field of the first nucleotide in the coding_sequence field.",
+        "gene_end: Co-ordinate in the sequence field of the last gene-coding nucleotide in the coding_sequence field."
+      ]
+    },
+    {
+      "id": "ogrdb_openapi",
+      "url": "https://ogrdb.airr-community.org/schema/ogrdb-api-openapi3.yaml",
+      "retrieved_at_utc": "2026-10-22T10:01:37Z",
+      "sha256": "c06ff8c2e0790825956fdaa3a7b43e74ef7bad2777f05846a5d5012035586cb3",
+      "bytes": 10258,
+      "statements": [
+        "Germline objects are referenced from airr-standards release-1.5 airr-schema-openapi3.yaml."
+      ]
+    },
+    {
+      "id": "ogrdb_licensing_statement",
+      "url": "https://ogrdb.airr-community.org/render_page/licensing_statement.html",
+      "retrieved_at_utc": "2026-10-22T10:01:37Z",
+      "sha256": "1cf20853b6302f5ea3d55f322592821c513842f79ba8b61604931a2cdec7dbe7",
+      "bytes": 27047,
+      "statements": [
+        "Information provided on this site is published under a CC0 (Creative Commons 0) license.",
+        "The website source code is published under a European Union Public License v. 1.2 and is available from GitHub."
+      ]
+    }
+  ],
+  "producer_code": {
+    "repository": "https://github.com/airr-community/ogrdb",
+    "commit": "c572507728789eb6436d2747a872ce434077ae5f",
+    "commit_date": "2026-10-05T17:05:01+01:00",
+    "licence": "European Union Public Licence 1.2 (software only)",
+    "deployment_note": "The revision running on the server when the fixtures were exported is not observable. The lines relied on below have been unchanged since 2024-04-08 (to_airr.py cdr3_start conversion, commit ae19d21) and 2024-07-06 (api.py delineation copy, commit 5ed6916); the fixture bytes are additionally checked record by record against the gapped exports.",
+    "files": [
+      {
+        "path": "ogrdb/germline_set/to_airr.py",
+        "git_blob": "ff193fbebee416d07fbdd2074c6f2f7545b66d5e",
+        "sha256": "3f849c7f3bb0c72dc9dff91064334c17ee496b0779474b7ff81aab7eb5cf0fb2",
+        "lines": {
+          "108-110": "coding_sequence = coding_seq_imgt with '.' removed, plus ext_3prime when exporting an '_ex' format",
+          "119": "functional = 'F' in functionality",
+          "143-155": "the IMGT delineation's unaligned_sequence is the same string as coding_sequence (gapped coding sequence with trailing gaps removed, plus ext_3prime when '_ex', with '.' removed); aligned_sequence is the gapped form",
+          "166": "'cdr3_start': gd.cdr3_start - gd.gene_start + 1 (stored full-sequence coordinate converted to a 1-based coordinate in the unaligned/coding sequence)",
+          "179-180": "j_codon_frame and j_cdr3_end are passed through unchanged (no gene_start offset)"
+        }
+      },
+      {
+        "path": "api_v2/api.py",
+        "git_blob": "c2c897ba143d8a9a9396c07db7daebfcc647653a",
+        "sha256": "7389f2ef709f9f285ed5bc10637f9f6a6b9b4af18dc00e27bd3d3f9f1f5cda19",
+        "lines": {
+          "339-343": "extend = True when the requested format contains '_ex'",
+          "349": "AIRR JSON exports are built by germline_set_to_airr",
+          "360": "FASTA exports are built by descs_to_fasta with fake_allele=True",
+          "542-578": "served delineations copy the numeric fields only; unaligned_sequence and aligned_sequence are not passed on, so they are null in the served JSON",
+          "560-570": "a delineation coordinate stored as None is served as 0; since the coordinates are 1-based, an adapter must treat 0 as missing (no V record in the fixtures has a 0 or null coordinate)"
+        }
+      },
+      {
+        "path": "api_v2/models.py",
+        "git_blob": "725de65e18fdd4e161e8d532fbe83b678b760332",
+        "sha256": "95fafa1c24b5bbe39a6b6a51123a7e56891a9f5d0df8ba49b4318996c6600448",
+        "lines": {
+          "246-247": "cdr3_start: CDR3 start co-ordinate in the 'unaligned sequence' field"
+        }
+      },
+      {
+        "path": "ogrdb/sequence/sequence_routes.py",
+        "git_blob": "dc925622a3663152b66cb0241003422fe19bd333",
+        "sha256": "b2b996b96597a69cae895376b99389b5c3e490c6c9d883c4e1d814beef4a4802",
+        "lines": {
+          "1821-1825": "default IMGT ranges over the gapped sequence, zero-based half-open: FR1 (0,78), CDR1 (78,114), FR2 (114,165), CDR2 (165,195), FR3 (195,312)",
+          "1828-1868": "delineate_v_gene: cdr3_start = 1 + number of non-gap characters in gapped columns before index 312, i.e. the first nucleotide after IMGT codon 104",
+          "1203": "bulk upload stores cdr3_start as a full-sequence coordinate: feats['cdr3_start'] + gene_start - 1",
+          "1107-1108": "bulk upload derives the feature ranges from form-supplied gapped CDR coordinates (FR3 ends at gapped_cdr3_start - 1), so the default IMGT ranges are a form default, not a guarantee",
+          "2085-2090": "cdr3_start can be entered manually; it is checked only for lying on a codon boundary from gene_start and inside gene_start..gene_end"
+        }
+      },
+      {
+        "path": "ogrdb/germline_set/descs_to_fasta.py",
+        "git_blob": "8fbb09a2d3e825fff13b161d9f363280ed273571",
+        "sha256": "8e8cc5991b2ba9b59f1b32aea76d0a4419a5107fd61e5202a0ae851fb15b4bb0",
+        "lines": {
+          "87-91": "fake_allele relabelling: '*00' appended to names without '*', '-' at index 4 rewritten (no fixture label is affected)",
+          "98-105": "gapped exports write coding_seq_imgt with trailing gaps removed, plus ext_3prime for '_ex'"
+        }
+      },
+      {
+        "path": "ogrdb/maint/maint_routes.py",
+        "git_blob": "9a92570e6c0b2e791415685fe36f3264340da156",
+        "sha256": "2bc46f504435f55d7f340e5458e573200b925ff3907b1df3c660db79f7ba2d8c",
+        "lines": {
+          "503-509": "maintenance check (written for mouse V records) expects cdr3_start at aligned position 313 (1-based)",
+          "552-562": "aligned positions 310-312 are checked as the second cysteine"
+        }
+      },
+      {
+        "path": "db/gene_description_db.py",
+        "git_blob": "63205b5b736bc774386820966e31b4db4ed2212c",
+        "sha256": "48cc37fafc8002f19f0fb7162b41a87458e5cc2db9eb15653a5afe8dd60081f2",
+        "lines": {
+          "394": "stored cdr3_start: CDR3 start co-ordinate in the Full Sequence (V-genes only)"
+        }
+      }
+    ],
+    "related_tool": {
+      "repository": "https://github.com/williamdlees/receptor_utils",
+      "commit": "e7983d47e6662449db100940c28ef83491c4f51e",
+      "path": "src/receptor_utils/aux_formats.py",
+      "git_blob": "cabb6203799cf3b4e11f3b84cf6d7ea625534ee3",
+      "sha256": "d2da33d0e5c216b4d82d580dd397287db5b55fa6406241dece8646c21f2eb545",
+      "lines": {
+        "163": "J records are rejected unless (j_cdr3_end - j_codon_frame) % 3 == 0",
+        "176": "IgBLAST coding frame = j_codon_frame - 1",
+        "178": "IgBLAST CDR3 end (0-based, last CDR3 nucleotide) = j_cdr3_end - 2"
+      }
+    }
+  },
+  "conventions": {
+    "coding_interval": {
+      "status": "established_for_listed_fixtures",
+      "rule": "sequence[gene_start - 1 : gene_end] (1-based inclusive in the record's sequence) equals coding_sequence, except where an '_ex' export appends a provider 3' extension after gene_end",
+      "exceptions_in_fixtures": "IGH_VDJ.10 airr_ex: 23 extended V records; IGKappa_VJ.5 airr_ex: 1 (IGKV1D-8*04); IGLambda_VJ.4 airr_ex: 6. The unsuffixed exports have none."
+    },
+    "j_landmark": {
+      "status": "established_for_listed_fixtures",
+      "rule": "zero-based anchor in coding_sequence = j_cdr3_end - 1; reported zero-based coding phase value = j_codon_frame - 1",
+      "differs_from": "AIRR 2.0 prose (j_cdr3_end in the sequence field; j_codon_frame as the codon position of the first coding nucleotide, i.e. phase (1 - j_codon_frame) % 3)",
+      "evidence": [
+        "Across the 47 J record occurrences in the six JSON exports (export-record occurrences, not unique alleles; most J alleles appear in both variants of a release), j_cdr3_end is always smaller than gene_start, so reading it as a sequence-field coordinate places the landmark before the coding sequence.",
+        "The producer's companion tool treats j_codon_frame - 1 as the coding frame and requires (j_cdr3_end - j_codon_frame) % 3 == 0; all 47 occurrences satisfy that check. This shows the two fields are mutually consistent, not that the phase was derived independently of the landmark.",
+        "Codon check after the meaning is fixed: the anchored codon is TGG in every IGH J occurrence and TTT/TTC in every IGK/IGL J occurrence; it is a disagreement detector, not the basis of the rule."
+      ],
+      "phase_scope": "Correct conversion of j_codon_frame establishes the reported phase value only. Whether the producer derived it independently of the landmark is unresolved (j_phase_derivation); it is not independent phase evidence."
+    },
+    "v_landmark": {
+      "status": "established_for_listed_fixtures",
+      "rule": "v_gene_delineations[0].cdr3_start (delineation_scheme 'IMGT', sequence_delineation_id '1') is a 1-based coordinate in coding_sequence naming the first nucleotide after IMGT codon 104; zero-based anchor of the IMGT codon-104 landmark in coding_sequence = cdr3_start - 4",
+      "scope": "Records of the six JSON fixtures listed in sources.json whose label-identical record in the gapped export of the same variant ('airr' with 'gapped', 'airr_ex' with 'gapped_ex') ungaps to exactly coding_sequence and has a complete codon at gapped columns 310-312. Every V record in these fixtures meets that condition. Other releases or sets are unsupported until a reviewed profile extension.",
+      "evidence": [
+        "Producer code: cdr3_start is converted to a 1-based coordinate in the delineation's unaligned_sequence, which is built from the same string as coding_sequence; the default IMGT ranges put it immediately after gapped column 312.",
+        "Why record binding is mandatory: the producer lets uploaders configure the gapped feature ranges (sequence_routes.py:1107-1108) and edit cdr3_start by hand (sequence_routes.py:2085-2090), and the exported numbers are stored database values rather than being derived from the gapped sequence at export time, so the code alone does not guarantee that any record follows the default IMGT ranges. Each record's number must be bound to its own gapped record in the gapped export of the same variant.",
+        "Record binding, variant-specific ('airr' records against 'gapped', 'airr_ex' records against 'gapped_ex'): for all 746 V record occurrences across the six JSON exports (IGH 209 + 202, IGK 82 + 77, IGL 88 + 88; export-record occurrences, not unique alleles), 1 + the number of non-gap characters in gapped columns 1-312 equals cdr3_start, the codon at gapped columns 310-312 has no gap, and it starts at ungapped index cdr3_start - 4. All ten numeric delineation fields agree with the default IMGT ranges in every occurrence.",
+        "Alignment origin: no gapped V record starts with a gap, and columns 67-69 and 121-123 carry the conserved first Cys 23 and Trp 41 except in the records listed under imgt_23_41_exceptions_in_both_gapped_exports, consistent with IMGT unique numbering starting at column 1. Residues at columns 310-312 are not used for this.",
+        "The fraction of records with a Cys at the anchor is not used as evidence; non-Cys residues at IMGT 104 are reported as found."
+      ],
+      "imgt_23_41_exceptions_in_both_gapped_exports": {
+        "IGH_VDJ.10": {
+          "IGHV3-20*02": {
+            "23": "TTT"
+          },
+          "IGHV3-25*02": {
+            "41": "TGT"
+          },
+          "IGHV3-25*03": {
+            "41": "TGT"
+          },
+          "IGHV3-25*04": {
+            "41": "TGT"
+          },
+          "IGHV3-25*05": {
+            "41": "TGT"
+          }
+        },
+        "IGKappa_VJ.5": {
+          "IGKV1-13*01": {
+            "41": "TGA"
+          },
+          "IGKV2D-24*01": {
+            "23": "TTC"
+          }
+        },
+        "IGLambda_VJ.4": {
+          "IGLV3-2*03": {
+            "41": "TCG"
+          }
+        }
+      },
+      "residues_other_than_cys_at_imgt_104": {
+        "IGH_VDJ.10": {
+          "IGHV1-38-4*01": "TAT"
+        },
+        "IGKappa_VJ.5": {
+          "IGKV1D-37*01": "GGT",
+          "IGKV2-29*01": "TGA"
+        },
+        "IGLambda_VJ.4": {
+          "IGLV3-2*03": "GCT",
+          "IGLV3-32*01": "TAT"
+        }
+      }
+    },
+    "gapped_alignment": {
+      "status": "established_for_listed_fixtures",
+      "rule": "FASTA, header = provider label, '.' = gap, V records aligned to IMGT unique numbering with column 1 = IMGT position 1 and no alignment_labels; D and J records carry no gaps",
+      "matching": "Variant-specific: an 'airr' record is matched only against the 'gapped' export and an 'airr_ex' record only against 'gapped_ex'. Every JSON record has exactly one label-identical record in its own variant's gapped export, and the ungapped bytes are equal (IGH 249/249 and 240/240, IGK 89/89 and 84/84, IGL 98/98 and 97/97). A label without an 'airr_ex' record has no 'gapped_ex' record either."
+    }
+  },
+  "record_observations": [
+    {
+      "set": "9606.IGLambda_VJ/4",
+      "label": "IGLV3-2*03",
+      "observation": "non_cys_imgt_104_with_out_of_frame_tgt_nearby",
+      "detail": "The source alignment places GCT at IMGT codon 104 (coding_sequence[258:261]). A TGT occurs at coding_sequence[254:257], 4 nt upstream of codon 104 and in a different reading frame (254 % 3 == 2); the next Cys codon downstream is TGC at coding_sequence[272:275], also out of frame. Neither is used as the landmark, even though the record has functional=true and curational_tags ['likely_full_length']; the landmark stays at codon 104 and its residue is reported.",
+      "coding_sequence_250_271": "TTACTGTCGCTCGGAACAGCA"
+    },
+    {
+      "set": "9606.IGH_VDJ/10",
+      "label": "IGHV1-58*01",
+      "observation": "v_rss_start_inside_coding_interval",
+      "detail": "The heptamer CACAGTG starts immediately after gene_end 438 (sequence positions 439-445, 1-based), while v_rs_start 324 points at an internal CACAG in FR3 (sequence positions 324-330 read CACAGAA). The RSS coordinate field is the faulty one; the coding interval and the cdr3_start binding are consistent.",
+      "sequence_after_gene_end": "CACAGTG",
+      "sequence_at_v_rs_start": "CACAGAA"
+    },
+    {
+      "set": "9606.IGH_VDJ/10",
+      "label": "IGHV3-7*04",
+      "observation": "coding_end_before_declared_v_rss",
+      "detail": "The additional 'A' carried by the 'airr_ex' record (3' extension past gene_end 455) matches the supplied record context immediately before the declared RSS (v_rs_start 457; heptamer CACAGTG follows). This is the IGH analogue of the IGL two-base class. The 'airr' record, which ends at gene_end, is the one used under the observed-span policy; the longer alternative stays recorded and whether it is the physical coding end remains unresolved.",
+      "sequence_after_gene_end": "ACACAGTG"
+    }
+  ],
+  "unresolved": [
+    {
+      "id": "v_coding_phase_independence",
+      "detail": "No source field states a V coding phase. Every V anchor is a multiple of 3, so a phase derived from the anchor is 0, but that is anchor-derived, not independent source support."
+    },
+    {
+      "id": "j_phase_derivation",
+      "detail": "Correct conversion of j_codon_frame establishes the reported phase value only. Whether the producer derived it independently of j_cdr3_end is not documented, so it is not independent phase evidence."
+    },
+    {
+      "id": "functional_false_meaning",
+      "detail": "The producer sets functional = 'F' in functionality, and 'F' also occurs in 'ORF': functional=true conflates functional (F) and ORF alleles, and functional=false means only that the stored functionality text has no 'F' (for example P). Neither value classifies an allele as functional, ORF or pseudogene."
+    },
+    {
+      "id": "coding_end_completeness",
+      "detail": "Neither curational tags, functional=true, RSS adjacency nor exact context slices establish complete physical coding ends; '_ex' 3' extensions are provider inferences."
+    },
+    {
+      "id": "historical_affirmed_spans",
+      "detail": "Free-text affirmation limits in curation notes use gapped numbering; no reviewed note interpretation exists for these fixtures."
+    },
+    {
+      "id": "v_rss_coordinates",
+      "detail": "IGHV1-58*01 (IGH_VDJ.10) declares v_rs_start 324 inside its coding interval 143-438 (see record_observations), and IGHV3-38*01 declares v_rs_start 452 before gene_end 460; RSS coordinates are retained as observations only."
+    },
+    {
+      "id": "server_revision",
+      "detail": "The deployed producer revision is not observable; conventions are bound to the fixture bytes by the per-record checks above, not by the code alone."
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "schema": "genairr_reference_source_expectations",
+  "schema_version": 1,
+  "description": "Expected values for the committed OGRDB fixtures, none produced by GenAIRR code. Provenance differs by section: j_examples and v_examples were read off printed position rulers (one base per position, gapped columns counted by eye); igl4_airr_ex_coding_end_observations match an earlier independently authored table and were confirmed against printed record substrings; the set-level aggregates under sets (record and segment counts, '_ext' counts, paralog-only identities, label differences, extension suffixes, identical-coding groups, V RSS gap counts, gapped record counts) were computed by standalone standard-library scripts and transcribed. 'anchor_coding0' is a zero-based index into the record's coding_sequence; 'phase' is the reported phase value converted from j_codon_frame (zero-based offset of the first complete codon as stated by the provider; a reported value, not independent phase evidence); 'same_offset_in_sequence' is the codon found when the same number is applied to the record's sequence field instead (the wrong coordinate space, kept as a contrast).",
+  "rules_under_test": {
+    "j_anchor_coding0": "j_cdr3_end - 1",
+    "j_reported_phase": "j_codon_frame - 1",
+    "j_airr_prose_anchor_coding0": "j_cdr3_end - gene_start",
+    "j_airr_prose_phase": "(1 - j_codon_frame) % 3",
+    "v_anchor_coding0": "cdr3_start - 4",
+    "v_cdr3_start_from_gapped": "1 + count of non-gap characters in gapped columns 1..312",
+    "coding_interval": "sequence[gene_start - 1 : gene_end]"
+  },
+  "sets": {
+    "9606.IGH_VDJ/10": {
+      "airr": {"records": 249, "V": 209, "D": 33, "J": 7, "refs_ending_ext": 0, "paralog_only_identities": []},
+      "airr_ex": {"records": 240, "V": 202, "D": 31, "J": 7, "refs_ending_ext": 240,
+                  "paralog_only_identities": ["IGHD4-11*01", "IGHD5-18*01", "IGHV1-69D*01", "IGHV2-70*04", "IGHV3-23D*01",
+                                              "IGHV3-30-3*03", "IGHV3-30-5*01", "IGHV3-30-5*02", "IGHV4-30-4*09"]},
+      "labels_only_in_airr": ["IGHD4-11*01", "IGHD5-18*01", "IGHV1-69D*01", "IGHV2-70*04", "IGHV3-23D*01",
+                              "IGHV3-30-3*03", "IGHV3-30-5*01", "IGHV3-30-5*02", "IGHV4-30-4*09"],
+      "labels_only_in_airr_ex": [],
+      "airr_ex_coding_suffix_beyond_airr": {
+        "IGHV1-58*03": "A", "IGHV1-69*18": "A", "IGHV1-69*20": "A", "IGHV3-21*05": "A", "IGHV3-30*20": "A",
+        "IGHV3-30*i02": "A", "IGHV3-53*05": "A", "IGHV3-7*04": "A", "IGHV3-9*04": "ATA", "IGHV4-30-4*i02": "A",
+        "IGHV4-31*11": "A", "IGHV4-39*08": "A", "IGHV4-39*09": "A", "IGHV4-39*i03": "A", "IGHV4-4*09": "GA",
+        "IGHV4-4*10": "A", "IGHV4-59*11": "A", "IGHV4-59*12": "A", "IGHV4-59*i03": "A", "IGHV4-61*10": "A",
+        "IGHV4-61*11": "A", "IGHV4-61*i04": "A", "IGHV5-51*06": "CA"
+      },
+      "airr_identical_coding_groups": [
+        ["IGHD4-11*01", "IGHD4-4*01"], ["IGHD5-18*01", "IGHD5-5*01"], ["IGHV1-69*01", "IGHV1-69D*01"],
+        ["IGHV2-70*04", "IGHV2-70D*04"], ["IGHV3-23*01", "IGHV3-23D*01"], ["IGHV3-30*02", "IGHV3-30-5*02"],
+        ["IGHV3-30*04", "IGHV3-30-3*03"], ["IGHV3-30*18", "IGHV3-30-5*01"], ["IGHV4-30-4*09", "IGHV4-31*03"]
+      ],
+      "airr_v_rss_gap_counts": {"0": 183, "1": 1, "-9": 1, "-115": 1, "no_v_rs_start": 23},
+      "gapped_records": {"gapped": 249, "gapped_ex": 240}
+    },
+    "9606.IGKappa_VJ/5": {
+      "airr": {"records": 89, "V": 82, "D": 0, "J": 7, "refs_ending_ext": 0, "paralog_only_identities": []},
+      "airr_ex": {"records": 84, "V": 77, "D": 0, "J": 7, "refs_ending_ext": 84,
+                  "paralog_only_identities": ["IGKV1-33*01", "IGKV1D-39*01", "IGKV2-40*01", "IGKV2D-28*01", "IGKV6-21*01"]},
+      "labels_only_in_airr": ["IGKV1-33*01", "IGKV1D-39*01", "IGKV2-40*01", "IGKV2D-28*01", "IGKV6-21*01"],
+      "labels_only_in_airr_ex": [],
+      "airr_ex_coding_suffix_beyond_airr": {"IGKV1D-8*04": "TCC"},
+      "airr_identical_coding_groups": [
+        ["IGKV1-33*01", "IGKV1D-33*01"], ["IGKV1-39*01", "IGKV1D-39*01"], ["IGKV2-28*01", "IGKV2D-28*01"],
+        ["IGKV2-40*01", "IGKV2D-40*01"], ["IGKV6-21*01", "IGKV6D-21*01"]
+      ],
+      "airr_v_rss_gap_counts": {"0": 81, "no_v_rs_start": 1},
+      "gapped_records": {"gapped": 89, "gapped_ex": 84}
+    },
+    "9606.IGLambda_VJ/4": {
+      "airr": {"records": 98, "V": 88, "D": 0, "J": 10, "refs_ending_ext": 0, "paralog_only_identities": []},
+      "airr_ex": {"records": 97, "V": 88, "D": 0, "J": 9, "refs_ending_ext": 97, "paralog_only_identities": ["IGLJ3*01"]},
+      "labels_only_in_airr": ["IGLJ3*01"],
+      "labels_only_in_airr_ex": [],
+      "airr_ex_coding_suffix_beyond_airr": {
+        "IGLV10-54*04": "CA", "IGLV2-14*03": "TC", "IGLV3-21*04": "CC", "IGLV3-25*03": "CC", "IGLV3-9*01": "CACCC",
+        "IGLV6-57*04": "CA"
+      },
+      "airr_identical_coding_groups": [["IGLJ2*01", "IGLJ3*01"]],
+      "airr_v_rss_gap_counts": {"0": 82, "2": 5, "no_v_rs_start": 1},
+      "gapped_records": {"gapped": 98, "gapped_ex": 97}
+    }
+  },
+  "igl4_airr_ex_coding_end_observations": [
+    {"label": "IGLV10-54*04", "gene_end": 463, "v_rs_start": 466, "coding_extension": "CA", "sequence_after_gene_end": "CA", "finding": "coding_end_before_declared_v_rss"},
+    {"label": "IGLV2-14*03", "gene_end": 469, "v_rs_start": 472, "coding_extension": "TC", "sequence_after_gene_end": "TC", "finding": "coding_end_before_declared_v_rss"},
+    {"label": "IGLV3-21*04", "gene_end": 779, "v_rs_start": 782, "coding_extension": "CC", "sequence_after_gene_end": "CC", "finding": "coding_end_before_declared_v_rss"},
+    {"label": "IGLV3-25*03", "gene_end": 511, "v_rs_start": 514, "coding_extension": "CC", "sequence_after_gene_end": "CC", "finding": "coding_end_before_declared_v_rss"},
+    {"label": "IGLV6-57*04", "gene_end": 476, "v_rs_start": 479, "coding_extension": "CA", "sequence_after_gene_end": "CA", "finding": "coding_end_before_declared_v_rss"},
+    {"label": "IGLV3-9*01", "gene_end": 628, "v_rs_start": 629, "coding_extension": "CACCC", "sequence_after_gene_end": "CACAG", "finding": "coding_extension_disagrees_with_record_context"}
+  ],
+  "j_examples": [
+    {"set": "9606.IGH_VDJ/10", "export": "airr", "label": "IGHJ1*01", "sequence_length": 90, "coding_length": 52, "gene_start": 39, "gene_end": 90,
+     "j_cdr3_end": 19, "j_codon_frame": 1, "anchor_coding0": 18, "anchor_codon": "TGG", "phase": 0, "same_offset_in_sequence": "CTC", "airr_prose_anchor_coding0": -20},
+    {"set": "9606.IGH_VDJ/10", "export": "airr", "label": "IGHJ2*01", "sequence_length": 91, "coding_length": 53, "gene_start": 39, "gene_end": 91,
+     "j_cdr3_end": 20, "j_codon_frame": 2, "anchor_coding0": 19, "anchor_codon": "TGG", "phase": 1, "same_offset_in_sequence": "CAG", "airr_prose_anchor_coding0": -19},
+    {"set": "9606.IGH_VDJ/10", "export": "airr", "label": "IGHJ4*02", "sequence_length": 87, "coding_length": 48, "gene_start": 40, "gene_end": 87,
+     "j_cdr3_end": 15, "j_codon_frame": 3, "anchor_coding0": 14, "anchor_codon": "TGG", "phase": 2, "same_offset_in_sequence": "CCT", "airr_prose_anchor_coding0": -25},
+    {"set": "9606.IGH_VDJ/10", "export": "airr_ex", "label": "IGHJ6*02", "sequence_length": 101, "coding_length": 63, "gene_start": 39, "gene_end": 101,
+     "j_cdr3_end": 30, "j_codon_frame": 3, "anchor_coding0": 29, "anchor_codon": "TGG", "phase": 2, "same_offset_in_sequence": "GCC", "airr_prose_anchor_coding0": -9},
+    {"set": "9606.IGKappa_VJ/5", "export": "airr", "label": "IGKJ1*01", "sequence_length": 77, "coding_length": 38, "gene_start": 40, "gene_end": 77,
+     "j_cdr3_end": 8, "j_codon_frame": 2, "anchor_coding0": 7, "anchor_codon": "TTC", "phase": 1, "same_offset_in_sequence": "GTT", "airr_prose_anchor_coding0": -32},
+    {"set": "9606.IGKappa_VJ/5", "export": "airr_ex", "label": "IGKJ2*01", "sequence_length": 78, "coding_length": 39, "gene_start": 40, "gene_end": 78,
+     "j_cdr3_end": 9, "j_codon_frame": 3, "anchor_coding0": 8, "anchor_codon": "TTT", "phase": 2, "same_offset_in_sequence": "TAT", "airr_prose_anchor_coding0": -31},
+    {"set": "9606.IGLambda_VJ/4", "export": "airr_ex", "label": "IGLJ7*02", "sequence_length": 66, "coding_length": 38, "gene_start": 29, "gene_end": 66,
+     "j_cdr3_end": 8, "j_codon_frame": 2, "anchor_coding0": 7, "anchor_codon": "TTC", "phase": 1, "same_offset_in_sequence": "GTG", "airr_prose_anchor_coding0": -21}
+  ],
+  "v_examples": [
+    {"set": "9606.IGLambda_VJ/4", "export": "airr_ex", "gapped_export": "gapped_ex", "label": "IGLV3-2*03", "functional": true, "coding_length": 284,
+     "cdr3_start": 262, "anchor_coding0": 258, "anchor_codon": "GCT", "gapped_columns_310_312": "GCT",
+     "non_gap_in_columns_1_309": 258, "non_gap_in_columns_1_312": 261, "same_offset_in_sequence": "CCT"},
+    {"set": "9606.IGLambda_VJ/4", "export": "airr_ex", "gapped_export": "gapped_ex", "label": "IGLV3-32*01", "functional": true, "coding_length": 290,
+     "cdr3_start": 262, "anchor_coding0": 258, "anchor_codon": "TAT", "gapped_columns_310_312": "TAT",
+     "non_gap_in_columns_1_309": 258, "non_gap_in_columns_1_312": 261, "same_offset_in_sequence": "TCA"},
+    {"set": "9606.IGH_VDJ/10", "export": "airr", "gapped_export": "gapped", "label": "IGHV1-2*02", "functional": true, "coding_length": 296,
+     "cdr3_start": 289, "anchor_coding0": 285, "anchor_codon": "TGT", "gapped_columns_310_312": "TGT",
+     "non_gap_in_columns_1_309": 285, "non_gap_in_columns_1_312": 288, "same_offset_in_sequence": "GGG"},
+    {"set": "9606.IGH_VDJ/10", "export": "airr", "gapped_export": "gapped", "label": "IGHV3-23*01", "functional": true, "coding_length": 296,
+     "cdr3_start": 289, "anchor_coding0": 285, "anchor_codon": "TGT", "gapped_columns_310_312": "TGT",
+     "non_gap_in_columns_1_309": 285, "non_gap_in_columns_1_312": 288, "same_offset_in_sequence": "GAA"},
+    {"set": "9606.IGH_VDJ/10", "export": "airr", "gapped_export": "gapped", "label": "IGHV1-38-4*01", "functional": true, "coding_length": 296,
+     "cdr3_start": 289, "anchor_coding0": 285, "anchor_codon": "TAT", "gapped_columns_310_312": "TAT",
+     "non_gap_in_columns_1_309": 285, "non_gap_in_columns_1_312": 288, "same_offset_in_sequence": "GAT"},
+    {"set": "9606.IGKappa_VJ/5", "export": "airr", "gapped_export": "gapped", "label": "IGKV1-39*01", "functional": true, "coding_length": 287,
+     "cdr3_start": 265, "anchor_coding0": 261, "anchor_codon": "TGT", "gapped_columns_310_312": "TGT",
+     "non_gap_in_columns_1_309": 261, "non_gap_in_columns_1_312": 264, "same_offset_in_sequence": "TCA"},
+    {"set": "9606.IGKappa_VJ/5", "export": "airr", "gapped_export": "gapped", "label": "IGKV2-29*01", "functional": false, "coding_length": 302,
+     "cdr3_start": 280, "anchor_coding0": 276, "anchor_codon": "TGA", "gapped_columns_310_312": "TGA",
+     "non_gap_in_columns_1_309": 276, "non_gap_in_columns_1_312": 279, "same_offset_in_sequence": "CAT"},
+    {"set": "9606.IGKappa_VJ/5", "export": "airr", "gapped_export": "gapped", "label": "IGKV1D-37*01", "functional": true, "coding_length": 287,
+     "cdr3_start": 265, "anchor_coding0": 261, "anchor_codon": "GGT", "gapped_columns_310_312": "GGT",
+     "non_gap_in_columns_1_309": 261, "non_gap_in_columns_1_312": 264, "same_offset_in_sequence": "GGT"},
+    {"set": "9606.IGKappa_VJ/5", "export": "airr_ex", "gapped_export": "gapped_ex", "label": "IGKV1D-8*04", "functional": true, "coding_length": 287,
+     "cdr3_start": 265, "anchor_coding0": 261, "anchor_codon": "TGT", "gapped_columns_310_312": "TGT",
+     "non_gap_in_columns_1_309": 261, "non_gap_in_columns_1_312": 264, "same_offset_in_sequence": "TGT"}
+  ]
+}

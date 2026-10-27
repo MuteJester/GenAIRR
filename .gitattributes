@@ -2,3 +2,5 @@
 # these bytes, so they are checked out unchanged (no CRLF conversion) on every platform.
 tests/data/reference_first_use/** -text
 tests/golden/reference/** -text
+# Exact provider bytes and their manifests: digests cover these bytes, so no EOL conversion.
+tests/data/reference_sources/** -text
