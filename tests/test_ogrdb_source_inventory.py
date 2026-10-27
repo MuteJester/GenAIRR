@@ -1366,3 +1366,30 @@ def test_a_paralog_naming_a_record_of_another_segment_is_flagged():
 def test_pinned_paralogs_name_records_of_their_own_segment(source):
     _, inventory = inventory_of(source)
     assert findings(inventory, "paralog_record_segment_conflict") == []
+
+
+def test_only_the_exact_ext_suffix_counts_as_the_extended_export_suffix():
+    shared = [item["label"] for item in raw_records(IGL, "airr_ex")]
+    one, two, three = shared[1:4]
+    refs = {item["label"]: item["allele_description_ref"] for item in raw_records(IGL, "airr")}
+
+    def edit_airr(records):
+        records[_label_index(records, one)]["allele_description_ref"] = "OGRDB:Homo sapiens:next"
+
+    def edit_ex(records):
+        records[_label_index(records, two)]["allele_description_ref"] = refs[two] + "ext"
+        records[_label_index(records, three)]["allele_description_ref"] = refs[three] + "_ext2"
+
+    blobs = {"airr": with_records(IGL, "airr", edit_airr), "airr_ex": with_records(IGL, "airr_ex", edit_ex)}
+    lock, inventory = build(IGL, blobs)
+    airr, airr_ex = (ogrdb.account(lock, inventory).export(f) for f in EXPORTS)
+    assert (airr.provider_refs_with_ext_suffix, airr_ex.provider_refs_with_ext_suffix) == (0, 95)
+    (suffix,) = findings(inventory, "export_provider_ref_suffix")
+    observations = suffix.observations.get()
+    assert {k: observations[k] for k in ("pairs", "suffix_only", "identical", "other")} == {
+        "pairs": 97, "suffix_only": 94, "identical": 0, "other": 3}
+    assert (observations["airr"]["refs_with_suffix"], observations["airr_ex"]["refs_with_suffix"]) == (0, 95)
+    differing = {f.observations.get()["label"]: (f.observations.get()["airr"], f.observations.get()["airr_ex"])
+                 for f in findings(inventory, "export_provider_ref_differs")}
+    assert differing == {one: ("OGRDB:Homo sapiens:next", refs[one] + "_ext"),
+                         two: (refs[two], refs[two] + "ext"), three: (refs[three], refs[three] + "_ext2")}
