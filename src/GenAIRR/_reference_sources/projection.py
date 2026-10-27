@@ -44,6 +44,7 @@ Everything the runtime reference cannot hold stays in the build report:
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -784,6 +785,18 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     return Projection(build_input_hash, fasta, annotations, reference, report)
 
 
+def _runtime_accounting(recipe: Recipe, reference: Reference) -> dict:
+    """The report fields that describe the runtime reference: its hashes, its capabilities and
+    whether each recipe requirement is satisfied by them."""
+    capabilities = reference.capabilities()
+    available = {level: capabilities.available(evidence=level) for level in ("assertion", "source")}
+    return {"runtime": RuntimeHashes(reference.catalogue_hash, reference.models_hash, reference.execution_hash,
+                                     reference.artifact_hash),
+            "capabilities": RuntimeCapabilities.from_dict(capabilities.to_dict()),
+            "requirements": tuple(RequirementOutcome(r.capability, r.evidence, r.capability in available[r.evidence])
+                                  for r in recipe.requires)}
+
+
 def _report(build: _Build, inputs: dict, records: tuple, claims: tuple, reference: Reference,
             generator: Generator) -> BuildReport:
     """The complete build report; its construction re-checks every document, hash and count."""
@@ -798,16 +811,29 @@ def _report(build: _Build, inputs: dict, records: tuple, claims: tuple, referenc
         selected_alleles=SegmentCounts(**segments),
         record_outcomes=OutcomeCounts(**{k: sum(r.outcome == k for r in records)
                                          for k in ("selected", "excluded", "rejected")}))
-    capabilities = reference.capabilities()
-    available = {level: capabilities.available(evidence=level) for level in ("assertion", "source")}
     return BuildReport(
         generator=generator, source_lock=lock, recipe=recipe, inventory=inventory,
         hashes=BuildHashes(source_lock=inputs["source_lock"], inventory=inputs["inventory"], recipe=inputs["recipe"],
                            build_inputs=build.build_input_hash),
-        runtime=RuntimeHashes(reference.catalogue_hash, reference.models_hash, reference.execution_hash,
-                              reference.artifact_hash),
         comparison=comparison, counts=counts,
         selection=tuple(SelectedAllele(e.allele_id, c.locator) for e, c in zip(build.entries, build.chosen)),
-        records=records, claims=claims, capabilities=RuntimeCapabilities.from_dict(capabilities.to_dict()),
-        requirements=tuple(RequirementOutcome(r.capability, r.evidence, r.capability in available[r.evidence])
-                           for r in recipe.requires))
+        records=records, claims=claims, **_runtime_accounting(recipe, reference))
+
+
+def report_for(report: BuildReport, reference: Reference, generator: Generator) -> BuildReport:
+    """The build report of an already projected build, stated for ``reference`` and ``generator``.
+
+    ``reference`` is a runtime artifact with the same runtime content as the projected one, for
+    example the artifact a dossier stores, written by the build that ``generator`` names.  The
+    source, recipe, inventory, selection and every outcome are ``report``'s; the runtime hashes,
+    capabilities and requirement outcomes are ``reference``'s.  A dossier check compares the
+    result with the stored report, so an earlier build is never judged by the artifact identity
+    the checking version would give it.
+    """
+    require_type(report, BuildReport, "report")
+    require_type(reference, Reference, "reference")
+    require_type(generator, Generator, "generator")
+    try:
+        return dataclasses.replace(report, generator=generator, **_runtime_accounting(report.recipe, reference))
+    except ReferenceSourceError as exc:
+        raise exc.under("/report") from None

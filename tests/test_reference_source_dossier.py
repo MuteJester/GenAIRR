@@ -154,3 +154,557 @@ def test_a_failed_write_leaves_an_incomplete_dossier_and_removes_nothing(igl, tm
         for name, data in written.items():
             assert data == expected[name]
         assert (tmp_path / "foreign.txt").read_bytes() == b"another writer's file"
+
+
+# ── checking: round trip and incomplete or unsafe dossiers ───────────
+
+
+def test_a_written_dossier_reads_back_as_the_stored_build(igl, tmp_path, offline):
+    _, build = igl
+    build.write_dossier(tmp_path / "dossier")
+    before = tree(tmp_path / "dossier")
+    checked = ReferenceBuild.read_dossier(tmp_path / "dossier")
+    assert tree(tmp_path / "dossier") == before                  # checking writes nothing
+    assert checked.reference.to_json() == build.reference.to_json()
+    assert checked.report.to_dict() == build.report.to_dict()
+    assert checked.manifest == build.manifest
+    assert (checked.lock, checked.recipe) == (build.lock, build.recipe)
+    assert checked.checked_with == GenAIRR.__version__
+    checked.write_dossier(tmp_path / "copy")                     # a checked build writes the same dossier
+    assert tree(tmp_path / "copy") == before
+
+
+def test_a_directory_without_a_manifest_is_an_incomplete_dossier(igl, tmp_path):
+    _, build = igl
+    build.write_dossier(tmp_path / "dossier")
+    (tmp_path / "dossier" / "manifest.json").unlink()
+    exc = error("incomplete_dossier", ReferenceBuild.read_dossier, tmp_path / "dossier")
+    assert "manifest.json" in exc.message
+    (tmp_path / "empty").mkdir()
+    error("incomplete_dossier", ReferenceBuild.read_dossier, tmp_path / "empty")
+
+
+def test_only_an_existing_directory_is_a_dossier(tmp_path):
+    error("io", ReferenceBuild.read_dossier, tmp_path / "absent")
+    (tmp_path / "file").write_bytes(b"{}")
+    error("io", ReferenceBuild.read_dossier, tmp_path / "file")
+    with pytest.raises(TypeError):
+        ReferenceBuild.read_dossier(None)
+
+
+def test_every_publication_failure_leaves_a_dossier_that_cannot_be_read(igl, tmp_path, monkeypatch):
+    _, build = igl
+    for step in (0, 4, 10, 15):              # a blob, the lock, the reference, the manifest
+        directory = tmp_path / f"failed-{step}"
+        recording_writer(monkeypatch, fail_at=step)
+        error("io", build.write_dossier, directory)
+        monkeypatch.undo()
+        error("incomplete_dossier", ReferenceBuild.read_dossier, directory)
+
+
+def test_a_listed_member_that_is_absent_is_named(igl, tmp_path):
+    _, build = igl
+    build.write_dossier(tmp_path / "dossier")
+    (tmp_path / "dossier" / "inputs" / "j.fasta").unlink()
+    exc = error("missing_asset", ReferenceBuild.read_dossier, tmp_path / "dossier")
+    assert exc.path == "/inputs/j.fasta"
+
+
+def test_a_member_that_differs_from_the_manifest_is_a_digest_mismatch(igl, tmp_path):
+    _, build = igl
+    build.write_dossier(tmp_path / "dossier")
+    path = tmp_path / "dossier" / "inputs" / "v.fasta"
+    data = path.read_bytes()
+    path.write_bytes(data.replace(b"IGLV1-36*01", b"IGLV1-36*02"))           # same size, other digest
+    exc = error("digest_mismatch", ReferenceBuild.read_dossier, tmp_path / "dossier")
+    assert exc.path == "/inputs/v.fasta" and sha(data) in exc.message
+    path.write_bytes(data + b"\n")
+    exc = error("digest_mismatch", ReferenceBuild.read_dossier, tmp_path / "dossier")
+    assert exc.path == "/inputs/v.fasta" and str(len(data)) in exc.message
+
+
+def test_unlisted_files_and_directories_are_refused(igl, tmp_path):
+    _, build = igl
+    build.write_dossier(tmp_path / "dossier")
+    for extra in ("notes.txt", "inputs/extra.fasta", "cache/blobs/sha256/" + "0" * 64, "receipts/x.txt",
+                  ".report.json.0123456789abcdef.tmp"):
+        path = tmp_path / "dossier" / extra
+        path.write_bytes(b"unlisted")
+        exc = error("malformed", ReferenceBuild.read_dossier, tmp_path / "dossier")
+        assert exc.path == "/" + extra
+        path.unlink()
+    (tmp_path / "dossier" / "inputs" / "nested").mkdir()
+    exc = error("malformed", ReferenceBuild.read_dossier, tmp_path / "dossier")
+    assert exc.path == "/inputs/nested"
+
+
+def symlink_or_skip(target: pathlib.Path, link: pathlib.Path, *, directory=False) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symbolic links are unavailable here: {exc}")
+
+
+def test_a_symbolic_link_anywhere_in_a_dossier_is_refused(mini, tmp_path):
+    _, dossier = mini
+    member = dossier / "inputs" / "v.fasta"
+    outside = tmp_path / "outside.fasta"
+    outside.write_bytes(member.read_bytes())
+    member.unlink()
+    symlink_or_skip(outside, member)
+    exc = error("io", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/inputs/v.fasta" and "symbolic link" in exc.message
+    member.unlink()
+    member.write_bytes(outside.read_bytes())
+    ReferenceBuild.read_dossier(dossier)
+    inputs = dossier / "inputs"
+    inputs.rename(tmp_path / "real-inputs")
+    symlink_or_skip(tmp_path / "real-inputs", inputs, directory=True)
+    exc = error("io", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/inputs"
+    inputs.unlink()
+    (tmp_path / "real-inputs").rename(inputs)
+    manifest = dossier / "manifest.json"
+    manifest.rename(tmp_path / "manifest.json")
+    symlink_or_skip(tmp_path / "manifest.json", manifest)
+    exc = error("io", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/manifest.json"
+
+
+def test_declared_sizes_are_bounded_before_any_member_is_read(igl, tmp_path, monkeypatch):
+    _, build = igl
+    build.write_dossier(tmp_path / "dossier")
+    manifest = load_manifest(tmp_path / "dossier")
+    for member in manifest["members"]:
+        if member["name"] == "report.json":
+            member["bytes"] = 256 * 1024 * 1024 + 1
+    save_manifest(tmp_path / "dossier", manifest)
+    reads = []
+    real_open = build_module.os.open
+    monkeypatch.setattr(build_module.os, "open", lambda path, *a, **k: reads.append(path) or real_open(path, *a, **k))
+    exc = error("resource_limit", ReferenceBuild.read_dossier, tmp_path / "dossier")
+    assert exc.path == "/report.json" and "268435457" in exc.message
+    assert [pathlib.Path(p).name for p in reads] == ["manifest.json"]
+
+
+def test_generated_members_must_be_in_canonical_form(mini, tmp_path):
+    _, dossier = mini
+    report = (dossier / "report.json").read_bytes()
+    rewrite(dossier, "report.json", json.dumps(json.loads(report), indent=1).encode("utf-8"))
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/report.json" and "canonical" in exc.message
+    rewrite(dossier, "report.json", report)
+    ReferenceBuild.read_dossier(dossier)
+    rewrite(dossier, "reference.genairr-ref.json",
+            b"\xef\xbb\xbf" + (dossier / "reference.genairr-ref.json").read_bytes())
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/reference.genairr-ref.json"
+
+
+def test_receipts_are_checked_but_stay_outside_the_manifest(mini, tmp_path):
+    build, dossier = mini
+    receipt = dossier / "receipts" / "0.json"
+    document = json.loads(receipt.read_bytes())
+    receipt.write_bytes(b'{"artifact": "genairr_reference_source_receipt"}')
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert exc.path.startswith("/receipts/0.json")
+    document["sha256"] = "sha256:" + "1" * 64
+    receipt.write_bytes(canonical(document))
+    exc = error("identity_mismatch", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/receipts/0.json"
+    receipt.unlink()
+    assert ReferenceBuild.read_dossier(dossier).manifest == build.manifest
+
+
+# ── checking: rehashed tampering is caught by regeneration ───────────
+
+
+def canonical(document) -> bytes:
+    return (json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+
+
+def load_manifest(dossier: pathlib.Path) -> dict:
+    return json.loads((dossier / "manifest.json").read_bytes().decode("utf-8"))
+
+
+def save_manifest(dossier: pathlib.Path, manifest: dict) -> None:
+    (dossier / "manifest.json").write_bytes(canonical(manifest))
+
+
+def rewrite(dossier: pathlib.Path, name: str, data: bytes, *, hashes=None, runtime=None) -> None:
+    """Replace member ``name`` and rehash the manifest: the member's digest and size, and any given
+    manifest ``hashes`` and ``runtime`` fields, as an editor hiding a change would."""
+    (dossier / name).write_bytes(data)
+    manifest = load_manifest(dossier)
+    (member,) = [x for x in manifest["members"] if x["name"] == name]
+    member["sha256"], member["bytes"] = sha(data), len(data)
+    manifest["hashes"].update(hashes or {})
+    manifest["runtime"].update(runtime or {})
+    save_manifest(dossier, manifest)
+
+
+def rewrite_report(dossier: pathlib.Path, change) -> None:
+    """Replace ``report.json`` by ``change(report)`` (a new, self-consistent report) and rehash."""
+    from GenAIRR._reference_sources.digests import report_hash
+    from GenAIRR._reference_sources.report import BuildReport
+    report = change(BuildReport.from_json((dossier / "report.json").read_bytes().decode("utf-8")))
+    rewrite(dossier, "report.json", canonical(report.to_dict()),
+            hashes={**report.hashes.to_dict(), "report": report_hash(report)}, runtime=report.runtime.to_dict())
+
+
+def with_inventory(report, *, claim=lambda c: c, keep_mapping=lambda x: True):
+    """The report over an edited inventory: ``claim(c)`` replaces each claim, mappings failing
+    ``keep_mapping`` are dropped; claim outcomes follow their claims and every input hash is recomputed."""
+    import dataclasses
+    from GenAIRR._reference_sources import model
+    from GenAIRR._reference_sources._fields import digest
+    from GenAIRR._reference_sources.digests import BUILD_INPUTS_DOMAIN, unchecked_build_inputs
+    from GenAIRR._reference_sources.report import BuildHashes
+    inventory, renamed, claims = report.inventory, {}, []
+    for old in inventory.claims:
+        new = claim(old)
+        renamed[old.id] = new.id
+        claims.append(new)
+    fields = {name: getattr(inventory, name) for name in ("source_lock_hash", "adapter", "records", "candidates",
+                                                          "mentioned_identities", "observations", "support",
+                                                          "findings")}
+    edited = model.SourceInventory.assemble(claims=tuple(claims), **fields,
+                                            mappings=tuple(x for x in inventory.mappings if keep_mapping(x)))
+    outcomes = {renamed[o.claim]: dataclasses.replace(o, claim=renamed[o.claim]) for o in report.claims}
+    inputs = unchecked_build_inputs(report.source_lock, edited, report.recipe)
+    hashes = BuildHashes(inputs["source_lock"], inputs["inventory"], inputs["recipe"],
+                         digest(inputs, BUILD_INPUTS_DOMAIN))
+    return dataclasses.replace(report, inventory=edited, claims=tuple(outcomes[c.id] for c in edited.claims),
+                               hashes=hashes)
+
+
+def rebuilt_reference(dossier: pathlib.Path, tmp_path: pathlib.Path, edit=lambda files: files):
+    """A runtime reference built from the dossier's inputs after ``edit({name: bytes})``."""
+    from GenAIRR._reference.artifact import Reference
+    files = edit({p.name: p.read_bytes() for p in (dossier / "inputs").iterdir()})
+    folder = tmp_path / "edited-inputs"
+    folder.mkdir(exist_ok=True)
+    for name, data in files.items():
+        (folder / name).write_bytes(data)
+    return Reference.from_fasta(v=folder / "v.fasta", j=folder / "j.fasta", annotations=folder / "annotations.json",
+                                d=folder / "d.fasta" if "d.fasta" in files else None)
+
+
+def runtime_of(reference) -> dict:
+    return {"catalogue_hash": reference.catalogue_hash, "models_hash": reference.models_hash,
+            "execution_hash": reference.execution_hash, "artifact_hash": reference.artifact_hash}
+
+
+def with_runtime(report, reference):
+    import dataclasses
+    from GenAIRR._reference_sources.common import RuntimeHashes
+    return dataclasses.replace(report, runtime=RuntimeHashes(**runtime_of(reference)))
+
+
+J7 = "IGLJ7*02"
+V_RECORD, J_RECORD, OTHER = ("airr#/GermlineSet/0/allele_descriptions/1", "airr#/GermlineSet/0/allele_descriptions/2",
+                             "airr#/GermlineSet/0/allele_descriptions/0")
+
+
+@pytest.fixture
+def mini(tmp_path, monkeypatch):
+    """A synthetic IGL source over V, J1 and J7 (registered as validated for the test); V and J1 are
+    selected, J7 is outside the selection.  Returns ``(build, dossier directory)``."""
+    from tests.test_reference_source_api import mini_source
+    from tests.test_reference_source_projection import entry, recipe
+    source, blobs = mini_source(tmp_path, monkeypatch, labels=MINI + (J7,))
+    build = source.build(recipe(source.lock, [entry(blobs, "airr", label) for label in MINI]))
+    build.write_dossier(tmp_path / "dossier")
+    return build, tmp_path / "dossier"
+
+
+def rejected(dossier, kind, member) -> ReferenceBuild:
+    exc = error(kind, ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/" + member or exc.path.startswith("/" + member + "/"), exc
+    return exc
+
+
+def test_the_untampered_synthetic_dossier_reads(mini):
+    build, dossier = mini
+    assert [(r.record.id, r.outcome, r.exclusion) for r in build.report.records][:3] == [
+        (OTHER, "excluded", "outside_explicit_selection"), (V_RECORD, "selected", None), (J_RECORD, "selected", None)]
+    assert ReferenceBuild.read_dossier(dossier).manifest == build.manifest
+
+
+def test_an_altered_mapping_is_rejected(mini):
+    _, dossier = mini
+
+    def unbind(report):
+        dropped = {x.id for x in report.inventory.mappings
+                   if x.kind == "gapped_alignment" and x.input.id == V_RECORD + "/coding_sequence"}
+        assert len(dropped) == 1
+        return with_inventory(report, keep_mapping=lambda x: x.id not in dropped, claim=lambda c: __import__(
+            "dataclasses").replace(c, mappings=tuple(i for i in c.mappings if i not in dropped),
+                                   evidence=tuple(e for e in c.evidence if e.asset != "gapped"))
+            if dropped & set(c.mappings) else c)
+
+    rewrite_report(dossier, unbind)
+    exc = rejected(dossier, "digest_mismatch", "report.json")
+    assert "regenerat" in exc.message
+
+
+def test_an_altered_claim_support_is_rejected(mini):
+    _, dossier = mini
+    import dataclasses
+
+    def weaker(report):
+        return with_inventory(report, claim=lambda c: dataclasses.replace(c, support="assertion")
+                              if (c.subject.id, c.predicate) == (J_RECORD + "/coding_sequence", "anchor") else c)
+
+    rewrite_report(dossier, weaker)
+    exc = rejected(dossier, "digest_mismatch", "report.json")
+    assert "regenerat" in exc.message
+
+
+def test_a_hidden_exclusion_is_rejected(mini):
+    _, dossier = mini
+    import dataclasses
+
+    def hide(report):
+        records = tuple(dataclasses.replace(r, exclusion="structural_incompatibility",
+                                            detail="the record cannot be projected")
+                        if r.record.id == OTHER else r for r in report.records)
+        return dataclasses.replace(report, records=records)
+
+    rewrite_report(dossier, hide)
+    exc = rejected(dossier, "digest_mismatch", "report.json")
+    assert exc.path == "/report.json/records/0/detail" or exc.path == "/report.json/records/0/exclusion"
+
+
+def test_a_selected_label_changed_everywhere_but_the_source_is_rejected(mini, tmp_path):
+    _, dossier = mini
+    relabel = {"j.fasta": lambda d: d.replace(b">IGLJ1*01", b">IGLJ1*99"),
+               "annotations.json": lambda d: d.replace(b'"label":"IGLJ1*01"', b'"label":"IGLJ1*99"')}
+
+    def edit(files):
+        return {name: relabel.get(name, lambda d: d)(data) for name, data in files.items()}
+
+    reference = rebuilt_reference(dossier, tmp_path, edit)
+    assert [a.label for a in reference.alleles] == ["IGLV1-36*01", "IGLJ1*99"]
+    for name in ("j.fasta", "annotations.json"):
+        rewrite(dossier, "inputs/" + name, edit({name: (dossier / "inputs" / name).read_bytes()})[name])
+    rewrite(dossier, "reference.genairr-ref.json", reference.to_json().encode("utf-8"))
+    rewrite_report(dossier, lambda report: with_runtime(report, reference))
+    exc = rejected(dossier, "digest_mismatch", "inputs/j.fasta")             # the first regenerated input
+    assert "regenerat" in exc.message
+
+
+def test_altered_native_output_is_rejected(mini, tmp_path):
+    _, dossier = mini
+
+    def mutate(files):
+        header, _, rest = files["v.fasta"].partition(b"\n")
+        base = rest[:1]
+        files["v.fasta"] = header + b"\n" + (b"A" if base != b"A" else b"C") + rest[1:]
+        old = "sha256:" + hashlib.sha256(rest.replace(b"\n", b"")).hexdigest()
+        new = "sha256:" + hashlib.sha256(files["v.fasta"].partition(b"\n")[2].replace(b"\n", b"")).hexdigest()
+        files["annotations.json"] = files["annotations.json"].replace(old.encode(), new.encode())
+        return files
+
+    reference = rebuilt_reference(dossier, tmp_path, mutate)
+    rewrite(dossier, "reference.genairr-ref.json", reference.to_json().encode("utf-8"))
+    rewrite_report(dossier, lambda report: with_runtime(report, reference))
+    exc = rejected(dossier, "digest_mismatch", "reference.genairr-ref.json")
+    assert "regenerat" in exc.message
+
+
+def test_a_report_claiming_another_runtime_identity_is_rejected(mini):
+    _, dossier = mini
+    import dataclasses
+    from GenAIRR._reference_sources.common import RuntimeHashes
+
+    def other(report):
+        runtime = dict(report.runtime.to_dict(), artifact_hash="sha256:" + "ab" * 32)
+        return dataclasses.replace(report, runtime=RuntimeHashes(**runtime))
+
+    rewrite_report(dossier, other)
+    exc = rejected(dossier, "digest_mismatch", "report.json")
+    assert exc.path == "/report.json/runtime/artifact_hash"
+
+
+def test_a_runtime_body_resealed_under_another_generator_is_rejected(mini, tmp_path, monkeypatch):
+    _, dossier = mini
+    with monkeypatch.context() as patch:
+        patch.setattr(GenAIRR, "__version__", "0.0.1+forged")
+        reference = rebuilt_reference(dossier, tmp_path)
+    assert json.loads(reference.to_json())["generator"]["version"] == "0.0.1+forged"
+    rewrite(dossier, "reference.genairr-ref.json", reference.to_json().encode("utf-8"))
+    exc = rejected(dossier, "digest_mismatch", "report.json")             # the report names the stored artifact
+    assert exc.path == "/report.json/runtime/artifact_hash"
+    rewrite_report(dossier, lambda report: with_runtime(report, reference))
+    exc = rejected(dossier, "identity_mismatch", "reference.genairr-ref.json")   # and its generator is not the builder
+    assert "0.0.1+forged" in exc.message
+
+
+def test_a_recipe_that_is_not_the_reports_recipe_is_rejected(mini):
+    _, dossier = mini
+    recipe = json.loads((dossier / "recipe.json").read_bytes())
+    recipe["selection"][0]["reason"] = "a reason edited after the build"
+    rewrite(dossier, "recipe.json", canonical(recipe))
+    rejected(dossier, "identity_mismatch", "recipe.json")
+
+
+# ── acquisition receipts never enter an identity ─────────────────────
+
+
+def test_builds_with_different_receipts_have_identical_identities(tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import api
+    builds = []
+    for moment in (T0, T0 + datetime.timedelta(days=3, microseconds=7)):
+        monkeypatch.setattr(api, "_now", lambda moment=moment: moment)
+        source = from_files(tmp_path, cache=f"cache-{len(builds)}")
+        builds.append(source.build(full_recipe(tmp_path, source)))
+        builds[-1].write_dossier(tmp_path / f"dossier-{len(builds)}")
+    first, second = builds
+    assert first.manifest == second.manifest
+    assert first.report.to_dict() == second.report.to_dict()
+    assert runtime_of(first.reference) == runtime_of(second.reference)
+    one, two = tree(tmp_path / "dossier-1"), tree(tmp_path / "dossier-2")
+    receipts = [name for name in one if name.startswith("receipts/")]
+    assert receipts and all(one[name] != two[name] for name in receipts)
+    assert {k: v for k, v in one.items() if k not in receipts} == {k: v for k, v in two.items() if k not in receipts}
+    assert b"2026-10-27T09:00:00" in one["receipts/0.json"] and b"2026-10-30T09:00:00" in two["receipts/0.json"]
+
+
+# ── offline rebuilding and generator changes ─────────────────────────
+
+
+def test_a_clean_cache_build_and_a_moved_offline_dossier_agree(tmp_path, offline):
+    """The public offline-rebuild composition: read the dossier, then rebuild from its own lock,
+    cache and recipe after moving it; the deterministic files are byte-identical."""
+    from GenAIRR.reference_sources import OgrdbSource
+    source = from_files(tmp_path, cache="clean-cache")
+    build = source.build(full_recipe(tmp_path, source))
+    build.write_dossier(tmp_path / "igl-build")
+    (tmp_path / "igl-build").rename(tmp_path / "moved")
+    for path in sorted((tmp_path / "clean-cache").rglob("*"), reverse=True):
+        path.unlink() if path.is_file() else path.rmdir()
+    dossier = tmp_path / "moved"
+    checked = ReferenceBuild.read_dossier(dossier)
+    assert checked.reference.execution_hash == build.reference.execution_hash
+    locked = OgrdbSource.read(dossier / "source.lock.json", cache=dossier / "cache")
+    rebuilt = locked.build(dossier / "recipe.json")
+    rebuilt.write_dossier(tmp_path / "igl-rebuilt")
+    original, again = tree(dossier), tree(tmp_path / "igl-rebuilt")
+    listed = {member["name"] for member in load_manifest(dossier)["members"]} | {"manifest.json"}
+    assert {k: original[k] for k in listed} == {k: again[k] for k in listed}
+    assert all(b"verified_cache" in again[name] for name in again if name.startswith("receipts/"))
+
+
+def test_an_older_generators_dossier_checks_and_rebuilds_under_the_installed_one(igl, tmp_path, monkeypatch):
+    from GenAIRR._reference_sources.digests import manifest_hash, report_hash
+    from GenAIRR.reference_sources import OgrdbSource
+    old = "1.9.0"
+    current = GenAIRR.__version__
+    assert current != old
+    source, _ = igl
+    monkeypatch.setattr(GenAIRR, "__version__", old)
+    build = source.build(full_recipe(tmp_path, source))
+    build.write_dossier(tmp_path / "old")
+    monkeypatch.undo()
+    assert GenAIRR.__version__ == current
+    stored = tree(tmp_path / "old")
+    for name in ("reference.genairr-ref.json", "report.json", "manifest.json"):
+        assert f'"version":"{old}"'.encode() in stored[name]
+
+    checked = ReferenceBuild.read_dossier(tmp_path / "old")
+    assert checked.checked_with == current
+    assert json.loads(checked.reference.to_json())["generator"]["version"] == old       # the stored artifact
+    assert (checked.report.generator.version, checked.manifest.builder.version) == (old, old)
+    assert tree(tmp_path / "old") == stored
+
+    dossier = tmp_path / "old"
+    rebuilt = OgrdbSource.read(dossier / "source.lock.json", cache=dossier / "cache").build(dossier / "recipe.json")
+    rebuilt.write_dossier(tmp_path / "rebuilt")
+    assert (rebuilt.report.generator.version, rebuilt.manifest.builder.version) == (current, current)
+    assert json.loads(rebuilt.reference.to_json())["generator"]["version"] == current
+    assert rebuilt.reference.execution_hash == checked.reference.execution_hash
+    assert (rebuilt.reference.catalogue_hash, rebuilt.reference.models_hash) == (
+        checked.reference.catalogue_hash, checked.reference.models_hash)
+    assert rebuilt.reference.artifact_hash != checked.reference.artifact_hash
+    assert report_hash(rebuilt.report) != report_hash(checked.report)
+    assert manifest_hash(rebuilt.manifest) != manifest_hash(checked.manifest)
+    for name, data in tree(tmp_path / "rebuilt").items():
+        assert f'"version":"{old}"'.encode() not in data, name
+    assert ReferenceBuild.read_dossier(tmp_path / "rebuilt").manifest == rebuilt.manifest
+
+
+# ── a moved dossier in a fresh offline process ───────────────────────
+
+# Runs in a fresh isolated interpreter: every network attempt is counted and refused before
+# GenAIRR is imported, and every warning is an error.
+OFFLINE_SCRIPT = r'''
+import json
+import socket
+import sys
+import warnings
+from pathlib import Path
+
+ATTEMPTS = []
+
+
+def _refuse(*args, **kwargs):
+    ATTEMPTS.append(repr(args)[:200])          # counted even if a caller swallows the error
+    raise OSError("network access is disabled in this offline check")
+
+
+class _NoSocket(socket.socket):
+    def __init__(self, *args, **kwargs):
+        _refuse(*args)
+
+
+socket.socket = _NoSocket
+socket.create_connection = _refuse
+socket.getaddrinfo = _refuse
+warnings.simplefilter("error")
+
+from GenAIRR import Experiment
+from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild
+
+dossier, out = Path(sys.argv[1]), Path(sys.argv[2])
+checked = ReferenceBuild.read_dossier(dossier)
+locked = OgrdbSource.read(dossier / "source.lock.json", cache=dossier / "cache")
+rebuilt = locked.build(dossier / "recipe.json")
+rebuilt.write_dossier(out)
+reference = ReferenceBuild.read_dossier(out).reference
+result = Experiment.on(reference).recombine().run_records(n=25, seed=7, validate_records=True)
+print(json.dumps({
+    "checked_execution_hash": checked.reference.execution_hash,
+    "rebuilt_execution_hash": rebuilt.reference.execution_hash,
+    "reference_content_hash": result.reference_content_hash,
+    "execution_hash": reference.execution_hash,
+    "records": len(result),
+    "alleles": sorted({record["v_call"] for record in result} | {record["j_call"] for record in result}),
+    "network_attempts": ATTEMPTS,
+}))
+'''
+
+
+def test_a_moved_dossier_checks_rebuilds_and_simulates_in_a_fresh_offline_process(igl, tmp_path):
+    import shutil
+    import subprocess
+    import sys
+    _, build = igl
+    build.write_dossier(tmp_path / "written")
+    moved = tmp_path / "elsewhere" / "igl-build"
+    shutil.copytree(tmp_path / "written", moved)
+    shutil.rmtree(tmp_path / "written")
+    script = tmp_path / "offline_check.py"
+    script.write_bytes(OFFLINE_SCRIPT.encode("utf-8"))
+    process = subprocess.run([sys.executable, "-I", str(script), str(moved), str(tmp_path / "rebuilt")],
+                             capture_output=True, timeout=600, cwd=tmp_path)
+    assert process.returncode == 0, process.stderr.decode("utf-8", "replace")
+    outcome = json.loads(process.stdout.decode("utf-8"))
+    assert outcome["network_attempts"] == []
+    assert outcome["checked_execution_hash"] == outcome["rebuilt_execution_hash"] == build.reference.execution_hash
+    assert outcome["reference_content_hash"] == outcome["execution_hash"] == build.reference.execution_hash
+    assert outcome["records"] == 25
+    assert set(outcome["alleles"]) <= set(MINI)
+    original, rebuilt = tree(moved), tree(tmp_path / "rebuilt")
+    listed = {member["name"] for member in load_manifest(moved)["members"]} | {"manifest.json"}
+    assert {k: original[k] for k in listed} == {k: rebuilt[k] for k in listed}

@@ -7,32 +7,51 @@ publishes exactly the members it lists.
 """
 from __future__ import annotations
 
+from collections import deque
 import hashlib
+import json
 import os
 from pathlib import Path
+import re
+import stat
 from types import MappingProxyType
-from typing import Mapping, Optional
+from typing import Callable, Mapping, Optional
 
 from GenAIRR._artifact_io import ArtifactIOError, canonical_json, write_atomic
-from GenAIRR._reference.artifact import Reference
+from GenAIRR._reference.artifact import MAX_BYTES as REFERENCE_MAX_BYTES, Reference
 from GenAIRR._reference.errors import ReferenceArtifactError
-from GenAIRR._reference_sources._fields import require_type
+from GenAIRR._reference.importer import FASTA_MAX_BYTES
+from GenAIRR._reference.sidecar import MAX_BYTES as SIDECAR_MAX_BYTES
+from GenAIRR._reference_sources._fields import MAX_ASSET_BYTES, MAX_ASSETS, bad, ptr, require_type, show
 from GenAIRR._reference_sources.digests import report_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
-from GenAIRR._reference_sources.lock import SourceLock
+from GenAIRR._reference_sources.lock import MAX_LOCK_BYTES, SourceLock
 from GenAIRR._reference_sources.manifest import (
-    BLOB_PREFIX, MANIFEST_NAME, MEMBER_SCHEMA_VERSIONS, RECEIPTS_PREFIX, BuildManifest, ManifestHashes, Member,
-    MemberVersions, check_manifest,
+    BLOB_PREFIX, MANIFEST_NAME, MAX_MANIFEST_BYTES, MAX_MEMBERS, MEMBER_SCHEMA_VERSIONS, RECEIPTS_PREFIX,
+    BuildManifest, ManifestHashes, Member, MemberVersions, check_manifest,
 )
-from GenAIRR._reference_sources.projection import ANNOTATIONS_MEMBER, FASTA_MEMBERS
-from GenAIRR._reference_sources.recipe import Recipe
-from GenAIRR._reference_sources.report import BuildReport
+from GenAIRR._reference_sources.projection import ANNOTATIONS_MEMBER, FASTA_MEMBERS, project, report_for
+from GenAIRR._reference_sources.receipt import MAX_RECEIPT_BYTES, AcquisitionReceipt
+from GenAIRR._reference_sources.recipe import MAX_RECIPE_BYTES, Recipe
+from GenAIRR._reference_sources.report import MAX_REPORT_BYTES, BuildReport
 
 LOCK_MEMBER = "source.lock.json"
 RECIPE_MEMBER = "recipe.json"
 REPORT_MEMBER = "report.json"
 REFERENCE_MEMBER = "reference.genairr-ref.json"
 INPUTS_PREFIX = "inputs/"
+
+# Reading budget: every member's declared size is checked against its own limit and the sum
+# against the dossier limit before any member is read.  Receipts: at most one per lock asset.
+MAX_DOSSIER_BYTES = 1 << 30
+MAX_RECEIPTS = MAX_ASSETS
+_MEMBER_LIMITS = {LOCK_MEMBER: MAX_LOCK_BYTES, RECIPE_MEMBER: MAX_RECIPE_BYTES, REPORT_MEMBER: MAX_REPORT_BYTES,
+                  REFERENCE_MEMBER: REFERENCE_MAX_BYTES, INPUTS_PREFIX + ANNOTATIONS_MEMBER: SIDECAR_MAX_BYTES,
+                  **{INPUTS_PREFIX + name: FASTA_MAX_BYTES for name in FASTA_MEMBERS.values()}}
+# The only directories a dossier holds; anything else is not part of it.
+_DIRECTORIES = ("cache", "cache/blobs", "cache/blobs/sha256", "inputs", "receipts")
+_RECEIPT_RE = re.compile(r"receipts/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.json")
+_ARTIFACT_KINDS = {"io": "io", "unsupported_schema": "unsupported_schema", "integrity": "digest_mismatch"}
 
 
 def document_bytes(document: dict) -> bytes:
@@ -52,6 +71,149 @@ def _path(directory) -> Path:
 
 def _receipt_name(index: int) -> str:
     return f"{RECEIPTS_PREFIX}{index}.json"
+
+
+def _receipt_order(name: str) -> tuple:
+    stem = name[len(RECEIPTS_PREFIX):-len(".json")]
+    return (0, int(stem), "") if stem.isdigit() else (1, 0, stem)
+
+
+# ── reading a dossier ────────────────────────────────────────────────
+
+
+def _is_link(entry: os.DirEntry) -> bool:
+    if entry.is_symlink():
+        return True
+    is_junction = getattr(entry, "is_junction", None)          # Windows directory junctions (Python 3.12+)
+    return bool(is_junction is not None and is_junction())
+
+
+def _scan(root: Path) -> dict:
+    """Every regular file below ``root`` as ``{relative name: size}``, without following anything.
+
+    A symbolic link (or junction) anywhere, a special file or a directory that is not part of a
+    dossier is refused; the number of entries is bounded."""
+    files: dict = {}
+    limit = MAX_MEMBERS + MAX_RECEIPTS + len(_DIRECTORIES) + 1
+    seen = 0
+    pending = deque([""])
+    while pending:
+        folder = pending.popleft()
+        location = root.joinpath(*folder.split("/")) if folder else root
+        entries = []
+        try:
+            with os.scandir(location) as listing:
+                for item in listing:
+                    seen += 1
+                    if seen > limit:
+                        raise bad("", f"{root} holds more than {limit} entries; a dossier holds at most {MAX_MEMBERS} "
+                                      f"members and {MAX_RECEIPTS} receipts", "resource_limit")
+                    entries.append(item)
+        except OSError as exc:
+            raise bad("/" + folder, f"cannot list {location}: {exc}", "io") from exc
+        for item in sorted(entries, key=lambda e: e.name):
+            name = f"{folder}/{item.name}" if folder else item.name
+            if _is_link(item):
+                raise bad("/" + name, f"{name} is a symbolic link; dossier members are regular files and links are "
+                                      "never followed", "io")
+            if item.is_dir(follow_symlinks=False):
+                if name not in _DIRECTORIES:
+                    raise bad("/" + name, f"unexpected directory {name}: it is not part of a dossier", "malformed")
+                pending.append(name)
+            elif item.is_file(follow_symlinks=False):
+                files[name] = item.stat(follow_symlinks=False).st_size
+            else:
+                raise bad("/" + name, f"{name} is not a regular file", "io")
+    return files
+
+
+def _read_file(root: Path, name: str, limit: int) -> bytes:
+    """At most ``limit + 1`` bytes of the regular file ``name`` below ``root``, never through a link."""
+    path = root.joinpath(*name.split("/"))
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError as exc:
+        raise bad("/" + name, f"{name} is listed in {MANIFEST_NAME} but absent from {root}", "missing_asset") from exc
+    except OSError as exc:
+        raise bad("/" + name, f"cannot read {name}: {exc}", "io") from exc
+    with os.fdopen(descriptor, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise bad("/" + name, f"{name} is not a regular file", "io")
+        return handle.read(limit + 1)
+
+
+def _text(name: str, data: bytes) -> str:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise bad("/" + name, f"{name} is not UTF-8 text: {exc}") from exc
+
+
+def _document(name: str, data: bytes, parse: Callable):
+    """A generated JSON member, parsed strictly; its bytes must be its canonical form."""
+    try:
+        document = parse(_text(name, data))
+    except ReferenceSourceError as exc:
+        raise exc.under("/" + name) from None
+    if document_bytes(document.to_dict()) != data:
+        raise bad("/" + name, f"{name} is not in canonical form (canonical JSON, UTF-8, one LF); a dossier stores "
+                              "each generated document exactly as written")
+    return document
+
+
+def _difference(stored, expected, path: str = "") -> Optional[str]:
+    """The JSON pointer of the first difference between two JSON values, or ``None``."""
+    if isinstance(stored, dict) and isinstance(expected, dict):
+        for key in sorted(set(stored) | set(expected)):
+            if key not in stored or key not in expected:
+                return ptr(path, key)
+            found = _difference(stored[key], expected[key], ptr(path, key))
+            if found is not None:
+                return found
+        return None
+    if isinstance(stored, list) and isinstance(expected, list):
+        for i, (a, b) in enumerate(zip(stored, expected)):
+            found = _difference(a, b, ptr(path, i))
+            if found is not None:
+                return found
+        return None if len(stored) == len(expected) else ptr(path, min(len(stored), len(expected)))
+    return None if type(stored) is type(expected) and stored == expected else path
+
+
+def _value_at(document, pointer: str):
+    for token in pointer.split("/")[1:]:
+        token = token.replace("~1", "/").replace("~0", "~")
+        try:
+            document = document[int(token)] if isinstance(document, list) else document[token]
+        except (KeyError, IndexError, ValueError, TypeError):
+            return "(absent)"
+    return document
+
+
+def _compared(name: str, stored: dict, expected: dict, what: str) -> None:
+    """``digest_mismatch`` at the first difference unless ``stored`` equals ``expected``."""
+    where = _difference(stored, expected)
+    if where is not None:
+        raise bad("/" + name + where, f"{name} differs from {what} at {where or 'the top level'}: stored "
+                                      f"{show(_value_at(stored, where))}, regenerated "
+                                      f"{show(_value_at(expected, where))}", "digest_mismatch")
+
+
+def _regeneration_failed(exc: ReferenceSourceError, lock: SourceLock) -> ReferenceSourceError:
+    """A projection error located in the dossier member it concerns."""
+    path, top = exc.path, exc.path.split("/")[1] if exc.path.startswith("/") else ""
+    blobs = {a.asset_id: BLOB_PREFIX + a.blob_name for a in lock.assets}
+    if top == "source_lock":
+        path = "/" + LOCK_MEMBER + path[len("/source_lock"):]
+    elif top == "assets" and path.split("/")[2:3] and path.split("/")[2] in blobs:
+        rest = path.split("/", 3)[3] if path.count("/") >= 3 else ""
+        path = "/" + blobs[path.split("/")[2]] + ("/" + rest if rest else "")
+    elif top in ("artifact", "schema_version", "source_lock_hash", "adapter", "projection", "reference",
+                 "selection", "decisions", "requires", "defaults_profile"):
+        path = "/" + RECIPE_MEMBER + path
+    return ReferenceSourceError(exc.kind, path, "the dossier's lock, blobs and recipe do not regenerate a build "
+                                                f"under this GenAIRR: {exc.message}")
 
 
 def _input_names(lock: SourceLock) -> tuple:
@@ -221,3 +383,154 @@ class ReferenceBuild:
                     f"cannot write dossier member {name} into {root}: {exc}. The dossier is incomplete: it has no "
                     f"{MANIFEST_NAME}, so it cannot be read. The files already written are kept; write the build "
                     "into a new directory")) from exc
+
+    @classmethod
+    def read_dossier(cls, directory) -> "ReferenceBuild":
+        """Check the dossier in ``directory`` fully offline and return the build it stores.
+
+        The dossier must be complete (``manifest.json`` is written last; without it nothing is
+        read).  Every file must be a listed member (or an acquisition receipt), a regular file
+        and never a link; each member's size and digest must be the manifest's.  The inventory,
+        the projected inputs, the runtime reference and the report are then regenerated from the
+        locked blobs and the recipe and compared with what is stored: the inputs byte for byte,
+        the reference in every runtime field but its generator and commitment, and the report
+        exactly, stated for the stored reference and its recorded builder.  A dossier whose
+        hashes were recomputed after an edit is therefore still refused.
+
+        Nothing is written.  The result holds the stored reference, report and manifest;
+        ``checked_with`` names the GenAIRR version that checked it.
+        """
+        import GenAIRR
+        checking = GenAIRR.__version__
+        root = _path(directory)
+        if not root.is_dir():
+            raise bad("", f"{root} is not a directory; a dossier is a directory written by write_dossier", "io")
+        try:
+            info = os.lstat(root / MANIFEST_NAME)
+        except FileNotFoundError:
+            raise bad("", f"{root} has no {MANIFEST_NAME}: the dossier is incomplete (its writing did not finish) or "
+                          "is not a dossier, and it is never read", "incomplete_dossier") from None
+        except OSError as exc:
+            raise bad("/" + MANIFEST_NAME, f"cannot read {MANIFEST_NAME}: {exc}", "io") from exc
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise bad("/" + MANIFEST_NAME, f"{MANIFEST_NAME} is a symbolic link or not a regular file; links are "
+                                           "never followed", "io")
+        data = _read_file(root, MANIFEST_NAME, MAX_MANIFEST_BYTES)
+        if len(data) > MAX_MANIFEST_BYTES:
+            raise bad("/" + MANIFEST_NAME, f"{MANIFEST_NAME} exceeds {MAX_MANIFEST_BYTES} bytes", "resource_limit")
+        manifest = _document(MANIFEST_NAME, data, BuildManifest.from_json)
+
+        # Exactly the listed members (plus receipts) are present, as regular files.
+        present = _scan(root)
+        listed = {member.name: member for member in manifest.members}
+        extra = sorted(name for name in present if name not in listed and name != MANIFEST_NAME)
+        receipts = sorted((name for name in extra if _RECEIPT_RE.fullmatch(name)), key=_receipt_order)
+        unlisted = [name for name in extra if name not in receipts]
+        if unlisted:
+            raise bad("/" + unlisted[0], f"{', '.join(unlisted)} {'is' if len(unlisted) == 1 else 'are'} not listed in "
+                                         f"{MANIFEST_NAME}; a dossier holds only its listed members and acquisition "
+                                         "receipts")
+        absent = [name for name in listed if name not in present]
+        if absent:
+            raise bad("/" + absent[0], f"{', '.join(absent)} {'is' if len(absent) == 1 else 'are'} listed in "
+                                       f"{MANIFEST_NAME} but absent from {root}", "missing_asset")
+        if len(receipts) > MAX_RECEIPTS:
+            raise bad("/receipts", f"{len(receipts)} receipts exceed the limit of {MAX_RECEIPTS}", "resource_limit")
+
+        # Declared and actual sizes, before any member is read.
+        total = 0
+        for member in manifest.members:
+            limit = MAX_ASSET_BYTES if member.is_blob else _MEMBER_LIMITS[member.name]
+            if member.bytes > limit:
+                raise bad("/" + member.name, f"{member.name} is declared with {member.bytes} bytes; the limit for this "
+                                             f"member is {limit}", "resource_limit")
+            total += member.bytes
+        if total > MAX_DOSSIER_BYTES:
+            raise bad("/" + MANIFEST_NAME + "/members", f"the members total {total} bytes; a dossier is read up to "
+                                                        f"{MAX_DOSSIER_BYTES}", "resource_limit")
+        for member in manifest.members:
+            if present[member.name] != member.bytes:
+                raise bad("/" + member.name, f"{member.name} holds {present[member.name]} bytes; {MANIFEST_NAME} lists "
+                                             f"{member.bytes}", "digest_mismatch")
+        for name in receipts:
+            if present[name] > MAX_RECEIPT_BYTES:
+                raise bad("/" + name, f"{name} holds {present[name]} bytes; a receipt holds at most "
+                                      f"{MAX_RECEIPT_BYTES}", "resource_limit")
+
+        # Every member's digest.
+        files = {}
+        for member in manifest.members:
+            data = _read_file(root, member.name, member.bytes)
+            observed = _sha256(data)
+            if len(data) != member.bytes or observed != member.sha256:
+                raise bad("/" + member.name, f"{member.name} holds {len(data)} bytes with digest {observed}; "
+                                             f"{MANIFEST_NAME} lists {member.bytes} bytes with {member.sha256}",
+                          "digest_mismatch")
+            files[member.name] = data
+
+        # The documents, and the manifest's commitments to them.
+        lock = _document(LOCK_MEMBER, files[LOCK_MEMBER], SourceLock.from_json)
+        recipe = _document(RECIPE_MEMBER, files[RECIPE_MEMBER], Recipe.from_json)
+        report = _document(REPORT_MEMBER, files[REPORT_MEMBER], BuildReport.from_json)
+        try:
+            check_manifest(manifest, lock, report)
+        except ReferenceSourceError as exc:
+            raise exc.under("/" + MANIFEST_NAME) from None
+        if report.recipe != recipe:
+            where = _difference(recipe.to_dict(), report.recipe.to_dict())
+            raise bad("/" + RECIPE_MEMBER + (where or ""), f"{RECIPE_MEMBER} is not the recipe embedded in "
+                                                           f"{REPORT_MEMBER} (first difference at {where})",
+                      "identity_mismatch")
+        locked = {(a.format, a.sha256, a.bytes) for a in lock.assets}
+        stored_receipts = []
+        for name in receipts:
+            data = _read_file(root, name, MAX_RECEIPT_BYTES)
+            receipt = _document(name, data, AcquisitionReceipt.from_json)
+            if (receipt.format, receipt.sha256, receipt.bytes) not in locked:
+                raise bad("/" + name, f"{name} records {receipt.format} {receipt.sha256} ({receipt.bytes} bytes), "
+                                      "which is not a locked asset", "identity_mismatch")
+            stored_receipts.append(receipt)
+
+        # Regenerate from the locked blobs and the recipe, and compare.
+        assets = {a.asset_id: files[BLOB_PREFIX + a.blob_name] for a in lock.assets}
+        try:
+            projection = project(lock, assets, recipe)
+        except ReferenceSourceError as exc:
+            raise _regeneration_failed(exc, lock) from None
+        regenerated = projection.inputs
+        inputs = {name: files[INPUTS_PREFIX + name] for name in _input_names(lock)}
+        for name, stored in inputs.items():
+            if regenerated.get(name) != stored:
+                raise bad("/" + INPUTS_PREFIX + name, (
+                    f"{INPUTS_PREFIX}{name} ({_sha256(stored)}) is not what the dossier's lock, blobs and recipe "
+                    f"regenerate ({_sha256(regenerated.get(name, b''))})"), "digest_mismatch")
+
+        try:
+            stored = Reference.from_json(_text(REFERENCE_MEMBER, files[REFERENCE_MEMBER]))
+        except ReferenceArtifactError as exc:
+            raise bad("/" + REFERENCE_MEMBER, f"the stored reference artifact does not load: {exc}",
+                      _ARTIFACT_KINDS.get(exc.kind, "malformed")) from exc
+        if stored.to_json().encode("utf-8") != files[REFERENCE_MEMBER]:
+            raise bad("/" + REFERENCE_MEMBER, f"{REFERENCE_MEMBER} is not in the artifact's own canonical form")
+        stored_document = json.loads(stored.to_json())
+        generator = stored_document.pop("generator")
+        stored_document.pop("commitment")
+        expected_document = json.loads(projection.reference.to_json())
+        for key in ("generator", "commitment"):
+            expected_document.pop(key)
+        _compared(REFERENCE_MEMBER, stored_document, expected_document,
+                  "the runtime reference the dossier's lock, blobs and recipe regenerate (every field but the "
+                  "generator and the commitment)")
+        expected = report_for(projection.report, stored, manifest.builder)
+        _compared(REPORT_MEMBER, report.to_dict(), expected.to_dict(),
+                  "the report regenerated for the stored reference and the recorded builder")
+        if generator != manifest.builder.to_dict():
+            raise bad("/" + REFERENCE_MEMBER + "/generator", (
+                f"the stored reference names its generator GenAIRR {show(generator.get('version'))}, but "
+                f"{REPORT_MEMBER} and {MANIFEST_NAME} record the builder GenAIRR {manifest.builder.version}"),
+                "identity_mismatch")
+
+        build = cls._create(lock=lock, recipe=recipe, assets=assets, inputs=inputs, reference=stored, report=report,
+                            receipts=tuple(stored_receipts), checked_with=checking)
+        _compared(MANIFEST_NAME, manifest.to_dict(), build.manifest.to_dict(), "the manifest of its stored members")
+        return build
