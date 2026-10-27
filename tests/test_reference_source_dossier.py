@@ -689,8 +689,9 @@ def _refuse(*args, **kwargs):
 
 
 def _audit(event, args):
-    # Below the Python socket surface: every connection and name lookup raises an audit event.
-    if event in ("socket.connect", "socket.getaddrinfo", "socket.gethostbyname"):
+    # Below the Python socket surface: every connection, datagram send and name lookup raises an audit event.
+    if event in ("socket.connect", "socket.sendto", "socket.sendmsg", "socket.getaddrinfo", "socket.gethostbyname",
+                 "socket.gethostbyaddr", "socket.getnameinfo"):
         _refuse(event, *args)
 
 
@@ -705,10 +706,28 @@ socket.create_connection = _refuse
 socket.getaddrinfo = _refuse
 warnings.simplefilter("error")
 
+def _raw_connect():
+    sock = _socket.socket()
+    try:
+        sock.connect(("127.0.0.1", 9))
+    finally:
+        sock.close()
+
+
+def _datagram():
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+    try:
+        sock.sendto(b"x", ("127.0.0.1", 9))
+    finally:
+        sock.close()
+
+
 # Positive controls: each route fails with the guard's own error, and is counted.
 CONTROLS = []
-for name, attempt in (("raw socket connect", lambda: _socket.socket().connect(("127.0.0.1", 9))),
+for name, attempt in (("raw socket connect", _raw_connect),
+                      ("datagram send", _datagram),
                       ("name lookup", lambda: socket.gethostbyname("localhost")),
+                      ("reverse lookup", lambda: _socket.gethostbyaddr("127.0.0.1")),
                       ("address lookup", lambda: _socket.getaddrinfo("localhost", 443)),
                       ("connection", lambda: socket.create_connection(("127.0.0.1", 9), timeout=1))):
     try:
@@ -759,10 +778,11 @@ def test_a_moved_dossier_checks_rebuilds_and_simulates_in_a_fresh_offline_proces
     assert process.returncode == 0, process.stderr.decode("utf-8", "replace")
     outcome = json.loads(process.stdout.decode("utf-8"))
     guard = "network access is disabled in this offline check"
-    assert [name for name, _ in outcome["controls"]] == ["raw socket connect", "name lookup", "address lookup",
-                                                         "connection"]
+    assert [name for name, _ in outcome["controls"]] == ["raw socket connect", "datagram send", "name lookup",
+                                                         "reverse lookup", "address lookup", "connection"]
     assert all(message == guard for _, message in outcome["controls"]), outcome["controls"]
-    assert outcome["control_attempts"] >= 4
+    assert outcome["control_attempts"] >= 6
+    assert b"ResourceWarning" not in process.stderr
     assert outcome["network_attempts"] == []
     assert outcome["checked_execution_hash"] == outcome["rebuilt_execution_hash"] == build.reference.execution_hash
     assert outcome["reference_content_hash"] == outcome["execution_hash"] == build.reference.execution_hash
