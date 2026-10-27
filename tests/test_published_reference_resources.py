@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections import Counter
 import hashlib
 import json
+import pathlib
 import re
 
 import pytest
@@ -91,7 +92,8 @@ def test_the_recipe_names_the_starter_and_requires_its_targeted_capabilities(tmp
 def test_the_recipe_selects_exactly_the_reviewed_selection_from_its_own_airr_records():
     records = raw_records(IGH, "airr")
     index = {record["label"]: i for i, record in enumerate(records)}
-    expected = [{"segment": segment, "label": label, "record": {"asset": "airr", "pointer": f"{RECORDS}/{index[label]}"},
+    expected = [{"segment": segment, "label": label,
+                 "record": {"asset": "airr", "pointer": f"{RECORDS}/{index[label]}"},
                  "sequence_sha256": sha(records[index[label]]["coding_sequence"])}
                 for segment in ("V", "D", "J") for label in SELECTION["selected"][segment]]
     selection = [{k: v for k, v in entry.items() if k != "reason"} for entry in recipe_document()["selection"]]
@@ -188,7 +190,8 @@ def test_every_other_reason_states_the_starter_rules_and_each_specific_observati
     for label in SELECTION["selected"]["V"]:
         record, sequence = airr[label], gapped[label]
         start = record["v_rs_start"]
-        if start is not None and start == record["gene_end"] + 1 and not record["sequence"][start - 1:].startswith("CAC"):
+        adjacent = start is not None and start == record["gene_end"] + 1
+        if adjacent and not record["sequence"][start - 1:].startswith("CAC"):
             orf[label] = f"the record bases at its declared V RSS start read {record['sequence'][start - 1:start + 6]}"
         for position, column, conserved, name in CONSERVED:
             codon = sequence[column:column + 3]
@@ -285,3 +288,185 @@ def test_the_generator_writes_only_into_a_new_or_empty_directory(tmp_path, capsy
     assert [p.name for p in target.iterdir()] == ["notes.txt"] and (target / "notes.txt").read_bytes() == b"kept\n"
     assert load_tool().main(["--output", str(tmp_path / "missing-parent" / "dossier")]) == 2
     assert not (tmp_path / "missing-parent").exists()
+
+
+# ── the packaged starter ─────────────────────────────────────────────
+
+# Pinned from the reviewed build: the typed manifest hash of the packaged dossier (it names
+# the GenAIRR version that generated it) and the runtime hashes of its reference.
+MANIFEST_PIN = "sha256:adc1961adbe134648d77cf4e8adec09f81465ead027112f6bca5ed7a53bda440"
+RUNTIME_PINS = {"execution": "sha256:7c2550263f5a26ebc1fb5369d8d8916c5e2e24e059f5c6661a47d7ec2cace40e",
+                "catalogue": "sha256:f404dd27fee06c95c69a41bb79e6cd17b555039750a9d95012ea3c8231ecd4d0",
+                "models": "sha256:e96b1404c64d36a55c0457163ef3a4aa706e1bc5114914147715cd0f964dffd8"}
+RECORD_OUTCOMES = {"selected": 230, "excluded": 259, "rejected": 0}
+PACKAGE, RESOURCE = "GenAIRR.data", f"published_references/{STARTER_ID}"
+DOSSIER_DIRECTORIES = ["cache", "cache/blobs", "cache/blobs/sha256", "inputs"]
+
+
+@pytest.fixture(scope="module")
+def starter():
+    from GenAIRR.reference_sources import ReferenceBuild
+    return ReferenceBuild.bundled(STARTER_ID)
+
+
+def runtime_hashes(reference) -> dict:
+    return {"execution": reference.execution_hash, "catalogue": reference.catalogue_hash,
+            "models": reference.models_hash}
+
+
+def packaged_files() -> dict:
+    """Every file of the packaged dossier (relative POSIX name -> bytes), and its directories."""
+    from GenAIRR._reference_sources import bundled
+    with bundled.dossier_directory(bundled.entry(STARTER_ID)) as directory:
+        files = {p.relative_to(directory).as_posix(): p.read_bytes() for p in sorted(directory.rglob("*"))
+                 if p.is_file()}
+        folders = sorted(p.relative_to(directory).as_posix() for p in directory.rglob("*") if p.is_dir())
+    return files, folders
+
+
+def test_the_registry_names_exactly_the_starter():
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR.reference_sources import ReferenceBuild, ReferenceSourceError
+    assert dict(bundled.REGISTRY) == {STARTER_ID: bundled.BundledDossier(PACKAGE, RESOURCE, MANIFEST_PIN)}
+    for near in ("human_igh", STARTER_ID.upper(), STARTER_ID + " ", "human_igh_ogrdb_10_observed"):
+        with pytest.raises(ReferenceSourceError) as info:
+            ReferenceBuild.bundled(near)
+        assert info.value.kind == "missing_asset" and f"available: {STARTER_ID}" in info.value.message
+
+
+def test_the_bundled_starter_is_the_reviewed_build_with_its_pinned_hashes(starter):
+    import GenAIRR
+    from GenAIRR._reference_sources.digests import manifest_hash
+    from GenAIRR.reference_sources import ReferenceBuild
+    assert manifest_hash(starter.manifest) == MANIFEST_PIN
+    assert runtime_hashes(starter.reference) == RUNTIME_PINS
+    runtime = starter.report.runtime
+    assert {"execution": runtime.execution_hash, "catalogue": runtime.catalogue_hash,
+            "models": runtime.models_hash} == RUNTIME_PINS
+    outcomes = Counter(outcome.outcome for outcome in starter.report.records)
+    assert {name: outcomes[name] for name in RECORD_OUTCOMES} == RECORD_OUTCOMES
+    assert len(starter.report.records) == sum(RECORD_OUTCOMES.values())
+    assert starter.recipe.to_dict() == recipe_document()
+    assert starter.checked_with == GenAIRR.__version__
+    assert ReferenceBuild.bundled(STARTER_ID) is starter                 # checked once per process
+    alleles = starter.reference.alleles
+    assert [(a.segment, a.label) for a in alleles] == [
+        (segment, label) for segment in ("V", "D", "J") for label in SELECTION["selected"][segment]]
+    differs = {finding.observations.get()["label"]: finding.id for finding in starter.report.inventory.findings
+               if finding.code == "export_coding_sequence_differs"}
+    assert [decision.findings for decision in starter.recipe.decisions] == [(differs[label],) for label in CHOICES]
+
+
+def test_the_bundled_starter_states_its_capabilities_truthfully(starter):
+    from GenAIRR._reference_sources.projection import PROJECTION_LOSSES
+    counts = SELECTION["counts"]
+    blockers = {"original_coding_ends": counts["V"] + counts["J"] + 2 * counts["D"],   # V 3', J 5', both D ends
+                "complete_reference_span": 2 * (counts["V"] + counts["D"] + counts["J"])}
+    for capabilities in (starter.reference.capabilities(), starter.report.capabilities):
+        status = capabilities.status
+        assert status("observed_span_simulation").available
+        assert (status("source_annotated_junction").available, status("source_annotated_junction").evidence) == (
+            True, "source")
+        assert (status("canonical_productive").available, status("canonical_productive").evidence) == (
+            True, "assertion")
+        assert capabilities.phase_support == "anchor_derived"
+        for name, count in blockers.items():
+            assert not status(name).available and len(status(name).unmet) == count, name
+    assert blockers == {"original_coding_ends": 263, "complete_reference_span": 460}
+    assert [r.to_dict() for r in starter.report.requirements] == [dict(r, satisfied=True) for r in REQUIRES]
+    text = " ".join(str(starter.report).split())
+    assert len(PROJECTION_LOSSES) == 4
+    for code, loss in PROJECTION_LOSSES:
+        assert f"{code}: {' '.join(loss.split())}" in text
+    assert "functional alleles" not in text.lower()
+
+
+def test_the_bundled_starter_simulates_bound_to_its_execution_hash(starter):
+    from GenAIRR import Experiment
+    result = Experiment.on(starter.reference).recombine().run_records(n=60, seed=11, validate_records=True)
+    assert result.reference_content_hash == starter.reference.execution_hash == RUNTIME_PINS["execution"]
+    assert len(result) == 60
+    for record in result:
+        assert set(record["v_call"].split(",")) <= set(SELECTION["selected"]["V"])
+        assert set(record["j_call"].split(",")) <= set(SELECTION["selected"]["J"])
+
+
+def test_rebuilding_from_the_pinned_bytes_and_the_recipe_reproduces_the_packaged_starter(generated, starter):
+    import GenAIRR
+    from GenAIRR.reference_sources import ReferenceBuild
+    code, target, _ = generated
+    assert code == 0
+    rebuilt = ReferenceBuild.read_dossier(target)
+    assert runtime_hashes(rebuilt.reference) == runtime_hashes(starter.reference) == RUNTIME_PINS
+    ours, packaged = rebuilt.report.to_dict(), starter.report.to_dict()
+    for report in (ours, packaged):              # the generator, and the artifact hash that names it
+        report.pop("generator")
+        report["runtime"].pop("artifact_hash")
+    assert ours == packaged
+    builder = starter.manifest.builder.version
+    if GenAIRR.__version__ != builder:
+        pytest.skip(f"the packaged dossier was generated by GenAIRR {builder} and this is GenAIRR "
+                    f"{GenAIRR.__version__}: its members are byte-identical only to a dossier generated by the "
+                    "same version; regenerate it with tools/build_published_reference.py")
+    files, _ = packaged_files()
+    assert {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob("*") if p.is_file()} == files
+
+
+def test_the_packaged_dossier_holds_only_its_members(starter):
+    files, folders = packaged_files()
+    assert sorted(files) == sorted([member.name for member in starter.manifest.members] + ["manifest.json"])
+    assert folders == DOSSIER_DIRECTORIES                    # no receipts, no __pycache__, no package marker
+    assert files["recipe.json"] == RECIPE_PATH.read_bytes()
+
+
+def test_every_dossier_member_is_packaged_in_the_wheel_and_the_sdist(starter):
+    import glob
+    tomllib = pytest.importorskip("tomllib", reason="reading pyproject.toml needs Python 3.11 or later")
+    source = REPO / "src" / "GenAIRR" / "data" / "published_references" / STARTER_ID
+    if not source.is_dir():
+        pytest.skip("the source checkout is not available")
+    members = {(source / name).resolve() for name in
+               [member.name for member in starter.manifest.members] + ["manifest.json"]}
+    includes = tomllib.loads((REPO / "pyproject.toml").read_bytes().decode("utf-8"))["tool"]["maturin"]["include"]
+    for target in ("wheel", "sdist"):
+        matched = set()
+        for rule in includes:
+            formats = [rule["format"]] if isinstance(rule["format"], str) else rule["format"]
+            if target in formats:
+                found = glob.glob(str(REPO / rule["path"]), recursive=True)
+                matched |= {pathlib.Path(path).resolve() for path in found}
+        assert members <= matched, f"{target}: {sorted(str(p) for p in members - matched)}"
+        if target == "wheel":                                   # no test fixtures ship in the wheel
+            assert not [path for path in matched if (REPO / "tests") in path.parents]
+
+
+def test_loading_the_starter_leaves_the_human_igh_alias_unchanged(starter):
+    import GenAIRR
+    from GenAIRR import Experiment
+    from GenAIRR._refdata_resolver import _CONFIG_ALIASES
+    from GenAIRR.reference_sources import ReferenceBuild
+    before = dict(_CONFIG_ALIASES)
+    assert ReferenceBuild.bundled(STARTER_ID) is starter
+    assert dict(_CONFIG_ALIASES) == before and _CONFIG_ALIASES["human_igh"] == "HUMAN_IGH_OGRDB"
+    assert not [alias for alias in _CONFIG_ALIASES if "observed" in alias or "published" in alias]
+    with pytest.raises(ValueError, match="Unknown config name"):
+        Experiment.on(STARTER_ID)
+    alias, cartridge = Experiment.on("human_igh"), Experiment.on(GenAIRR.HUMAN_IGH_OGRDB)
+    assert (alias.refdata.v_pool_size(), alias.refdata.j_pool_size()) == (
+        cartridge.refdata.v_pool_size(), cartridge.refdata.j_pool_size())
+    first = alias.recombine().run_records(n=20, seed=3)
+    second = Experiment.on(GenAIRR.HUMAN_IGH_OGRDB).recombine().run_records(n=20, seed=3)
+    assert first.reference_content_hash == second.reference_content_hash != starter.reference.execution_hash
+    assert [record["sequence"] for record in first] == [record["sequence"] for record in second]
+
+
+
+def test_the_packaged_dossier_is_checked_out_byte_for_byte_on_every_platform():
+    """Its digests cover exact LF bytes, so no checkout may convert its line endings."""
+    attributes = REPO / ".gitattributes"
+    if not attributes.is_file():
+        pytest.skip("the source checkout is not available")
+    rules = [line.split() for line in attributes.read_bytes().decode("utf-8").splitlines()
+             if line.strip() and not line.startswith("#")]
+    assert ["src/GenAIRR/data/published_references/**", "-text"] in rules
+

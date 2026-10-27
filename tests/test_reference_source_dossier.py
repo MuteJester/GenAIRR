@@ -800,11 +800,11 @@ STARTER_ID = "human_igh_ogrdb_10_observed_v1"
 
 def test_the_bundled_registry_is_closed_and_exact():
     from GenAIRR._reference_sources import bundled
-    assert dict(bundled.REGISTRY) == {}
+    assert sorted(bundled.REGISTRY) == [STARTER_ID]
     with pytest.raises(TypeError):
         bundled.REGISTRY["x"] = None
-    exc = error("missing_asset", ReferenceBuild.bundled, STARTER_ID)
-    assert exc.path == "" and STARTER_ID in exc.message and "available: none" in exc.message
+    exc = error("missing_asset", ReferenceBuild.bundled, "human_igh")
+    assert exc.path == "" and "'human_igh'" in exc.message and f"available: {STARTER_ID}" in exc.message
     with pytest.raises(TypeError):
         ReferenceBuild.bundled(None)
 

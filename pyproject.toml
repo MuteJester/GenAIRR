@@ -79,6 +79,9 @@ include = [
     { path = "src/GenAIRR/data/builtin_dataconfigs/*.json", format = ["sdist", "wheel"] },
     { path = "src/GenAIRR/data/mutation_model_parameters/*.pkl", format = ["sdist", "wheel"] },
     { path = "src/GenAIRR/data/mutation_model_parameters/*.json", format = ["sdist", "wheel"] },
+    # Packaged reference build dossiers: every member, including the content-addressed
+    # source blobs (cache/blobs/sha256/<digest>, no extension) and the projected inputs.
+    { path = "src/GenAIRR/data/published_references/**/*", format = ["sdist", "wheel"] },
     { path = "engine_rs/**/*", format = "sdist" },
     { path = "README.md", format = "sdist" },
     { path = "LICENSE", format = "sdist" },
