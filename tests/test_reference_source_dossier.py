@@ -1231,3 +1231,11 @@ def test_an_absent_packaged_dossier_is_a_missing_asset(mini, tmp_path, monkeypat
     register(monkeypatch, bundled.BundledDossier(name, "builds/elsewhere", "sha256:" + "0" * 64))
     exc = error("missing_asset", ReferenceBuild.bundled, STARTER_ID)
     assert "builds/elsewhere" in exc.message
+
+
+@pytest.mark.parametrize("name", ["report.json", "source.lock.json"])
+def test_a_member_that_is_not_utf8_is_located_once(mini, name):
+    _, dossier = mini
+    rewrite(dossier, name, b"\xff\xfe not UTF-8 \x80\n")
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/" + name and "not UTF-8" in exc.message

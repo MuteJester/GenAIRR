@@ -193,8 +193,9 @@ def _text(name: str, data: bytes) -> str:
 
 def _document(name: str, data: bytes, parse: Callable):
     """A generated JSON member, parsed strictly; its bytes must be its canonical form."""
+    text = _text(name, data)                      # located at the member itself
     try:
-        document = parse(_text(name, data))
+        document = parse(text)
     except ReferenceSourceError as exc:
         raise exc.under("/" + name) from None
     if document_bytes(document.to_dict()) != data:
@@ -618,8 +619,9 @@ class ReferenceBuild:
         expected = report_for(projection.report, stored, manifest.builder)
         expected_dict = expected.to_dict()
         if document_bytes(expected_dict) != files[REPORT_MEMBER]:
+            text = _text(REPORT_MEMBER, files[REPORT_MEMBER])                 # located at the member itself
             try:
-                stored_report = parse_json(_text(REPORT_MEMBER, files[REPORT_MEMBER]), max_bytes=MAX_REPORT_BYTES)
+                stored_report = parse_json(text, max_bytes=MAX_REPORT_BYTES)
             except ReferenceSourceError as exc:
                 raise exc.under("/" + REPORT_MEMBER) from None
             _compared(REPORT_MEMBER, stored_report, expected_dict,
