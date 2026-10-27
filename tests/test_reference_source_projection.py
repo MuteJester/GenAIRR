@@ -1056,7 +1056,7 @@ def test_the_built_runtime_alleles_must_be_exactly_the_selection(monkeypatch):
     assert "conflict" in found.message and "alleles[0].anchor" in found.message
 
 
-# ── fix round: decisions, outcome reasons, error paths and details ───
+# ── decisions, outcome reasons, error paths and details ────────────
 
 
 def _cdr3_start(blobs, label=V_LABEL) -> dict:
