@@ -1049,7 +1049,7 @@ def _fasta_records(asset: str, data: bytes) -> list:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise bad(path, f"{asset}: the export is not UTF-8 text ({exc})") from None
-    if text.startswith("﻿"):
+    if text.startswith("\ufeff"):
         text = text[1:]
     records, header, lines = [], None, []
     for number, line in enumerate(text.split("\n"), start=1):
