@@ -1410,7 +1410,7 @@ def test_preserved_values_are_finite_bounded_json(inv):
     loc = L("airr", "/Info/title")
     for value, kind in ((float("nan"), "malformed"), (float("inf"), "malformed"), ({1: "x"}, "malformed"),
                         ((1, 2), "malformed"), ({"\ud800": 1}, "malformed"),
-                        (_nested(m.MAX_JSON_DEPTH + 1), "resource_limit"),
+                        (_nested(m.MAX_EMBEDDED_VALUE_DEPTH + 1), "resource_limit"),
                         (["x"] * (m.MAX_VALUE_NODES + 1), "resource_limit")):
         with _raises(kind):
             m.Observation(locator=loc, record=None, presence="present", value=value, interpretation="preserved")
@@ -2193,7 +2193,7 @@ def test_resource_budget_is_shared_by_every_format():
     assert lock.MAX_ASSET_BYTES is m.MAX_ASSET_BYTES and receipt.MAX_ASSET_BYTES is m.MAX_ASSET_BYTES
     assert inventory.MAX_RECORDS == m.MAX_SOURCE_RECORDS
     loc = L("airr", "/Info/title")
-    m.Observation(locator=loc, record=None, presence="present", value=_nested(m.MAX_JSON_DEPTH),
+    m.Observation(locator=loc, record=None, presence="present", value=_nested(m.MAX_EMBEDDED_VALUE_DEPTH),
                   interpretation="preserved")
 
 
@@ -2600,3 +2600,68 @@ def test_gapped_mapping_header_must_equal_the_subject_label(inv):
         inv.build(observations=relabelled)
     assert caught.error.path.endswith("/output")
 
+
+# ── embedded provider values fit the native nesting cap ──────────────
+
+
+def _value_roots(value, depth=0, path=()):
+    """Depths of every preserved-value root (observation value, claim value, finding observations)."""
+    if isinstance(value, dict):
+        if "interpretation" in value and "presence" in value:
+            yield depth + 1, path + ("value",)
+        if "predicate" in value and "derivation" in value:
+            yield depth + 1, path + ("value",)
+        if "code" in value and "severity" in value:
+            yield depth + 1, path + ("observations",)
+        for key, item in value.items():
+            yield from _value_roots(item, depth + 1, path + (key,))
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            yield from _value_roots(item, depth + 1, path + (i,))
+
+
+def test_embedded_value_depth_leaves_room_for_the_deepest_embedding(report):
+    deepest = max(depth for depth, _ in _value_roots(report.to_dict()))
+    assert deepest == m.VALUE_EMBEDDING_DEPTH == 4
+    assert m.MAX_EMBEDDED_VALUE_DEPTH == m.MAX_JSON_DEPTH - m.VALUE_EMBEDDING_DEPTH == 60
+    assert m.MAX_JSON_DEPTH == 64
+
+
+def _deep_report(inv, depth):
+    deep = m.Observation(locator=L("airr", "/Info/deep"), record=None, presence="present", value=_nested(depth),
+                         interpretation="preserved")
+    inventory = inv.build(observations=inv.observations + [deep])
+    return report_dict(inventory, inv)
+
+
+def test_a_value_at_the_embedded_depth_limit_survives_a_report(inv):
+    d = _deep_report(inv, m.MAX_EMBEDDED_VALUE_DEPTH)
+    report = m.BuildReport.from_dict(d)
+    assert m.report_hash(report) == typed_digest(d, "genairr_reference_source_build_report_v1")
+    text = canonical_json(report.to_dict())
+    again = m.BuildReport.from_json(text)
+    assert again == report and canonical_json(again.to_dict()) == text
+    assert m.BuildReport.from_dict(report.to_dict()) == report
+
+
+def test_a_value_one_level_deeper_fails_at_construction(inv):
+    with _raises("resource_limit") as caught:
+        m.Observation(locator=L("airr", "/Info/deep"), record=None, presence="present",
+                      value=_nested(m.MAX_EMBEDDED_VALUE_DEPTH + 1), interpretation="preserved")
+    assert caught.error.path.startswith("/value/0") and str(m.MAX_EMBEDDED_VALUE_DEPTH) in caught.error.message
+    for build in (lambda v: m.Claim(source_lock_hash=inv.lock.commitment, subject=inv.cand["airr", "IGHJ4*02"],
+                                    predicate="extension", value=v, coordinate_system=None, support="none",
+                                    derivation="variant_comparison", status="candidate",
+                                    evidence=(L("airr", inv.cand["airr", "IGHJ4*02"].pointer),), mappings=()),
+                  lambda v: m.Finding(source_lock_hash=inv.lock.commitment, code="deep", severity="info",
+                                      category="informational", subjects=(), locators=(L("airr", "/Info/version"),),
+                                      observations={"value": v}, capabilities=())):
+        with _raises("resource_limit"):
+            build(_nested(m.MAX_EMBEDDED_VALUE_DEPTH + 1))
+
+
+def test_raw_provider_payloads_still_parse_to_depth_64():
+    from GenAIRR._reference_sources._fields import parse_json
+    assert parse_json(json.dumps(_nested(m.MAX_JSON_DEPTH)), max_bytes=1 << 20) == _nested(m.MAX_JSON_DEPTH)
+    with _raises("resource_limit"):
+        parse_json(json.dumps(_nested(m.MAX_JSON_DEPTH + 1)), max_bytes=1 << 20)

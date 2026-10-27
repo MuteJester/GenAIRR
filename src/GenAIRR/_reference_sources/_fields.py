@@ -26,7 +26,15 @@ MAX_ASSET_BYTES = 16 * 1024 * 1024             # one source asset
 MAX_SOURCE_PAYLOAD_BYTES = 128 * 1024 * 1024   # all source assets of one lock together
 MAX_ASSETS = 16                                # assets per lock
 MAX_SOURCE_RECORDS = 100_000                   # source record occurrences per inventory
-MAX_JSON_DEPTH = 64                            # nesting of owned JSON and of preserved provider values
+MAX_JSON_DEPTH = 64                            # nesting of owned JSON documents and raw provider payloads
+# The deepest place a preserved provider value sits in any owned document: a build report's
+# embedded inventory -> observations -> one observation -> its value.  Claim values and
+# finding observations sit at the same depth.
+VALUE_EMBEDDING_PATH = ("inventory", "observations", "<index>", "value")
+VALUE_EMBEDDING_DEPTH = len(VALUE_EMBEDDING_PATH)
+# Nesting allowed inside a preserved value, so that every owned document embedding it stays
+# within MAX_JSON_DEPTH and is accepted by the strict parser and the typed digest alike.
+MAX_EMBEDDED_VALUE_DEPTH = MAX_JSON_DEPTH - VALUE_EMBEDDING_DEPTH
 
 # ── Size limits ─────────────────────────────────────────────────────
 
@@ -332,8 +340,10 @@ def _check_json(value: Any, path: str) -> None:
         nodes += 1
         if nodes > MAX_VALUE_NODES:
             raise bad(path, f"value has more than {MAX_VALUE_NODES} JSON values", "resource_limit")
-        if depth > MAX_JSON_DEPTH:
-            raise bad(where, f"value nests {depth} levels deep; the limit is {MAX_JSON_DEPTH}", "resource_limit")
+        if depth > MAX_EMBEDDED_VALUE_DEPTH:
+            raise bad(where, f"value nests {depth} levels deep; the limit for a preserved provider value is "
+                             f"{MAX_EMBEDDED_VALUE_DEPTH} ({MAX_JSON_DEPTH} for a whole document, less "
+                             f"{VALUE_EMBEDDING_DEPTH} levels of embedding)", "resource_limit")
         kind = type(item)
         if item is None or kind is bool:
             continue
