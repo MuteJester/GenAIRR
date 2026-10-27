@@ -111,8 +111,9 @@ _NOT_REPRESENTABLE = {
     "extension": "the runtime reference holds the selected coding sequence, not the coding extensions of the other "
                  "record export",
 }
-_J_PHASE = ("projected with derivation anchor_derived: the source states the value and it equals the anchor modulo "
-            "3, but whether it was derived independently of the landmark is unresolved")
+_PHASE_AS_ANCHOR_DERIVED = ("projected with derivation anchor_derived: the {derivation} value equals the anchor "
+                            "modulo 3, but whether it was derived independently of the landmark is unresolved, so it "
+                            "is never projected as independent phase evidence")
 _CONVERSIONS = {
     ("anchor", "V", "stated"): f"anchor = {RULES['v_anchor_coding0']} in the coding sequence, the cdr3_start bound "
                                f"to the record's exact gapped record ({RULES['v_cdr3_start_from_gapped']})",
@@ -283,8 +284,12 @@ class _Build:
     def method(self, claim, segment: str, accepted_by: Optional[int]) -> str:
         adapter, projection = self.lock.adapter, self.recipe.projection
         profile = adapter.coordinate_profile
-        rule = _CONVERSIONS.get((claim.predicate, segment, claim.derivation),
-                                f"{claim.predicate} ({claim.derivation})")
+        rule = _CONVERSIONS.get((claim.predicate, segment, claim.derivation))
+        if rule is None and claim.predicate == "coding_phase":
+            rule = (f"coding phase ({claim.derivation}) equal to anchor % 3, projected as anchor_derived because its "
+                    "independence of the landmark is unresolved")
+        elif rule is None:
+            rule = f"{claim.predicate} ({claim.derivation})"
         text = f"{adapter.id} v{adapter.version} with {profile.id} v{profile.version}: {rule}"
         if accepted_by is not None:
             text += f"; accepted by recipe decision {accepted_by}"
@@ -345,7 +350,11 @@ class _Build:
                 outcomes[claim.id] = self._runtime_claim(claim, slots, anchors)
         for claim in phases:
             outcomes[claim.id] = self._runtime_claim(claim, slots, anchors)
-        self.annotations = self._annotations(slots)
+        self.annotations, weakened = self._annotations(slots)
+        for claim_id, why in weakened.items():
+            outcome = outcomes[claim_id]
+            reason = why if outcome.reason is None else f"{outcome.reason}; {why}"
+            outcomes[claim_id] = ClaimOutcome(claim_id, outcome.outcome, outcome.decision, reason)
         return tuple(outcomes[c.id] for c in self.inventory.claims)
 
     def _runtime_claim(self, claim, slots: dict, anchors: dict) -> ClaimOutcome:
@@ -384,7 +393,9 @@ class _Build:
             anchors[claim.subject.id] = (value, claim.evidence)
         slots.setdefault((i, claim.predicate), []).append(
             (claim, value, support, source, self.method(claim, entry.segment, accepted_by)))
-        reason = _J_PHASE if (claim.predicate, entry.segment) == ("coding_phase", "J") else None
+        reason = None
+        if claim.predicate == "coding_phase" and claim.derivation != "anchor_derived":
+            reason = _PHASE_AS_ANCHOR_DERIVED.format(derivation=claim.derivation)
         return ClaimOutcome(claim.id, "projected", accepted_by, reason)
 
     @staticmethod
@@ -404,9 +415,11 @@ class _Build:
                 return f"phase {value} is not the projected anchor {anchor} modulo 3 ({anchor % 3})"
         return None
 
-    def _annotations(self, slots: dict) -> dict:
-        """``{entry index: {predicate: sidecar annotation}}`` from the projected claims."""
+    def _annotations(self, slots: dict) -> tuple:
+        """``({entry index: {predicate: sidecar annotation}}, {claim id: why its support was lowered})``
+        from the projected claims."""
         annotations: dict = {}
+        weakened: dict = {}
         for (i, predicate), items in slots.items():
             values = {canonical_json(value) for _, value, _, _, _ in items}
             if len(values) > 1:
@@ -421,7 +434,13 @@ class _Build:
             if predicate == "coding_phase":
                 annotation["derivation"] = "anchor_derived"
             annotations.setdefault(i, {})[predicate] = annotation
-        return annotations
+            weaker = [c.id for c, _, support, _, _ in items if support == annotation["support"]]
+            for claim, _, support, _, _ in items:
+                if support != annotation["support"]:
+                    weakened[claim.id] = (f"projected at support {annotation['support']}, weaker than its own "
+                                          f"{support} support, because {', '.join(weaker)} projected into the same "
+                                          f"{predicate} annotation at support {annotation['support']}")
+        return annotations, weakened
 
     # -- relationships ----------------------------------------------------
 

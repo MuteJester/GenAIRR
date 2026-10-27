@@ -1068,3 +1068,40 @@ def test_accept_claim_cannot_project_a_conflicting_annotation(monkeypatch):
         assert part in found.message
     for claim in disputed:
         assert str(claim.value.get()) in found.message
+
+
+def _methods(reference) -> dict:
+    return {(c["subject"], c["predicate"]): c["method"] for c in artifact(reference)["catalogue"]["claims"]
+            if c["status"] == "accepted"}
+
+
+def test_a_phase_of_any_other_derivation_is_projected_and_explained_as_anchor_derived(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    # a V phase stated by the source instead of derived from the anchor (same value)
+    interpret = rewrite_claims(monkeypatch, V_LABEL, "coding_phase",
+                               lambda c: [dataclasses.replace(c, derivation="stated", support="source")])
+    phase = claim_id(interpret(lock, blobs, ogrdb.build_inventory(lock, blobs)), "airr", V_LABEL, "coding_phase")
+    result = build(lock, blobs, mini_recipe(blobs, lock))
+    v = result.reference.alleles[0]
+    assert (v.coding_phase.derivation, v.coding_phase.support) == ("anchor_derived", "source")
+    assert result.reference.capabilities().phase_support == "anchor_derived"
+    (outcome,) = [o for o in result.report.claims if o.claim == phase]
+    assert outcome.outcome == "projected" and "anchor_derived" in outcome.reason and "stated" in outcome.reason
+    method = _methods(result.reference)[(f"V:{V_LABEL}", "coding_phase")]
+    assert "projected as anchor_derived" in method and "coding_phase (stated)" not in method
+
+
+def test_a_claim_projected_below_its_own_support_says_so(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    # a second accepted anchor claim with the same value, but only an assertion
+    interpret = rewrite_claims(monkeypatch, V_LABEL, "anchor",
+                               lambda c: [c, dataclasses.replace(c, support="assertion")])
+    inventory = interpret(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    anchors = {c.support: c.id for c in inventory.claims
+               if c.predicate == "anchor" and c.subject.asset == "airr" and inventory.subject_record(c).label == V_LABEL}
+    result = build(lock, blobs, mini_recipe(blobs, lock))
+    assert result.reference.alleles[0].anchor.support == "assertion"
+    outcomes = {o.claim: o for o in result.report.claims}
+    weakened = outcomes[anchors["source"]]
+    assert weakened.outcome == "projected" and "assertion" in weakened.reason and anchors["assertion"] in weakened.reason
+    assert outcomes[anchors["assertion"]].reason is None
