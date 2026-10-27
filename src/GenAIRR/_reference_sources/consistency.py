@@ -7,6 +7,7 @@ Paths locate the offending field inside the first document argument.
 from __future__ import annotations
 
 from GenAIRR._reference_sources._fields import bad, ptr
+from GenAIRR._reference_sources.inventory import RUNTIME_PREDICATES, SourceInventory
 from GenAIRR._reference_sources.lock import SourceLock
 from GenAIRR._reference_sources.recipe import Recipe
 
@@ -57,3 +58,130 @@ def check_recipe(recipe: Recipe, lock: SourceLock) -> None:
                 raise bad(ptr(ptr(ptr(ptr("/decisions", i), "evidence"), j), "asset"),
                           f"evidence asset {locator.asset!r} is not in the lock (locked: {list(roles)})",
                           "identity_mismatch")
+
+
+def check_inventory(inventory: SourceInventory, lock: SourceLock) -> None:
+    """The inventory was generated from exactly this lock and refers only to its assets.
+
+    ``digest_mismatch``: ``source_lock_hash`` is not this lock's commitment.
+    ``identity_mismatch``: a different adapter, or a locator into an asset the lock lacks.
+    """
+    _require(inventory, SourceInventory, "inventory")
+    _require(lock, SourceLock, "lock")
+    if inventory.source_lock_hash != lock.commitment:
+        raise bad("/source_lock_hash", f"inventory was generated from lock {inventory.source_lock_hash}, but this "
+                                       f"lock is {lock.commitment}", "digest_mismatch")
+    if inventory.adapter != lock.adapter:
+        raise bad("/adapter", f"inventory adapter {inventory.adapter.to_dict()} differs from the lock adapter "
+                              f"{lock.adapter.to_dict()}", "identity_mismatch")
+    locked = set(lock.asset_ids)
+    for path, asset_id in inventory.asset_references():
+        if asset_id not in locked:
+            raise bad(path, f"asset {asset_id!r} is not in the lock (locked: {sorted(locked)})", "identity_mismatch")
+
+
+def check_selection(recipe: Recipe, inventory: SourceInventory) -> None:
+    """Every selection entry resolves to one exact record and one of its candidates.
+
+    ``unresolved_selection``: no such record, a malformed/unsupported record, or no
+    candidate of that record with the selected digest (no first-name matching).
+    ``identity_mismatch``: the record's segment, label, taxon or locus differ from the
+    entry or the recipe's reference (names are never changed).
+    """
+    _require(recipe, Recipe, "recipe")
+    _require(inventory, SourceInventory, "inventory")
+    if recipe.source_lock_hash != inventory.source_lock_hash:
+        raise bad("/source_lock_hash", f"recipe builds from lock {recipe.source_lock_hash}, but the inventory is of "
+                                       f"lock {inventory.source_lock_hash}", "digest_mismatch")
+    reference = recipe.reference
+    for i, entry in enumerate(recipe.selection):
+        path = ptr("/selection", i)
+        try:
+            record = inventory.record(entry.record)
+        except KeyError:
+            raise bad(ptr(path, "record"), f"{entry.label}: no source record at {entry.record.id}",
+                      "unresolved_selection") from None
+        if record.status != "parsed":
+            raise bad(ptr(path, "record"), f"{entry.label}: record {record.id} is {record.status} "
+                                           f"({record.problem}) and cannot be selected", "unresolved_selection")
+        if record.segment != entry.segment:
+            raise bad(ptr(path, "segment"), f"{entry.label}: record {record.id} declares segment {record.segment}, "
+                                            f"not {entry.segment}", "identity_mismatch")
+        if record.label != entry.label:
+            raise bad(ptr(path, "label"), f"record {record.id} is labelled {record.label!r}, not {entry.label!r}; "
+                                          "labels are never changed", "identity_mismatch")
+        if record.taxonomy_id != reference.taxon.taxonomy_id or record.locus != reference.locus:
+            raise bad(ptr(path, "record"), f"{entry.label}: record {record.id} declares taxon {record.taxonomy_id} "
+                                           f"locus {record.locus}, not {reference.taxon.taxonomy_id} "
+                                           f"{reference.locus}", "identity_mismatch")
+        if not any(c.sha256 == entry.sequence_sha256 for c in inventory.candidates_of(entry.record)):
+            raise bad(ptr(path, "sequence_sha256"), f"{entry.label}: record {record.id} supplies no candidate with "
+                                                    f"digest {entry.sequence_sha256}", "unresolved_selection")
+
+
+def _subject_digests(inventory: SourceInventory, claim) -> set:
+    try:
+        return {inventory.candidate(claim.subject).sha256}
+    except KeyError:
+        return {c.sha256 for c in inventory.candidates_of(claim.subject)}
+
+
+def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
+    """Every decision still names current findings, claims, evidence and subject digest.
+
+    ``stale_decision``: an unknown finding/claim id, an evidence locator that is not an
+    observation, a subject digest that changed, or a ``select_alternative`` whose digest
+    is not a selected candidate among its findings' subjects.  ``projection``: an
+    ``accept_claim`` of a claim the runtime reference cannot represent or that has no value.
+    """
+    _require(recipe, Recipe, "recipe")
+    _require(inventory, SourceInventory, "inventory")
+    for i, decision in enumerate(recipe.decisions):
+        path = ptr("/decisions", i)
+        findings, claims = [], []
+        for j, finding_id in enumerate(decision.findings):
+            try:
+                findings.append(inventory.finding(finding_id))
+            except KeyError:
+                raise bad(ptr(ptr(path, "findings"), j), f"finding {finding_id} no longer exists", "stale_decision") \
+                    from None
+        for j, claim_id in enumerate(decision.claims):
+            try:
+                claims.append(inventory.claim(claim_id))
+            except KeyError:
+                raise bad(ptr(ptr(path, "claims"), j), f"claim {claim_id} no longer exists", "stale_decision") from None
+        for j, locator in enumerate(decision.evidence):
+            try:
+                inventory.observation(locator)
+            except KeyError:
+                raise bad(ptr(ptr(path, "evidence"), j), f"evidence {locator.id} is not an observed source field",
+                          "stale_decision") from None
+        for claim in claims:
+            if decision.sequence_sha256 not in _subject_digests(inventory, claim):
+                raise bad(ptr(path, "sequence_sha256"), f"claim {claim.id} is about {claim.subject.id}, whose "
+                                                        f"sequence is not {decision.sequence_sha256}", "stale_decision")
+        if decision.action == "accept_claim":
+            for j, claim in enumerate(claims):
+                if claim.predicate not in RUNTIME_PREDICATES:
+                    raise bad(ptr(ptr(path, "claims"), j), f"{claim.predicate} claims are not representable in a "
+                                                           f"runtime reference ({list(RUNTIME_PREDICATES)})",
+                              "projection")
+                if claim.status == "unresolved":
+                    raise bad(ptr(ptr(path, "claims"), j), f"claim {claim.id} is unresolved and has no value to "
+                                                           "accept", "projection")
+        if decision.action == "select_alternative":
+            subjects = {s.id for f in findings for s in f.subjects}
+            chosen = [e for e in recipe.selection if e.sequence_sha256 == decision.sequence_sha256 and (
+                e.record.id in subjects or any(c.id in subjects and c.sha256 == e.sequence_sha256
+                                               for c in inventory.candidates_of(e.record)))]
+            if not chosen:
+                raise bad(ptr(path, "sequence_sha256"), f"no selected record with digest {decision.sequence_sha256} "
+                                                        "is a subject of the decision's findings", "stale_decision")
+
+
+def check_build_inputs(lock: SourceLock, inventory: SourceInventory, recipe: Recipe) -> None:
+    """All cross-document checks a build performs before any projection or native work."""
+    check_recipe(recipe, lock)
+    check_inventory(inventory, lock)
+    check_selection(recipe, inventory)
+    check_decisions(recipe, inventory)

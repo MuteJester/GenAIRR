@@ -27,6 +27,19 @@ from GenAIRR._reference_sources.recipe import (  # noqa: F401
     DECISION_ACTIONS, EVIDENCE_LEVELS, MAX_RECIPE_BYTES, Decision, Recipe, RecipeReference, Requirement,
     SelectionEntry,
 )
-from GenAIRR._reference_sources.consistency import check_recipe  # noqa: F401
-from GenAIRR._reference_sources.digests import DOMAINS, lock_hash, recipe_hash  # noqa: F401
+from GenAIRR._reference_sources.inventory import (  # noqa: F401
+    BOUNDARIES, CLAIM_ID_DOMAIN, CLAIM_STATUSES, CLAIM_SUPPORTS, COORDINATE_SYSTEMS, DERIVATIONS,
+    EXTENSION_SIDES, FINDING_CATEGORIES, FINDING_ID_DOMAIN, FUNCTIONALITIES, INTERPRETATIONS, MAPPING_ID_DOMAIN,
+    MAPPING_KINDS, MAPPING_SPACES, MAPPING_TRANSFORMS, MAPPING_VALIDATIONS, MAX_INVENTORY_BYTES, PHASE_INDEPENDENCE,
+    PREDICATE_DERIVATIONS, PREDICATE_SEGMENTS, PREDICATE_SUBJECTS, PREDICATE_SYSTEMS, PREDICATES, PRESENCES,
+    RECORD_STATUSES, RELATIONSHIPS, RUNTIME_PREDICATES, SEVERITIES, SUPPORT_KINDS, SUPPORT_STATUSES, Block, Claim,
+    Finding, Mapping, Mention, MentionedIdentity, Observation, SequenceCandidate, SourceInventory, SourceRecord,
+    SupportReference, check_claim_value, text_digest,
+)
+from GenAIRR._reference_sources.consistency import (  # noqa: F401
+    check_build_inputs, check_decisions, check_inventory, check_recipe, check_selection,
+)
+from GenAIRR._reference_sources.digests import (  # noqa: F401
+    DOMAINS, build_input_hash, build_inputs, inventory_hash, lock_hash, recipe_hash,
+)
 from GenAIRR._reference.model import sequence_digest  # noqa: F401

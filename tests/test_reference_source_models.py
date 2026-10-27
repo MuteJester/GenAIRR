@@ -721,7 +721,7 @@ def decision(action="select_alternative", **overrides):
          "claims": [] if action == "select_alternative" else [CLAIM_ID],
          "sequence_sha256": entry["sequence_sha256"],
          "reason": "The airr record ends at gene_end like every other selected V; the extension is not adopted",
-         "evidence": [{"asset": "airr", "pointer": entry["record"]["pointer"] + "/gene_end"}]}
+         "evidence": [{"asset": "airr", "pointer": entry["record"]["pointer"] + "/coding_sequence"}]}
     d.update(overrides)
     return d
 
@@ -828,3 +828,647 @@ def test_changed_recipe_text_changes_the_recipe_identity_even_with_identical_dna
     second = m.Recipe.from_dict(d)
     assert [e.sequence_sha256 for e in first.selection] == [e.sequence_sha256 for e in second.selection]
     assert m.recipe_hash(first) != m.recipe_hash(second)
+
+
+# ── source inventory ─────────────────────────────────────────────────
+
+L = m.Locator
+
+
+def _fasta(fmt, set_id=IGH):
+    source = _source_set(set_id)
+    text = (ROOT / "ogrdb" / set_id / str(source["release"]) / f"{fmt}.fasta").read_bytes().decode("ascii")
+    records, name = [], None
+    for line in text.split("\n"):
+        if line.startswith(">"):
+            records.append([line[1:], ""])
+        elif line:
+            records[-1][1] += line
+    return records
+
+
+def _gapped_index(label, fmt):
+    (found,) = [(i, seq) for i, (name, seq) in enumerate(_fasta(fmt)) if name == label]
+    return found
+
+
+def _blocks(gapped):
+    """Exact interval map from ungapped positions to gapped columns."""
+    blocks, position = [], 0
+    for column, char in enumerate(gapped):
+        if char == ".":
+            continue
+        if blocks and blocks[-1][1][1] == column:
+            blocks[-1] = ((blocks[-1][0][0], position + 1), (blocks[-1][1][0], column + 1))
+        else:
+            blocks.append(((position, position + 1), (column, column + 1)))
+        position += 1
+    return tuple(m.Block(input=i, output=o) for i, o in blocks)
+
+
+def _sorted(locators):
+    return tuple(sorted(locators, key=L.sort_key))
+
+
+INV_RECORDS = (("airr", "IGHV1-58*03"), ("airr", "IGHV1-69*01"), ("airr", "IGHV1-69D*01"), ("airr", "IGHD1-1*01"),
+               ("airr", "IGHJ4*02"), ("airr_ex", "IGHV1-58*03"), ("airr_ex", "IGHV1-69*01"),
+               ("airr_ex", "IGHD1-1*01"), ("airr_ex", "IGHJ4*02"))
+
+
+class Inv:
+    """A small realistic inventory over pinned IGH release 10 records, built field by field."""
+
+    def __init__(self, lock=None):
+        self.lock = lock or m.SourceLock.from_dict(lock_dict())
+        self.records, self.candidates, self.observations, self.support = [], [], [], []
+        self.mentioned, self.mappings, self.claims, self.findings = [], [], [], []
+        self.rec, self.cand, self.obs = {}, {}, {}
+        for fmt, label in INV_RECORDS:
+            index, raw = _find(label, fmt)
+            loc = L(fmt, _pointer(index))
+            self.rec[fmt, label] = loc
+            self.records.append(m.SourceRecord(
+                locator=loc, status="parsed", problem=None, label=raw["label"],
+                provider_id=raw["allele_description_id"], provider_ref=raw["allele_description_ref"],
+                segment=raw["sequence_type"], taxonomy_id=int(raw["species"]["id"].split(":")[1]),
+                locus=raw["locus"]))
+            fields = ["label", "coding_sequence", "functional", "sequence_type"]
+            if raw["sequence_type"] == "V":
+                fields.append("v_gene_delineations/0/cdr3_start")
+            if raw["sequence_type"] == "J":
+                fields += ["j_codon_frame", "j_cdr3_end"]
+            if raw["paralogs"]:
+                fields.append("paralogs/0")
+            for field in fields:
+                value = raw
+                for token in field.split("/"):
+                    value = value[int(token)] if isinstance(value, list) else value[token]
+                self._observe(L(fmt, f"{loc.pointer}/{field}"), loc, value)
+            cand = L(fmt, loc.pointer + "/coding_sequence")
+            self.cand[fmt, label] = cand
+            self.candidates.append(m.SequenceCandidate(locator=cand, record=loc, sequence=raw["coding_sequence"],
+                                                       sha256=m.sequence_digest(raw["coding_sequence"])))
+            self.claims.append(self.claim(loc, "functionality", "functional", [self.obs_at(loc, "functional")]))
+        # Paralog-only identity in the extended export, mentioned by IGHV1-69*01.
+        ex69 = self.rec["airr_ex", "IGHV1-69*01"]
+        self.mentioned.append(m.MentionedIdentity(asset="airr_ex", segment="V", label="IGHV1-69D*01", mentions=(
+            m.Mention(record=ex69, locator=L("airr_ex", ex69.pointer + "/paralogs/0"), relationship="paralog"),)))
+        # Embedded, unretrieved repository support of one record.
+        rec5803 = self.rec["airr", "IGHV1-58*03"]
+        _, raw5803 = _find("IGHV1-58*03")
+        entry = raw5803["unrearranged_support"][0]
+        self.support.append(m.SupportReference(
+            locator=L("airr", rec5803.pointer + "/unrearranged_support/0"), record=rec5803, kind="unrearranged",
+            repository=entry["repository_name"], reference=entry["repository_ref"], status="embedded_unretrieved"))
+        # Set-level observation: the API version is not the schema version or the data release.
+        info = L("airr", "/Info/version")
+        self._observe(info, None, _load_json(ROOT / "ogrdb" / IGH / "10" / "airr.json")["Info"]["version"],
+                      interpretation="preserved")
+        # Variant-specific gapped alignments, each mapping one record occurrence to its own variant.
+        for fmt, gapped_fmt in (("airr", "gapped"), ("airr_ex", "gapped_ex")):
+            gindex, gapped = _gapped_index("IGHV1-58*03", gapped_fmt)
+            gloc = L(gapped_fmt, f"/{gindex}")
+            self._observe(gloc, None, gapped)
+            cand = self.cand[fmt, "IGHV1-58*03"]
+            sequence = gapped.replace(".", "")
+            mapping = m.Mapping(kind="gapped_alignment", input=cand, output=gloc,
+                                input_sha256=m.sequence_digest(sequence),
+                                output_sha256=m.text_digest(gapped), input_space="coding_sequence",
+                                output_space="imgt_gapped", blocks=_blocks(gapped), transform="remove_imgt_gaps",
+                                validation="exact")
+            self.mappings.append(mapping)
+        # V junction anchor: source-stated, and re-derived from the variant's own gapped record.
+        cand, rec = self.cand["airr", "IGHV1-58*03"], self.rec["airr", "IGHV1-58*03"]
+        cdr3 = self.obs_at(rec, "v_gene_delineations/0/cdr3_start")
+        anchor = _find("IGHV1-58*03")[1]["v_gene_delineations"][0]["cdr3_start"] - 4
+        gapped = _gapped_index("IGHV1-58*03", "gapped")[1]
+        assert len(gapped[:312].replace(".", "")) - 3 == anchor
+        self.anchor = anchor
+        self.claims.append(self.claim(cand, "anchor", anchor, [cdr3], system="coding_sequence"))
+        self.claims.append(self.claim(cand, "anchor", anchor, [L("gapped", f"/{_gapped_index('IGHV1-58*03', 'gapped')[0]}")],
+                                      system="coding_sequence", derivation="imgt_alignment",
+                                      mappings=[self.mappings[0].id]))
+        self.claims.append(self.claim(cand, "coding_phase", anchor % 3, [cdr3], system="coding_sequence",
+                                      derivation="anchor_derived"))
+        self.claims.append(self.claim(cand, "phase_independence", "anchor_derived", [cdr3],
+                                      derivation="anchor_derived"))
+        # J: the reported phase value is accepted; whether it is independent of the landmark is unresolved.
+        jcand, jrec = self.cand["airr", "IGHJ4*02"], self.rec["airr", "IGHJ4*02"]
+        _, jraw = _find("IGHJ4*02")
+        frame = self.obs_at(jrec, "j_codon_frame")
+        self.claims.append(self.claim(jcand, "anchor", jraw["j_cdr3_end"] - 1, [self.obs_at(jrec, "j_cdr3_end")],
+                                      system="coding_sequence"))
+        self.claims.append(self.claim(jcand, "coding_phase", jraw["j_codon_frame"] - 1, [frame],
+                                      system="coding_sequence"))
+        self.claims.append(self.claim(jcand, "phase_independence", None, [frame], status="unresolved",
+                                      support="none"))
+        # Extended-export alternative: provider 3' extension beyond the observed span.
+        ex = self.cand["airr_ex", "IGHV1-58*03"]
+        self.claims.append(self.claim(ex, "extension", {"side": "3", "length": 1, "matches_record_context": True},
+                                      [L("airr_ex", ex.pointer), L("airr", cand.pointer)],
+                                      derivation="variant_comparison"))
+        # D: no universal coding phase; its physical 3' end stays unresolved.
+        dcand = self.cand["airr", "IGHD1-1*01"]
+        self.claims.append(self.claim(dcand, "boundary_3", None, [L("airr", dcand.pointer)], status="unresolved",
+                                      support="none"))
+        self.findings.append(m.Finding(
+            code="variant_coding_sequence_differs", severity="warning", category="contradictory_evidence",
+            subjects=_sorted([cand, ex]), locators=_sorted([cand, ex]),
+            observations={"label": "IGHV1-58*03", "extension_3": "A"},
+            capabilities=("observed_span_simulation", "canonical_productive")))
+        self.findings.append(m.Finding(
+            code="paralog_only_identity", severity="info", category="informational",
+            subjects=(self.rec["airr_ex", "IGHV1-69*01"],), locators=(L("airr_ex", ex69.pointer + "/paralogs/0"),),
+            observations={"label": "IGHV1-69D*01"}, capabilities=()))
+        self.findings.append(m.Finding(
+            code="api_version_is_not_release", severity="info", category="unsupported_interpretation",
+            subjects=(), locators=(info,), observations={"value": "2.0.0"}, capabilities=()))
+
+    def _observe(self, locator, record, value, interpretation="interpreted"):
+        self.obs[locator.id] = locator
+        self.observations.append(m.Observation(locator=locator, record=record, presence="present", value=value,
+                                               interpretation=interpretation))
+
+    def obs_at(self, record, field):
+        return self.obs[L(record.asset, f"{record.pointer}/{field}").id]
+
+    def claim(self, subject, predicate, value, evidence, *, system=None, derivation="stated", status="accepted",
+              support="source", mappings=()):
+        return m.Claim(subject=subject, predicate=predicate, value=value, coordinate_system=system, support=support,
+                       derivation=derivation, status=status, evidence=_sorted(evidence), mappings=tuple(mappings))
+
+    def build(self, **overrides):
+        fields = dict(source_lock_hash=self.lock.commitment, adapter=self.lock.adapter, records=self.records,
+                      candidates=self.candidates, mentioned_identities=self.mentioned,
+                      observations=self.observations, support=self.support, claims=self.claims,
+                      mappings=self.mappings, findings=self.findings)
+        fields.update(overrides)
+        return m.SourceInventory.assemble(**fields)
+
+
+@pytest.fixture(scope="module")
+def inv():
+    return Inv()
+
+
+@pytest.fixture(scope="module")
+def inventory(inv):
+    return inv.build()
+
+
+def _inventory_dict(inventory):
+    return copy.deepcopy(inventory.to_dict())
+
+
+def test_inventory_round_trips_and_is_byte_stable(inventory):
+    d = inventory.to_dict()
+    again = m.SourceInventory.from_dict(d)
+    assert again == inventory
+    text = canonical_json(d)
+    assert canonical_json(m.SourceInventory.from_json(text).to_dict()) == text
+    assert d["artifact"] == "genairr_reference_source_inventory" and d["schema_version"] == 1
+    assert m.inventory_hash(inventory) == typed_digest(d, "genairr_reference_source_inventory_v1")
+
+
+def test_inventory_assemble_puts_every_list_in_canonical_order(inv, inventory):
+    shuffled = inv.build(records=list(reversed(inv.records)), claims=list(reversed(inv.claims)),
+                         observations=list(reversed(inv.observations)), findings=list(reversed(inv.findings)))
+    assert shuffled == inventory
+    with _raises("malformed", "/records"):
+        m.SourceInventory(**{**_fields_of(inventory), "records": tuple(reversed(inventory.records))})
+
+
+def _fields_of(inventory):
+    return {k: getattr(inventory, k) for k in ("source_lock_hash", "adapter", "records", "candidates",
+                                                "mentioned_identities", "observations", "support", "claims",
+                                                "mappings", "findings")}
+
+
+def test_inventory_records_are_occurrences_keyed_by_asset_and_pointer(inventory):
+    ids = [r.id for r in inventory.records]
+    assert len(ids) == len(set(ids)) == len(INV_RECORDS)
+    by_provider = {}
+    for record in inventory.records:
+        by_provider.setdefault(record.provider_id, []).append(record.locator.asset)
+    # The same provider id in both exports stays two record occurrences.
+    assert sorted(by_provider["OGRDB:A00014"]) == ["airr", "airr_ex"]
+
+
+def test_inventory_counts_keep_occurrences_candidates_and_mentions_distinct(inventory):
+    counts = inventory.export_counts("airr_ex")
+    assert counts == {"record_occurrences": {"V": 2, "D": 1, "J": 1, "unassigned": 0},
+                      "sequence_candidates": {"V": 2, "D": 1, "J": 1, "unassigned": 0},
+                      "mentioned_identities": {"V": 1, "D": 0, "J": 0, "unassigned": 0}}
+    assert inventory.export_counts("airr")["mentioned_identities"]["V"] == 0
+    assert inventory.export_counts("airr")["record_occurrences"]["V"] == 3
+
+
+def test_identical_dna_identities_keep_their_own_records_and_evidence(inventory, inv):
+    a, b = inv.cand["airr", "IGHV1-69*01"], inv.cand["airr", "IGHV1-69D*01"]
+    assert inventory.candidate(a).sha256 == inventory.candidate(b).sha256
+    assert inventory.candidate(a).record != inventory.candidate(b).record
+    assert {c.subject for c in inventory.claims if c.predicate == "functionality"} >= {
+        inv.rec["airr", "IGHV1-69*01"], inv.rec["airr", "IGHV1-69D*01"]}
+
+
+def test_phase_value_and_phase_independence_are_separate_claims(inventory, inv):
+    jcand = inv.cand["airr", "IGHJ4*02"]
+    phase = [c for c in inventory.claims if c.subject == jcand and c.predicate == "coding_phase"]
+    independence = [c for c in inventory.claims if c.subject == jcand and c.predicate == "phase_independence"]
+    assert [(c.value.get(), c.status, c.derivation) for c in phase] == [(2, "accepted", "stated")]
+    assert [(c.value.get(), c.status, c.support) for c in independence] == [(None, "unresolved", "none")]
+    vcand = inv.cand["airr", "IGHV1-58*03"]
+    (v_independence,) = [c for c in inventory.claims if c.subject == vcand and c.predicate == "phase_independence"]
+    assert (v_independence.value.get(), v_independence.status) == ("anchor_derived", "accepted")
+
+
+def test_claim_and_finding_ids_are_content_derived_and_verified(inventory):
+    d = _inventory_dict(inventory)
+    claim = d["claims"][0]
+    body = {k: v for k, v in claim.items() if k != "id"}
+    assert claim["id"] == "claim:" + typed_digest(body, "genairr_reference_source_claim_id_v1").split(":")[1]
+    d["claims"][0]["id"] = "claim:" + "0" * 64
+    with _raises("digest_mismatch", "/claims/0/id"):
+        m.SourceInventory.from_dict(d)
+    d = _inventory_dict(inventory)
+    (index,) = [i for i, f in enumerate(d["findings"]) if f["code"] == "paralog_only_identity"]
+    d["findings"][index]["observations"]["label"] = "IGHV3-23D*01"
+    with _raises("digest_mismatch", f"/findings/{index}/id"):
+        m.SourceInventory.from_dict(d)
+    d = _inventory_dict(inventory)
+    d["mappings"][0]["blocks"][0]["output"][0] += 0
+    d["mappings"][0]["transform"] = "remove_imgt_gaps"
+    assert m.SourceInventory.from_dict(d) == inventory
+
+
+@pytest.mark.parametrize("edit,kind,path_prefix", [
+    (lambda d: d["records"].append(copy.deepcopy(d["records"][0])), "malformed", "/records"),
+    (lambda d: d["records"][0].update(label=None), "malformed", "/records/0/label"),
+    (lambda d: d["records"][0].update(segment=None), "malformed", "/records/0/segment"),
+    (lambda d: d["records"][0].update(status="malformed"), "malformed", "/records/0/problem"),
+    (lambda d: d["records"][0].update(problem="unreadable"), "malformed", "/records/0/problem"),
+    (lambda d: d["records"][0].update(taxonomy_id=True), "malformed", "/records/0/taxonomy_id"),
+    (lambda d: d["records"][0]["locator"].update(asset="gapped"), "malformed", "/records/0/locator"),
+    (lambda d: d["candidates"][0].update(sha256="sha256:" + "0" * 64), "digest_mismatch", "/candidates/0/sha256"),
+    (lambda d: d["candidates"][0].update(sequence=d["candidates"][0]["sequence"].lower(),
+                                         sha256=m.sequence_digest(d["candidates"][0]["sequence"].lower())),
+     "malformed", "/candidates/0/sequence"),
+    (lambda d: d["candidates"][0]["record"].update(pointer="/GermlineSet/0/allele_descriptions/1"), "malformed",
+     "/candidates/0"),
+    (lambda d: d["observations"][0].update(presence="absent"), "malformed", "/observations/0/value"),
+    (lambda d: d["observations"][0].update(interpretation="trusted"), "malformed",
+     "/observations/0/interpretation"),
+    (lambda d: d["observations"][0]["record"].update(asset="airr_ex"), "malformed", "/observations/0"),
+    (lambda d: d["support"][0].update(status="verified"), "malformed", "/support/0/status"),
+    (lambda d: d["mentioned_identities"][0].update(label="IGHV1-69*01"), "malformed", "/mentioned_identities/0"),
+    (lambda d: d["mentioned_identities"][0].update(segment="D"), "malformed", "/mentioned_identities/0"),
+    (lambda d: d["mentioned_identities"][0].update(mentions=[]), "malformed", "/mentioned_identities/0/mentions"),
+    (lambda d: d["mentioned_identities"][0]["mentions"][0].update(relationship="ortholog"), "malformed",
+     "/mentioned_identities/0/mentions/0/relationship"),
+])
+def test_inventory_items_are_strict(inventory, edit, kind, path_prefix):
+    d = _inventory_dict(inventory)
+    edit(d)
+    with _raises(kind) as caught:
+        m.SourceInventory.from_dict(d)
+    assert caught.error.path.startswith(path_prefix), caught.error
+
+
+def test_inventory_keeps_malformed_and_unsupported_records(inv):
+    loc = L("airr", _pointer(0))
+    odd = m.SourceRecord(locator=loc, status="unsupported", problem="sequence_type 'C' is not a V, D or J segment",
+                         label="IGHC*01 (constant)", provider_id=None, provider_ref=None, segment=None,
+                         taxonomy_id=None, locus="IGH")
+    inventory = inv.build(records=inv.records + [odd])
+    assert inventory.record(loc).status == "unsupported"
+    assert inventory.export_counts("airr")["record_occurrences"]["unassigned"] == 1
+    with _raises("malformed", "/label"):
+        m.SourceRecord(locator=loc, status="parsed", problem=None, label="IGHC*01 (constant)", provider_id=None,
+                       provider_ref=None, segment="V", taxonomy_id=None, locus=None)
+
+
+def _rebuild_claim(inv, index, **changes):
+    claims = list(inv.claims)
+    fields = {k: getattr(claims[index], k) for k in ("subject", "predicate", "value", "coordinate_system", "support",
+                                                      "derivation", "status", "evidence", "mappings")}
+    fields["value"] = fields["value"].get()
+    fields.update(changes)
+    claims[index] = m.Claim(**fields)
+    return inv.build(claims=claims)
+
+
+def _claim_index(inv, predicate, label="IGHV1-58*03", fmt="airr", **match):
+    subjects = {inv.cand[fmt, label], inv.rec[fmt, label]}
+    for i, claim in enumerate(inv.claims):
+        if claim.predicate == predicate and claim.subject in subjects and all(
+                getattr(claim, k) == v for k, v in match.items()):
+            return i
+    raise AssertionError(predicate)
+
+
+@pytest.mark.parametrize("predicate,label,changes,path", [
+    ("phase_independence", "IGHJ4*02", {"value": "independent"}, "/value"),
+    ("coding_phase", "IGHJ4*02", {"value": None}, "/value"),
+    ("coding_phase", "IGHJ4*02", {"value": 3}, "/value"),
+    ("coding_phase", "IGHJ4*02", {"value": True}, "/value"),
+    ("coding_phase", "IGHJ4*02", {"support": "none"}, "/support"),
+    ("coding_phase", "IGHJ4*02", {"coordinate_system": None}, "/coordinate_system"),
+    ("coding_phase", "IGHJ4*02", {"coordinate_system": "imgt_gapped"}, "/coordinate_system"),
+    ("coding_phase", "IGHJ4*02", {"status": "candidate"}, "/support"),
+    ("coding_phase", "IGHJ4*02", {"evidence": ()}, "/evidence"),
+    ("coding_phase", "IGHJ4*02", {"derivation": "guessed"}, "/derivation"),
+    ("anchor", "IGHJ4*02", {"value": -1}, "/value"),
+    ("anchor", "IGHJ4*02", {"derivation": "anchor_derived"}, "/derivation"),
+    ("functionality", "IGHJ4*02", {"value": "unknown"}, "/value"),
+    ("functionality", "IGHJ4*02", {"value": False}, "/value"),
+    ("functionality", "IGHJ4*02", {"coordinate_system": "coding_sequence"}, "/coordinate_system"),
+    ("extension", "IGHV1-58*03", {"value": {"side": "3", "length": 0, "matches_record_context": True}},
+     "/value/length"),
+    ("extension", "IGHV1-58*03", {"value": {"side": "3", "length": 1}}, "/value"),
+])
+def test_claim_values_and_vocabularies_are_strict(inv, predicate, label, changes, path):
+    fmt = "airr_ex" if predicate == "extension" else "airr"
+    index = _claim_index(inv, predicate, label, fmt)
+    with _raises("malformed") as caught:
+        _rebuild_claim(inv, index, **changes)
+    assert caught.error.path.endswith(path), caught.error
+
+
+def test_claims_are_checked_against_their_subjects_and_evidence(inv):
+    jcand = inv.cand["airr", "IGHJ4*02"]
+    dcand = inv.cand["airr", "IGHD1-1*01"]
+    cdr3 = inv.obs_at(inv.rec["airr", "IGHV1-58*03"], "v_gene_delineations/0/cdr3_start")
+    cases = [
+        # No universal D coding phase, and no anchors on D.
+        (inv.claim(dcand, "coding_phase", 0, [L("airr", dcand.pointer)], system="coding_sequence"), "malformed"),
+        (inv.claim(dcand, "anchor", 3, [L("airr", dcand.pointer)], system="coding_sequence"), "malformed"),
+        # v_subregions only on V; functionality only on a record.
+        (inv.claim(jcand, "v_subregions", {"FWR1": [0, 10]}, [L("airr", jcand.pointer)], system="coding_sequence",
+                   derivation="imgt_alignment", mappings=[inv.mappings[0].id]), "malformed"),
+        (inv.claim(jcand, "functionality", "functional", [L("airr", jcand.pointer)]), "malformed"),
+        # Anchor beyond the candidate's coding sequence.
+        (inv.claim(jcand, "anchor", 46, [L("airr", jcand.pointer)], system="coding_sequence"), "malformed"),
+        # Evidence roots are observed source fields.
+        (inv.claim(jcand, "anchor", 14, [L("airr", jcand.pointer + "/nowhere")], system="coding_sequence"),
+         "malformed"),
+        # Mappings must exist; alignment-derived claims need one.
+        (inv.claim(jcand, "anchor", 14, [L("airr", jcand.pointer)], system="coding_sequence",
+                   mappings=["mapping:" + "0" * 64]), "malformed"),
+        # Unknown subject.
+        (inv.claim(L("airr", "/GermlineSet/0/allele_descriptions/0/coding_sequence"), "anchor", 1, [cdr3],
+                   system="coding_sequence"), "malformed"),
+    ]
+    for claim, kind in cases:
+        with _raises(kind):
+            inv.build(claims=inv.claims + [claim])
+    with _raises("malformed", "/mappings"):
+        inv.claim(inv.cand["airr", "IGHV1-58*03"], "anchor", inv.anchor, [cdr3], system="coding_sequence",
+                  derivation="imgt_alignment")
+
+
+def test_claim_statuses_express_agreement_and_conflict(inv):
+    vcand = inv.cand["airr", "IGHV1-58*03"]
+    cdr3 = inv.obs_at(inv.rec["airr", "IGHV1-58*03"], "v_gene_delineations/0/cdr3_start")
+    disagreeing = inv.claim(vcand, "anchor", inv.anchor + 3, [L("airr", vcand.pointer)], system="coding_sequence",
+                            derivation="unique_motif")
+    with _raises("malformed"):
+        inv.build(claims=inv.claims + [disagreeing])
+    lone_conflict = inv.claim(vcand, "boundary_5", "complete", [cdr3], status="conflicting")
+    with _raises("malformed"):
+        inv.build(claims=inv.claims + [lone_conflict])
+    pair = [inv.claim(vcand, "boundary_5", "complete", [cdr3], status="conflicting"),
+            inv.claim(vcand, "boundary_5", "partial", [L("airr", vcand.pointer)], status="conflicting")]
+    assert sum(c.status == "conflicting" for c in inv.build(claims=inv.claims + pair).claims) == 2
+    motif = inv.claim(vcand, "anchor", inv.anchor + 3, [L("airr", vcand.pointer)], system="coding_sequence",
+                      derivation="unique_motif", status="candidate", support="none")
+    inv.build(claims=inv.claims + [motif])
+    independent = inv.claim(vcand, "phase_independence", "independent", [cdr3])
+    with _raises("malformed"):
+        inv.build(claims=[c for c in inv.claims if not (c.subject == vcand and c.predicate == "phase_independence")]
+                  + [independent])
+
+
+def test_mappings_bind_one_record_occurrence_to_one_gapped_record_of_its_own_variant(inv):
+    good = inv.mappings[0]
+    fields = {k: getattr(good, k) for k in ("kind", "input", "output", "input_sha256", "output_sha256", "input_space",
+                                             "output_space", "blocks", "transform", "validation")}
+    ex_gapped = inv.mappings[1].output
+    with _raises("malformed", "/output"):
+        m.Mapping(**{**fields, "output": ex_gapped})
+    with _raises("malformed", "/output"):
+        m.Mapping(**{**fields, "output": L("gapped", "/GermlineSet/0")})
+    with _raises("malformed", "/blocks"):
+        m.Mapping(**{**fields, "blocks": ()})
+    with _raises("malformed", "/blocks"):
+        m.Mapping(**{**fields, "blocks": (m.Block((0, 10), (0, 10)), m.Block((5, 20), (30, 45)))})
+    with _raises("malformed", "/output"):
+        m.Block((0, 10), (0, 11))
+    with _raises("malformed", "/input"):
+        m.Block((5, 5), (0, 0))
+    with _raises("malformed", "/input"):
+        m.Block((0, True), (0, 1))
+    with _raises("malformed", "/transform"):
+        m.Mapping(**{**fields, "transform": "align_anything"})
+    mismatch = m.Mapping(**{**fields, "blocks": (), "validation": "mismatch"})
+    assert mismatch.validation == "mismatch"
+    with _raises("digest_mismatch"):
+        inv.build(mappings=[m.Mapping(**{**fields, "input_sha256": "sha256:" + "1" * 64}), inv.mappings[1]])
+    with _raises("malformed"):
+        inv.build(mappings=inv.mappings + [mismatch])
+    other = inv.cand["airr", "IGHV1-69*01"]
+    with _raises("malformed"):
+        inv.build(mappings=inv.mappings + [m.Mapping(**{**fields, "input": other, "blocks": (), "validation": "mismatch",
+                                                         "input_sha256": inv.build().candidate(other).sha256})])
+    short = fields["blocks"][:-1]
+    with _raises("malformed"):
+        inv.build(mappings=[m.Mapping(**{**fields, "blocks": short}), inv.mappings[1]],
+                  claims=[c for c in inv.claims if not c.mappings])
+
+
+def test_coding_interval_mapping_converts_record_sequence_coordinates(inv):
+    index, raw = _find("IGHJ4*02")
+    rec, cand = inv.rec["airr", "IGHJ4*02"], inv.cand["airr", "IGHJ4*02"]
+    start, end = raw["gene_start"] - 1, raw["gene_end"]
+    assert raw["sequence"][start:end] == raw["coding_sequence"]
+    seq_loc = L("airr", rec.pointer + "/sequence")
+    observation = m.Observation(locator=seq_loc, record=rec, presence="present", value=raw["sequence"],
+                                interpretation="interpreted")
+    mapping = m.Mapping(kind="coding_interval", input=seq_loc, output=cand,
+                        input_sha256=m.text_digest(raw["sequence"]),
+                        output_sha256=m.sequence_digest(raw["coding_sequence"]), input_space="record_sequence",
+                        output_space="coding_sequence", blocks=(m.Block((start, end), (0, end - start)),),
+                        transform="extract_interval", validation="exact")
+    inventory = inv.build(observations=inv.observations + [observation], mappings=inv.mappings + [mapping])
+    assert mapping in inventory.mappings
+    interval = inv.claim(cand, "coding_interval", [start, end], [seq_loc], system="record_sequence",
+                         mappings=[mapping.id])
+    inv.build(observations=inv.observations + [observation], mappings=inv.mappings + [mapping],
+              claims=inv.claims + [interval])
+    with _raises("malformed"):
+        m.Mapping(kind="coding_interval", input=seq_loc, output=cand, input_sha256=mapping.input_sha256,
+                  output_sha256=mapping.output_sha256, input_space="record_sequence", output_space="coding_sequence",
+                  blocks=(m.Block((start, end), (1, end - start + 1)),), transform="extract_interval",
+                  validation="exact")
+
+
+def test_findings_are_strict(inv):
+    base = inv.findings[0]
+    fields = {k: getattr(base, k) for k in ("code", "severity", "category", "subjects", "locators", "observations",
+                                             "capabilities")}
+    fields["observations"] = fields["observations"].get()
+    for change, path in (({"code": "Variant differs"}, "/code"), ({"severity": "fatal"}, "/severity"),
+                         ({"category": "biology"}, "/category"), ({"observations": ["x"]}, "/observations"),
+                         ({"capabilities": ("canonical_productive", "observed_span_simulation")}, "/capabilities"),
+                         ({"capabilities": ("all_functional",)}, "/capabilities/0"),
+                         ({"subjects": (), "locators": ()}, "/subjects"),
+                         ({"subjects": tuple(reversed(base.subjects))}, "/subjects")):
+        with _raises("malformed", path):
+            m.Finding(**{**fields, **change})
+    unknown = m.Finding(**{**fields, "subjects": (L("airr", _pointer(0)),)})
+    with _raises("malformed"):
+        inv.build(findings=inv.findings + [unknown])
+
+
+def test_preserved_values_are_finite_bounded_json(inv):
+    loc = L("airr", "/Info/title")
+    for value, kind in ((float("nan"), "malformed"), (float("inf"), "malformed"), ({1: "x"}, "malformed"),
+                        ((1, 2), "malformed"), ({"\ud800": 1}, "malformed"),
+                        (_nested(m.MAX_VALUE_DEPTH + 1), "resource_limit"),
+                        (["x"] * (m.MAX_VALUE_NODES + 1), "resource_limit")):
+        with _raises(kind):
+            m.Observation(locator=loc, record=None, presence="present", value=value, interpretation="preserved")
+    a = m.Observation(locator=loc, record=None, presence="present", value={"b": 1, "a": [1.5, None]},
+                      interpretation="preserved")
+    b = m.Observation(locator=loc, record=None, presence="present", value={"a": [1.5, None], "b": 1},
+                      interpretation="preserved")
+    assert a == b and a.value.get() == {"a": [1.5, None], "b": 1}
+    copy_ = a.value.get()
+    copy_["a"].append(2)
+    assert a.value.get() == {"a": [1.5, None], "b": 1}
+    absent = m.Observation(locator=L("airr", "/Info/missing"), record=None, presence="absent", value=None,
+                           interpretation="preserved")
+    null = m.Observation(locator=L("airr", "/Info/missing"), record=None, presence="present", value=None,
+                         interpretation="preserved")
+    assert absent != null and absent.to_dict()["presence"] == "absent" and null.to_dict()["presence"] == "present"
+
+
+def _nested(depth):
+    value = 0
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+def test_check_inventory_against_its_lock(inventory):
+    m.check_inventory(inventory, m.SourceLock.from_dict(lock_dict()))
+    with _raises("digest_mismatch", "/source_lock_hash"):
+        m.check_inventory(inventory, m.SourceLock.from_dict(lock_dict(origin="local_file")))
+    narrow = Inv(m.SourceLock.from_dict(lock_dict(formats=("airr", "gapped", "gapped_ex")))).build()
+    with _raises("identity_mismatch") as caught:
+        m.check_inventory(narrow, m.SourceLock.from_dict(lock_dict(formats=("airr", "gapped", "gapped_ex"))))
+    assert "airr_ex" in caught.error.message
+
+
+# ── selection and decisions against the inventory ────────────────────
+
+
+def _recipe(inventory, *, selected=SELECTED, decisions=(), edit=None):
+    d = recipe_dict(selected=selected)
+    d["decisions"] = list(decisions)
+    if edit:
+        edit(d)
+    return m.Recipe.from_dict(d)
+
+
+def test_check_selection_binds_exact_record_and_digest(inventory):
+    m.check_selection(_recipe(inventory), inventory)
+
+
+@pytest.mark.parametrize("edit,kind,path", [
+    (lambda d: d["selection"][0].update(label="IGHV1-58*04"), "identity_mismatch", "/selection/0/label"),
+    (lambda d: d["selection"][3].update(segment="J"), "identity_mismatch", "/selection/3/segment"),
+    (lambda d: d["selection"][0]["record"].update(pointer=_pointer(0)), "unresolved_selection",
+     "/selection/0/record"),
+    (lambda d: d["selection"][0].update(sequence_sha256=selection_entry("IGHV1-58*03", "airr_ex")["sequence_sha256"]),
+     "unresolved_selection", "/selection/0/sequence_sha256"),
+])
+def test_rehashed_selection_that_disagrees_with_its_record_is_rejected(inventory, edit, kind, path):
+    with _raises(kind, path):
+        m.check_selection(_recipe(inventory, edit=edit), inventory)
+
+
+def test_selected_records_must_agree_with_the_source_identity(inv):
+    records = list(inv.records)
+    index = [i for i, r in enumerate(records) if r.locator == inv.rec["airr", "IGHJ4*02"]][0]
+    fields = {k: getattr(records[index], k) for k in ("locator", "status", "problem", "label", "provider_id",
+                                                       "provider_ref", "segment", "taxonomy_id", "locus")}
+    for change in ({"taxonomy_id": 10090}, {"locus": "IGK"}):
+        records[index] = m.SourceRecord(**{**fields, **change})
+        with _raises("identity_mismatch", "/selection/4/record"):
+            m.check_selection(_recipe(None), inv.build(records=records))
+    records[index] = m.SourceRecord(**{**fields, "status": "malformed", "problem": "coding_sequence is not DNA"})
+    with _raises("unresolved_selection", "/selection/4/record"):
+        m.check_selection(_recipe(None), inv.build(records=records))
+
+
+def test_check_selection_needs_the_same_lock(inventory):
+    other = Inv(m.SourceLock.from_dict(lock_dict(origin="local_file"))).build()
+    with _raises("digest_mismatch", "/source_lock_hash"):
+        m.check_selection(_recipe(inventory), other)
+
+
+def _finding(inventory, code):
+    (found,) = [f for f in inventory.findings if f.code == code]
+    return found
+
+
+def _claim(inventory, predicate, subject):
+    (found,) = [c for c in inventory.claims if c.predicate == predicate and c.subject == subject]
+    return found
+
+
+def test_check_decisions_accepts_current_ids_and_digests(inventory, inv):
+    finding = _finding(inventory, "variant_coding_sequence_differs")
+    jcand = inv.cand["airr", "IGHJ4*02"]
+    j_sha = inventory.candidate(jcand).sha256
+    independence = _claim(inventory, "phase_independence", jcand)
+    phase = _claim(inventory, "coding_phase", jcand)
+    decisions = [decision(findings=[finding.id]),
+                 decision("withhold_claim", claims=[independence.id], sequence_sha256=j_sha),
+                 decision("accept_claim", claims=[phase.id], sequence_sha256=j_sha,
+                          evidence=[inv.obs_at(inv.rec["airr", "IGHJ4*02"], "j_codon_frame").to_dict()])]
+    m.check_decisions(_recipe(inventory, decisions=decisions), inventory)
+
+
+def test_stale_decisions_are_rejected(inventory, inv):
+    finding = _finding(inventory, "variant_coding_sequence_differs")
+    jcand = inv.cand["airr", "IGHJ4*02"]
+    j_sha = inventory.candidate(jcand).sha256
+    phase = _claim(inventory, "coding_phase", jcand)
+    cases = [
+        (decision(findings=["finding:" + "f" * 64]), "stale_decision", "/decisions/0/findings/0"),
+        (decision("withhold_claim", claims=["claim:" + "c" * 64], sequence_sha256=j_sha), "stale_decision",
+         "/decisions/0/claims/0"),
+        (decision("withhold_claim", claims=[phase.id]), "stale_decision", "/decisions/0/sequence_sha256"),
+        (decision(findings=[finding.id], evidence=[{"asset": "airr", "pointer": "/GermlineSet/0/nowhere"}]),
+         "stale_decision", "/decisions/0/evidence/0"),
+        (decision(findings=[_finding(inventory, "paralog_only_identity").id]), "stale_decision",
+         "/decisions/0/sequence_sha256"),
+        (decision(findings=[finding.id], sequence_sha256=selection_entry("IGHV1-58*03", "airr_ex")["sequence_sha256"]),
+         "stale_decision", "/decisions/0/sequence_sha256"),
+    ]
+    for entry, kind, path in cases:
+        with _raises(kind, path):
+            m.check_decisions(_recipe(inventory, decisions=[entry]), inventory)
+
+
+def test_accepted_claims_must_be_representable_by_the_runtime_reference(inventory, inv):
+    ex = inv.cand["airr_ex", "IGHV1-58*03"]
+    extension = _claim(inventory, "extension", ex)
+    jcand = inv.cand["airr", "IGHJ4*02"]
+    independence = _claim(inventory, "phase_independence", jcand)
+    for claim, sha in ((extension, inventory.candidate(ex).sha256), (independence, inventory.candidate(jcand).sha256)):
+        entry = decision("accept_claim", claims=[claim.id], sequence_sha256=sha,
+                         evidence=[claim.evidence[0].to_dict()])
+        with _raises("projection", "/decisions/0/claims/0"):
+            m.check_decisions(_recipe(inventory, decisions=[entry]), inventory)

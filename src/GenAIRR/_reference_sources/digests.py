@@ -16,6 +16,8 @@ the build-input hash, never the report or manifest hash.
 from __future__ import annotations
 
 from GenAIRR._reference_sources._fields import digest
+from GenAIRR._reference_sources.consistency import check_build_inputs
+from GenAIRR._reference_sources.inventory import SourceInventory
 from GenAIRR._reference_sources.lock import DIGEST_DOMAIN as LOCK_DOMAIN, SourceLock
 from GenAIRR._reference_sources.recipe import Recipe
 
@@ -50,3 +52,31 @@ def recipe_hash(recipe: Recipe) -> str:
     """``genairr_reference_source_recipe_v1`` over the complete recipe (which holds the lock hash)."""
     _require(recipe, Recipe, "recipe")
     return digest(recipe.to_dict(), RECIPE_DOMAIN)
+
+
+def inventory_hash(inventory: SourceInventory) -> str:
+    """``genairr_reference_source_inventory_v1`` over the complete inventory (which holds the lock hash)."""
+    _require(inventory, SourceInventory, "inventory")
+    return digest(inventory.to_dict(), INVENTORY_DOMAIN)
+
+
+def build_inputs(lock: SourceLock, inventory: SourceInventory, recipe: Recipe) -> dict:
+    """The build-input record: lock, inventory and recipe hashes plus adapter and projection ids.
+
+    Runs every cross-document check first, so inconsistent inputs never get an identity.
+    """
+    _require(lock, SourceLock, "lock")
+    _require(inventory, SourceInventory, "inventory")
+    _require(recipe, Recipe, "recipe")
+    check_build_inputs(lock, inventory, recipe)
+    return {"source_lock": lock_hash(lock), "inventory": inventory_hash(inventory), "recipe": recipe_hash(recipe),
+            "adapter": recipe.adapter.to_dict(), "projection": recipe.projection.to_dict()}
+
+
+def build_input_hash(lock: SourceLock, inventory: SourceInventory, recipe: Recipe) -> str:
+    """``genairr_reference_source_build_inputs_v1`` over :func:`build_inputs`.
+
+    Exists before projection, so runtime citations may name it; it cannot depend on a
+    report, manifest or receipt.
+    """
+    return digest(build_inputs(lock, inventory, recipe), BUILD_INPUTS_DOMAIN)
