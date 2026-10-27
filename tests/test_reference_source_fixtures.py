@@ -439,7 +439,7 @@ def test_igh_capability_target():
     basis = target["basis_for_target"]
     assert "Source-supported junction anchors" in basis["source_annotated_junction"]
     assert "below source certification" in basis["canonical_productive"]
-    assert "'assertion'" in basis["canonical_productive"] and "'none'" in basis["canonical_productive"]
+    assert "'assertion'" in basis["canonical_productive"] and "'anchor_derived'" in basis["canonical_productive"]
     assert "does not promise that every generated sequence is productive" in basis["canonical_productive"]
     assert "confirmed later by projection tests" in basis["confirmation"]
     assert "canonical_productive_source_certified" in target["not_targeted"]

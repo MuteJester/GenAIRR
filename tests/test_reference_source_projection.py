@@ -261,6 +261,8 @@ def test_the_starter_capabilities_are_confirmed_on_the_built_reference(starter):
             True, "assertion")
         assert capabilities.phase_support == "anchor_derived"
         assert not status("original_coding_ends").available
+    target = SELECTION["capability_target"]["basis_for_target"]["canonical_productive"]
+    assert "evidence 'assertion' and phase support 'anchor_derived'" in target
     assert [r.to_dict() for r in result.report.requirements] == [
         {"capability": c, "evidence": e, "satisfied": True} for c, e in STARTER_REQUIRES]
 

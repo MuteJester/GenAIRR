@@ -278,7 +278,7 @@
     ],
     "basis_for_target": {
       "source_annotated_junction": "Source-supported junction anchors: every selected V has its own cdr3_start, whose meaning and record binding are verified against the 'gapped' export; every selected J has its own j_cdr3_end/j_codon_frame consistent with the producer convention. Anchors are source-stated positions, not motif searches.",
-      "canonical_productive": "Targeted below source certification only: every selected V anchor codon is Cys and every selected J anchor codon is TGG, so the capability is expected to be available with evidence 'assertion' and phase support 'none' (V coding phase is at most anchor-derived). The capability concerns the reference's anchors; it does not promise that every generated sequence is productive.",
+      "canonical_productive": "Targeted below source certification only: every selected V anchor codon is Cys and every selected J anchor codon is TGG, so the capability is expected to be available with evidence 'assertion' and phase support 'anchor_derived' (V coding phase is at most anchor-derived). The capability concerns the reference's anchors; it does not promise that every generated sequence is productive.",
       "confirmation": "This file states a target. Actual availability is confirmed later by projection tests on the built reference."
     },
     "not_targeted": {
