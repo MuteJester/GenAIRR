@@ -36,7 +36,7 @@ from GenAIRR._reference_sources.manifest import (
 )
 from GenAIRR._reference_sources.projection import ANNOTATIONS_MEMBER, FASTA_MEMBERS, project, report_for
 from GenAIRR._reference_sources.receipt import MAX_RECEIPT_BYTES, AcquisitionReceipt
-from GenAIRR._reference_sources.recipe import MAX_RECIPE_BYTES, Recipe
+from GenAIRR._reference_sources.recipe import _KEYS as RECIPE_KEYS, MAX_RECIPE_BYTES, Recipe
 from GenAIRR._reference_sources.report import MAX_REPORT_BYTES, BuildReport
 
 LOCK_MEMBER = "source.lock.json"
@@ -242,8 +242,7 @@ def _regeneration_failed(exc: ReferenceSourceError, lock: SourceLock) -> Referen
         path = "/" + LOCK_MEMBER + path[len("/source_lock"):]
     elif tokens[1] == "assets" and len(tokens) > 2 and tokens[2] in blobs:     # /assets/<id>... -> its blob
         path = "/" + blobs[tokens[2]] + path[len("/assets/" + tokens[2]):]
-    elif tokens[1] in ("artifact", "schema_version", "source_lock_hash", "adapter", "projection", "reference",
-                       "selection", "decisions", "requires", "defaults_profile"):
+    elif tokens[1] in RECIPE_KEYS:                  # a location in the recipe document
         path = "/" + RECIPE_MEMBER + path
     return ReferenceSourceError(exc.kind, path, "the dossier's lock, blobs and recipe do not regenerate a build "
                                                 f"under this GenAIRR: {exc.message}")
@@ -323,7 +322,12 @@ class ReferenceBuild:
     data); ``lock`` and ``recipe`` are what it was built from; ``manifest`` lists every
     deterministic dossier member with its digest and size.  A build never changes.
 
-    Builds come from ``OgrdbSource.build``, :meth:`read_dossier` and :meth:`bundled`.
+    Builds come from ``OgrdbSource.build``, :meth:`read_dossier` and :meth:`bundled`.  For a
+    build read from a dossier, what is verified is content identity: the raw source bytes, the
+    recipe, and the inputs, reference and report regenerated from them.  The recorded generator
+    and builder, and the lock's asset origins, declared URLs and data terms, are the writer's
+    statements; ``checked_with`` is the only version this process verified.  Acquisition
+    receipts are unverified records of how the bytes were obtained, outside every identity.
     """
 
     __slots__ = ("_reference", "_report", "_lock", "_recipe", "_manifest", "_files", "_receipts", "_checked_with")
@@ -465,15 +469,26 @@ class ReferenceBuild:
 
         The dossier must be complete (``manifest.json`` is written last; without it nothing is
         read).  Every file must be a listed member (or an acquisition receipt), a regular file
-        and never a link; each member's size and digest must be the manifest's.  The inventory,
-        the projected inputs, the runtime reference and the report are then regenerated from the
-        locked blobs and the recipe and compared with what is stored: the inputs byte for byte,
-        the reference in every runtime field but its generator and commitment, and the report
-        exactly, stated for the stored reference and its recorded builder.  A dossier whose
-        hashes were recomputed after an edit is therefore still refused.
+        and never a link; file-manager metadata (``.DS_Store``, ``Thumbs.db``, ``desktop.ini``,
+        ``._*``) is ignored.  Each member's size and digest must be the manifest's, and the lock
+        and recipe must be the ones it commits to.  The inventory, the projected inputs, the
+        runtime reference and the report are then regenerated from the locked blobs and the
+        recipe and compared with what is stored: the inputs byte for byte, the reference in every
+        runtime field but its generator and commitment, and the report byte for byte, stated for
+        the stored reference and its recorded builder; the manifest must be the manifest of
+        those members.  A dossier whose hashes were recomputed after an edit is therefore still
+        refused.
 
-        Nothing is written.  The result holds the stored reference, report and manifest;
-        ``checked_with`` names the GenAIRR version that checked it.
+        What is verified is content identity: raw bytes, recipe, regenerated inputs, reference
+        and report.  The recorded generator and builder, and the lock's asset origins, declared
+        URLs and data terms, are the writer's statements; ``checked_with`` names the only
+        version verified, the GenAIRR that ran this check.  Receipts are unverified acquisition
+        records outside every identity.
+
+        Nothing is written into the dossier.  Regeneration writes the projected FASTA and
+        annotation files into a private system temporary directory, which it removes, so the
+        check (and :meth:`bundled`) needs a writable temporary directory.  The result holds the
+        stored reference, report and manifest.
         """
         import GenAIRR
         checking = GenAIRR.__version__

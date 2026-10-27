@@ -20,7 +20,7 @@ from GenAIRR._reference_sources._fields import read_json
 from GenAIRR._reference_sources.acquisition import (
     AcquiredSource, HttpsTransport, Transport, fetch_source, ingest_files, read_locked,
 )
-from GenAIRR._reference_sources.build import ReferenceBuild, document_bytes
+from GenAIRR._reference_sources.build import RECIPE_KEYS, ReferenceBuild, document_bytes
 from GenAIRR._reference_sources.consistency import profile_scope_problem
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.inventory import (
@@ -34,9 +34,6 @@ from GenAIRR._reference_sources.recipe import MAX_RECIPE_BYTES, Recipe
 # returning a fixed timezone-aware datetime; receipts never enter an identity.
 _now = None
 
-# Top-level recipe keys: an error located below one of them is about the recipe document.
-_RECIPE_KEYS = ("artifact", "schema_version", "source_lock_hash", "adapter", "projection", "reference",
-                "selection", "decisions", "requires", "defaults_profile")
 
 
 def _transport() -> Transport:
@@ -353,7 +350,7 @@ class OgrdbSource:
         try:
             projection = project(self._lock, self._assets, parsed)
         except ReferenceSourceError as exc:
-            if origin is not None and _first_token(exc.path) in _RECIPE_KEYS:
+            if origin is not None and _first_token(exc.path) in RECIPE_KEYS:     # located in the recipe
                 raise _named(exc, origin) from None
             raise
         return ReferenceBuild._create(lock=self._lock, recipe=parsed, assets=self._assets,
