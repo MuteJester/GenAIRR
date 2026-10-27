@@ -19,8 +19,9 @@ The caller also supplies the data terms, or they are recorded as unresolved.
 Provider URLs are generated from validated components only.  Only HTTPS to the known
 OGRDB origin is accepted, and at most three same-origin HTTPS redirects are followed.
 Each response streams under a hard byte bound, checked against Content-Length when one
-is present but never trusting it alone.  A socket timeout and a whole-operation deadline
-apply, and nothing is retried automatically.
+is present but never trusting it alone.  Every blocking step (connecting, sending, the
+status line and headers, and each receive of the body) waits at most the socket timeout
+and never beyond the whole-operation deadline.  Nothing is retried automatically.
 
 Every asset of an operation is staged in an owned temporary file and validated: digest,
 pins of an expected lock, and identity.  Only then is anything published, so a failure
@@ -34,8 +35,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import datetime
 import http.client
+import io
 import os
 import re
+import socket
 import ssl
 import stat
 import time
@@ -152,6 +155,14 @@ def _check_formats(formats, path: str) -> tuple:
 # ── Transport ───────────────────────────────────────────────────────
 
 
+class DeadlineExceeded(socket.timeout):
+    """The operation's acquisition deadline passed during a transport step.
+
+    It is a socket timeout, so code unaware of it still sees a timeout; the acquisition
+    reports it as ``resource_limit`` with the elapsed and allowed time.
+    """
+
+
 class TransportResponse(Protocol):
     """One HTTP response: ``status``, header lookup, bounded reads and ``close``."""
 
@@ -159,15 +170,23 @@ class TransportResponse(Protocol):
 
     def getheader(self, name: str, default: Optional[str] = None) -> Optional[str]: ...
 
-    def read(self, amt: int) -> bytes: ...
+    def read(self, amt: int) -> bytes:
+        """At most ``amt`` bytes, returning as soon as some arrive; ``b""`` at the end."""
 
     def close(self) -> None: ...
 
 
 class Transport(Protocol):
-    """One HTTP GET without following redirects; ``OSError``/``http.client.HTTPException`` on failure."""
+    """One HTTP GET that never follows redirects.
 
-    def get(self, url: str, *, timeout: float) -> TransportResponse: ...
+    ``timeout`` bounds each blocking socket step.  ``deadline`` is the absolute time, on
+    the monotonic clock of the operation, by which the whole operation must end: once it
+    passes, every step (connecting, sending, the status line and headers, and each body
+    read) raises :class:`DeadlineExceeded`.  Other failures raise ``OSError`` or
+    ``http.client.HTTPException``.
+    """
+
+    def get(self, url: str, *, timeout: float, deadline: float) -> TransportResponse: ...
 
 
 def _user_agent() -> str:
@@ -176,6 +195,74 @@ def _user_agent() -> str:
     except ImportError:  # pragma: no cover - partially initialized package
         version = "unknown"
     return f"GenAIRR/{version} (reference source import)"
+
+
+class _StepBound:
+    """Socket timeout of each blocking step: ``min(timeout, time left before the deadline)``."""
+
+    def __init__(self, clock: Callable[[], float], timeout: float, deadline: float):
+        self._clock, self._timeout, self._deadline = clock, timeout, deadline
+
+    def next(self) -> tuple:
+        """``(seconds, bounded_by_deadline)``; :class:`DeadlineExceeded` once the deadline has passed."""
+        remaining = self._deadline - self._clock()
+        if remaining <= 0:
+            raise DeadlineExceeded("the acquisition deadline has passed")
+        if remaining < self._timeout:
+            return remaining, True
+        return self._timeout, False
+
+    def run(self, sock, step, *args):
+        """Run one blocking socket step under the next bound."""
+        seconds, by_deadline = self.next()
+        sock.settimeout(seconds)
+        try:
+            return step(*args)
+        except socket.timeout as exc:
+            if by_deadline and not isinstance(exc, DeadlineExceeded):
+                raise DeadlineExceeded("the acquisition deadline passed while waiting for the server") from exc
+            raise
+
+
+class _BoundedReader(io.RawIOBase):
+    """Raw receives from a connected socket, each bounded by :class:`_StepBound`."""
+
+    def __init__(self, sock, raw, bound: _StepBound):
+        self._sock, self._raw, self._bound = sock, raw, bound
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer) -> int:
+        return self._bound.run(self._sock, self._raw.readinto, buffer)
+
+    def close(self) -> None:
+        try:
+            self._raw.close()
+        finally:
+            super().close()
+
+
+class _BoundedSocket:
+    """The connected socket as ``http.client`` uses it, with every send and receive bounded."""
+
+    def __init__(self, sock, bound: _StepBound):
+        self._sock, self._bound = sock, bound
+
+    def makefile(self, mode="r", buffering=None, **kwargs):
+        if mode != "rb":
+            raise ValueError("only binary reads are supported")
+        raw = self._sock.makefile("rb", buffering=0)
+        return io.BufferedReader(_BoundedReader(self._sock, raw, self._bound))
+
+    def sendall(self, data, *args):
+        return self._bound.run(self._sock, self._sock.sendall, data, *args)
+
+    def close(self) -> None:
+        self._sock.close()
+
+    def __getattr__(self, name):
+        return getattr(self._sock, name)
 
 
 class _HttpsResponse:
@@ -188,7 +275,7 @@ class _HttpsResponse:
         return self._response.getheader(name, default)
 
     def read(self, amt: int) -> bytes:
-        return self._response.read(amt)
+        return self._response.read1(amt)    # at most one underlying receive
 
     def close(self) -> None:
         try:
@@ -201,21 +288,35 @@ class HttpsTransport:
     """Standard-library HTTPS GET.
 
     Redirects are never followed here; the caller applies the redirect policy.  The
-    request carries no credentials and asks for the unencoded bytes.
+    request carries no credentials and asks for the unencoded bytes.  Connecting (with the
+    TLS handshake), sending, receiving the status line and headers, and every body
+    receive each run under ``min(timeout, time left before deadline)`` on ``clock``; body
+    reads return after at most one receive.
     """
 
-    def __init__(self, *, context: Optional[ssl.SSLContext] = None):
+    def __init__(self, *, context: Optional[ssl.SSLContext] = None,
+                 clock: Callable[[], float] = time.monotonic):
         self._context = context
+        self._clock = clock
 
-    def get(self, url: str, *, timeout: float) -> TransportResponse:
+    def get(self, url: str, *, timeout: float, deadline: float) -> TransportResponse:
         parts = urlsplit(url)
         if parts.scheme != "https" or not parts.hostname or parts.username is not None or parts.password is not None:
             raise ValueError("only https URLs without credentials can be requested")
+        bound = _StepBound(self._clock, timeout, deadline)
+        seconds, by_deadline = bound.next()
         context = self._context if self._context is not None else ssl.create_default_context()
-        connection = http.client.HTTPSConnection(parts.hostname, parts.port or 443, timeout=timeout,
+        connection = http.client.HTTPSConnection(parts.hostname, parts.port or 443, timeout=seconds,
                                                  context=context)
         target = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
         try:
+            try:
+                connection.connect()
+            except socket.timeout as exc:
+                if by_deadline and not isinstance(exc, DeadlineExceeded):
+                    raise DeadlineExceeded("the acquisition deadline passed while connecting") from exc
+                raise
+            connection.sock = _BoundedSocket(connection.sock, bound)
             connection.request("GET", target, headers={"User-Agent": _user_agent(), "Accept": "*/*",
                                                        "Accept-Encoding": "identity", "Connection": "close"})
             response = connection.getresponse()
@@ -282,15 +383,21 @@ class _Budget:
 
 
 class _Deadline:
+    """The whole-operation deadline; ``at`` is its absolute time on ``clock``."""
+
     def __init__(self, clock: Callable[[], float]):
         self._clock = clock
         self._start = clock()
+        self.at = self._start + ACQUISITION_DEADLINE_SECONDS
+
+    def exceeded(self, activity: str) -> ReferenceSourceError:
+        elapsed = self._clock() - self._start
+        return bad("", f"the acquisition deadline was exceeded while {activity}: {elapsed:.1f} s elapsed, "
+                       f"allowed {ACQUISITION_DEADLINE_SECONDS} s", "resource_limit")
 
     def check(self, activity: str) -> None:
-        elapsed = self._clock() - self._start
-        if elapsed > ACQUISITION_DEADLINE_SECONDS:
-            raise bad("", f"the acquisition deadline was exceeded while {activity}: {elapsed:.1f} s elapsed, "
-                          f"allowed {ACQUISITION_DEADLINE_SECONDS} s", "resource_limit")
+        if self._clock() - self._start > ACQUISITION_DEADLINE_SECONDS:
+            raise self.exceeded(activity)
 
 
 def _timestamp(now: Optional[Callable[[], datetime.datetime]]) -> str:
@@ -479,6 +586,8 @@ def _stream_body(fmt: str, url: str, response: TransportResponse, cache: BlobCac
         while True:
             try:
                 chunk = response.read(min(_CHUNK, cap + 1 - total))
+            except DeadlineExceeded as exc:
+                raise deadline.exceeded(f"downloading {fmt}") from exc
             except _TRANSPORT_ERRORS as exc:
                 raise _network(fmt, f"the connection to {url} failed after {total} bytes ({exc!r})") from exc
             deadline.check(f"downloading {fmt}")
@@ -510,7 +619,9 @@ def _download(fmt: str, url: str, *, transport: Transport, cache: BlobCache, dea
     while True:
         deadline.check(f"requesting {fmt}")
         try:
-            response = transport.get(current, timeout=SOCKET_TIMEOUT_SECONDS)
+            response = transport.get(current, timeout=SOCKET_TIMEOUT_SECONDS, deadline=deadline.at)
+        except DeadlineExceeded as exc:
+            raise deadline.exceeded(f"requesting {fmt}") from exc
         except _TRANSPORT_ERRORS as exc:
             raise _network(fmt, f"the request for {current} failed ({exc!r}); it is not retried") from exc
         staged = None
@@ -624,7 +735,7 @@ def fetch_source(*, set_id, release, profile, cache, transport: Transport, ident
     """
     _require_callable(identify, "identify")
     if not callable(getattr(transport, "get", None)):
-        raise TypeError(f"transport must provide get(url, *, timeout), got {type(transport).__name__}")
+        raise TypeError(f"transport must provide get(url, *, timeout, deadline), got {type(transport).__name__}")
     _require_callable(clock, "clock")
     if expected_lock is not None and not isinstance(expected_lock, SourceLock):
         raise TypeError(f"expected_lock must be a SourceLock, got {type(expected_lock).__name__}")

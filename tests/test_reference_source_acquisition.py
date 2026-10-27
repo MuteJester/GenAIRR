@@ -15,9 +15,11 @@ import errno
 import hashlib
 import http.client
 import inspect
+import io
 import os
 import pathlib
 import socket
+import ssl
 import threading
 
 import pytest
@@ -28,8 +30,8 @@ from GenAIRR._reference_sources import acquisition as acq
 from GenAIRR._reference_sources import model as m
 from GenAIRR._reference_sources.acquisition import (
     ACQUISITION_DEADLINE_SECONDS, FETCH_FORMATS, MAX_FOLLOWED_REDIRECTS, OGRDB_ORIGIN, SOCKET_TIMEOUT_SECONDS,
-    AcquiredSource, HttpsTransport, SuppliedFile, fetch_source, ingest_files, provider_url, read_locked,
-    resolve_profile,
+    AcquiredSource, DeadlineExceeded, HttpsTransport, SuppliedFile, fetch_source, ingest_files, provider_url,
+    read_locked, resolve_profile,
 )
 from GenAIRR._reference_sources.cache import BlobCache
 from GenAIRR._reference_sources.errors import ReferenceSourceError
@@ -157,10 +159,12 @@ class FakeTransport:
     def __init__(self, routes=None):
         self.routes = dict(routes or {})
         self.calls = []
+        self.deadlines = []
         self.responses = []
 
-    def get(self, url, *, timeout):
+    def get(self, url, *, timeout, deadline):
         self.calls.append((url, timeout))
+        self.deadlines.append(deadline)
         route = self.routes.get(url)
         response = route() if route else FakeResponse(404, b"not found")
         self.responses.append(response)
@@ -172,7 +176,7 @@ class FakeTransport:
 
 
 class FailingTransport:
-    def get(self, url, *, timeout):
+    def get(self, url, *, timeout, deadline):
         pytest.fail(f"the transport was called for {url}")
 
 
@@ -407,7 +411,7 @@ def test_a_fetch_reacquires_every_requested_asset_even_when_cached(tmp_path):
 
 def test_a_fetch_is_attempted_once_and_never_retried(tmp_path):
     class Refused(FakeTransport):
-        def get(self, url, *, timeout):
+        def get(self, url, *, timeout, deadline):
             self.calls.append((url, timeout))
             raise ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused")
 
@@ -620,13 +624,20 @@ def test_the_acquisition_deadline_is_checked_while_streaming(tmp_path):
     assert _temporaries(tmp_path) == []
 
 
+def test_the_absolute_deadline_is_passed_to_the_transport(tmp_path):
+    clock = FakeClock()
+    transport = FakeTransport(serve(formats=("airr", "airr_ex")))
+    fetch(tmp_path, transport, formats=("airr", "airr_ex"), clock=clock)
+    assert transport.deadlines == [clock.now + ACQUISITION_DEADLINE_SECONDS] * 2
+
+
 def test_the_deadline_covers_the_whole_operation(tmp_path):
     clock = FakeClock()
 
     class Slow(FakeTransport):
-        def get(self, url, *, timeout):
+        def get(self, url, *, timeout, deadline):
             clock.now += 70.0
-            return super().get(url, timeout=timeout)
+            return super().get(url, timeout=timeout, deadline=deadline)
 
     transport = Slow(serve(formats=("airr", "airr_ex")))
     _error("resource_limit", fetch, tmp_path, transport, formats=("airr", "airr_ex"), clock=clock)
@@ -835,10 +846,10 @@ def test_concurrent_fetches_into_one_cache_agree(tmp_path):
     results, errors = [], []
 
     class Synchronized(FakeTransport):
-        def get(self, url, *, timeout):
+        def get(self, url, *, timeout, deadline):
             if url == _url(IGH, "airr"):
                 barrier.wait(timeout=10)
-            return super().get(url, timeout=timeout)
+            return super().get(url, timeout=timeout, deadline=deadline)
 
     def run():
         try:
@@ -1126,41 +1137,214 @@ def test_assets_with_identical_bytes_share_one_verified_blob(tmp_path, no_networ
 
 
 # ── the standard-library HTTPS transport ─────────────────────────────
+#
+# A stand-in for a connected TLS socket drives the real http.client request and response
+# code, and a simulated monotonic clock advances as the "server" sends bytes: no network
+# and no real waiting.
 
 
-class RecordingConnection:
-    instances = []
+class SimulatedSocket:
+    """A connected socket whose receives cost simulated time.
 
-    def __init__(self, host, port=None, *, timeout=None, context=None):
-        self.host, self.port, self.timeout, self.context = host, port, timeout, context
-        self.requests, self.closed = [], False
-        RecordingConnection.instances.append(self)
+    Each receive yields at most ``chunk`` bytes and costs ``head_step`` seconds while the
+    status line and headers are sent, then ``body_step``.  A receive slower than the
+    current socket timeout advances the clock by the timeout and raises
+    ``socket.timeout``, as a real socket would.
+    """
 
-    def request(self, method, target, headers=None):
-        self.requests.append((method, target, dict(headers or {})))
+    def __init__(self, clock, data, head_size, *, head_step=0.0, body_step=0.0, chunk=1 << 16):
+        self.clock, self.data, self.head_size = clock, data, head_size
+        self.head_step, self.body_step, self.chunk = head_step, body_step, chunk
+        self.pos = self.recvs = 0
+        self.timeout = None
+        self.timeouts = []        # (simulated time, timeout) at each settimeout
+        self.sent = b""
+        self.closed = False
 
-    def getresponse(self):
-        return FakeResponse(200, b"payload", headers={"Content-Type": "text/plain"})
+    def settimeout(self, value):
+        self.timeout = value
+        self.timeouts.append((self.clock.now, value))
+
+    def gettimeout(self):
+        return self.timeout
+
+    def sendall(self, data, *args):
+        self.sent += bytes(data)
+
+    def makefile(self, mode, buffering=None, **kwargs):
+        assert (mode, buffering) == ("rb", 0)     # the transport adds its own buffering
+        return SimulatedReader(self)
+
+    def recv_into(self, buffer):
+        if self.pos >= len(self.data):
+            return 0
+        in_head = self.pos < self.head_size
+        cost = self.head_step if in_head else self.body_step
+        if self.timeout is not None and cost > self.timeout:
+            self.clock.now += self.timeout
+            raise socket.timeout("timed out")
+        self.clock.now += cost
+        end = min(len(self.data), self.pos + self.chunk, self.pos + len(buffer),
+                  self.head_size if in_head else len(self.data))
+        n = end - self.pos
+        buffer[:n] = self.data[self.pos:end]
+        self.pos, self.recvs = end, self.recvs + 1
+        return n
 
     def close(self):
         self.closed = True
 
 
-def test_the_https_transport_uses_the_standard_library_with_a_socket_timeout(monkeypatch):
-    RecordingConnection.instances = []
-    monkeypatch.setattr(http.client, "HTTPSConnection", RecordingConnection)
-    response = HttpsTransport().get(_url(IGH, "airr") + "?q=1", timeout=SOCKET_TIMEOUT_SECONDS)
-    (connection,) = RecordingConnection.instances
+class SimulatedReader(io.RawIOBase):
+    def __init__(self, sock):
+        self.sock = sock
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        return self.sock.recv_into(buffer)
+
+
+def http_response(body: bytes, *, status="200 OK", headers=()):
+    head = (f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\n"
+            + "".join(f"{name}: {value}\r\n" for name, value in headers) + "\r\n").encode("ascii")
+    return head + body, len(head)
+
+
+def simulate_connections(monkeypatch, clock, make_socket, *, connect_cost=0.0):
+    """Replace ``http.client.HTTPSConnection`` by one whose ``connect`` yields simulated sockets."""
+    opened = []
+
+    # A plain HTTPConnection underneath: the simulation needs no TLS, and the patched module
+    # name must not be the base class (HTTPSConnection.__init__ looks itself up by name).
+    class Connection(http.client.HTTPConnection):
+        default_port = http.client.HTTPS_PORT
+
+        def __init__(self, host, port=None, *, timeout=None, context=None):
+            self.given_context = context
+            super().__init__(host, port, timeout=timeout)
+
+        def connect(self):
+            opened.append(self)
+            if connect_cost > self.timeout:
+                clock.now += self.timeout
+                raise socket.timeout("timed out")
+            clock.now += connect_cost
+            self.simulated = make_socket()
+            self.sock = self.simulated
+
+    monkeypatch.setattr(http.client, "HTTPSConnection", Connection)
+    return opened
+
+
+def test_the_https_transport_drives_the_standard_library_client(monkeypatch):
+    clock = FakeClock()
+    data, head = http_response(b"payload", headers=[("Content-Type", "text/plain")])
+    opened = simulate_connections(monkeypatch, clock, lambda: SimulatedSocket(clock, data, head))
+    response = HttpsTransport(clock=clock).get(_url(IGH, "airr") + "?q=1", timeout=SOCKET_TIMEOUT_SECONDS,
+                                               deadline=clock.now + ACQUISITION_DEADLINE_SECONDS)
+    (connection,) = opened
     assert (connection.host, connection.port, connection.timeout) == ("ogrdb.airr-community.org", 443, 30)
-    assert connection.context is not None
-    ((method, target, headers),) = connection.requests
-    assert (method, target) == ("GET", "/api_v2/germline/set/9606.IGH_VDJ/10/airr?q=1")
-    assert headers["Accept-Encoding"] == "identity"
-    assert not {"authorization", "cookie", "proxy-authorization"} & {name.lower() for name in headers}
+    lines = connection.simulated.sent.decode("ascii").split("\r\n")
+    assert lines[0] == "GET /api_v2/germline/set/9606.IGH_VDJ/10/airr?q=1 HTTP/1.1"
+    headers = {line.split(":", 1)[0].lower(): line.split(":", 1)[1].strip() for line in lines[1:] if line}
+    assert headers["host"] == "ogrdb.airr-community.org" and headers["accept-encoding"] == "identity"
+    assert not {"authorization", "cookie", "proxy-authorization"} & set(headers)
     assert response.status == 200 and response.getheader("content-type") == "text/plain"
-    assert response.read(100) == b"payload"
+    assert response.read(100) == b"payload" and response.read(100) == b""
     response.close()
-    assert connection.closed
+    assert connection.simulated.closed
+
+
+def test_the_https_transport_returns_after_one_receive(monkeypatch):
+    clock = FakeClock()
+    data, head = http_response(b"0123456789")
+    sockets = []
+    simulate_connections(monkeypatch, clock, lambda: sockets.append(SimulatedSocket(clock, data, head, chunk=1))
+                         or sockets[-1])
+    response = HttpsTransport(clock=clock).get(_url(IGH, "airr"), timeout=30, deadline=clock.now + 120)
+    before = sockets[0].recvs
+    assert response.read(1 << 16) == b"0"
+    assert sockets[0].recvs == before + 1
+
+
+def _trickle(monkeypatch, clock, body, **steps):
+    data, head = http_response(body)
+    sockets = []
+    simulate_connections(monkeypatch, clock,
+                         lambda: sockets.append(SimulatedSocket(clock, data, head, chunk=1, **steps)) or sockets[-1])
+    return sockets, head
+
+
+def _bounded_by_the_deadline(sock, deadline):
+    assert sock.timeouts
+    for at, timeout in sock.timeouts:
+        assert 0 < timeout <= SOCKET_TIMEOUT_SECONDS and at + timeout <= deadline + 1e-9
+
+
+def test_a_trickled_body_hits_the_deadline_promptly(tmp_path, monkeypatch):
+    clock = FakeClock()
+    start = clock.now
+    sockets, head = _trickle(monkeypatch, clock, _fixture(IGH, "airr"), body_step=29.0)
+    error = _error("resource_limit", fetch, tmp_path, HttpsTransport(clock=clock), formats=("airr",), clock=clock)
+    assert "deadline" in error.message and "120" in error.message
+    assert clock.now - start == pytest.approx(ACQUISITION_DEADLINE_SECONDS)
+    assert sockets[0].pos - head == 4                    # four bytes at 29 s; the fifth is cut at the deadline
+    _bounded_by_the_deadline(sockets[0], start + ACQUISITION_DEADLINE_SECONDS)
+    assert _snapshot(tmp_path / "cache" / "blobs" / "sha256") == {}
+    assert _temporaries(tmp_path) == []
+
+
+def test_a_trickled_status_line_and_headers_hit_the_deadline_promptly(tmp_path, monkeypatch):
+    clock = FakeClock()
+    start = clock.now
+    sockets, head = _trickle(monkeypatch, clock, _fixture(IGH, "airr"), head_step=29.0)
+    error = _error("resource_limit", fetch, tmp_path, HttpsTransport(clock=clock), formats=("airr",), clock=clock)
+    assert "deadline" in error.message
+    assert clock.now - start == pytest.approx(ACQUISITION_DEADLINE_SECONDS)
+    assert sockets[0].pos == 4 < head
+    _bounded_by_the_deadline(sockets[0], start + ACQUISITION_DEADLINE_SECONDS)
+    assert _temporaries(tmp_path) == []
+
+
+def test_a_receive_slower_than_the_socket_timeout_is_a_network_error(tmp_path, monkeypatch):
+    clock = FakeClock()
+    start = clock.now
+    _trickle(monkeypatch, clock, _fixture(IGH, "airr"), body_step=40.0)
+    _error("network", fetch, tmp_path, HttpsTransport(clock=clock), formats=("airr",), clock=clock)
+    assert clock.now - start == pytest.approx(SOCKET_TIMEOUT_SECONDS)
+
+
+def test_a_complete_download_through_the_https_transport(tmp_path, monkeypatch):
+    clock = FakeClock()
+    body = _fixture(IGH, "airr")
+    data, head = http_response(body, headers=[("Content-Type", "application/octet-stream")])
+    simulate_connections(monkeypatch, clock, lambda: SimulatedSocket(clock, data, head, body_step=0.001))
+    result = fetch(tmp_path, HttpsTransport(clock=clock), formats=("airr",), clock=clock)
+    assert result.assets["airr"] == body
+    assert result.lock.asset("airr").sha256 == _sha(body)
+    assert dict(result.receipts[0].headers) == {"content-length": str(len(body)),
+                                                "content-type": "application/octet-stream"}
+
+
+def test_a_slow_connect_is_bounded_by_the_remaining_deadline(monkeypatch):
+    clock = FakeClock()
+    data, head = http_response(b"x")
+    opened = simulate_connections(monkeypatch, clock, lambda: SimulatedSocket(clock, data, head), connect_cost=20.0)
+    start = clock.now
+    with pytest.raises(DeadlineExceeded):
+        HttpsTransport(clock=clock).get(_url(IGH, "airr"), timeout=30, deadline=start + 10)
+    assert opened[0].timeout == pytest.approx(10) and clock.now - start == pytest.approx(10)
+    assert issubclass(DeadlineExceeded, socket.timeout)
+
+
+def test_a_passed_deadline_opens_no_connection(monkeypatch):
+    clock = FakeClock()
+    opened = simulate_connections(monkeypatch, clock, lambda: pytest.fail("a socket was created"))
+    with pytest.raises(DeadlineExceeded):
+        HttpsTransport(clock=clock).get(_url(IGH, "airr"), timeout=30, deadline=clock.now)
+    assert opened == []
 
 
 @pytest.mark.parametrize("url", ["http://ogrdb.airr-community.org/x", "ftp://ogrdb.airr-community.org/x",
@@ -1169,7 +1353,7 @@ def test_the_https_transport_refuses_anything_but_plain_https(monkeypatch, url):
     monkeypatch.setattr(http.client, "HTTPSConnection",
                         lambda *a, **k: pytest.fail("a connection was opened"))
     with pytest.raises(ValueError):
-        HttpsTransport().get(url, timeout=SOCKET_TIMEOUT_SECONDS)
+        HttpsTransport().get(url, timeout=SOCKET_TIMEOUT_SECONDS, deadline=float("inf"))
 
 
 def test_the_source_model_is_not_changed_by_acquisition(tmp_path):
