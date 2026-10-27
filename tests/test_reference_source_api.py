@@ -429,3 +429,107 @@ def test_a_failed_capability_requirement_is_a_typed_build_failure(tmp_path, offl
     exc = error("capability", source.build,
                 full_recipe(tmp_path, source, requires=(("complete_reference_span", "assertion"),)))
     assert exc.path == "/requires/0" and "complete_reference_span" in exc.message
+
+
+# ── inspection ───────────────────────────────────────────────────────
+
+EXPECT = json.loads((DATA / "expectations.json").read_bytes().decode("utf-8"))
+
+
+def raw_records(source, fmt) -> list:
+    return json.loads(fixture_bytes(source, fmt).decode("utf-8"))["GermlineSet"][0]["allele_descriptions"]
+
+
+def test_inspection_reports_the_complete_source(tmp_path, offline):
+    source = from_files(tmp_path)
+    inspection = source.inspect()
+    report = inspection.to_dict()
+    assert (report["provider"], report["set_id"], report["release"]) == ("ogrdb", "9606.IGLambda_VJ", 4)
+    assert report["identity"] == {"taxon": {"scientific_name": "Homo sapiens", "taxonomy_id": 9606}, "locus": "IGL",
+                                  "chain_type": "vj"}
+    assert report["adapter"]["coordinate_profile"] == {"id": PROFILE, "version": 1}
+    assert report["lock_hash"] == source.lock.commitment
+    assert report["scope"] == {"in_scope": True, "problem": None}
+    assert [(a["asset_id"], a["sha256"], a["bytes"]) for a in report["assets"]] == [
+        (fmt, "sha256:" + pinned_asset(IGL, fmt)["sha256"], pinned_asset(IGL, fmt)["bytes"]) for fmt in ALL]
+    assert report["missing_assets"] == []
+    assert report["comparison"]["complete"] is True
+    assert (report["comparison"]["exports"], report["comparison"]["missing"]) == (["airr", "airr_ex"], [])
+    expected = EXPECT["sets"]["9606.IGLambda_VJ/4"]
+    for counts in report["exports"]:
+        stated = expected[counts["asset"]]
+        assert counts["record_occurrences"] == {"V": stated["V"], "D": stated["D"], "J": stated["J"], "unassigned": 0}
+        assert sum(counts["mentioned_identities"].values()) == len(stated["paralog_only_identities"])
+    records = [r for fmt in ("airr", "airr_ex") for r in raw_records(IGL, fmt)]
+    assert len(report["records"]) == len(records) == 98 + 97
+    assert [r["label"] for r in report["records"]] == [r["label"] for r in records]
+    assert [r["segment"] for r in report["records"]] == [r["sequence_type"] for r in records]
+    assert {r["status"] for r in report["records"]} == {"parsed"}
+    assert report["accepted_coordinate_claims"] > 0
+    assert {(c["predicate"], c["status"]) for c in report["claims"]} >= {("anchor", "accepted"),
+                                                                         ("functionality", "unresolved")}
+    assert all(f["count"] > 0 and f["severity"] in ("info", "warning", "error") for f in report["findings"])
+    assert inspection.comparison_complete is True and inspection.in_scope is True
+
+
+def test_inspection_is_an_immutable_copy_returning_report(tmp_path):
+    source = from_files(tmp_path)
+    inspection = source.inspect()
+    first = inspection.to_dict()
+    first["records"].clear()
+    first["scope"]["in_scope"] = False
+    assert inspection.to_dict() != first
+    assert inspection.to_dict() == source.inspect().to_dict()
+    json.dumps(inspection.to_dict(), allow_nan=False)
+    with pytest.raises(dataclasses_frozen_error()):
+        inspection.set_id = "other"
+    assert str(inspection) == str(source.inspect())
+
+
+def dataclasses_frozen_error():
+    import dataclasses
+    return dataclasses.FrozenInstanceError
+
+
+def test_the_inspection_text_covers_identity_assets_counts_and_every_record(tmp_path):
+    source = from_files(tmp_path)
+    text = str(source.inspect())
+    assert "9606.IGLambda_VJ release 4" in text and source.lock.commitment in text
+    assert PROFILE in text and "validated" in text
+    for fmt in ALL:
+        assert "sha256:" + pinned_asset(IGL, fmt)["sha256"] in text
+    assert "comparison: complete" in text.lower()
+    for record in raw_records(IGL, "airr") + raw_records(IGL, "airr_ex"):
+        assert record["label"] in text
+    lines = text.splitlines()
+    assert sum(1 for line in lines if "#/GermlineSet/0/allele_descriptions/" in line) == 98 + 97
+    assert all(len(line) <= 200 for line in lines)
+
+
+def test_a_single_export_can_be_inspected_but_its_comparison_is_incomplete(tmp_path):
+    source = from_files(tmp_path, formats=("airr",))
+    inspection = source.inspect()
+    report = inspection.to_dict()
+    assert report["comparison"]["complete"] is False
+    assert (report["comparison"]["exports"], report["comparison"]["missing"]) == (["airr"], ["airr_ex"])
+    assert [(m["format"], m["reason"]) for m in report["missing_assets"]] == [
+        ("airr_ex", "not_supplied"), ("gapped", "not_supplied"), ("gapped_ex", "not_supplied")]
+    assert len(report["records"]) == 98
+    assert inspection.comparison_complete is False
+    text = str(inspection).lower()
+    assert "comparison: incomplete" in text and "airr_ex" in text
+
+
+def test_an_out_of_scope_release_is_inspected_and_reported_as_such(tmp_path):
+    blobs = small(IGL, set(MINI))                         # bytes the profile was never validated on
+    source = from_files(tmp_path, files=written(tmp_path, blobs))
+    inspection = source.inspect()
+    report = inspection.to_dict()
+    assert report["scope"]["in_scope"] is False and "not the validated" in report["scope"]["problem"]
+    assert report["accepted_coordinate_claims"] == 0
+    assert not [c for c in report["claims"] if c["predicate"] in ("anchor", "coding_phase") and
+                c["status"] == "accepted"]
+    assert inspection.in_scope is False
+    text = str(inspection)
+    assert "outside the validated scope" in text and "no coordinate claim is accepted" in text.lower()
+    error("unsupported_profile", source.build, full_recipe(tmp_path, source))

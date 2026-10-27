@@ -8,18 +8,25 @@ for modification.  :meth:`OgrdbSource.build` projects an explicit recipe over it
 """
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass
+import json
 import os
 from types import MappingProxyType
 from typing import Optional
 
-from GenAIRR._artifact_io import ArtifactIOError, write_atomic
-from GenAIRR._reference_sources import ogrdb
+from GenAIRR._artifact_io import ArtifactIOError, canonical_json, write_atomic
+from GenAIRR._reference_sources import evidence, ogrdb
 from GenAIRR._reference_sources._fields import read_json
 from GenAIRR._reference_sources.acquisition import (
     AcquiredSource, HttpsTransport, Transport, fetch_source, ingest_files, read_locked,
 )
 from GenAIRR._reference_sources.build import ReferenceBuild, document_bytes
+from GenAIRR._reference_sources.consistency import profile_scope_problem
 from GenAIRR._reference_sources.errors import ReferenceSourceError
+from GenAIRR._reference_sources.inventory import (
+    CLAIM_STATUSES, COORDINATE_PREDICATES, PREDICATES, SEVERITIES, SourceInventory,
+)
 from GenAIRR._reference_sources.lock import SourceLock
 from GenAIRR._reference_sources.projection import project
 from GenAIRR._reference_sources.recipe import MAX_RECIPE_BYTES, Recipe
@@ -69,6 +76,130 @@ def _relocated(exc: ReferenceSourceError, old: str, new: str) -> ReferenceSource
     if exc.path == old or exc.path.startswith(old + "/"):
         return ReferenceSourceError(exc.kind, new + exc.path[len(old):], exc.message)
     return exc
+
+
+# ── inspection ───────────────────────────────────────────────────────
+
+
+def _segments(counts: dict) -> str:
+    return ", ".join(f"{segment} {counts[segment]}" for segment in ("V", "D", "J", "unassigned"))
+
+
+@dataclass(frozen=True)
+class SourceInspection:
+    """What a locked source holds, as interpreted under its profile: identity, assets, scope,
+    endpoint comparison, per-export counts, finding and claim counts, and every record.
+
+    ``to_dict()`` returns a fresh JSON-safe copy; ``str()`` renders it as text.  An inspection is
+    a view of the source and is not part of any identity.
+    """
+
+    _document: str
+
+    @classmethod
+    def _of(cls, lock: SourceLock, inventory: SourceInventory) -> "SourceInspection":
+        comparison = ogrdb.comparison(lock, inventory)
+        problem = profile_scope_problem(lock)
+        findings = Counter((f.code, f.severity) for f in inventory.findings)
+        claims = Counter((c.predicate, c.status) for c in inventory.claims)
+        document = {
+            "provider": lock.provider, "set_id": lock.set_id, "release": lock.release,
+            "identity": lock.identity.to_dict(), "adapter": lock.adapter.to_dict(), "lock_hash": lock.commitment,
+            "scope": {"in_scope": problem is None, "problem": problem},
+            "assets": [{"asset_id": a.asset_id, "role": a.role, "sha256": a.sha256, "bytes": a.bytes,
+                        "origin_kind": a.origin_kind, "declared_url": a.declared_url} for a in lock.assets],
+            "missing_assets": [m.to_dict() for m in lock.missing_assets],
+            "terms": lock.terms.to_dict(),
+            "comparison": {"complete": comparison.complete, "exports": list(comparison.exports),
+                           "missing": list(comparison.missing), "findings": len(comparison.findings)},
+            "exports": [{"asset": asset, **inventory.export_counts(asset)} for asset in comparison.exports],
+            "findings": [{"code": code, "severity": severity, "count": findings[(code, severity)]}
+                         for code, severity in sorted(findings, key=lambda k: (k[0], SEVERITIES.index(k[1])))],
+            "claims": [{"predicate": predicate, "status": status, "count": claims[(predicate, status)]}
+                       for predicate in PREDICATES for status in CLAIM_STATUSES if claims[(predicate, status)]],
+            "accepted_coordinate_claims": sum(1 for c in inventory.claims
+                                              if c.status == "accepted" and c.predicate in COORDINATE_PREDICATES),
+            "records": [{"record": r.id, "status": r.status, "segment": r.segment, "label": r.label,
+                         "candidates": len(inventory.candidates_of(r.locator)), "problem": r.problem}
+                        for r in inventory.records],
+        }
+        return cls(canonical_json(document))
+
+    def to_dict(self) -> dict:
+        """A fresh, JSON-safe copy of the inspection."""
+        return json.loads(self._document)
+
+    @property
+    def set_id(self) -> str:
+        return self.to_dict()["set_id"]
+
+    @property
+    def release(self) -> int:
+        return self.to_dict()["release"]
+
+    @property
+    def in_scope(self) -> bool:
+        """Whether the interpretation profile has been validated for these exact bytes."""
+        return self.to_dict()["scope"]["in_scope"]
+
+    @property
+    def comparison_complete(self) -> bool:
+        """Whether both record exports are present, so that their differences are compared."""
+        return self.to_dict()["comparison"]["complete"]
+
+    def __repr__(self) -> str:
+        d = self.to_dict()
+        return f"<SourceInspection {d['provider']} {d['set_id']} release {d['release']} {d['lock_hash']}>"
+
+    def __str__(self) -> str:
+        d = self.to_dict()
+        identity, adapter = d["identity"], d["adapter"]
+        profile = adapter["coordinate_profile"]
+        lines = [f"{d['provider'].upper()} source {d['set_id']} release {d['release']} "
+                 f"({identity['taxon']['scientific_name']}, taxonomy {identity['taxon']['taxonomy_id']}, "
+                 f"{identity['locus']}, {identity['chain_type']})",
+                 f"Lock: {d['lock_hash']}",
+                 f"Adapter: {adapter['id']} v{adapter['version']}; interpretation profile {profile['id']} "
+                 f"v{profile['version']}"]
+        if d["scope"]["in_scope"]:
+            lines.append("Profile scope: validated for these exact bytes")
+        else:
+            lines += ["Profile scope: outside the validated scope",
+                      f"  {d['scope']['problem']}",
+                      f"  No coordinate claim is accepted ({d['accepted_coordinate_claims']} accepted anchor, phase or "
+                      "interval claims): their values stay candidates, and a build from this source is refused"]
+        lines.append("Assets:")
+        lines += [f"  {a['asset_id']:<18} {a['role']:<18} {a['sha256']}  {a['bytes']} bytes  {a['origin_kind']}"
+                  + (f"  {a['declared_url']}" if a["declared_url"] else "") for a in d["assets"]]
+        for missing in d["missing_assets"]:
+            lines.append(f"  {missing['format']:<18} {missing['role']:<18} missing: {missing['reason']}"
+                         + (f" ({missing['detail']})" if missing["detail"] else ""))
+        terms = d["terms"]
+        lines.append(f"Data terms: {terms['status']}"
+                     + (f": {terms['reason']}" if terms["reason"] else f" ({', '.join(terms['assets'])})"))
+        comparison = d["comparison"]
+        if comparison["complete"]:
+            lines.append(f"Endpoint comparison: complete ({', '.join(comparison['exports'])}); "
+                         f"{comparison['findings']} comparison finding{'' if comparison['findings'] == 1 else 's'}")
+        else:
+            lines.append(f"Endpoint comparison: incomplete: {', '.join(comparison['missing'])} "
+                         f"{'is' if len(comparison['missing']) == 1 else 'are'} not locked, so differences between "
+                         "the record exports are not compared")
+        lines.append("Exports:")
+        for counts in d["exports"]:
+            lines.append(f"  {counts['asset']}: records {_segments(counts['record_occurrences'])}; sequence candidates "
+                         f"{_segments(counts['sequence_candidates'])}; mentioned-only identities "
+                         f"{_segments(counts['mentioned_identities'])}")
+        lines.append("Findings (code, severity: count):")
+        lines += [f"  {f['code']}, {f['severity']}: {f['count']}" for f in d["findings"]] or ["  none"]
+        lines.append("Claims (predicate, status: count):")
+        lines += [f"  {c['predicate']}, {c['status']}: {c['count']}" for c in d["claims"]] or ["  none"]
+        lines.append(f"Records ({len(d['records'])}):")
+        for record in d["records"]:
+            line = (f"  {record['record']}  {record['status']}  {record['segment'] or '-'}  {record['label'] or '-'}"
+                    f"  {record['candidates']} candidate{'' if record['candidates'] == 1 else 's'}")
+            lines.append(line + (f"  ({record['problem']})" if record["problem"] else ""))
+        return "\n".join(lines)
 
 
 class OgrdbSource:
@@ -202,6 +333,15 @@ class OgrdbSource:
         except ArtifactIOError as exc:
             hint = "; pass replace=True to replace it" if not replace and os.path.lexists(path) else ""
             raise ReferenceSourceError("io", "", f"cannot write the source lock to {path}: {exc}{hint}") from exc
+
+    def inspect(self) -> SourceInspection:
+        """What the source holds, interpreted under its profile; never touches the network.
+
+        Works for a single export (the endpoint comparison is then incomplete) and for bytes
+        outside the profile's validated scope (no coordinate claim is then accepted).
+        """
+        inventory = evidence.interpret(self._lock, self._assets, ogrdb.build_inventory(self._lock, self._assets))
+        return SourceInspection._of(self._lock, inventory)
 
     def build(self, recipe) -> ReferenceBuild:
         """Project ``recipe`` (a recipe document or a JSON file path) over this source.
