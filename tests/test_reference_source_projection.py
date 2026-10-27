@@ -18,6 +18,7 @@ import dataclasses
 import hashlib
 import json
 import re
+import tempfile
 
 import pytest
 
@@ -858,3 +859,116 @@ def test_a_candidate_named_by_accept_claim_is_projected_as_an_assertion_citing_t
     assert (outcome.outcome, outcome.decision) == ("projected", 0)
     status = result.reference.capabilities().status("source_annotated_junction")
     assert not status.available and f"V:{V_LABEL}" in {u.allele for u in status.unmet}
+
+
+# ── determinism, line endings and Unicode labels ─────────────────────
+
+
+def test_two_temporary_roots_give_identical_files_runtime_hashes_and_report(monkeypatch, tmp_path):
+    blobs, lock = mini(monkeypatch)
+    document = mini_recipe(blobs, lock)
+    seen, real = [], tempfile.TemporaryDirectory
+
+    class Recording(real):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            seen.append(self.name)
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", Recording)
+    results = []
+    for name in ("first", "a second root with a longer name"):
+        root = tmp_path / name
+        root.mkdir()
+        monkeypatch.setattr(tempfile, "tempdir", str(root))
+        results.append(build(lock, blobs, document))
+        assert seen[-1].startswith(str(root)) and list(root.iterdir()) == []   # used, then removed
+    first, second = results
+    assert first.inputs == second.inputs
+    assert first.report.runtime == second.report.runtime
+    assert first.reference.to_json() == second.reference.to_json()
+    assert m.report_hash(first.report) == m.report_hash(second.report)
+    assert "a second root" not in second.reference.to_json() and str(tmp_path) not in second.reference.to_json()
+
+
+def test_a_changed_recipe_changes_the_runtime_identity_although_the_dna_is_unchanged(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    first = build(lock, blobs, mini_recipe(blobs, lock))
+    document = mini_recipe(blobs, lock)
+    document["selection"][0]["reason"] = "the same record, selected for another stated reason"
+    second = build(lock, blobs, document)
+    assert first.build_input_hash != second.build_input_hash
+    assert first.fasta == second.fasta
+    assert [(a.segment, a.label, a.sequence_sha256) for a in first.reference.alleles] == \
+        [(a.segment, a.label, a.sequence_sha256) for a in second.reference.alleles]
+    assert first.annotations != second.annotations        # the notes cite the build inputs
+    assert first.reference.catalogue_hash != second.reference.catalogue_hash
+    assert first.reference.execution_hash != second.reference.execution_hash
+
+
+def _line_endings(blobs, newline) -> dict:
+    """The same exports with LF or CRLF line ends (record exports pretty-printed)."""
+    changed = {}
+    for fmt, data in blobs.items():
+        text = data.decode("utf-8")
+        if fmt in ("airr", "airr_ex"):
+            text = json.dumps(json.loads(text), ensure_ascii=False, indent=1) + "\n"
+        changed[fmt] = text.replace("\n", newline).encode("utf-8")
+    return changed
+
+
+def _annotation_values(data: bytes) -> list:
+    values = []
+    for allele in json.loads(data.decode("utf-8"))["alleles"]:
+        annotations = {name: None if allele[name] is None else
+                       (allele[name]["value"], allele[name]["support"], allele[name].get("derivation"))
+                       for name in ("functionality", "anchor", "coding_phase", "boundary_5", "boundary_3")}
+        values.append((allele["segment"], allele["label"], allele["sequence_sha256"], annotations))
+    return values
+
+
+def test_crlf_source_bytes_change_lock_and_citations_but_not_dna_labels_or_annotation_values(monkeypatch):
+    base = small(IGL, set(MINI))
+    built = {}
+    for newline in ("\n", "\r\n"):
+        blobs = _line_endings(base, newline)
+        lock = seal(IGL, blobs)
+        in_scope(monkeypatch, lock)
+        built[newline] = (blobs, lock, build(lock, blobs, mini_recipe(blobs, lock)))
+    (lf, lf_lock, a), (crlf, crlf_lock, b) = built["\n"], built["\r\n"]
+    assert lf_lock.commitment != crlf_lock.commitment
+    for asset in lf_lock.assets:
+        assert asset.sha256 == raw_sha(lf[asset.asset_id]) != crlf_lock.asset(asset.asset_id).sha256
+    assert a.fasta == b.fasta
+    assert _annotation_values(a.annotations) == _annotation_values(b.annotations)
+    assert a.annotations != b.annotations
+    for blobs, result in ((lf, a), (crlf, b)):        # every citation names the digest of its own raw bytes
+        for allele in json.loads(result.annotations.decode("utf-8"))["alleles"]:
+            assert allele["anchor"]["source"].startswith(f"airr {raw_sha(blobs['airr'])} ")
+            if allele["segment"] == "V":
+                assert f"gapped {raw_sha(blobs['gapped'])} " in allele["anchor"]["source"]
+            assert f"airr {raw_sha(blobs['airr'])} " in allele["notes"][0]
+    for result in (a, b):
+        for data in result.inputs.values():
+            assert b"\r" not in data
+
+
+UNICODE = "IGLV1-36*01_ünïcödé-λ"
+
+
+def test_unicode_labels_are_kept_literally_in_utf8_files_and_the_runtime(monkeypatch):
+    def relabel(fmt, record):
+        if record["label"] == V_LABEL:
+            record["label"] = UNICODE
+
+    def regap(fmt, header, sequence):
+        return (UNICODE if header == V_LABEL else header), sequence
+
+    blobs, lock = mini(monkeypatch, edit=relabel, gapped_edit=regap)
+    document = recipe(lock, [entry(blobs, "airr", UNICODE), entry(blobs, "airr", J1)],
+                      requires=(("source_annotated_junction", "source"),))
+    result = build(lock, blobs, document)
+    assert result.fasta_of("V").startswith(b">" + UNICODE.encode("utf-8") + b"\n")
+    assert UNICODE.encode("utf-8") in result.annotations and b"\\u" not in result.annotations
+    v = result.reference.alleles[0]
+    assert v.label == UNICODE and v.anchor is not None and v.anchor.support == "source"
+    assert Reference.from_json(result.reference.to_json()).alleles[0].label == UNICODE
