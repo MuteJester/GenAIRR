@@ -735,9 +735,7 @@ def _result(lock: SourceLock, data: dict, receipts: dict) -> AcquiredSource:
 
 
 def _check_expected(lock, set_id: str, release: int, adapter: AdapterRef, requested: tuple) -> None:
-    """An expected lock must pin exactly this request before any HTTP."""
-    if not isinstance(lock, SourceLock):
-        raise TypeError(f"expected_lock must be a SourceLock, got {type(lock).__name__}")
+    """An expected lock (already type-checked) must pin exactly this request before any HTTP."""
     if lock.set_id != set_id:
         raise bad("/expected_lock/set_id", f"the expected lock pins set {lock.set_id!r}, not the requested "
                                            f"{set_id!r}", "identity_mismatch")
