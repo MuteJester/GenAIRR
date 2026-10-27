@@ -551,15 +551,58 @@ def test_a_reviewed_note_would_give_an_affirmed_span_through_the_exact_alignment
         "affirmed_span"] == "mapped"
 
 
+SPAN_KEYS = ("supplied_last_column", "span_vs_stated_column", "bases_beyond_stated_column",
+             "columns_short_of_stated_column")
+
+
 def test_a_note_whose_text_changed_is_not_read():
     def edit(fmt, record):
         if record["label"] == "IGLV3-21*04":
             record["curation"] = record["curation"] + " Edited."
     lock, inventory = interpret(small(IGL, {"IGLV3-21*04", "IGLJ1*01"}, edit=edit))
     (finding,) = findings(inventory, "affirmed_span_mapping_unresolved")
-    for entry in finding.observations.get()["records"]:
+    observations = finding.observations.get()
+    # The profile's reading of the old text is not presented as the record's current note.
+    assert (observations["text_matches"], observations["quotes"], observations["stated_column"]) == (False, [], None)
+    assert observations["reviewed_text_sha256"] == [n for n in profiles.PROFILE.historical_notes
+                                                     if n.label == "IGLV3-21*04"][0].text_sha256
+    for entry in observations["records"]:
         assert entry["text_matches"] is False and "not the note text" in entry["reason"]
+        assert "not applied" in entry["reason"]
+        assert all(entry[k] is None for k in SPAN_KEYS)
     assert coding_end_findings(inventory)["IGLV3-21*04"].observations.get()["historical_note"] is None
+
+
+def test_an_edited_note_stating_another_column_is_not_compared_with_the_profiles_column():
+    def edit(fmt, record):
+        if record["label"] == "IGLV2-14*04":
+            record["curation"] = "Affirmed up to and including nucleotide 339 after review."
+    lock, inventory = interpret(small(IGL, {"IGLV2-14*04", "IGLJ1*01"}, edit=edit))
+    (finding,) = findings(inventory, "affirmed_span_mapping_unresolved")
+    observations = finding.observations.get()
+    assert observations["stated_column"] is None and observations["quotes"] == []
+    assert all(entry[k] is None for entry in observations["records"] for k in SPAN_KEYS)
+
+
+def test_a_note_read_against_another_sequence_is_not_compared_with_this_sequence():
+    def edit(fmt, record):
+        if record["label"] == "IGLV2-14*04":
+            record["coding_sequence"] = record["coding_sequence"][:-1]
+            record["gene_end"] -= 1
+
+    def gapped_edit(fmt, header, sequence):
+        return header, (sequence[:-1] if header == "IGLV2-14*04" else sequence)
+
+    lock, inventory = interpret(small(IGL, {"IGLV2-14*04", "IGLJ1*01"}, edit=edit, gapped_edit=gapped_edit))
+    (finding,) = findings(inventory, "affirmed_span_mapping_unresolved")
+    observations = finding.observations.get()
+    (note,) = [n for n in profiles.PROFILE.historical_notes if n.label == "IGLV2-14*04"]
+    assert (observations["text_matches"], observations["stated_column"]) == (True, 337)   # the text is the note's
+    assert observations["quotes"] == list(note.quotes)
+    for entry in observations["records"]:
+        assert (entry["text_matches"], entry["sequence_bound"], entry["gapped_mapping"]) == (True, False, "exact")
+        assert "not the sequence" in entry["reason"] and "not applied" in entry["reason"]
+        assert all(entry[k] is None for k in SPAN_KEYS)
 
 
 def test_only_genomic_support_entries_are_listed_as_genomic_support():

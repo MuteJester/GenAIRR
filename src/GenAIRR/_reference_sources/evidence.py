@@ -174,9 +174,10 @@ FINDING_CODES = {
         "info", "unavailable_evidence", _ENDS,
         "A curation note limits the allele's affirmed span (in gapped numbering) or marks likely further "
         "bases; without a reviewed interpretation, the exact note text, the sequence it was read against and an "
-        "exact gapped alignment, no affirmed interval is derived.  Where the note states a column, each record's "
-        "supplied span is compared with it through its exact gapped alignment (a span running past the stated "
-        "column holds bases that were not affirmed)."),
+        "exact gapped alignment, no affirmed interval is derived.  Where the record holds the note text the "
+        "profile read and the sequence it was read against, and the note states a column, the supplied span is "
+        "compared with that column through the exact gapped alignment (a span running past it holds bases that "
+        "were not affirmed).  For a record whose note text changed, only the digest of the text read is named."),
     "affirmed_span_mapped": (
         "info", "informational", _ENDS,
         "A reviewed historical note, bound to its exact text and sequence, maps through the record's exact "
@@ -552,7 +553,7 @@ class _Interpretation:
         for note in self.profile.historical_notes:
             if (note.set_id, note.release) != (self.lock.set_id, self.lock.release):
                 continue
-            outcomes: dict = {}          # finding code -> (record entries, subjects, locators)
+            outcomes: dict = {}      # (finding code, text matches) -> (record entries, subjects, locators)
             label, segment = note.label, None
             for asset in self.exports:
                 for record in self.parsed[asset]:
@@ -562,13 +563,17 @@ class _Interpretation:
                     (candidate,) = candidates
                     segment = record.segment
                     entry, locators, code = self.note_record(note, asset, record, candidate)
-                    found = outcomes.setdefault(code, ([], [], []))
+                    found = outcomes.setdefault((code, entry["text_matches"]), ([], [], []))
                     found[0].append(entry)
                     found[1].extend((record.locator, candidate.locator))
                     found[2].extend(locators)
-            for code, (entries, subjects, locators) in outcomes.items():
-                observations = {"label": label, "segment": segment, "field": note.field, "quotes": list(note.quotes),
-                                "numbering": note.numbering, "stated_column": note.stated_column}
+            for (code, matches), (entries, subjects, locators) in outcomes.items():
+                # The profile's reading (quotes, stated column) is the record's note only where the
+                # record still holds the reviewed text; otherwise only that text's digest is named.
+                observations = {"label": label, "segment": segment, "field": note.field, "numbering": note.numbering,
+                                "text_matches": matches, "reviewed_text_sha256": note.text_sha256,
+                                "quotes": list(note.quotes) if matches else [],
+                                "stated_column": note.stated_column if matches else None}
                 if code == "affirmed_span_mapped":
                     observations.update(first_affirmed_column=note.interpretation.first_affirmed_column,
                                         last_affirmed_column=note.interpretation.last_affirmed_column,
@@ -580,17 +585,21 @@ class _Interpretation:
         """``(record entry, locators, finding code)`` of one record carrying a profile note."""
         text_at, text = self.field(record, note.field)
         matches = type(text) is str and text_digest(text) == note.text_sha256
+        bound = dict(note.sequences).get(asset) == candidate.sha256
         mapping, gapped = self.alignments.get(candidate.id, (None, None))
         span = c.affirmed_span(note, asset, candidate.sequence, gapped)
         interval, reason = span.interval, span.reason
         if not matches:
             interval, reason = None, (f"the record's {note.field} text is not the note text the profile lists, so "
-                                      "the note is not read")
+                                      "the note is not read and the profile's stated column is not applied")
+        elif not bound:
+            interval, reason = None, (f"the {asset} coding sequence is not the sequence this note was read against, "
+                                      "so the stated column is not applied to it")
         versus = None
-        if note.stated_column is not None and mapping is not None and mapping.validation == "exact":
+        if (matches and bound and note.stated_column is not None and mapping is not None
+                and mapping.validation == "exact"):
             versus = c.span_against_column(mapping.blocks, note.stated_column)
-        entry = {"asset": asset, "text_matches": matches,
-                 "sequence_bound": dict(note.sequences).get(asset) == candidate.sha256,
+        entry = {"asset": asset, "text_matches": matches, "sequence_bound": bound,
                  "gapped_mapping": None if mapping is None else mapping.validation,
                  "supplied_last_column": None if versus is None else versus.last_column,
                  "span_vs_stated_column": None if versus is None else versus.relation,
