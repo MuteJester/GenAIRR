@@ -47,7 +47,7 @@ from GenAIRR._reference_sources._fields import (
     check_label, check_text, parse_json, ptr, require_type, show,
 )
 from GenAIRR._reference_sources.common import (
-    ADAPTER_ID, LOCUS_CHAIN_TYPES, RECORD_EXPORT_FORMATS, SEGMENTS, Locator, SourceIdentity, Taxon,
+    ADAPTER_ID, FORMAT_ROLES, FORMATS, LOCUS_CHAIN_TYPES, RECORD_EXPORT_FORMATS, SEGMENTS, Locator, SourceIdentity, Taxon,
 )
 from GenAIRR._reference_sources.digests import lock_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
@@ -301,7 +301,7 @@ EXPORT_ANCHOR = SET_POINTER + "/germline_set_ref"
 _SEQUENCE_RE = re.compile(r"[ACGT]+")
 _JSON_TYPES = {dict: "object", list: "array", str: "string", int: "number", float: "number", bool: "Boolean",
                type(None): "null"}
-_FASTA_FORMATS = ("gapped", "gapped_ex", "ungapped", "ungapped_ex")
+_FASTA_FORMATS = tuple(f for f in FORMATS if FORMAT_ROLES[f] in ("gapped_alignment", "ungapped_sequences"))
 
 
 def _json_type(value: Any) -> str:
@@ -775,7 +775,6 @@ class _Builder:
                           exc.kind) from None
 
     def identities(self, asset: str) -> None:
-        entries = [e for e in self.entries[asset] if e.record.status == "parsed"]
         by_provider_id: dict = {}
         for entry in self.entries[asset]:
             if entry.record.provider_id is not None:
@@ -786,12 +785,12 @@ class _Builder:
                              locators=[Locator(asset, ptr(e.record.locator.pointer, "allele_description_id"))
                                        for e in group],
                              observations={"provider_id": provider_id, "records": len(group)})
-        by_identity: dict = {}
+        by_identity = _parsed_identities(self.entries[asset])
         by_sequence: dict = {}
-        for entry in entries:
-            by_identity.setdefault((entry.record.segment, entry.record.label), []).append(entry)
-            if entry.candidate is not None:
-                by_sequence.setdefault(entry.candidate.sha256, []).append(entry)
+        for group in by_identity.values():
+            for entry in group:
+                if entry.candidate is not None:
+                    by_sequence.setdefault(entry.candidate.sha256, []).append(entry)
         for (segment, label), group in sorted(by_identity.items()):
             variants: dict = {}
             for entry in group:
@@ -848,8 +847,7 @@ class _Builder:
                 refs["pairs"] += 1
                 refs[self._compare_pair(key, mine[0], theirs[0])] += 1
         exports = {a: {"records": len(self.entries[a]),
-                       "refs_with_suffix": sum(1 for e in self.entries[a]
-                                               if (e.record.provider_ref or "").endswith(EXT_SUFFIX))}
+                       "refs_with_suffix": _ext_suffixed(e.record for e in self.entries[a])}
                    for a in RECORD_EXPORT_FORMATS}
         self.finding("export_provider_ref_suffix", locators=[Locator(a, EXPORT_ANCHOR) for a in RECORD_EXPORT_FORMATS],
                      observations={"suffix": EXT_SUFFIX, **refs, **exports})
@@ -974,6 +972,11 @@ def _subjects(entries) -> list:
         if entry.candidate is not None:
             found.append(entry.candidate.locator)
     return found
+
+
+def _ext_suffixed(records) -> int:
+    """How many of ``records`` have a provider ref ending in the extended export's suffix."""
+    return sum(1 for record in records if (record.provider_ref or "").endswith(EXT_SUFFIX))
 
 
 def _parsed_identities(entries) -> dict:
@@ -1297,7 +1300,7 @@ def _export_account(inventory: SourceInventory, asset: str) -> ExportAccount:
         paralog_names_of_aliases=paralogs_of_aliases, paralog_names_of_mentioned_only=of_mentioned,
         paralog_names_unresolved=unresolved,
         support_references=sum(1 for s in inventory.support if s.locator.asset == asset),
-        provider_refs_with_ext_suffix=sum(1 for r in records if (r.provider_ref or "").endswith(EXT_SUFFIX)),
+        provider_refs_with_ext_suffix=_ext_suffixed(records),
         segments=inventory.export_counts(asset))
 
 
