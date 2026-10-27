@@ -708,3 +708,109 @@ def test_a_moved_dossier_checks_rebuilds_and_simulates_in_a_fresh_offline_proces
     original, rebuilt = tree(moved), tree(tmp_path / "rebuilt")
     listed = {member["name"] for member in load_manifest(moved)["members"]} | {"manifest.json"}
     assert {k: original[k] for k in listed} == {k: rebuilt[k] for k in listed}
+
+
+# ── packaged dossiers ────────────────────────────────────────────────
+
+STARTER_ID = "human_igh_ogrdb_10_observed_v1"
+
+
+def test_the_bundled_registry_is_closed_and_exact():
+    from GenAIRR._reference_sources import bundled
+    assert dict(bundled.REGISTRY) == {}
+    with pytest.raises(TypeError):
+        bundled.REGISTRY["x"] = None
+    exc = error("missing_asset", ReferenceBuild.bundled, STARTER_ID)
+    assert exc.path == "" and STARTER_ID in exc.message and "available: none" in exc.message
+    with pytest.raises(TypeError):
+        ReferenceBuild.bundled(None)
+
+
+def packaged(tmp_path, monkeypatch, dossier: pathlib.Path, *, name="genairr_test_pkg", zipped=False):
+    """``dossier`` packaged as resource ``builds/starter`` of a throwaway importable package."""
+    import shutil
+    import sys
+    import zipfile
+    root = tmp_path / "site"
+    root.mkdir()
+    if zipped:
+        archive = root / "packages.zip"
+        with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr(f"{name}/__init__.py", "")
+            for path in sorted(dossier.rglob("*")):
+                if path.is_file():
+                    bundle.write(path, f"{name}/builds/starter/{path.relative_to(dossier).as_posix()}")
+        monkeypatch.syspath_prepend(str(archive))
+    else:
+        (root / name).mkdir()
+        (root / name / "__init__.py").write_bytes(b"")
+        shutil.copytree(dossier, root / name / "builds" / "starter")
+        monkeypatch.syspath_prepend(str(root))
+    monkeypatch.delitem(sys.modules, name, raising=False)
+    return root
+
+
+def register(monkeypatch, entry):
+    from GenAIRR._reference_sources import bundled
+    monkeypatch.setattr(bundled, "REGISTRY", __import__("types").MappingProxyType({STARTER_ID: entry}))
+
+
+def test_a_registered_dossier_loads_through_the_dossier_reader(mini, tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR._reference_sources.digests import manifest_hash
+    build, dossier = mini
+    root = packaged(tmp_path, monkeypatch, dossier)
+    register(monkeypatch, bundled.BundledDossier("genairr_test_pkg", "builds/starter", manifest_hash(build.manifest)))
+    before = tree(root)
+    reads = []
+    real = ReferenceBuild.read_dossier.__func__
+    monkeypatch.setattr(ReferenceBuild, "read_dossier",
+                        classmethod(lambda cls, directory: reads.append(directory) or real(cls, directory)))
+    if hasattr(__import__("os"), "geteuid"):
+        for path in sorted(root.rglob("*"), reverse=True):
+            path.chmod(0o555 if path.is_dir() else 0o444)
+    try:
+        loaded = ReferenceBuild.bundled(STARTER_ID)
+        assert ReferenceBuild.bundled(STARTER_ID) is loaded               # checked once, never reopened
+    finally:
+        for path in sorted(root.rglob("*")):
+            path.chmod(0o755 if path.is_dir() else 0o644)
+    assert len(reads) == 1 and pathlib.Path(reads[0]) == root / "genairr_test_pkg" / "builds" / "starter"
+    assert loaded.manifest == build.manifest and loaded.reference.to_json() == build.reference.to_json()
+    assert tree(root) == before
+    exc = error("missing_asset", ReferenceBuild.bundled, STARTER_ID.upper())
+    assert STARTER_ID in exc.message
+
+
+def test_a_dossier_packaged_in_an_archive_is_read_from_a_private_copy(mini, tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR._reference_sources.digests import manifest_hash
+    build, dossier = mini
+    packaged(tmp_path, monkeypatch, dossier, name="genairr_zipped_pkg", zipped=True)
+    register(monkeypatch, bundled.BundledDossier("genairr_zipped_pkg", "builds/starter", manifest_hash(build.manifest)))
+    copies = []
+    real = ReferenceBuild.read_dossier.__func__
+    monkeypatch.setattr(ReferenceBuild, "read_dossier",
+                        classmethod(lambda cls, directory: copies.append(pathlib.Path(directory)) or real(cls, directory)))
+    loaded = ReferenceBuild.bundled(STARTER_ID)
+    assert loaded.manifest == build.manifest
+    (copy,) = copies
+    assert not copy.exists()                                     # the private copy is removed afterwards
+    assert tmp_path not in copy.parents
+
+
+def test_a_packaged_dossier_must_have_its_registered_manifest(mini, tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import bundled
+    _, dossier = mini
+    packaged(tmp_path, monkeypatch, dossier, name="genairr_other_pkg")
+    register(monkeypatch, bundled.BundledDossier("genairr_other_pkg", "builds/starter", "sha256:" + "0" * 64))
+    exc = error("digest_mismatch", ReferenceBuild.bundled, STARTER_ID)
+    assert "sha256:" + "0" * 64 in exc.message
+
+
+@pytest.mark.parametrize("resource", ["/abs", "../up", "a\\b", "", "C:/x", "a/../b"])
+def test_a_registry_entry_names_a_resource_below_its_package(resource):
+    from GenAIRR._reference_sources import bundled
+    with pytest.raises(Exception) as info:
+        bundled.BundledDossier("GenAIRR", resource, "sha256:" + "0" * 64)
+    assert getattr(info.value, "kind", None) in ("malformed", "resource_limit")

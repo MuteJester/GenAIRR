@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import threading
 from types import MappingProxyType
 from typing import Callable, Mapping, Optional
 
@@ -22,8 +23,9 @@ from GenAIRR._reference.artifact import MAX_BYTES as REFERENCE_MAX_BYTES, Refere
 from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference.importer import FASTA_MAX_BYTES
 from GenAIRR._reference.sidecar import MAX_BYTES as SIDECAR_MAX_BYTES
+from GenAIRR._reference_sources import bundled
 from GenAIRR._reference_sources._fields import MAX_ASSET_BYTES, MAX_ASSETS, bad, ptr, require_type, show
-from GenAIRR._reference_sources.digests import report_hash
+from GenAIRR._reference_sources.digests import manifest_hash, report_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.lock import MAX_LOCK_BYTES, SourceLock
 from GenAIRR._reference_sources.manifest import (
@@ -52,6 +54,9 @@ _MEMBER_LIMITS = {LOCK_MEMBER: MAX_LOCK_BYTES, RECIPE_MEMBER: MAX_RECIPE_BYTES, 
 _DIRECTORIES = ("cache", "cache/blobs", "cache/blobs/sha256", "inputs", "receipts")
 _RECEIPT_RE = re.compile(r"receipts/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.json")
 _ARTIFACT_KINDS = {"io": "io", "unsupported_schema": "unsupported_schema", "integrity": "digest_mismatch"}
+# Packaged builds already checked in this process, by (identifier, registry entry).
+_BUNDLED: dict = {}
+_BUNDLED_LOCK = threading.Lock()
 
 
 def document_bytes(document: dict) -> bytes:
@@ -534,3 +539,27 @@ class ReferenceBuild:
                             receipts=tuple(stored_receipts), checked_with=checking)
         _compared(MANIFEST_NAME, manifest.to_dict(), build.manifest.to_dict(), "the manifest of its stored members")
         return build
+
+    @classmethod
+    def bundled(cls, exact_id: str) -> "ReferenceBuild":
+        """The reference build packaged with GenAIRR under exactly ``exact_id``.
+
+        The packaged dossier is checked with :meth:`read_dossier` (offline, from local package
+        resources) and must have its registered manifest hash.  There are no aliases and no
+        downloads; an unknown identifier is an error listing the available ones.  A packaged
+        build is checked once per process and the same build is returned afterwards.
+        """
+        entry = bundled.entry(exact_id)
+        key = (exact_id, entry)
+        with _BUNDLED_LOCK:
+            cached = _BUNDLED.get(key)
+        if cached is not None:
+            return cached
+        with bundled.dossier_directory(entry) as directory:
+            build = cls.read_dossier(directory)
+        found = manifest_hash(build.manifest)
+        if found != entry.manifest_hash:
+            raise bad("", f"the dossier packaged as {exact_id!r} has manifest {found}, not the registered "
+                          f"{entry.manifest_hash}", "digest_mismatch")
+        with _BUNDLED_LOCK:
+            return _BUNDLED.setdefault(key, build)
