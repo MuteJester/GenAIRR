@@ -1042,3 +1042,39 @@ def test_a_leftover_temporary_file_is_named_as_such(mini):
     (dossier / ".manifest.json.not-a-temporary.tmp").write_bytes(b"{}")
     exc = error("malformed", ReferenceBuild.read_dossier, dossier)
     assert "leftover temporary" not in exc.message
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "mkfifo"), reason="FIFOs are unavailable here")
+def test_a_fifo_swapped_in_after_the_scan_never_blocks_the_reader(mini, monkeypatch):
+    import os
+    import threading
+    from GenAIRR.reference_sources import ReferenceSourceError
+    _, dossier = mini
+    member = dossier / "inputs" / "v.fasta"
+    real_scan = build_module._scan
+
+    def swapping(root):
+        found = real_scan(root)
+        member.unlink()
+        os.mkfifo(member)
+        return found
+
+    monkeypatch.setattr(build_module, "_scan", swapping)
+    outcome = []
+
+    def check():
+        try:
+            ReferenceBuild.read_dossier(dossier)
+        except ReferenceSourceError as exc:
+            outcome.append(exc)
+
+    worker = threading.Thread(target=check, daemon=True)
+    worker.start()
+    worker.join(timeout=10)
+    if worker.is_alive():
+        with open(member, "wb"):              # releases the blocked reader
+            pass
+        worker.join(timeout=10)
+        pytest.fail("opening a dossier member blocked on a FIFO")
+    (exc,) = outcome
+    assert (exc.kind, exc.path) == ("io", "/inputs/v.fasta") and "regular file" in exc.message

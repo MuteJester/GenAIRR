@@ -158,9 +158,12 @@ def _scan(root: Path) -> dict:
 
 
 def _read_file(root: Path, name: str, limit: int) -> bytes:
-    """At most ``limit + 1`` bytes of the regular file ``name`` below ``root``, never through a link."""
+    """At most ``limit + 1`` bytes of the regular file ``name`` below ``root``, never through a link.
+
+    The open never blocks (a FIFO swapped in after the walk is refused as not a regular file)."""
     path = root.joinpath(*name.split("/"))
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_NONBLOCK", 0))
     try:
         descriptor = os.open(path, flags)
     except FileNotFoundError as exc:
