@@ -1,33 +1,42 @@
 """The closed registry of reference build dossiers packaged with GenAIRR.
 
-Each entry maps an exact identifier to a dossier directory packaged as a resource of a Python
-package, and to the manifest hash that dossier must have.  There are no aliases, no
-pattern matching and no downloads: an identifier is either listed here or unknown.
+Each entry maps an exact identifier to a dossier packaged as a resource of a Python package
+(a directory, or a single zip archive of its members) and to the manifest hash that dossier
+must have.  There are no aliases, no pattern matching and no downloads: an identifier is
+either listed here or unknown.
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
 import importlib.resources
+import io
 from pathlib import Path
 import tempfile
 from types import MappingProxyType
-from typing import Iterator, Mapping
+from typing import Callable, Iterator, Mapping, Optional
+import zipfile
 
 from GenAIRR._reference_sources._fields import bad, check_digest, check_member_path
-from GenAIRR._reference_sources.manifest import MAX_MEMBERS
+from GenAIRR._reference_sources.errors import ReferenceSourceError
+from GenAIRR._reference_sources.manifest import MANIFEST_NAME, MAX_MEMBER_NAME, MAX_MEMBERS
 
 MAX_RESOURCE = 255
 # A packaged dossier is copied out of a non-file package (for example a zip archive) within the
 # same bounds the dossier reader enforces: entries and total bytes.
 _MAX_ENTRIES = 2 * MAX_MEMBERS
 _MAX_BYTES = 1 << 30
+# A packaged archive: a resource named ``*.zip`` holding only the dossier's member files, stored
+# without compression.  Its own size may exceed the member bytes by its headers and directory.
+ARCHIVE_SUFFIX = ".zip"
+_ARCHIVE_OVERHEAD = 64 << 20
+_ZIP_ERRORS = (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, ValueError, NotImplementedError, RuntimeError)
 
 
 @dataclass(frozen=True)
 class BundledDossier:
-    """A packaged dossier: the directory ``resource`` ('/'-separated) inside ``package``, and the
-    ``genairr_reference_source_build_manifest_v1`` hash its manifest must have."""
+    """A packaged dossier: the directory or ``.zip`` archive ``resource`` ('/'-separated) inside
+    ``package``, and the ``genairr_reference_source_build_manifest_v1`` hash its manifest must have."""
 
     package: str
     resource: str
@@ -98,13 +107,91 @@ def _copy(source, target: Path, budget: list) -> None:
         (target / name).write_bytes(data)
 
 
+def _archive_entries(archive: zipfile.ZipFile, where: str) -> list:
+    """The member entries of a packaged archive, refused unless every one is a safely named,
+    unique, stored and unencrypted file within the entry and byte budgets."""
+    try:
+        entries = archive.infolist()
+    except _ZIP_ERRORS as exc:
+        raise bad("", f"{where} is not a readable zip archive: {exc}") from exc
+    if len(entries) > _MAX_ENTRIES:
+        raise bad("", f"{where} holds more than {_MAX_ENTRIES} entries", "resource_limit")
+    names, folded, total = set(), set(), 0
+    for entry_ in entries:
+        name = entry_.filename
+        if name.endswith("/"):
+            raise bad("", f"{where} holds a directory entry {name!r}; it holds only the dossier's member files")
+        try:
+            check_member_path(name, "", MAX_MEMBER_NAME)
+        except ReferenceSourceError as exc:
+            raise bad("", f"{where} holds an entry whose name is unsafe: {exc.message}", exc.kind) from None
+        if ":" in name:
+            raise bad("", f"{where} holds an entry named {name!r}, which contains a colon")
+        if name in names or name.casefold() in folded:
+            raise bad("", f"{where} holds an entry named {name!r} more than once (letter case ignored)")
+        names.add(name)
+        folded.add(name.casefold())
+        if entry_.flag_bits & 0x1:
+            raise bad("", f"{where} holds the encrypted entry {name!r}")
+        if entry_.compress_type != zipfile.ZIP_STORED or entry_.compress_size != entry_.file_size:
+            raise bad("", f"{where} holds the compressed entry {name!r}; its entries are stored uncompressed")
+        total += entry_.file_size
+        if total > _MAX_BYTES:
+            raise bad("", f"{where} holds more than {_MAX_BYTES} bytes", "resource_limit")
+    return entries
+
+
+def _extract_entry(archive: zipfile.ZipFile, entry_: zipfile.ZipInfo, target: Path, where: str) -> None:
+    try:
+        with archive.open(entry_) as handle:
+            data = handle.read(entry_.file_size + 1)       # reading to the end checks the CRC
+    except _ZIP_ERRORS as exc:
+        raise bad("", f"{where} entry {entry_.filename!r} cannot be read: {exc}") from exc
+    if len(data) != entry_.file_size:
+        raise bad("", f"{where} entry {entry_.filename!r} holds {len(data)} bytes, not the {entry_.file_size} its "
+                      "header states")
+    path = target.joinpath(*entry_.filename.split("/"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "xb") as handle:
+        handle.write(data)
+
+
+def _extract(resource, target: Path, where: str, check: Optional[Callable[[Path], None]]) -> None:
+    """Extract a packaged archive into the new directory ``target``: ``manifest.json`` first, then
+    ``check(target)`` (when given), then every other member."""
+    limit = _MAX_BYTES + _ARCHIVE_OVERHEAD
+    with resource.open("rb") as handle:
+        data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise bad("", f"{where} holds more than {limit} bytes", "resource_limit")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except _ZIP_ERRORS as exc:
+        raise bad("", f"{where} is not a readable zip archive: {exc}") from exc
+    with archive:
+        entries = _archive_entries(archive, where)
+        target.mkdir()
+        first = [e for e in entries if e.filename == MANIFEST_NAME]
+        for entry_ in first:
+            _extract_entry(archive, entry_, target, where)
+        if check is not None:
+            check(target)
+        for entry_ in entries:
+            if entry_.filename != MANIFEST_NAME:
+                _extract_entry(archive, entry_, target, where)
+
+
 @contextmanager
-def dossier_directory(dossier: BundledDossier) -> Iterator[Path]:
+def dossier_directory(dossier: BundledDossier, check: Optional[Callable[[Path], None]] = None) -> Iterator[Path]:
     """A filesystem directory holding the packaged dossier, for reading only.
 
-    Where the package's resources are plain files this is the packaged directory itself;
-    otherwise the dossier is copied into a private temporary directory, removed afterwards.
-    Nothing is ever written into the package.  An absent dossier is ``missing_asset``.
+    Where the package's resources are plain files and the dossier is a directory, this is the
+    packaged directory itself; otherwise the dossier is copied (a directory) or extracted (a
+    ``.zip`` archive) into a private temporary directory, removed afterwards.  ``check``, when
+    given, is called with the directory as soon as its ``manifest.json`` is there: for an
+    archive, before any other member is extracted.  Nothing is ever written into the package.
+    An absent dossier is ``missing_asset``; an unreadable, unsafe or compressed archive is
+    ``malformed``.
     """
     try:
         resource = importlib.resources.files(dossier.package)
@@ -113,15 +200,24 @@ def dossier_directory(dossier: BundledDossier) -> Iterator[Path]:
                   "missing_asset") from exc
     for part in dossier.resource.split("/"):         # one name per call, as resources join on Python 3.9
         resource = resource.joinpath(part)
-    if not resource.is_dir():
+    archived = dossier.resource.endswith(ARCHIVE_SUFFIX)
+    if not (resource.is_file() if archived else resource.is_dir()):
         raise bad("", f"the bundled dossier {dossier.resource} is not packaged in {dossier.package}", "missing_asset")
-    if isinstance(resource, Path):
+    if isinstance(resource, Path) and not archived:
+        if check is not None:
+            check(resource)
         yield resource
         return
     with tempfile.TemporaryDirectory(prefix="genairr_bundled_") as temporary:
         target = Path(temporary) / "dossier"
+        where = f"the bundled dossier archive {dossier.resource} of {dossier.package}"
         try:
-            _copy(resource, target, [_MAX_ENTRIES, _MAX_BYTES])
+            if archived:
+                _extract(resource, target, where, check)
+            else:
+                _copy(resource, target, [_MAX_ENTRIES, _MAX_BYTES])
+                if check is not None:
+                    check(target)
         except OSError as exc:
             raise bad("", f"the bundled dossier {dossier.resource} cannot be copied out of {dossier.package}: {exc}",
                       "io") from exc

@@ -671,11 +671,13 @@ class ReferenceBuild:
                 cached = _BUNDLED.get(key)
             if cached is not None:
                 return cached
-            with bundled.dossier_directory(entry) as directory:
-                found = manifest_hash(_read_manifest(Path(directory)))       # a modified install fails at once
+            def pinned(directory) -> None:          # a modified install fails at once, before anything else
+                found = manifest_hash(_read_manifest(Path(directory)))
                 if found != entry.manifest_hash:
                     raise bad("/" + MANIFEST_NAME, f"the dossier packaged as {exact_id!r} has manifest {found}, not "
                                                    f"the registered {entry.manifest_hash}", "digest_mismatch")
+
+            with bundled.dossier_directory(entry, pinned) as directory:
                 build = cls.read_dossier(directory)
             if manifest_hash(build.manifest) != entry.manifest_hash:
                 raise bad("/" + MANIFEST_NAME, f"the dossier packaged as {exact_id!r} changed while it was checked",

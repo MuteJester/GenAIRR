@@ -1277,3 +1277,163 @@ def test_the_report_hash_of_its_member_bytes_is_the_report_hash(igl, tmp_path):
     assert from_bytes == computed == load_manifest(tmp_path / "dossier")["hashes"]["report"]
     with pytest.raises(ValueError):
         digests.remember_report_hash(BuildReport.from_dict(build.report.to_dict()), data[:-1])
+
+
+# ── packaged archives ────────────────────────────────────────────────
+
+
+def archive_bytes(entries, *, compress=False) -> bytes:
+    """A zip of ``(name, bytes)`` entries in the given order (duplicates allowed on purpose)."""
+    import io
+    import warnings
+    import zipfile
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive, warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for name, data in entries:
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, data)
+    return buffer.getvalue()
+
+
+def dossier_entries(dossier: pathlib.Path) -> list:
+    return [(name, data) for name, data in sorted(tree(dossier).items())]
+
+
+def zip_package(tmp_path, monkeypatch, data: bytes, *, name: str, zipped=False) -> None:
+    """``data`` packaged as resource ``builds/starter.zip`` of a throwaway package (itself in a zip
+    archive when ``zipped``)."""
+    import sys
+    import zipfile
+    root = tmp_path / f"site_{name}"
+    root.mkdir()
+    if zipped:
+        with zipfile.ZipFile(root / "packages.zip", "w") as bundle:
+            bundle.writestr(f"{name}/__init__.py", "")
+            bundle.writestr(f"{name}/builds/starter.zip", data)
+        monkeypatch.syspath_prepend(str(root / "packages.zip"))
+    else:
+        (root / name / "builds").mkdir(parents=True)
+        (root / name / "__init__.py").write_bytes(b"")
+        (root / name / "builds" / "starter.zip").write_bytes(data)
+        monkeypatch.syspath_prepend(str(root))
+    monkeypatch.delitem(sys.modules, name, raising=False)
+
+
+@pytest.mark.parametrize("zipped", [False, True], ids=["plain-package", "zipped-package"])
+def test_a_dossier_packaged_as_one_zip_is_read_from_a_private_extracted_copy(mini, tmp_path, monkeypatch, zipped):
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR._reference_sources.digests import manifest_hash
+    build, dossier = mini
+    package = "genairr_zip_pkg" + ("_zipped" if zipped else "")
+    zip_package(tmp_path, monkeypatch, archive_bytes(dossier_entries(dossier)), name=package, zipped=zipped)
+    register(monkeypatch, bundled.BundledDossier(package, "builds/starter.zip", manifest_hash(build.manifest)))
+    copies = []
+    real = ReferenceBuild.read_dossier.__func__
+
+    def recording(cls, directory):
+        copies.append(pathlib.Path(directory))
+        return real(cls, directory)
+
+    monkeypatch.setattr(ReferenceBuild, "read_dossier", classmethod(recording))
+    loaded = ReferenceBuild.bundled(STARTER_ID)
+    assert loaded.manifest == build.manifest and loaded.reference.to_json() == build.reference.to_json()
+    (copy,) = copies
+    assert not copy.exists() and tmp_path not in copy.parents       # a removed private copy
+
+
+def test_a_packaged_zip_has_its_registered_manifest_before_anything_else_is_extracted(mini, tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import bundled
+    _, dossier = mini
+    zip_package(tmp_path, monkeypatch, archive_bytes(dossier_entries(dossier)), name="genairr_zip_pin_pkg")
+    entry = bundled.BundledDossier("genairr_zip_pin_pkg", "builds/starter.zip", "sha256:" + "0" * 64)
+    seen = []
+    with bundled.dossier_directory(entry, lambda directory: seen.append(sorted(tree(directory)))) as directory:
+        extracted = tree(directory)
+    assert seen == [["manifest.json"]] and extracted == tree(dossier)
+    register(monkeypatch, entry)
+    checks = []
+    real = ReferenceBuild.read_dossier.__func__
+    monkeypatch.setattr(ReferenceBuild, "read_dossier",
+                        classmethod(lambda cls, directory: checks.append(directory) or real(cls, directory)))
+    exc = error("digest_mismatch", ReferenceBuild.bundled, STARTER_ID)
+    assert exc.path == "/manifest.json" and "sha256:" + "0" * 64 in exc.message and checks == []
+
+
+def _encrypted(data: bytes) -> bytes:
+    """``data`` with the encryption bit set in every local and central file header (the writer
+    clears flag bits, so they are set in the bytes)."""
+    out = bytearray(data)
+    for signature, offset in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        at = out.find(signature)
+        while at != -1:
+            out[at + offset] |= 0x01
+            at = out.find(signature, at + 4)
+    return bytes(out)
+
+
+def _flip_first_payload_byte(data: bytes, payload: bytes) -> bytes:
+    at = data.index(payload)
+    return data[:at] + bytes([payload[0] ^ 0x01]) + data[at + 1:]
+
+
+ARCHIVE_DEFECTS = {
+    "not-a-zip": (lambda: b"this is not a zip archive", "malformed"),
+    "deflated-entry": (lambda: archive_bytes([("manifest.json", b"{}\n" * 64)], compress=True), "malformed"),
+    "directory-entry": (lambda: archive_bytes([("inputs/", b""), ("manifest.json", b"{}\n")]), "malformed"),
+    "parent-component": (lambda: archive_bytes([("../manifest.json", b"{}\n")]), "malformed"),
+    "inner-parent": (lambda: archive_bytes([("inputs/../manifest.json", b"{}\n")]), "malformed"),
+    "absolute": (lambda: archive_bytes([("/manifest.json", b"{}\n")]), "malformed"),
+    "backslash": (lambda: archive_bytes([("inputs\\v.fasta", b">a\n")]), "malformed"),
+    "drive": (lambda: archive_bytes([("C:/manifest.json", b"{}\n")]), "malformed"),
+    "colon": (lambda: archive_bytes([("inputs/v.fasta:stream", b">a\n")]), "malformed"),
+    "duplicate": (lambda: archive_bytes([("manifest.json", b"{}\n"), ("manifest.json", b"[]\n")]), "malformed"),
+    "case-duplicate": (lambda: archive_bytes([("Manifest.json", b"{}\n"), ("manifest.json", b"[]\n")]), "malformed"),
+    "encrypted-flag": (lambda: _encrypted(archive_bytes([("manifest.json", b"{}\n")])), "malformed"),
+    "bad-crc": (lambda: _flip_first_payload_byte(archive_bytes([("manifest.json", b"A" * 64 + b"\n")]), b"A" * 64),
+                "malformed"),
+}
+
+
+@pytest.mark.parametrize("defect", sorted(ARCHIVE_DEFECTS))
+def test_an_unsafe_or_corrupt_packaged_zip_is_a_typed_error(tmp_path, monkeypatch, defect):
+    from GenAIRR._reference_sources import bundled
+    make, kind = ARCHIVE_DEFECTS[defect]
+    package = "genairr_bad_zip_" + defect.replace("-", "_")
+    zip_package(tmp_path, monkeypatch, make(), name=package)
+    entry = bundled.BundledDossier(package, "builds/starter.zip", "sha256:" + "0" * 64)
+
+    def enter():
+        with bundled.dossier_directory(entry):
+            pass
+
+    error(kind, enter)
+
+
+def test_a_packaged_zip_is_read_within_the_byte_budget(mini, tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import bundled
+    _, dossier = mini
+    zip_package(tmp_path, monkeypatch, archive_bytes(dossier_entries(dossier)),
+                name="genairr_zip_budget_pkg")
+    entry = bundled.BundledDossier("genairr_zip_budget_pkg", "builds/starter.zip", "sha256:" + "0" * 64)
+    monkeypatch.setattr(bundled, "_MAX_BYTES", 4096)
+
+    def enter():
+        with bundled.dossier_directory(entry):
+            pass
+
+    error("resource_limit", enter)
+
+
+def test_an_absent_packaged_zip_is_a_missing_asset(tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import bundled
+    zip_package(tmp_path, monkeypatch, archive_bytes([("manifest.json", b"{}\n")]), name="genairr_zip_absent_pkg")
+    entry = bundled.BundledDossier("genairr_zip_absent_pkg", "builds/other.zip", "sha256:" + "0" * 64)
+
+    def enter():
+        with bundled.dossier_directory(entry):
+            pass
+
+    error("missing_asset", enter)
