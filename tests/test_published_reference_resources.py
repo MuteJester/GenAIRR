@@ -372,8 +372,13 @@ def test_the_generator_writes_one_deterministic_stored_zip_of_the_dossier_member
     for line in (f"manifest {manifest_hash(checked.manifest)}", f"runtime execution {reference.execution_hash}",
                  f"runtime catalogue {reference.catalogue_hash}", f"runtime models {reference.models_hash}",
                  f"runtime artifact {reference.artifact_hash}", f"builder GenAIRR {checked.manifest.builder.version}",
-                 f"archive sha256:{hashlib.sha256(data).hexdigest()} ({len(data)} bytes)"):
+                 f"archive sha256:{hashlib.sha256(data).hexdigest()} ({len(data)} bytes)",
+                 f"lock {checked.lock.commitment}"):
         assert line in printed.splitlines(), line
+    hint = printed.splitlines()[-1]                               # every pin a regeneration may move
+    for pin in ("src/GenAIRR/_reference_sources/bundled.py", "MANIFEST_PIN", "ARCHIVE_PIN", "RUNTIME_PINS",
+                "LOCK_PIN", "tests/test_published_reference_resources.py"):
+        assert pin in hint, pin
     assert members["recipe.json"] == RECIPE_PATH.read_bytes()
     assert load_tool().archive(dict(reversed(list(members.items())))) == data       # the same bytes again
 
@@ -409,6 +414,28 @@ def test_the_generator_records_the_providers_data_terms_and_inspection_shows_the
     text = str(source.inspect())
     assert f"Data terms: recorded (licence_statement, citation_statement): {TERMS['licence']}" in text.splitlines()
     assert f"Citation: {TERMS['citation']}" in text.splitlines()
+
+
+def test_a_written_archive_that_does_not_read_back_unchanged_is_removed(tmp_path, monkeypatch):
+    from GenAIRR.reference_sources import ReferenceSourceError
+    tool = load_tool()
+    members = {"manifest.json": b"{}\n", "inputs/v.fasta": b">a\nACGT\n"}
+    # The loader refuses it (this manifest is not a manifest): the archive is removed.
+    target = tmp_path / "refused.zip"
+    with pytest.raises(ReferenceSourceError):
+        tool.write_archive(members, target)
+    assert not target.exists()
+
+    # The loader extracts other bytes than were written: the archive is removed.
+    def altered(resource, directory, where, check):
+        directory.mkdir()
+        (directory / "manifest.json").write_bytes(b"[]\n")
+
+    monkeypatch.setattr(tool.bundled, "_extract", altered)
+    target = tmp_path / "altered.zip"
+    with pytest.raises(tool.GeneratorError, match="does not extract"):
+        tool.write_archive(members, target)
+    assert not target.exists() and sorted(p.name for p in tmp_path.iterdir()) == []
 
 
 def test_the_generator_writes_only_a_new_zip_file(tmp_path, capsys):

@@ -53,15 +53,16 @@ EXPORT_FILES = {"airr": "airr.json", "airr_ex": "airr_ex.json", "gapped": "gappe
 OGRDB_STATEMENTS = {"licence_statement": ("ogrdb/statements/licensing_statement.html", "data_licence"),
                     "citation_statement": ("ogrdb/statements/help.html", "citation")}
 
-
-def _sources() -> dict:
-    return json.loads((SOURCE_DATA / "sources.json").read_bytes().decode("utf-8"))
 MANIFEST = "manifest.json"
 ARCHIVE_SUFFIX = bundled.ARCHIVE_SUFFIX
 # Every archive entry is the same apart from its name and bytes: stored, at the earliest zip
 # time, made on POSIX as a regular 0644 file, with no extra field and no comment.
 ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 ZIP_FILE_ATTR = 0o100644 << 16
+
+
+def _sources() -> dict:
+    return json.loads((SOURCE_DATA / "sources.json").read_bytes().decode("utf-8"))
 
 
 class Published(NamedTuple):
@@ -150,6 +151,27 @@ def archive(members: Mapping[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
+def write_archive(members: Mapping[str, bytes], target: Path) -> bytes:
+    """Write the archive of ``members`` as the new file ``target`` and read it back as a package
+    would; an archive that the loader refuses, or that does not give back exactly ``members``, is
+    removed again."""
+    check_target(target)
+    data = archive(members)
+    with open(target, "xb") as handle:
+        handle.write(data)
+    try:
+        with tempfile.TemporaryDirectory(prefix="genairr_archive_") as scratch:
+            unpacked = Path(scratch) / "dossier"
+            bundled._extract(target, unpacked, str(target), None)
+            found = {p.relative_to(unpacked).as_posix(): p.read_bytes() for p in unpacked.rglob("*") if p.is_file()}
+        if found != dict(members):
+            raise GeneratorError(f"the archive {target} does not extract to the dossier members it was written from")
+    except BaseException:
+        target.unlink()
+        raise
+    return data
+
+
 def publish(result: ReferenceBuild, target: Path) -> ReferenceBuild:
     """Write ``result`` as the archive ``target`` (a new ``.zip`` file) and return the dossier checked
     before archiving.  Receipts are not written."""
@@ -162,15 +184,7 @@ def publish(result: ReferenceBuild, target: Path) -> ReferenceBuild:
         if checked.manifest != result.manifest:
             raise GeneratorError("the written dossier does not check as the build that was written")
         members = {name: staged.joinpath(*name.split("/")).read_bytes() for name in names}
-    data = archive(members)
-    with open(target, "xb") as handle:
-        handle.write(data)
-    with tempfile.TemporaryDirectory(prefix="genairr_archive_") as scratch:   # read back as a package would
-        unpacked = Path(scratch) / "dossier"
-        bundled._extract(target, unpacked, str(target), None)
-        found = {p.relative_to(unpacked).as_posix(): p.read_bytes() for p in unpacked.rglob("*") if p.is_file()}
-    if found != members:
-        raise GeneratorError(f"the archive {target} does not extract to the dossier members it was written from")
+    write_archive(members, target)
     return checked
 
 
@@ -186,6 +200,7 @@ def summary(exact_id: str, result: ReferenceBuild, data: bytes) -> str:
         f"runtime models {reference.models_hash}",
         f"runtime artifact {reference.artifact_hash}",
         f"archive sha256:{hashlib.sha256(data).hexdigest()} ({len(data)} bytes)",
+        f"lock {result.lock.commitment}",
     ])
 
 
@@ -203,8 +218,9 @@ def main(argv=None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(summary(args.id, checked, args.output.read_bytes()))
-    print(f"checked with GenAIRR {GenAIRR.__version__}; pin the manifest hash above in "
-          "src/GenAIRR/_reference_sources/bundled.py")
+    print(f"checked with GenAIRR {GenAIRR.__version__}. Pin what changed: the manifest hash in the registry "
+          "(src/GenAIRR/_reference_sources/bundled.py) and in MANIFEST_PIN, the archive digest in ARCHIVE_PIN, the "
+          "runtime hashes in RUNTIME_PINS and the lock in LOCK_PIN (tests/test_published_reference_resources.py)")
     return 0
 
 
