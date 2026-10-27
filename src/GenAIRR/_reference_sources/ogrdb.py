@@ -448,7 +448,7 @@ class _Builder:
         :meth:`check_observations` can report the full count."""
         locator = Locator(asset, pointer)
         self.observation_count += 1
-        if self.observation_count > MAX_OBSERVATIONS:
+        if self._over_cap():
             return locator
         try:
             self.observations.append(Observation(locator=locator, record=record, presence=presence,
@@ -465,7 +465,7 @@ class _Builder:
         Once the observation cap is exceeded the inventory cannot be built, so findings are
         no longer formed while the remaining observations are counted.
         """
-        if self.observation_count > MAX_OBSERVATIONS:
+        if self._over_cap():
             return
         severity, category, capabilities, _ = FINDING_CODES[code]
         subjects = sorted(set(subjects), key=Locator.sort_key)
@@ -928,8 +928,12 @@ class _Builder:
             self.finding("unknown_provider_field", locators=locators,
                          observations={"asset": asset, "field": pattern, "occurrences": len(locators)})
 
+    def _over_cap(self) -> bool:
+        """Whether more observations were made than an inventory holds (the one cap test)."""
+        return self.observation_count > MAX_OBSERVATIONS
+
     def check_observations(self) -> None:
-        if self.observation_count > MAX_OBSERVATIONS:
+        if self._over_cap():
             raise bad("/assets", f"{self.observation_count} observations exceed the limit of {MAX_OBSERVATIONS}",
                       "resource_limit")
 
