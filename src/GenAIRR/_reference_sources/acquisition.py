@@ -74,7 +74,7 @@ ACQUISITION_DEADLINE_SECONDS = 120
 MAX_FOLLOWED_REDIRECTS = 3
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 _CHUNK = 1 << 16
-# A Content-Length: ASCII digits only, at most 19 (below 2**63), so conversion is always cheap.
+# A Content-Length: ASCII digits only, at most 19 of them, so conversion is always cheap.
 _CONTENT_LENGTH_RE = re.compile(r"[0-9]{1,19}")
 _FETCH_TERMS_REASON = ("no data-terms statement was supplied with this acquisition; GenAIRR does not fetch "
                        "provider statement pages")
@@ -330,7 +330,10 @@ class HttpsTransport:
                                                        "Accept-Encoding": "identity", "Connection": "close"})
             response = connection.getresponse()
         except BaseException:
-            connection.close()
+            try:
+                connection.close()
+            except OSError:
+                pass
             raise
         return _HttpsResponse(connection, response)
 
