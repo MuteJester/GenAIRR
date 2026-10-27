@@ -308,3 +308,225 @@ def test_identity_needs_a_record_export():
 def test_identity_reader_rejects_arguments_of_the_wrong_type():
     with pytest.raises(TypeError):
         identify(IGL, {"airr": raw(IGL, "airr").decode("utf-8")})
+
+
+# ── records, candidates and observations ─────────────────────────────
+
+# Record fields the inventory itself normalizes; every other known field is kept as is.
+INTERPRETED_FIELDS = {"label", "sequence_type", "coding_sequence", "allele_description_id",
+                      "allele_description_ref", "locus", "species", "aliases", "paralogs",
+                      "unrearranged_support", "rearranged_support"}
+
+
+@pytest.mark.parametrize("fmt", EXPORTS)
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_every_record_occurrence_is_a_source_record(source, fmt):
+    _, inventory = inventory_of(source)
+    raws = raw_records(source, fmt)
+    records = records_of(inventory, fmt)
+    expected = EXPECT["sets"][_key(source)][fmt]
+    assert len(records) == len(raws) == expected["records"]
+    assert [r.locator.pointer for r in records] == [rec(i) for i in range(len(raws))]
+    for record, item in zip(records, raws):
+        assert (record.status, record.problem) == ("parsed", None)
+        assert record.label == item["label"]
+        assert record.provider_id == item["allele_description_id"]
+        assert record.provider_ref == item["allele_description_ref"]
+        assert record.segment == item["sequence_type"]
+        assert (record.taxonomy_id, record.locus) == (9606, _entry(source)["locus"])
+    counts = Counter(r.segment for r in records)
+    assert {s: counts.get(s, 0) for s in "VDJ"} == {s: expected[s] for s in "VDJ"}
+
+
+@pytest.mark.parametrize("fmt", EXPORTS)
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_each_supplied_coding_sequence_is_a_candidate_of_its_own_record(source, fmt):
+    _, inventory = inventory_of(source)
+    raws = raw_records(source, fmt)
+    candidates = [c for c in inventory.candidates if c.locator.asset == fmt]
+    assert len(candidates) == len(raws)
+    for i, (candidate, item) in enumerate(zip(candidates, raws)):
+        assert candidate.record == m.Locator(fmt, rec(i))
+        assert candidate.locator == m.Locator(fmt, rec(i) + "/coding_sequence")
+        assert candidate.sequence == item["coding_sequence"]
+        assert candidate.sha256 == _sha(item["coding_sequence"].encode("ascii"))
+        assert inventory.candidates_of(candidate.record) == (candidate,)
+
+
+@pytest.mark.parametrize("fmt", EXPORTS)
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_every_record_field_is_observed_with_its_original_value(source, fmt):
+    _, inventory = inventory_of(source)
+    for i, item in enumerate(raw_records(source, fmt)):
+        for key, value in item.items():
+            found = observed(inventory, fmt, f"{rec(i)}/{key}")
+            assert (found.presence, found.value.get(), found.record) == ("present", value, m.Locator(fmt, rec(i)))
+            assert found.interpretation == ("interpreted" if key in INTERPRETED_FIELDS else "preserved"), key
+        for field in ("aliases", "paralogs"):
+            for j, name in enumerate(item[field] or ()):
+                found = observed(inventory, fmt, f"{rec(i)}/{field}/{j}")
+                assert (found.value.get(), found.interpretation) == (name, "interpreted")
+        for j, delineation in enumerate(item["v_gene_delineations"] or ()):
+            for key, value in delineation.items():
+                found = observed(inventory, fmt, f"{rec(i)}/v_gene_delineations/{j}/{key}")
+                assert (found.value.get(), found.interpretation) == (value, "preserved")
+
+
+def _record_index(source, fmt, label) -> int:
+    (index,) = [i for i, item in enumerate(raw_records(source, fmt)) if item["label"] == label]
+    return index
+
+
+def test_coordinate_fields_are_kept_uninterpreted_at_their_locators():
+    sets = {_key(s): s for s in SETS}
+    for example in EXPECT["j_examples"]:
+        source, fmt = sets[example["set"]], example["export"]
+        _, inventory = inventory_of(source)
+        base = rec(_record_index(source, fmt, example["label"]))
+        for field in ("gene_start", "gene_end", "j_cdr3_end", "j_codon_frame"):
+            found = observed(inventory, fmt, f"{base}/{field}")
+            assert (found.value.get(), found.interpretation) == (example[field], "preserved")
+    for example in EXPECT["v_examples"]:
+        source, fmt = sets[example["set"]], example["export"]
+        _, inventory = inventory_of(source)
+        base = rec(_record_index(source, fmt, example["label"]))
+        found = observed(inventory, fmt, f"{base}/v_gene_delineations/0/cdr3_start")
+        assert (found.value.get(), found.interpretation) == (example["cdr3_start"], "preserved")
+        assert observed(inventory, fmt, f"{base}/functional").value.get() is example["functional"]
+    _, inventory = inventory_of(IGL)
+    for example in EXPECT["igl4_airr_ex_coding_end_observations"]:
+        base = rec(_record_index(IGL, "airr_ex", example["label"]))
+        for field in ("gene_end", "v_rs_start"):
+            found = observed(inventory, "airr_ex", f"{base}/{field}")
+            assert (found.value.get(), found.interpretation) == (example[field], "preserved")
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_set_level_fields_are_observed_without_a_record(source):
+    _, inventory = inventory_of(source)
+    for fmt in EXPORTS:
+        document = payload(source, fmt)
+        assert observed(inventory, fmt, "/Info").value.get() == document["Info"]
+        for key, value in document["GermlineSet"][0].items():
+            if key == "allele_descriptions":
+                with pytest.raises(KeyError):
+                    observed(inventory, fmt, f"/GermlineSet/0/{key}")
+                continue
+            found = observed(inventory, fmt, f"/GermlineSet/0/{key}")
+            assert (found.record, found.presence, found.value.get()) == (None, "present", value)
+    assert observed(inventory, "airr", "/GermlineSet/0/germline_set_ref").value.get() == _entry(source)["germline_set_ref"]
+
+
+@pytest.mark.parametrize("fmt", EXPORTS)
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_support_entries_are_embedded_unretrieved_references_of_their_own_record(source, fmt):
+    _, inventory = inventory_of(source)
+    support = [s for s in inventory.support if s.locator.asset == fmt]
+    expected = []
+    for i, item in enumerate(raw_records(source, fmt)):
+        for kind in ("unrearranged", "rearranged"):
+            for j, entry in enumerate(item[f"{kind}_support"]):
+                pointer = f"{rec(i)}/{kind}_support/{j}"
+                expected.append((pointer, rec(i), kind, entry["repository_name"], entry["repository_ref"]))
+                assert observed(inventory, fmt, pointer).value.get() == entry
+    found = [(s.locator.pointer, s.record.pointer, s.kind, s.repository, s.reference) for s in support]
+    assert sorted(found) == sorted(expected)
+    assert {s.status for s in support} <= {"embedded_unretrieved"}
+
+
+@pytest.mark.parametrize("fmt", ["gapped", "gapped_ex"])
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_fasta_records_are_header_and_sequence_observations(source, fmt):
+    _, inventory = inventory_of(source)
+    blocks = raw(source, fmt).decode("utf-8").split(">")[1:]
+    expected = [{"header": b.split("\n", 1)[0], "sequence": b.split("\n", 1)[1].replace("\n", "")} for b in blocks]
+    found = [o for o in inventory.observations if o.locator.asset == fmt]
+    assert len(found) == EXPECT["sets"][_key(source)]["gapped_records"][fmt]
+    assert [o.value.get() for o in found] == expected
+    assert [o.locator.pointer for o in found] == [f"/{n}" for n in range(len(expected))]
+    assert {(o.record, o.presence, o.interpretation) for o in found} == {(None, "present", "preserved")}
+
+
+def test_fasta_line_terminators_are_removed_and_everything_else_is_kept():
+    data = "﻿>IGLJ1*01 note é\r\nTTA.TG\r\n\r\nccg \n>IGLJ2*01\n\n".encode("utf-8")
+    blobs = pinned(IGL, ("airr",))
+    blobs["gapped"] = data
+    _, inventory = build(IGL, blobs)
+    found = [o.value.get() for o in inventory.observations if o.locator.asset == "gapped"]
+    assert found == [{"header": "IGLJ1*01 note é", "sequence": "TTA.TGccg "},
+                     {"header": "IGLJ2*01", "sequence": ""}]
+
+
+@pytest.mark.parametrize("data", [b"TTAT\n>IGLJ1*01\nTTAT\n", b">IGLJ1*01\n\xff\n"], ids=["headless", "not-utf8"])
+def test_a_malformed_fasta_export_is_a_typed_error(data):
+    blobs = pinned(IGL, ("airr",))
+    blobs["gapped"] = data
+    lock = seal(IGL, blobs)
+    assert error("malformed", ogrdb.build_inventory, lock, blobs).path == "/assets/gapped"
+
+
+def test_the_inventory_is_bound_to_its_lock_and_round_trips():
+    lock, inventory = inventory_of(IGL)
+    assert inventory.source_lock_hash == m.lock_hash(lock)
+    assert inventory.adapter == lock.adapter
+    m.check_inventory(inventory, lock)
+    assert m.SourceInventory.from_json(json.dumps(inventory.to_dict())) == inventory
+    again = ogrdb.build_inventory(lock, pinned(IGL))
+    assert m.inventory_hash(again) == m.inventory_hash(inventory)
+
+
+def test_the_inventory_reads_exactly_the_locked_bytes():
+    blobs = pinned(IGL)
+    lock = seal(IGL, blobs)
+    found = error("digest_mismatch", ogrdb.build_inventory, lock, dict(blobs, gapped=blobs["gapped"] + b"\n"))
+    assert found.path == "/assets/gapped"
+    found = error("digest_mismatch", ogrdb.build_inventory, lock, dict(blobs, gapped=blobs["gapped_ex"]))
+    assert found.path == "/assets/gapped"
+    found = error("missing_asset", ogrdb.build_inventory, lock, {k: v for k, v in blobs.items() if k != "airr_ex"})
+    assert found.path == "/assets/airr_ex"
+    found = error("identity_mismatch", ogrdb.build_inventory, lock, dict(blobs, ungapped=b">x\nACGT\n"))
+    assert found.path == "/assets/ungapped"
+    with pytest.raises(TypeError):
+        ogrdb.build_inventory(lock.to_dict(), blobs)
+    with pytest.raises(TypeError):
+        ogrdb.build_inventory(lock, list(blobs.items()))
+
+
+def test_the_lock_identity_must_be_the_payload_identity():
+    blobs = pinned(IGL)
+    lock = seal(IGL, blobs, identity=expected_identity(IGK))
+    assert error("identity_mismatch", ogrdb.build_inventory, lock, blobs).path == "/identity"
+    lock = seal(IGL, blobs, set_id="9606.IGKappa_VJ")
+    assert error("identity_mismatch", ogrdb.build_inventory, lock, blobs).path.startswith("/assets/airr")
+
+
+def test_inventories_of_locks_outside_the_validated_profile_scope_are_still_built():
+    blobs = {"airr": edited(IGL, "airr", lambda d: d["GermlineSet"][0].update(curation="edited"))}
+    lock, inventory = build(IGL, blobs)
+    assert m.profile_scope_problem(lock) is not None
+    assert len(inventory.records) == EXPECT["sets"][_key(IGL)]["airr"]["records"]
+
+
+def test_the_identity_reader_and_the_inventory_share_the_ingested_bytes(tmp_path):
+    files = {}
+    for fmt in ALL:
+        path = tmp_path / f"{fmt}.{SUFFIX[fmt]}"
+        path.write_bytes(raw(IGL, fmt))
+        files[fmt] = path
+    result = ingest_files(set_id=IGL[0], release=IGL[1], profile="ogrdb_api_v2_human_ig_observed_v1",
+                          files=files, cache=tmp_path / "cache", identify=ogrdb.identify)
+    again = read_locked(result.lock, cache=tmp_path / "cache", identify=ogrdb.identify)
+    inventory = ogrdb.build_inventory(again.lock, again.assets)
+    assert inventory.source_lock_hash == m.lock_hash(result.lock)
+    assert m.inventory_hash(inventory) != m.inventory_hash(inventory_of(IGL)[1])  # another lock, other ids
+
+
+def test_relationship_only_names_are_mentioned_identities_without_sequence():
+    _, inventory = inventory_of(IGL)
+    j2 = rec(_record_index(IGL, "airr_ex", "IGLJ2*01"))
+    (identity,) = inventory.mentioned_identities
+    assert (identity.asset, identity.segment, identity.label) == ("airr_ex", "J", "IGLJ3*01")
+    assert [(x.record.pointer, x.locator.pointer, x.relationship) for x in identity.mentions] == [
+        (j2, j2 + "/paralogs/0", "paralog")]
+    assert "IGLJ3*01" not in by_label(inventory, "airr_ex")
+    assert [r.label for r in records_of(inventory, "airr")].count("IGLJ3*01") == 1

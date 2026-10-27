@@ -1,4 +1,4 @@
-"""OGRDB germline-set adapter: set identity read from the locked export bytes.
+"""OGRDB germline-set adapter: set identity and the normalized source inventory.
 
 OGRDB API v2 serves a germline set as AIRR germline-set JSON (``airr``, and ``airr_ex``
 with the provider's ``_ex`` content) and as FASTA.  A JSON export is an envelope
@@ -14,21 +14,43 @@ from the payload envelope itself.  It is usable as the acquisition layer's ident
 reader: it never trusts the requested set id or URL, checks the payload's own set and
 release identifiers against the request wherever the payload states them, and requires
 every record export present to agree.
+
+:func:`build_inventory` reads a verified lock's bytes into the normalized inventory.  It
+interprets no coordinates.  Every record occurrence becomes a :class:`SourceRecord`
+(malformed and unsupported ones included, with a problem and a finding), every supplied
+coding sequence a :class:`SequenceCandidate` of its own record, every name that appears
+only as a paralog a :class:`MentionedIdentity`, every embedded support entry a
+:class:`SupportReference`, and every provider field an :class:`Observation` at its
+locator.  Fields the inventory normalizes are ``interpreted`` (or ``invalid``), other
+known fields are ``preserved`` uninterpreted, and fields this adapter does not know are
+``unsupported``: kept with their values and recorded by a finding, never an error.
+Records are identified by asset and JSON pointer, so duplicate or missing provider ids
+never merge records, and evidence never moves between identities because their DNA
+matches.  Only a malformed global envelope or an exceeded budget raises.
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
 from GenAIRR._reference_sources._fields import (
-    MAX_ASSET_BYTES, MAX_NAME, MAX_TAXONOMY_ID, bad, check_text, parse_json, ptr, show,
+    MAX_ASSET_BYTES, MAX_NAME, MAX_REFS, MAX_SEQUENCE, MAX_SOURCE_RECORDS, MAX_TAXONOMY_ID, MAX_TEXT, bad,
+    check_label, check_text, parse_json, ptr, require_type, show,
 )
 from GenAIRR._reference_sources.common import (
-    LOCUS_CHAIN_TYPES, RECORD_EXPORT_FORMATS, SourceIdentity, Taxon,
+    ADAPTER_ID, LOCUS_CHAIN_TYPES, RECORD_EXPORT_FORMATS, SEGMENTS, Locator, SourceIdentity, Taxon,
 )
+from GenAIRR._reference_sources.digests import lock_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
+from GenAIRR._reference_sources.inventory import (
+    MAX_LOCUS, MAX_OBSERVATIONS, Finding, MentionedIdentity, Mention, Observation, SequenceCandidate,
+    SourceInventory, SourceRecord, SupportReference,
+)
+from GenAIRR._reference_sources.lock import SourceLock
+from GenAIRR._reference.model import sequence_digest
 
 # ── Provider conventions ────────────────────────────────────────────
 
@@ -187,9 +209,9 @@ def _check_agreement(first: _Envelope, other: _Envelope) -> None:
              ("germline_set_id", first.set_id, other.set_id),
              ("germline_set_ref", first.set_ref, other.set_ref),
              ("release_version", first.release, other.release))
-    for field, mine, theirs in pairs:
+    for name, mine, theirs in pairs:
         if mine is not None and theirs is not None and mine != theirs:
-            raise _mismatch(other, field, f"{field} {show(theirs)} disagrees with {show(mine)} in {first.asset}; "
+            raise _mismatch(other, name, f"{name} {show(theirs)} disagrees with {show(mine)} in {first.asset}; "
                                           "every record export must describe the same set")
 
 
@@ -219,3 +241,625 @@ def identify(*, set_id: str, release: int, assets: Mapping[str, bytes]) -> Sourc
     _require_assets(assets)
     envelopes = [_envelope(fmt, assets[fmt]) for fmt in RECORD_EXPORT_FORMATS if fmt in assets]
     return _identity(envelopes, set_id, release)
+
+
+# ── Field registries ────────────────────────────────────────────────
+#
+# The fields of the pinned producer's exports.  A field outside these registries is an
+# unknown provider field: it is kept as an ``unsupported`` observation and recorded.
+
+TOP_FIELDS = ("Info", "GermlineSet")
+SET_FIELDS = ("germline_set_id", "author", "lab_name", "lab_address", "acknowledgements", "release_version",
+              "release_description", "release_date", "germline_set_name", "germline_set_ref", "pub_ids",
+              "species", "species_subgroup", "species_subgroup_type", "locus", "allele_descriptions",
+              "curation")
+RECORD_FIELDS = (
+    "allele_description_id", "allele_description_ref", "maintainer", "acknowledgements", "lab_address",
+    "release_version", "release_date", "release_description", "label", "sequence", "coding_sequence", "aliases",
+    "locus", "chromosome", "sequence_type", "functional", "inference_type", "species", "species_subgroup",
+    "species_subgroup_type", "status", "subgroup_designation", "gene_designation", "allele_designation",
+    "allele_similarity_cluster_designation", "allele_similarity_cluster_member_id", "j_codon_frame",
+    "gene_start", "gene_end", "utr_5_prime_start", "utr_5_prime_end", "leader_1_start", "leader_1_end",
+    "leader_2_start", "leader_2_end", "v_rs_start", "v_rs_end", "d_rs_3_prime_start", "d_rs_3_prime_end",
+    "d_rs_5_prime_start", "d_rs_5_prime_end", "j_cdr3_end", "j_rs_start", "j_rs_end", "j_donor_splice",
+    "v_gene_delineations", "unrearranged_support", "rearranged_support", "paralogs", "curation",
+    "curational_tags",
+)
+DELINEATION_FIELDS = ("sequence_delineation_id", "delineation_scheme", "unaligned_sequence", "aligned_sequence",
+                      "fwr1_start", "fwr1_end", "cdr1_start", "cdr1_end", "fwr2_start", "fwr2_end", "cdr2_start",
+                      "cdr2_end", "fwr3_start", "fwr3_end", "cdr3_start", "alignment_labels")
+SUPPORT_FIELDS = {
+    "unrearranged_support": ("sequence_id", "sequence", "curation", "repository_name", "repository_ref",
+                             "patch_no", "gff_seqid", "gff_start", "gff_end", "strand"),
+    "rearranged_support": ("sequence_id", "sequence", "derivation", "observation_type", "curation",
+                           "repository_name", "repository_ref", "deposited_version", "sequence_start",
+                           "sequence_end"),
+}
+SUPPORT_KIND = {"unrearranged_support": "unrearranged", "rearranged_support": "rearranged"}
+SPECIES_FIELDS = ("id", "label")
+RELATIONSHIP_FIELDS = {"aliases": "alias", "paralogs": "paralog"}
+# Fields the inventory normalizes (identity facts); every other known field is kept uninterpreted.
+INTERPRETED_SET_FIELDS = ("germline_set_id", "release_version", "germline_set_name", "germline_set_ref",
+                          "species", "locus")
+INTERPRETED_RECORD_FIELDS = ("allele_description_id", "allele_description_ref", "label", "coding_sequence",
+                             "aliases", "locus", "sequence_type", "species", "unrearranged_support",
+                             "rearranged_support", "paralogs")
+# A record without a valid one of these has no identity or no candidate.
+REQUIRED_RECORD_FIELDS = ("label", "sequence_type", "coding_sequence")
+# Export-level findings cite the export's set identifier observation.
+EXPORT_ANCHOR = SET_POINTER + "/germline_set_ref"
+
+_SEQUENCE_RE = re.compile(r"[ACGT]+")
+_JSON_TYPES = {dict: "object", list: "array", str: "string", int: "number", float: "number", bool: "Boolean",
+               type(None): "null"}
+_FASTA_FORMATS = ("gapped", "gapped_ex", "ungapped", "ungapped_ex")
+
+
+def _json_type(value: Any) -> str:
+    return _JSON_TYPES.get(type(value), type(value).__name__)
+
+
+def _text_or_none(value: Any, max_len: int) -> Optional[str]:
+    """``value`` if it is valid one-line text of at most ``max_len`` characters, else ``None``."""
+    try:
+        return check_text(value, "", max_len=max_len, multiline=False)
+    except ReferenceSourceError:
+        return None
+
+
+# ── Findings ────────────────────────────────────────────────────────
+#
+# code -> (severity, category, affected capabilities, meaning).
+
+FINDING_CODES = {
+    # Records and fields.
+    "malformed_record": (
+        "error", "invalid_source_syntax", (),
+        "A record that is not an object, or has no valid label or sequence_type; it is kept with its problem "
+        "and cannot be selected."),
+    "unsupported_record": (
+        "warning", "unsupported_interpretation", (),
+        "A record whose segment is not V, D or J, or not a segment of the set's chain type; it is kept and "
+        "cannot be selected."),
+    "record_without_sequence_candidate": (
+        "warning", "invalid_source_syntax", (),
+        "A record whose coding_sequence is absent, null or not [ACGT] text within the length limit; it has no "
+        "sequence candidate."),
+    "invalid_field_value": (
+        "warning", "invalid_source_syntax", (),
+        "A field the inventory normalizes holds a value of the wrong form; the value is kept and not used."),
+    "record_identity_differs_from_set": (
+        "warning", "contradictory_evidence", (),
+        "A record's taxon or locus differs from its set's."),
+    "unknown_provider_field": (
+        "info", "informational", (),
+        "A provider field this adapter does not know; its values are kept as unsupported observations (or, "
+        "where no locator can name it, in the locked bytes)."),
+    # Identities within one export.
+    "duplicate_provider_id": (
+        "warning", "contradictory_evidence", (),
+        "Records of one export share a provider id; they stay separate records."),
+    "duplicate_record_occurrence": (
+        "info", "informational", (),
+        "An identity supplied more than once with the same coding sequence in one export."),
+    "same_label_sequence_alternatives": (
+        "warning", "contradictory_evidence", (),
+        "An identity supplied with different coding sequences in one export; using it needs an explicit "
+        "choice of one."),
+    "identical_sequence_distinct_identities": (
+        "info", "informational", (),
+        "Distinct identities supply the same coding sequence in one export; each keeps only its own records "
+        "and evidence."),
+    "alias_names_explicit_record": (
+        "warning", "contradictory_evidence", (),
+        "A declared alias names another record's label in the same export, so it is not a plain alias."),
+    "mentioned_identity_segment_conflict": (
+        "warning", "contradictory_evidence", (),
+        "A relationship-only name is named by records of different segments; no mentioned identity is formed."),
+}
+
+
+@dataclass
+class _Entry:
+    """One record occurrence while the inventory is built."""
+
+    record: SourceRecord
+    item: Any
+    candidate: Optional[SequenceCandidate] = None
+    relationships: dict = field(default_factory=lambda: {"alias": [], "paralog": []})
+
+
+class _Builder:
+    """Accumulates the items of one inventory, in any order (``assemble`` sorts them)."""
+
+    def __init__(self, lock: SourceLock, identity: SourceIdentity):
+        self.lock = lock
+        self.lock_hash = lock_hash(lock)
+        self.identity = identity
+        self.records: list = []
+        self.candidates: list = []
+        self.observations: list = []
+        self.support: list = []
+        self.mentioned: list = []
+        self.findings: list = []
+        self.entries: dict = {}          # asset -> [_Entry]
+        self.unknown: dict = {}          # (asset, field pattern) -> [locator]
+
+    # -- items ---------------------------------------------------------
+
+    def observe(self, asset: str, pointer: str, record: Optional[Locator], value: Any, interpretation: str,
+                presence: str = "present") -> Locator:
+        if len(self.observations) >= MAX_OBSERVATIONS:
+            raise bad("/assets", f"the inventory would hold more than {MAX_OBSERVATIONS} observations",
+                      "resource_limit")
+        locator = Locator(asset, pointer)
+        try:
+            self.observations.append(Observation(locator=locator, record=record, presence=presence,
+                                                 value=value if presence == "present" else None,
+                                                 interpretation=interpretation))
+        except ReferenceSourceError as exc:
+            raise bad(ptr("/assets", asset) + pointer, f"{asset}: {exc.message}", exc.kind) from None
+        return locator
+
+    def finding(self, code: str, *, subjects=(), locators=(), observations: dict) -> None:
+        """Add a finding; one naming more than ``MAX_REFS`` subjects or locators is split into parts."""
+        severity, category, capabilities, _ = FINDING_CODES[code]
+        subjects = sorted(set(subjects), key=Locator.sort_key)
+        locators = sorted(set(locators), key=Locator.sort_key)
+        parts = max(1, -(-len(subjects) // MAX_REFS), -(-len(locators) // MAX_REFS))
+        for part in range(parts):
+            details = dict(observations)
+            if parts > 1:
+                details.update(part=part + 1, parts=parts)
+            window = slice(part * MAX_REFS, (part + 1) * MAX_REFS)
+            self.findings.append(Finding(source_lock_hash=self.lock_hash, code=code, severity=severity,
+                                         category=category, subjects=tuple(subjects[window]),
+                                         locators=tuple(locators[window]), observations=details,
+                                         capabilities=tuple(capabilities)))
+
+    def remember_unknown(self, asset: str, pattern: str, key: str, locator: Locator) -> None:
+        """Record an unknown provider field ``key`` (at ``pattern``) kept at ``locator``."""
+        self.unknown.setdefault((asset, ptr(pattern, key)), []).append(locator)
+
+    def unknown_field(self, asset: str, pattern: str, base: str, key: str, fallback: Locator,
+                      record: Optional[Locator], value: Any) -> None:
+        """Keep unknown provider field ``key`` of the object at ``base`` as an ``unsupported`` observation.
+
+        ``pattern`` names the field's place for every record (``*`` for an index).  A key no
+        pointer can name (too long, or with control characters) is recorded at ``fallback``;
+        its value stays in the locked bytes.
+        """
+        pointer = ptr(base, key)
+        try:
+            Locator(asset, pointer)
+        except ReferenceSourceError:
+            locator = fallback
+        else:
+            locator = self.observe(asset, pointer, record, value, "unsupported")
+        self.remember_unknown(asset, pattern, key, locator)
+
+    # -- one export ----------------------------------------------------
+
+    def export(self, envelope: _Envelope) -> None:
+        asset = envelope.asset
+        anchor = Locator(asset, EXPORT_ANCHOR)
+        for key, value in envelope.root.items():
+            if key == "GermlineSet":
+                continue
+            if key in TOP_FIELDS:
+                self.observe(asset, ptr("", key), None, value, "preserved")
+            else:
+                self.unknown_field(asset, "", "", key, anchor, None, value)
+        if "Info" not in envelope.root:
+            self.observe(asset, "/Info", None, None, "preserved", "absent")
+        germline_set = envelope.germline_set
+        for key, value in germline_set.items():
+            if key == "allele_descriptions":
+                continue
+            pointer = ptr(SET_POINTER, key)
+            if key in SET_FIELDS:
+                self.observe(asset, pointer, None, value,
+                             "interpreted" if key in INTERPRETED_SET_FIELDS else "preserved")
+            else:
+                self.unknown_field(asset, SET_POINTER, SET_POINTER, key, anchor, None, value)
+        for key in SET_FIELDS:
+            if key not in germline_set and key != "allele_descriptions":
+                self.observe(asset, ptr(SET_POINTER, key), None, None,
+                             "interpreted" if key in INTERPRETED_SET_FIELDS else "preserved", "absent")
+        for key, value in germline_set["species"].items():
+            if key not in SPECIES_FIELDS:
+                self.remember_unknown(asset, SET_POINTER + "/species", key, Locator(asset, SET_POINTER + "/species"))
+        self.entries[asset] = [self.record(asset, index, item)
+                               for index, item in enumerate(germline_set["allele_descriptions"])]
+
+    def record(self, asset: str, index: int, item: Any) -> _Entry:
+        locator = Locator(asset, ptr(RECORDS_POINTER, index))
+        if not isinstance(item, dict):
+            problem = f"the record is a JSON {_json_type(item)}, not an object"
+            record = SourceRecord(locator=locator, status="malformed", problem=problem, label=None,
+                                  provider_id=None, provider_ref=None, segment=None, taxonomy_id=None, locus=None)
+            self.records.append(record)
+            self.finding("malformed_record", subjects=[locator], observations={"problem": problem})
+            return _Entry(record, item)
+        fields = {}
+        for key, value in item.items():
+            if key in RECORD_FIELDS:
+                fields[key] = self.observe(asset, ptr(locator.pointer, key), locator, value,
+                                           self._interpretation(key, value))
+            else:
+                self.unknown_field(asset, RECORDS_POINTER + "/*", locator.pointer, key, locator, locator, value)
+        for key in RECORD_FIELDS:
+            if key not in item:
+                fields[key] = self.observe(asset, ptr(locator.pointer, key), locator, None,
+                                           self._interpretation(key, None, absent=True), "absent")
+        record = self._source_record(locator, item, fields)
+        self.records.append(record)
+        entry = _Entry(record, item)
+        self._candidate(entry, fields["coding_sequence"])
+        self._nested(entry, fields)
+        return entry
+
+    @staticmethod
+    def _interpretation(key: str, value: Any, absent: bool = False) -> str:
+        if key not in INTERPRETED_RECORD_FIELDS:
+            return "preserved"
+        if absent:
+            return "invalid" if key in REQUIRED_RECORD_FIELDS else "interpreted"
+        if key == "label":
+            return "invalid" if check_label_problem(value) else "interpreted"
+        if key == "sequence_type":
+            return "interpreted" if type(value) is str and value else "invalid"
+        if key == "coding_sequence":
+            return "interpreted" if _sequence_problem(value) is None else "invalid"
+        if value is None:
+            return "interpreted"
+        if key in ("allele_description_id", "allele_description_ref"):
+            return "interpreted" if _text_or_none(value, MAX_NAME) is not None else "invalid"
+        if key == "locus":
+            return "interpreted" if _text_or_none(value, MAX_LOCUS) is not None else "invalid"
+        if key == "species":
+            return "interpreted" if isinstance(value, dict) and taxonomy_id(value.get("id")) else "invalid"
+        return "interpreted" if isinstance(value, list) else "invalid"   # relationships and support
+
+    def _invalid(self, record: Locator, locator: Locator, field_name: str, value: Any, expected: str) -> None:
+        self.finding("invalid_field_value", subjects=[record], locators=[locator],
+                     observations={"field": field_name, "found": _json_type(value), "expected": expected})
+
+    def _status(self, item: dict) -> tuple:
+        """``(status, problem, segment)`` of a record object."""
+        label, sequence_type = item.get("label"), item.get("sequence_type")
+        segment = sequence_type if type(sequence_type) is str and sequence_type in SEGMENTS else None
+        if "label" not in item:
+            return "malformed", "the record has no label", segment
+        problem = check_label_problem(label)
+        if problem:
+            return "malformed", problem, segment
+        if "sequence_type" not in item:
+            return "malformed", "the record has no sequence_type", segment
+        if type(sequence_type) is not str or not sequence_type:
+            return "malformed", f"sequence_type {show(sequence_type)} is not a segment name", segment
+        if segment is None:
+            return "unsupported", f"sequence_type {show(sequence_type)} is not a V, D or J segment", segment
+        if segment not in self.identity.segments:
+            return "unsupported", (f"a {segment} record cannot belong to a {self.identity.locus} "
+                                   f"({self.identity.chain_type}) set"), segment
+        return "parsed", None, segment
+
+    def _source_record(self, locator: Locator, item: dict, fields: dict) -> SourceRecord:
+        status, problem, segment = self._status(item)
+        label = item.get("label")
+        if status != "parsed":
+            try:   # whatever is readable of the label is kept
+                label = check_text(label, "", max_len=MAX_TEXT)
+            except ReferenceSourceError:
+                label = None
+        species = item.get("species")
+        taxon = taxonomy_id(species.get("id")) if isinstance(species, dict) else None
+        locus = _text_or_none(item.get("locus"), MAX_LOCUS)
+        record = SourceRecord(locator=locator, status=status, problem=problem, label=label,
+                              provider_id=_text_or_none(item.get("allele_description_id"), MAX_NAME),
+                              provider_ref=_text_or_none(item.get("allele_description_ref"), MAX_NAME),
+                              segment=segment, taxonomy_id=taxon, locus=locus)
+        if status != "parsed":
+            self.finding(f"{status}_record", subjects=[locator], observations={"problem": problem})
+        for key, expected in (("allele_description_id", "text of at most 256 characters"),
+                              ("allele_description_ref", "text of at most 256 characters"),
+                              ("locus", f"text of at most {MAX_LOCUS} characters"),
+                              ("species", f"an object with id {TAXON_PREFIX}<taxonomy id>")):
+            if item.get(key) is not None and self._interpretation(key, item[key]) == "invalid":
+                self._invalid(locator, fields[key], key, item[key], expected)
+        for key in species if isinstance(species, dict) else ():
+            if key not in SPECIES_FIELDS:
+                self.remember_unknown(locator.asset, RECORDS_POINTER + "/*/species", key, fields["species"])
+        differs, cited = {}, []
+        if taxon is not None and taxon != self.identity.taxon.taxonomy_id:
+            differs["taxonomy_id"] = {"record": taxon, "set": self.identity.taxon.taxonomy_id}
+            cited.append(fields["species"])
+        if locus is not None and locus != self.identity.locus:
+            differs["locus"] = {"record": locus, "set": self.identity.locus}
+            cited.append(fields["locus"])
+        if differs:
+            self.finding("record_identity_differs_from_set", subjects=[locator], locators=cited,
+                         observations=differs)
+        return record
+
+    def _candidate(self, entry: _Entry, locator: Locator) -> None:
+        record = entry.record
+        value = entry.item.get("coding_sequence")
+        problem = _sequence_problem(value) if "coding_sequence" in entry.item else "absent"
+        if problem is None:
+            entry.candidate = SequenceCandidate(locator=locator, record=record.locator, sequence=value,
+                                                sha256=sequence_digest(value))
+            self.candidates.append(entry.candidate)
+        else:
+            self.finding("record_without_sequence_candidate", subjects=[record.locator], locators=[locator],
+                         observations={"label": record.label, "reason": problem})
+
+    def _nested(self, entry: _Entry, fields: dict) -> None:
+        record, item, asset = entry.record.locator, entry.item, entry.record.locator.asset
+        for key, relationship in RELATIONSHIP_FIELDS.items():
+            value = item.get(key)
+            if value is not None and not isinstance(value, list):
+                self._invalid(record, fields[key], key, value, "an array of labels or null")
+            for j, name in enumerate(value if isinstance(value, list) else ()):
+                valid = check_label_problem(name) is None
+                locator = self.observe(asset, ptr(fields[key].pointer, j), record, name,
+                                       "interpreted" if valid else "invalid")
+                if valid:
+                    entry.relationships[relationship].append((name, locator))
+                else:
+                    self._invalid(record, locator, key, name, "a label")
+        value = item.get("v_gene_delineations")
+        for j, delineation in enumerate(value if isinstance(value, list) else ()):
+            base = ptr(fields["v_gene_delineations"].pointer, j)
+            if not isinstance(delineation, dict):
+                self.observe(asset, base, record, delineation, "preserved")
+                continue
+            for key, part in delineation.items():
+                if key in DELINEATION_FIELDS:
+                    self.observe(asset, ptr(base, key), record, part, "preserved")
+                else:
+                    self.unknown_field(asset, RECORDS_POINTER + "/*/v_gene_delineations/*", base, key, record,
+                                       record, part)
+            for key in DELINEATION_FIELDS:
+                if key not in delineation:
+                    self.observe(asset, ptr(base, key), record, None, "preserved", "absent")
+        for key, kind in SUPPORT_KIND.items():
+            value = item.get(key)
+            if value is not None and not isinstance(value, list):
+                self._invalid(record, fields[key], key, value, "an array of support entries or null")
+            for j, support in enumerate(value if isinstance(value, list) else ()):
+                valid = isinstance(support, dict)
+                locator = self.observe(asset, ptr(fields[key].pointer, j), record, support,
+                                       "interpreted" if valid else "invalid")
+                if not valid:
+                    self._invalid(record, locator, key, support, "a support entry object")
+                    continue
+                for part in support:
+                    if part not in SUPPORT_FIELDS[key]:
+                        self.remember_unknown(asset, RECORDS_POINTER + f"/*/{key}/*", part, locator)
+                stated = {}
+                for part in ("repository_name", "repository_ref"):
+                    stated[part] = _text_or_none(support.get(part), MAX_NAME)
+                    if support.get(part) is not None and stated[part] is None:
+                        self._invalid(record, locator, f"{key}/{part}", support[part],
+                                      "text of at most 256 characters")
+                self.support.append(SupportReference(locator=locator, record=record, kind=kind,
+                                                     repository=stated["repository_name"],
+                                                     reference=stated["repository_ref"],
+                                                     status="embedded_unretrieved"))
+
+    # -- relationships and identities within one export ----------------
+
+    def relationships(self, asset: str) -> None:
+        entries = self.entries[asset]
+        labels = {e.record.label for e in entries if e.record.label is not None}
+        records_by_label: dict = {}
+        for entry in entries:
+            if entry.record.status == "parsed":
+                records_by_label.setdefault(entry.record.label, []).append(entry.record.locator)
+        mentioned: dict = {}
+        for entry in entries:
+            if entry.record.status != "parsed":
+                continue
+            own = entry.record.label
+            for name, locator in entry.relationships["alias"]:
+                if name != own and name in labels:
+                    self.finding("alias_names_explicit_record",
+                                 subjects=[entry.record.locator] + records_by_label.get(name, []),
+                                 locators=[locator], observations={"label": own, "alias": name})
+            for name, locator in entry.relationships["paralog"]:
+                if name not in labels:
+                    mentioned.setdefault(name, []).append((entry.record, locator))
+        for name, mentions in sorted(mentioned.items()):
+            segments = sorted({record.segment for record, _ in mentions})
+            if len(segments) != 1:
+                self.finding("mentioned_identity_segment_conflict",
+                             subjects=[record.locator for record, _ in mentions],
+                             locators=[locator for _, locator in mentions],
+                             observations={"label": name, "segments": segments})
+                continue
+            self.mentioned.append(MentionedIdentity(
+                asset=asset, segment=segments[0], label=name,
+                mentions=tuple(sorted((Mention(record=record.locator, locator=locator, relationship="paralog")
+                                       for record, locator in mentions), key=lambda x: x.locator.sort_key()))))
+
+    def identities(self, asset: str) -> None:
+        entries = [e for e in self.entries[asset] if e.record.status == "parsed"]
+        by_provider_id: dict = {}
+        for entry in self.entries[asset]:
+            if entry.record.provider_id is not None:
+                by_provider_id.setdefault(entry.record.provider_id, []).append(entry)
+        for provider_id, group in sorted(by_provider_id.items()):
+            if len(group) > 1:
+                self.finding("duplicate_provider_id", subjects=[e.record.locator for e in group],
+                             locators=[Locator(asset, ptr(e.record.locator.pointer, "allele_description_id"))
+                                       for e in group],
+                             observations={"provider_id": provider_id, "records": len(group)})
+        by_identity: dict = {}
+        by_sequence: dict = {}
+        for entry in entries:
+            by_identity.setdefault((entry.record.segment, entry.record.label), []).append(entry)
+            if entry.candidate is not None:
+                by_sequence.setdefault(entry.candidate.sha256, []).append(entry)
+        for (segment, label), group in sorted(by_identity.items()):
+            variants: dict = {}
+            for entry in group:
+                if entry.candidate is not None:
+                    variants.setdefault(entry.candidate.sha256, []).append(entry)
+            for sha256, same in sorted(variants.items()):
+                if len(same) > 1:
+                    self.finding("duplicate_record_occurrence", subjects=_subjects(same),
+                                 observations={"label": label, "segment": segment, "sha256": sha256,
+                                               "occurrences": len(same)})
+            if len(variants) > 1:
+                self.finding("same_label_sequence_alternatives", subjects=_subjects(group),
+                             observations={"label": label, "segment": segment, "alternatives": [
+                                 {"sha256": sha256, "length": len(same[0].candidate.sequence),
+                                  "records": len(same)} for sha256, same in sorted(variants.items())]})
+        for sha256, group in sorted(by_sequence.items()):
+            identities = sorted({(e.record.segment, e.record.label) for e in group})
+            if len(identities) > 1:
+                self.finding("identical_sequence_distinct_identities", subjects=_subjects(group),
+                             observations={"sha256": sha256, "length": len(group[0].candidate.sequence),
+                                           "identities": [{"segment": s, "label": l} for s, l in identities]})
+
+    def fasta(self, asset: str, data: bytes) -> None:
+        for index, (header, sequence) in enumerate(_fasta_records(asset, data)):
+            self.observe(asset, f"/{index}", None, {"header": header, "sequence": sequence}, "preserved")
+
+    def unknown_findings(self) -> None:
+        for (asset, pattern), locators in sorted(self.unknown.items()):
+            self.finding("unknown_provider_field", locators=locators,
+                         observations={"asset": asset, "field": pattern, "occurrences": len(locators)})
+
+    def inventory(self) -> SourceInventory:
+        return SourceInventory.assemble(
+            source_lock_hash=self.lock_hash, adapter=self.lock.adapter, records=self.records,
+            candidates=self.candidates, mentioned_identities=self.mentioned, observations=self.observations,
+            support=self.support, claims=(), mappings=(), findings=self.findings)
+
+
+def check_label_problem(value: Any) -> Optional[str]:
+    """``None`` for a valid runtime label, else the problem (as the runtime label rule states it)."""
+    try:
+        check_label(value, "")
+    except ReferenceSourceError as exc:
+        return exc.message
+    return None
+
+
+def _sequence_problem(value: Any) -> Optional[str]:
+    if value is None:
+        return "null"
+    if type(value) is not str:
+        return f"a JSON {_json_type(value)}, not text"
+    if len(value) > MAX_SEQUENCE:
+        return f"{len(value)} bases exceed the limit of {MAX_SEQUENCE}"
+    if not _SEQUENCE_RE.fullmatch(value):
+        return "not a sequence of A, C, G and T"
+    return None
+
+
+def _subjects(entries) -> list:
+    """The records of ``entries`` and their candidates."""
+    found = []
+    for entry in entries:
+        found.append(entry.record.locator)
+        if entry.candidate is not None:
+            found.append(entry.candidate.locator)
+    return found
+
+
+def _fasta_records(asset: str, data: bytes) -> list:
+    """``(header, sequence)`` per FASTA record, as supplied.
+
+    The header is the header line after ``>``; the sequence is the record's other lines
+    joined without their line terminators (``\\n`` or ``\\r\\n``), with case, gap and every
+    other character kept.  One leading byte-order mark is ignored.  Blank lines before the
+    first header are allowed; other text there is ``malformed``.
+    """
+    path = ptr("/assets", asset)
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise bad(path, f"{asset}: the export is not UTF-8 text ({exc})") from None
+    if text.startswith("﻿"):
+        text = text[1:]
+    records, header, lines = [], None, []
+    for number, line in enumerate(text.split("\n"), start=1):
+        if line.endswith("\r"):
+            line = line[:-1]
+        if line.startswith(">"):
+            if header is not None:
+                records.append((header, "".join(lines)))
+            header, lines = line[1:], []
+        elif header is not None:
+            lines.append(line)
+        elif line.strip():
+            raise bad(path, f"{asset}: line {number} holds sequence data before the first '>' header")
+    if header is not None:
+        records.append((header, "".join(lines)))
+    return records
+
+
+# ── Inventory ───────────────────────────────────────────────────────
+
+
+def _locked_bytes(lock: SourceLock, assets: Mapping) -> dict:
+    """The bytes of every locked asset, each exactly the locked digest and size."""
+    for name in assets:
+        if name not in lock.asset_ids:
+            raise bad(ptr("/assets", name), f"{show(name)} is not an asset of this lock (assets "
+                                            f"{list(lock.asset_ids)})", "identity_mismatch")
+    blobs = {}
+    for asset in lock.assets:
+        if asset.asset_id not in assets:
+            raise bad(ptr("/assets", asset.asset_id), f"no bytes supplied for locked asset {asset.asset_id} "
+                                                      f"({asset.sha256}, {asset.bytes} bytes)", "missing_asset")
+        data = assets[asset.asset_id]
+        digest = "sha256:" + hashlib.sha256(data).hexdigest()
+        if (digest, len(data)) != (asset.sha256, asset.bytes):
+            raise bad(ptr("/assets", asset.asset_id), f"{asset.asset_id}: the bytes are {digest} ({len(data)} "
+                                                      f"bytes), not the locked {asset.sha256} ({asset.bytes} "
+                                                      "bytes)", "digest_mismatch")
+        blobs[asset.asset_id] = data
+    return blobs
+
+
+def build_inventory(lock: SourceLock, assets: Mapping[str, bytes]) -> SourceInventory:
+    """The normalized inventory of a verified lock and its bytes (asset id -> bytes).
+
+    The bytes must be exactly the locked assets (``missing_asset``, ``digest_mismatch``,
+    ``identity_mismatch`` for bytes the lock does not hold), and the identity read from
+    the record exports must be the lock's (``identity_mismatch`` at ``/identity``).  The
+    record exports together may hold at most :data:`MAX_SOURCE_RECORDS` records
+    (``resource_limit``).  A malformed envelope or FASTA export is ``malformed`` at
+    ``/assets/<asset>...``; a malformed record never raises.  Data-terms statements are
+    not read.  Claims and mappings are left empty: coordinates are not interpreted here.
+    """
+    require_type(lock, SourceLock, "lock")
+    _require_assets(assets)
+    if lock.adapter.id != ADAPTER_ID:
+        raise bad("/adapter", f"adapter {lock.adapter.id!r} is not the OGRDB adapter {ADAPTER_ID!r}",
+                  "unsupported_profile")
+    blobs = _locked_bytes(lock, assets)
+    envelopes = [_envelope(fmt, blobs[fmt]) for fmt in RECORD_EXPORT_FORMATS if fmt in blobs]
+    identity = _identity(envelopes, lock.set_id, lock.release)
+    if identity != lock.identity:
+        raise bad("/identity", f"the record exports identify as {identity.to_dict()}, but the lock pins "
+                               f"{lock.identity.to_dict()}", "identity_mismatch")
+    total = sum(len(e.germline_set["allele_descriptions"]) for e in envelopes)
+    if total > MAX_SOURCE_RECORDS:
+        raise bad("/assets", f"the record exports hold {total} records together; the limit is "
+                             f"{MAX_SOURCE_RECORDS}", "resource_limit")
+    builder = _Builder(lock, identity)
+    for envelope in envelopes:
+        builder.export(envelope)
+        builder.relationships(envelope.asset)
+        builder.identities(envelope.asset)
+    for asset in lock.assets:
+        if asset.format in _FASTA_FORMATS:
+            builder.fasta(asset.asset_id, blobs[asset.asset_id])
+    builder.unknown_findings()
+    return builder.inventory()
