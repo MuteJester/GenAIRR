@@ -1138,3 +1138,26 @@ def test_the_frameshift_gate_covers_claims_about_the_selected_record_too(monkeyp
     assert (result.reference.alleles[-1].anchor, result.reference.alleles[-1].coding_phase) == (None, None)
     v = result.reference.alleles[0]                     # a phase about the record still meets its anchor
     assert v.coding_phase is not None and v.coding_phase.value == v.anchor.value % 3
+
+
+def test_a_report_construction_error_is_located_under_report_not_in_the_recipe(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    real = ogrdb.comparison
+
+    def naming_an_unknown_finding(lock_, inventory):
+        found = real(lock_, inventory)
+        return m.Comparison(found.complete, found.exports, found.missing, ("finding:" + "0" * 64,))
+
+    monkeypatch.setattr(ogrdb, "comparison", naming_an_unknown_finding)
+    assert error("malformed", build, lock, blobs, mini_recipe(blobs, lock)).path == "/report/comparison/findings/0"
+
+
+def test_one_capability_error_names_every_unmet_requirement(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    requires = (("observed_span_simulation", "assertion"), ("original_coding_ends", "assertion"),
+                ("source_annotated_junction", "source"), ("genotype_constrained", "assertion"))
+    found = error("capability", build, lock, blobs, mini_recipe(blobs, lock, requires=requires))
+    assert found.path == "/requires/1"
+    for part in ("/requires/1", "original_coding_ends", "/requires/3", "genotype_constrained", "not yet supported"):
+        assert part in found.message
+    assert "/requires/2" not in found.message and "/requires/0" not in found.message

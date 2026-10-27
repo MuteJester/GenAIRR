@@ -662,20 +662,26 @@ def _check_runtime(reference: Reference, build: _Build, document: dict) -> None:
 
 def _check_requirements(recipe: Recipe, capabilities) -> None:
     """Each recipe requirement is satisfied by the built reference's capabilities: available at an
-    evidence level at least the required one."""
+    evidence level at least the required one.  One error names every unmet requirement (the report
+    is not returned on failure); its path is the first unmet one."""
+    unmet = []
     for i, requirement in enumerate(recipe.requires):
         if requirement.capability in capabilities.available(evidence=requirement.evidence):
             continue
         status = capabilities.status(requirement.capability)
-        parts = [f"required capability {requirement.capability} at evidence {requirement.evidence} is not "
-                 "available on the built reference"]
+        parts = [f"{ptr('/requires', i)}: required capability {requirement.capability} at evidence "
+                 f"{requirement.evidence} is not available on the built reference"]
         if status.available:
             parts.append(f"it is available only at evidence {status.evidence}")
         if status.unmet:
             parts.append("unmet: " + "; ".join(f"{u.allele}: {u.requirement} ({u.hint})" for u in status.unmet))
         if status.note:
             parts.append(status.note)
-        raise bad(ptr("/requires", i), "; ".join(parts), "capability")
+        unmet.append((i, "; ".join(parts)))
+    if unmet:
+        raise bad(ptr("/requires", unmet[0][0]), f"{len(unmet)} of {len(recipe.requires)} required capabilities "
+                                                 "are not met: " + " | ".join(text for _, text in unmet),
+                  "capability")
 
 
 # ── the entry point ──────────────────────────────────────────────────
@@ -687,9 +693,10 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     ``assets`` maps each locked asset id to its bytes.  Errors are
     :class:`~GenAIRR._reference_sources.errors.ReferenceSourceError`; their paths are
     ``/source_lock/...`` for the lock, ``/assets/<asset id>...`` for the bytes,
-    ``/inventory/...`` for the regenerated inventory and recipe paths (``/selection/<i>``,
+    ``/inventory/...`` for the regenerated inventory, recipe paths (``/selection/<i>``,
     ``/decisions/<i>``, ``/requires/<i>``, ``/defaults_profile``) for everything the recipe
-    decides.  Arguments of the wrong type raise ``TypeError``.
+    decides, and ``/report/...`` for the build report's own re-checks.  Arguments of the wrong type
+    raise ``TypeError``.
     """
     require_type(lock, SourceLock, "lock")
     require_type(recipe, Recipe, "recipe")
@@ -719,7 +726,10 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     document = json.loads(reference.to_json())
     _check_runtime(reference, build, document)
     _check_requirements(recipe, reference.capabilities())
-    report = _report(build, inputs, records, claims, reference, Generator.from_dict(document["generator"]))
+    try:
+        report = _report(build, inputs, records, claims, reference, Generator.from_dict(document["generator"]))
+    except ReferenceSourceError as exc:          # the report's own re-checks, located in the report
+        raise exc.under("/report") from None
     return Projection(build_input_hash, fasta, annotations, reference, report)
 
 
