@@ -720,8 +720,12 @@ def test_more_observations_than_an_inventory_holds_is_a_resource_limit(monkeypat
     found = error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
     assert found.path == "/assets"
     assert found.message == f"{expected} observations exceed the limit of 100"
+    # The boundary: exactly the cap builds; one past it fails with the full count.
     monkeypatch.setattr(ogrdb, "MAX_OBSERVATIONS", expected)
     assert len(build(IGL, blobs)[1].observations) == expected
+    monkeypatch.setattr(ogrdb, "MAX_OBSERVATIONS", expected - 1)
+    found = error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
+    assert found.message == f"{expected} observations exceed the limit of {expected - 1}"
 
 
 def _nested(depth):
