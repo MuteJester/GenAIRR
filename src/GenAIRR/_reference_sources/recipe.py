@@ -19,7 +19,7 @@ from GenAIRR._reference_sources._fields import (
     require_object, check_header,
 )
 from GenAIRR._reference_sources.common import (
-    CHAIN_TYPES, CLAIM_ID_RE, FINDING_ID_RE, LOCUS_CHAIN_TYPES, SEGMENTS, AdapterRef, Locator, ProjectionRef,
+    CLAIM_ID_RE, FINDING_ID_RE, SEGMENTS, AdapterRef, Locator, ProjectionRef,
     SourceIdentity, Taxon, check_defaults_profile, locator_tuple,
 )
 
@@ -54,12 +54,7 @@ class RecipeReference:
     def __post_init__(self):
         check_text(self.name, "/name", max_len=MAX_NAME, multiline=False)
         check_text(self.version, "/version", nullable=True, max_len=MAX_NAME, multiline=False)
-        check_instance(self.taxon, Taxon, "/taxon")
-        check_enum(self.locus, tuple(LOCUS_CHAIN_TYPES), "/locus")
-        check_enum(self.chain_type, CHAIN_TYPES, "/chain_type")
-        if self.chain_type != LOCUS_CHAIN_TYPES[self.locus]:
-            raise bad("/chain_type", f"locus {self.locus} has chain type {LOCUS_CHAIN_TYPES[self.locus]!r}, "
-                                     f"got {self.chain_type!r}")
+        SourceIdentity(self.taxon, self.locus, self.chain_type)   # same taxon/locus/chain rules as a lock
         check_date(self.build_date, "/build_date", nullable=True)
 
     @property

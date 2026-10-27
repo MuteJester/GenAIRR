@@ -159,12 +159,24 @@ def test_lock_asset_digests_and_sizes_come_from_the_pinned_fixtures():
     assert [a.asset_id for a in lock.assets] == ["airr", "airr_ex", "gapped", "gapped_ex"]
 
 
-def test_lock_identity_excludes_receipt_time_paths_and_headers():
+@pytest.mark.parametrize("key,value", [("retrieved_at_utc", "2026-10-22T09:58:15Z"), ("http_status", 200),
+                                       ("final_url", "https://ogrdb.airr-community.org/x"),
+                                       ("content_disposition", "attachment; filename=Homo sapiens_IGH_VDJ_rev_10.json"),
+                                       ("file_name", "airr.json"), ("path", "/home/user/airr.json")])
+def test_lock_assets_cannot_carry_acquisition_or_filesystem_details(key, value):
     d = lock_dict()
-    text = canonical_json(d)
-    for leaked in ("retrieved_at", "content_disposition", "Homo sapiens_IGH_VDJ_rev_10", "http_status",
-                   "final_url", "fixture"):
-        assert leaked not in text
+    d["assets"][0][key] = value
+    with _raises("malformed", "/assets/0") as caught:
+        m.SourceLock.from_dict(_reseal(d))
+    assert key in caught.error.message
+
+
+def test_moving_or_refetching_identical_bytes_keeps_the_lock_identity():
+    first = m.SourceLock.from_dict(lock_dict(origin="local_file"))
+    again = m.SourceLock.seal(provider="ogrdb", set_id=first.set_id, release=first.release, identity=first.identity,
+                              adapter=first.adapter, assets=tuple(m.Asset(**a.__dict__) for a in first.assets),
+                              missing_assets=first.missing_assets, terms=first.terms)
+    assert again.commitment == first.commitment
 
 
 def test_local_import_and_provider_download_have_distinct_lock_identities():
@@ -263,7 +275,7 @@ def test_lock_identity_is_validated(edit, path):
         m.SourceLock.from_dict(_reseal(d))
 
 
-@pytest.mark.parametrize("asset_id", ["", "/airr", "../airr", "air/r", "a\\b", "C:airr", "c:", "a" * 65,
+@pytest.mark.parametrize("asset_id", ["", "/airr", "../airr", "air/r", "a\\b", "C:airr", "c:",
                                       "Airr", "airr ", "air\x00r", 7, None])
 def test_lock_rejects_path_forms_in_asset_names(asset_id):
     d = lock_dict()
@@ -1834,7 +1846,7 @@ def test_manifest_round_trips_and_binds_the_report(report):
 
 @pytest.mark.parametrize("name", ["", "/report.json", "../report.json", "inputs/../report.json", "inputs\\v.fasta",
                                   "C:report.json", "c:/report.json", "inputs//v.fasta", "./report.json",
-                                  "inputs/v.fasta/", "x" * 256, "receipts/2026-10-22T09:58:15Z.json",
+                                  "inputs/v.fasta/", "receipts/2026-10-22T09:58:15Z.json",
                                   "manifest.json", "notes.txt", "cache/blobs/sha256/" + "A" * 64,
                                   "cache/blobs/sha256/abc", "inputs/v.fasta\x00", None])
 def test_manifest_member_names_are_closed_and_relative(report, name):
@@ -2157,9 +2169,12 @@ def test_report_and_inventory_views_are_copies(report, inventory):
     d["inventory"]["records"].clear()
     d["records"].clear()
     assert len(report.to_dict()["records"]) == len(inventory.records)
-    value = inventory.observations[0].value.get()
-    if isinstance(value, str):
-        assert inventory.observations[0].value.get() == value
+    (extension,) = [c for c in inventory.claims if c.predicate == "extension"]
+    copied = extension.value.get()
+    copied["length"] = 99
+    assert extension.value.get()["length"] == 1
+    d["inventory"]["claims"][0]["status"] = "candidate"
+    assert report.to_dict()["inventory"]["claims"][0]["status"] == inventory.claims[0].status
     with pytest.raises(AttributeError):
         report.records = ()
     with pytest.raises(AttributeError):
@@ -2487,3 +2502,55 @@ def test_one_finding_is_resolved_by_one_selection_decision():
     d["decisions"] = [decision(reason="first"), decision(reason="second")]
     with _raises("malformed", "/decisions"):
         m.Recipe.from_dict(d)
+
+
+
+# ── consistency of limits, locations and scale ───────────────────────
+
+
+def test_over_long_names_are_resource_limits(report):
+    d = lock_dict()
+    d["assets"][0]["asset_id"] = "a" * 65
+    with _raises("resource_limit", "/assets/0/asset_id"):
+        m.SourceLock.from_dict(_reseal(d))
+    d = manifest_dict(report)
+    d["members"][0]["name"] = "x" * 256
+    with _raises("resource_limit", "/members/0/name") as caught:
+        m.BuildManifest.from_dict(d)
+    assert "256" in caught.error.message and "255" in caught.error.message
+
+
+def test_seal_locates_a_field_that_is_not_json():
+    lock = m.SourceLock.from_dict(lock_dict())
+    with _raises("malformed", "/release"):
+        m.SourceLock.seal(provider="ogrdb", set_id=lock.set_id, release=object(), identity=lock.identity,
+                          adapter=lock.adapter, assets=lock.assets, missing_assets=lock.missing_assets, terms=lock.terms)
+
+
+def test_selection_checks_scale_linearly():
+    import random
+    import time
+    lock = m.SourceLock.from_dict(lock_dict())
+    rng = random.Random(7)
+    records, candidates, selection = [], [], []
+    for i in range(20_000):
+        loc = L("airr", _pointer(i))
+        label = f"IGHV9-{i}*01"
+        records.append(m.SourceRecord(locator=loc, status="parsed", problem=None, label=label, provider_id=None,
+                                      provider_ref=None, segment="V", taxonomy_id=9606, locus="IGH"))
+        sequence = "".join(rng.choice("ACGT") for _ in range(24))
+        candidates.append(m.SequenceCandidate(locator=L("airr", loc.pointer + "/coding_sequence"), record=loc,
+                                              sequence=sequence, sha256=m.sequence_digest(sequence)))
+        selection.append({"segment": "V", "label": label, "record": loc.to_dict(),
+                          "sequence_sha256": m.sequence_digest(sequence), "reason": "x"})
+    inventory = m.SourceInventory.assemble(source_lock_hash=lock.commitment, adapter=lock.adapter, records=records,
+                                           candidates=candidates, mentioned_identities=[], observations=[],
+                                           support=[], claims=[], mappings=[], findings=[])
+    d = recipe_dict()
+    d["selection"] = selection
+    recipe = m.Recipe.from_dict(d)
+    started = time.perf_counter()
+    m.check_selection(recipe, inventory)
+    m.check_decisions(recipe, inventory)
+    assert len(m.selected_subjects(recipe, inventory)) == 40_000
+    assert time.perf_counter() - started < 2.0

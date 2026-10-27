@@ -15,7 +15,7 @@ import re
 from GenAIRR._reference.artifact import SCHEMA_VERSION as REFERENCE_SCHEMA_VERSION
 from GenAIRR._reference.sidecar import SCHEMA_VERSION as ANNOTATIONS_SCHEMA_VERSION
 from GenAIRR._reference_sources._fields import (
-    bad, check_canonical_order, check_digest, check_instance, check_int, check_member_path, check_tuple,
+    closed, require_type, bad, check_canonical_order, check_digest, check_instance, check_int, check_member_path, check_tuple,
     construct, parse_array, parse_json, ptr, read_json, require_object, check_header,
 )
 from GenAIRR._reference_sources.common import AdapterRef, Generator, ProjectionRef, RuntimeHashes
@@ -58,11 +58,6 @@ def check_member_name(name, path: str) -> str:
     return name
 
 
-def _closed(cls, d, path, **nested):
-    require_object(d, cls.KEYS, path)
-    return construct(cls, path, **{k: (nested[k](d[k], ptr(path, k)) if k in nested else d[k]) for k in cls.KEYS})
-
-
 @dataclass(frozen=True)
 class Member:
     name: str
@@ -89,7 +84,7 @@ class Member:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "Member":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 @dataclass(frozen=True)
@@ -116,7 +111,7 @@ class MemberVersions:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "MemberVersions":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 @dataclass(frozen=True)
@@ -140,7 +135,7 @@ class ManifestHashes:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "ManifestHashes":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 @dataclass(frozen=True)
@@ -206,10 +201,8 @@ def check_manifest(manifest: BuildManifest, lock: SourceLock, report: BuildRepor
     blob size differs.  ``identity_mismatch``: adapter, builder or projection differ, a blob
     is not locked, or the D input does not match the chain type.
     """
-    if not isinstance(manifest, BuildManifest):
-        raise TypeError(f"manifest must be a BuildManifest, got {type(manifest).__name__}")
-    if not isinstance(lock, SourceLock):
-        raise TypeError(f"lock must be a SourceLock, got {type(lock).__name__}")
+    require_type(manifest, BuildManifest, "manifest")
+    require_type(lock, SourceLock, "lock")
     if manifest.hashes.source_lock != lock.commitment:
         raise bad("/hashes/source_lock", f"manifest commits to lock {manifest.hashes.source_lock}, not "
                                          f"{lock.commitment}", "digest_mismatch")
@@ -238,8 +231,7 @@ def check_manifest(manifest: BuildManifest, lock: SourceLock, report: BuildRepor
                               f"{lock.identity.chain_type} source", "identity_mismatch")
     if report is None:
         return
-    if not isinstance(report, BuildReport):
-        raise TypeError(f"report must be a BuildReport, got {type(report).__name__}")
+    require_type(report, BuildReport, "report")
     if report.source_lock != lock:
         raise bad("/hashes/source_lock", "the report was built from a different lock", "identity_mismatch")
     for key in ("source_lock", "inventory", "recipe", "build_inputs"):

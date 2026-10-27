@@ -71,6 +71,18 @@ def construct(cls, path: str, **kwargs):
         raise exc.under(path) from None
 
 
+def closed(cls, d: Any, path: str, **nested):
+    """Generic ``from_dict`` for a flat shape: exactly ``cls.KEYS``; ``nested`` parses listed keys."""
+    require_object(d, cls.KEYS, path)
+    return construct(cls, path, **{k: (nested[k](d[k], ptr(path, k)) if k in nested else d[k]) for k in cls.KEYS})
+
+
+def require_type(value: Any, cls: type, name: str) -> None:
+    """Programming-error guard for function arguments (``TypeError``, not a document error)."""
+    if not isinstance(value, cls):
+        raise TypeError(f"{name} must be a {cls.__name__}, got {type(value).__name__}")
+
+
 # ── Containers ──────────────────────────────────────────────────────
 
 
@@ -293,7 +305,7 @@ def check_member_path(value: Any, path: str, max_len: int) -> str:
     if not value:
         raise bad(path, "name must not be empty")
     if len(value) > max_len:
-        raise bad(path, f"name of {len(value)} characters exceeds the limit of {max_len}")
+        raise bad(path, f"name of {len(value)} characters exceeds the limit of {max_len}", "resource_limit")
     _utf8(value, path)
     if "\\" in value:
         raise bad(path, f"name {show(value)} contains a backslash")

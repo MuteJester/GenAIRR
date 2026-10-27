@@ -18,6 +18,7 @@ from GenAIRR._reference_sources._fields import (
     check_text, check_token, check_tuple, check_url, construct, digest, parse_array, parse_json, ptr,
     read_json, require_object, check_header,
 )
+from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.common import (
     EVIDENCE_FORMATS, FORMAT_ROLES, FORMATS, PROVIDERS, ROLES, AdapterRef, SourceIdentity, check_asset_id,
 )
@@ -246,8 +247,8 @@ class SourceLock:
                       assets=assets, missing_assets=missing_assets, terms=terms)
         try:
             commitment = digest(_body(**fields), DIGEST_DOMAIN)
-        except (AttributeError, TypeError):
-            commitment = _UNSEALED  # a field has the wrong type; construction names it
+        except (AttributeError, TypeError, ReferenceSourceError):
+            commitment = _UNSEALED  # a field is not a valid value; construction names it
         return cls(commitment=commitment, **fields)
 
     # -- views --------------------------------------------------------

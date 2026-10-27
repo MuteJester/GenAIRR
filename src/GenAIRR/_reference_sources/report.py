@@ -20,17 +20,17 @@ from typing import Optional
 
 from GenAIRR._reference.capabilities import CAPABILITIES
 from GenAIRR._reference_sources._fields import (
-    MAX_NAME, MAX_TEXT, bad, check_bool, check_canonical_order, check_digest, check_enum, check_instance,
+    closed, digest, MAX_NAME, MAX_TEXT, bad, check_bool, check_canonical_order, check_digest, check_enum, check_instance,
     check_int, check_text, check_token, check_tuple, construct, parse_array, parse_json, ptr, read_json,
     require_object, check_header,
 )
 from GenAIRR._reference_sources.common import (
-    CLAIM_ID_RE, FINDING_ID_RE, FORMATS, RECORD_EXPORT_FORMATS, SEGMENTS, Generator, Locator, RuntimeHashes,
+    CLAIM_ID_RE, FINDING_ID_RE, FORMATS, RECORD_EXPORT_FORMATS, Generator, Locator, RuntimeHashes,
 )
 from GenAIRR._reference_sources.consistency import (
-    check_decisions, check_inventory, check_recipe, check_selection, selected_subjects,
+    check_decisions, check_inventory, check_profile_scope, check_recipe, check_selection, selected_subjects,
 )
-from GenAIRR._reference_sources.digests import build_input_hash, inventory_hash, lock_hash, recipe_hash
+from GenAIRR._reference_sources.digests import BUILD_INPUTS_DOMAIN, unchecked_build_inputs
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.inventory import (
     MAX_CLAIMS, MAX_FINDINGS, MAX_RECORDS, RUNTIME_PREDICATES, SourceInventory,
@@ -55,13 +55,6 @@ _EVIDENCE_RANK = {"assertion": 1, "source": 2}
 _SEGMENT_KEYS = ("V", "D", "J", "unassigned")
 _KEYS = ("artifact", "schema_version", "generator", "source_lock", "recipe", "inventory", "hashes", "runtime",
          "comparison", "counts", "selection", "records", "claims", "capabilities", "requirements")
-
-
-def _closed(cls, d, path, **nested):
-    """Generic ``from_dict``: closed keys, nested parsers by key, the rest passed through."""
-    require_object(d, cls.KEYS, path)
-    fields = {k: (nested[k](d[k], ptr(path, k)) if k in nested else d[k]) for k in cls.KEYS}
-    return construct(cls, path, **fields)
 
 
 def _under(prefix: str, check, *args) -> None:
@@ -94,7 +87,7 @@ class BuildHashes:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "BuildHashes":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 @dataclass(frozen=True)
@@ -145,7 +138,7 @@ class Comparison:
     def from_dict(cls, d, path: str = "") -> "Comparison":
         def strings(value, where):
             return parse_array(value, where, MAX_FINDINGS, lambda v, p: v)
-        return _closed(cls, d, path, exports=strings, missing=strings, findings=strings)
+        return closed(cls, d, path, exports=strings, missing=strings, findings=strings)
 
 
 @dataclass(frozen=True)
@@ -166,7 +159,7 @@ class SegmentCounts:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "SegmentCounts":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 @dataclass(frozen=True)
@@ -191,7 +184,7 @@ class ExportCounts:
     @classmethod
     def from_dict(cls, d, path: str = "") -> "ExportCounts":
         parse = SegmentCounts.from_dict
-        return _closed(cls, d, path, record_occurrences=parse, sequence_candidates=parse,
+        return closed(cls, d, path, record_occurrences=parse, sequence_candidates=parse,
                        mentioned_identities=parse)
 
 
@@ -212,7 +205,7 @@ class OutcomeCounts:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "OutcomeCounts":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 @dataclass(frozen=True)
@@ -236,7 +229,7 @@ class Counts:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "Counts":
-        return _closed(cls, d, path,
+        return closed(cls, d, path,
                        exports=lambda v, p: parse_array(v, p, len(RECORD_EXPORT_FORMATS), ExportCounts.from_dict),
                        selected_alleles=SegmentCounts.from_dict, record_outcomes=OutcomeCounts.from_dict)
 
@@ -259,7 +252,7 @@ class SelectedAllele:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "SelectedAllele":
-        return _closed(cls, d, path, candidate=Locator.from_dict)
+        return closed(cls, d, path, candidate=Locator.from_dict)
 
 
 @dataclass(frozen=True)
@@ -303,7 +296,7 @@ class RecordOutcome:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "RecordOutcome":
-        return _closed(cls, d, path, record=Locator.from_dict,
+        return closed(cls, d, path, record=Locator.from_dict,
                        related=lambda v, p: None if v is None else Locator.from_dict(v, p))
 
 
@@ -329,7 +322,7 @@ class ClaimOutcome:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "ClaimOutcome":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 @dataclass(frozen=True)
@@ -352,7 +345,7 @@ class UnmetRequirement:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "UnmetRequirement":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 @dataclass(frozen=True)
@@ -384,7 +377,7 @@ class CapabilityStatus:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "CapabilityStatus":
-        return _closed(cls, d, path, unmet=lambda v, p: parse_array(v, p, MAX_UNMET, UnmetRequirement.from_dict))
+        return closed(cls, d, path, unmet=lambda v, p: parse_array(v, p, MAX_UNMET, UnmetRequirement.from_dict))
 
 
 @dataclass(frozen=True)
@@ -410,7 +403,7 @@ class RuntimeCapabilities:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "RuntimeCapabilities":
-        return _closed(cls, d, path,
+        return closed(cls, d, path,
                        statuses=lambda v, p: parse_array(v, p, len(CAPABILITIES), CapabilityStatus.from_dict))
 
 
@@ -434,7 +427,7 @@ class RequirementOutcome:
 
     @classmethod
     def from_dict(cls, d, path: str = "") -> "RequirementOutcome":
-        return _closed(cls, d, path)
+        return closed(cls, d, path)
 
 
 # ── The report ──────────────────────────────────────────────────────
@@ -466,12 +459,14 @@ class BuildReport:
         check_tuple(self.claims, "/claims", MAX_CLAIMS, ClaimOutcome)
         check_tuple(self.requirements, "/requirements", MAX_REQUIRES, RequirementOutcome)
         lock, recipe, inventory = self.source_lock, self.recipe, self.inventory
+        _under("/source_lock", check_profile_scope, lock)
         _under("/recipe", check_recipe, recipe, lock)
         _under("/inventory", check_inventory, inventory, lock)
         _under("/recipe", check_selection, recipe, inventory)
         _under("/recipe", check_decisions, recipe, inventory)
-        expected = {"source_lock": lock_hash(lock), "inventory": inventory_hash(inventory),
-                    "recipe": recipe_hash(recipe), "build_inputs": build_input_hash(lock, inventory, recipe)}
+        inputs = unchecked_build_inputs(lock, inventory, recipe)
+        expected = {"source_lock": inputs["source_lock"], "inventory": inputs["inventory"],
+                    "recipe": inputs["recipe"], "build_inputs": digest(inputs, BUILD_INPUTS_DOMAIN)}
         for key, value in expected.items():
             if getattr(self.hashes, key) != value:
                 raise bad(ptr("/hashes", key), f"stored {getattr(self.hashes, key)} differs from the recomputed "

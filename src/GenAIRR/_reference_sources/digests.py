@@ -15,7 +15,7 @@ the build-input hash, never the report or manifest hash.
 """
 from __future__ import annotations
 
-from GenAIRR._reference_sources._fields import digest
+from GenAIRR._reference_sources._fields import digest, require_type
 from GenAIRR._reference_sources.consistency import check_build_inputs
 from GenAIRR._reference_sources.inventory import SourceInventory
 from GenAIRR._reference_sources.lock import DIGEST_DOMAIN as LOCK_DOMAIN, SourceLock
@@ -37,26 +37,21 @@ DOMAINS = (
 )
 
 
-def _require(value, cls, name):
-    if not isinstance(value, cls):
-        raise TypeError(f"{name} must be a {cls.__name__}, got {type(value).__name__}")
-
-
 def lock_hash(lock: SourceLock) -> str:
     """``genairr_reference_source_lock_v1`` over every lock field but the commitment (= the commitment)."""
-    _require(lock, SourceLock, "lock")
+    require_type(lock, SourceLock, "lock")
     return digest(lock.body(), LOCK_DOMAIN)
 
 
 def recipe_hash(recipe: Recipe) -> str:
     """``genairr_reference_source_recipe_v1`` over the complete recipe (which holds the lock hash)."""
-    _require(recipe, Recipe, "recipe")
+    require_type(recipe, Recipe, "recipe")
     return digest(recipe.to_dict(), RECIPE_DOMAIN)
 
 
 def inventory_hash(inventory: SourceInventory) -> str:
     """``genairr_reference_source_inventory_v1`` over the complete inventory (which holds the lock hash)."""
-    _require(inventory, SourceInventory, "inventory")
+    require_type(inventory, SourceInventory, "inventory")
     return digest(inventory.to_dict(), INVENTORY_DOMAIN)
 
 
@@ -65,10 +60,15 @@ def build_inputs(lock: SourceLock, inventory: SourceInventory, recipe: Recipe) -
 
     Runs every cross-document check first, so inconsistent inputs never get an identity.
     """
-    _require(lock, SourceLock, "lock")
-    _require(inventory, SourceInventory, "inventory")
-    _require(recipe, Recipe, "recipe")
+    require_type(lock, SourceLock, "lock")
+    require_type(inventory, SourceInventory, "inventory")
+    require_type(recipe, Recipe, "recipe")
     check_build_inputs(lock, inventory, recipe)
+    return unchecked_build_inputs(lock, inventory, recipe)
+
+
+def unchecked_build_inputs(lock: SourceLock, inventory: SourceInventory, recipe: Recipe) -> dict:
+    """The build-input record without re-running the cross-document checks (callers ran them)."""
     return {"source_lock": lock_hash(lock), "inventory": inventory_hash(inventory), "recipe": recipe_hash(recipe),
             "adapter": recipe.adapter.to_dict(), "projection": recipe.projection.to_dict()}
 
@@ -85,12 +85,12 @@ def build_input_hash(lock: SourceLock, inventory: SourceInventory, recipe: Recip
 def report_hash(report) -> str:
     """``genairr_reference_source_build_report_v1`` over the complete report (never stored in it)."""
     from GenAIRR._reference_sources.report import BuildReport
-    _require(report, BuildReport, "report")
+    require_type(report, BuildReport, "report")
     return digest(report.to_dict(), REPORT_DOMAIN)
 
 
 def manifest_hash(manifest) -> str:
     """``genairr_reference_source_build_manifest_v1`` over the complete manifest (never stored in it)."""
     from GenAIRR._reference_sources.manifest import BuildManifest
-    _require(manifest, BuildManifest, "manifest")
+    require_type(manifest, BuildManifest, "manifest")
     return digest(manifest.to_dict(), MANIFEST_DOMAIN)

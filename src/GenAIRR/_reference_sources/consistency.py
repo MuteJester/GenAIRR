@@ -6,16 +6,11 @@ Paths locate the offending field inside the first document argument.
 """
 from __future__ import annotations
 
-from GenAIRR._reference_sources._fields import bad, ptr
+from GenAIRR._reference_sources._fields import bad, ptr, require_type
 from GenAIRR._reference_sources.common import PROFILE_SCOPES
 from GenAIRR._reference_sources.inventory import COORDINATE_PREDICATES, RUNTIME_PREDICATES, SourceInventory
 from GenAIRR._reference_sources.lock import SourceLock
 from GenAIRR._reference_sources.recipe import Recipe
-
-
-def _require(value, cls, name):
-    if not isinstance(value, cls):
-        raise TypeError(f"{name} must be a {cls.__name__}, got {type(value).__name__}")
 
 
 def profile_scope_problem(lock: SourceLock):
@@ -37,7 +32,7 @@ def profile_scope_problem(lock: SourceLock):
 
 def check_profile_scope(lock: SourceLock) -> None:
     """``unsupported_profile`` unless the lock lies inside its profile's validated scope."""
-    _require(lock, SourceLock, "lock")
+    require_type(lock, SourceLock, "lock")
     problem = profile_scope_problem(lock)
     if problem:
         raise bad("", problem, "unsupported_profile")
@@ -51,8 +46,8 @@ def check_recipe(recipe: Recipe, lock: SourceLock) -> None:
     selected record / decision evidence names an asset the lock does not hold (selected
     records must come from a record export).
     """
-    _require(recipe, Recipe, "recipe")
-    _require(lock, SourceLock, "lock")
+    require_type(recipe, Recipe, "recipe")
+    require_type(lock, SourceLock, "lock")
     if recipe.source_lock_hash != lock.commitment:
         raise bad("/source_lock_hash", f"recipe builds from lock {recipe.source_lock_hash}, but this lock is "
                                        f"{lock.commitment} ({lock.set_id} release {lock.release})", "digest_mismatch")
@@ -92,8 +87,8 @@ def check_inventory(inventory: SourceInventory, lock: SourceLock) -> None:
     ``digest_mismatch``: ``source_lock_hash`` is not this lock's commitment.
     ``identity_mismatch``: a different adapter, or a locator into an asset the lock lacks.
     """
-    _require(inventory, SourceInventory, "inventory")
-    _require(lock, SourceLock, "lock")
+    require_type(inventory, SourceInventory, "inventory")
+    require_type(lock, SourceLock, "lock")
     if inventory.source_lock_hash != lock.commitment:
         raise bad("/source_lock_hash", f"inventory was generated from lock {inventory.source_lock_hash}, but this "
                                        f"lock is {lock.commitment}", "digest_mismatch")
@@ -120,8 +115,8 @@ def check_selection(recipe: Recipe, inventory: SourceInventory) -> None:
     ``identity_mismatch``: the record's segment, label, taxon or locus differ from the
     entry or the recipe's reference (names are never changed).
     """
-    _require(recipe, Recipe, "recipe")
-    _require(inventory, SourceInventory, "inventory")
+    require_type(recipe, Recipe, "recipe")
+    require_type(inventory, SourceInventory, "inventory")
     if recipe.source_lock_hash != inventory.source_lock_hash:
         raise bad("/source_lock_hash", f"recipe builds from lock {recipe.source_lock_hash}, but the inventory is of "
                                        f"lock {inventory.source_lock_hash}", "digest_mismatch")
@@ -183,8 +178,8 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
     * ``stale_decision``: a ``select_alternative`` whose digest is not a selected candidate
       among its findings' subjects.
     """
-    _require(recipe, Recipe, "recipe")
-    _require(inventory, SourceInventory, "inventory")
+    require_type(recipe, Recipe, "recipe")
+    require_type(inventory, SourceInventory, "inventory")
     entries = {e.record.id: e for e in recipe.selection}
     chosen = _selected_candidates(recipe, inventory)
     selected = set(entries) | {c.id for c in chosen.values()}

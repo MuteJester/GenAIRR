@@ -27,7 +27,7 @@ import re
 from typing import Any, Optional
 
 from GenAIRR._reference.capabilities import CAPABILITIES
-from GenAIRR._reference.model import PREDICATES as RUNTIME_PREDICATES, SUBREGION_LABELS, sequence_digest
+from GenAIRR._reference.model import PREDICATES as _RUNTIME_MODEL_PREDICATES, SUBREGION_LABELS, sequence_digest
 from GenAIRR._reference_sources._fields import (
     MAX_SOURCE_RECORDS, MAX_NAME, MAX_REFS, MAX_SEQUENCE, MAX_TAXONOMY_ID, MAX_TEXT, JsonValue, bad, check_bool,
     check_canonical_order, check_digest, check_enum, check_instance, check_int, check_label, check_text,
@@ -63,6 +63,8 @@ RELATIONSHIPS = ("alias", "paralog")
 SUPPORT_KINDS = ("unrearranged", "rearranged")
 SUPPORT_STATUSES = ("embedded_unretrieved",)
 
+# Predicates a runtime reference catalogue can hold.
+RUNTIME_PREDICATES = tuple(_RUNTIME_MODEL_PREDICATES)
 PREDICATES = ("anchor", "coding_phase", "phase_independence", "boundary_5", "boundary_3", "functionality",
               "v_subregions", "coding_interval", "extension")
 CLAIM_SUPPORTS = ("source", "assertion", "none")
@@ -424,19 +426,14 @@ class SupportReference:
 
 
 def _check_interval(value, path: str) -> tuple:
-    if not isinstance(value, tuple) or len(value) != 2:
-        raise bad(path, "expected a (start, end) pair")
+    """A non-empty half-open interval ``[start, end)``: a 2-item list (JSON) or tuple of exact ints."""
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise bad(path, "expected [start, end]")
     start = check_int(value[0], path, minimum=0, maximum=_MAX_COORDINATE)
     end = check_int(value[1], path, minimum=0, maximum=_MAX_COORDINATE)
     if start >= end:
         raise bad(path, f"interval [{start}, {end}) is empty or reversed")
-    return value
-
-
-def _interval_from_json(value, path: str) -> tuple:
-    if not isinstance(value, list) or len(value) != 2:
-        raise bad(path, "expected [start, end]")
-    return tuple(value)
+    return start, end
 
 
 @dataclass(frozen=True)
@@ -449,6 +446,9 @@ class Block:
     KEYS = ("input", "output")
 
     def __post_init__(self):
+        for name in ("input", "output"):
+            if not isinstance(getattr(self, name), tuple):
+                raise bad("/" + name, "expected a (start, end) tuple")
         a = _check_interval(self.input, "/input")
         b = _check_interval(self.output, "/output")
         if a[1] - a[0] != b[1] - b[0]:
@@ -460,8 +460,10 @@ class Block:
     @classmethod
     def from_dict(cls, d, path: str = "") -> "Block":
         require_object(d, cls.KEYS, path)
-        return construct(cls, path, input=_interval_from_json(d["input"], ptr(path, "input")),
-                         output=_interval_from_json(d["output"], ptr(path, "output")))
+        def interval(value, where):
+            return tuple(_check_interval(value, where))
+        return construct(cls, path, input=interval(d["input"], ptr(path, "input")),
+                         output=interval(d["output"], ptr(path, "output")))
 
 
 @dataclass(frozen=True)
@@ -563,16 +565,6 @@ class Mapping:
 # ── Claims ──────────────────────────────────────────────────────────
 
 
-def _check_span(value, path: str) -> tuple:
-    if not isinstance(value, list) or len(value) != 2:
-        raise bad(path, "expected [start, end]")
-    start = check_int(value[0], path, minimum=0, maximum=_MAX_COORDINATE)
-    end = check_int(value[1], path, minimum=0, maximum=_MAX_COORDINATE)
-    if start >= end:
-        raise bad(path, f"span [{start}, {end}) is empty or reversed")
-    return start, end
-
-
 def check_claim_value(predicate: str, value: Any, path: str) -> None:
     """Validate a resolved claim value for a build-model predicate."""
     if predicate == "anchor":
@@ -592,14 +584,14 @@ def check_claim_value(predicate: str, value: Any, path: str) -> None:
         for label, span in value.items():
             if label not in SUBREGION_LABELS:
                 raise bad(path, f"unknown subregion {show(label)}; expected {list(SUBREGION_LABELS)}")
-            start, end = _check_span(span, ptr(path, label))
+            start, end = _check_interval(span, ptr(path, label))
             spans.append((start, end, label))
         spans.sort()
         for (_, end, first), (start, _, second) in zip(spans, spans[1:]):
             if start < end:
                 raise bad(path, f"subregions {first} and {second} overlap")
     elif predicate == "coding_interval":
-        _check_span(value, path)
+        _check_interval(value, path)
     elif predicate == "extension":
         require_object(value, ("side", "length", "matches_record_context"), path)
         check_enum(value["side"], EXTENSION_SIDES, ptr(path, "side"))
@@ -829,9 +821,12 @@ class SourceInventory:
         for record in self.records:
             if record.status == "parsed":
                 identities.setdefault((record.segment, record.label), []).append(record)
+        by_record: dict = {}
+        for candidate in self.candidates:
+            by_record.setdefault(candidate.record.id, []).append(candidate)
         index = {"records": records, "candidates": candidates, "observations": observations, "mappings": mappings,
                  "claims": {c.id: c for c in self.claims}, "findings": {f.id: f for f in self.findings},
-                 "identities": identities}
+                 "identities": identities, "by_record": {k: tuple(v) for k, v in by_record.items()}}
         object.__setattr__(self, "_index", index)
         self._check_items(records, candidates, observations)
         self._check_mappings(candidates, observations)
@@ -1086,7 +1081,7 @@ class SourceInventory:
         return self._index["mappings"][mapping_id]
 
     def candidates_of(self, record: Locator) -> tuple:
-        return tuple(c for c in self.candidates if c.record == record)
+        return self._index["by_record"].get(record.id, ())
 
     def export_counts(self, asset_id: str) -> dict:
         """Record occurrences, sequence candidates and mentioned-only identities of one
