@@ -598,6 +598,22 @@ def test_an_error_closing_a_failed_response_never_hides_the_failure(tmp_path, re
     assert text in error.message
 
 
+def test_a_failure_after_the_body_is_staged_leaves_no_temporary_file(tmp_path):
+    calls = []
+
+    def now():
+        calls.append(None)
+        if len(calls) > 1:     # valid when checked up front, failing once the body is staged
+            raise RuntimeError("clock failure")
+        return T0
+
+    with pytest.raises(RuntimeError, match="clock failure"):
+        fetch(tmp_path, FakeTransport(serve(formats=("airr",))), formats=("airr",), now=now)
+    assert len(calls) == 2
+    assert _snapshot(tmp_path / "cache" / "blobs" / "sha256") == {}
+    assert _temporaries(tmp_path) == []
+
+
 def test_an_encoded_body_is_refused_because_raw_bytes_are_locked(tmp_path):
     routes = {_url(IGH, "airr"): ok(_fixture(IGH, "airr"), headers={"Content-Encoding": "gzip"})}
     error = _error("network", fetch, tmp_path, FakeTransport(routes), formats=("airr",))
@@ -1106,6 +1122,21 @@ def test_local_ingestion_has_the_same_aggregate_budget(tmp_path, monkeypatch, no
 
 
 # ── offline reads ────────────────────────────────────────────────────
+
+
+NAIVE = datetime.datetime(2026, 10, 27, 9, 30)
+
+
+@pytest.mark.parametrize("now", [lambda: NAIVE, lambda: "2026-10-27T09:30:00Z", "not callable"],
+                         ids=["naive", "text", "not-callable"])
+def test_now_is_validated_before_any_io(tmp_path, now):
+    with pytest.raises(TypeError):
+        fetch(tmp_path, FailingTransport(), now=now)
+    with pytest.raises(TypeError):
+        ingest(tmp_path, {"airr": tmp_path / "absent.json"}, now=now)
+    with pytest.raises(TypeError):
+        read_locked(tmp_path / "absent.lock.json", cache=tmp_path / "cache", now=now)
+    assert not (tmp_path / "cache").exists()
 
 
 def test_offline_operations_take_no_transport():

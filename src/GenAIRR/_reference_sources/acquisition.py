@@ -416,6 +416,13 @@ def _timestamp(now: Optional[Callable[[], datetime.datetime]]) -> str:
     return moment.astimezone(datetime.timezone.utc).isoformat(timespec="microseconds")
 
 
+def _check_now(now) -> None:
+    """``now`` is ``None`` or a callable returning a timezone-aware datetime; checked before any I/O."""
+    if now is not None:
+        _require_callable(now, "now")
+        _timestamp(now)
+
+
 def _offline_receipt(origin: str, fmt: str, sha256: str, size: int, now) -> AcquisitionReceipt:
     return AcquisitionReceipt(event_time_utc=_timestamp(now), origin=origin, format=fmt, sha256=sha256,
                               bytes=size, requested_url=None, final_url=None, redirects=(), http_status=None,
@@ -769,11 +776,15 @@ def fetch_source(*, set_id, release, profile, cache, transport: Transport, ident
     asset is downloaded again even if cached, and the bytes and identity must equal the
     pins.  Changed bytes are reported as drift (``digest_mismatch``) and are not stored.
     Pinned assets that were not requested are read from the verified cache.
+
+    ``now`` (default: the current time) gives receipt times and must return a
+    timezone-aware datetime; like every argument, it is checked before any I/O.
     """
     _require_callable(identify, "identify")
     if not callable(getattr(transport, "get", None)):
         raise TypeError(f"transport must provide get(url, *, timeout, deadline), got {type(transport).__name__}")
     _require_callable(clock, "clock")
+    _check_now(now)
     if expected_lock is not None and not isinstance(expected_lock, SourceLock):
         raise TypeError(f"expected_lock must be a SourceLock, got {type(expected_lock).__name__}")
     set_id = _check_set_id(set_id, "/set_id")
@@ -865,6 +876,7 @@ def ingest_files(*, set_id, release, profile, files, cache, identify, terms: Opt
     depends on the bytes only, never on paths or file names.
     """
     _require_callable(identify, "identify")
+    _check_now(now)
     set_id = _check_set_id(set_id, "/set_id")
     release = _check_release(release, "/release")
     adapter = _profile(profile, "/profile")
@@ -910,6 +922,7 @@ def read_locked(lock, *, cache, identify=None,
     the lock's.  Receipts have origin ``verified_cache``: a cached read is not a fresh
     acquisition.
     """
+    _check_now(now)
     if isinstance(lock, (str, os.PathLike)) and not isinstance(lock, bool):
         lock = SourceLock.read(lock)
     elif not isinstance(lock, SourceLock):
