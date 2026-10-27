@@ -533,3 +533,160 @@ def test_an_out_of_scope_release_is_inspected_and_reported_as_such(tmp_path):
     text = str(inspection)
     assert "outside the validated scope" in text and "no coordinate claim is accepted" in text.lower()
     error("unsupported_profile", source.build, full_recipe(tmp_path, source))
+
+
+# ── the readable build report ────────────────────────────────────────
+
+SELECTION = json.loads((DATA / "human_igh_release10_candidate_selection.json").read_bytes().decode("utf-8"))
+LOSS_CODES = ("v_subregions", "gapped_sequences", "affirmed_spans", "genomic_context")
+SECTIONS = ("Source", "Hashes", "Endpoint comparison", "Counts", "Selection", "Source records", "Claims",
+            "Findings", "Runtime capabilities", "Required capabilities", "Not in the runtime reference")
+
+
+@pytest.fixture(scope="module")
+def igh_starter(tmp_path_factory):
+    """The IGH release 10 starter: the selection fixture as a recipe over the pinned exports."""
+    from tests.test_reference_source_projection import interpreted, starter_recipe
+    root = tmp_path_factory.mktemp("igh")
+    source = from_files(root, IGH)
+    blobs = {fmt: fixture_bytes(IGH, fmt) for fmt in ALL}
+    build = source.build(starter_recipe(source.lock, interpreted(blobs, source.lock)))
+    return build, str(build.report)
+
+
+def section(text: str, title: str) -> str:
+    """The lines of one titled section (up to the next section title)."""
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(title))
+    end = next((i for i in range(start + 1, len(lines)) if any(lines[i].startswith(t) for t in SECTIONS)), len(lines))
+    return "\n".join(lines[start:end])
+
+
+def test_the_report_text_has_its_sections_in_order(igh_starter):
+    _, text = igh_starter
+    lines = text.splitlines()
+    starts = [next(i for i, line in enumerate(lines) if line.startswith(title)) for title in SECTIONS]
+    assert starts == sorted(starts)
+
+
+def test_the_report_text_names_the_source_versions_hashes_and_generator(igh_starter):
+    build, text = igh_starter
+    head = section(text, "Source")
+    assert "OGRDB 9606.IGH_VDJ release 10" in head and "Homo sapiens" in head and "IGH" in head
+    assert f"GenAIRR {GenAIRR.__version__}" in text
+    for fragment in ("ogrdb_germline_set v1", f"{PROFILE} v1", "observed_span v1", "genairr.unfitted_defaults.v1"):
+        assert fragment in head
+    for fmt in ALL:
+        pinned = pinned_asset(IGH, fmt)
+        assert f"sha256:{pinned['sha256']}" in head and str(pinned["bytes"]) in head
+    hashes = section(text, "Hashes")
+    report = build.report
+    for value in (*report.hashes.to_dict().values(), *report.runtime.to_dict().values()):
+        assert value in hashes
+    assert "Reference.report()" in text and "runtime catalogue" in text
+    assert "functional allele" not in text.lower()
+
+
+def test_the_report_text_accounts_for_every_source_record(igh_starter):
+    build, text = igh_starter
+    expected = EXPECT["sets"]["9606.IGH_VDJ/10"]
+    total = expected["airr"]["records"] + expected["airr_ex"]["records"]
+    selected = sum(len(labels) for labels in SELECTION["selected"].values())
+    records = section(text, "Source records")
+    assert f"Source records: {total} (selected {selected}, excluded {total - selected}, rejected 0)" in records
+    for fmt in ("airr", "airr_ex"):
+        for index in range(expected[fmt]["records"]):
+            locator = f"{fmt}#/GermlineSet/0/allele_descriptions/{index}"
+            assert f"{locator} " in text or f"{locator}/" in text or text.endswith(locator), locator
+    for outcome in build.report.records:
+        if outcome.exclusion:
+            assert outcome.exclusion in records
+        if outcome.detail:
+            assert outcome.detail in records, outcome.record.id
+
+
+def test_the_report_text_lists_the_ordered_selection(igh_starter):
+    _, text = igh_starter
+    lines = [line.split()[1] for line in section(text, "Selection").splitlines()[1:]]
+    assert lines == [f"{segment}:{label}" for segment in ("V", "D", "J") for label in SELECTION["selected"][segment]]
+
+
+def test_the_report_text_gives_every_withheld_and_unrepresentable_claim_its_reason(igh_starter):
+    build, text = igh_starter
+    claims = section(text, "Claims")
+    groups = {}
+    for outcome in build.report.claims:
+        if outcome.outcome in ("withheld", "not_representable"):
+            groups.setdefault((outcome.outcome, outcome.reason), []).append(outcome)
+            assert outcome.reason in claims
+    assert "cannot classify" in claims                      # the provider's functional value
+    numbers = {f"({len(items)})" for items in groups.values()}
+    assert all(number in claims for number in numbers)
+
+
+def test_the_report_text_shows_capabilities_with_blockers_and_hints(igh_starter):
+    build, text = igh_starter
+    capabilities = section(text, "Runtime capabilities")
+    selected = {segment: len(labels) for segment, labels in SELECTION["selected"].items()}
+    for status in build.report.capabilities.statuses:
+        assert status.name in capabilities
+        for unmet in status.unmet:
+            assert unmet.hint in capabilities and unmet.requirement in capabilities
+    blockers = selected["V"] + selected["J"] + 2 * selected["D"]          # V 3', J 5', both D ends
+    assert f"original_coding_ends: unavailable; {blockers} blockers" in capabilities
+    assert "phase support anchor_derived" in capabilities
+    required = section(text, "Required capabilities")
+    for capability in ("observed_span_simulation", "source_annotated_junction", "canonical_productive"):
+        assert f"{capability} at evidence" in required
+    assert required.count("satisfied") == 3 and "not satisfied" not in required
+
+
+def test_the_report_text_names_every_projection_loss(igh_starter):
+    from GenAIRR._reference_sources.projection import PROJECTION_LOSSES
+    _, text = igh_starter
+    losses = section(text, "Not in the runtime reference")
+    assert [code for code, _ in PROJECTION_LOSSES] == list(LOSS_CODES)
+    for code in LOSS_CODES:
+        assert f"{code}:" in losses
+    assert "n_v_unannotated_mutations" in " ".join(losses.split())
+
+
+def test_the_report_text_is_deterministic_and_depends_only_on_the_report(igh_starter):
+    from GenAIRR._reference_sources.report import BuildReport
+    build, text = igh_starter
+    again = BuildReport.from_json(json.dumps(build.report.to_dict()))
+    assert str(again) == text
+    assert all(line == line.rstrip() for line in text.splitlines())
+
+
+def grouped(text: str) -> list:
+    """``(declared count, listed items)`` for every group header (four-space indent, ``(n)``) or
+    ``n records`` line followed by a wrapped list (six-space indent)."""
+    import re
+    groups, lines = [], text.splitlines()
+    for i, line in enumerate(lines):
+        if not line.startswith("    ") or line.startswith("      "):
+            continue
+        found = re.search(r"\] \((\d+)\)|^    (\d+) records|\((\d+)\); would be resolved", line)
+        if not found:
+            continue
+        items = []
+        for follow in lines[i + 1:]:
+            if not follow.startswith("      "):
+                break
+            items += [item for item in follow.strip().rstrip(",").split(", ") if item]
+        groups.append((int(next(g for g in found.groups() if g)), items))
+    return groups
+
+
+def test_grouped_lists_name_every_claim_record_and_blocker(igh_starter):
+    build, text = igh_starter
+    report = build.report
+    for title in ("Source records", "Claims", "Runtime capabilities"):
+        groups = grouped(section(text, title))
+        assert groups and all(declared == len(items) for declared, items in groups), title
+    claims = grouped(section(text, "Claims"))
+    named = sum(declared for declared, _ in claims)
+    assert named == sum(o.outcome != "not_selected" for o in report.claims)
+    blockers = grouped(section(text, "Runtime capabilities"))
+    assert sum(declared for declared, _ in blockers) == sum(len(s.unmet) for s in report.capabilities.statuses)
