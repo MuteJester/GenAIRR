@@ -18,7 +18,6 @@ import datetime
 import hashlib
 import http.client
 import json
-import os
 import pathlib
 import shutil
 import socket

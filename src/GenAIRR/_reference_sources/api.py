@@ -13,7 +13,6 @@ from dataclasses import dataclass
 import json
 import os
 from types import MappingProxyType
-from typing import Optional
 
 from GenAIRR._artifact_io import ArtifactIOError, canonical_json, write_atomic
 from GenAIRR._reference_sources import evidence, ogrdb

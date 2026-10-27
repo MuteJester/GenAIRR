@@ -161,7 +161,8 @@ def test_a_failed_write_leaves_an_incomplete_dossier_and_removes_nothing(igl, tm
 # ── checking: round trip and incomplete or unsafe dossiers ───────────
 
 
-def test_a_written_dossier_reads_back_as_the_stored_build(igl, tmp_path, offline):
+@pytest.mark.usefixtures("offline")
+def test_a_written_dossier_reads_back_as_the_stored_build(igl, tmp_path):
     _, build = igl
     build.write_dossier(tmp_path / "dossier")
     before = tree(tmp_path / "dossier")
@@ -566,7 +567,8 @@ def test_builds_with_different_receipts_have_identical_identities(tmp_path, monk
 # ── offline rebuilding and generator changes ─────────────────────────
 
 
-def test_a_clean_cache_build_and_a_moved_offline_dossier_agree(tmp_path, offline):
+@pytest.mark.usefixtures("offline")
+def test_a_clean_cache_build_and_a_moved_offline_dossier_agree(tmp_path):
     """The public offline-rebuild composition: read the dossier, then rebuild from its own lock,
     cache and recipe after moving it; the deterministic files are byte-identical."""
     from GenAIRR.reference_sources import OgrdbSource

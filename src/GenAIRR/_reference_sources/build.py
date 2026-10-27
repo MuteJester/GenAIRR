@@ -115,7 +115,7 @@ def _scan(root: Path) -> dict:
                                       f"members and {MAX_RECEIPTS} receipts", "resource_limit")
                     entries.append(item)
         except OSError as exc:
-            raise bad("/" + folder, f"cannot list {location}: {exc}", "io") from exc
+            raise bad("/" + folder if folder else "", f"cannot list {location}: {exc}", "io") from exc
         for item in sorted(entries, key=lambda e: e.name):
             name = f"{folder}/{item.name}" if folder else item.name
             if _is_link(item):
@@ -207,15 +207,15 @@ def _compared(name: str, stored: dict, expected: dict, what: str) -> None:
 
 def _regeneration_failed(exc: ReferenceSourceError, lock: SourceLock) -> ReferenceSourceError:
     """A projection error located in the dossier member it concerns."""
-    path, top = exc.path, exc.path.split("/")[1] if exc.path.startswith("/") else ""
+    path = exc.path
+    tokens = path.split("/") if path.startswith("/") else ["", ""]
     blobs = {a.asset_id: BLOB_PREFIX + a.blob_name for a in lock.assets}
-    if top == "source_lock":
+    if tokens[1] == "source_lock":                        # /source_lock/... -> the lock member
         path = "/" + LOCK_MEMBER + path[len("/source_lock"):]
-    elif top == "assets" and path.split("/")[2:3] and path.split("/")[2] in blobs:
-        rest = path.split("/", 3)[3] if path.count("/") >= 3 else ""
-        path = "/" + blobs[path.split("/")[2]] + ("/" + rest if rest else "")
-    elif top in ("artifact", "schema_version", "source_lock_hash", "adapter", "projection", "reference",
-                 "selection", "decisions", "requires", "defaults_profile"):
+    elif tokens[1] == "assets" and len(tokens) > 2 and tokens[2] in blobs:     # /assets/<id>... -> its blob
+        path = "/" + blobs[tokens[2]] + path[len("/assets/" + tokens[2]):]
+    elif tokens[1] in ("artifact", "schema_version", "source_lock_hash", "adapter", "projection", "reference",
+                       "selection", "decisions", "requires", "defaults_profile"):
         path = "/" + RECIPE_MEMBER + path
     return ReferenceSourceError(exc.kind, path, "the dossier's lock, blobs and recipe do not regenerate a build "
                                                 f"under this GenAIRR: {exc.message}")
