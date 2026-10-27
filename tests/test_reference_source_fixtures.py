@@ -24,7 +24,7 @@ EVIDENCE = json.loads((ROOT / "interpretation_evidence.json").read_bytes())
 EXPECT = json.loads((ROOT / "expectations.json").read_bytes())
 SELECTION = json.loads((ROOT / "human_igh_release10_candidate_selection.json").read_bytes())
 GENERATED_TEXT = ("sources.json", "interpretation_evidence.json", "expectations.json",
-                  "human_igh_release10_candidate_selection.json")
+                  "human_igh_release10_candidate_selection.json", "human_igh_ogrdb_10_observed_v1.recipe.json")
 FIXTURE_FILES = {"airr": "airr.json", "airr_ex": "airr_ex.json",
                  "gapped": "gapped.fasta", "gapped_ex": "gapped_ex.fasta"}
 CYS = {"TGT", "TGC"}
