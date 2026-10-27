@@ -781,8 +781,9 @@ def test_every_conservation_equation_reconciles_to_the_raw_payload(source, fmt):
     assert account.named_identities == account.record_identities + account.mentioned_only_identities
     assert account.alias_names == sum(len(_items(item, "aliases")) for item in raws)
     assert account.paralog_names == sum(len(_items(item, "paralogs")) for item in raws)
-    assert account.paralog_names == (account.paralog_names_of_records + account.paralog_names_of_mentioned_only
-                                     + account.paralog_names_unresolved)
+    assert account.paralog_names == (account.paralog_names_of_records + account.paralog_names_of_aliases
+                                     + account.paralog_names_of_mentioned_only + account.paralog_names_unresolved)
+    assert account.paralog_names_of_aliases == 0
     mentions = sum(len(i.mentions) for i in inventory.mentioned_identities if i.asset == fmt)
     assert account.paralog_names_of_mentioned_only == mentions
     labels = {item["label"] for item in raws}
@@ -978,8 +979,8 @@ def test_paralog_names_that_resolve_to_nothing_are_counted_as_unresolved():
         records[3]["paralogs"] = ["IGLY*01"]
     lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
     account = ogrdb.account(lock, inventory).export("airr")
-    assert (account.paralog_names, account.paralog_names_of_records, account.paralog_names_of_mentioned_only,
-            account.paralog_names_unresolved) == (7, 2, 1, 4)
+    assert (account.paralog_names, account.paralog_names_of_records, account.paralog_names_of_aliases,
+            account.paralog_names_of_mentioned_only, account.paralog_names_unresolved) == (7, 2, 0, 1, 4)
     assert [(i.label, i.segment) for i in inventory.mentioned_identities] == [("IGLX*01", "J")]
     (conflict,) = findings(inventory, "mentioned_identity_segment_conflict")
     assert conflict.observations.get() == {"label": "IGLZ*01", "segments": ["J", "V"]}
@@ -1272,3 +1273,54 @@ def test_a_missing_info_block_is_an_absent_observation():
     found = observed(inventory, "airr", "/Info")
     assert (found.presence, found.value.get(), found.record) == ("absent", None, None)
     assert identify(IGL, blobs) == expected_identity(IGL)
+
+
+# ── a paralog name that is a declared alias gains no identity ───────
+
+
+def _alias_holder(records):
+    """Index and alias of the first V record declaring an alias (IGLV6-57*04 declares IGLV6-57*i01)."""
+    return next((i, item["aliases"][0]) for i, item in enumerate(records)
+                if item["sequence_type"] == "V" and item["aliases"])
+
+
+@pytest.mark.parametrize("where", ["another-record", "same-record"])
+def test_a_paralog_name_declared_as_an_alias_forms_no_mentioned_identity(where):
+    raws = raw_records(IGL, "airr")
+    holder, alias = _alias_holder(raws)
+    assert (raws[holder]["label"], alias) == ("IGLV6-57*04", "IGLV6-57*i01")
+    namer = holder if where == "same-record" else next(
+        i for i, item in enumerate(raws) if item["sequence_type"] == "V" and i != holder and not item["paralogs"])
+
+    def edit(records):
+        records[namer]["paralogs"] = (records[namer]["paralogs"] or []) + [alias]
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    assert [i.label for i in inventory.mentioned_identities] == []
+    account = ogrdb.account(lock, inventory).export("airr")
+    assert (account.record_identities, account.mentioned_only_identities, account.named_identities) == (98, 0, 98)
+    assert (account.paralog_names, account.paralog_names_of_records, account.paralog_names_of_aliases,
+            account.paralog_names_of_mentioned_only, account.paralog_names_unresolved) == (3, 2, 1, 0, 0)
+    assert account.paralog_names == (account.paralog_names_of_records + account.paralog_names_of_aliases
+                                     + account.paralog_names_of_mentioned_only + account.paralog_names_unresolved)
+    (finding,) = findings(inventory, "paralog_names_declared_alias")
+    assert finding.observations.get() == {"label": alias, "named_as_paralog_by": [raws[namer]["label"]],
+                                          "declared_alias_of": [raws[holder]["label"]]}
+    assert set(finding.subjects) == {m.Locator("airr", rec(holder)), m.Locator("airr", rec(namer))}
+    paralog_index = len(raws[namer]["paralogs"] or [])
+    assert set(finding.locators) == {m.Locator("airr", rec(namer) + f"/paralogs/{paralog_index}"),
+                                     m.Locator("airr", rec(holder) + "/aliases/0")}
+    assert (finding.severity, finding.category) == ("warning", "contradictory_evidence")
+
+
+def test_an_alias_declared_by_an_unparsed_record_does_not_absorb_a_paralog_name():
+    raws = raw_records(IGL, "airr")
+    holder, alias = _alias_holder(raws)
+    namer = next(i for i, item in enumerate(raws) if item["sequence_type"] == "V" and i != holder)
+
+    def edit(records):
+        records[holder]["label"] = "not a label"
+        records[namer]["paralogs"] = [alias]
+    lock, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    assert [i.label for i in inventory.mentioned_identities] == [alias]
+    assert findings(inventory, "paralog_names_declared_alias") == []
+    assert ogrdb.account(lock, inventory).export("airr").paralog_names_of_aliases == 0

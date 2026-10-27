@@ -365,6 +365,10 @@ FINDING_CODES = {
     "mentioned_identity_segment_conflict": (
         "warning", "contradictory_evidence", (),
         "A relationship-only name is named by records of different segments; no mentioned identity is formed."),
+    "paralog_names_declared_alias": (
+        "warning", "contradictory_evidence", (),
+        "A name given as a paralog is declared as an alias by a record of the same export; it names that "
+        "record's identity and forms no identity of its own."),
     # Endpoint comparison between the two record exports (no export is preferred).
     "endpoint_comparison_incomplete": (
         "warning", "unavailable_evidence", (),
@@ -706,10 +710,14 @@ class _Builder:
         for entry in entries:
             if entry.record.status == "parsed":
                 records_by_label.setdefault(entry.record.label, []).append(entry.record.locator)
+        parsed = [e for e in entries if e.record.status == "parsed"]
+        aliases: dict = {}
+        for entry in parsed:
+            for name, locator in entry.relationships["alias"]:
+                aliases.setdefault(name, []).append((entry.record, locator))
         mentioned: dict = {}
-        for entry in entries:
-            if entry.record.status != "parsed":
-                continue
+        declared: dict = {}
+        for entry in parsed:
             own = entry.record.label
             for name, locator in entry.relationships["alias"]:
                 if name != own and name in labels:
@@ -717,8 +725,16 @@ class _Builder:
                                  subjects=[entry.record.locator] + records_by_label.get(name, []),
                                  locators=[locator], observations={"label": own, "alias": name})
             for name, locator in entry.relationships["paralog"]:
-                if name not in labels:
-                    mentioned.setdefault(name, []).append((entry.record, locator))
+                if name in labels:
+                    continue
+                (declared if name in aliases else mentioned).setdefault(name, []).append((entry.record, locator))
+        for name, mentions in sorted(declared.items()):
+            both = mentions + aliases[name]
+            self.finding("paralog_names_declared_alias", subjects=[record.locator for record, _ in both],
+                         locators=[locator for _, locator in both],
+                         observations={"label": name,
+                                       "named_as_paralog_by": sorted({record.label for record, _ in mentions}),
+                                       "declared_alias_of": sorted({record.label for record, _ in aliases[name]})})
         for name, mentions in sorted(mentioned.items()):
             segments = sorted({record.segment for record, _ in mentions})
             if len(segments) != 1:
@@ -1095,7 +1111,8 @@ class ExportAccount:
     * ``parsed_records = identity_sequences + duplicate_occurrences + parsed_without_candidate``
     * ``identity_sequences = record_identities - identities_without_candidate + alternative_sequences``
     * ``named_identities = record_identities + mentioned_only_identities``
-    * ``paralog_names = paralog_names_of_records + paralog_names_of_mentioned_only + paralog_names_unresolved``
+    * ``paralog_names = paralog_names_of_records + paralog_names_of_aliases + paralog_names_of_mentioned_only
+      + paralog_names_unresolved``
 
     An identity is a parsed record's ``(segment, label)``.  ``identity_sequences`` counts
     distinct supplied coding sequences per identity; ``duplicate_occurrences`` the parsed
@@ -1104,7 +1121,8 @@ class ExportAccount:
     distinct identities share, their labels: they stay distinct identities.
     ``named_identities`` are the identities an export names at all: its own record
     identities plus the names it gives only as paralogs.  Declared aliases name their own
-    record and add no identity.  ``segments`` is :meth:`SourceInventory.export_counts`.
+    record and add no identity, also where another record gives one as a paralog
+    (``paralog_names_of_aliases``).  ``segments`` is :meth:`SourceInventory.export_counts`.
     """
 
     asset: str
@@ -1127,6 +1145,7 @@ class ExportAccount:
     alias_names: int
     paralog_names: int
     paralog_names_of_records: int
+    paralog_names_of_aliases: int
     paralog_names_of_mentioned_only: int
     paralog_names_unresolved: int
     support_references: int
@@ -1215,22 +1234,25 @@ def _export_account(inventory: SourceInventory, asset: str) -> ExportAccount:
     by_locator = {r.locator: r for r in records}
     labels = {r.label for r in records if r.label is not None}
     mention_locators = {x.locator for i in mentioned for x in i.mentions}
-    aliases = paralogs = paralogs_of_records = unresolved = 0
+    alias_items, paralog_items = [], []
     for observation in inventory.observations:
         record = observation.record
         if record is None or record.asset != asset:
             continue
         match = _RELATIONSHIP_ITEM_RE.fullmatch(observation.locator.pointer[len(record.pointer):])
-        if match is None:
-            continue
-        if match.group(1) == "aliases":
-            aliases += 1
-            continue
-        paralogs += 1
-        if observation.interpretation != "interpreted" or by_locator[record].status != "parsed":
+        if match is not None:
+            (alias_items if match.group(1) == "aliases" else paralog_items).append(observation)
+    def usable(observation) -> bool:   # a valid name in a parsed record
+        return observation.interpretation == "interpreted" and by_locator[observation.record].status == "parsed"
+    declared = {o.value.get() for o in alias_items if usable(o)}
+    paralogs_of_records = paralogs_of_aliases = unresolved = 0
+    for observation in paralog_items:
+        if not usable(observation):
             unresolved += 1
         elif observation.value.get() in labels:
             paralogs_of_records += 1
+        elif observation.value.get() in declared:
+            paralogs_of_aliases += 1
         elif observation.locator not in mention_locators:
             unresolved += 1
     of_mentioned = sum(len(i.mentions) for i in mentioned)
@@ -1242,8 +1264,9 @@ def _export_account(inventory: SourceInventory, asset: str) -> ExportAccount:
         record_identities=len(identities), identities_without_candidate=bare, identity_sequences=sequences,
         duplicate_occurrences=duplicates, parsed_without_candidate=without, alternative_identities=alternatives,
         alternative_sequences=extra, shared_sequences=shared, mentioned_only_identities=len(mentioned),
-        named_identities=len(identities) + len(mentioned), alias_names=aliases, paralog_names=paralogs,
-        paralog_names_of_records=paralogs_of_records, paralog_names_of_mentioned_only=of_mentioned,
+        named_identities=len(identities) + len(mentioned), alias_names=len(alias_items),
+        paralog_names=len(paralog_items), paralog_names_of_records=paralogs_of_records,
+        paralog_names_of_aliases=paralogs_of_aliases, paralog_names_of_mentioned_only=of_mentioned,
         paralog_names_unresolved=unresolved,
         support_references=sum(1 for s in inventory.support if s.locator.asset == asset),
         provider_refs_with_ext_suffix=sum(1 for r in records if (r.provider_ref or "").endswith(EXT_SUFFIX)),
