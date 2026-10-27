@@ -41,17 +41,21 @@ def igl(tmp_path_factory):
     return source, source.build(full_recipe(root, source))
 
 
-def recording_writer(monkeypatch, fail_at=None) -> list:
+def recording_writer(monkeypatch, fail_at=None, *, after=False) -> list:
     """Record every atomic write (the dossier writer and the reference artifact writer share one
-    implementation); with ``fail_at``, the write with that index raises instead of writing."""
+    implementation); with ``fail_at``, the write with that index raises instead of writing, or with
+    ``after``, raises after publishing its file (as when the directory cannot be synced)."""
     calls = []
     real = _artifact_io.write_atomic
 
     def write(path, data, *, replace):
         calls.append(pathlib.Path(path))
-        if fail_at is not None and len(calls) - 1 == fail_at:
+        failing = fail_at is not None and len(calls) - 1 == fail_at
+        if failing and not after:
             raise _artifact_io.ArtifactIOError("io", f"simulated failure writing {pathlib.Path(path).name}")
         real(path, data, replace=replace)
+        if failing:
+            raise _artifact_io.ArtifactIOError("io", f"simulated failure after publishing {pathlib.Path(path).name}")
 
     monkeypatch.setattr(build_module, "write_atomic", write)
     monkeypatch.setattr(artifact_module, "write_atomic", write)
@@ -104,6 +108,17 @@ def test_members_are_published_with_the_atomic_writer_and_the_manifest_last(igl,
     assert names[4:] == ["source.lock.json", "recipe.json", "inputs/v.fasta", "inputs/j.fasta",
                          "inputs/annotations.json", "reference.genairr-ref.json", "report.json",
                          "receipts/0.json", "receipts/1.json", "receipts/2.json", "receipts/3.json", "manifest.json"]
+
+
+def test_a_failure_after_the_manifest_is_published_says_the_dossier_is_complete(igl, tmp_path, monkeypatch):
+    _, build = igl
+    recording_writer(monkeypatch, fail_at=15, after=True)              # the manifest is the 16th write
+    exc = error("io", build.write_dossier, tmp_path / "dossier")
+    monkeypatch.undo()
+    assert exc.path == "/manifest.json"
+    assert "has no manifest.json" not in exc.message and "complete" in exc.message
+    assert "simulated failure after publishing manifest.json" in exc.message
+    assert ReferenceBuild.read_dossier(tmp_path / "dossier").manifest == build.manifest
 
 
 def test_a_dossier_is_written_into_a_new_directory_only(igl, tmp_path):

@@ -447,6 +447,10 @@ class ReferenceBuild:
                 else:
                     write_atomic(target, data, replace=False)
             except (OSError, ArtifactIOError, ReferenceArtifactError) as exc:
+                if name == MANIFEST_NAME and os.path.lexists(root / MANIFEST_NAME):
+                    raise ReferenceSourceError("io", "/" + name, (
+                        f"{MANIFEST_NAME} was published into {root}, so the dossier is complete, but finishing its "
+                        f"publication failed: {exc}. Check the dossier with ReferenceBuild.read_dossier")) from exc
                 raise ReferenceSourceError("io", "/" + name, (
                     f"cannot write dossier member {name} into {root}: {exc}. The dossier is incomplete: it has no "
                     f"{MANIFEST_NAME}, so it cannot be read. The files already written are kept; write the build "
