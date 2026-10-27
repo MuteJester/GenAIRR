@@ -22,12 +22,13 @@ import pytest
 from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference_sources.recipe import Recipe
 from tests.test_ogrdb_source_inventory import IGH, RECORDS, SELECTION, raw, raw_records
-from tests.test_reference_source_api import DATA, PROFILE, from_files
+from tests.test_reference_source_api import DATA, PROFILE, SOURCES
 
 STARTER_ID = "human_igh_ogrdb_10_observed_v1"
 RECIPE_PATH = DATA / f"{STARTER_ID}.recipe.json"
-# The lock of the pinned IGH release 10 exports recorded as local files (from the reviewed build).
-LOCK_PIN = "sha256:1f9ec3a9fa0b89b93e48d2752cf1993c4436dfdb0eb1c193f2a0f3b7a86dcd32"
+# The lock of the pinned IGH release 10 exports and OGRDB statement pages recorded as local files,
+# with the data terms they state (from the reviewed build).
+LOCK_PIN = "sha256:3672042713c4bce5846bbb9b2a93ef0bb3e15887f1379a8039c2220fc73fe9b2"
 CHOICES = [row["label"] for row in SELECTION["record_choices"]]
 REQUIRES = [{"capability": "observed_span_simulation", "evidence": "assertion"},
             {"capability": "source_annotated_junction", "evidence": "source"},
@@ -78,7 +79,7 @@ def test_the_recipe_is_canonical_lf_json_of_a_valid_recipe():
 
 def test_the_recipe_names_the_starter_and_requires_its_targeted_capabilities(tmp_path):
     document = recipe_document()
-    lock = from_files(tmp_path, IGH).lock
+    lock = load_tool().source(STARTER_ID, cache=tmp_path / "cache").lock      # the generator's lock
     assert document["source_lock_hash"] == LOCK_PIN == lock.commitment
     assert document["adapter"] == {"id": "ogrdb_germline_set", "version": 1,
                                    "coordinate_profile": {"id": PROFILE, "version": 1}}
@@ -279,6 +280,39 @@ def test_the_generator_writes_exactly_the_dossier_members_offline(generated):
     assert (target / "recipe.json").read_bytes() == RECIPE_PATH.read_bytes()
 
 
+# OGRDB's data terms as the fixture manifest records them, and the statement pages kept as fixtures.
+TERMS = {"status": "recorded", "assets": ["licence_statement", "citation_statement"],
+         "licence": SOURCES["data_licence"]["licence"], "citation": SOURCES["citation"]["requested_by_provider"],
+         "reason": None}
+STATEMENT_ASSETS = {
+    "licence_statement": (SOURCES["data_licence"]["statement_url"],
+                          DATA / "ogrdb" / "statements" / "licensing_statement.html"),
+    "citation_statement": (SOURCES["citation"]["statement_url"], DATA / "ogrdb" / "statements" / "help.html"),
+}
+
+
+def assert_terms_recorded(lock, blob=None) -> None:
+    """The lock records OGRDB's terms from the two statement pages (and ``blob(sha256)`` holds their bytes)."""
+    assert TERMS["licence"] == "CC0 1.0 Universal" and TERMS["citation"].startswith("The current landscape")
+    assert lock.terms.to_dict() == TERMS
+    statements = {asset.format: asset for asset in lock.assets if asset.role == "data_terms"}
+    assert sorted(statements) == sorted(STATEMENT_ASSETS)
+    for fmt, (url, path) in STATEMENT_ASSETS.items():
+        data, asset = path.read_bytes(), statements[fmt]
+        assert (asset.declared_url, asset.origin_kind, asset.sha256, asset.bytes) == (
+            url, "local_file", "sha256:" + hashlib.sha256(data).hexdigest(), len(data))
+        if blob is not None:
+            assert blob(asset.sha256) == data
+
+
+def test_the_generator_records_the_providers_data_terms_and_inspection_shows_them(tmp_path):
+    source = load_tool().source(STARTER_ID, cache=tmp_path / "cache")
+    assert_terms_recorded(source.lock)
+    text = str(source.inspect())
+    assert f"Data terms: recorded (licence_statement, citation_statement): {TERMS['licence']}" in text.splitlines()
+    assert f"Citation: {TERMS['citation']}" in text.splitlines()
+
+
 def test_the_generator_writes_only_into_a_new_or_empty_directory(tmp_path, capsys):
     target = tmp_path / "occupied"
     target.mkdir()
@@ -294,9 +328,9 @@ def test_the_generator_writes_only_into_a_new_or_empty_directory(tmp_path, capsy
 
 # Pinned from the reviewed build: the typed manifest hash of the packaged dossier (it covers
 # the GenAIRR version that generated it) and the runtime hashes of its reference.
-MANIFEST_PIN = "sha256:adc1961adbe134648d77cf4e8adec09f81465ead027112f6bca5ed7a53bda440"
-RUNTIME_PINS = {"execution": "sha256:7c2550263f5a26ebc1fb5369d8d8916c5e2e24e059f5c6661a47d7ec2cace40e",
-                "catalogue": "sha256:f404dd27fee06c95c69a41bb79e6cd17b555039750a9d95012ea3c8231ecd4d0",
+MANIFEST_PIN = "sha256:6e9b8bab0f8959e5248cda915f7ea75a893fe5718f73f2d034019eaded037fde"
+RUNTIME_PINS = {"execution": "sha256:dac5bc5dea9061fdb1a038011f1ba5f022e4426646685d4cd2817d9a780771f0",
+                "catalogue": "sha256:3ff0281221b19ff5be4467848c73e40bae4b0a4c78b125b491c510573e72fc8e",
                 "models": "sha256:e96b1404c64d36a55c0457163ef3a4aa706e1bc5114914147715cd0f964dffd8"}
 RECORD_OUTCOMES = {"selected": 230, "excluded": 259, "rejected": 0}
 PACKAGE, RESOURCE = "GenAIRR.data", f"published_references/{STARTER_ID}"
@@ -355,6 +389,14 @@ def test_the_bundled_starter_is_the_reviewed_build_with_its_pinned_hashes(starte
     differs = {finding.observations.get()["label"]: finding.id for finding in starter.report.inventory.findings
                if finding.code == "export_coding_sequence_differs"}
     assert [decision.findings for decision in starter.recipe.decisions] == [(differs[label],) for label in CHOICES]
+
+
+def test_the_bundled_starter_records_the_providers_data_terms(starter):
+    files, _ = packaged_files()
+    assert_terms_recorded(starter.lock, lambda sha256: files["cache/blobs/sha256/" + sha256.split(":", 1)[1]])
+    lines = str(starter.report).splitlines()
+    assert f"  data terms: recorded (licence_statement, citation_statement): {TERMS['licence']}" in lines
+    assert f"  citation: {TERMS['citation']}" in lines
 
 
 def test_the_bundled_starter_states_its_capabilities_truthfully(starter):

@@ -1,0 +1,2270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    
+    <title>OGRDB</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/css/ogrdb-design-system.css">
+    <style>
+    /* OGRDB Design System - CSS Custom Properties */
+    :root {
+        /* Primary Brand Colors */
+        --ogrdb-primary: #3279A6;
+        --ogrdb-primary-dark: #3242bb;
+        --ogrdb-primary-light: #3887A6;
+        --ogrdb-primary-lighter: #55C1D9;
+        --ogrdb-primary-lightest: #6BE5F2;
+        
+        /* Extended Color Palette */
+        --ogrdb-secondary: #6c757d;
+        --ogrdb-success: #28a745;
+        --ogrdb-success-light: #d4edda;
+        --ogrdb-info: #17a2b8;
+        --ogrdb-info-light: #d1ecf1;
+        --ogrdb-warning: #aa6e25;
+        --ogrdb-warning-light: #a18e4f;
+        --ogrdb-danger: #991414;
+        --ogrdb-danger-light: #f8d7da;
+        
+        /* Semantic Colors */
+        --ogrdb-text-primary: #212529;
+        --ogrdb-text-secondary: #6c757d;
+        --ogrdb-text-muted: #868e96;
+        --ogrdb-link: var(--ogrdb-primary);
+        --ogrdb-link-hover: var(--ogrdb-primary-dark);
+        
+        /* Background Colors */
+        --ogrdb-bg-body: #dae6f3;
+        --ogrdb-bg-outer: #09197D;
+        --ogrdb-bg-card: #e8e9e4;
+        --ogrdb-bg-light: #b4c7db;
+        --ogrdb-bg-lighter: #f1f3f4;
+        --ogrdb-bg-dark: #343a40;
+        
+        /* Border Colors */
+        --ogrdb-border-color: #dee2e6;
+        --ogrdb-border-light: #e9ecef;
+        --ogrdb-border-dark: #adb5bd;
+        
+        /* Shadows */
+        --ogrdb-shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        --ogrdb-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        --ogrdb-shadow-lg: 0 1rem 3rem rgba(0, 0, 0, 0.175);
+        --ogrdb-shadow-primary: 0 0.5rem 1rem rgba(24, 141, 251, 0.25);
+        
+        /* Spacing Scale */
+        --ogrdb-spacer-xs: 0.25rem;
+        --ogrdb-spacer-sm: 0.5rem;
+        --ogrdb-spacer: 1rem;
+        --ogrdb-spacer-lg: 1.5rem;
+        --ogrdb-spacer-xl: 3rem;
+        
+        /* Border Radius */
+        --ogrdb-border-radius: 0.375rem;
+        --ogrdb-border-radius-sm: 0.25rem;
+        --ogrdb-border-radius-lg: 0.5rem;
+        --ogrdb-border-radius-xl: 1rem;
+        
+        /* Typography Scale */
+        --ogrdb-font-size-xs: 0.75rem;
+        --ogrdb-font-size-sm: 0.875rem;
+        --ogrdb-font-size-base: 1rem;
+        --ogrdb-font-size-lg: 1.125rem;
+        --ogrdb-font-size-xl: 1.25rem;
+        --ogrdb-font-size-xxl: 1.5rem;
+        
+        /* Font Weights */
+        --ogrdb-font-weight-light: 300;
+        --ogrdb-font-weight-normal: 400;
+        --ogrdb-font-weight-medium: 500;
+        --ogrdb-font-weight-semibold: 600;
+        --ogrdb-font-weight-bold: 700;
+        
+        /* Line Heights */
+        --ogrdb-line-height-sm: 1.25;
+        --ogrdb-line-height-base: 1.5;
+        --ogrdb-line-height-lg: 1.75;
+        
+        /* Transitions */
+        --ogrdb-transition-base: all 0.2s ease-in-out;
+        --ogrdb-transition-fast: all 0.15s ease-in-out;
+        --ogrdb-transition-slow: all 0.3s ease-in-out;
+    }
+    
+    /* Enhanced Typography Scale */
+    .text-xs { font-size: var(--ogrdb-font-size-xs) !important; }
+    .text-sm { font-size: var(--ogrdb-font-size-sm) !important; }
+    .text-lg { font-size: var(--ogrdb-font-size-lg) !important; }
+    .text-xl { font-size: var(--ogrdb-font-size-xl) !important; }
+    .text-xxl { font-size: var(--ogrdb-font-size-xxl) !important; }
+    
+    .fw-medium { font-weight: var(--ogrdb-font-weight-medium) !important; }
+    .fw-semibold { font-weight: var(--ogrdb-font-weight-semibold) !important; }
+    
+    .lh-sm { line-height: var(--ogrdb-line-height-sm) !important; }
+    .lh-lg { line-height: var(--ogrdb-line-height-lg) !important; }
+    
+    /* Content Spacing Rules */
+    h1, h2, h3, h4, h5, h6 {
+        margin-bottom: var(--ogrdb-spacer-sm);
+    }
+    
+    h1 + *, h2 + *, h3 + *, h4 + *, h5 + *, h6 + * {
+        margin-top: var(--ogrdb-spacer-sm);
+    }
+    
+    p {
+        margin-bottom: var(--ogrdb-spacer-sm);
+    }
+    
+    p:last-child {
+        margin-bottom: 0;
+    }
+    
+    /* Section Header Spacing */
+    .card-body h6 {
+        margin-top: var(--ogrdb-spacer-lg);
+        margin-bottom: var(--ogrdb-spacer-sm);
+    }
+    
+    .card-body h6:first-child {
+        margin-top: 0;
+    }
+    
+    /* Data Card Integration with Bootstrap Cards */
+    .data-card .card-header {
+        margin-bottom: var(--ogrdb-spacer);
+        padding-bottom: var(--ogrdb-spacer);
+        border-bottom: 1px solid var(--ogrdb-border-light);
+    }
+    
+    .data-card .card-body {
+        padding-top: 0;
+    }
+    
+    /* Ensure proper spacing between card header and table */
+    .data-card .card-header + .card-body .table-responsive:first-child {
+        margin-top: var(--ogrdb-spacer);
+    }
+    
+    /* Enhanced Brand Color Utilities */
+    .text-primary { color: var(--ogrdb-primary) !important; }
+    .text-primary-dark { color: var(--ogrdb-primary-dark) !important; }
+    .text-primary-light { color: var(--ogrdb-primary-light) !important; }
+    .text-muted { color: var(--ogrdb-text-muted) !important; }
+    
+    /* OGRDB Semantic Color Utilities */
+    .text-ogrdb-warning { color: var(--ogrdb-warning) !important; }
+    .text-ogrdb-danger { color: var(--ogrdb-danger) !important; }
+    .text-ogrdb-success { color: var(--ogrdb-success) !important; }
+    .text-ogrdb-info { color: var(--ogrdb-info) !important; }
+    .text-ogrdb-primary { color: var(--ogrdb-primary) !important; }
+    
+    .bg-primary { background-color: var(--ogrdb-primary) !important; }
+    .bg-primary-light { background-color: var(--ogrdb-primary-light) !important; }
+    .bg-primary-lighter { background-color: var(--ogrdb-primary-lighter) !important; }
+    .bg-primary-lightest { background-color: var(--ogrdb-primary-lightest) !important; }
+    
+    .border-primary { border-color: var(--ogrdb-primary) !important; }
+    .border-light { border-color: var(--ogrdb-border-light) !important; }
+    
+    /* Enhanced Shadow Utilities */
+    .shadow-primary { box-shadow: var(--ogrdb-shadow-primary) !important; }
+    .shadow-hover { transition: var(--ogrdb-transition-base); }
+    .shadow-hover:hover { box-shadow: var(--ogrdb-shadow-lg) !important; transform: translateY(-2px); }
+    
+    /* Card Enhancements */
+    .card {
+        background-color: var(--ogrdb-bg-card);
+        border: 1px solid var(--ogrdb-border-light);
+        box-shadow: var(--ogrdb-shadow-sm);
+        transition: var(--ogrdb-transition-base);
+    }
+    
+    .card-hover:hover {
+        box-shadow: var(--ogrdb-shadow);
+        transform: translateY(-2px);
+    }
+    
+    .card-primary {
+        border-left: 4px solid var(--ogrdb-primary);
+    }
+    
+    .card-success {
+        border-left: 4px solid var(--ogrdb-success);
+    }
+    
+    .card-warning {
+        border-left: 4px solid var(--ogrdb-warning);
+    }
+    
+    .card-info {
+        border-left: 4px solid var(--ogrdb-info);
+    }
+    
+    /* Button Enhancements */
+    .btn {
+        transition: var(--ogrdb-transition-base);
+        font-weight: var(--ogrdb-font-weight-medium);
+        border-radius: var(--ogrdb-border-radius);
+    }
+    
+    .btn-primary {
+        background-color: var(--ogrdb-primary);
+        border-color: var(--ogrdb-primary);
+    }
+    
+    .btn-primary:hover,
+    .btn-primary:focus {
+        background-color: var(--ogrdb-primary-dark);
+        border-color: var(--ogrdb-primary-dark);
+        box-shadow: var(--ogrdb-shadow-primary);
+    }
+    
+    .btn-outline-primary {
+        color: var(--ogrdb-primary);
+        border-color: var(--ogrdb-primary);
+    }
+    
+    .btn-outline-primary:hover,
+    .btn-outline-primary:focus {
+        background-color: var(--ogrdb-primary);
+        border-color: var(--ogrdb-primary);
+    }
+    
+    /* Table Enhancements */
+    .table {
+        border-color: var(--ogrdb-border-light);
+    }
+    
+    .table th {
+        border-color: var(--ogrdb-border-color);
+        background-color: var(--ogrdb-bg-light);
+        font-weight: var(--ogrdb-font-weight-semibold);
+        color: var(--ogrdb-text-primary);
+    }
+    
+    .table td, .table th {
+        vertical-align: middle;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+    
+    /* Table cell content containment - allow content to wrap */
+    .table td {
+        overflow-wrap: break-word;
+        word-wrap: break-word;
+        vertical-align: top;
+        min-width: 120px; /* Ensure minimum width for readability */
+    }
+    
+    /* DOI column specific styling - wider to accommodate badges */
+    .table td:has(a[href*="doi"]) {
+        min-width: 180px;
+        width: auto;
+    }
+    
+    /* DOI badge specific styling - smaller and more compact */
+    .table td .badge[href*="doi"],
+    .table td a[href*="doi"] .badge {
+        font-size: 0.65rem;
+        padding: 0.15rem 0.4rem;
+        max-width: 100%;
+        word-break: break-all;
+        white-space: normal;
+        line-height: 1.1;
+        display: inline-block;
+    }
+    
+    /* Allow badges and buttons to wrap within cells */
+    .table td .badge,
+    .table td .btn {
+        display: inline-block;
+        margin: 0.1rem;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.2;
+    }
+    
+    .table-hover tbody tr:hover {
+        background-color: var(--ogrdb-primary-lightest);
+    }
+    
+    /* Form Enhancements */
+    .form-control,
+    .form-select {
+        border-color: var(--ogrdb-border-light);
+        transition: var(--ogrdb-transition-base);
+    }
+    
+    .form-control:focus,
+    .form-select:focus {
+        border-color: var(--ogrdb-primary);
+        box-shadow: 0 0 0 0.2rem rgba(24, 141, 251, 0.25);
+    }
+    
+    /* Alert Enhancements */
+    .alert {
+        border-radius: var(--ogrdb-border-radius);
+        border: none;
+    }
+    
+    .alert-primary {
+        background-color: var(--ogrdb-primary-lightest);
+        color: var(--ogrdb-primary-dark);
+    }
+    
+    .alert-success {
+        background-color: var(--ogrdb-success-light);
+    }
+    
+    .alert-info {
+        background-color: var(--ogrdb-info-light);
+    }
+    
+    .alert-warning {
+        background-color: var(--ogrdb-warning-light);
+    }
+    
+    .alert-danger {
+        background-color: var(--ogrdb-danger-light);
+    }
+    
+    /* Navigation Enhancements */
+    .navbar-brand {
+        font-weight: var(--ogrdb-font-weight-bold);
+        color: var(--ogrdb-primary) !important;
+    }
+    
+    .nav-link {
+        transition: var(--ogrdb-transition-base);
+        font-weight: var(--ogrdb-font-weight-medium);
+    }
+    
+    .nav-link:hover {
+        color: var(--ogrdb-primary) !important;
+    }
+    
+    /* Badge Enhancements */
+    .badge {
+        font-weight: var(--ogrdb-font-weight-medium);
+    }
+    
+    .badge-primary {
+        background-color: var(--ogrdb-primary);
+    }
+    
+    /* Layout Utilities */
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, var(--ogrdb-primary) 0%, var(--ogrdb-primary-dark) 100%);
+    }
+    
+    .bg-pattern {
+        background-color: var(--ogrdb-bg-light);
+        background-image: radial-gradient(circle at 1px 1px, var(--ogrdb-border-light) 1px, transparent 0);
+        background-size: 20px 20px;
+    }
+    
+    /* Responsive Text Utilities */
+    @media (max-width: 576px) {
+        .text-responsive-sm { font-size: var(--ogrdb-font-size-sm) !important; }
+        .display-responsive { font-size: 2rem !important; }
+    }
+    
+    @media (min-width: 768px) {
+        .text-responsive-md { font-size: var(--ogrdb-font-size-lg) !important; }
+    }
+    
+    @media (min-width: 992px) {
+        .text-responsive-lg { font-size: var(--ogrdb-font-size-xl) !important; }
+    }
+    
+    /* Focus Management */
+    .btn:focus,
+    .form-control:focus,
+    .form-select:focus {
+        outline: 2px solid var(--ogrdb-primary);
+        outline-offset: 2px;
+    }
+    
+    /* Bootstrap 5 compatibility for BootstrapDialog type styling */
+    .modal.type-danger .modal-header {
+        background-color: var(--ogrdb-danger);
+        color: white;
+    }
+    .modal.type-warning .modal-header {
+        background-color: var(--ogrdb-warning);
+        color: var(--ogrdb-text-primary);
+    }
+    .modal.type-primary .modal-header {
+        background-color: var(--ogrdb-primary);
+        color: white;
+    }
+    
+    /* Enhanced Modal Styling */
+    .modal-content {
+        border-radius: var(--ogrdb-border-radius-lg);
+        box-shadow: var(--ogrdb-shadow-lg);
+        border: none;
+    }
+    
+    .modal-header {
+        background-color: var(--ogrdb-primary);
+        color: white;
+        border-radius: var(--ogrdb-border-radius-lg) var(--ogrdb-border-radius-lg) 0 0;
+        border-bottom: none;
+    }
+    
+    .modal-title {
+        font-weight: var(--ogrdb-font-weight-semibold);
+    }
+    
+    .modal-body {
+        padding: var(--ogrdb-spacer-lg);
+    }
+    
+    .modal-footer {
+        border-top: 1px solid var(--ogrdb-border-light);
+        background-color: var(--ogrdb-bg-light);
+        border-radius: 0 0 var(--ogrdb-border-radius-lg) var(--ogrdb-border-radius-lg);
+    }
+    </style>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/bs5/jszip-2.5.0/dt-1.11.3/b-2.0.1/b-colvis-2.0.1/b-html5-2.0.1/b-print-2.0.1/cr-1.5.5/fh-3.2.0/sl-1.3.3/datatables.min.css"/>
+    <link rel="stylesheet" type="text/css" href="/static/css/styles.css" />
+    <title>OGRDB</title>
+
+</head>
+<body>
+    
+    <div class="container-fluid">
+        
+
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-12">
+
+                    <div class="logo">
+                        <div>
+                        <a href="/"><img class="logo-left" src="/static/img/ogre-lozenge.png"></a>
+                        <span class="logo-title">
+                        Help & Documentation
+                        </span>
+                        <a href="https://www.antibodysociety.org/the-airr-community/"><img class="logo-right" src="/static/img/airr-lozenge.png"></a>
+                        </div>
+                    </div>
+
+
+                
+            </div>
+        </div>
+            <div class="row">
+                <div class="menu">
+                    <a href="/" class="m-item">Home</a> |
+                    <a href="/germline_sets" class="m-item">Germline Sets</a> |
+                    <div class="dropdown d-inline">
+                        <a href="#" class="dropdown-toggle m-item" style="padding-left: 10px" id="dropdownMenu2" data-bs-toggle="dropdown">
+                            Sequences
+                            <span class="caret"></span>
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="dropdownMenu2">
+                            <li><a href="/gene_table" class="dropdown-item m-item"><i class="bi bi-table me-1"></i>Gene Tables</a></li>
+                            <li><a href="/sequences" class="dropdown-item m-item"><i class="bi bi-list-ul me-1"></i>Sequence Tables</a></li>
+                            <li><a href="/alignments" class="dropdown-item m-item"><i class="bi bi-align-center me-1"></i>Sequence Alignments</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a href="/vdjbase_review" class="dropdown-item m-item">Review VDJbase</a></li>
+                        </ul>
+                    </div> |
+                    <a href="/submissions" class="m-item">Submissions</a> |
+                    
+                    <a href="/register" class="m-item">Register</a> |
+                    <a href="/login" class="m-item">Login</a>
+                    
+                </div>
+            </div>
+
+            
+    <div class="row g-4">
+        <!-- Left Column - Main Help Content -->
+        <div class="col-lg-8">
+                <!-- Quick Start Guide -->
+                <div class="data-card mb-4" id="quick-start">
+                    <h2 class="h3 mb-3">
+                        <i class="bi bi-rocket-takeoff me-2"></i>
+                        Data Access Quick Start
+                    </h2>
+                    
+                    <div class="alert alert-success">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-check-circle-fill me-2" style="font-size: 1.5rem;"></i>
+                            <div>
+                                <strong>No Account Required!</strong><br>
+                                <small>You can browse and download all data without creating an account.</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-4">
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="bg-primary rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                                    <i class="bi bi-search text-white" style="font-size: 2rem;"></i>
+                                </div>
+                                <h4 class="h5">Sets</h4>
+                                <p class="small text-muted">Explore our curated germline sets and download in multiple formats.</p>
+                                <a href="/germline_sets" class="btn btn-outline-primary btn-sm">Browse Sets</a>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="bg-primary rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                                    <i class="bi bi-download text-white" style="font-size: 2rem;"></i>
+                                </div>
+                                <h4 class="h5">Sequences</h4>
+                                <p class="small text-muted">Review our database of allele sequences, supporting evidence and curation history.</p>
+                                <a href="/gene_table" class="btn btn-outline-primary btn-sm">View Sequences</a>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="bg-primary rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                                    <i class="bi bi-quote text-white" style="font-size: 2rem;"></i>
+                                </div>
+                                <h4 class="h5">Cite</h4>
+                                <p class="small text-muted">Please support us with a citation if you use the data in your work.</p>
+                                <a href="#citation" class="btn btn-outline-primary btn-sm">Citation Info</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inside VDJBase -->
+                <div class="data-card mb-4" id="inside-vdjbase">
+                    <h2 class="h3 mb-3">
+                        <i class="bi bi-book me-2"></i>
+                        Inside OGRDB
+                    </h2>
+                    <p class="mb-4">Explore the background and development of OGRDB through these key articles and publications.</p>
+                    
+                    <div class="d-flex justify-content-center">
+                        <div class="card px-3" style="max-width: 800px; width: 100%;">
+                            <div class="list-group list-group-flush">
+                                <a href="https://doi.org/10.1093/nar/gkaf1094" target="_blank" class="list-group-item list-group-item-action border-0 py-2">
+                                    <div class="d-flex align-items-start">
+                                        <i class="bi bi-compass text-primary me-3 mt-1" style="font-size: 1.25rem;"></i>
+                                        <div class="flex-grow-1">
+                                            <h5 class="h6 mb-1">The current landscape of adaptive immune receptor genomic and repertoire data: OGRDB and VDJbase</h5>
+                                            <p class="small text-muted mb-0">An update article describing current functionality of the sites, exploring use cases, and looking to future developments</p>
+                                        </div>
+                                        <i class="bi bi-box-arrow-up-right text-muted"></i>
+                                    </div>
+                                </a>
+
+                                <a href="https://wordpress.vdjbase.org/index.php/vdjbase_news/germline-databases-or-adventures-into-the-allelic-underworld/" target="_blank" class="list-group-item list-group-item-action border-0 py-2">
+                                    <div class="d-flex align-items-start">
+                                        <i class="bi bi-compass text-primary me-3 mt-1" style="font-size: 1.25rem;"></i>
+                                        <div class="flex-grow-1">
+                                            <h5 class="h6 mb-1">Germline Databases, or adventures into the allelic underworld</h5>
+                                            <p class="small text-muted mb-0">A podcast exploring the challenges and discoveries in germline database development</p>
+                                        </div>
+                                        <i class="bi bi-box-arrow-up-right text-muted"></i>
+                                    </div>
+                                </a>
+                                
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/introduction-to-ogrdb/" target="_blank" class="list-group-item list-group-item-action border-0 py-2">
+                                    <div class="d-flex align-items-start">
+                                        <i class="bi bi-info-circle text-primary me-3 mt-1" style="font-size: 1.25rem;"></i>
+                                        <div class="flex-grow-1">
+                                            <h5 class="h6 mb-1">Introduction to OGRDB</h5>
+                                            <p class="small text-muted mb-0">A short introduction to the Open Germline Receptor Database</p>
+                                        </div>
+                                        <i class="bi bi-box-arrow-up-right text-muted"></i>
+                                    </div>
+                                </a>
+                                
+                                <a href="https://www.sciencedirect.com/science/article/pii/S2667119023000058" target="_blank" class="list-group-item list-group-item-action border-0 py-2">
+                                    <div class="d-flex align-items-start">
+                                        <i class="bi bi-journal-text text-primary me-3 mt-1" style="font-size: 1.25rem;"></i>
+                                        <div class="flex-grow-1">
+                                            <h5 class="h6 mb-1">AIRR community curation and standardised representation for immunoglobulin and T cell receptor germline sets</h5>
+                                            <p class="small text-muted mb-0">Scientific publication on AIRR community standards and curation processes</p>
+                                        </div>
+                                        <i class="bi bi-box-arrow-up-right text-muted"></i>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Key Features -->
+                <div class="data-card mb-4" id="features">
+                    <h2 class="h3 mb-3">
+                        <i class="bi bi-stars me-2"></i>
+                        Key Features
+                    </h2>
+                    <div class="row g-3">
+                        <div class="col-sm-6">
+                            <div class="d-flex align-items-start">
+                                <i class="bi bi-collection text-primary me-3 mt-1" style="font-size: 1.25rem;"></i>
+                                <div>
+                                    <h5 class="h6 mb-1">Curated Germline Sets</h5>
+                                    <p class="small text-muted mb-0">High-quality, reviewed germline gene sequences for multiple species</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="d-flex align-items-start">
+                                <i class="bi bi-check-circle text-primary me-3 mt-1" style="font-size: 1.25rem;"></i>
+                                <div>
+                                    <h5 class="h6 mb-1">AIRR Compliance</h5>
+                                    <p class="small text-muted mb-0">Data formatted according to AIRR Community standards</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="d-flex align-items-start">
+                                <i class="bi bi-file-earmark-code text-primary me-3 mt-1" style="font-size: 1.25rem;"></i>
+                                <div>
+                                    <h5 class="h6 mb-1">Multiple Formats</h5>
+                                    <p class="small text-muted mb-0">Download in FASTA, JSON, or custom formats</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="d-flex align-items-start">
+                                <i class="bi bi-graph-up text-primary me-3 mt-1" style="font-size: 1.25rem;"></i>
+                                <div>
+                                    <h5 class="h6 mb-1">Regular Updates</h5>
+                                    <p class="small text-muted mb-0">Continuously updated with newly discovered alleles</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Citation Information -->
+                <div class="data-card mb-4" id="citation">
+                    <h2 class="h3 mb-3">
+                        <i class="bi bi-quote me-2"></i>
+                        Citation Information
+                    </h2>
+                    <p>If you use OGRDB in your research, please cite:</p>
+                    <div class="alert alert-primary">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <strong>The current landscape of adaptive immune receptor genomic and repertoire data: OGRDB and VDJbase</strong><br>
+                                <small class="text-muted">Lees, Peres, Klein, Amos et al., Nucleic Acids Research, November 2025.</small><br>
+                                <a href="https://doi.org/10.1093/nar/gkaf1094" target="_blank" class="text-decoration-none">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>View Paper
+                                </a>
+                            </div>
+                            <button class="btn btn-outline-secondary btn-sm copy-citation" title="Copy citation">
+                                <i class="bi bi-clipboard me-1"></i>Copy
+                            </button>
+                        </div>
+                    </div>
+                    <p class="small text-muted">Individual sequences and submissions may have additional citation requirements listed on their respective pages.</p>
+                </div>
+        </div>
+
+        <!-- Right Column - WordPress News & Documentation -->
+        <div class="col-lg-4">
+            <!-- WordPress News Articles -->
+            <div class="info-card mb-4">
+                <h3 class="h5 mb-3">
+                    <i class="bi bi-newspaper me-2"></i>
+                    OGRDB Documentation
+                </h3>
+                
+                <!-- Search Input -->
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control form-control-sm" placeholder="Search articles..." id="articleFilter">
+                    <button class="btn btn-outline-secondary btn-sm" type="button">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+                
+                <!-- Topic Filters -->
+                <div class="mb-3">
+                    <small class="text-muted fw-bold text-uppercase">Filter by Topic:</small>
+                </div>
+                <div class="row g-2 mb-4">
+                    <div class="col-6">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100 active" data-filter="all">
+                            <i class="bi bi-list me-1"></i>
+                            <span class="small">All Articles</span>
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" data-filter="data_updates">
+                            <i class="bi bi-database me-1"></i>
+                            <span class="small">Data Updates</span>
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" data-filter="site_updates">
+                            <i class="bi bi-arrow-clockwise me-1"></i>
+                            <span class="small">Site Updates</span>
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" data-filter="howto">
+                            <i class="bi bi-question-circle me-1"></i>
+                            <span class="small">How-To Guides</span>
+                        </button>
+                    </div>
+                    <div class="col-12">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" data-filter="submission">
+                            <i class="bi bi-upload me-1"></i>
+                            <span class="small">Submission Info</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="articles-container" class="help-topics-scroll" style="max-height: 800px; overflow-y: auto;">
+                    
+                        
+                        <div class="article-item border-bottom py-3" data-tags="data_updates" data-title="fixes to peromyscus leucopus sets" data-excerpt="a curation error caused the 5′ rss to be included in the coding sequence of peromyscus leucopus ighd alleles, and some ighj and igk alleles. this has now been fixed and new versions of the two sets are available.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/fixes-to-peromyscus-leucopus-sets/" target="_blank" class="text-decoration-none">
+                                            Fixes to Peromyscus leucopus sets
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">A curation error caused the 5′ RSS to be included in the coding sequence of Peromyscus leucopus IGHD alleles, and some I...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-10-05
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">data_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/fixes-to-peromyscus-leucopus-sets/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="data_updates" data-title="rainbow trout igh set now available" data-excerpt="a reference set for rainbow trout (oncorhynchus mykiss) igh is now available. this is based on an annotation of the arlee strain genome assembly prjna623027 by pierre boudinot of inrae, université paris-saclay, france and susana magadan of cinbio, universidade de vigo, spain. a publication is in preparation.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/rainbow-trout-igh-set-now-available/" target="_blank" class="text-decoration-none">
+                                            Rainbow trout IGH set now available
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">A reference set for rainbow trout (Oncorhynchus mykiss) IGH is now available. This is based on an annotation of the Arle...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-06-20
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">data_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/rainbow-trout-igh-set-now-available/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="cell ranger support added" data-excerpt="ogrdb now supports cell ranger! specifically, you can use the receptor_utils download tool to download our human ig sets in a 10x-supported format, and then use cell ranger to create a reference set for annotation. natively, cell ranger only annotates at the gene level. using the ogrdb sets therefore adds a substantial degree of additional… continue reading cell ranger support added">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/cell-ranger-support-added/" target="_blank" class="text-decoration-none">
+                                            Cell Ranger support added
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">OGRDB now supports Cell Ranger! Specifically, you can use the receptor_utils download tool to download our Human IG sets...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-06-09
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/cell-ranger-support-added/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="airr-c gldb wg resources" data-excerpt="ogrdb is the airr community database of reference sets for ig and tr receptor germline alleles. all sets are freely available for commercial and non-commercial use. data formats and api conform to airr-c’s miairr standards. receptor-utils provides command-line tools for working with ogrdb germline sets. it provides walkthroughs for using ogrdb sets with:– igblast– mixcr… continue reading airr-c gldb wg resources">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/airr-c-gldb-wg-resources/" target="_blank" class="text-decoration-none">
+                                            AIRR-C GLDB WG resources
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">OGRDB is the AIRR Community database of reference sets for IG and TR receptor germline alleles. All sets are freely avai...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-06-01
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/airr-c-gldb-wg-resources/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="human ig sets updated" data-excerpt="the human igh_vdj, igk and igl sets have been updated to incorporate information from vdjbase genomic studies. full-length sequences (including leader and rss) have been added to most alleles in these sets as a result, and the information from vdjbase has allowed us to add 25 additional v-sequences (4 ighv, 13 igkv, 8iglv). these are… continue reading human ig sets updated">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/human-ig-sets-updated/" target="_blank" class="text-decoration-none">
+                                            Human IG sets updated
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">The human IGH_VDJ, IGK and IGL sets have been updated to incorporate information from VDJbase genomic studies. Full-leng...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-05-27
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/human-ig-sets-updated/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="mouse sets revised" data-excerpt="the alignment of two heavy-chain sequences has been revised: ighv-ntll in cast/eij igh and ighv-mjae in lewes/eij igh. some truncated sequences in cast/eij igl and msm/msj igl have been replaced with full-length versions. please refer to the version history of these four sets for further details. thanks to hervé pagès for reporting these anomalies.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/mouse-sets-revised/" target="_blank" class="text-decoration-none">
+                                            Mouse sets revised
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">The alignment of two heavy-chain sequences has been revised: IGHV-NTLL in CAST/EiJ IGH and IGHV-MJAE in LEWES/EiJ IGH. S...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-03-30
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/mouse-sets-revised/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="macaque sets updated" data-excerpt="we have fixed a problem with the amino acid alignment of some v sequences in the macaque igl set. this impacts the gapping of the v sequences (but not the nt sequence itself) and consequently changes the delineation of cdr1 and cdr2 in those sequences (the delineation of the start of cdr3 was not affected).… continue reading macaque sets updated">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/macaque-sets-updated/" target="_blank" class="text-decoration-none">
+                                            Macaque sets updated
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">We have fixed a problem with the amino acid alignment of some V sequences in the macaque IGL set. This impacts the gappi...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-02-05
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/macaque-sets-updated/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="rhesus macaque ig germline sets released" data-excerpt="the germline database working group of the airr community is pleased to announce publication on ogrdb of rhesus macaque germline sets covering all three ig loci. these sets include ig sequences from the recent publication in immunity, “population-level genomic analysis of immunoglobulin loci variation in rhesus macaques reveals extensive germline diversity” [1], derived from 106… continue reading rhesus macaque ig germline sets released">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/rhesus-macaque-ig-germline-sets-released/" target="_blank" class="text-decoration-none">
+                                            Rhesus Macaque IG Germline sets released
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">The Germline Database Working Group of the AIRR Community is pleased to announce publication on OGRDB of rhesus macaque ...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-01-06
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/rhesus-macaque-ig-germline-sets-released/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="human ighc set released" data-excerpt="we’re pleased to publish the first version of a human ighc germline set on ogrdb. the set is based on the work of jana et al., 2025, and contains 105 full-length igh constant region sequences, derived from long-read genomic sequencing. this work substantially increased the number of published sequences and revealed significant polymorphism and population… continue reading human ighc set released">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/human-ighc-set-released/" target="_blank" class="text-decoration-none">
+                                            Human IGHC set released
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">We’re pleased to publish the first version of a human IGHC germline set on OGRDB. The set is based on the work of Jana e...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2026-01-01
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/human-ighc-set-released/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="explanation of germline set formats" data-excerpt="this article gives a brief explanation of the different germline set formats available from ogrdb. recommended for airr-seq analysis the sets available from the download pages are tuned for airr-seq analysis. in particular, duplicate sequences are removed and sequences inferred from transcripts are extended to their likely full length, as inferred from other alleles of… continue reading explanation of germline set formats">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/explanation-of-germline-set-formats/" target="_blank" class="text-decoration-none">
+                                            Explanation of germline set formats
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">This article gives a brief explanation of the different germline set formats available from OGRDB. Recommended for AIRR-...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2025-12-31
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/explanation-of-germline-set-formats/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="" data-title="new publication" data-excerpt="please read our update article in nucleic acids research to learn about new features in ogrdb and vdjbase, and plans for the future. william d lees, ayelet peres, vered klein, naama amos, uddalok jana, eric engelbrecht, zachary vanwinkle, yaniv malach, thomas konstantinovsky, pazit polak, corey t watson, gur yaari, the current landscape of adaptive immune… continue reading new publication">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/vdjbase_news/new-publication/" target="_blank" class="text-decoration-none">
+                                            New publication
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">Please read our update article in Nucleic Acids Research to learn about new features in OGRDB and VDJbase, and plans for...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2025-11-09
+                                        </small>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/vdjbase_news/new-publication/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="uploading germline sets to ogrdb" data-excerpt="germline sets, or additional data for existing sets, is provided in two csv files which are uploaded to the site. this repo documents file formats and the process to follow in creating them. it also provides a number of utilities which are designed to simplify data creation and to check the data before upload.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/uploading-germline-sets-to-ogrdb/" target="_blank" class="text-decoration-none">
+                                            Uploading germline sets to OGRDB
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">Germline sets, or additional data for existing sets, is provided in two CSV files which are uploaded to the site. This r...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2025-09-17
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/uploading-germline-sets-to-ogrdb/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="submission" data-title="contributing germline sets to ogrb" data-excerpt="we welcome submissions of germline sets for new species, and new sequences for existing species. under our overall policy, expressed in the name of the site, contributions must be free for anyone to use. ogrdb is structured to allow individuals or groups to manage the sets that they provide, and we hope that they will… continue reading contributing germline sets to ogrb">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/contributing-germline-sets-to-ogrb/" target="_blank" class="text-decoration-none">
+                                            Contributing germline sets to OGRB
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">We welcome submissions of germline sets for new species, and new sequences for existing species. Under our overall polic...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2025-09-17
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">submission</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/contributing-germline-sets-to-ogrb/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto site_updates" data-title="gene tables and  alignments!" data-excerpt="this month we’ve added gene tables and alignments to ogrdb. both can be reached from the sequences dropdown at the top of every page. gene tables list all the sequences in a locus, organised by gene. you can click on the sequence name to see full details of the sequence, including the support we have… continue reading gene tables and alignments!">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/gene-tables-and-alignments/" target="_blank" class="text-decoration-none">
+                                            Gene Tables and  Alignments!
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">This month we’ve added gene tables and alignments to OGRDB. Both can be reached from the Sequences dropdown at the top o...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2025-09-17
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                                    <span class="badge bg-light text-dark me-1">site_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/gene-tables-and-alignments/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="site_updates" data-title="website updated" data-excerpt="we have redesigned the front page and added a new help page which brings together all information on how to use ogrdb. other pages have been restyled to make them simpler and easier to use. we hope you will enjoy the new site. if there are any problems, please let us know by using the… continue reading website updated">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/website-updated/" target="_blank" class="text-decoration-none">
+                                            Website updated
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">We have redesigned the front page and added a new help page which brings together all information on how to use OGRDB. O...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2025-08-25
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">site_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/website-updated/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="ogrdb api v2" data-excerpt="the ogrdb api has been upgraded to provide new features: this guide describes the new api. the old api is still available for compatibility with existing scripts.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/ogrdb-api-v2/" target="_blank" class="text-decoration-none">
+                                            OGRDB API v2
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">The OGRDB API has been upgraded to provide new features: This guide describes the new API. The old API is still availabl...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2025-08-10
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/ogrdb-api-v2/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="site_updates" data-title="additional support for germline sets" data-excerpt="we have created step-by-step walk-throughs showing how to use the airr-c germline sets with local installations of igblast and mixcr. these tools make use of download_germline_set, which is a powerful command-line utility which can be used to download sets in various formats, and explore the sets and versions available in ogrdb. it can even create… continue reading additional support for germline sets">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/additional-support-for-germline-sets/" target="_blank" class="text-decoration-none">
+                                            Additional support for germline sets
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">We have created step-by-step walk-throughs showing how to use the AIRR-C germline sets with local installations of IgBLA...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2024-10-18
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">site_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/additional-support-for-germline-sets/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="data_updates" data-title="mouse ig reference sets updated" data-excerpt="fixes have been made to two mouse reference sets. in c57bl/6 igh, a stray character in the coding sequence for ighv-kaog has been removed. there are no other changes to this set. in pwd/phj igh, the delineation j_cdr3_end has been corrected. there are no other changes in this set, and coding sequences are unchanged.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/mouse-ig-reference-sets-updated/" target="_blank" class="text-decoration-none">
+                                            Mouse IG Reference Sets Updated
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">Fixes have been made to two mouse reference sets. In C57BL/6 IGH, a stray character in the coding sequence for IGHV-KAOG...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2024-10-15
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">data_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/mouse-ig-reference-sets-updated/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="data_updates" data-title="human ig reference sets updated" data-excerpt="the human ig reference sets on ogrdb have been updated and carry new versions, but no coding sequences are affected. the updates add longer gene sequences for many light-chain alleles, allowing better characterisation of leader and rss. delineations of cdrs and other features have been reviewed and fixed in some cases. the changes made are… continue reading human ig reference sets updated">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/human-ig-reference-sets-updated/" target="_blank" class="text-decoration-none">
+                                            Human IG Reference Sets Updated
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">The human IG reference sets on OGRDB have been updated and carry new versions, but no coding sequences are affected. The...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2024-10-15
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">data_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/human-ig-reference-sets-updated/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="site_updates" data-title="ogrdb updated" data-excerpt="ogrdb has been updated to use binomial (latin) species names instead of colloquial names. the former names can still be used in calls to fetch germline sets, which i hope will prevent automated scripts from breaking, but if you do have problems please try substituting, for example, “homo sapiens” for “human”. this turned out to… continue reading ogrdb updated">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/ogrdb-updated/" target="_blank" class="text-decoration-none">
+                                            OGRDB Updated
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">OGRDB has been updated to use binomial (latin) species names instead of colloquial names. The former names can still be ...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2024-07-07
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">site_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/ogrdb-updated/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="site_updates" data-title="collaboration opportunities" data-excerpt="ogrdb and vdjbase are part of the airr knowledge commons project – bringing together immune repertoires from the airr data commons, epitopes from iedb, receptor germline analysis from ogrdb and vdjbase with other emerging datasets. we are actively seeking collaborators whose projects will drive use cases and demonstrate the utility of bringing these various sources… continue reading collaboration opportunities">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/vdjbase_news/collaboration-opportunities/" target="_blank" class="text-decoration-none">
+                                            Collaboration Opportunities
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">OGRDB and VDJbase are part of the AIRR Knowledge Commons project – bringing together immune repertoires from the AIRR Da...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2024-03-19
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">site_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/vdjbase_news/collaboration-opportunities/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="novel allele submission process simplified" data-excerpt="following an iarc decision in december 2023, the submission process for inferred novel alleles has been simplified. previously, it was necessary to deposit the sequence of each inferred allele in genbank or ena, and it was usually necessary to accompany this with an extracted set of reads from the repertoire that provided explicit support for… continue reading novel allele submission process simplified">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/novel-allele-submission-process-simplified/" target="_blank" class="text-decoration-none">
+                                            Novel Allele Submission Process Simplified
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">Following an IARC decision in December 2023, the submission process for inferred novel alleles has been simplified. Prev...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2023-12-31
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/novel-allele-submission-process-simplified/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="germline databases, or adventures into the allelic underworld" data-excerpt="if you are interested in receptor germlines, you might enjoy this on-airr podcast with corey watson and william lees, hosted by ulrik stervbo and zhaoqing ding. “in this episode we talk about the recent work by the germline database working group of the airr-community. the accuracy of v and j gene segment assignment improves with… continue reading germline databases, or adventures into the allelic underworld">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/vdjbase_news/germline-databases-or-adventures-into-the-allelic-underworld/" target="_blank" class="text-decoration-none">
+                                            Germline Databases, or adventures into the allelic underworld
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">If you are interested in receptor germlines, you might enjoy this On-AIRR podcast with Corey Watson and William Lees, ho...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2023-11-02
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/vdjbase_news/germline-databases-or-adventures-into-the-allelic-underworld/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="data_updates" data-title="human ig germline sets now available" data-excerpt="germline sets for human igh, igk and igl are now available for download. they are described in a forthcoming publication, “airr-c human ig reference sets: curated sets of immunoglobulin heavy and light chain germline genes”, currently available from biorxiv as a preprint. our aim with these sets is to provide high-quality, evidenced collections that are… continue reading human ig germline sets now available">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/human-ig-germline-sets-now-available/" target="_blank" class="text-decoration-none">
+                                            Human IG germline sets now available
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">Germline sets for human IGH, IGK and IGL are now available for download. They are described in a forthcoming publication...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2023-09-08
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">data_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/human-ig-germline-sets-now-available/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="downloading germline sets from the command line or api" data-excerpt="in this post, we’re going to look briefly at the different ways that you can download germline sets from the command line, or from code. we want to make germline sets on ogrdb as easy to work with as possible, and making them available for download conveniently is an important part of that, so that… continue reading downloading germline sets from the command line or api">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/downloading-germline-sets-from-the-command-line-or-api/" target="_blank" class="text-decoration-none">
+                                            Downloading germline sets from the command line or API
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">In this post, we’re going to look briefly at the different ways that you can download germline sets from the command lin...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2023-07-21
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/downloading-germline-sets-from-the-command-line-or-api/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="germline set format updates" data-excerpt="the json format in which germline sets are distributed has been updated (germline sets are also available from ogrdb in fasta format, but the json format provides much richer information). the revised format is compliant with the latest development version of the airr schema, which is expected to be released as an update in the… continue reading germline set format updates">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/germline-set-format-updates/" target="_blank" class="text-decoration-none">
+                                            Germline Set format updates
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">The JSON format in which germline sets are distributed has been updated (germline sets are also available from OGRDB in ...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2023-06-27
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/germline-set-format-updates/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="preprint on germline set development now available" data-excerpt="the airr community has recently published a preprint on the community development of ig and tr germline sets. this sets out the principles and approach being followed for the development and publication of germline sets on ogrdb, which we hope will gain wider traction in the community as a whole.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/preprint-on-germline-set-development-now-available/" target="_blank" class="text-decoration-none">
+                                            Preprint on germline set development now available
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">The AIRR Community has recently published a preprint on the community development of IG and TR germline sets. This sets ...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2022-12-02
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/preprint-on-germline-set-development-now-available/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="using the ogrdb mouse germline sets" data-excerpt="for many analyses, it is important to annotate airr-seq repertoires with an accurate and comprehensive germline set. as an example, determination of the overall mutation rate of a repertoire may give misleading results if frequently-expressed sequences are omitted. likewise, many methods of clonal assignment require an accurate determination of the germline. the ig loci of… continue reading using the ogrdb mouse germline sets">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/using-the-ogrdb-mouse-germline-sets/" target="_blank" class="text-decoration-none">
+                                            Using the OGRDB mouse germline sets
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">For many analyses, it is important to annotate AIRR-seq repertoires with an accurate and comprehensive germline set. As ...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2022-12-02
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/using-the-ogrdb-mouse-germline-sets/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="data_updates" data-title="germline sets now have dois" data-excerpt="germline sets on ogrdb are copied to zenodo.org for long-term security and have dois issued by zenodo which you will see on the germline sets pages. the doi is updated with each version: you can provide the doi for the version used in your research as a permanent link to the set.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/germline-sets-now-have-dois/" target="_blank" class="text-decoration-none">
+                                            Germline sets now have DOIs
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">Germline sets on OGRDB are copied to Zenodo.org for long-term security and have DOIs issued by Zenodo which you will see...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2022-09-28
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">data_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/germline-sets-now-have-dois/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="downloading ogrdb data" data-excerpt="ogrdb provides facilities on various pages to download key items of data. some tables also provide buttons to download in csv or excel format. to download germline sets in fasta or airr-c format, just press the download germline sets button on the home page, and select the species you require. to download full details of… continue reading downloading ogrdb data">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/downloading-ogrdb-data/" target="_blank" class="text-decoration-none">
+                                            Downloading OGRDB Data
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">OGRDB provides facilities on various pages to download key items of data. Some tables also provide buttons to download i...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2022-09-28
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/downloading-ogrdb-data/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="tools for working with germline sets" data-excerpt="the airr-c standard germline sets published in ogrdb use a new naming scheme: please see this poster for details. because the format of these names may not be compatible with all current pipeline tools, we have released receptor-germline-tools: utilities that can convert to more compatible subgroup-identifier-allele form. we have also updated the fasta files downloadable… continue reading tools for working with germline sets">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/tools-for-working-with-germline-sets/" target="_blank" class="text-decoration-none">
+                                            Tools for working with germline sets
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">The AIRR-C standard germline sets published in OGRDB use a new naming scheme: please see this poster for details. Becaus...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2022-07-10
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/tools-for-working-with-germline-sets/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="data_updates" data-title="first germline sets published on ogrdb" data-excerpt="we have published ighv germline sets for laboratory mouse strains balb/c and c75bl/6, as recently reported in preprint by jackson et al.the sets will be curated by the airr community germline database working group with the aim of maintaining sets that are tuned for use in airr-seq, taking advantage of the latest research. we hope… continue reading first germline sets published on ogrdb">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/first-germline-sets-published-on-ogrdb/" target="_blank" class="text-decoration-none">
+                                            First Germline Sets Published on OGRDB
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">We have published IGHV germline sets for laboratory mouse strains BALB/c and C75BL/6, as recently reported in preprint b...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2022-03-08
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">data_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/first-germline-sets-published-on-ogrdb/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="data_updates" data-title="new inferred sequences accepted by imgt" data-excerpt="a new batch of inferred receptor sequences, submitted for review through ogrdb, has been accepted by imgt and should be added to their reference sets shortly. this batch included the first igk and igl alleles. we have now affirmed a total of 32 sequences, details of which can be found on the sequences page.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/new-inferred-sequences-accepted-by-imgt/" target="_blank" class="text-decoration-none">
+                                            New inferred sequences accepted by IMGT
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">A new batch of inferred receptor sequences, submitted for review through OGRDB, has been accepted by IMGT and should be ...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2021-11-17
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">data_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/new-inferred-sequences-accepted-by-imgt/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="howto" data-title="introduction to ogrdb" data-excerpt="introduction to ogrdb in recent years it has become possible to sequence immune receptor repertoires (immunoglobulins and t cell receptors) at great depth. the accurate analysis of these repertoires requires a comprehensive understanding of the germline genes that give rise to the repertoire through v(d)j gene recombination. even for well-studied species such as humans and… continue reading introduction to ogrdb">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/introduction-to-ogrdb/" target="_blank" class="text-decoration-none">
+                                            Introduction to OGRDB
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">Introduction to OGRDB In recent years it has become possible to sequence immune receptor repertoires (immunoglobulins an...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2021-11-17
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">howto</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/introduction-to-ogrdb/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="submission" data-title="submitting inferences to ogrdb" data-excerpt="if you have identified previously undocumented alleles in airr-seq repertoires, we invite you to submit them to ogrdb for review and possible inclusion in published germline reference sets. at present, you can submit human ig or tr v-sequences for consideration. we hope to extend this to cover more species and loci soon. qualification criteria to… continue reading submitting inferences to ogrdb">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/submitting-inferences-to-ogrdb/" target="_blank" class="text-decoration-none">
+                                            Submitting inferences to OGRDB
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">If you have identified previously undocumented alleles in AIRR-Seq repertoires, we invite you to submit them to OGRDB fo...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2021-10-08
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">submission</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/submitting-inferences-to-ogrdb/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="submission" data-title="creating a select set" data-excerpt="a select set is a set of reads taken from a single repertoire that directly support a specific inference. in outline, the process to create the set is as follows: for a paired-end-read dataset, merge all paired-end reads align reads to the inferred allele reference filter the output to an identity of at least 96%… continue reading creating a select set">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/creating-a-select-set/" target="_blank" class="text-decoration-none">
+                                            Creating a select set
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">A select set is a set of reads taken from a single repertoire that directly support a specific inference. In outline, th...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2021-10-08
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">submission</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/creating-a-select-set/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="submission" data-title="ogrdb &amp;#8211; depositing records in nih repositories" data-excerpt="at the end of this deposition process, ncbi will contain two types of record for use in your submission: a sequence record for each inferred sequence you intend to submit. one or more select sets for each inferred sequence. the deposition process for each type is detailed below. as sequence records refer to select sets,… continue reading ogrdb – depositing records in nih repositories">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb/ogrdb-depositing-records-in-nih-repositories/" target="_blank" class="text-decoration-none">
+                                            OGRDB &#8211; Depositing records in NIH repositories
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">At the end of this deposition process, NCBI will contain two types of record for use in your submission: A sequence reco...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2021-10-08
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">submission</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb/ogrdb-depositing-records-in-nih-repositories/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="submission" data-title="iarc submission guide updated" data-excerpt="we welcome submissions of previously undocumented alleles of human receptor genes. the submission guide explains the process, which involves deposition of sequences and sequence sets in nih or ena repositories. your submission will be reviewed by airr‘s inferred allele review committee, and, if there is sufficient evidence, the sequence will be published on this site… continue reading iarc submission guide updated">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/iarc-submission-guide-updated/" target="_blank" class="text-decoration-none">
+                                            IARC Submission Guide Updated
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">We welcome submissions of previously undocumented alleles of human receptor genes. The Submission Guide explains the pro...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2021-10-01
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">submission</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/iarc-submission-guide-updated/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="article-item border-bottom py-3" data-tags="site_updates" data-title="allele review extended" data-excerpt="ogrdb is now accepting v- and j- sequence inferences from the human bcr light and heavy chain. analysis scripts and submission pages have been updated accordingly.">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/allele-review-extended/" target="_blank" class="text-decoration-none">
+                                            Allele Review Extended
+                                        </a>
+                                    </h6>
+                                    <p class="small text-muted mb-2">OGRDB is now accepting V- and J- sequence inferences from the human BCR light and heavy chain. Analysis scripts and subm...</p>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <small>
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            2021-08-01
+                                        </small>
+                                        
+                                            <span class="ms-2">
+                                                
+                                                    <span class="badge bg-light text-dark me-1">site_updates</span>
+                                                
+                                            </span>
+                                        
+                                    </div>
+                                </div>
+                                <a href="https://wordpress.vdjbase.org/index.php/ogrdb_news/allele-review-extended/" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        
+                    
+                </div>
+            </div>
+            
+            <!-- Need Help Card -->
+            <div class="info-card">
+                <h3 class="h5 mb-3">
+                    <i class="bi bi-headset me-2"></i>
+                    Need Help?
+                </h3>
+                <div class="mt-3 p-3 bg-light rounded">
+                    <small class="text-muted">
+                        <strong>Developer:</strong><br>
+                        William Lees
+                        <div class="d-flex align-items-center mt-1">
+                            <span class="me-2">william@lees.org.uk</span>
+                            <a href="mailto:william@lees.org.uk" class="btn btn-outline-secondary btn-sm me-1" style="padding: 0.125rem 0.25rem;" title="Send email">
+                                <i class="bi bi-envelope" style="font-size: 0.75rem;"></i>
+                            </a>
+                            <a href="https://www.linkedin.com/in/williamlees/" target="_blank" class="btn btn-outline-secondary btn-sm" style="padding: 0.125rem 0.25rem;" title="LinkedIn profile">
+                                <i class="bi bi-linkedin" style="font-size: 0.75rem;"></i>
+                            </a>
+                        </div>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+        <footer>
+            <div class="row">
+                <div class="col-sm-12">
+                    <div class="center">
+                        <p>Copyright is retained by contributors. <a href="/render_page/privacy_statement.html"> Privacy </a><a href="/render_page/licensing_statement.html"> | Licensing </a></p>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    </div>
+
+    <!-- Global confirmation modal -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirmModalLabel">Confirm Action</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="confirmModalBody">
+                    Are you sure?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmModalOK">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global dialog modal for BootstrapDialog.show compatibility -->
+    <div class="modal fade" id="dialogModal" tabindex="-1" aria-labelledby="dialogModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="dialogModalLabel">Dialog</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="dialogModalBody">
+                    <!-- Dynamic content will be inserted here -->
+                </div>
+                <div class="modal-footer" id="dialogModalFooter">
+                    <!-- Dynamic buttons will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    
+    
+    
+    <script>
+    // Bootstrap 5 replacement for BootstrapDialog.confirm
+    function showConfirmDialog(options) {
+        const modal = document.getElementById('confirmModal');
+        const modalBody = document.getElementById('confirmModalBody');
+        const modalOK = document.getElementById('confirmModalOK');
+        const modalTitle = document.getElementById('confirmModalLabel');
+        
+        // Remove previous type classes
+        modal.classList.remove('type-danger', 'type-warning', 'type-primary');
+        
+        // Set content
+        modalBody.innerHTML = options.message || 'Are you sure?';
+        modalTitle.textContent = options.title || 'Confirm Action';
+        
+        // Set modal type class
+        if (options.type) {
+            modal.classList.add('type-' + options.type);
+        }
+        
+        // Set button class based on type
+        let btnClass = 'btn-primary';
+        if (options.type === 'danger') btnClass = 'btn-danger';
+        else if (options.type === 'warning') btnClass = 'btn-warning';
+        else if (options.btnOKClass) btnClass = options.btnOKClass;
+        
+        modalOK.className = 'btn ' + btnClass;
+        modalOK.textContent = options.btnOKLabel || 'OK';
+        
+        // Remove previous event listeners
+        const newModalOK = modalOK.cloneNode(true);
+        modalOK.parentNode.replaceChild(newModalOK, modalOK);
+        
+        // Add new event listener
+        newModalOK.addEventListener('click', function() {
+            if (options.callback && typeof options.callback === 'function') {
+                options.callback(true);
+            }
+            bootstrap.Modal.getInstance(modal).hide();
+        });
+        
+        // Show modal
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
+    }
+
+    // Bootstrap 5 replacement for BootstrapDialog.show
+    function showDialog(options) {
+        const modal = document.getElementById('dialogModal');
+        const modalBody = document.getElementById('dialogModalBody');
+        const modalFooter = document.getElementById('dialogModalFooter');
+        const modalTitle = document.getElementById('dialogModalLabel');
+        
+        // Remove previous type classes
+        modal.classList.remove('type-danger', 'type-warning', 'type-primary');
+        
+        // Set modal type class
+        if (options.type) {
+            modal.classList.add('type-' + options.type);
+        }
+        
+        // Set title
+        modalTitle.textContent = options.title || 'Dialog';
+        
+        // Set content
+        if (typeof options.message === 'function') {
+            // Create a dialog object with methods for compatibility
+            const dialogObject = {
+                getButton: function(id) {
+                    return {
+                        enable: function() {
+                            const btn = document.getElementById(id);
+                            if (btn) btn.disabled = false;
+                        },
+                        disable: function() {
+                            const btn = document.getElementById(id);
+                            if (btn) btn.disabled = true;
+                        }
+                    };
+                },
+                close: function() {
+                    bootstrap.Modal.getInstance(modal).hide();
+                }
+            };
+            
+            const content = options.message(dialogObject);
+            if (content instanceof jQuery) {
+                modalBody.innerHTML = content.html();
+            } else if (content instanceof HTMLElement) {
+                modalBody.innerHTML = '';
+                modalBody.appendChild(content);
+            } else {
+                modalBody.innerHTML = content;
+            }
+        } else {
+            modalBody.innerHTML = options.message || '';
+        }
+        
+        // Clear and set buttons
+        modalFooter.innerHTML = '';
+        if (options.buttons && Array.isArray(options.buttons)) {
+            options.buttons.forEach(function(btn) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn ' + (btn.cssClass || 'btn-secondary');
+                button.textContent = btn.label || 'Button';
+                if (btn.id) button.id = btn.id;
+                if (btn.title) button.title = btn.title;
+                
+                button.addEventListener('click', function() {
+                    if (btn.action && typeof btn.action === 'function') {
+                        const dialogObject = {
+                            close: function() {
+                                bootstrap.Modal.getInstance(modal).hide();
+                            }
+                        };
+                        btn.action(dialogObject);
+                    }
+                });
+                
+                modalFooter.appendChild(button);
+            });
+        } else {
+            // Default close button
+            const closeBtn = document.createElement('button');
+            closeBtn.type = 'button';
+            closeBtn.className = 'btn btn-secondary';
+            closeBtn.textContent = 'Close';
+            closeBtn.setAttribute('data-bs-dismiss', 'modal');
+            modalFooter.appendChild(closeBtn);
+        }
+        
+        // Show modal
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
+        
+        // Call onshow if provided
+        if (options.onshow && typeof options.onshow === 'function') {
+            const dialogObject = {
+                getButton: function(id) {
+                    return {
+                        enable: function() {
+                            const btn = document.getElementById(id);
+                            if (btn) btn.disabled = false;
+                        },
+                        disable: function() {
+                            const btn = document.getElementById(id);
+                            if (btn) btn.disabled = true;
+                        }
+                    };
+                },
+                close: function() {
+                    bootstrap.Modal.getInstance(modal).hide();
+                }
+            };
+            options.onshow(dialogObject);
+        }
+    }
+    
+    // Backward compatibility for BootstrapDialog
+    window.BootstrapDialog = {
+        TYPE_DANGER: 'danger',
+        TYPE_WARNING: 'warning',
+        TYPE_PRIMARY: 'primary',
+        confirm: function(options) {
+            showConfirmDialog({
+                message: options.message,
+                title: options.title,
+                type: options.type,
+                btnOKClass: options.btnOKClass,
+                btnOKLabel: options.btnOKLabel,
+                callback: options.callback
+            });
+        },
+        show: function(options) {
+            showDialog(options);
+        }
+    };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+    
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/v/bs5/jszip-2.5.0/dt-1.11.3/b-2.0.1/b-colvis-2.0.1/b-html5-2.0.1/b-print-2.0.1/cr-1.5.5/fh-3.2.0/sl-1.3.3/datatables.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jeditable.js/2.0.19/jquery.jeditable.min.js"></script>
+    <script>
+    $(function () {
+        $('[data-bs-toggle="tooltip"]').tooltip()
+    })
+    </script>
+
+
+    <style>
+        /* Ensure dropdown menus appear above help page content */
+        .dropdown-menu {
+            z-index: 1050 !important;
+        }
+        .dropdown {
+            position: relative;
+            z-index: 1000;
+        }
+    </style>
+    <script>
+    // Client-side filtering for help articles
+    document.addEventListener('DOMContentLoaded', function() {
+        // Article filtering functionality
+        const articleFilter = document.getElementById('articleFilter');
+        const topicFilters = document.querySelectorAll('.help-content [data-filter]');
+        const articles = document.querySelectorAll('.article-item');
+        
+        // Article search/filter functionality
+        if (articleFilter) {
+            articleFilter.addEventListener('input', function(e) {
+                const searchTerm = e.target.value.toLowerCase();
+                filterArticles(searchTerm);
+            });
+        }
+        
+        // Topic filter buttons - use event delegation on the document
+        document.addEventListener('click', function(e) {
+            // Only handle clicks on elements with data-filter attribute
+            if (e.target.hasAttribute('data-filter') || e.target.closest('[data-filter]')) {
+                const filterButton = e.target.hasAttribute('data-filter') ? e.target : e.target.closest('[data-filter]');
+                
+                if (filterButton) {
+                    e.preventDefault();
+                    
+                    // Update active state - find all filter buttons
+                    const topicFilters = document.querySelectorAll('[data-filter]');
+                    topicFilters.forEach(f => f.classList.remove('active'));
+                    filterButton.classList.add('active');
+                    
+                    const filterValue = filterButton.dataset.filter;
+                    filterByTopic(filterValue);
+                }
+            }
+        });
+        
+        // Handle Browse Sets and View Sequences button clicks
+        const browseSetsBtn = document.getElementById('browse-sets-btn');
+        const viewSequencesBtn = document.getElementById('view-sequences-btn');
+        
+        function handleHelpDropdownClick(dropdownSelector) {
+            // First, scroll to top so user can see the navigation
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+            
+            // Check if navbar is collapsed (on mobile)
+            const navbarCollapse = document.getElementById('navbarCollapse');
+            const isCollapsed = navbarCollapse && !navbarCollapse.classList.contains('show');
+            
+            if (isCollapsed) {
+                // Expand the navbar first
+                const navbarToggler = document.querySelector('.navbar-toggler');
+                if (navbarToggler && typeof bootstrap !== 'undefined') {
+                    const collapse = bootstrap.Collapse.getOrCreateInstance(navbarCollapse);
+                    collapse.show();
+                }
+            }
+            
+            // Wait a bit for scroll and potential navbar expansion, then show dropdown
+            setTimeout(() => {
+                const dropdown = document.querySelector(dropdownSelector);
+                if (dropdown && typeof bootstrap !== 'undefined') {
+                    const dropdownInstance = bootstrap.Dropdown.getOrCreateInstance(dropdown);
+                    dropdownInstance.show();
+                }
+            }, isCollapsed ? 400 : 200); // Longer delay if we had to expand navbar
+        }
+                
+        function filterArticles(searchTerm) {
+            articles.forEach(article => {
+                const title = article.dataset.title || '';
+                const excerpt = article.dataset.excerpt || '';
+                const tags = article.dataset.tags || '';
+                
+                const matchesSearch = !searchTerm || 
+                    title.includes(searchTerm) || 
+                    excerpt.includes(searchTerm) || 
+                    tags.includes(searchTerm);
+                
+                article.style.display = matchesSearch ? 'block' : 'none';
+            });
+            
+            updateArticleCount();
+        }
+        
+        function filterByTopic(topicFilter) {
+            articles.forEach(article => {
+                const tags = article.dataset.tags || '';
+                const matchesTopic = topicFilter === 'all' || tags.includes(topicFilter);
+                
+                article.style.display = matchesTopic ? 'block' : 'none';
+            });
+            
+            // Clear search when filtering by topic
+            if (articleFilter) {
+                articleFilter.value = '';
+            }
+            
+            updateArticleCount();
+        }
+        
+        function updateArticleCount() {
+            const visibleArticles = document.querySelectorAll('.article-item[style="display: block"], .article-item:not([style*="none"])').length;
+            const container = document.getElementById('articles-container');
+            
+            if (visibleArticles === 0 && articles.length > 0) {
+                // Show "no results" message if we have articles but none are visible
+                if (!document.getElementById('no-results-message')) {
+                    const noResults = document.createElement('div');
+                    noResults.id = 'no-results-message';
+                    noResults.className = 'text-center py-4';
+                    noResults.innerHTML = `
+                        <i class="bi bi-search text-muted" style="font-size: 2rem;"></i>
+                        <p class="text-muted mt-2">No articles found matching your search.</p>
+                    `;
+                    container.appendChild(noResults);
+                }
+                document.getElementById('no-results-message').style.display = 'block';
+            } else {
+                const noResultsMsg = document.getElementById('no-results-message');
+                if (noResultsMsg) {
+                    noResultsMsg.style.display = 'none';
+                }
+            }
+        }
+        
+        // Smooth scrolling for anchor links - use event delegation on document
+        document.addEventListener('click', function(e) {
+            // Only handle anchor links that start with #
+            if (e.target.tagName === 'A' && e.target.getAttribute('href')?.startsWith('#')) {
+                const href = e.target.getAttribute('href');
+                if (href && href.length > 1) {
+                    // Skip if this is a dropdown toggle or other Bootstrap component
+                    if (!e.target.hasAttribute('data-bs-toggle')) {
+                        e.preventDefault();
+                        const target = document.querySelector(href);
+                        if (target) {
+                            target.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'start'
+                            });
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Copy to clipboard functionality for citation
+        const copyButtons = document.querySelectorAll('.copy-citation');
+        copyButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const citationText = this.closest('.alert').querySelector('strong').textContent;
+                navigator.clipboard.writeText(citationText).then(() => {
+                    const originalText = this.innerHTML;
+                    this.innerHTML = '<i class="bi bi-check me-1"></i>Copied!';
+                    this.classList.remove('btn-outline-secondary');
+                    this.classList.add('btn-success');
+                    
+                    setTimeout(() => {
+                        this.innerHTML = originalText;
+                        this.classList.remove('btn-success');
+                        this.classList.add('btn-outline-secondary');
+                    }, 2000);
+                });
+            });
+        });
+    });
+    </script>
+
+</body>
+</html>

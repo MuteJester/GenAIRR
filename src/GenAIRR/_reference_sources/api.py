@@ -171,7 +171,10 @@ class SourceInspection:
                          + (f" ({missing['detail']})" if missing["detail"] else ""))
         terms = d["terms"]
         lines.append(f"Data terms: {terms['status']}"
-                     + (f": {terms['reason']}" if terms["reason"] else f" ({', '.join(terms['assets'])})"))
+                     + (f": {terms['reason']}" if terms["reason"] else
+                        f" ({', '.join(terms['assets'])}): {terms['licence']}"))
+        if terms["citation"]:
+            lines.append(f"Citation: {terms['citation']}")
         comparison = d["comparison"]
         if comparison["complete"]:
             lines.append(f"Endpoint comparison: complete ({', '.join(comparison['exports'])}); "

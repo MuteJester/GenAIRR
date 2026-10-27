@@ -3,8 +3,9 @@
 
 Maintainer tool (run from a source checkout; not part of the shipped wheel).  For one exact
 build identifier it records the pinned provider exports under
-``tests/data/reference_sources/ogrdb/`` with ``OgrdbSource.from_files``, builds the reviewed
-recipe next to them with ``OgrdbSource.build``, writes the dossier into a new or empty
+``tests/data/reference_sources/ogrdb/`` as local files, together with the provider's data-terms
+statement pages (the licence and the requested citation, recorded in the lock), builds the
+reviewed recipe next to them with ``OgrdbSource.build``, writes the dossier into a new or empty
 directory and checks it there with ``ReferenceBuild.read_dossier``.  It never uses the
 network.  Acquisition receipts are machine-local records and are not written.
 
@@ -24,19 +25,31 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 import tempfile
 from typing import NamedTuple
 
 import GenAIRR
+from GenAIRR._reference_sources import ogrdb
+from GenAIRR._reference_sources.acquisition import SuppliedFile, ingest_files
 from GenAIRR._reference_sources.digests import manifest_hash
+from GenAIRR._reference_sources.lock import Terms
 from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild, ReferenceSourceError
 
 REPO = Path(__file__).resolve().parent.parent
 SOURCE_DATA = REPO / "tests" / "data" / "reference_sources"
 EXPORT_FILES = {"airr": "airr.json", "airr_ex": "airr_ex.json", "gapped": "gapped.fasta",
                 "gapped_ex": "gapped_ex.fasta"}
+# OGRDB's data terms: each statement page kept as a fixture, and the section of the fixture
+# manifest (sources.json) that records the URL it was retrieved from and what it states.
+OGRDB_STATEMENTS = {"licence_statement": ("ogrdb/statements/licensing_statement.html", "data_licence"),
+                    "citation_statement": ("ogrdb/statements/help.html", "citation")}
+
+
+def _sources() -> dict:
+    return json.loads((SOURCE_DATA / "sources.json").read_bytes().decode("utf-8"))
 MANIFEST = "manifest.json"
 
 
@@ -52,6 +65,13 @@ class Published(NamedTuple):
     def exports(self) -> dict:
         directory = SOURCE_DATA / "ogrdb" / self.set_id / str(self.release)
         return {fmt: directory / name for fmt, name in EXPORT_FILES.items()}
+
+    @property
+    def terms(self) -> Terms:
+        """The provider's data terms, as ``sources.json`` records them."""
+        sources = _sources()
+        return Terms(status="recorded", assets=tuple(OGRDB_STATEMENTS), licence=sources["data_licence"]["licence"],
+                     citation=sources["citation"]["requested_by_provider"], reason=None)
 
     @property
     def recipe_path(self) -> Path:
@@ -70,12 +90,23 @@ class GeneratorError(Exception):
     """A target the generator will not write into."""
 
 
-def build(exact_id: str, *, cache) -> ReferenceBuild:
-    """Build ``exact_id`` from its pinned exports and recipe; ``cache`` is an empty scratch directory."""
+def source(exact_id: str, *, cache) -> OgrdbSource:
+    """The pinned exports of ``exact_id`` and the provider's statement pages, recorded as local files
+    with the terms they state; ``cache`` is an empty scratch directory."""
     published = BUILDS[exact_id]
-    source = OgrdbSource.from_files(set_id=published.set_id, release=published.release, profile=published.profile,
-                                    exports=published.exports, cache=cache)
-    return source.build(published.recipe_path)
+    files = {fmt: SuppliedFile(path) for fmt, path in published.exports.items()}
+    sources = _sources()
+    files.update({fmt: SuppliedFile(SOURCE_DATA / name, declared_url=sources[section]["statement_url"])
+                  for fmt, (name, section) in OGRDB_STATEMENTS.items()})
+    acquired = ingest_files(set_id=published.set_id, release=published.release, profile=published.profile,
+                            files=files, cache=cache, identify=ogrdb.identify, terms=published.terms)
+    return OgrdbSource._of(acquired)
+
+
+def build(exact_id: str, *, cache) -> ReferenceBuild:
+    """Build ``exact_id`` from its pinned exports, statements and recipe; ``cache`` is an empty scratch
+    directory."""
+    return source(exact_id, cache=cache).build(BUILDS[exact_id].recipe_path)
 
 
 def check_target(target: Path) -> None:
