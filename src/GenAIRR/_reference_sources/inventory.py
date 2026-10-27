@@ -110,6 +110,12 @@ SEVERITIES = ("info", "warning", "error")
 FINDING_CATEGORIES = ("unavailable_evidence", "contradictory_evidence", "unsupported_interpretation",
                       "invalid_source_syntax", "informational")
 
+# IMGT gap character in gapped FASTA sequences.
+IMGT_GAP = "."
+# Frozen value of a FASTA record observation: header text after '>' and the sequence lines
+# joined without line terminators, both exactly as supplied.
+FASTA_VALUE_KEYS = ("header", "sequence")
+
 _SEQ_RE = re.compile(r"[ACGT]+")
 _FASTA_POINTER_RE = re.compile(r"/(0|[1-9][0-9]*)")
 _CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
@@ -120,6 +126,22 @@ _MAX_COORDINATE = 2 ** 31 - 1
 def text_digest(text: str) -> str:
     """``sha256:<hex>`` of UTF-8 text (e.g. a gapped sequence or a record's ``sequence`` field)."""
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def alignment_blocks(gapped: str) -> tuple:
+    """The exact blocks of a gapped sequence: maximal runs of non-gap columns, each mapped from
+    the consecutive ungapped positions they hold (input = ungapped, output = gapped columns)."""
+    blocks, position, start = [], 0, None
+    for column, char in enumerate(gapped + IMGT_GAP):
+        if char != IMGT_GAP:
+            if start is None:
+                start = column
+            continue
+        if start is not None:
+            length = column - start
+            blocks.append(Block(input=(position, position + length), output=(start, column)))
+            position, start = position + length, None
+    return tuple(blocks)
 
 
 def _content_id(prefix: str, body: dict, domain: str) -> str:
@@ -326,7 +348,8 @@ class Observation:
             _check_record_locator(self.record, "/record")
             if not self.locator.is_under(self.record):
                 raise bad("/locator", f"{self.locator.id} is not a field of record {self.record.id}")
-        if self.locator.role in _FASTA_ROLES:
+        fasta = self.locator.role in _FASTA_ROLES
+        if fasta:
             if not _FASTA_POINTER_RE.fullmatch(self.locator.pointer):
                 raise bad("/locator", f"a FASTA record locator is /<index>, got {self.locator.pointer!r}")
             if self.record is not None:
@@ -334,8 +357,15 @@ class Observation:
         check_enum(self.presence, PRESENCES, "/presence")
         if not isinstance(self.value, JsonValue):
             object.__setattr__(self, "value", JsonValue(self.value, "/value"))
-        if self.presence == "absent" and self.value.get() is not None:
+        value = self.value.get()
+        if self.presence == "absent" and value is not None:
             raise bad("/value", "an absent field's value must be null")
+        if fasta:
+            if self.presence != "present":
+                raise bad("/presence", "a FASTA record observation is of a present record")
+            if (not isinstance(value, dict) or tuple(sorted(value)) != FASTA_VALUE_KEYS
+                    or not all(type(value[k]) is str for k in FASTA_VALUE_KEYS)):
+                raise bad("/value", 'a FASTA record observation value is {"header": str, "sequence": str}')
         check_enum(self.interpretation, INTERPRETATIONS, "/interpretation")
 
     @property
@@ -830,6 +860,16 @@ class SourceInventory:
             for i, item in enumerate(getattr(self, name)):
                 if item.record is not None and item.record.id not in records:
                     raise bad(ptr(ptr("/" + name, i), "record"), f"unknown record {item.record.id}")
+        record_keys = {(r.locator.asset, r.locator.pointer) for r in self.records}
+        for i, observation in enumerate(self.observations):
+            locator = observation.locator
+            if observation.record is None and locator.role == "record_export":
+                parts = locator.pointer.split("/")
+                for depth in range(2, len(parts)):
+                    if (locator.asset, "/".join(parts[:depth])) in record_keys:
+                        raise bad(ptr(ptr("/observations", i), "record"),
+                                  f"{locator.id} is a field of record {locator.asset}#{'/'.join(parts[:depth])}; "
+                                  "its observation names that record")
         labels = {(r.locator.asset, r.label) for r in self.records}
         for i, identity in enumerate(self.mentioned_identities):
             path = ptr("/mentioned_identities", i)
@@ -841,6 +881,8 @@ class SourceInventory:
                 where = ptr(ptr(path, "mentions"), j)
                 if record is None:
                     raise bad(ptr(where, "record"), f"unknown record {mention.record.id}")
+                if mention.locator.id not in observations:
+                    raise bad(ptr(where, "locator"), f"mention {mention.locator.id} is not an observed field")
                 if record.segment != identity.segment:
                     raise bad(path, f"{identity.label} is mentioned by {record.segment} record {record.label}, "
                                     f"not as segment {identity.segment}")
@@ -873,10 +915,43 @@ class SourceInventory:
             if end is not None and end != len(candidate.sequence):
                 raise bad(ptr(path, "blocks"), f"blocks cover {end} bases of candidate {candidate.id} "
                                                f"({len(candidate.sequence)} bases)")
+            self._verify_mapping(mapping, candidate, observations, path)
             key = (mapping.kind, candidate.id)
             if key in inputs:
                 raise bad(path, f"candidate {candidate.id} has more than one {mapping.kind} mapping")
             inputs.add(key)
+
+    @staticmethod
+    def _verify_mapping(mapping, candidate, observations, path) -> None:
+        """Recompute a mapping from the observed values: digests, exactness and blocks."""
+        if mapping.kind == "gapped_alignment":
+            gapped = observations[mapping.output.id].value.get()["sequence"]
+            if mapping.output_sha256 != text_digest(gapped):
+                raise bad(ptr(path, "output_sha256"), f"digest {mapping.output_sha256} is not that of the observed "
+                                                      f"gapped sequence {mapping.output.id} ({text_digest(gapped)})",
+                          "digest_mismatch")
+            reproduces = gapped.replace(IMGT_GAP, "") == candidate.sequence
+            if mapping.validation == "exact":
+                if not reproduces:
+                    raise bad(ptr(path, "validation"), f"removing gaps from {mapping.output.id} does not give "
+                                                       f"candidate {candidate.id}; the mapping is not exact")
+                if mapping.blocks != alignment_blocks(gapped):
+                    raise bad(ptr(path, "blocks"), f"blocks do not place candidate {candidate.id} on the non-gap "
+                                                   f"columns of {mapping.output.id}")
+            elif reproduces:
+                raise bad(ptr(path, "validation"), f"removing gaps from {mapping.output.id} gives candidate "
+                                                   f"{candidate.id} exactly; the mapping is exact")
+            return
+        text = observations[mapping.input.id].value.get()
+        if type(text) is not str:
+            raise bad(ptr(path, "input"), f"{mapping.input.id} is not a text field")
+        if mapping.input_sha256 != text_digest(text):
+            raise bad(ptr(path, "input_sha256"), f"digest {mapping.input_sha256} is not that of the observed field "
+                                                 f"{mapping.input.id} ({text_digest(text)})", "digest_mismatch")
+        if mapping.blocks:
+            start, end = mapping.blocks[0].input
+            if text[start:end] != candidate.sequence:
+                raise bad(ptr(path, "blocks"), f"{mapping.input.id}[{start}:{end}] is not candidate {candidate.id}")
 
     def _check_claims(self, records, candidates, observations, mappings) -> None:
         groups: dict = {}
@@ -901,6 +976,10 @@ class SourceInventory:
                 problem = self.mapping_binding_problem(claim, mappings[mapping])
                 if problem:
                     raise bad(ptr(ptr(path, "mappings"), j), problem)
+                if (claim.derivation == "imgt_alignment" and claim.status != "unresolved"
+                        and mappings[mapping].validation != "exact"):
+                    raise bad(ptr(ptr(path, "mappings"), j), f"an alignment-derived claim rests on an exact "
+                                                             f"mapping; {mapping} is a mismatch")
             for j, locator in enumerate(claim.evidence):
                 problem = self.evidence_binding_problem(claim, locator)
                 if problem:

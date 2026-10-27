@@ -30,12 +30,12 @@ from GenAIRR._reference_sources.recipe import (  # noqa: F401
 )
 from GenAIRR._reference_sources.inventory import (  # noqa: F401
     BOUNDARIES, COORDINATE_PREDICATES, CLAIM_ID_DOMAIN, CLAIM_STATUSES, CLAIM_SUPPORTS, COORDINATE_SYSTEMS, DERIVATIONS,
-    EXTENSION_SIDES, FINDING_CATEGORIES, FINDING_ID_DOMAIN, FUNCTIONALITIES, INTERPRETATIONS, MAPPING_ID_DOMAIN,
+    EXTENSION_SIDES, FASTA_VALUE_KEYS, IMGT_GAP, FINDING_CATEGORIES, FINDING_ID_DOMAIN, FUNCTIONALITIES, INTERPRETATIONS, MAPPING_ID_DOMAIN,
     MAPPING_KINDS, MAPPING_SPACES, MAPPING_TRANSFORMS, MAPPING_VALIDATIONS, MAX_INVENTORY_BYTES, PHASE_INDEPENDENCE,
     PREDICATE_DERIVATIONS, PREDICATE_SEGMENTS, PREDICATE_SUBJECTS, PREDICATE_SYSTEMS, PREDICATES, PRESENCES,
     RECORD_STATUSES, RELATIONSHIPS, RUNTIME_PREDICATES, SEVERITIES, SUPPORT_KINDS, SUPPORT_STATUSES, Block, Claim,
     Finding, Mapping, Mention, MentionedIdentity, Observation, SequenceCandidate, SourceInventory, SourceRecord,
-    SupportReference, check_claim_value, text_digest,
+    SupportReference, alignment_blocks, check_claim_value, text_digest,
 )
 from GenAIRR._reference_sources.consistency import (  # noqa: F401
     check_build_inputs, check_decisions, check_inventory, check_profile_scope, check_recipe, check_selection,

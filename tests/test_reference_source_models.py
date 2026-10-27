@@ -933,7 +933,7 @@ class Inv:
         for fmt, gapped_fmt in (("airr", "gapped"), ("airr_ex", "gapped_ex")):
             gindex, gapped = _gapped_index("IGHV1-58*03", gapped_fmt)
             gloc = L(gapped_fmt, f"/{gindex}")
-            self._observe(gloc, None, gapped)
+            self._observe(gloc, None, {"header": "IGHV1-58*03", "sequence": gapped})
             cand = self.cand[fmt, "IGHV1-58*03"]
             sequence = gapped.replace(".", "")
             mapping = m.Mapping(source_lock_hash=self.lock.commitment, kind="gapped_alignment", input=cand,
@@ -2279,3 +2279,117 @@ def test_decisions_go_stale_when_the_recipe_is_pointed_at_another_lock(inventory
                         edit=lambda d: d.update(source_lock_hash=other_lock.commitment))
     with _raises("stale_decision", "/decisions/0/findings/0"):
         m.check_build_inputs(other_lock, other_inventory, repointed)
+
+
+
+# ── mappings are verified against the observed values ────────────────
+
+
+def _replace_mapping(inv, index, **changes):
+    """Rebuild the inventory with mapping ``index`` changed (claims follow its new id)."""
+    import dataclasses
+    old = inv.mappings[index]
+    new = dataclasses.replace(old, **changes)
+    claims = [dataclasses.replace(c, mappings=tuple(sorted(new.id if x == old.id else x for x in c.mappings)))
+              for c in inv.claims]
+    mappings = list(inv.mappings)
+    mappings[index] = new
+    return inv.build(mappings=mappings, claims=claims)
+
+
+def test_alignment_blocks_are_the_exact_runs_of_ungapped_positions():
+    gapped = _gapped_index("IGHV1-58*03", "gapped")[1]
+    assert m.alignment_blocks(gapped) == _blocks(gapped)
+    assert m.alignment_blocks("AC..G.T") == (m.Block((0, 2), (0, 2)), m.Block((2, 3), (4, 5)), m.Block((3, 4), (6, 7)))
+    assert m.IMGT_GAP == "."
+
+
+def test_fasta_record_observations_have_a_frozen_value_shape():
+    loc = L("gapped", "/3")
+    m.Observation(locator=loc, record=None, presence="present", value={"header": "IGHV1-2*02", "sequence": "CAG..GTG"},
+                  interpretation="interpreted")
+    for value in ("CAG..GTG", {"header": "IGHV1-2*02"}, {"header": "IGHV1-2*02", "sequence": 7},
+                  {"header": None, "sequence": "CAG"}, {"header": "x", "sequence": "CAG", "description": ""}):
+        with _raises("malformed", "/value"):
+            m.Observation(locator=loc, record=None, presence="present", value=value, interpretation="interpreted")
+    with _raises("malformed", "/presence"):
+        m.Observation(locator=loc, record=None, presence="absent", value=None, interpretation="interpreted")
+
+
+def test_gapped_mapping_output_digest_must_match_the_observed_gapped_record(inv):
+    with _raises("digest_mismatch") as caught:
+        _replace_mapping(inv, 0, output_sha256="sha256:" + "a" * 64)
+    assert caught.error.path.startswith("/mappings/") and caught.error.path.endswith("/output_sha256")
+
+
+def test_exact_gapped_blocks_must_reproduce_the_candidate(inv):
+    n = inv.mappings[0].blocks[-1].input[1]
+    with _raises("malformed") as caught:
+        _replace_mapping(inv, 0, blocks=(m.Block(input=(0, n), output=(1, n + 1)),))
+    assert caught.error.path.endswith("/blocks")
+    with _raises("malformed") as caught:
+        _replace_mapping(inv, 0, blocks=(), validation="mismatch")
+    assert caught.error.path.endswith("/validation")
+
+
+def test_coding_interval_mapping_is_verified_against_the_record_field(inv):
+    index, raw = _find("IGHJ4*02")
+    rec, cand = inv.rec["airr", "IGHJ4*02"], inv.cand["airr", "IGHJ4*02"]
+    start, end = raw["gene_start"] - 1, raw["gene_end"]
+    seq_loc = L("airr", rec.pointer + "/sequence")
+    observation = m.Observation(locator=seq_loc, record=rec, presence="present", value=raw["sequence"],
+                                interpretation="interpreted")
+
+    def mapping(**changes):
+        fields = dict(source_lock_hash=inv.lock.commitment, kind="coding_interval", input=seq_loc, output=cand,
+                      input_sha256=m.text_digest(raw["sequence"]), output_sha256=m.sequence_digest(raw["coding_sequence"]),
+                      input_space="record_sequence", output_space="coding_sequence",
+                      blocks=(m.Block((start, end), (0, end - start)),), transform="extract_interval",
+                      validation="exact")
+        fields.update(changes)
+        return inv.build(observations=inv.observations + [observation], mappings=inv.mappings + [m.Mapping(**fields)])
+
+    mapping()
+    with _raises("digest_mismatch") as caught:
+        mapping(input_sha256="sha256:" + "b" * 64)
+    assert caught.error.path.endswith("/input_sha256")
+    with _raises("malformed") as caught:
+        mapping(blocks=(m.Block((start + 1, end + 1), (0, end - start)),))
+    assert caught.error.path.endswith("/blocks")
+
+
+def test_record_fields_are_observed_with_their_record(inv):
+    rec = inv.rec["airr", "IGHV1-69*01"]
+    orphan = m.Observation(locator=L("airr", rec.pointer + "/curation"), record=None, presence="present", value="x",
+                           interpretation="preserved")
+    with _raises("malformed") as caught:
+        inv.build(observations=inv.observations + [orphan])
+    assert caught.error.path.startswith("/observations/") and caught.error.path.endswith("/record")
+
+
+def test_mention_locators_are_observed_fields(inv):
+    ex69 = inv.rec["airr_ex", "IGHV1-69*01"]
+    unobserved = m.MentionedIdentity(asset="airr_ex", segment="V", label="IGHV1-69D*01", mentions=(
+        m.Mention(record=ex69, locator=L("airr_ex", ex69.pointer + "/paralogs/1"), relationship="paralog"),))
+    with _raises("malformed", "/mentioned_identities/0/mentions/0/locator"):
+        inv.build(mentioned_identities=[unobserved])
+
+
+def test_alignment_derived_claims_rest_on_exact_mappings(inv):
+    cand, rec = inv.cand["airr", "IGHV1-69*01"], inv.rec["airr", "IGHV1-69*01"]
+    gindex, gapped = _gapped_index("IGHV1-2*02", "gapped")
+    gloc = L("gapped", f"/{gindex}")
+    observation = m.Observation(locator=gloc, record=None, presence="present",
+                                value={"header": "IGHV1-2*02", "sequence": gapped}, interpretation="interpreted")
+    mismatch = m.Mapping(source_lock_hash=inv.lock.commitment, kind="gapped_alignment", input=cand, output=gloc,
+                         input_sha256=m.sequence_digest(_find("IGHV1-69*01")[1]["coding_sequence"]),
+                         output_sha256=m.text_digest(gapped), input_space="coding_sequence",
+                         output_space="imgt_gapped", blocks=(), transform="remove_imgt_gaps", validation="mismatch")
+    fields = dict(observations=inv.observations + [observation], mappings=inv.mappings + [mismatch])
+    inv.build(**fields)
+    cdr3 = inv.obs_at(rec, "v_gene_delineations/0/cdr3_start")
+    claim = inv.claim(cand, "anchor", 285, [cdr3, gloc], system="coding_sequence", derivation="imgt_alignment",
+                      mappings=[mismatch.id])
+    with _raises("malformed") as caught:
+        inv.build(claims=inv.claims + [claim], **fields)
+    assert caught.error.path.endswith("/mappings/0") and "mismatch" in caught.error.message
