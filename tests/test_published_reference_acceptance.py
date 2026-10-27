@@ -92,7 +92,8 @@ ACCEPTANCE = {
                 _MODELS + "test_lock_assets_cannot_carry_acquisition_or_filesystem_details",
                 _PROJECTION + "test_two_temporary_roots_give_identical_files_runtime_hashes_and_report",
                 _DOSSIER + "test_a_clean_cache_build_and_a_moved_offline_dossier_agree",
-                _HERE + "test_a_moved_and_renamed_igk_snapshot_builds_the_same_reference_and_names_no_location")),
+                _HERE + "test_a_moved_and_renamed_igk_snapshot_builds_the_same_reference_and_names_no_location",
+                _HERE + "test_the_location_check_skips_a_home_directory_at_the_filesystem_root")),
     "A03": ("An offline cache miss or corrupt blob is a typed missing/digest error with no transport call", (
         _API + "test_an_offline_cache_miss_or_corrupt_blob_is_a_typed_error",
         _ACQ + "test_a_missing_blob_names_its_asset_and_digest_and_never_downloads",
@@ -752,6 +753,31 @@ def test_an_igk_recipe_requiring_original_coding_ends_fails_with_a_capability_er
     assert all(f"{e['segment']}:{e['label']}" in info.value.message for e in selection)
 
 
+def location_fragments(*places) -> set:
+    """The text forms of ``places`` (paths in both separators, or names) that would reveal a location.  A
+    fragment shorter than 8 characters, or a bare root or drive such as '/' or 'C:\\', matches unrelated bytes
+    and reveals nothing, so it is skipped."""
+    fragments = set()
+    for place in places:
+        for form in ({str(place), place.as_posix()} if isinstance(place, pathlib.PurePath) else {place}):
+            if len(form) >= 8 and form != pathlib.PurePath(form).anchor:
+                fragments.add(form)
+    return fragments
+
+
+def assert_names_no_location(files: dict, *places) -> None:
+    for name, data in files.items():
+        for fragment in location_fragments(*places):
+            assert fragment.encode("utf-8") not in data, (name, fragment)
+
+
+def written_members(build, directory: pathlib.Path) -> dict:
+    """The manifest members and the manifest of ``build`` written as a dossier into ``directory``."""
+    build.write_dossier(directory)
+    return {name: (directory / name).read_bytes()
+            for name in [member.name for member in build.manifest.members] + ["manifest.json"]}
+
+
 def test_a_moved_and_renamed_igk_snapshot_builds_the_same_reference_and_names_no_location(igk, tmp_path):
     source, build, document, _, _ = igk
     names = [f"renamed-export-{n}.bin" for n in range(len(ALL))]
@@ -763,17 +789,20 @@ def test_a_moved_and_renamed_igk_snapshot_builds_the_same_reference_and_names_no
     assert again.manifest == build.manifest
     assert again.report.to_dict() == build.report.to_dict()
     assert again.reference.artifact_hash == build.reference.artifact_hash
-    build.write_dossier(tmp_path / "first")
-    again.write_dossier(tmp_path / "second")
-    listed = [member.name for member in build.manifest.members] + ["manifest.json"]
-    first = {name: (tmp_path / "first" / name).read_bytes() for name in listed}
-    second = {name: (tmp_path / "second" / name).read_bytes() for name in listed}
+    first, second = written_members(build, tmp_path / "first"), written_members(again, tmp_path / "second")
     assert first == second
-    fragments = {str(tmp_path), tmp_path.as_posix(), str(REPO), REPO.as_posix(), str(DATA / "ogrdb"),
-                 str(pathlib.Path.home()), "moved snapshot", "another cache", "renamed-export-", "airr.json"}
-    for name, data in second.items():
-        for fragment in fragments:
-            assert fragment.encode("utf-8") not in data, (name, fragment)
+    assert_names_no_location(second, tmp_path, REPO, DATA / "ogrdb", pathlib.Path.home(), "moved snapshot",
+                             "another cache", "renamed-export-", "airr.json")
+
+
+def test_the_location_check_skips_a_home_directory_at_the_filesystem_root(igk, tmp_path, monkeypatch):
+    _, build, _, _, _ = igk
+    root = pathlib.Path(tmp_path.anchor)                       # '/' here; a drive root such as 'C:\\' on Windows
+    monkeypatch.setenv("HOME", str(root))
+    monkeypatch.setenv("USERPROFILE", str(root))
+    assert pathlib.Path.home() == root
+    assert location_fragments(pathlib.Path.home(), "/", "C:\\", "short") == set()
+    assert_names_no_location(written_members(build, tmp_path / "dossier"), tmp_path, REPO, pathlib.Path.home())
 
 
 def test_igk_simulation_is_validated_against_the_selected_source_alleles(igk):
