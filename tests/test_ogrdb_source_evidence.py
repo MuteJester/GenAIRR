@@ -159,13 +159,38 @@ def test_each_provider_extension_is_classified_against_its_own_record_context(so
         assert set(records) == {"airr", "airr_ex"}
         long = candidate_of(inventory, "airr_ex", label)
         claim = claim_of(inventory, long, "extension")
-        assert_status(claim, "accepted", "source", "variant_comparison",
+        assert_status(claim, "accepted", "assertion", "variant_comparison",
                       {"side": "3", "length": len(extension), "matches_record_context": status == "matches"})
         assert claim.coordinate_system is None
         short = candidate_of(inventory, "airr", label)
         assert long.sequence == short.sequence + extension
         assert short.locator in claim.evidence and long.locator in claim.evidence
         assert [x for x in inventory.claims if x.subject == short.locator and x.predicate == "extension"] == []
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_a_matching_context_that_is_only_the_records_own_end_is_marked(source):
+    _, inventory = interpreted(source)
+    found = extension_findings(inventory)
+    for label, extension in _suffixes(source).items():
+        record = raw_record(source, "airr_ex", label)
+        status, _ = _context_oracle(source, label, extension)
+        expected = (None if status == "without_record_context"
+                    else record["gene_end"] + len(extension) == len(record["sequence"]))
+        assert found[label][1].observations.get()["context_is_sequence_terminus"] == expected, label
+
+
+def test_only_ighv3_7_04_and_the_igl_matches_have_bases_beyond_the_extension():
+    terminus = {}
+    for source in SETS:
+        _, inventory = interpreted(source)
+        for label, (code, finding) in extension_findings(inventory).items():
+            if code == "coding_extension_matches_record_context":
+                terminus[label] = finding.observations.get()["context_is_sequence_terminus"]
+    assert sorted(label for label, value in terminus.items() if not value) == sorted(
+        ["IGHV3-7*04"] + list(NOTE_LABELS))
+    assert sum(1 for label, value in terminus.items() if value and label.startswith("IGHV")) == 14
+    assert terminus["IGKV1D-8*04"] is True
 
 
 def test_igh_extensions_split_15_with_matching_context_8_without_and_none_disagreeing():
@@ -584,7 +609,7 @@ def test_support_derivation_and_status_are_honest_for_every_claim(source):
         "phase_independence": {("V", "accepted", "assertion", "anchor_derived"), ("J", "unresolved", "none", "stated")},
         "coding_interval": {(s, "accepted", "source", "stated") for s in "VDJ"} | {
             (s, "unresolved", "none", "stated") for s in "VDJ"},
-        "extension": {(s, "accepted", "source", "variant_comparison") for s in "VDJ"},
+        "extension": {(s, "accepted", "assertion", "variant_comparison") for s in "VDJ"},
         "boundary_5": {(s, "unresolved", "none", "stated") for s in "VDJ"},
         "boundary_3": {(s, "unresolved", "none", "stated") for s in "VDJ"},
         "functionality": {(s, "unresolved", "none", "stated") for s in "VDJ"},

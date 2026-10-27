@@ -9,7 +9,8 @@ support references and the earlier findings are kept unchanged.
 Every claim says how strong it is:
 
 * ``support``: ``source`` (a provider field states the value), ``assertion`` (GenAIRR
-  derives it from source values) or ``none``;
+  derives it from source values: a phase from the anchor, an extension from comparing the
+  two record exports) or ``none``;
 * ``derivation``: ``stated``, ``anchor_derived`` (a phase from the anchor modulo 3) or
   ``variant_comparison`` (from comparing the two record exports);
 * ``status``: ``accepted`` only for a value whose meaning the profile establishes on
@@ -25,15 +26,17 @@ What is claimed:
 * V: the anchor is source-stated and accepted only when the record's own gapped record
   binds it; the phase is at most anchor-derived (``assertion``).
 * Coding intervals are accepted only where they reproduce the coding sequence;
-  provider extensions are recorded by comparing the two record exports.
+  provider extensions are recorded by comparing the two record exports, and a record
+  context that is only the record's own end is marked as such, never read as support.
 * Both coding boundaries and the provider functionality are always unresolved: no tag,
   Boolean, RSS adjacency or exact slice establishes a complete end or a functionality
   class.
 
 Coordinate values are never repaired, relocated, extended or chosen by vote: a value that
 fails a check stays unresolved (or a candidate) with a finding that says why.  Each claim
-cites only the fields of its own record and the gapped record its own exact mapping binds,
-so identities with identical DNA never share evidence.  All exports of one provider set
+cites the fields of its own record and the gapped record its own mapping binds; an
+extension claim also cites the same identity's record in the other record export, which
+it compares.  Identities with identical DNA never share evidence.  All exports of one provider set
 are one evidence lineage (:func:`evidence_lineage`): their agreement is consistency, not
 independent confirmation, and embedded support entries are never retrieved or verified.
 """
@@ -116,7 +119,8 @@ FINDING_CODES = {
         "info", "informational", _ENDS,
         "One export's coding sequence extends the other's, and the extension equals the record bases just "
         "beyond the declared coding interval.  The extension is a provider inference: neither end is adopted "
-        "as the physical coding end."),
+        "as the physical coding end, and where those bases are the record's own end "
+        "(context_is_sequence_terminus) they are no genomic flank."),
     "coding_extension_without_record_context": (
         "info", "unavailable_evidence", _ENDS,
         "One export's coding sequence extends the other's, and the record holds no bases (or not all of them) "
@@ -491,6 +495,11 @@ class _Interpretation:
         else:
             context = c.extension_context(sequence, (interval.start, interval.end), side, extra)
             status, bases = context.status, context.bases
+        # A context ending (or starting) exactly where the record sequence does is only the record's
+        # own terminal bases, not genomic flank around the extension.
+        terminus = None
+        if status != "without_record_context":
+            terminus = (interval.end + len(extra) == len(sequence)) if side == "3" else (interval.start == len(extra))
         evidence = [long_candidate.locator, short_candidate.locator, seq_at, start_at, end_at]
         rs_at, rs = self.field(longer, "v_rs_start")
         versus_rss = None
@@ -500,13 +509,14 @@ class _Interpretation:
                 versus_rss = _extension_end(interval.end, extra, c.stated_position(rs).value)
         self.claim(long_candidate.locator, "extension",
                    {"side": side, "length": len(extra), "matches_record_context": status == "matches"}, None,
-                   "variant_comparison", self.status(True), evidence[:5])
+                   "variant_comparison", self.status(True, support="assertion"), evidence[:5])
         self.findings.add(_EXTENSION_CODES[status], locators=evidence, subjects=(
             longer.locator, long_candidate.locator, shorter.locator, short_candidate.locator), observations={
             "label": longer.label, "segment": longer.segment, "extending_export": longer.locator.asset,
             "side": side, "extension": extra, "record_context": bases, "reason": reason, "gene_start": _raw(start),
             "gene_end": _raw(end), "v_rs_start": _raw(rs) if longer.segment == "V" else None,
-            "extension_end_vs_v_rss": versus_rss, "lineage": self.lineage_id})
+            "extension_end_vs_v_rss": versus_rss, "context_is_sequence_terminus": terminus,
+            "lineage": self.lineage_id})
         self.extensions[(longer.segment, longer.label)] = {"export": longer.locator.asset, "side": side,
                                                            "bases": extra,
                                                            "matches_record_context": status == "matches"}
