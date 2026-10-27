@@ -25,6 +25,8 @@ EXPECT = json.loads((ROOT / "expectations.json").read_bytes())
 SELECTION = json.loads((ROOT / "human_igh_release10_candidate_selection.json").read_bytes())
 GENERATED_TEXT = ("sources.json", "interpretation_evidence.json", "expectations.json",
                   "human_igh_release10_candidate_selection.json", "human_igh_ogrdb_10_observed_v1.recipe.json")
+# The provider's data-terms pages, as retrieved (byte-exact third-party HTML: read, never rendered).
+STATEMENTS = {"ogrdb/statements/licensing_statement.html": "data_licence", "ogrdb/statements/help.html": "citation"}
 FIXTURE_FILES = {"airr": "airr.json", "airr_ex": "airr_ex.json",
                  "gapped": "gapped.fasta", "gapped_ex": "gapped_ex.fasta"}
 CYS = {"TGT", "TGC"}
@@ -90,7 +92,7 @@ def test_committed_fixture_matches_recorded_digest_and_size(source_set, asset):
 
 
 def test_directory_holds_only_listed_files():
-    listed = {asset["fixture"] for _, asset in COMMITTED} | set(GENERATED_TEXT)
+    listed = {asset["fixture"] for _, asset in COMMITTED} | set(GENERATED_TEXT) | set(STATEMENTS)
     present = {path.relative_to(ROOT).as_posix() for path in ROOT.rglob("*") if path.is_file()}
     assert present == listed
 
@@ -119,6 +121,19 @@ def test_manifest_covers_the_supported_releases_and_both_record_exports():
         assert germline_set["release_version"] == source_set["release"]
         # The JSON names the API software licence; the data licence is recorded separately.
         assert document["Info"]["license"]["name"] == "European Union Public License version 1.2"
+
+
+def test_the_data_terms_statements_are_the_pinned_provider_pages():
+    from GenAIRR._reference_sources import profiles
+    pages = {name: (ROOT / name).read_bytes() for name in STATEMENTS}
+    for name, section in STATEMENTS.items():
+        assert hashlib.sha256(pages[name]).hexdigest() == SOURCES[section]["statement_page_sha256"]
+    licence = pages["ogrdb/statements/licensing_statement.html"]
+    (pin,) = [d for d in profiles.PROFILE.evidence.documents if d.id == "ogrdb_licensing_statement"]
+    assert (pin.url, pin.sha256, pin.bytes) == (SOURCES["data_licence"]["statement_url"],
+                                                "sha256:" + hashlib.sha256(licence).hexdigest(), len(licence))
+    # Sizes as retrieved (sources.json records the digests, the profile also the licence page size).
+    assert (len(licence), len(pages["ogrdb/statements/help.html"])) == (27047, 143032)
 
 
 def test_data_licence_is_recorded_separately_from_software_licence():
