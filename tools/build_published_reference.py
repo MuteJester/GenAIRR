@@ -1,38 +1,44 @@
 #!/usr/bin/env python3
-"""Generate the dossier of a reference build packaged with GenAIRR.
+"""Generate the packaged archive of a reference build shipped with GenAIRR.
 
 Maintainer tool (run from a source checkout; not part of the shipped wheel).  For one exact
 build identifier it records the pinned provider exports under
 ``tests/data/reference_sources/ogrdb/`` as local files, together with the provider's data-terms
-statement pages (the licence and the requested citation, recorded in the lock), builds the
-reviewed recipe next to them with ``OgrdbSource.build``, writes the dossier into a new or empty
-directory and checks it there with ``ReferenceBuild.read_dossier``.  It never uses the
-network.  Acquisition receipts are machine-local records and are not written.
+statement pages (the licence and the requested citation, recorded in the lock), and builds the
+reviewed recipe next to them with ``OgrdbSource.build``.  The dossier is written into a private
+temporary directory and checked there with ``ReferenceBuild.read_dossier``; its members are then
+written as one deterministic zip archive (entries sorted by name, stored uncompressed, fixed
+times and modes, nothing else), which is extracted again with the packaged-dossier loader and
+compared byte for byte.  It never uses the network.  Acquisition receipts are machine-local
+records and are not written.
 
 The dossier records the GenAIRR version that runs this script as its builder.  Regenerate the
-packaged dossier whenever that version changes (after a release version bump) and pin the
+packaged archive whenever that version changes (after a release version bump) and pin the
 printed manifest hash in ``src/GenAIRR/_reference_sources/bundled.py``.
 
 Usage::
 
-    # Write the starter into a scratch directory:
-    python tools/build_published_reference.py --output ./human_igh_ogrdb_10_observed_v1
+    # Write the starter archive into a scratch location:
+    python tools/build_published_reference.py --output ./human_igh_ogrdb_10_observed_v1.zip
 
-    # Regenerate the packaged starter (remove the old directory first):
+    # Regenerate the packaged starter (remove the old archive first):
     python tools/build_published_reference.py \\
-        --output src/GenAIRR/data/published_references/human_igh_ogrdb_10_observed_v1
+        --output src/GenAIRR/data/published_references/human_igh_ogrdb_10_observed_v1.zip
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import io
 import json
 from pathlib import Path
 import sys
 import tempfile
-from typing import NamedTuple
+from typing import Mapping, NamedTuple
+import zipfile
 
 import GenAIRR
-from GenAIRR._reference_sources import ogrdb
+from GenAIRR._reference_sources import bundled, ogrdb
 from GenAIRR._reference_sources.acquisition import SuppliedFile, ingest_files
 from GenAIRR._reference_sources.digests import manifest_hash
 from GenAIRR._reference_sources.lock import Terms
@@ -51,6 +57,11 @@ OGRDB_STATEMENTS = {"licence_statement": ("ogrdb/statements/licensing_statement.
 def _sources() -> dict:
     return json.loads((SOURCE_DATA / "sources.json").read_bytes().decode("utf-8"))
 MANIFEST = "manifest.json"
+ARCHIVE_SUFFIX = bundled.ARCHIVE_SUFFIX
+# Every archive entry is the same apart from its name and bytes: stored, at the earliest zip
+# time, made on POSIX as a regular 0644 file, with no extra field and no comment.
+ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+ZIP_FILE_ATTR = 0o100644 << 16
 
 
 class Published(NamedTuple):
@@ -110,39 +121,61 @@ def build(exact_id: str, *, cache) -> ReferenceBuild:
 
 
 def check_target(target: Path) -> None:
-    """``target`` must be absent with an existing parent, or an empty directory."""
-    if target.is_symlink() or (target.exists() and not target.is_dir()):
-        raise GeneratorError(f"{target} exists and is not a directory")
-    if target.is_dir():
-        if any(target.iterdir()):
-            raise GeneratorError(f"{target} is not empty; the dossier is written into a new or empty directory")
-    elif not target.parent.is_dir():
+    """``target`` must be a new ``.zip`` file in an existing directory."""
+    if not target.name.endswith(ARCHIVE_SUFFIX):
+        raise GeneratorError(f"{target} must name a .zip file")
+    if target.is_symlink() or target.exists():
+        raise GeneratorError(f"{target} already exists; the archive is written as a new file")
+    if not target.parent.is_dir():
         raise GeneratorError(f"the parent directory of {target} does not exist")
 
 
+def archive(members: Mapping[str, bytes]) -> bytes:
+    """The deterministic zip of ``members`` (name -> bytes): entries sorted by name, stored, with
+    every entry field fixed, so equal members give equal bytes on every platform."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED, allowZip64=False) as out:
+        for name in sorted(members):
+            entry = zipfile.ZipInfo(name, date_time=ZIP_TIME)
+            entry.compress_type = zipfile.ZIP_STORED
+            entry.create_system = 3
+            entry.create_version = entry.extract_version = 20
+            entry.external_attr = ZIP_FILE_ATTR
+            entry.internal_attr = 0
+            entry.flag_bits = 0
+            entry.extra = b""
+            entry.comment = b""
+            out.writestr(entry, members[name])
+        out.comment = b""
+    return buffer.getvalue()
+
+
 def publish(result: ReferenceBuild, target: Path) -> ReferenceBuild:
-    """Write the dossier members of ``result`` into ``target`` (new or empty), ``manifest.json`` last,
-    and return the dossier checked there.  Receipts are not written."""
+    """Write ``result`` as the archive ``target`` (a new ``.zip`` file) and return the dossier checked
+    before archiving.  Receipts are not written."""
     check_target(target)
     names = [member.name for member in result.manifest.members] + [MANIFEST]
     with tempfile.TemporaryDirectory(prefix="genairr_dossier_") as scratch:
         staged = Path(scratch) / "dossier"
         result.write_dossier(staged)
+        checked = ReferenceBuild.read_dossier(staged)
+        if checked.manifest != result.manifest:
+            raise GeneratorError("the written dossier does not check as the build that was written")
         members = {name: staged.joinpath(*name.split("/")).read_bytes() for name in names}
-    target.mkdir(exist_ok=True)
-    for name in names:
-        path = target.joinpath(*name.split("/"))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "xb") as handle:
-            handle.write(members[name])
-    checked = ReferenceBuild.read_dossier(target)
-    if checked.manifest != result.manifest:
-        raise GeneratorError(f"the dossier written into {target} does not check as the build that was written")
+    data = archive(members)
+    with open(target, "xb") as handle:
+        handle.write(data)
+    with tempfile.TemporaryDirectory(prefix="genairr_archive_") as scratch:   # read back as a package would
+        unpacked = Path(scratch) / "dossier"
+        bundled._extract(target, unpacked, str(target), None)
+        found = {p.relative_to(unpacked).as_posix(): p.read_bytes() for p in unpacked.rglob("*") if p.is_file()}
+    if found != members:
+        raise GeneratorError(f"the archive {target} does not extract to the dossier members it was written from")
     return checked
 
 
-def summary(exact_id: str, result: ReferenceBuild) -> str:
-    """The identifiers to pin: the typed manifest hash and the runtime reference hashes."""
+def summary(exact_id: str, result: ReferenceBuild, data: bytes) -> str:
+    """The identifiers to pin: the typed manifest hash, the runtime reference hashes and the archive digest."""
     reference = result.reference
     return "\n".join([
         f"build {exact_id}",
@@ -152,13 +185,14 @@ def summary(exact_id: str, result: ReferenceBuild) -> str:
         f"runtime catalogue {reference.catalogue_hash}",
         f"runtime models {reference.models_hash}",
         f"runtime artifact {reference.artifact_hash}",
+        f"archive sha256:{hashlib.sha256(data).hexdigest()} ({len(data)} bytes)",
     ])
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--id", default=DEFAULT_ID, choices=sorted(BUILDS), help="exact build identifier")
-    parser.add_argument("--output", required=True, type=Path, help="new or empty directory for the dossier")
+    parser.add_argument("--output", required=True, type=Path, help="new .zip file for the dossier archive")
     args = parser.parse_args(argv)
     try:
         check_target(args.output)
@@ -168,7 +202,7 @@ def main(argv=None) -> int:
     except (GeneratorError, ReferenceSourceError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    print(summary(args.id, checked))
+    print(summary(args.id, checked, args.output.read_bytes()))
     print(f"checked with GenAIRR {GenAIRR.__version__}; pin the manifest hash above in "
           "src/GenAIRR/_reference_sources/bundled.py")
     return 0

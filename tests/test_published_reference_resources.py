@@ -13,9 +13,11 @@ from __future__ import annotations
 
 from collections import Counter
 import hashlib
+import io
 import json
 import pathlib
 import re
+import zipfile
 
 import pytest
 
@@ -318,12 +320,31 @@ def refuse_network(patch) -> None:
         patch.setattr(owner, name, refuse)
 
 
+# Every entry of a packaged archive: stored, at a fixed time, POSIX regular file 0644, nothing extra.
+ZIP_ENTRY = {"compress_type": zipfile.ZIP_STORED, "date_time": (1980, 1, 1, 0, 0, 0), "create_system": 3,
+             "create_version": 20, "extract_version": 20, "external_attr": 0o100644 << 16, "internal_attr": 0,
+             "flag_bits": 0, "extra": b"", "comment": b""}
+
+
+def archive_members(data: bytes) -> dict:
+    """The entries of a zip archive, in archive order (name -> bytes), read with the standard library."""
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        return {entry.filename: archive.read(entry) for entry in archive.infolist()}
+
+
+def extracted(data: bytes, directory: pathlib.Path) -> pathlib.Path:
+    for name, member in archive_members(data).items():
+        path = directory.joinpath(*name.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(member)
+    return directory
+
+
 @pytest.fixture(scope="module")
 def generated(tmp_path_factory):
-    """The starter written by the generator's command line into a new directory, offline."""
+    """The starter archive written by the generator's command line into a new file, offline."""
     import contextlib
-    import io
-    target = tmp_path_factory.mktemp("generated") / STARTER_ID
+    target = tmp_path_factory.mktemp("generated") / f"{STARTER_ID}.zip"
     out = io.StringIO()
     with pytest.MonkeyPatch.context() as patch, contextlib.redirect_stdout(out):
         refuse_network(patch)
@@ -331,22 +352,30 @@ def generated(tmp_path_factory):
     return code, target, out.getvalue()
 
 
-def test_the_generator_writes_exactly_the_dossier_members_offline(generated):
+def test_the_generator_writes_one_deterministic_stored_zip_of_the_dossier_members_offline(generated, tmp_path):
     from GenAIRR._reference_sources.digests import manifest_hash
     from GenAIRR.reference_sources import ReferenceBuild
     code, target, printed = generated
     assert code == 0
-    checked = ReferenceBuild.read_dossier(target)
-    listed = sorted([member.name for member in checked.manifest.members] + ["manifest.json"])
-    present = sorted(p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file())
-    assert present == listed and not (target / "receipts").exists()
-    assert sorted(p.name for p in target.iterdir() if p.is_dir()) == ["cache", "inputs"]
+    data = target.read_bytes()
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        entries = archive.infolist()
+        assert archive.comment == b""
+    for entry_ in entries:
+        assert {field: getattr(entry_, field) for field in ZIP_ENTRY} == ZIP_ENTRY, entry_.filename
+        assert entry_.file_size == entry_.compress_size and not entry_.filename.endswith("/")
+    members = archive_members(data)
+    assert list(members) == sorted(members)                         # sorted by member name, files only
+    checked = ReferenceBuild.read_dossier(extracted(data, tmp_path / "dossier"))
+    assert list(members) == sorted([member.name for member in checked.manifest.members] + ["manifest.json"])
     reference = checked.reference
     for line in (f"manifest {manifest_hash(checked.manifest)}", f"runtime execution {reference.execution_hash}",
                  f"runtime catalogue {reference.catalogue_hash}", f"runtime models {reference.models_hash}",
-                 f"runtime artifact {reference.artifact_hash}", f"builder GenAIRR {checked.manifest.builder.version}"):
+                 f"runtime artifact {reference.artifact_hash}", f"builder GenAIRR {checked.manifest.builder.version}",
+                 f"archive sha256:{hashlib.sha256(data).hexdigest()} ({len(data)} bytes)"):
         assert line in printed.splitlines(), line
-    assert (target / "recipe.json").read_bytes() == RECIPE_PATH.read_bytes()
+    assert members["recipe.json"] == RECIPE_PATH.read_bytes()
+    assert load_tool().archive(dict(reversed(list(members.items())))) == data       # the same bytes again
 
 
 # OGRDB's data terms as the fixture manifest records them, and the statement pages kept as fixtures.
@@ -382,15 +411,15 @@ def test_the_generator_records_the_providers_data_terms_and_inspection_shows_the
     assert f"Citation: {TERMS['citation']}" in text.splitlines()
 
 
-def test_the_generator_writes_only_into_a_new_or_empty_directory(tmp_path, capsys):
-    target = tmp_path / "occupied"
-    target.mkdir()
-    (target / "notes.txt").write_bytes(b"kept\n")
-    assert load_tool().main(["--output", str(target)]) == 2
-    assert "is not empty" in capsys.readouterr().err
-    assert [p.name for p in target.iterdir()] == ["notes.txt"] and (target / "notes.txt").read_bytes() == b"kept\n"
-    assert load_tool().main(["--output", str(tmp_path / "missing-parent" / "dossier")]) == 2
-    assert not (tmp_path / "missing-parent").exists()
+def test_the_generator_writes_only_a_new_zip_file(tmp_path, capsys):
+    existing = tmp_path / "kept.zip"
+    existing.write_bytes(b"kept\n")
+    assert load_tool().main(["--output", str(existing)]) == 2
+    assert "already exists" in capsys.readouterr().err and existing.read_bytes() == b"kept\n"
+    assert load_tool().main(["--output", str(tmp_path / "missing-parent" / "starter.zip")]) == 2
+    assert load_tool().main(["--output", str(tmp_path / "starter")]) == 2
+    assert "a .zip file" in capsys.readouterr().err
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["kept.zip"]
 
 
 # ── the packaged starter ─────────────────────────────────────────────
@@ -401,8 +430,10 @@ MANIFEST_PIN = "sha256:7c306e4c3586c66639a5f37ecc56c9bcb1c75c1e297c3be465d51b22b
 RUNTIME_PINS = {"execution": "sha256:5a51c07d0c7f410c36915987a177ed30247de474f18082638b98016e7cb1c981",
                 "catalogue": "sha256:c000add5d9a8cf573177e930e47adf3cb8e3b19052f62687e81b02af57117ae5",
                 "models": "sha256:e96b1404c64d36a55c0457163ef3a4aa706e1bc5114914147715cd0f964dffd8"}
+# The raw sha256 of the packaged archive (it holds the manifest, so it also changes with the version).
+ARCHIVE_PIN = "sha256:903d5cbc33912c6e01362cf78f8ea4825f659dcc7250d797f20ea8f91da3e92e"
 RECORD_OUTCOMES = {"selected": 230, "excluded": 259, "rejected": 0}
-PACKAGE, RESOURCE = "GenAIRR.data", f"published_references/{STARTER_ID}"
+PACKAGE, RESOURCE = "GenAIRR.data", f"published_references/{STARTER_ID}.zip"
 DOSSIER_DIRECTORIES = ["cache", "cache/blobs", "cache/blobs/sha256", "inputs"]
 
 
@@ -415,6 +446,12 @@ def starter():
 def runtime_hashes(reference) -> dict:
     return {"execution": reference.execution_hash, "catalogue": reference.catalogue_hash,
             "models": reference.models_hash}
+
+
+def packaged_archive() -> bytes:
+    import importlib.resources
+    return importlib.resources.files(PACKAGE).joinpath("published_references").joinpath(f"{STARTER_ID}.zip") \
+        .read_bytes()
 
 
 def packaged_files() -> tuple:
@@ -503,12 +540,13 @@ def test_the_bundled_starter_simulates_bound_to_its_execution_hash(starter):
         assert set(record["j_call"].split(",")) <= set(SELECTION["selected"]["J"])
 
 
-def test_rebuilding_from_the_pinned_bytes_and_the_recipe_reproduces_the_packaged_starter(generated, starter):
+def test_rebuilding_from_the_pinned_bytes_and_the_recipe_reproduces_the_packaged_starter(generated, starter,
+                                                                                         tmp_path):
     import GenAIRR
     from GenAIRR.reference_sources import ReferenceBuild
     code, target, _ = generated
     assert code == 0
-    rebuilt = ReferenceBuild.read_dossier(target)
+    rebuilt = ReferenceBuild.read_dossier(extracted(target.read_bytes(), tmp_path / "rebuilt"))
     assert runtime_hashes(rebuilt.reference) == runtime_hashes(starter.reference) == RUNTIME_PINS
     ours, packaged = rebuilt.report.to_dict(), starter.report.to_dict()
     for report in (ours, packaged):              # the generator, and the artifact hash that names it
@@ -520,25 +558,29 @@ def test_rebuilding_from_the_pinned_bytes_and_the_recipe_reproduces_the_packaged
         pytest.skip(f"the packaged dossier was generated by GenAIRR {builder} and this is GenAIRR "
                     f"{GenAIRR.__version__}: its members are byte-identical only to a dossier generated by the "
                     "same version; regenerate it with tools/build_published_reference.py")
-    files, _ = packaged_files()
-    assert {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob("*") if p.is_file()} == files
+    assert target.read_bytes() == packaged_archive()
 
 
-def test_the_packaged_dossier_holds_only_its_members(starter):
+def test_the_packaged_dossier_is_one_archive_of_only_its_members(starter):
+    import importlib.resources
+    folder = importlib.resources.files(PACKAGE).joinpath("published_references")
+    assert sorted(item.name for item in folder.iterdir()) == [f"{STARTER_ID}.zip"]  # no marker, no unpacked copy
+    data = packaged_archive()
+    assert "sha256:" + hashlib.sha256(data).hexdigest() == ARCHIVE_PIN
     files, folders = packaged_files()
-    assert sorted(files) == sorted([member.name for member in starter.manifest.members] + ["manifest.json"])
+    assert list(archive_members(data)) == sorted(files) == sorted(
+        [member.name for member in starter.manifest.members] + ["manifest.json"])
     assert folders == DOSSIER_DIRECTORIES                    # no receipts, no __pycache__, no package marker
     assert files["recipe.json"] == RECIPE_PATH.read_bytes()
 
 
-def test_every_dossier_member_is_packaged_in_the_wheel_and_the_sdist(starter):
+def test_the_packaged_archive_is_included_in_the_wheel_and_the_sdist():
     import glob
     tomllib = pytest.importorskip("tomllib", reason="reading pyproject.toml needs Python 3.11 or later")
-    source = REPO / "src" / "GenAIRR" / "data" / "published_references" / STARTER_ID
-    if not source.is_dir():
+    source = REPO / "src" / "GenAIRR" / "data" / "published_references" / f"{STARTER_ID}.zip"
+    if not source.is_file():
         pytest.skip("the source checkout is not available")
-    members = {(source / name).resolve() for name in
-               [member.name for member in starter.manifest.members] + ["manifest.json"]}
+    members = {source.resolve()}
     includes = tomllib.loads((REPO / "pyproject.toml").read_bytes().decode("utf-8"))["tool"]["maturin"]["include"]
     for target in ("wheel", "sdist"):
         matched = set()
@@ -579,15 +621,15 @@ def test_loading_the_starter_leaves_the_human_igh_alias_unchanged(starter):
     assert [record["sequence"] for record in first] == [record["sequence"] for record in second]
 
 
-
-def test_the_packaged_dossier_is_checked_out_byte_for_byte_on_every_platform():
-    """Its digests cover exact LF bytes, so no checkout may convert its line endings."""
+def test_the_packaged_archive_and_its_sources_are_checked_out_byte_for_byte_on_every_platform():
+    """Their digests cover exact bytes, so no checkout may convert line endings; the archive is binary."""
     attributes = REPO / ".gitattributes"
     if not attributes.is_file():
         pytest.skip("the source checkout is not available")
     rules = [line.split() for line in attributes.read_bytes().decode("utf-8").splitlines()
              if line.strip() and not line.startswith("#")]
-    assert ["src/GenAIRR/data/published_references/**", "-text"] in rules
+    assert ["src/GenAIRR/data/published_references/*.zip", "-text", "-diff"] in rules
+    assert ["tests/data/reference_sources/**", "-text"] in rules       # exports, statements and the recipe
 
 
 # ── installation conditions ──────────────────────────────────────────
@@ -674,17 +716,14 @@ def test_the_starter_loads_from_a_read_only_package_location(tmp_path, monkeypat
     from GenAIRR._reference_sources.digests import manifest_hash
     from GenAIRR.reference_sources import ReferenceBuild
     from tests.test_reference_source_api import tree
-    files, _ = packaged_files()
     root = tmp_path / "site"
-    dossier = root / "genairr_readonly_pkg" / "published" / STARTER_ID
+    dossier = root / "genairr_readonly_pkg" / "published"
     dossier.mkdir(parents=True)
     (root / "genairr_readonly_pkg" / "__init__.py").write_bytes(b"")
-    for name, data in files.items():
-        (dossier / name).parent.mkdir(parents=True, exist_ok=True)
-        (dossier / name).write_bytes(data)
+    (dossier / f"{STARTER_ID}.zip").write_bytes(packaged_archive())
     monkeypatch.syspath_prepend(str(root))
     monkeypatch.delitem(sys.modules, "genairr_readonly_pkg", raising=False)
-    entry = bundled.BundledDossier("genairr_readonly_pkg", f"published/{STARTER_ID}", MANIFEST_PIN)
+    entry = bundled.BundledDossier("genairr_readonly_pkg", f"published/{STARTER_ID}.zip", MANIFEST_PIN)
     monkeypatch.setattr(bundled, "REGISTRY", types.MappingProxyType({STARTER_ID: entry}))
     monkeypatch.setattr(build_module, "_BUNDLED", {})
     readonly(root, on=True)

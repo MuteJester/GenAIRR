@@ -4,5 +4,5 @@ tests/data/reference_first_use/** -text
 tests/golden/reference/** -text
 # Exact provider bytes and their manifests: digests cover these bytes, so no EOL conversion.
 tests/data/reference_sources/** -text
-# Packaged reference build dossiers: their manifests cover exact LF bytes, so no EOL conversion.
-src/GenAIRR/data/published_references/** -text
+# Packaged reference build archives: binary; their digests cover the exact bytes.
+src/GenAIRR/data/published_references/*.zip -text -diff

@@ -35,27 +35,31 @@ cartridges (and expect the golden baselines to move).
 
 ## `build_published_reference.py`
 
-Generates the dossier of a reference build packaged with GenAIRR (currently
-`human_igh_ogrdb_10_observed_v1`). It records the pinned OGRDB exports under
-`tests/data/reference_sources/ogrdb/` with `OgrdbSource.from_files`, builds the
-reviewed recipe next to them (`tests/data/reference_sources/<id>.recipe.json`)
-with `OgrdbSource.build`, writes the dossier members into a new or empty
-directory (`manifest.json` last, no acquisition receipts), checks the result
-with `ReferenceBuild.read_dossier` and prints the hashes to pin. It never uses
-the network.
+Generates the packaged archive of a reference build shipped with GenAIRR
+(currently `human_igh_ogrdb_10_observed_v1`). It records the pinned OGRDB
+exports under `tests/data/reference_sources/ogrdb/` and OGRDB's licensing and
+help pages (`ogrdb/statements/`, recorded in the lock as the data terms), builds
+the reviewed recipe next to them (`tests/data/reference_sources/<id>.recipe.json`)
+with `OgrdbSource.build`, writes the dossier into a private temporary directory,
+checks it with `ReferenceBuild.read_dossier`, and writes its members as one
+deterministic zip archive (entries sorted by name, stored uncompressed, fixed
+times and modes; no acquisition receipts). It prints the hashes to pin. It never
+uses the network.
 
 ```bash
-# Write the starter into a scratch directory:
-python tools/build_published_reference.py --output ./human_igh_ogrdb_10_observed_v1
+# Write the starter archive into a scratch location:
+python tools/build_published_reference.py --output ./human_igh_ogrdb_10_observed_v1.zip
 
-# Regenerate the packaged copy (remove the old directory first):
+# Regenerate the packaged archive (remove the old one first):
 python tools/build_published_reference.py \
-    --output src/GenAIRR/data/published_references/human_igh_ogrdb_10_observed_v1
+    --output src/GenAIRR/data/published_references/human_igh_ogrdb_10_observed_v1.zip
 ```
 
 The dossier records the GenAIRR version that ran the script as its builder,
-so its manifest hash changes with the version. After a release version bump,
-regenerate the packaged copy with the bumped version installed, then pin the
-printed manifest hash in `src/GenAIRR/_reference_sources/bundled.py` and in
-`tests/test_published_reference_resources.py` (`MANIFEST_PIN`). The runtime
-execution, catalogue and models hashes do not change with the version.
+so its manifest hash and the archive digest change with the version. After a
+release version bump, regenerate the packaged archive with the bumped version
+installed, then pin the printed manifest hash in
+`src/GenAIRR/_reference_sources/bundled.py` and in
+`tests/test_published_reference_resources.py` (`MANIFEST_PIN`), and the printed
+archive digest in the same test file (`ARCHIVE_PIN`). The runtime execution,
+catalogue and models hashes do not change with the version.
