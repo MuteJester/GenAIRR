@@ -470,3 +470,143 @@ def test_the_packaged_dossier_is_checked_out_byte_for_byte_on_every_platform():
              if line.strip() and not line.startswith("#")]
     assert ["src/GenAIRR/data/published_references/**", "-text"] in rules
 
+
+# ── installation conditions ──────────────────────────────────────────
+
+BLOCKED = ("pandas", "numpy", "scipy", "graphviz", "tqdm", "fastmcp")
+
+
+def network_guard() -> str:
+    """The offline guard of the dossier tests: an audit hook and patched socket functions that
+    count and refuse every connection, datagram and name lookup, with positive controls."""
+    from tests.test_reference_source_dossier import OFFLINE_SCRIPT
+    guard = OFFLINE_SCRIPT[:OFFLINE_SCRIPT.index("from GenAIRR import Experiment")]
+    assert "sys.addaudithook(_audit)" in guard and "CONTROL_ATTEMPTS" in guard
+    return guard
+
+
+FRESH_PROCESS = r'''
+from GenAIRR import Experiment
+from GenAIRR._reference_sources.digests import manifest_hash
+from GenAIRR.reference_sources import ReferenceBuild
+
+build = ReferenceBuild.bundled(sys.argv[1])
+reference = build.reference
+result = Experiment.on(reference).recombine().run_records(n=40, seed=5, validate_records=True)
+print(json.dumps({
+    "manifest_hash": manifest_hash(build.manifest),
+    "execution_hash": reference.execution_hash,
+    "reference_content_hash": result.reference_content_hash,
+    "records": len(result),
+    "again": ReferenceBuild.bundled(sys.argv[1]) is build,
+    "loaded_optional": sorted(name for name in sys.argv[2].split(",") if sys.modules.get(name) is not None),
+    "network_attempts": ATTEMPTS,
+    "controls": CONTROLS,
+    "control_attempts": CONTROL_ATTEMPTS,
+}))
+'''
+
+
+def test_the_starter_loads_and_simulates_in_a_fresh_process_without_optional_packages_or_network(tmp_path):
+    import os
+    import subprocess
+    import sys
+    blocker = "import sys\nfor _name in %r:\n    sys.modules[_name] = None\n" % (BLOCKED,)
+    script = tmp_path / "fresh_starter.py"
+    script.write_bytes((blocker + network_guard() + FRESH_PROCESS).encode("utf-8"))
+    home = tmp_path / "home"
+    home.mkdir()
+    environment = dict(os.environ, HOME=str(home), USERPROFILE=str(home), XDG_CACHE_HOME=str(home / ".cache"),
+                       APPDATA=str(home), LOCALAPPDATA=str(home))
+    process = subprocess.run([sys.executable, "-I", str(script), STARTER_ID, ",".join(BLOCKED)],
+                             capture_output=True, timeout=600, cwd=tmp_path, env=environment)
+    assert process.returncode == 0, process.stderr.decode("utf-8", "replace")
+    outcome = json.loads(process.stdout.decode("utf-8"))
+    guard = "network access is disabled in this offline check"
+    assert [name for name, _ in outcome["controls"]] == ["raw socket connect", "datagram send", "name lookup",
+                                                         "reverse lookup", "address lookup", "connection"]
+    assert all(message == guard for _, message in outcome["controls"]), outcome["controls"]
+    assert outcome["control_attempts"] >= 6 and outcome["network_attempts"] == []
+    assert b"ResourceWarning" not in process.stderr
+    assert outcome["loaded_optional"] == []
+    assert outcome["manifest_hash"] == MANIFEST_PIN
+    assert outcome["execution_hash"] == outcome["reference_content_hash"] == RUNTIME_PINS["execution"]
+    assert outcome["records"] == 40 and outcome["again"] is True
+    assert list(home.iterdir()) == []                          # no cache or settings written
+
+
+def readonly(path, *, on: bool) -> None:
+    """Make ``path`` and everything below it read-only (``on``) or writable again."""
+    import os
+    import stat
+    entries = sorted(path.rglob("*"), reverse=True) + [path]
+    for entry in (entries if on else reversed(entries)):
+        if os.name == "nt":
+            os.chmod(entry, stat.S_IREAD if on else stat.S_IREAD | stat.S_IWRITE)
+        else:
+            os.chmod(entry, (0o555 if entry.is_dir() else 0o444) if on else (0o755 if entry.is_dir() else 0o644))
+
+
+def test_the_starter_loads_from_a_read_only_package_location(tmp_path, monkeypatch):
+    import sys
+    import types
+    from GenAIRR._reference_sources import build as build_module
+    from GenAIRR._reference_sources import bundled
+    from GenAIRR._reference_sources.digests import manifest_hash
+    from GenAIRR.reference_sources import ReferenceBuild
+    from tests.test_reference_source_api import tree
+    files, _ = packaged_files()
+    root = tmp_path / "site"
+    dossier = root / "genairr_readonly_pkg" / "published" / STARTER_ID
+    dossier.mkdir(parents=True)
+    (root / "genairr_readonly_pkg" / "__init__.py").write_bytes(b"")
+    for name, data in files.items():
+        (dossier / name).parent.mkdir(parents=True, exist_ok=True)
+        (dossier / name).write_bytes(data)
+    monkeypatch.syspath_prepend(str(root))
+    monkeypatch.delitem(sys.modules, "genairr_readonly_pkg", raising=False)
+    entry = bundled.BundledDossier("genairr_readonly_pkg", f"published/{STARTER_ID}", MANIFEST_PIN)
+    monkeypatch.setattr(bundled, "REGISTRY", types.MappingProxyType({STARTER_ID: entry}))
+    monkeypatch.setattr(build_module, "_BUNDLED", {})
+    readonly(root, on=True)
+    try:
+        probe = dossier / "probe"
+        try:
+            probe.write_bytes(b"")
+        except OSError:
+            pass
+        else:
+            probe.unlink()
+            pytest.skip("this platform or user cannot make a directory read-only (for example Windows, or root)")
+        before = tree(root)
+        loaded = ReferenceBuild.bundled(STARTER_ID)
+        after = tree(root)
+    finally:
+        readonly(root, on=False)
+    assert manifest_hash(loaded.manifest) == MANIFEST_PIN and runtime_hashes(loaded.reference) == RUNTIME_PINS
+    assert after == before                                      # nothing was written into the package
+
+
+def test_the_starter_needs_no_source_cache_or_network(tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import acquisition, api
+    from GenAIRR._reference_sources import build as build_module
+    from GenAIRR._reference_sources import cache as cache_module
+    from GenAIRR._reference_sources.digests import manifest_hash
+    from GenAIRR.reference_sources import ReferenceBuild
+
+    def no_source(*args, **kwargs):
+        pytest.fail("a packaged build opened a source cache or acquired a source")
+
+    monkeypatch.setattr(build_module, "_BUNDLED", {})
+    refuse_network(monkeypatch)
+    monkeypatch.setattr(cache_module.BlobCache, "__init__", no_source)
+    for owner in (acquisition, api):
+        for name in ("fetch_source", "ingest_files", "read_locked"):
+            monkeypatch.setattr(owner, name, no_source)
+    home = tmp_path / "home"
+    home.mkdir()
+    for variable in ("HOME", "USERPROFILE", "XDG_CACHE_HOME", "APPDATA", "LOCALAPPDATA"):
+        monkeypatch.setenv(variable, str(home))
+    loaded = ReferenceBuild.bundled(STARTER_ID)
+    assert manifest_hash(loaded.manifest) == MANIFEST_PIN and runtime_hashes(loaded.reference) == RUNTIME_PINS
+    assert list(home.iterdir()) == []
