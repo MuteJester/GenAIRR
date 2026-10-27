@@ -1935,3 +1935,167 @@ def test_recipe_or_provenance_changes_move_the_build_input_identity_without_dna_
     assert [e.sequence_sha256 for e in changed.selection] == [e.sequence_sha256 for e in report.recipe.selection]
     assert m.build_input_hash(report.source_lock, inventory, changed) != \
         m.build_input_hash(report.source_lock, inventory, report.recipe)
+
+
+# ── strictness across every owned format ─────────────────────────────
+
+_WRONG = (None, True, -1, 0, 1.5, "", "x", [], {})
+
+
+def _leaves(value, path=()):
+    """Every (path, value) inside a JSON document, containers included."""
+    yield path, value
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from _leaves(item, path + (key,))
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            yield from _leaves(item, path + (i,))
+
+
+def _replaced(document, path, value):
+    d = copy.deepcopy(document)
+    if not path:
+        return value
+    target = d
+    for token in path[:-1]:
+        target = target[token]
+    target[path[-1]] = value
+    return d
+
+
+def _sweep(reader, document, *, stride=1):
+    """Replace leaves with wrong-typed values: the reader either accepts the document or
+    raises ReferenceSourceError with a JSON-pointer-like path - never another exception."""
+    rejected = 0
+    for n, (path, original) in enumerate(_leaves(document)):
+        if n % stride:
+            continue
+        for wrong in _WRONG:
+            if type(wrong) is type(original) and wrong == original:
+                continue
+            try:
+                reader(_replaced(document, path, wrong))
+            except ReferenceSourceError as exc:
+                assert exc.kind in KINDS and (exc.path == "" or exc.path.startswith("/")), exc
+                rejected += 1
+    assert rejected
+
+
+def test_every_wrong_value_in_a_lock_receipt_or_recipe_is_a_typed_error():
+    _sweep(m.SourceLock.from_dict, lock_dict())
+    _sweep(m.AcquisitionReceipt.from_dict, receipt_dict())
+    d = recipe_dict()
+    d["decisions"] = [decision(), decision("withhold_claim"), decision("accept_claim", claims=["claim:" + "c" * 64])]
+    _sweep(m.Recipe.from_dict, d)
+
+
+def test_every_wrong_value_in_an_inventory_report_or_manifest_is_a_typed_error(inventory, report, report_d):
+    _sweep(m.SourceInventory.from_dict, inventory.to_dict(), stride=7)
+    _sweep(m.BuildManifest.from_dict, manifest_dict(report))
+    small = copy.deepcopy(report_d)
+    _sweep(m.BuildReport.from_dict, {k: v for k, v in small.items()}, stride=97)
+
+
+@pytest.mark.parametrize("cls,make", [
+    ("SourceLock", lambda r, i: lock_dict()),
+    ("AcquisitionReceipt", lambda r, i: receipt_dict()),
+    ("Recipe", lambda r, i: recipe_dict()),
+    ("SourceInventory", lambda r, i: i.to_dict()),
+    ("BuildReport", lambda r, i: r.to_dict()),
+    ("BuildManifest", lambda r, i: manifest_dict(r)),
+])
+def test_every_owned_json_text_is_strict(report, inventory, tmp_path, cls, make):
+    reader = getattr(m, cls)
+    d = make(report, inventory)
+    text = canonical_json(d)
+    assert reader.from_json(text) == reader.from_dict(d)
+    first_key = '"artifact":"' + d["artifact"] + '"'
+    with _raises("malformed"):
+        reader.from_json(text.replace(first_key, first_key + "," + first_key, 1))
+    with _raises("malformed"):
+        reader.from_json(text[:-1] + ',"x":NaN}')
+    with _raises("malformed"):
+        reader.from_json(text + "[]")
+    with _raises("resource_limit"):
+        reader.from_json(text[:-1] + ',"x":' + "[" * 70 + "]" * 70 + "}")
+    with _raises("malformed"):
+        reader.from_json(None)
+    path = tmp_path / "document.json"
+    path.write_bytes(text.encode("utf-8"))
+    assert reader.read(path) == reader.from_dict(d)
+    with _raises("io"):
+        reader.read(tmp_path / "missing.json")
+
+
+def test_owned_documents_bound_their_byte_size(monkeypatch):
+    from GenAIRR._reference_sources import recipe as recipe_module
+    text = canonical_json(recipe_dict())
+    monkeypatch.setattr(recipe_module, "MAX_RECIPE_BYTES", len(text.encode("utf-8")) - 1)
+    with _raises("resource_limit"):
+        m.Recipe.from_json(text)
+
+
+def test_containers_are_bounded_by_named_limits(monkeypatch):
+    from GenAIRR._reference_sources import recipe as recipe_module
+    monkeypatch.setattr(recipe_module, "MAX_SELECTION", 4)
+    with _raises("resource_limit", "/selection"):
+        m.Recipe.from_dict(recipe_dict())
+    monkeypatch.setattr(recipe_module, "MAX_REFS", 1)
+    d = recipe_dict(selected=SELECTED[:4])
+    d["decisions"] = [decision(findings=[FINDING_ID, "finding:" + "d" * 64])]
+    with _raises("resource_limit", "/decisions/0/findings"):
+        m.Recipe.from_dict(d)
+    d = lock_dict()
+    d["assets"] = d["assets"] * 3
+    with _raises("resource_limit", "/assets"):
+        m.SourceLock.from_dict(d)
+
+
+def test_strings_are_bounded_by_named_limits():
+    d = recipe_dict()
+    d["reference"]["name"] = "n" * (m.MAX_NAME + 1)
+    with _raises("resource_limit", "/reference/name"):
+        m.Recipe.from_dict(d)
+    d = recipe_dict()
+    d["selection"][0]["label"] = "IGHV" + "1" * 300
+    with _raises("malformed", "/selection/0/label"):
+        m.Recipe.from_dict(d)
+    with _raises("resource_limit", "/value"):
+        m.Observation(locator=L("airr", "/Info/title"), record=None, presence="present",
+                      value="x" * (m.MAX_VALUE_STRING + 1), interpretation="preserved")
+
+
+def test_null_and_missing_are_distinct_in_generated_formats(inventory):
+    d = _inventory_dict(inventory)
+    d["records"][0]["provider_ref"] = None
+    assert m.SourceInventory.from_dict(d).records[0].provider_ref is None
+    del d["records"][0]["provider_ref"]
+    with _raises("malformed", "/records/0"):
+        m.SourceInventory.from_dict(d)
+    d = _inventory_dict(inventory)
+    (index,) = [i for i, o in enumerate(d["observations"]) if o["record"] is None and o["locator"]["asset"] == "airr"]
+    del d["observations"][index]["record"]
+    with _raises("malformed", f"/observations/{index}"):
+        m.SourceInventory.from_dict(d)
+
+
+def test_independent_builds_are_byte_identical(inventory):
+    again = Inv().build()
+    assert canonical_json(again.to_dict()) == canonical_json(inventory.to_dict())
+    assert m.inventory_hash(again) == m.inventory_hash(inventory)
+
+
+def test_report_and_inventory_views_are_copies(report, inventory):
+    d = report.to_dict()
+    d["inventory"]["records"].clear()
+    d["records"].clear()
+    assert len(report.to_dict()["records"]) == len(inventory.records)
+    value = inventory.observations[0].value.get()
+    if isinstance(value, str):
+        assert inventory.observations[0].value.get() == value
+    with pytest.raises(AttributeError):
+        report.records = ()
+    with pytest.raises(AttributeError):
+        inventory.claims[0].status = "accepted"
+
