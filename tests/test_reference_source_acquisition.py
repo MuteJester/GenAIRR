@@ -614,6 +614,23 @@ def test_a_failure_after_the_body_is_staged_leaves_no_temporary_file(tmp_path):
     assert _temporaries(tmp_path) == []
 
 
+def test_cleanup_failures_never_hide_the_original_error(tmp_path, monkeypatch):
+    real_unlink = os.unlink
+
+    def unlink(path, *args, **kwargs):
+        if os.fspath(path).endswith(".tmp"):
+            raise PermissionError(errno.EACCES, "The process cannot access the file")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", unlink)
+    _error("identity_mismatch", fetch, tmp_path, FakeTransport(serve(source=IGK, at=IGH)))
+    _error("network", fetch, tmp_path, FakeTransport({_url(IGH, "airr"): ok(_fixture(IGH, "airr"),
+                                                                             content_length=10 ** 6)}),
+           formats=("airr",))
+    # only the temporaries that could not be removed remain; nothing was published
+    assert all(name.endswith(".tmp") for name in _snapshot(tmp_path / "cache" / "blobs" / "sha256"))
+
+
 def test_an_encoded_body_is_refused_because_raw_bytes_are_locked(tmp_path):
     routes = {_url(IGH, "airr"): ok(_fixture(IGH, "airr"), headers={"Content-Encoding": "gzip"})}
     error = _error("network", fetch, tmp_path, FakeTransport(routes), formats=("airr",))

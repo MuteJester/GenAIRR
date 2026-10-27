@@ -167,8 +167,11 @@ class BlobCache:
         """Publish a staged blob at its content address without ever replacing a file.
 
         An existing identical blob is accepted after full verification; a conflicting
-        file is ``digest_mismatch`` and stays in place.  The staged temporary file is
-        always consumed or removed.
+        file is ``digest_mismatch`` and stays in place.  If publication reports an error
+        but an identical, fully verified blob is in place (another writer won, or the blob
+        was linked and only removing the temporary name failed, as a Windows sharing
+        violation does), the blob is accepted.  The staged temporary file is then removed
+        on a best-effort basis.
         """
         if not isinstance(staged, StagedBlob) or staged.cache_dir != self.blob_dir:
             raise TypeError("publish takes a StagedBlob written by this cache")
@@ -178,21 +181,29 @@ class BlobCache:
                 return destination
             try:
                 _artifact_io._publish_without_replacing(staged.path, destination)
-            except FileExistsError:
-                if self.contains(staged.sha256, staged.bytes):
-                    return destination
-                raise _io(f"the cache entry {destination} changed while publishing; try again") from None
             except _artifact_io.ArtifactIOError as exc:
                 raise _io(f"cannot publish blob {staged.sha256} in the cache {self.root}: the cache filesystem "
                           "does not support atomic no-overwrite publication (hard links are unavailable); "
                           "place the cache on a local disk") from exc
             except OSError as exc:
-                raise _io(f"cannot publish blob {staged.sha256} at {destination}", exc) from exc
-            staged._published()
+                if not self.contains(staged.sha256, staged.bytes):
+                    if isinstance(exc, FileExistsError):
+                        raise _io(f"the cache entry {destination} changed while publishing; try again") from None
+                    raise _io(f"cannot publish blob {staged.sha256} at {destination}", exc) from exc
+            else:
+                staged._published()
             _sync_directory(self.blob_dir)
             return destination
         finally:
             staged.discard()
+
+
+def _remove_quietly(path: Path) -> None:
+    """Best-effort removal of an owned temporary file."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _sync_directory(directory: Path) -> None:
@@ -226,13 +237,14 @@ class StagedBlob:
         self._owned = False
 
     def discard(self) -> None:
-        """Remove this blob's own temporary file if it is still there (idempotent)."""
+        """Remove this blob's own temporary file if it is still there (idempotent, best effort).
+
+        A file that cannot be removed is left under its temporary name; the failure never
+        replaces an error being reported.
+        """
         if self._owned:
             self._owned = False
-            try:
-                os.unlink(self.path)
-            except FileNotFoundError:
-                pass
+            _remove_quietly(self.path)
 
     def __repr__(self) -> str:
         return f"StagedBlob({self.sha256}, {self.bytes} bytes)"
@@ -242,7 +254,7 @@ class BlobWriter:
     """Streams bytes into an owned temporary file, hashing as it goes.
 
     Use as a context manager: leaving the block without :meth:`finish` (an error or a
-    cancellation) removes the temporary file.  At most ``MAX_ASSET_BYTES`` are accepted.
+    cancellation) removes the temporary file, on a best-effort basis.  At most ``MAX_ASSET_BYTES`` are accepted.
     """
 
     def __init__(self, cache: BlobCache):
@@ -302,7 +314,4 @@ class BlobWriter:
             self._file.close()
         except OSError:
             pass
-        try:
-            os.unlink(self._path)
-        except FileNotFoundError:
-            pass
+        _remove_quietly(self._path)

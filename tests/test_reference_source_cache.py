@@ -449,3 +449,65 @@ def test_publication_failures_leave_every_existing_blob_untouched(cache, monkeyp
     _no_hard_links(monkeypatch)
     _error("io", cache.put, GAPPED)
     assert _snapshot(cache.root) == before
+
+
+# ── cleanup that cannot complete ─────────────────────────────────────
+
+
+def _failing_unlink(monkeypatch, *, times=None):
+    """Make removing this cache's temporary files fail (``times`` times, or always)."""
+    real, failures = os.unlink, []
+
+    def unlink(path, *args, **kwargs):
+        if pathlib.Path(path).name.startswith(".incoming.") and (times is None or len(failures) < times):
+            failures.append(pathlib.Path(path))
+            raise PermissionError(errno.EACCES, "The process cannot access the file because it is being used "
+                                                "by another process")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", unlink)
+    return failures
+
+
+def test_publication_survives_a_failed_removal_of_its_temporary_link(cache, monkeypatch):
+    # The blob is linked into place, then removing the temporary name fails once, as a
+    # Windows sharing violation does while another process has the new blob open.
+    cache.blob_dir.mkdir(parents=True)
+    failures = _failing_unlink(monkeypatch, times=1)
+    assert cache.put(GAPPED) == BlobRef(GAPPED_SHA, GAPPED_SIZE)
+    assert len(failures) == 1
+    assert sorted(p.name for p in cache.blob_dir.iterdir()) == [GAPPED_SHA.split(":")[1]]
+    assert cache.read(GAPPED_SHA, GAPPED_SIZE) == GAPPED
+
+
+def test_a_temporary_that_cannot_be_removed_never_fails_a_verified_publication(cache, monkeypatch):
+    _failing_unlink(monkeypatch)
+    assert cache.put(GAPPED) == BlobRef(GAPPED_SHA, GAPPED_SIZE)
+    assert cache.read(GAPPED_SHA, GAPPED_SIZE) == GAPPED
+    # the undeletable temporary name stays behind under its own name, never as a blob
+    assert [p.name for p in cache.blob_dir.iterdir() if not p.name.startswith(".incoming.")] == [
+        GAPPED_SHA.split(":")[1]]
+
+
+def test_discards_are_best_effort_and_never_hide_the_original_error(cache, monkeypatch):
+    failures = _failing_unlink(monkeypatch)
+    with pytest.raises(RuntimeError, match="original"):
+        with cache.writer() as writer:
+            writer.write(GAPPED)
+            raise RuntimeError("original")
+    with cache.writer() as writer:
+        writer.write(GAPPED)
+        staged = writer.finish()
+    staged.discard()
+    assert len(failures) == 2
+    assert not cache.blob_path(GAPPED_SHA).exists()
+
+
+def test_a_failed_link_with_no_blob_in_place_is_still_an_io_error(cache, monkeypatch):
+    def link(source, destination, *args, **kwargs):
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(os, "link", link)
+    _error("io", cache.put, GAPPED)
+    assert not os.path.lexists(cache.blob_path(GAPPED_SHA))
+    assert _temporaries(cache) == []
