@@ -1218,3 +1218,26 @@ def test_single_export_inspection_succeeds_and_marks_the_comparison_incomplete(p
 def test_comparison_needs_the_inventory_of_its_lock():
     lock, inventory = inventory_of(IGL)
     error("digest_mismatch", ogrdb.comparison, inventory_of(IGK)[0], inventory)
+
+
+def test_an_exceeded_inventory_bound_is_located_in_the_inventory(monkeypatch):
+    def over(**fields):
+        raise ReferenceSourceError("resource_limit", "/findings", "65537 items exceed the limit of 65536")
+    monkeypatch.setattr(ogrdb.SourceInventory, "assemble", staticmethod(over))
+    blobs = pinned(IGL, ("airr",))
+    found = error("resource_limit", ogrdb.build_inventory, seal(IGL, blobs), blobs)
+    assert found.path == "/inventory/findings"
+
+
+def test_findings_naming_more_than_a_finding_holds_are_split_into_parts(monkeypatch):
+    monkeypatch.setattr(ogrdb, "MAX_REFS", 3)
+    def edit(records):
+        for i in range(7):
+            records[i]["new_record_field"] = i
+    _, inventory = build(IGL, {"airr": with_records(IGL, "airr", edit)})
+    parts = [f for f in findings(inventory, "unknown_provider_field")]
+    assert sorted((f.observations.get()["part"], f.observations.get()["parts"], len(f.locators)) for f in parts) == [
+        (1, 3, 3), (2, 3, 3), (3, 3, 1)]
+    assert {f.observations.get()["occurrences"] for f in parts} == {7}
+    located = sorted((x for f in parts for x in f.locators), key=m.Locator.sort_key)
+    assert [x.pointer for x in located] == [rec(i) + "/new_record_field" for i in range(7)]

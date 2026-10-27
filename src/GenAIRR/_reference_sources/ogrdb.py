@@ -720,10 +720,14 @@ class _Builder:
                              locators=[locator for _, locator in mentions],
                              observations={"label": name, "segments": segments})
                 continue
-            self.mentioned.append(MentionedIdentity(
-                asset=asset, segment=segments[0], label=name,
-                mentions=tuple(sorted((Mention(record=record.locator, locator=locator, relationship="paralog")
-                                       for record, locator in mentions), key=lambda x: x.locator.sort_key()))))
+            try:
+                self.mentioned.append(MentionedIdentity(
+                    asset=asset, segment=segments[0], label=name,
+                    mentions=tuple(sorted((Mention(record=record.locator, locator=locator, relationship="paralog")
+                                           for record, locator in mentions), key=lambda x: x.locator.sort_key()))))
+            except ReferenceSourceError as exc:
+                raise bad(ptr("/assets", asset), f"{asset}: paralog name {show(name)}: {exc.message}",
+                          exc.kind) from None
 
     def identities(self, asset: str) -> None:
         entries = [e for e in self.entries[asset] if e.record.status == "parsed"]
@@ -777,9 +781,9 @@ class _Builder:
                          observations={"exports": present, "missing": missing})
         else:
             self._compare_exports()
+        identities = {key for a in present for key in _parsed_identities(self.entries[a])}
         for identity in self.mentioned:
-            if not any(_parsed_identities(self.entries[a]).get((identity.segment, identity.label))
-                       for a in present):
+            if (identity.segment, identity.label) not in identities:
                 self.finding("mentioned_identity_without_record", subjects=[x.record for x in identity.mentions],
                              locators=[x.locator for x in identity.mentions],
                              observations={"asset": identity.asset, "label": identity.label,
@@ -882,10 +886,13 @@ class _Builder:
                          observations={"asset": asset, "field": pattern, "occurrences": len(locators)})
 
     def inventory(self) -> SourceInventory:
-        return SourceInventory.assemble(
-            source_lock_hash=self.lock_hash, adapter=self.lock.adapter, records=self.records,
-            candidates=self.candidates, mentioned_identities=self.mentioned, observations=self.observations,
-            support=self.support, claims=(), mappings=(), findings=self.findings)
+        try:
+            return SourceInventory.assemble(
+                source_lock_hash=self.lock_hash, adapter=self.lock.adapter, records=self.records,
+                candidates=self.candidates, mentioned_identities=self.mentioned, observations=self.observations,
+                support=self.support, claims=(), mappings=(), findings=self.findings)
+        except ReferenceSourceError as exc:   # an inventory bound such as the number of findings
+            raise exc.under("/inventory") from None
 
 
 def check_label_problem(value: Any) -> Optional[str]:
