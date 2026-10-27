@@ -466,8 +466,12 @@ def _check_declared(fmt: str, supplied: SuppliedFile, set_id: str, release: int,
             raise bad(ptr(path, "declared_url"), f"declared URL {url} is not the provider endpoint {expected} of "
                                                  "this set, release and format", "identity_mismatch")
         return
-    parts = urlsplit(url)
-    if (parts.hostname or "").lower() != OGRDB_HOST or parts.port not in (None, 443):
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError as exc:
+        raise bad(ptr(path, "declared_url"), f"declared URL {url} is not a valid URL ({exc})") from None
+    if (parts.hostname or "").lower() != OGRDB_HOST or port not in (None, 443):
         raise bad(ptr(path, "declared_url"), f"declared URL {url} is not on the provider origin {OGRDB_ORIGIN}",
                   "identity_mismatch")
 

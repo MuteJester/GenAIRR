@@ -1104,6 +1104,20 @@ def test_a_declared_statement_url_must_be_on_the_provider_origin(tmp_path, no_ne
            terms=_recorded_terms(), cache="other")
 
 
+@pytest.mark.parametrize("port", ["abc", "99999"])
+def test_an_invalid_port_in_a_declared_statement_url_is_malformed(tmp_path, no_network, port):
+    files = _local_copies(tmp_path / "exports", formats=("airr",))
+    statement = tmp_path / "licence.txt"
+    statement.write_bytes(LICENCE)
+    supplied = SuppliedFile(statement, declared_url=f"https://ogrdb.airr-community.org:{port}/terms")
+    error = _error("malformed", ingest, tmp_path, {**files, "licence_statement": supplied}, terms=_recorded_terms())
+    assert error.path == "/files/licence_statement/declared_url"
+    error = _error("malformed", fetch, tmp_path, FailingTransport(), formats=("airr",), terms=_recorded_terms(),
+                   statements={"licence_statement": supplied})
+    assert error.path == "/statements/licence_statement/declared_url"
+    assert not (tmp_path / "cache").exists()
+
+
 def test_an_oversized_local_file_is_a_resource_limit(tmp_path, no_network):
     big = tmp_path / "big.json"
     with open(big, "wb") as handle:
