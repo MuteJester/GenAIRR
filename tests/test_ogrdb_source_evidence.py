@@ -335,9 +335,9 @@ def _raw_gap_counts(source, fmt) -> dict:
 
 
 @pytest.mark.parametrize("source", SETS, ids=_key)
-def test_v_rss_spacing_is_counted_per_export(source):
+def test_the_gap_between_coding_end_and_v_rss_start_is_counted_per_export(source):
     _, inventory = interpreted(source)
-    summaries = {f.observations.get()["asset"]: f for f in findings(inventory, "v_rss_spacing")}
+    summaries = {f.observations.get()["asset"]: f for f in findings(inventory, "v_rss_gap_after_coding_end")}
     assert set(summaries) == set(GAPPED)
     expected = EXPECT["sets"][f"{source[0]}/{source[1]}"]["airr_v_rss_gap_counts"]
     assert _gap_counts(summaries["airr"].observations.get()) == expected
@@ -349,13 +349,73 @@ def test_v_rss_spacing_is_counted_per_export(source):
         assert finding.locators == (m.Locator(asset, ogrdb.EXPORT_ANCHOR),)
 
 
-def test_igl_v_rss_spacing_names_the_two_base_intervals_and_the_missing_rss():
+def test_igl_v_rss_gaps_name_the_two_base_intervals_and_the_missing_rss():
     _, inventory = interpreted(IGL)
-    for finding in findings(inventory, "v_rss_spacing"):
+    for finding in findings(inventory, "v_rss_gap_after_coding_end"):
         observations = finding.observations.get()
         assert observations["adjacent"] == 82
         assert sorted(observations["gaps"]["2"]) == sorted(NOTE_LABELS)
         assert len(observations["no_v_rs_start"]) == 1
+
+
+def _raw_v_rss(source, check) -> dict:
+    """label -> raw values of V records (both exports agree) for which ``check(record)`` holds."""
+    found = {}
+    for fmt in GAPPED:
+        for record in raw_records(source, fmt):
+            if record["sequence_type"] == "V" and record["v_rs_start"] is not None and check(record):
+                found[record["label"]] = record
+    return found
+
+
+def _without_cac(record) -> bool:
+    start = record["v_rs_start"]
+    return start <= len(record["sequence"]) and record["sequence"][start - 1:start + 2] != "CAC"
+
+
+@pytest.mark.parametrize("source, count", [(IGH, 9), (IGK, 2), (IGL, 4)], ids=["IGH", "IGK", "IGL"])
+def test_a_declared_v_rss_start_without_a_cac_core_is_recorded(source, count):
+    _, inventory = interpreted(source)
+    found = {f.observations.get()["label"]: f.observations.get()
+             for f in findings(inventory, "declared_v_rss_start_without_cac")}
+    oracle = _raw_v_rss(source, _without_cac)
+    assert set(found) == set(oracle) and len(found) == count
+    for label, observations in found.items():
+        record = oracle[label]
+        start = record["v_rs_start"]
+        assert (observations["v_rs_start"], observations["record_bases_at_v_rs_start"]) == (
+            start, record["sequence"][start - 1:start + 6])
+    for summary in findings(inventory, "v_rss_gap_after_coding_end"):
+        assert summary.observations.get()["starts_without_cac"] == sorted(oracle)
+    if source == IGH:
+        for label in ("IGHV3-16*02", "IGHV3-16*03", "IGHV3-16*04"):
+            assert found[label]["record_bases_at_v_rs_start"] == "TCCTGTG" and found[label]["gap"] == 0
+
+
+def test_a_declared_v_rss_end_beyond_the_record_sequence_is_recorded():
+    _, inventory = interpreted(IGH)
+    found = {f.observations.get()["label"]: f.observations.get()
+             for f in findings(inventory, "v_rss_coordinate_beyond_record_sequence")}
+    oracle = _raw_v_rss(IGH, lambda r: r["v_rs_end"] is not None and r["v_rs_end"] > len(r["sequence"]))
+    assert set(found) == set(oracle) and len(found) == 11
+    assert {k: found["IGHV3-69-1*02"][k] for k in ("field", "value", "sequence_length")} == {
+        "field": "v_rs_end", "value": 350, "sequence_length": 339}
+    for source in (IGK, IGL):
+        assert findings(interpreted(source)[1], "v_rss_coordinate_beyond_record_sequence") == []
+
+
+def test_a_declared_v_rss_start_beyond_the_record_sequence_gives_no_position():
+    def edit(fmt, record):
+        if record["label"] == "IGLV10-54*04":
+            record["v_rs_start"] = len(record["sequence"]) + 5
+    lock, inventory = interpret(small(IGL, {"IGLV10-54*04", "IGLJ1*01"}, edit=edit))
+    (finding,) = findings(inventory, "v_rss_coordinate_beyond_record_sequence")
+    observations = finding.observations.get()
+    assert (observations["field"], observations["value"], observations["sequence_length"]) == ("v_rs_start", 509, 504)
+    for summary in findings(inventory, "v_rss_gap_after_coding_end"):
+        assert summary.observations.get()["unusable"] == ["IGLV10-54*04"] and summary.observations.get()["gaps"] == {}
+    assert findings(inventory, "coding_end_before_declared_v_rss") == []
+    assert findings(inventory, "declared_v_rss_start_without_cac") == []
 
 
 def test_a_v_rss_start_inside_the_coding_interval_is_recorded_and_nothing_moves():

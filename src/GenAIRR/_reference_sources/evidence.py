@@ -62,6 +62,8 @@ _JUNCTION = ("source_annotated_junction", "canonical_productive")
 _ENDS = ("original_coding_ends",)
 # The endpoint comparison's relation for one export's coding sequence extending the other's.
 _EXTENDS = re.compile(r"(airr|airr_ex)_extends_([35])prime")
+# The first bases of a heptamer-like V RSS start (CACAGTG); only reported, never used to place one.
+_HEPTAMER_CORE = "CAC"
 _EXTENSION_CODES = {"matches": "coding_extension_matches_record_context",
                     "without_record_context": "coding_extension_without_record_context",
                     "disagrees": "coding_extension_disagrees_with_record_context"}
@@ -143,10 +145,19 @@ FINDING_CODES = {
         "warning", "contradictory_evidence", (),
         "The declared V RSS start lies before the declared coding interval; the RSS coordinates are kept as "
         "observations and no coordinate is moved."),
-    "v_rss_spacing": (
+    "v_rss_gap_after_coding_end": (
         "info", "informational", (),
-        "Per record export: how many V records have their declared RSS start right after the declared coding "
-        "end, the labels at every other spacing, and the labels without a declared or usable RSS start."),
+        "Per record export: the gap between the declared coding end and the declared V RSS start (how many V "
+        "records have none, the labels at every other gap), the labels without a declared or usable RSS start, "
+        "and those whose declared RSS start does not begin with a heptamer-like CAC."),
+    "declared_v_rss_start_without_cac": (
+        "info", "informational", (),
+        "The record bases at the declared V RSS start do not begin with CAC, the core of the heptamer CACAGTG; "
+        "the declared position is reported as given and no other position is searched."),
+    "v_rss_coordinate_beyond_record_sequence": (
+        "warning", "invalid_source_syntax", (),
+        "A declared V RSS start or end lies beyond the record sequence; a start there gives no position and "
+        "no record bases are read past the sequence."),
     "affirmed_span_mapping_unresolved": (
         "info", "unavailable_evidence", _ENDS,
         "A curation note limits the allele's affirmed span (in gapped numbering) or marks likely further "
@@ -581,40 +592,54 @@ class _Interpretation:
         return entry, locators, "affirmed_span_mapping_unresolved" if interval is None else "affirmed_span_mapped"
 
     def v_rss(self, asset: str) -> None:
-        """Declared V RSS starts against the declared coding interval of one record export."""
-        counts = {"adjacent": 0, "gaps": {}, "no_v_rs_start": [], "unusable": []}
+        """Declared V RSS coordinates against the declared coding interval of one record export:
+        the gap between the coding end and the RSS start, the bases the RSS starts with, and
+        coordinates beyond the record sequence.  Nothing here is projected."""
+        counts = {"adjacent": 0, "gaps": {}, "no_v_rs_start": [], "unusable": [], "starts_without_cac": []}
         v_records = 0
         for record in self.parsed[asset]:
             if record.segment != "V":
                 continue
             v_records += 1
+            (rs_at, rs), (rs_end_at, rs_end) = self.field(record, "v_rs_start"), self.field(record, "v_rs_end")
+            seq_at, sequence = self.field(record, "sequence")
+            candidates = self.inventory.candidates_of(record.locator)
+            if type(sequence) is str and candidates:
+                for name, at, value in (("v_rs_start", rs_at, rs), ("v_rs_end", rs_end_at, rs_end)):
+                    if type(value) is int and value > len(sequence):
+                        self.finding("v_rss_coordinate_beyond_record_sequence", record, candidates[0],
+                                     locators=(at, seq_at), field=name, value=value, sequence_length=len(sequence))
             interval = self.intervals.get(record.id)
             if interval is None or interval.start is None:
                 counts["unusable"].append(record.label)
                 continue
-            (rs_at, rs), (seq_at, sequence) = self.field(record, "v_rs_start"), self.field(record, "sequence")
             position = c.v_rss_position(interval.start + 1, interval.end, rs)
-            if position.gap is None:
+            if position.gap is None or rs > len(sequence):
                 counts["no_v_rs_start" if rs is None or rs is c.ABSENT else "unusable"].append(record.label)
                 continue
             if position.gap == 0:
                 counts["adjacent"] += 1
             else:
                 counts["gaps"].setdefault(str(position.gap), []).append(record.label)
-            (candidate,) = self.inventory.candidates_of(record.locator)
+            (candidate,) = candidates
+            at_start = sequence[rs - 1:rs + 6]
+            if not at_start.startswith(_HEPTAMER_CORE):
+                counts["starts_without_cac"].append(record.label)
+                self.finding("declared_v_rss_start_without_cac", record, candidate, locators=(rs_at, seq_at),
+                             v_rs_start=rs, gap=position.gap, record_bases_at_v_rs_start=at_start)
             if position.position == "after_coding_end" and position.gap > 0:
                 self.coding_end_before_rss(record, candidate, interval, rs, position.gap)
             elif position.position != "after_coding_end":
-                rs_end_at, rs_end = self.field(record, "v_rs_end")
                 self.finding(f"v_rss_start_{position.position}", record, candidate, locators=(
                     _locator(record, "gene_start"), _locator(record, "gene_end"), rs_at, rs_end_at, seq_at),
                     gene_start=interval.start + 1, gene_end=interval.end, v_rs_start=rs, v_rs_end=_raw(rs_end),
-                    gap=position.gap, record_bases_at_v_rs_start=sequence[rs - 1:rs + 6],
+                    gap=position.gap, record_bases_at_v_rs_start=at_start,
                     record_bases_after_gene_end=sequence[interval.end:interval.end + 7])
-        self.findings.add("v_rss_spacing", locators=[Locator(asset, EXPORT_ANCHOR)], observations={
+        self.findings.add("v_rss_gap_after_coding_end", locators=[Locator(asset, EXPORT_ANCHOR)], observations={
             "asset": asset, "v_records": v_records, "adjacent": counts["adjacent"],
             "gaps": {gap: sorted(labels) for gap, labels in sorted(counts["gaps"].items(), key=lambda x: int(x[0]))},
-            "no_v_rs_start": sorted(counts["no_v_rs_start"]), "unusable": sorted(counts["unusable"])})
+            "no_v_rs_start": sorted(counts["no_v_rs_start"]), "unusable": sorted(counts["unusable"]),
+            "starts_without_cac": sorted(counts["starts_without_cac"])})
 
     def coding_end_before_rss(self, record, candidate, interval, rs: int, gap: int) -> None:
         (seq_at, sequence), (end_at, _), (rs_at, _) = (self.field(record, name) for name in
