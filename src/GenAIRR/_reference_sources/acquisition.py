@@ -74,7 +74,8 @@ ACQUISITION_DEADLINE_SECONDS = 120
 MAX_FOLLOWED_REDIRECTS = 3
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 _CHUNK = 1 << 16
-_DIGITS_RE = re.compile(r"[0-9]+")
+# A Content-Length: ASCII digits only, at most 19 (below 2**63), so conversion is always cheap.
+_CONTENT_LENGTH_RE = re.compile(r"[0-9]{1,19}")
 _FETCH_TERMS_REASON = ("no data-terms statement was supplied with this acquisition; GenAIRR does not fetch "
                        "provider statement pages")
 _LOCAL_TERMS_REASON = "no data-terms statement was supplied with these files"
@@ -306,6 +307,8 @@ class HttpsTransport:
         self._clock = clock
 
     def get(self, url: str, *, timeout: float, deadline: float) -> TransportResponse:
+        if not isinstance(url, str) or not url.isascii():
+            raise ValueError("only ASCII https URLs can be requested")
         parts = urlsplit(url)
         if parts.scheme != "https" or not parts.hostname or parts.username is not None or parts.password is not None:
             raise ValueError("only https URLs without credentials can be requested")
@@ -525,17 +528,24 @@ def _network(fmt: str, message: str) -> ReferenceSourceError:
 def _content_length(fmt: str, url: str, value: Optional[str]) -> Optional[int]:
     if value is None:
         return None
-    if not _DIGITS_RE.fullmatch(value.strip()):
-        raise _network(fmt, f"the response from {url} has an invalid Content-Length {value!r}")
-    return int(value.strip())
+    digits = value.strip(" \t")
+    if not _CONTENT_LENGTH_RE.fullmatch(digits):
+        raise _network(fmt, f"the response from {url} has an invalid Content-Length {show(value)}")
+    return int(digits)
 
 
 def _redirect_target(fmt: str, current: str, location: Optional[str], status: int) -> str:
-    """The validated absolute target of a redirect: HTTPS on the OGRDB origin, no credentials."""
+    """The validated absolute target of a redirect: HTTPS on the OGRDB origin, no credentials.
+
+    Every problem with the server-supplied ``Location`` is a typed ``network`` error.
+    """
     if location is None or not location.strip():
         raise _network(fmt, f"{current} answered redirect status {status} without a Location header")
-    target = urldefrag(urljoin(current, location.strip())).url
+    location = location.strip()
+    if not location.isascii():
+        raise _network(fmt, f"refused a redirect from {current} to a URL with non-ASCII characters")
     try:
+        target = urldefrag(urljoin(current, location)).url
         parts = urlsplit(target)
         port = parts.port
     except ValueError:
@@ -618,9 +628,28 @@ def _stream_body(fmt: str, url: str, response: TransportResponse, cache: BlobCac
     return staged, b"".join(chunks)
 
 
+def _close(fmt: str, url: str, response: TransportResponse) -> None:
+    """Close a response whose handling succeeded; a transport failure is ``network``."""
+    try:
+        response.close()
+    except _TRANSPORT_ERRORS as exc:
+        raise _network(fmt, f"closing the response from {url} failed ({exc!r})") from exc
+
+
+def _close_quietly(response: TransportResponse) -> None:
+    """Best-effort close while another error is already being reported."""
+    try:
+        response.close()
+    except Exception:  # never hides the error being reported
+        pass
+
+
 def _download(fmt: str, url: str, *, transport: Transport, cache: BlobCache, deadline: _Deadline,
               budget: _Budget, now):
-    """GET one export, applying the redirect policy; return ``(staged, bytes, receipt)``."""
+    """GET one export, applying the redirect policy; return ``(staged, bytes, receipt)``.
+
+    A staged body is removed if anything fails before it is returned.
+    """
     current, redirects = url, []
     while True:
         deadline.check(f"requesting {fmt}")
@@ -630,33 +659,35 @@ def _download(fmt: str, url: str, *, transport: Transport, cache: BlobCache, dea
             raise deadline.exceeded(f"requesting {fmt}") from exc
         except _TRANSPORT_ERRORS as exc:
             raise _network(fmt, f"the request for {current} failed ({exc!r}); it is not retried") from exc
-        staged = None
+        staged, target = None, None
         try:
-            try:
-                status = response.status
-                if status in REDIRECT_STATUSES:
-                    if len(redirects) >= MAX_FOLLOWED_REDIRECTS:
-                        raise _network(fmt, f"refused to follow more than {MAX_FOLLOWED_REDIRECTS} redirects "
-                                            f"(requested {url}, redirected again by {current})")
-                    current = _redirect_target(fmt, current, response.getheader("location"), status)
-                    redirects.append(current)
-                    continue
-                if status != 200:
-                    raise _network(fmt, f"{current} answered HTTP status {status}; only 200 with the complete "
-                                        "body is accepted")
+            status = response.status
+            if status in REDIRECT_STATUSES:
+                if len(redirects) >= MAX_FOLLOWED_REDIRECTS:
+                    raise _network(fmt, f"refused to follow more than {MAX_FOLLOWED_REDIRECTS} redirects "
+                                        f"(requested {url}, redirected again by {current})")
+                target = _redirect_target(fmt, current, response.getheader("location"), status)
+            elif status != 200:
+                raise _network(fmt, f"{current} answered HTTP status {status}; only 200 with the complete body "
+                                    "is accepted")
+            else:
                 staged, data = _stream_body(fmt, current, response, cache, deadline, budget)
                 headers = _receipt_headers(response)
-            finally:
-                response.close()
-            receipt = AcquisitionReceipt(
-                event_time_utc=_timestamp(now), origin="provider_download", format=fmt, sha256=staged.sha256,
-                bytes=staged.bytes, requested_url=url, final_url=current, redirects=tuple(redirects),
-                http_status=200, headers=headers)
+            _close(fmt, current, response)
+            if target is None:
+                receipt = AcquisitionReceipt(
+                    event_time_utc=_timestamp(now), origin="provider_download", format=fmt, sha256=staged.sha256,
+                    bytes=staged.bytes, requested_url=url, final_url=current, redirects=tuple(redirects),
+                    http_status=200, headers=headers)
         except BaseException:
+            _close_quietly(response)
             if staged is not None:
                 staged.discard()
             raise
-        return staged, data, receipt
+        if target is None:
+            return staged, data, receipt
+        redirects.append(target)
+        current = target
 
 
 # ── Shared steps ────────────────────────────────────────────────────

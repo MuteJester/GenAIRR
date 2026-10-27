@@ -501,6 +501,21 @@ def test_a_redirect_downgrade_to_http_is_refused(tmp_path, location):
     assert transport.urls == [_url(IGH, "airr")]
 
 
+@pytest.mark.parametrize("location", [
+    "https://[::1/hop",                                    # urlsplit: invalid IPv6 URL
+    "https://ogrdb.airr-community.org\uff0fevil/hop",      # netloc changes under NFKC normalization
+    "https://ogrdb.airr-community.org/\u00e9",              # non-ASCII path
+    "/\u00c3\u00a9",                                         # UTF-8 bytes as http.client decodes them
+    "https://ogrdb.airr-community.org:abc/hop",
+    "https://ogrdb.airr-community.org:99999/hop",
+])
+def test_a_malformed_or_non_ascii_redirect_target_is_a_network_error(tmp_path, location):
+    transport = FakeTransport({_url(IGH, "airr"): redirect(location)})
+    _error("network", fetch, tmp_path, transport, formats=("airr",))
+    assert transport.urls == [_url(IGH, "airr")]
+    assert _snapshot(tmp_path / "cache" / "blobs" / "sha256") == {}
+
+
 def test_a_redirect_without_a_location_is_a_network_error(tmp_path):
     transport = FakeTransport({_url(IGH, "airr"): redirect(None)})
     _error("network", fetch, tmp_path, transport, formats=("airr",))
@@ -545,10 +560,42 @@ def test_a_body_longer_than_its_content_length_is_refused(tmp_path):
     assert _snapshot(tmp_path / "cache" / "blobs" / "sha256") == {}
 
 
-@pytest.mark.parametrize("value", ["abc", "-1", "12, 12", "", "1e3", "0x10"])
+@pytest.mark.parametrize("value", ["abc", "-1", "12, 12", "", "1e3", "0x10", "+5", "\u0661\u0662",
+                                   pytest.param("9" * 20, id="20-digits"), pytest.param("9" * 5000, id="5000-digits")])
 def test_an_invalid_content_length_is_a_network_error(tmp_path, value):
     routes = {_url(IGH, "airr"): ok(_fixture(IGH, "airr"), content_length=value)}
     _error("network", fetch, tmp_path, FakeTransport(routes), formats=("airr",))
+
+
+def test_a_nineteen_digit_content_length_is_parsed_and_bounded(tmp_path):
+    response = FakeResponse(200, b"x", content_length="9" * 19)
+    error = _error("resource_limit", fetch, tmp_path, FakeTransport({_url(IGH, "airr"): lambda: response}),
+                   formats=("airr",))
+    assert "9" * 19 in error.message and response.reads == 0
+
+
+class CloseFails(FakeResponse):
+    def close(self):
+        super().close()
+        raise ConnectionResetError(errno.ECONNRESET, "reset while closing")
+
+
+def test_an_error_closing_a_complete_response_is_a_network_error_and_leaves_nothing(tmp_path):
+    routes = {_url(IGH, "airr"): lambda: CloseFails(200, _fixture(IGH, "airr"))}
+    error = _error("network", fetch, tmp_path, FakeTransport(routes), formats=("airr",))
+    assert "clos" in error.message
+    assert _snapshot(tmp_path / "cache" / "blobs" / "sha256") == {}
+    assert _temporaries(tmp_path) == []
+
+
+@pytest.mark.parametrize("response,kind,text", [
+    (lambda: CloseFails(500, b"oops"), "network", "500"),
+    (lambda: CloseFails(200, filler=(b"x", m.MAX_ASSET_BYTES + 1)), "resource_limit", "Content-Length"),
+    (lambda: CloseFails(302, b"", headers={"Location": "https://example.org/x"}), "network", "another origin"),
+], ids=["status", "oversized", "redirect"])
+def test_an_error_closing_a_failed_response_never_hides_the_failure(tmp_path, response, kind, text):
+    error = _error(kind, fetch, tmp_path, FakeTransport({_url(IGH, "airr"): response}), formats=("airr",))
+    assert text in error.message
 
 
 def test_an_encoded_body_is_refused_because_raw_bytes_are_locked(tmp_path):
@@ -1364,7 +1411,8 @@ def test_a_passed_deadline_opens_no_connection(monkeypatch):
 
 
 @pytest.mark.parametrize("url", ["http://ogrdb.airr-community.org/x", "ftp://ogrdb.airr-community.org/x",
-                                 "https://user:pw@ogrdb.airr-community.org/x"])
+                                 "https://user:pw@ogrdb.airr-community.org/x",
+                                 "https://ogrdb.airr-community.org/\u00e9"])
 def test_the_https_transport_refuses_anything_but_plain_https(monkeypatch, url):
     monkeypatch.setattr(http.client, "HTTPSConnection",
                         lambda *a, **k: pytest.fail("a connection was opened"))
