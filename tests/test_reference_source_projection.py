@@ -24,6 +24,7 @@ import pytest
 
 import GenAIRR
 from GenAIRR._reference.artifact import Reference
+from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference_sources import common, evidence, ogrdb, projection
 from GenAIRR._reference_sources import model as m
 from tests.test_ogrdb_source_coordinates import V_LABEL, in_scope, small
@@ -1026,3 +1027,17 @@ def test_the_starter_reports_honest_blockers_for_coding_ends_it_does_not_establi
     v, d, j = (SELECTION["counts"][s] for s in ("V", "D", "J"))
     assert not ends.available and len(ends.unmet) == v + j + 2 * d     # V 3', J 5', both D ends
     assert all('"complete"' in u.requirement and u.hint for u in ends.unmet)
+
+
+def test_the_built_runtime_alleles_must_be_exactly_the_selection(monkeypatch):
+    blobs, lock = mini(monkeypatch, (V_LABEL, J1, J7))
+    other = build(lock, blobs, mini_recipe(blobs, lock, (V_LABEL, J1))).reference
+    monkeypatch.setattr(Reference, "from_fasta", lambda **files: other)     # an importer returning another selection
+    found = error("projection", build, lock, blobs, mini_recipe(blobs, lock, (V_LABEL, J7)))
+    assert found.path == "/selection/1" and f"J:{J7}" in found.message
+
+    def rejects(**files):
+        raise ReferenceArtifactError("conflict", "alleles[0].anchor", "rejected for this test")
+    monkeypatch.setattr(Reference, "from_fasta", rejects)
+    found = error("projection", build, lock, blobs, mini_recipe(blobs, lock, (V_LABEL, J7)))
+    assert "conflict" in found.message and "alleles[0].anchor" in found.message
