@@ -1253,3 +1253,22 @@ def test_provider_functionality_is_kept_raw_and_never_classified(value):
     assert records_of(inventory, "airr")[0].status == "parsed"
     assert not [f for f in inventory.findings if m.Locator("airr", rec(0)) in f.subjects]
     assert inventory.claims == () and inventory.mappings == ()
+
+
+def test_accounts_are_plain_json_with_distinct_counts():
+    lock, inventory = inventory_of(IGL)
+    document = json.loads(json.dumps(ogrdb.account(lock, inventory).to_dict()))
+    (airr_ex,) = [e for e in document["exports"] if e["asset"] == "airr_ex"]
+    assert {k: airr_ex[k] for k in ("record_occurrences", "sequence_candidates", "mentioned_only_identities",
+                                    "named_identities")} == {"record_occurrences": 97, "sequence_candidates": 97,
+                                                             "mentioned_only_identities": 1, "named_identities": 98}
+    assert document["fasta"] == [["gapped", 98], ["gapped_ex", 97]]
+    assert document["comparison"]["only_in"] == {"airr": ["IGLJ3*01"], "airr_ex": []}
+
+
+def test_a_missing_info_block_is_an_absent_observation():
+    blobs = {"airr": edited(IGL, "airr", lambda d: d.pop("Info"))}
+    _, inventory = build(IGL, blobs)
+    found = observed(inventory, "airr", "/Info")
+    assert (found.presence, found.value.get(), found.record) == ("absent", None, None)
+    assert identify(IGL, blobs) == expected_identity(IGL)
