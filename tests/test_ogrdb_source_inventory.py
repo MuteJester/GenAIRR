@@ -853,8 +853,8 @@ def test_j2_and_j3_keep_their_own_records_ids_and_support():
     lock, inventory = inventory_of(IGL)
     j2, j3 = by_label(inventory, "airr")["IGLJ2*01"], by_label(inventory, "airr")["IGLJ3*01"]
     (j2,), (j3,) = j2, j3
-    (c2,), (c3,) = inventory.candidates_of(j2.locator), inventory.candidates_of(j3.locator)
-    assert c2.sha256 == c3.sha256 and c2.locator != c3.locator
+    (j2_candidate,), (j3_candidate,) = inventory.candidates_of(j2.locator), inventory.candidates_of(j3.locator)
+    assert j2_candidate.sha256 == j3_candidate.sha256 and j2_candidate.locator != j3_candidate.locator
     assert (j2.provider_id, j3.provider_id) == ("OGRDB:A02870", "OGRDB:A02871")
     own = {}
     for support in inventory.support:
@@ -870,7 +870,7 @@ def test_j2_and_j3_keep_their_own_records_ids_and_support():
     (j3_mentioned,) = [i for i in inventory.mentioned_identities if i.label == "IGLJ3*01"]
     assert j3_mentioned.asset == "airr_ex"
     # No J2 field can be evidence about J3, in either export.
-    for target in (j3.locator, c3.locator):
+    for target in (j3.locator, j3_candidate.locator):
         claim = m.Claim(source_lock_hash=inventory.source_lock_hash, subject=target,
                         predicate="functionality" if target == j3.locator else "boundary_3",
                         value=None, coordinate_system=None, support="none", derivation="stated",
@@ -1241,3 +1241,15 @@ def test_findings_naming_more_than_a_finding_holds_are_split_into_parts(monkeypa
     assert {f.observations.get()["occurrences"] for f in parts} == {7}
     located = sorted((x for f in parts for x in f.locators), key=m.Locator.sort_key)
     assert [x.pointer for x in located] == [rec(i) + "/new_record_field" for i in range(7)]
+
+
+@pytest.mark.parametrize("value", [None, "F", "ORF", 0, {"code": "P"}], ids=["null", "text", "orf-text", "number",
+                                                                           "object"])
+def test_provider_functionality_is_kept_raw_and_never_classified(value):
+    blobs = {"airr": with_records(IGL, "airr", lambda records: records[0].update(functional=value))}
+    _, inventory = build(IGL, blobs)
+    found = observed(inventory, "airr", rec(0) + "/functional")
+    assert (found.value.get(), found.interpretation) == (value, "preserved")
+    assert records_of(inventory, "airr")[0].status == "parsed"
+    assert not [f for f in inventory.findings if m.Locator("airr", rec(0)) in f.subjects]
+    assert inventory.claims == () and inventory.mappings == ()
