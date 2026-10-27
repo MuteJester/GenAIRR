@@ -1,0 +1,543 @@
+"""Projection of an explicit recipe over a locked source into an unchanged runtime reference.
+
+:func:`project` takes a source lock, its exact locked bytes and a parsed :class:`Recipe`.
+It regenerates the interpreted source inventory from the bytes itself (an inventory supplied
+by a caller is never trusted), runs every cross-document check, resolves the ordered
+selection against the inventory, and writes deterministic inputs for the existing local
+importer:
+
+* ``v.fasta``, ``d.fasta`` (VDJ only) and ``j.fasta``: for each selected allele, ``>`` and its
+  literal label, then its supplied coding sequence (uppercase A/C/G/T, never repaired) in
+  80-column lines; LF line ends, a trailing LF, UTF-8;
+* ``annotations.json``: an annotation sidecar version 1, canonical JSON plus LF, with
+  ``v_alignment`` ``none`` so that no alignment-derived assertion competes with a
+  source-stated anchor.
+
+The files are built into a runtime :class:`~GenAIRR._reference.artifact.Reference` with the
+public ``Reference.from_fasta`` in a private temporary directory, whose name enters no output.
+The complete :class:`~GenAIRR._reference_sources.report.BuildReport` gives one outcome per
+explicit source record and per claim.
+
+What reaches the runtime reference, per selected allele:
+
+* an anchor only from an accepted coding-sequence anchor claim, at that claim's support (a
+  source-supported one cites its exact source fields and the raw digest of their assets);
+* a coding phase only from an accepted claim whose value is the projected anchor modulo 3,
+  always as ``anchor_derived`` at the claim's own support, never as independent phase
+  evidence (whether a source phase is independent of the landmark is not established);
+* functionality and coding boundaries only from accepted claims (none under the current
+  interpretation profile: the provider's Boolean ``functional`` is never mapped);
+* a candidate or conflicting claim only through an ``accept_claim`` decision, as an
+  assertion citing that decision and its evidence; ``withhold_claim`` withholds a claim;
+* notes citing the source record (asset, raw digest, pointer), the build-input hash and the
+  projection.
+
+Everything the runtime reference cannot hold stays in the build report:
+:data:`PROJECTION_LOSSES` and the claim and record outcomes say what and why.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+import tempfile
+from types import MappingProxyType
+from typing import Mapping, Optional
+
+from GenAIRR._artifact_io import canonical_json
+from GenAIRR._reference.artifact import Reference
+from GenAIRR._reference.errors import ReferenceArtifactError
+from GenAIRR._reference.sidecar import SCHEMA_NAME as SIDECAR_SCHEMA, SCHEMA_VERSION as SIDECAR_VERSION
+from GenAIRR._reference_sources import evidence, ogrdb
+from GenAIRR._reference_sources._fields import MAX_TEXT, bad, digest, ptr, require_type
+from GenAIRR._reference_sources.common import RECORD_EXPORT_FORMATS, Generator, Locator, RuntimeHashes
+from GenAIRR._reference_sources.consistency import (
+    check_decisions, check_inventory, check_profile_scope, check_recipe, check_selection,
+)
+from GenAIRR._reference_sources.coordinates import RULES
+from GenAIRR._reference_sources.digests import BUILD_INPUTS_DOMAIN, unchecked_build_inputs
+from GenAIRR._reference_sources.errors import ReferenceSourceError
+from GenAIRR._reference_sources.inventory import RUNTIME_PREDICATES, SourceInventory
+from GenAIRR._reference_sources.lock import SourceLock
+from GenAIRR._reference_sources.recipe import Recipe
+from GenAIRR._reference_sources.report import (
+    BuildHashes, BuildReport, ClaimOutcome, Counts, ExportCounts, OutcomeCounts, RecordOutcome, RequirementOutcome,
+    RuntimeCapabilities, SegmentCounts, SelectedAllele,
+)
+
+# What this projection never puts into a runtime reference; all of it stays in the build report.
+PROJECTION_LOSSES = (
+    ("v_subregions", "The runtime reference has no V FWR/CDR subregion annotations: its V alignment is 'none', "
+                     "so no subregion of a source gapped alignment survives projection."),
+    ("gapped_sequences", "Source gapped sequences and their alignments to each coding sequence stay in the build "
+                         "report; the runtime reference holds ungapped coding sequences only."),
+    ("affirmed_spans", "Curation notes that limit an allele's affirmed span stay in the build report; no affirmed "
+                       "interval is projected."),
+    ("genomic_context", "Record sequences around the coding interval (flanks, RSS and leader coordinates, and the "
+                        "coding extensions of the other record export) stay in the build report; the runtime "
+                        "reference holds the selected coding sequence only."),
+)
+
+FASTA_MEMBERS = MappingProxyType({"V": "v.fasta", "D": "d.fasta", "J": "j.fasta"})
+ANNOTATIONS_MEMBER = "annotations.json"
+FASTA_LINE_WIDTH = 80
+SIDECAR_CONVENTIONS = MappingProxyType({"coordinates": "zero_based_half_open", "v_alignment": "none"})
+
+_SIDECAR_ANNOTATIONS = ("functionality", "anchor", "coding_phase", "boundary_5", "boundary_3")
+_WITHHELD = {
+    "unresolved": "unresolved: the source establishes no value for it",
+    "conflicting": "conflicting source claims; the competing values stay in the build report",
+    "candidate": "a candidate only (support none); an accept_claim decision with evidence would project it as "
+                 "an assertion",
+}
+_NOT_REPRESENTABLE = {
+    "phase_independence": "the runtime reference holds a coding phase and its derivation, not a separate claim "
+                          "about its independence of the landmark",
+    "coding_interval": "the runtime reference holds the selected coding sequence, not its interval in the record "
+                       "sequence",
+    "extension": "the runtime reference holds the selected coding sequence, not the coding extensions of the other "
+                 "record export",
+}
+_J_PHASE = ("projected with derivation anchor_derived: the source states the value and it equals the anchor modulo "
+            "3, but whether it was derived independently of the landmark is unresolved")
+_CONVERSIONS = {
+    ("anchor", "V", "stated"): f"anchor = {RULES['v_anchor_coding0']} in the coding sequence, the cdr3_start bound "
+                               f"to the record's exact gapped record ({RULES['v_cdr3_start_from_gapped']})",
+    ("anchor", "J", "stated"): f"anchor = {RULES['j_anchor_coding0']} in the coding sequence",
+    ("coding_phase", "V", "anchor_derived"): "coding phase = anchor % 3 (anchor-derived)",
+    ("coding_phase", "J", "stated"): f"coding phase = {RULES['j_reported_phase']}, equal to anchor % 3; projected "
+                                     "as anchor-derived because its independence of the landmark is unresolved",
+}
+_BOUNDARY_NEEDS = {"V": ("boundary_3",), "D": ("boundary_5", "boundary_3"), "J": ("boundary_5",)}
+
+
+@dataclass(frozen=True)
+class Projection:
+    """A projected build: the exact input files, the runtime reference and the build report.
+
+    ``fasta`` is ``((segment, bytes), ...)`` in V, (D,) J order and ``annotations`` the sidecar
+    bytes; ``build_input_hash`` is the identity the runtime citations name.
+    """
+
+    build_input_hash: str
+    fasta: tuple
+    annotations: bytes
+    reference: Reference
+    report: BuildReport
+
+    def fasta_of(self, segment: str) -> bytes:
+        for name, data in self.fasta:
+            if name == segment:
+                return data
+        raise KeyError(segment)
+
+    @property
+    def inputs(self) -> dict:
+        """A fresh ``{member name: exact bytes}`` of every projected input file."""
+        files = {FASTA_MEMBERS[segment]: data for segment, data in self.fasta}
+        files[ANNOTATIONS_MEMBER] = self.annotations
+        return files
+
+
+def _under(prefix: str, check, *args) -> None:
+    try:
+        check(*args)
+    except ReferenceSourceError as exc:
+        raise exc.under(prefix) from None
+
+
+def _clip(text: Optional[str]) -> Optional[str]:
+    if text is None or len(text) <= MAX_TEXT:
+        return text
+    return text[:MAX_TEXT - 3] + "..."
+
+
+def _require_record_exports(lock: SourceLock) -> None:
+    """A build compares both record exports, so both must be locked."""
+    absent = [f for f in RECORD_EXPORT_FORMATS if f not in lock.asset_ids]
+    if absent:
+        recorded = {a.format: a for a in lock.missing_assets}
+        why = "; ".join(f"{f}: {recorded[f].reason}" + (f" ({recorded[f].detail})" if recorded[f].detail else "")
+                        for f in absent if f in recorded)
+        raise bad("/source_lock/assets", f"a build compares both record exports {list(RECORD_EXPORT_FORMATS)}; the "
+                                         f"lock of {lock.set_id} release {lock.release} lacks {absent}"
+                                         + (f" ({why})" if why else ""), "missing_asset")
+
+
+def _require_segments(recipe: Recipe) -> None:
+    present = {entry.segment for entry in recipe.selection}
+    absent = [s for s in recipe.reference.identity.segments if s not in present]
+    if absent:
+        raise bad("/selection", f"the recipe selects no {' allele and no '.join(absent)} allele; a "
+                                f"{recipe.reference.chain_type} reference needs at least one allele of each of "
+                                f"{list(recipe.reference.identity.segments)}", "unresolved_selection")
+
+
+# ── resolution of the recipe against the inventory ───────────────────
+
+
+class _Build:
+    """The selection resolved against the inventory, and everything projected from it."""
+
+    def __init__(self, lock: SourceLock, inventory: SourceInventory, recipe: Recipe, build_input_hash: str):
+        self.lock, self.inventory, self.recipe = lock, inventory, recipe
+        self.build_input_hash = build_input_hash
+        self.segments = lock.identity.segments
+        self.assets = {a.asset_id: a for a in lock.assets}
+        self.entries = recipe.selection
+        self.chosen = []
+        for entry in self.entries:
+            (candidate,) = [c for c in inventory.candidates_of(entry.record) if c.sha256 == entry.sequence_sha256]
+            self.chosen.append(candidate)
+        # Runtime order: V, then D, then J, each in recipe order (the order of the FASTA files).
+        self.order = [i for segment in self.segments for i, e in enumerate(self.entries) if e.segment == segment]
+        self.by_subject = {}
+        for i, entry in enumerate(self.entries):
+            self.by_subject[entry.record.id] = i
+            self.by_subject[self.chosen[i].id] = i
+        self.identities = {(e.segment, e.label): i for i, e in enumerate(self.entries)}
+        self.decided = {claim: (i, d) for i, d in enumerate(recipe.decisions) for claim in d.claims}
+        self.claims_of: dict = {}
+        for claim in inventory.claims:
+            self.claims_of.setdefault(claim.subject.id, []).append(claim)
+
+    # -- citations ------------------------------------------------------
+
+    def cite(self, locators) -> str:
+        """``<asset> <raw sha256> <pointer>, <pointer>; ...`` in canonical locator order."""
+        groups: dict = {}
+        for locator in sorted(set(locators), key=Locator.sort_key):
+            groups.setdefault(locator.asset, []).append(locator.pointer)
+        return "; ".join(f"{asset} {self.assets[asset].sha256} {', '.join(pointers)}"
+                         for asset, pointers in groups.items())
+
+    def method(self, claim, segment: str, accepted_by: Optional[int]) -> str:
+        adapter, projection = self.lock.adapter, self.recipe.projection
+        profile = adapter.coordinate_profile
+        rule = _CONVERSIONS.get((claim.predicate, segment, claim.derivation),
+                                f"{claim.predicate} ({claim.derivation})")
+        text = f"{adapter.id} v{adapter.version} with {profile.id} v{profile.version}: {rule}"
+        if accepted_by is not None:
+            text += f"; accepted by recipe decision {accepted_by}"
+        return f"{text}; projection {projection.id} v{projection.version}"
+
+    def notes(self, i: int) -> list:
+        record, projection = self.entries[i].record, self.recipe.projection
+        return [f"source record {record.asset} {self.assets[record.asset].sha256} {record.pointer}",
+                f"build inputs {self.build_input_hash}, projection {projection.id} version {projection.version}"]
+
+    # -- claims -----------------------------------------------------------
+
+    def claims(self) -> tuple:
+        """One outcome per inventory claim (inventory order); fills ``self.annotations``."""
+        outcomes, slots, anchors, phases = {}, {}, {}, []
+        for claim in self.inventory.claims:
+            if claim.subject.id not in self.by_subject:
+                outcomes[claim.id] = ClaimOutcome(claim.id, "not_selected", None, None)
+            elif claim.predicate not in RUNTIME_PREDICATES:
+                outcomes[claim.id] = ClaimOutcome(claim.id, "not_representable", None,
+                                                  _NOT_REPRESENTABLE.get(claim.predicate))
+            elif claim.predicate == "coding_phase":
+                phases.append(claim)            # judged against the projected anchor
+            else:
+                outcomes[claim.id] = self._runtime_claim(claim, slots, anchors)
+        for claim in phases:
+            outcomes[claim.id] = self._runtime_claim(claim, slots, anchors)
+        self.annotations = self._annotations(slots)
+        return tuple(outcomes[c.id] for c in self.inventory.claims)
+
+    def _runtime_claim(self, claim, slots: dict, anchors: dict) -> ClaimOutcome:
+        i = self.by_subject[claim.subject.id]
+        entry = self.entries[i]
+        index, decision = self.decided.get(claim.id, (None, None))
+        if decision is not None and decision.action == "withhold_claim":
+            return ClaimOutcome(claim.id, "withheld", index, f"withheld by recipe decision {index}")
+        accepted_by = index if decision is not None and decision.action == "accept_claim" else None
+        if claim.status != "accepted" and accepted_by is None:
+            return ClaimOutcome(claim.id, "withheld", None, _WITHHELD[claim.status])
+        value = claim.value.get()
+        problem = self._gate(claim, value, anchors)
+        if problem is not None:
+            if accepted_by is not None:
+                raise bad(ptr("/decisions", accepted_by), f"{entry.allele_id}: accept_claim names {claim.predicate} "
+                                                          f"claim {claim.id}, which cannot be projected: {problem}",
+                          "projection")
+            return ClaimOutcome(claim.id, "withheld", None, problem)
+        # An anchor-derived phase also rests on the fields of the anchor it is derived from.
+        resting_on = anchors[claim.subject.id][1] if claim.predicate == "coding_phase" else ()
+        if claim.status == "accepted":
+            support, source = claim.support, self.cite(claim.evidence + resting_on)
+        else:
+            support = "assertion"
+            source = f"recipe decision {accepted_by}: {self.cite(decision.evidence + resting_on)}"
+        if claim.predicate == "anchor":
+            anchors[claim.subject.id] = (value, claim.evidence)
+        slots.setdefault((i, claim.predicate), []).append(
+            (claim, value, support, source, self.method(claim, entry.segment, accepted_by)))
+        reason = _J_PHASE if (claim.predicate, entry.segment) == ("coding_phase", "J") else None
+        return ClaimOutcome(claim.id, "projected", accepted_by, reason)
+
+    @staticmethod
+    def _gate(claim, value, anchors: dict) -> Optional[str]:
+        """Why a claim with a value cannot become a runtime annotation, or ``None``."""
+        if claim.predicate == "v_subregions":
+            return "the runtime projection holds no V subregions (its V alignment is 'none')"
+        if claim.predicate in ("anchor", "coding_phase") and claim.coordinate_system != "coding_sequence":
+            return (f"stated in {claim.coordinate_system} coordinates; the runtime reference takes coding-sequence "
+                    "coordinates")
+        if claim.predicate == "coding_phase":
+            if claim.subject.id not in anchors:
+                return "no anchor of this sequence is projected, and the runtime reference holds a phase only as " \
+                       "the anchor modulo 3"
+            anchor = anchors[claim.subject.id][0]
+            if value != anchor % 3:
+                return f"phase {value} is not the projected anchor {anchor} modulo 3 ({anchor % 3})"
+        return None
+
+    def _annotations(self, slots: dict) -> dict:
+        """``{entry index: {predicate: sidecar annotation}}`` from the projected claims."""
+        annotations: dict = {}
+        for (i, predicate), items in slots.items():
+            values = {canonical_json(value) for _, value, _, _, _ in items}
+            if len(values) > 1:
+                raise bad(ptr("/selection", i), f"{self.entries[i].allele_id}: claims "
+                                                f"{[c.id for c, *_ in items]} would project different {predicate} "
+                                                f"values {sorted(values)}", "projection")
+            annotation = {"value": items[0][1],
+                          "support": "source" if all(s == "source" for _, _, s, _, _ in items) else "assertion",
+                          "source": "; ".join(dict.fromkeys(source for *_, source, _ in items)),
+                          "method": "; ".join(dict.fromkeys(method for *_, method in items))}
+            if predicate == "coding_phase":
+                annotation["derivation"] = "anchor_derived"
+            annotations.setdefault(i, {})[predicate] = annotation
+        return annotations
+
+    # -- relationships ----------------------------------------------------
+
+    def relationships(self) -> list:
+        self.unprojected: dict = {}
+        return []
+
+    # -- records ----------------------------------------------------------
+
+    def records(self) -> tuple:
+        """One outcome per inventory record (inventory order)."""
+        inventory = self.inventory
+        sequences: dict = {}
+        for record in inventory.records:
+            if record.status == "parsed":
+                sequences.setdefault((record.segment, record.label), set()).update(
+                    c.sha256 for c in inventory.candidates_of(record.locator))
+        self.noncanonical = {s.id for f in inventory.findings if f.code == "noncanonical_landmark_codon"
+                             for s in f.subjects}
+        outcomes = []
+        for record in inventory.records:
+            if record.status != "parsed":
+                outcomes.append(RecordOutcome(record.locator, "rejected", None, None, None, _clip(record.problem)))
+            elif record.id in self.by_subject:
+                entry = self.entries[self.by_subject[record.id]]
+                detail = "; ".join(self.unprojected.get(record.id, ())) or None
+                outcomes.append(RecordOutcome(record.locator, "selected", entry.allele_id, None, None, _clip(detail)))
+            else:
+                exclusion, related, detail = self._exclusion(record, sequences)
+                outcomes.append(RecordOutcome(record.locator, "excluded", None, exclusion, related, _clip(detail)))
+        return tuple(outcomes)
+
+    def _exclusion(self, record, sequences: dict) -> tuple:
+        """``(reason, related selected record, detail)`` for an unselected parsed record; first rule wins."""
+        candidates = self.inventory.candidates_of(record.locator)
+        key = (record.segment, record.label)
+        if key in self.identities:
+            entry = self.entries[self.identities[key]]
+            if any(c.sha256 == entry.sequence_sha256 for c in candidates):
+                return ("duplicate_occurrence", entry.record,
+                        f"another occurrence of {entry.allele_id}, selected at {entry.record.id}; it supplies the "
+                        "same coding sequence")
+            supplied = "a different coding sequence" if candidates else "no coding sequence"
+            return ("alternative_for_selected_identity", entry.record,
+                    f"an alternative record of {entry.allele_id}, selected at {entry.record.id}; it supplies "
+                    f"{supplied}")
+        problem = self._structural_problem(record, candidates)
+        if problem is not None:
+            return "structural_incompatibility", None, problem
+        if len(sequences.get(key, ())) > 1:
+            return ("unresolved_conflicting_sequence", None,
+                    f"{record.label} has {len(sequences[key])} different coding sequences across its records and "
+                    "the recipe selects none of them")
+        unmet = self._missing_evidence(record, candidates)
+        if unmet:
+            return "missing_required_evidence", None, unmet
+        return "outside_explicit_selection", None, None
+
+    def _structural_problem(self, record, candidates) -> Optional[str]:
+        if record.segment not in self.segments:
+            return f"segment {record.segment} is not part of a {self.lock.identity.chain_type} reference"
+        if not candidates:
+            return "the record supplies no coding sequence the runtime reference can hold"
+        return None
+
+    def _missing_evidence(self, record, candidates) -> str:
+        """Which recipe requirement this record's own claims cannot meet, if any."""
+        (candidate,) = candidates
+        claims = self.claims_of.get(candidate.id, ())
+
+        def accepted(predicate, value=None):
+            return [c for c in claims if c.predicate == predicate and c.status == "accepted"
+                    and (value is None or c.value.get() == value)]
+
+        anchors = [c for c in accepted("anchor") if c.coordinate_system == "coding_sequence"]
+        problems = []
+        for requirement in self.recipe.requires:
+            capability, level, problem = requirement.capability, requirement.evidence, None
+            if capability in ("source_annotated_junction", "canonical_productive") and record.segment != "D":
+                if not anchors:
+                    problem = "no accepted anchor"
+                elif capability == "source_annotated_junction" and any(c.support != "source" for c in anchors):
+                    problem = "its anchor is not source-supported"
+                elif capability == "canonical_productive" and candidate.id in self.noncanonical:
+                    problem = "the codon at its anchor does not encode the conserved residue"
+                elif capability == "canonical_productive" and level == "source":
+                    problem = ("a source-certified canonical_productive needs an independently source-supported "
+                               "coding phase, and this projection projects phases as anchor-derived only")
+            elif capability in ("original_coding_ends", "complete_reference_span"):
+                needs = _BOUNDARY_NEEDS[record.segment] if capability == "original_coding_ends" else \
+                    ("boundary_5", "boundary_3")
+                found = [accepted(p, "complete") for p in needs]
+                if not all(found):
+                    problem = "no accepted complete " + " and ".join(p for p, f in zip(needs, found) if not f)
+                elif level == "source" and any(c.support != "source" for f in found for c in f):
+                    problem = "its complete boundaries are not source-supported"
+            if problem is not None:
+                problems.append(f"{capability} at evidence {level}: {problem}")
+        return "; ".join(problems)
+
+    # -- files ------------------------------------------------------------
+
+    def fasta(self) -> tuple:
+        files = []
+        for segment in self.segments:
+            lines = []
+            for i in self.order:
+                if self.entries[i].segment != segment:
+                    continue
+                sequence = self.chosen[i].sequence
+                lines.append(">" + self.entries[i].label)
+                lines.extend(sequence[k:k + FASTA_LINE_WIDTH] for k in range(0, len(sequence), FASTA_LINE_WIDTH))
+            files.append((segment, ("\n".join(lines) + "\n").encode("utf-8")))
+        return tuple(files)
+
+    def sidecar(self, relationships: list) -> bytes:
+        alleles = []
+        for i in self.order:
+            entry, annotations = self.entries[i], self.annotations.get(i, {})
+            allele = {"segment": entry.segment, "label": entry.label, "sequence_sha256": entry.sequence_sha256,
+                      "gene": None}
+            for name in _SIDECAR_ANNOTATIONS:
+                allele[name] = annotations.get(name)
+            allele["notes"] = self.notes(i)
+            alleles.append(allele)
+        document = {"schema": SIDECAR_SCHEMA, "schema_version": SIDECAR_VERSION,
+                    "reference": self.recipe.reference.to_dict(), "conventions": dict(SIDECAR_CONVENTIONS),
+                    "alleles": alleles, "relationships": relationships}
+        return (canonical_json(document) + "\n").encode("utf-8")
+
+
+# ── the runtime reference ────────────────────────────────────────────
+
+
+def _runtime(fasta: tuple, annotations: bytes) -> Reference:
+    """Build through the public ``Reference.from_fasta`` from files in a private temporary directory."""
+    with tempfile.TemporaryDirectory(prefix="genairr_projection_") as root:
+        paths = {}
+        for segment, data in fasta:
+            paths[segment] = Path(root, FASTA_MEMBERS[segment])
+            paths[segment].write_bytes(data)
+        sidecar = Path(root, ANNOTATIONS_MEMBER)
+        sidecar.write_bytes(annotations)
+        try:
+            return Reference.from_fasta(v=paths["V"], j=paths["J"], d=paths.get("D"), annotations=sidecar)
+        except ReferenceArtifactError as exc:
+            raise bad("", f"the runtime reference rejected the projected files ({exc.kind} at "
+                          f"{exc.path or 'the whole input'}): {exc.message}", "projection") from exc
+
+
+def _check_runtime(reference: Reference, build: _Build, document: dict) -> None:
+    """The runtime alleles are exactly the selection, and the defaults are the recipe's."""
+    expected = [build.entries[i] for i in build.order]
+    alleles = reference.alleles
+    for n, entry in enumerate(expected):
+        allele = alleles[n] if n < len(alleles) else None
+        found = None if allele is None else (allele.segment, allele.label, allele.sequence_sha256)
+        if found != (entry.segment, entry.label, entry.sequence_sha256):
+            raise bad(ptr("/selection", build.order[n]), f"runtime allele {n} is {found}, not {entry.allele_id} "
+                                                         f"with {entry.sequence_sha256}", "projection")
+    if len(alleles) != len(expected):
+        raise bad("/selection", f"the runtime reference holds {len(alleles)} alleles for {len(expected)} selected",
+                  "projection")
+    profile = document["models"]["profile"]
+    if profile != build.recipe.defaults_profile:
+        raise bad("/defaults_profile", f"the runtime reference uses defaults profile {profile!r}, not the recipe's "
+                                       f"{build.recipe.defaults_profile!r}", "projection")
+
+
+# ── the entry point ──────────────────────────────────────────────────
+
+
+def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Projection:
+    """Build ``recipe`` over ``lock`` and its exact locked bytes into a runtime reference.
+
+    ``assets`` maps each locked asset id to its bytes.  Errors are
+    :class:`~GenAIRR._reference_sources.errors.ReferenceSourceError`; their paths are
+    ``/source_lock/...`` for the lock, ``/assets/<asset id>...`` for the bytes,
+    ``/inventory/...`` for the regenerated inventory and recipe paths (``/selection/<i>``,
+    ``/decisions/<i>``, ``/requires/<i>``, ``/defaults_profile``) for everything the recipe
+    decides.  Arguments of the wrong type raise ``TypeError``.
+    """
+    require_type(lock, SourceLock, "lock")
+    require_type(recipe, Recipe, "recipe")
+    _require_record_exports(lock)
+    _under("/source_lock", check_profile_scope, lock)
+    check_recipe(recipe, lock)
+    inventory = evidence.interpret(lock, assets, ogrdb.build_inventory(lock, assets))
+    _under("/inventory", check_inventory, inventory, lock)
+    check_selection(recipe, inventory)
+    check_decisions(recipe, inventory)
+    _require_segments(recipe)
+    inputs = unchecked_build_inputs(lock, inventory, recipe)
+    build_input_hash = digest(inputs, BUILD_INPUTS_DOMAIN)
+
+    build = _Build(lock, inventory, recipe, build_input_hash)
+    claims = build.claims()
+    relationships = build.relationships()
+    records = build.records()
+    fasta = build.fasta()
+    annotations = build.sidecar(relationships)
+
+    reference = _runtime(fasta, annotations)
+    document = json.loads(reference.to_json())
+    _check_runtime(reference, build, document)
+    capabilities = reference.capabilities()
+    available = {level: capabilities.available(evidence=level) for level in ("assertion", "source")}
+
+    comparison = ogrdb.comparison(lock, inventory)
+    segments = {s: 0 for s in ("V", "D", "J", "unassigned")}
+    for entry in recipe.selection:
+        segments[entry.segment] += 1
+    counts = Counts(
+        exports=tuple(ExportCounts(asset, **{k: SegmentCounts(**v) for k, v in inventory.export_counts(asset).items()})
+                      for asset in comparison.exports),
+        selected_alleles=SegmentCounts(**segments),
+        record_outcomes=OutcomeCounts(**{k: sum(r.outcome == k for r in records)
+                                         for k in ("selected", "excluded", "rejected")}))
+    report = BuildReport(
+        generator=Generator.from_dict(document["generator"]), source_lock=lock, recipe=recipe, inventory=inventory,
+        hashes=BuildHashes(source_lock=inputs["source_lock"], inventory=inputs["inventory"], recipe=inputs["recipe"],
+                           build_inputs=build_input_hash),
+        runtime=RuntimeHashes(reference.catalogue_hash, reference.models_hash, reference.execution_hash,
+                              reference.artifact_hash),
+        comparison=comparison, counts=counts,
+        selection=tuple(SelectedAllele(e.allele_id, c.locator) for e, c in zip(build.entries, build.chosen)),
+        records=records, claims=claims, capabilities=RuntimeCapabilities.from_dict(capabilities.to_dict()),
+        requirements=tuple(RequirementOutcome(r.capability, r.evidence, r.capability in available[r.evidence])
+                           for r in recipe.requires))
+    return Projection(build_input_hash, fasta, annotations, reference, report)
