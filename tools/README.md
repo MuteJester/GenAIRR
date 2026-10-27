@@ -56,10 +56,18 @@ python tools/build_published_reference.py \
 ```
 
 The dossier records the GenAIRR version that ran the script as its builder,
-so its manifest hash and the archive digest change with the version. After a
-release version bump, regenerate the packaged archive with the bumped version
-installed, then pin the printed manifest hash in
-`src/GenAIRR/_reference_sources/bundled.py` and in
-`tests/test_published_reference_resources.py` (`MANIFEST_PIN`), and the printed
-archive digest in the same test file (`ARCHIVE_PIN`). The runtime execution,
-catalogue and models hashes do not change with the version.
+so its manifest hash and the archive digest change with the version, and a test
+fails while the packaged builder differs from `[project].version` in
+`pyproject.toml`. For a release:
+
+1. Set the release version in both `pyproject.toml` and `engine_rs/Cargo.toml`
+   and commit it.
+2. Build and install that version (for example `maturin develop`), so that
+   `GenAIRR.__version__` is the release version.
+3. Remove the packaged archive and regenerate it with the command above.
+4. Pin the printed manifest hash in `src/GenAIRR/_reference_sources/bundled.py`
+   and in `tests/test_published_reference_resources.py` (`MANIFEST_PIN`), and the
+   printed archive digest in the same test file (`ARCHIVE_PIN`).
+5. The printed runtime execution, catalogue and models hashes must equal
+   `RUNTIME_PINS` unchanged: a pure version bump does not change them. If any of
+   them changes, stop and investigate before pinning anything.
