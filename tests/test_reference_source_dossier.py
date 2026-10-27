@@ -974,3 +974,56 @@ def test_a_build_hashes_its_report_once(igl, tmp_path, monkeypatch):
     counts = count_report_work(monkeypatch)
     source.build(document)
     assert (counts["hashed"], counts["serialised"]) == (1, 1)
+
+
+# ── platform metadata and leftovers ──────────────────────────────────
+
+PLATFORM_FILES = (".DS_Store", "inputs/Thumbs.db", "cache/blobs/desktop.ini", "receipts/._0.json", "._manifest.json",
+                  "cache/blobs/sha256/.DS_Store")
+
+
+def test_platform_metadata_files_are_ignored_and_never_read(mini, monkeypatch):
+    build, dossier = mini
+    for name in PLATFORM_FILES:
+        (dossier / name).write_bytes(b"\x00 written by a file manager \xff")
+    opened = []
+    real_open = build_module.os.open
+    monkeypatch.setattr(build_module.os, "open", lambda path, *a, **k: opened.append(pathlib.Path(path).name)
+                        or real_open(path, *a, **k))
+    checked = ReferenceBuild.read_dossier(dossier)
+    assert checked.manifest == build.manifest
+    assert not {pathlib.Path(name).name for name in PLATFORM_FILES} & set(opened)
+    assert all(pathlib.Path(name).name in opened for name in ("manifest.json", "report.json", "v.fasta"))
+
+
+@pytest.mark.parametrize("name", [".DS_Store2", "inputs/thumbs.db", "Desktop.ini", "_.foo", "receipts/desktop.ini.bak"])
+def test_names_near_platform_metadata_are_still_refused(mini, name):
+    _, dossier = mini
+    (dossier / name).write_bytes(b"x")
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/" + name
+
+
+def test_platform_metadata_names_must_be_regular_files(mini, tmp_path):
+    _, dossier = mini
+    (dossier / "inputs" / ".DS_Store").mkdir()
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/inputs/.DS_Store"
+    (dossier / "inputs" / ".DS_Store").rmdir()
+    (tmp_path / "elsewhere").write_bytes(b"x")
+    symlink_or_skip(tmp_path / "elsewhere", dossier / "._report.json")
+    exc = error("io", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/._report.json"
+
+
+def test_a_leftover_temporary_file_is_named_as_such(mini):
+    _, dossier = mini
+    (dossier / ".manifest.json.0123456789abcdef.tmp").write_bytes(b"{}")
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "/.manifest.json.0123456789abcdef.tmp"
+    assert "leftover temporary file from an interrupted write" in exc.message
+    assert "removed once no writer is active" in exc.message
+    (dossier / ".manifest.json.0123456789abcdef.tmp").unlink()
+    (dossier / ".manifest.json.not-a-temporary.tmp").write_bytes(b"{}")
+    exc = error("malformed", ReferenceBuild.read_dossier, dossier)
+    assert "leftover temporary" not in exc.message

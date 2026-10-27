@@ -55,6 +55,11 @@ _MEMBER_LIMITS = {LOCK_MEMBER: MAX_LOCK_BYTES, RECIPE_MEMBER: MAX_RECIPE_BYTES, 
 # The only directories a dossier holds; anything else is not part of it.
 _DIRECTORIES = ("cache", "cache/blobs", "cache/blobs/sha256", "inputs", "receipts")
 _RECEIPT_RE = re.compile(r"receipts/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.json")
+# Files that file managers write into any directory; ignored (never read, never listed) when regular.
+_PLATFORM_FILES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini"})
+_APPLE_DOUBLE_PREFIX = "._"
+# The temporary name the atomic file writer publishes from: ``.<name>.<16 hex>.tmp``.
+_WRITER_TEMPORARY_RE = re.compile(r"\..+\.[0-9a-f]{16}\.tmp")
 _ARTIFACT_KINDS = {"io": "io", "unsupported_schema": "unsupported_schema", "integrity": "digest_mismatch"}
 # Packaged builds already checked in this process, by (identifier, registry entry); one lock per
 # key makes concurrent first loads run a single check.
@@ -138,6 +143,9 @@ def _scan(root: Path) -> dict:
             if _is_link(item):
                 raise bad("/" + name, f"{name} is a symbolic link or junction; dossier members are regular files "
                                       "and links are never followed", "io")
+            if (item.name in _PLATFORM_FILES or item.name.startswith(_APPLE_DOUBLE_PREFIX)) \
+                    and item.is_file(follow_symlinks=False):
+                continue
             if item.is_dir(follow_symlinks=False):
                 if name not in _DIRECTORIES:
                     raise bad("/" + name, f"unexpected directory {name}: it is not part of a dossier", "malformed")
@@ -472,9 +480,13 @@ class ReferenceBuild:
         receipts = sorted((name for name in extra if _RECEIPT_RE.fullmatch(name)), key=_receipt_order)
         unlisted = [name for name in extra if name not in receipts]
         if unlisted:
+            leftovers = [name for name in unlisted if _WRITER_TEMPORARY_RE.fullmatch(name.rsplit("/", 1)[-1])]
+            what = "is a leftover temporary file" if len(leftovers) == 1 else "are leftover temporary files"
+            note = (f"; {', '.join(leftovers)} {what} from an interrupted write, which can be removed once no writer "
+                    "is active" if leftovers else "")
             raise bad("/" + unlisted[0], f"{', '.join(unlisted)} {'is' if len(unlisted) == 1 else 'are'} not listed in "
                                          f"{MANIFEST_NAME}; a dossier holds only its listed members and acquisition "
-                                         "receipts")
+                                         f"receipts{note}")
         absent = [name for name in listed if name not in present]
         if absent:
             raise bad("/" + absent[0], f"{', '.join(absent)} {'is' if len(absent) == 1 else 'are'} listed in "
