@@ -36,8 +36,9 @@ What reaches the runtime reference, per selected allele:
 
 A selected allele carrying ``phase_landmark_projection_unsupported`` (a stated phase that is
 not its stated landmark modulo 3) needs a ``withhold_claim`` decision covering its anchor and
-coding-phase claims; neither value is ever shifted or replaced.  Everything the runtime
-reference cannot hold stays in the build report:
+coding-phase claims; neither value is ever shifted or replaced.
+
+Everything the runtime reference cannot hold stays in the build report:
 :data:`PROJECTION_LOSSES` and the claim and record outcomes say what and why.
 """
 from __future__ import annotations
@@ -686,10 +687,15 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     reference = _runtime(fasta, annotations)
     document = json.loads(reference.to_json())
     _check_runtime(reference, build, document)
-    capabilities = reference.capabilities()
-    _check_requirements(recipe, capabilities)
-    available = {level: capabilities.available(evidence=level) for level in ("assertion", "source")}
+    _check_requirements(recipe, reference.capabilities())
+    report = _report(build, inputs, records, claims, reference, Generator.from_dict(document["generator"]))
+    return Projection(build_input_hash, fasta, annotations, reference, report)
 
+
+def _report(build: _Build, inputs: dict, records: tuple, claims: tuple, reference: Reference,
+            generator: Generator) -> BuildReport:
+    """The complete build report; its construction re-checks every document, hash and count."""
+    lock, recipe, inventory = build.lock, build.recipe, build.inventory
     comparison = ogrdb.comparison(lock, inventory)
     segments = {s: 0 for s in ("V", "D", "J", "unassigned")}
     for entry in recipe.selection:
@@ -700,10 +706,12 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
         selected_alleles=SegmentCounts(**segments),
         record_outcomes=OutcomeCounts(**{k: sum(r.outcome == k for r in records)
                                          for k in ("selected", "excluded", "rejected")}))
-    report = BuildReport(
-        generator=Generator.from_dict(document["generator"]), source_lock=lock, recipe=recipe, inventory=inventory,
+    capabilities = reference.capabilities()
+    available = {level: capabilities.available(evidence=level) for level in ("assertion", "source")}
+    return BuildReport(
+        generator=generator, source_lock=lock, recipe=recipe, inventory=inventory,
         hashes=BuildHashes(source_lock=inputs["source_lock"], inventory=inputs["inventory"], recipe=inputs["recipe"],
-                           build_inputs=build_input_hash),
+                           build_inputs=build.build_input_hash),
         runtime=RuntimeHashes(reference.catalogue_hash, reference.models_hash, reference.execution_hash,
                               reference.artifact_hash),
         comparison=comparison, counts=counts,
@@ -711,4 +719,3 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
         records=records, claims=claims, capabilities=RuntimeCapabilities.from_dict(capabilities.to_dict()),
         requirements=tuple(RequirementOutcome(r.capability, r.evidence, r.capability in available[r.evidence])
                            for r in recipe.requires))
-    return Projection(build_input_hash, fasta, annotations, reference, report)
