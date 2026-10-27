@@ -341,7 +341,33 @@ def affirmed_span(note, export: str, coding: str, gapped: Optional[str]) -> Affi
         return unresolved("no gapped record is bound to this record")
     if gapped.replace(IMGT_GAP, "") != coding:
         return unresolved("the gapped record does not ungap to the coding sequence")
-    column = note.interpretation.last_affirmed_column
-    if not 1 <= column <= len(gapped):
-        return unresolved(f"affirmed column {column} is beyond the {len(gapped)} columns of the gapped record")
-    return AffirmedSpan((0, _non_gap(gapped[:column])), None)
+    first, last = note.interpretation.first_affirmed_column, note.interpretation.last_affirmed_column
+    if not 1 <= first <= last:
+        return unresolved(f"affirmed columns {first}-{last} are not an interval of 1-based columns")
+    if last > len(gapped):
+        return unresolved(f"affirmed column {last} is beyond the {len(gapped)} columns of the gapped record")
+    return AffirmedSpan((_non_gap(gapped[:first - 1]), _non_gap(gapped[:last])), None)
+
+
+@dataclass(frozen=True)
+class SpanVsColumn:
+    """Where a supplied coding span ends in the gapped columns, against a stated column.
+
+    ``last_column`` is the 1-based column of the span's last base; ``relation`` is
+    ``exceeds``, ``equals`` or ``short_of``; ``bases_beyond`` counts the span's bases after
+    the stated column and ``columns_short`` the columns from the span's end to it.
+    """
+
+    last_column: int
+    relation: str
+    bases_beyond: int
+    columns_short: int
+
+
+def span_against_column(blocks, column: int) -> SpanVsColumn:
+    """Compare the span of an exact gapped alignment (its blocks: coding positions onto
+    zero-based gapped columns) with a stated 1-based column."""
+    last = blocks[-1].output[1]
+    beyond = sum(max(0, end - max(start, column)) for start, end in (b.output for b in blocks))
+    relation = "exceeds" if last > column else "equals" if last == column else "short_of"
+    return SpanVsColumn(last, relation, beyond, max(0, column - last))

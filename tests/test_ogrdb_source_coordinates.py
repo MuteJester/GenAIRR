@@ -27,6 +27,7 @@ import dataclasses
 import functools
 import hashlib
 import json
+import re
 
 import pytest
 
@@ -45,6 +46,10 @@ PROFILE_REF = m.CoordinateProfileRef("ogrdb_api_v2_human_ig_observed_v1", 1)
 SET_KEYS = {"9606.IGH_VDJ/10": IGH, "9606.IGKappa_VJ/5": IGK, "9606.IGLambda_VJ/4": IGL}
 NOTE_LABELS = tuple(row["label"] for row in EXPECT["igl4_airr_ex_coding_end_observations"]
                     if row["finding"] == "coding_end_before_declared_v_rss")
+# Test oracle for span-limiting curation notes (never used by the code under test): an affirmed
+# column ("up to and including nucleotide N" / "... base N") or a trailing-dot marker.
+NOTE_COLUMN = re.compile(r"up to and including (?:nucleotide|base) (\d+)")
+NOTE_DOTS = re.compile(r"[Tt]railing [\"\u201c]\.+[\"\u201d]|\b(?:one|two|three) dots at the end|a dot at the 3' end")
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -162,19 +167,59 @@ def test_profile_landmark_residues():
                                                   "J": {"IGH": ("W",), "IGK": ("F",), "IGL": ("F",)}}
 
 
-def test_historical_notes_are_bound_to_their_exact_text_and_sequences():
+def span_limiting_notes(source, fmt="airr") -> dict:
+    """label -> affirmed columns stated in the raw curation note (empty for a trailing-dot note only),
+    for every record of a raw export whose note limits its affirmed span (regex oracle)."""
+    found = {}
+    for record in raw_records(source, fmt):
+        text = record.get("curation") or ""
+        columns = sorted({int(n) for n in NOTE_COLUMN.findall(text)})
+        if columns or NOTE_DOTS.search(text):
+            found[record["label"]] = columns
+    return found
+
+
+def test_the_note_oracle_finds_the_settled_set_of_span_limiting_notes():
+    counts = {key: len(span_limiting_notes(source, fmt)) for source, key in ((IGH, "IGH"), (IGK, "IGK"), (IGL, "IGL"))
+              for fmt in ("airr", "airr_ex")}
+    assert counts == {"IGH": 34, "IGK": 1, "IGL": 6}
+    for source in (IGH, IGK, IGL):
+        assert span_limiting_notes(source, "airr") == span_limiting_notes(source, "airr_ex")
+    assert [label for label, columns in span_limiting_notes(IGH).items() if not columns] == ["IGHV1-3*04"]
+
+
+def test_every_span_limiting_note_is_a_profile_note_bound_to_its_text_and_sequences():
     notes = profiles.PROFILE.historical_notes
-    assert sorted(n.label for n in notes) == sorted(NOTE_LABELS)
+    expected = {(source[0], source[1], label): columns for source in (IGH, IGK, IGL)
+                for label, columns in span_limiting_notes(source).items()}
+    assert {(n.set_id, n.release, n.label) for n in notes} == set(expected)
+    assert len(notes) == len(expected) == 41
     for note in notes:
-        assert (note.set_id, note.release, note.field, note.numbering) == ("9606.IGLambda_VJ", 4, "curation",
-                                                                          "imgt_gapped")
+        source = (note.set_id, note.release)
+        assert (note.field, note.numbering) == ("curation", "imgt_gapped")
         assert note.interpretation is None           # no reviewed interpretation exists
-        texts = {raw_record(IGL, fmt, note.label)["curation"] for fmt in ("airr", "airr_ex")}
+        texts = {raw_record(source, fmt, note.label)["curation"] for fmt in ("airr", "airr_ex")}
         (text,) = texts
         assert note.text_sha256 == sha(text)
         assert note.quotes and all(quote in text for quote in note.quotes)
-        assert dict(note.sequences) == {fmt: sha(raw_record(IGL, fmt, note.label)["coding_sequence"])
+        columns = expected[(note.set_id, note.release, note.label)]
+        assert note.stated_column == (min(columns) if columns else None)
+        if note.stated_column is not None:
+            assert any(f"including nucleotide {note.stated_column}" in q or f"including base {note.stated_column}" in q
+                       for q in note.quotes)
+        assert dict(note.sequences) == {fmt: sha(raw_record(source, fmt, note.label)["coding_sequence"])
                                         for fmt in ("airr", "airr_ex")}
+
+
+def test_note_quotes_keep_the_providers_own_confirmations():
+    notes = {n.label: n for n in profiles.PROFILE.historical_notes}
+    assert any("MK587524" in q and "confirms the inference" in q for q in notes["IGLV2-14*03"].quotes)
+    assert any("bases 338-339" in q and "are T and C" in q for q in notes["IGLV2-14*03"].quotes)
+    assert any("identical genomic sequence has been accepted by IMGT as the full length sequence" in q
+               for q in notes["IGLV3-25*03"].quotes)
+    assert any("final three nucleotides of the sequence - TAC" in q for q in notes["IGHV2-70*20"].quotes)
+    for label in ("IGHV3-13*06", "IGHV3-43D*05"):
+        assert any("missing terminal nucleotide of the sequence can be confirmed" in q for q in notes[label].quotes)
 
 
 # ── stated positions ─────────────────────────────────────────────────
@@ -462,7 +507,7 @@ def test_an_affirmed_span_needs_a_reviewed_interpretation():
 
 @pytest.mark.parametrize("export, gapped_export", [("airr", "gapped"), ("airr_ex", "gapped_ex")])
 def test_a_reviewed_note_maps_through_an_exact_gapped_alignment(export, gapped_export):
-    reviewed = dataclasses.replace(_note(), interpretation=profiles.NoteInterpretation(last_affirmed_column=339))
+    reviewed = dataclasses.replace(_note(), interpretation=profiles.NoteInterpretation(1, 339))
     record = raw_record(IGL, export, "IGLV3-21*04")
     gapped = raw_gapped(IGL, gapped_export, "IGLV3-21*04")
     expected = sum(1 for char in gapped[:339] if char != ".")        # counted independently
@@ -471,7 +516,7 @@ def test_a_reviewed_note_maps_through_an_exact_gapped_alignment(export, gapped_e
 
 
 def test_a_reviewed_note_stays_unresolved_without_a_matching_alignment_or_sequence():
-    reviewed = dataclasses.replace(_note(), interpretation=profiles.NoteInterpretation(last_affirmed_column=339))
+    reviewed = dataclasses.replace(_note(), interpretation=profiles.NoteInterpretation(1, 339))
     coding = raw_record(IGL, "airr", "IGLV3-21*04")["coding_sequence"]
     gapped = raw_gapped(IGL, "gapped", "IGLV3-21*04")
     assert "no gapped record" in c.affirmed_span(reviewed, "airr", coding, None).reason
@@ -480,8 +525,43 @@ def test_a_reviewed_note_stays_unresolved_without_a_matching_alignment_or_sequen
     other = "C" + coding[1:] if coding[0] != "C" else "A" + coding[1:]
     assert "not the sequence" in c.affirmed_span(reviewed, "airr", other, other).reason
     assert "not the sequence" in c.affirmed_span(reviewed, "gapped", coding, gapped).reason
-    beyond = dataclasses.replace(reviewed, interpretation=profiles.NoteInterpretation(last_affirmed_column=400))
+    beyond = dataclasses.replace(reviewed, interpretation=profiles.NoteInterpretation(1, 400))
     assert "beyond" in c.affirmed_span(beyond, "airr", coding, gapped).reason
+    for first, last in ((0, 339), (340, 339)):
+        empty = dataclasses.replace(reviewed, interpretation=profiles.NoteInterpretation(first, last))
+        assert "not an interval" in c.affirmed_span(empty, "airr", coding, gapped).reason
+
+
+def test_a_reviewed_span_need_not_start_at_column_1():
+    gapped = raw_gapped(IGL, "gapped", "IGLV3-21*04")
+    coding = gapped.replace(".", "")
+    for first, last in ((2, 339), (310, 312), (100, 200)):
+        reviewed = dataclasses.replace(_note(), interpretation=profiles.NoteInterpretation(first, last))
+        expected = (sum(1 for char in gapped[:first - 1] if char != "."),
+                    sum(1 for char in gapped[:last] if char != "."))
+        assert c.affirmed_span(reviewed, "airr", coding, gapped).interval == expected
+
+
+# ── supplied span against a stated column ────────────────────────────
+
+
+@pytest.mark.parametrize("source, fmt, gapped_fmt, label, column, relation, beyond, short", [
+    (IGL, "airr", "gapped", "IGLV2-14*04", 337, "exceeds", 2, 0),
+    (IGL, "airr_ex", "gapped_ex", "IGLV2-14*04", 337, "exceeds", 2, 0),
+    (IGL, "airr", "gapped", "IGLV2-14*03", 337, "equals", 0, 0),
+    (IGL, "airr_ex", "gapped_ex", "IGLV2-14*03", 337, "exceeds", 2, 0),
+    (IGH, "airr", "gapped", "IGHV2-70*20", 319, "exceeds", 3, 0),
+    (IGH, "airr", "gapped", "IGHV4-4*09", 318, "equals", 0, 0),
+    (IGH, "airr", "gapped", "IGHV4-4*09", 330, "short_of", 0, 12),
+])
+def test_the_supplied_span_is_compared_with_a_stated_column(source, fmt, gapped_fmt, label, column, relation,
+                                                            beyond, short):
+    gapped = raw_gapped(source, gapped_fmt, label)
+    blocks = m.alignment_blocks(gapped)
+    found = c.span_against_column(blocks, column)
+    assert (found.last_column, found.relation, found.bases_beyond, found.columns_short) == (
+        len(gapped.rstrip(".")), relation, beyond, short)
+    assert found.bases_beyond == sum(1 for char in gapped[column:] if char != ".")
 
 
 # ── codons ───────────────────────────────────────────────────────────

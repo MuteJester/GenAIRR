@@ -145,9 +145,11 @@ FINDING_CODES = {
         "end, the labels at every other spacing, and the labels without a declared or usable RSS start."),
     "affirmed_span_mapping_unresolved": (
         "info", "unavailable_evidence", _ENDS,
-        "A historical note limits the allele's affirmed span in gapped numbering; without a reviewed "
-        "interpretation, the exact note text, the sequence it was read against and an exact gapped alignment, "
-        "no affirmed interval is derived."),
+        "A curation note limits the allele's affirmed span (in gapped numbering) or marks likely further "
+        "bases; without a reviewed interpretation, the exact note text, the sequence it was read against and an "
+        "exact gapped alignment, no affirmed interval is derived.  Where the note states a column, each record's "
+        "supplied span is compared with it through its exact gapped alignment (a span running past the stated "
+        "column holds bases that were not affirmed)."),
     "affirmed_span_mapped": (
         "info", "informational", _ENDS,
         "A reviewed historical note, bound to its exact text and sequence, maps through the record's exact "
@@ -510,43 +512,64 @@ class _Interpretation:
                                                            "matches_record_context": status == "matches"}
 
     def historical_notes(self) -> None:
-        """Every profile note of this set, per record of its allele: mapped to an affirmed
-        interval only with a reviewed interpretation, the exact note text and sequence, and an
-        exact gapped alignment; otherwise unresolved with the reason."""
+        """One finding per profile note of this set, naming each record of its allele: an
+        affirmed interval only with a reviewed interpretation, the exact note text and
+        sequence, and an exact gapped alignment; otherwise unresolved with the reason.  Where
+        the note states a column, each record's supplied span is compared with it through the
+        record's exact gapped mapping."""
         for note in self.profile.historical_notes:
             if (note.set_id, note.release) != (self.lock.set_id, self.lock.release):
                 continue
+            outcomes: dict = {}          # finding code -> (record entries, subjects, locators)
+            label, segment = note.label, None
             for asset in self.exports:
                 for record in self.parsed[asset]:
                     candidates = self.inventory.candidates_of(record.locator)
                     if record.label != note.label or not candidates:
                         continue
                     (candidate,) = candidates
-                    text_at, text = self.field(record, note.field)
-                    matches = type(text) is str and text_digest(text) == note.text_sha256
-                    mapping, gapped = self.alignments.get(candidate.id, (None, None))
-                    span = c.affirmed_span(note, asset, candidate.sequence, gapped)
-                    interval, reason = span.interval, span.reason
-                    if not matches:
-                        interval, reason = None, (f"the record's {note.field} text is not the note text the profile "
-                                                  "lists, so the note is not read")
-                    details = {"field": note.field, "quotes": list(note.quotes), "numbering": note.numbering,
-                               "text_matches": matches,
-                               "sequence_bound": dict(note.sequences).get(asset) == candidate.sha256,
-                               "gapped_mapping": None if mapping is None else mapping.validation}
-                    locators = [text_at] + ([mapping.output] if mapping is not None else [])
-                    if interval is None:
-                        self.finding("affirmed_span_mapping_unresolved", record, candidate, locators=locators,
-                                     reason=reason, **details)
-                    else:
-                        self.finding("affirmed_span_mapped", record, candidate, locators=locators,
-                                     last_affirmed_column=note.interpretation.last_affirmed_column,
-                                     affirmed_interval=list(interval), coordinate_system="coding_sequence",
-                                     **details)
-                    if matches:
-                        self.notes[record.id] = (text_at, {"field": note.field, "quotes": list(note.quotes),
-                                                           "affirmed_span": "unresolved" if interval is None
-                                                           else "mapped"})
+                    segment = record.segment
+                    entry, locators, code = self.note_record(note, asset, record, candidate)
+                    found = outcomes.setdefault(code, ([], [], []))
+                    found[0].append(entry)
+                    found[1].extend((record.locator, candidate.locator))
+                    found[2].extend(locators)
+            for code, (entries, subjects, locators) in outcomes.items():
+                observations = {"label": label, "segment": segment, "field": note.field, "quotes": list(note.quotes),
+                                "numbering": note.numbering, "stated_column": note.stated_column}
+                if code == "affirmed_span_mapped":
+                    observations.update(first_affirmed_column=note.interpretation.first_affirmed_column,
+                                        last_affirmed_column=note.interpretation.last_affirmed_column,
+                                        coordinate_system="coding_sequence")
+                observations["records"] = entries
+                self.findings.add(code, subjects=subjects, locators=locators, observations=observations)
+
+    def note_record(self, note, asset: str, record, candidate) -> tuple:
+        """``(record entry, locators, finding code)`` of one record carrying a profile note."""
+        text_at, text = self.field(record, note.field)
+        matches = type(text) is str and text_digest(text) == note.text_sha256
+        mapping, gapped = self.alignments.get(candidate.id, (None, None))
+        span = c.affirmed_span(note, asset, candidate.sequence, gapped)
+        interval, reason = span.interval, span.reason
+        if not matches:
+            interval, reason = None, (f"the record's {note.field} text is not the note text the profile lists, so "
+                                      "the note is not read")
+        versus = None
+        if note.stated_column is not None and mapping is not None and mapping.validation == "exact":
+            versus = c.span_against_column(mapping.blocks, note.stated_column)
+        entry = {"asset": asset, "text_matches": matches,
+                 "sequence_bound": dict(note.sequences).get(asset) == candidate.sha256,
+                 "gapped_mapping": None if mapping is None else mapping.validation,
+                 "supplied_last_column": None if versus is None else versus.last_column,
+                 "span_vs_stated_column": None if versus is None else versus.relation,
+                 "bases_beyond_stated_column": None if versus is None else versus.bases_beyond,
+                 "columns_short_of_stated_column": None if versus is None else versus.columns_short,
+                 "affirmed_interval": None if interval is None else list(interval), "reason": reason}
+        if matches:
+            self.notes[record.id] = (text_at, {"field": note.field, "quotes": list(note.quotes),
+                                               "affirmed_span": "unresolved" if interval is None else "mapped"})
+        locators = [text_at] + ([mapping.output] if mapping is not None else [])
+        return entry, locators, "affirmed_span_mapping_unresolved" if interval is None else "affirmed_span_mapped"
 
     def v_rss(self, asset: str) -> None:
         """Declared V RSS starts against the declared coding interval of one record export."""

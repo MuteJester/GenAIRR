@@ -28,7 +28,7 @@ from GenAIRR._reference_sources import ogrdb
 from GenAIRR._reference_sources import profiles
 from tests.test_ogrdb_source_coordinates import (
     GAPPED, NOTE_LABELS, assert_status, at, candidate_of, claim_of, claims, findings, interpret,
-    interpreted, raw_gapped, raw_record, record_of, small,
+    interpreted, raw_gapped, raw_record, record_of, small, span_limiting_notes,
 )
 from tests.test_ogrdb_source_inventory import (
     EXPECT, IGH, IGK, IGL, SELECTION, SETS, _key, build, error, inventory_of, pinned, raw_records, seal,
@@ -281,7 +281,10 @@ def test_the_igh_two_base_analogue_is_ighv3_7_04():
     assert observations["bases_through_rss_minus_1"] == choice["alternative"]["extension_3prime"] == "A"
     assert observations["extension"] == {"export": "airr_ex", "bases": "A", "matches_record_context": True,
                                          "reaches_rss_minus_1": choice["extension_reaches_rss_minus_1"]}
-    assert observations["historical_note"] is None
+    (note,) = [n for n in profiles.PROFILE.historical_notes if n.label == "IGHV3-7*04"]
+    assert observations["historical_note"] == {"field": "curation", "quotes": list(note.quotes),
+                                               "affirmed_span": "unresolved"}
+    assert note.stated_column == 319
     _, igk = interpreted(IGK)
     assert coding_end_findings(igk) == {}
 
@@ -367,28 +370,70 @@ def test_a_v_rss_start_before_the_coding_interval_has_its_own_finding():
 # ── historically affirmed spans ──────────────────────────────────────
 
 
-def test_historical_affirmation_notes_stay_unresolved():
-    _, inventory = interpreted(IGL)
-    found = {f.observations.get()["label"]: f for f in findings(inventory, "affirmed_span_mapping_unresolved")}
-    assert set(found) == set(NOTE_LABELS)
-    notes = {n.label: n for n in profiles.PROFILE.historical_notes}
+def note_findings(inventory, code="affirmed_span_mapping_unresolved") -> dict:
+    found = {}
+    for finding in findings(inventory, code):
+        label = finding.observations.get()["label"]
+        assert label not in found
+        found[label] = finding
+    return found
+
+
+def _span_oracle(source, gapped_fmt, label, column) -> dict:
+    """The supplied span's last column against a stated column, read from the raw gapped record."""
+    gapped = raw_gapped(source, gapped_fmt, label)
+    last = len(gapped.rstrip("."))
+    beyond = sum(1 for char in gapped[column:] if char != ".")
+    relation = "exceeds" if last > column else "equals" if last == column else "short_of"
+    return {"supplied_last_column": last, "span_vs_stated_column": relation, "bases_beyond_stated_column": beyond,
+            "columns_short_of_stated_column": max(0, column - last)}
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_every_span_limiting_note_is_reported_unresolved(source):
+    _, inventory = interpreted(source)
+    found = note_findings(inventory)
+    oracle = span_limiting_notes(source)
+    assert set(found) == set(oracle)
+    assert findings(inventory, "affirmed_span_mapped") == []
+    notes = {n.label: n for n in profiles.PROFILE.historical_notes if (n.set_id, n.release) == source}
     for label, finding in found.items():
         observations = finding.observations.get()
+        column = min(oracle[label]) if oracle[label] else None
+        assert (observations["field"], observations["numbering"], observations["stated_column"]) == (
+            "curation", "imgt_gapped", column)
         assert observations["quotes"] == list(notes[label].quotes)
-        assert (observations["field"], observations["numbering"], observations["text_matches"],
-                observations["sequence_bound"], observations["gapped_mapping"]) == (
-            "curation", "imgt_gapped", True, True, "exact")
-        assert "no reviewed interpretation" in observations["reason"]
+        assert finding.capabilities == ("original_coding_ends",)
+        assert [r["asset"] for r in observations["records"]] == ["airr", "airr_ex"]
+        for entry in observations["records"]:
+            assert (entry["text_matches"], entry["sequence_bound"], entry["gapped_mapping"]) == (True, True, "exact")
+            assert "no reviewed interpretation" in entry["reason"] and entry["affirmed_interval"] is None
+            expected = (_span_oracle(source, GAPPED[entry["asset"]], label, column) if column is not None else
+                        dict.fromkeys(("supplied_last_column", "span_vs_stated_column", "bases_beyond_stated_column",
+                                       "columns_short_of_stated_column")))
+            assert {k: entry[k] for k in expected} == expected
         assert {s.asset for s in finding.subjects} == {"airr", "airr_ex"}
         for fmt in GAPPED:
             assert at(record_of(inventory, fmt, label), "curation") in finding.locators
-    assert findings(inventory, "affirmed_span_mapped") == []
-    for source in (IGH, IGK):
-        assert findings(interpreted(source)[1], "affirmed_span_mapping_unresolved") == []
+
+
+@pytest.mark.parametrize("source, label, beyond", [(IGL, "IGLV2-14*04", 2), (IGH, "IGHV2-70*20", 3)])
+def test_supplied_coding_spans_that_run_past_the_affirmed_column(source, label, beyond):
+    _, inventory = interpreted(source)
+    records = note_findings(inventory)[label].observations.get()["records"]
+    assert [(r["span_vs_stated_column"], r["bases_beyond_stated_column"]) for r in records] == [
+        ("exceeds", beyond), ("exceeds", beyond)]
+
+
+def test_a_note_without_a_stated_column_is_still_reported():
+    _, inventory = interpreted(IGH)
+    observations = note_findings(inventory)["IGHV1-3*04"].observations.get()
+    assert observations["stated_column"] is None
+    assert all(r["span_vs_stated_column"] is None for r in observations["records"])
 
 
 def test_a_reviewed_note_would_give_an_affirmed_span_through_the_exact_alignment(monkeypatch):
-    reviewed = tuple(dataclasses.replace(n, interpretation=profiles.NoteInterpretation(339))
+    reviewed = tuple(dataclasses.replace(n, interpretation=profiles.NoteInterpretation(1, 339))
                      if n.label == "IGLV3-21*04" else n for n in profiles.PROFILE.historical_notes)
     profile = dataclasses.replace(profiles.PROFILE, historical_notes=reviewed)
     monkeypatch.setattr(profiles, "PROFILES", types.MappingProxyType({(profile.id, profile.version): profile}))
@@ -400,10 +445,9 @@ def test_a_reviewed_note_would_give_an_affirmed_span_through_the_exact_alignment
     assert len(expected) == 1
     observations = finding.observations.get()
     assert observations["label"] == "IGLV3-21*04"
-    assert observations["affirmed_interval"] == [0, expected.pop()]
-    assert observations["last_affirmed_column"] == 339
-    assert {f.observations.get()["label"] for f in findings(inventory, "affirmed_span_mapping_unresolved")} == \
-        set(NOTE_LABELS) - {"IGLV3-21*04"}
+    assert (observations["first_affirmed_column"], observations["last_affirmed_column"]) == (1, 339)
+    assert [r["affirmed_interval"] for r in observations["records"]] == [[0, expected.pop()]] * 2
+    assert set(note_findings(inventory)) == set(span_limiting_notes(IGL)) - {"IGLV3-21*04"}
     assert coding_end_findings(inventory)["IGLV3-21*04"].observations.get()["historical_note"][
         "affirmed_span"] == "mapped"
 
@@ -414,8 +458,8 @@ def test_a_note_whose_text_changed_is_not_read():
             record["curation"] = record["curation"] + " Edited."
     lock, inventory = interpret(small(IGL, {"IGLV3-21*04", "IGLJ1*01"}, edit=edit))
     (finding,) = findings(inventory, "affirmed_span_mapping_unresolved")
-    observations = finding.observations.get()
-    assert observations["text_matches"] is False and "not the note text" in observations["reason"]
+    for entry in finding.observations.get()["records"]:
+        assert entry["text_matches"] is False and "not the note text" in entry["reason"]
     assert coding_end_findings(inventory)["IGLV3-21*04"].observations.get()["historical_note"] is None
 
 
