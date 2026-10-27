@@ -1,8 +1,8 @@
 """Projection of an explicit recipe over a locked source into an unchanged runtime reference.
 
 :func:`project` takes a source lock, its exact locked bytes and a parsed :class:`Recipe`.
-It regenerates the interpreted source inventory from the bytes itself (an inventory supplied
-by a caller is never trusted), runs every cross-document check, resolves the ordered
+It regenerates the interpreted source inventory from the bytes itself, reading them once (an
+inventory supplied by a caller is never trusted), runs every cross-document check, resolves the ordered
 selection against the inventory, and writes deterministic inputs for the existing local
 importer:
 
@@ -755,7 +755,7 @@ def project(lock: SourceLock, assets: Mapping[str, bytes], recipe: Recipe) -> Pr
     _require_record_exports(lock)
     _under("/source_lock", check_profile_scope, lock)
     check_recipe(recipe, lock)
-    inventory = evidence.interpret(lock, assets, ogrdb.build_inventory(lock, assets))
+    inventory = evidence._interpret_locked(lock, assets)
     _under("/inventory", check_inventory, inventory, lock)
     _check_supplied_sequences(recipe, inventory)
     check_selection(recipe, inventory)

@@ -767,3 +767,35 @@ def test_grouped_lists_name_every_record_and_blocker(igh_starter):
         assert groups and all(declared == len(items) for declared, items in groups), title
     blockers = grouped(section(text, "Runtime capabilities"))
     assert sum(declared for declared, _ in blockers) == sum(len(s.unmet) for s in report.capabilities.statuses)
+
+
+# ── one inventory build per projection ───────────────────────────────
+
+
+def test_a_build_reads_the_source_bytes_into_an_inventory_once(tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import evidence, ogrdb
+    source = from_files(tmp_path)
+    document = full_recipe(tmp_path, source)
+    calls = []
+    real = ogrdb.build_inventory
+
+    def counted(lock, assets):
+        calls.append(lock.commitment)
+        return real(lock, assets)
+
+    monkeypatch.setattr(ogrdb, "build_inventory", counted)
+    monkeypatch.setattr(evidence, "build_inventory", counted)
+    source.build(document)
+    assert calls == [source.lock.commitment]
+
+
+def test_interpretation_of_a_supplied_inventory_still_rebuilds_and_compares_it(tmp_path):
+    import dataclasses
+    from GenAIRR._reference_sources import evidence, ogrdb
+    source = from_files(tmp_path)
+    blobs = {fmt: fixture_bytes(IGL, fmt) for fmt in ALL}
+    inventory = ogrdb.build_inventory(source.lock, blobs)
+    assert inventory.findings
+    edited = dataclasses.replace(inventory, findings=inventory.findings[:-1])
+    exc = error("identity_mismatch", evidence.interpret, source.lock, blobs, edited)
+    assert exc.path == "/inventory"

@@ -133,10 +133,10 @@ def rewrite_claims(monkeypatch, label, predicate, change, *, subjects=None):
     replacement.  This reaches claims the shipped profile never emits in scope.  ``subjects``
     ({predicate: "record" | "candidate"}) changes the claim-subject vocabulary while the rewritten
     inventory is assembled."""
-    real = evidence.interpret
+    real = evidence._interpret_locked
 
-    def interpret(lock_, assets, inventory):
-        result = real(lock_, assets, inventory)
+    def interpret(lock_, assets):
+        result = real(lock_, assets)
         claims = []
         for claim in result.claims:
             hit = claim.predicate == predicate and label in (None, result.subject_record(claim).label)
@@ -149,7 +149,7 @@ def rewrite_claims(monkeypatch, label, predicate, change, *, subjects=None):
                 patch.setitem(inventory_module.PREDICATE_SUBJECTS, name, kind)
             return m.SourceInventory.assemble(claims=tuple(claims), **fields)
 
-    monkeypatch.setattr(evidence, "interpret", interpret)
+    monkeypatch.setattr(evidence, "_interpret_locked", interpret)
     return interpret
 
 
@@ -872,7 +872,7 @@ def test_a_candidate_named_by_accept_claim_is_projected_as_an_assertion_citing_t
     # the V anchor demoted to a candidate (a value whose meaning a profile has not established)
     demoted = rewrite_claims(monkeypatch, V_LABEL, "anchor",
                              lambda c: [dataclasses.replace(c, status="candidate", support="none")])
-    inventory = demoted(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    inventory = demoted(lock, blobs)
     anchor = claim_id(inventory, "airr", V_LABEL, "anchor")
     (index,) = [i for i, r in enumerate(records_in(blobs, "airr")) if r["label"] == V_LABEL]
     cdr3 = {"asset": "airr", "pointer": f"{RECORDS}/{index}/v_gene_delineations/0/cdr3_start"}
@@ -1072,7 +1072,7 @@ def accept(claims, digest, evidence_) -> dict:
 def test_accept_claim_cannot_project_a_conflicting_annotation(monkeypatch):
     blobs, lock = mini(monkeypatch)
     interpret = rewrite_claims(monkeypatch, V_LABEL, "anchor", _conflicting)
-    inventory = interpret(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    inventory = interpret(lock, blobs)
     disputed = [c for c in inventory.claims if c.status == "conflicting" and c.subject.asset == "airr"]
     assert len(disputed) == 2
     no_native(monkeypatch)
@@ -1095,7 +1095,7 @@ def test_a_phase_of_any_other_derivation_is_projected_and_explained_as_anchor_de
     # a V phase stated by the source instead of derived from the anchor (same value)
     interpret = rewrite_claims(monkeypatch, V_LABEL, "coding_phase",
                                lambda c: [dataclasses.replace(c, derivation="stated", support="source")])
-    phase = claim_id(interpret(lock, blobs, ogrdb.build_inventory(lock, blobs)), "airr", V_LABEL, "coding_phase")
+    phase = claim_id(interpret(lock, blobs), "airr", V_LABEL, "coding_phase")
     result = build(lock, blobs, mini_recipe(blobs, lock))
     v = result.reference.alleles[0]
     assert (v.coding_phase.derivation, v.coding_phase.support) == ("anchor_derived", "source")
@@ -1111,7 +1111,7 @@ def test_a_claim_projected_below_its_own_support_says_so(monkeypatch):
     # a second accepted anchor claim with the same value, but only an assertion
     interpret = rewrite_claims(monkeypatch, V_LABEL, "anchor",
                                lambda c: [c, dataclasses.replace(c, support="assertion")])
-    inventory = interpret(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    inventory = interpret(lock, blobs)
     anchors = {c.support: c.id for c in inventory.claims
                if c.predicate == "anchor" and c.subject.asset == "airr" and inventory.subject_record(c).label == V_LABEL}
     result = build(lock, blobs, mini_recipe(blobs, lock))
@@ -1135,7 +1135,7 @@ def test_the_frameshift_gate_covers_claims_about_the_selected_record_too(monkeyp
     blobs, lock = mini(monkeypatch, (V_LABEL, J7), edit=_frameshift)
     interpret = rewrite_claims(monkeypatch, None, "coding_phase", _about_the_record,
                                subjects={"coding_phase": "record"})
-    inventory = interpret(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    inventory = interpret(lock, blobs)
     anchor = claim_id(inventory, "airr", J7, "anchor")
     (record,) = [r for r in inventory.records if r.locator.asset == "airr" and r.label == J7]
     (phase,) = [c.id for c in inventory.claims if c.subject == record.locator and c.predicate == "coding_phase"]
