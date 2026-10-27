@@ -903,14 +903,27 @@ def test_a_dossier_outside_this_versions_validated_scope_is_unsupported(mini, mo
     assert exc.path == "/source.lock.json" and "not been validated" in exc.message
 
 
-def test_a_windows_reparse_point_counts_as_a_link():
+@pytest.mark.parametrize("tag, link", [
+    (0xA000000C, True),                 # IO_REPARSE_TAG_SYMLINK
+    (0xA0000003, True),                 # IO_REPARSE_TAG_MOUNT_POINT (directory junction)
+    (0xA000001D, True),                 # IO_REPARSE_TAG_LX_SYMLINK
+    (0x9000601A, False),                # a cloud-file placeholder: an ordinary file, read without following
+    (0x80000013, False),                # IO_REPARSE_TAG_DEDUP
+    (None, True),                       # a reparse point whose tag is unavailable: refused
+])
+def test_only_windows_name_surrogate_reparse_points_count_as_links(tag, link):
     import stat
     import types
-    attributes = types.SimpleNamespace(st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT)
-    junction = types.SimpleNamespace(is_symlink=lambda: False, stat=lambda follow_symlinks=True: attributes)
-    plain = types.SimpleNamespace(is_symlink=lambda: False, stat=lambda follow_symlinks=True: types.SimpleNamespace())
-    assert build_module._is_link(junction) is True
+    attributes = {"st_file_attributes": stat.FILE_ATTRIBUTE_REPARSE_POINT, "st_mode": stat.S_IFREG | 0o644}
+    if tag is not None:
+        attributes["st_reparse_tag"] = tag
+    entry = types.SimpleNamespace(is_symlink=lambda: False,
+                                  stat=lambda follow_symlinks=True: types.SimpleNamespace(**attributes))
+    plain = types.SimpleNamespace(is_symlink=lambda: False,
+                                  stat=lambda follow_symlinks=True: types.SimpleNamespace(st_mode=stat.S_IFREG))
+    assert build_module._is_link(entry) is link
     assert build_module._is_link(plain) is False
+
 
 
 # ── the cost of a check ──────────────────────────────────────────────

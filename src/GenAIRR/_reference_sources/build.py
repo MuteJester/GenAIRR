@@ -90,12 +90,24 @@ def _receipt_order(name: str) -> tuple:
 # ── reading a dossier ────────────────────────────────────────────────
 
 
-def _is_link(entry: os.DirEntry) -> bool:
-    """A symbolic link, or on Windows any reparse point (junctions included, on every version)."""
-    if entry.is_symlink():
+# Windows reparse tags with this bit set name another file (symbolic links, junctions, LX symlinks).
+_NAME_SURROGATE = 0x20000000
+
+
+def _link_like(info) -> bool:
+    """Whether a not-followed stat result is a link: a symbolic link or, on Windows, a
+    name-surrogate reparse point.  Other reparse points (such as cloud-file placeholders) are
+    ordinary files; where the reparse tag is unavailable, any reparse point counts as a link."""
+    if stat.S_ISLNK(getattr(info, "st_mode", 0)):
         return True
-    attributes = getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0)   # Windows only
-    return bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+    if not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:     # Windows only
+        return False
+    tag = getattr(info, "st_reparse_tag", None)
+    return tag is None or bool(tag & _NAME_SURROGATE)
+
+
+def _is_link(entry: os.DirEntry) -> bool:
+    return entry.is_symlink() or _link_like(entry.stat(follow_symlinks=False))
 
 
 def _scan(root: Path) -> dict:
@@ -124,8 +136,8 @@ def _scan(root: Path) -> dict:
         for item in sorted(entries, key=lambda e: e.name):
             name = f"{folder}/{item.name}" if folder else item.name
             if _is_link(item):
-                raise bad("/" + name, f"{name} is a symbolic link or another reparse point; dossier members are "
-                                      "regular files and links are never followed", "io")
+                raise bad("/" + name, f"{name} is a symbolic link or junction; dossier members are regular files "
+                                      "and links are never followed", "io")
             if item.is_dir(follow_symlinks=False):
                 if name not in _DIRECTORIES:
                     raise bad("/" + name, f"unexpected directory {name}: it is not part of a dossier", "malformed")
@@ -240,7 +252,7 @@ def _read_manifest(root: Path) -> BuildManifest:
                       "is not a dossier, and it is never read", "incomplete_dossier") from None
     except OSError as exc:
         raise bad("/" + MANIFEST_NAME, f"cannot read {MANIFEST_NAME}: {exc}", "io") from exc
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+    if _link_like(info) or not stat.S_ISREG(info.st_mode):
         raise bad("/" + MANIFEST_NAME, f"{MANIFEST_NAME} is a symbolic link or not a regular file; links are "
                                        "never followed", "io")
     data = _read_file(root, MANIFEST_NAME, MAX_MANIFEST_BYTES)
