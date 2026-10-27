@@ -212,3 +212,76 @@ def test_no_reason_overstates_functionality_or_names_internal_work():
         assert text.isascii() and "\n" not in text
         assert "functional allele" not in text.lower()
         assert not INTERNAL_WORDS.search(text), text
+
+
+# ── the generator ────────────────────────────────────────────────────
+
+REPO = DATA.parent.parent.parent
+TOOL_PATH = REPO / "tools" / "build_published_reference.py"
+
+
+def load_tool():
+    """The generator script, loaded from the checkout (it is not part of the package)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("build_published_reference", TOOL_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def refuse_network(patch) -> None:
+    """Any connection attempt, name lookup or fetch transport fails the test."""
+    import http.client
+    import socket
+    from GenAIRR._reference_sources import api
+    from GenAIRR._reference_sources.acquisition import HttpsTransport
+
+    def refuse(*args, **kwargs):
+        pytest.fail("the generator tried to reach the network")
+
+    for owner, name in ((socket, "create_connection"), (socket, "getaddrinfo"), (socket.socket, "connect"),
+                        (http.client.HTTPSConnection, "connect"), (http.client.HTTPConnection, "connect"),
+                        (HttpsTransport, "get"), (api, "_transport")):
+        patch.setattr(owner, name, refuse)
+
+
+@pytest.fixture(scope="module")
+def generated(tmp_path_factory):
+    """The starter written by the generator's command line into a new directory, offline."""
+    import contextlib
+    import io
+    target = tmp_path_factory.mktemp("generated") / STARTER_ID
+    out = io.StringIO()
+    with pytest.MonkeyPatch.context() as patch, contextlib.redirect_stdout(out):
+        refuse_network(patch)
+        code = load_tool().main(["--output", str(target)])
+    return code, target, out.getvalue()
+
+
+def test_the_generator_writes_exactly_the_dossier_members_offline(generated):
+    from GenAIRR._reference_sources.digests import manifest_hash
+    from GenAIRR.reference_sources import ReferenceBuild
+    code, target, printed = generated
+    assert code == 0
+    checked = ReferenceBuild.read_dossier(target)
+    listed = sorted([member.name for member in checked.manifest.members] + ["manifest.json"])
+    present = sorted(p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file())
+    assert present == listed and not (target / "receipts").exists()
+    assert sorted(p.name for p in target.iterdir() if p.is_dir()) == ["cache", "inputs"]
+    reference = checked.reference
+    for line in (f"manifest {manifest_hash(checked.manifest)}", f"runtime execution {reference.execution_hash}",
+                 f"runtime catalogue {reference.catalogue_hash}", f"runtime models {reference.models_hash}",
+                 f"runtime artifact {reference.artifact_hash}", f"builder GenAIRR {checked.manifest.builder.version}"):
+        assert line in printed.splitlines(), line
+    assert (target / "recipe.json").read_bytes() == RECIPE_PATH.read_bytes()
+
+
+def test_the_generator_writes_only_into_a_new_or_empty_directory(tmp_path, capsys):
+    target = tmp_path / "occupied"
+    target.mkdir()
+    (target / "notes.txt").write_bytes(b"kept\n")
+    assert load_tool().main(["--output", str(target)]) == 2
+    assert "is not empty" in capsys.readouterr().err
+    assert [p.name for p in target.iterdir()] == ["notes.txt"] and (target / "notes.txt").read_bytes() == b"kept\n"
+    assert load_tool().main(["--output", str(tmp_path / "missing-parent" / "dossier")]) == 2
+    assert not (tmp_path / "missing-parent").exists()
