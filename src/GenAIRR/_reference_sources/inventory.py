@@ -14,7 +14,9 @@ The inventory is generated from locked bytes by an adapter.  It keeps distinct:
 * :class:`Finding` - a stable-coded finding with subjects, locators and affected capabilities.
 
 Claims, mappings and findings carry content-derived ids (``claim:``/``mapping:``/
-``finding:`` plus 64 hex), verified on reading, so any change to one changes its id.
+``finding:`` plus 64 hex), verified on reading.  The hashed content includes the
+``source_lock_hash`` each item was derived under, so any change to the item or to the
+locked source bytes changes its id and a decision naming it goes stale.
 Every list is held in canonical order (see :meth:`SourceInventory.assemble`).
 """
 from __future__ import annotations
@@ -443,6 +445,7 @@ class Mapping:
     mappings carry no blocks.
     """
 
+    source_lock_hash: str
     kind: str
     input: Locator
     output: Locator
@@ -455,10 +458,11 @@ class Mapping:
     validation: str
     id: str = field(init=False, compare=False, repr=False)
 
-    KEYS = ("id", "kind", "input", "output", "input_sha256", "output_sha256", "input_space", "output_space",
+    KEYS = ("id", "source_lock_hash", "kind", "input", "output", "input_sha256", "output_sha256", "input_space", "output_space",
             "blocks", "transform", "validation")
 
     def __post_init__(self):
+        check_digest(self.source_lock_hash, "/source_lock_hash")
         check_enum(self.kind, MAPPING_KINDS, "/kind")
         _check_record_locator(self.input, "/input")
         check_instance(self.output, Locator, "/output")
@@ -497,7 +501,8 @@ class Mapping:
         object.__setattr__(self, "id", _content_id("mapping", self._body(), MAPPING_ID_DOMAIN))
 
     def _body(self) -> dict:
-        return {"kind": self.kind, "input": self.input.to_dict(), "output": self.output.to_dict(),
+        return {"source_lock_hash": self.source_lock_hash, "kind": self.kind, "input": self.input.to_dict(),
+                "output": self.output.to_dict(),
                 "input_sha256": self.input_sha256, "output_sha256": self.output_sha256,
                 "input_space": self.input_space, "output_space": self.output_space,
                 "blocks": [b.to_dict() for b in self.blocks], "transform": self.transform,
@@ -514,7 +519,8 @@ class Mapping:
     @classmethod
     def from_dict(cls, d, path: str = "") -> "Mapping":
         require_object(d, cls.KEYS, path)
-        item = construct(cls, path, kind=d["kind"], input=Locator.from_dict(d["input"], ptr(path, "input")),
+        item = construct(cls, path, source_lock_hash=d["source_lock_hash"], kind=d["kind"],
+                         input=Locator.from_dict(d["input"], ptr(path, "input")),
                          output=Locator.from_dict(d["output"], ptr(path, "output")),
                          input_sha256=d["input_sha256"], output_sha256=d["output_sha256"],
                          input_space=d["input_space"], output_space=d["output_space"],
@@ -585,6 +591,7 @@ class Claim:
     ``mappings`` the coordinate mappings used.
     """
 
+    source_lock_hash: str
     subject: Locator
     predicate: str
     value: Any
@@ -596,10 +603,11 @@ class Claim:
     mappings: tuple
     id: str = field(init=False, compare=False, repr=False)
 
-    KEYS = ("id", "subject", "predicate", "value", "coordinate_system", "support", "derivation", "status",
+    KEYS = ("id", "source_lock_hash", "subject", "predicate", "value", "coordinate_system", "support", "derivation", "status",
             "evidence", "mappings")
 
     def __post_init__(self):
+        check_digest(self.source_lock_hash, "/source_lock_hash")
         _check_record_locator(self.subject, "/subject")
         check_enum(self.predicate, PREDICATES, "/predicate")
         check_enum(self.status, CLAIM_STATUSES, "/status")
@@ -639,7 +647,8 @@ class Claim:
         object.__setattr__(self, "id", _content_id("claim", self._body(), CLAIM_ID_DOMAIN))
 
     def _body(self) -> dict:
-        return {"subject": self.subject.to_dict(), "predicate": self.predicate, "value": self.value.get(),
+        return {"source_lock_hash": self.source_lock_hash, "subject": self.subject.to_dict(),
+                "predicate": self.predicate, "value": self.value.get(),
                 "coordinate_system": self.coordinate_system, "support": self.support,
                 "derivation": self.derivation, "status": self.status,
                 "evidence": [e.to_dict() for e in self.evidence], "mappings": list(self.mappings)}
@@ -656,7 +665,8 @@ class Claim:
     def from_dict(cls, d, path: str = "") -> "Claim":
         require_object(d, cls.KEYS, path)
         item = construct(
-            cls, path, subject=Locator.from_dict(d["subject"], ptr(path, "subject")), predicate=d["predicate"],
+            cls, path, source_lock_hash=d["source_lock_hash"],
+            subject=Locator.from_dict(d["subject"], ptr(path, "subject")), predicate=d["predicate"],
             value=JsonValue(d["value"], ptr(path, "value")), coordinate_system=d["coordinate_system"],
             support=d["support"], derivation=d["derivation"], status=d["status"],
             evidence=parse_array(d["evidence"], ptr(path, "evidence"), MAX_REFS, Locator.from_dict),
@@ -674,6 +684,7 @@ class Finding:
     fields involved, ``observations`` a JSON object of structured values, ``capabilities``
     the runtime capabilities it affects (canonical capability order)."""
 
+    source_lock_hash: str
     code: str
     severity: str
     category: str
@@ -683,9 +694,10 @@ class Finding:
     capabilities: tuple
     id: str = field(init=False, compare=False, repr=False)
 
-    KEYS = ("id", "code", "severity", "category", "subjects", "locators", "observations", "capabilities")
+    KEYS = ("id", "source_lock_hash", "code", "severity", "category", "subjects", "locators", "observations", "capabilities")
 
     def __post_init__(self):
+        check_digest(self.source_lock_hash, "/source_lock_hash")
         check_token(self.code, "/code", _CODE_RE, "a code matching [a-z][a-z0-9_]*")
         check_enum(self.severity, SEVERITIES, "/severity")
         check_enum(self.category, FINDING_CATEGORIES, "/category")
@@ -704,7 +716,8 @@ class Finding:
         object.__setattr__(self, "id", _content_id("finding", self._body(), FINDING_ID_DOMAIN))
 
     def _body(self) -> dict:
-        return {"code": self.code, "severity": self.severity, "category": self.category,
+        return {"source_lock_hash": self.source_lock_hash, "code": self.code, "severity": self.severity,
+                "category": self.category,
                 "subjects": [s.to_dict() for s in self.subjects], "locators": [s.to_dict() for s in self.locators],
                 "observations": self.observations.get(), "capabilities": list(self.capabilities)}
 
@@ -720,7 +733,8 @@ class Finding:
     def from_dict(cls, d, path: str = "") -> "Finding":
         require_object(d, cls.KEYS, path)
         item = construct(
-            cls, path, code=d["code"], severity=d["severity"], category=d["category"],
+            cls, path, source_lock_hash=d["source_lock_hash"], code=d["code"], severity=d["severity"],
+            category=d["category"],
             subjects=parse_array(d["subjects"], ptr(path, "subjects"), MAX_REFS, Locator.from_dict),
             locators=parse_array(d["locators"], ptr(path, "locators"), MAX_REFS, Locator.from_dict),
             observations=JsonValue(d["observations"], ptr(path, "observations")),
@@ -769,6 +783,12 @@ class SourceInventory:
         for name, cls, limit, key in _LISTS:
             items = check_tuple(getattr(self, name), "/" + name, limit, cls)
             check_canonical_order([key(x) for x in items], "/" + name, _ITEM_NAMES[name])
+        for name in ("claims", "mappings", "findings"):
+            for i, item in enumerate(getattr(self, name)):
+                if item.source_lock_hash != self.source_lock_hash:
+                    raise bad(ptr(ptr("/" + name, i), "source_lock_hash"),
+                              f"{item.id} was derived under lock {item.source_lock_hash}, not this inventory's "
+                              f"{self.source_lock_hash}", "digest_mismatch")
         records = {r.id: r for r in self.records}
         candidates = {c.id: c for c in self.candidates}
         observations = {o.id: o for o in self.observations}

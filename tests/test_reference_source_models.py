@@ -936,7 +936,8 @@ class Inv:
             self._observe(gloc, None, gapped)
             cand = self.cand[fmt, "IGHV1-58*03"]
             sequence = gapped.replace(".", "")
-            mapping = m.Mapping(kind="gapped_alignment", input=cand, output=gloc,
+            mapping = m.Mapping(source_lock_hash=self.lock.commitment, kind="gapped_alignment", input=cand,
+                                output=gloc,
                                 input_sha256=m.sequence_digest(sequence),
                                 output_sha256=m.text_digest(gapped), input_space="coding_sequence",
                                 output_space="imgt_gapped", blocks=_blocks(gapped), transform="remove_imgt_gaps",
@@ -977,16 +978,16 @@ class Inv:
         self.claims.append(self.claim(dcand, "boundary_3", None, [L("airr", dcand.pointer)], status="unresolved",
                                       support="none"))
         self.findings.append(m.Finding(
-            code="variant_coding_sequence_differs", severity="warning", category="contradictory_evidence",
+            source_lock_hash=self.lock.commitment, code="variant_coding_sequence_differs", severity="warning", category="contradictory_evidence",
             subjects=_sorted([cand, ex]), locators=_sorted([cand, ex]),
             observations={"label": "IGHV1-58*03", "extension_3": "A"},
             capabilities=("observed_span_simulation", "canonical_productive")))
         self.findings.append(m.Finding(
-            code="paralog_only_identity", severity="info", category="informational",
+            source_lock_hash=self.lock.commitment, code="paralog_only_identity", severity="info", category="informational",
             subjects=(self.rec["airr_ex", "IGHV1-69*01"],), locators=(L("airr_ex", ex69.pointer + "/paralogs/0"),),
             observations={"label": "IGHV1-69D*01"}, capabilities=()))
         self.findings.append(m.Finding(
-            code="api_version_is_not_release", severity="info", category="unsupported_interpretation",
+            source_lock_hash=self.lock.commitment, code="api_version_is_not_release", severity="info", category="unsupported_interpretation",
             subjects=(), locators=(info,), observations={"value": "2.0.0"}, capabilities=()))
 
     def _observe(self, locator, record, value, interpretation="interpreted"):
@@ -999,7 +1000,7 @@ class Inv:
 
     def claim(self, subject, predicate, value, evidence, *, system=None, derivation="stated", status="accepted",
               support="source", mappings=()):
-        return m.Claim(subject=subject, predicate=predicate, value=value, coordinate_system=system, support=support,
+        return m.Claim(source_lock_hash=self.lock.commitment, subject=subject, predicate=predicate, value=value, coordinate_system=system, support=support,
                        derivation=derivation, status=status, evidence=_sorted(evidence), mappings=tuple(mappings))
 
     def build(self, **overrides):
@@ -1154,7 +1155,7 @@ def test_inventory_keeps_malformed_and_unsupported_records(inv):
 
 def _rebuild_claim(inv, index, **changes):
     claims = list(inv.claims)
-    fields = {k: getattr(claims[index], k) for k in ("subject", "predicate", "value", "coordinate_system", "support",
+    fields = {k: getattr(claims[index], k) for k in ("source_lock_hash", "subject", "predicate", "value", "coordinate_system", "support",
                                                       "derivation", "status", "evidence", "mappings")}
     fields["value"] = fields["value"].get()
     fields.update(changes)
@@ -1255,7 +1256,7 @@ def test_claim_statuses_express_agreement_and_conflict(inv):
 
 def test_mappings_bind_one_record_occurrence_to_one_gapped_record_of_its_own_variant(inv):
     good = inv.mappings[0]
-    fields = {k: getattr(good, k) for k in ("kind", "input", "output", "input_sha256", "output_sha256", "input_space",
+    fields = {k: getattr(good, k) for k in ("source_lock_hash", "kind", "input", "output", "input_sha256", "output_sha256", "input_space",
                                              "output_space", "blocks", "transform", "validation")}
     ex_gapped = inv.mappings[1].output
     with _raises("malformed", "/output"):
@@ -1298,7 +1299,7 @@ def test_coding_interval_mapping_converts_record_sequence_coordinates(inv):
     seq_loc = L("airr", rec.pointer + "/sequence")
     observation = m.Observation(locator=seq_loc, record=rec, presence="present", value=raw["sequence"],
                                 interpretation="interpreted")
-    mapping = m.Mapping(kind="coding_interval", input=seq_loc, output=cand,
+    mapping = m.Mapping(source_lock_hash=inv.lock.commitment, kind="coding_interval", input=seq_loc, output=cand,
                         input_sha256=m.text_digest(raw["sequence"]),
                         output_sha256=m.sequence_digest(raw["coding_sequence"]), input_space="record_sequence",
                         output_space="coding_sequence", blocks=(m.Block((start, end), (0, end - start)),),
@@ -1310,7 +1311,8 @@ def test_coding_interval_mapping_converts_record_sequence_coordinates(inv):
     inv.build(observations=inv.observations + [observation], mappings=inv.mappings + [mapping],
               claims=inv.claims + [interval])
     with _raises("malformed"):
-        m.Mapping(kind="coding_interval", input=seq_loc, output=cand, input_sha256=mapping.input_sha256,
+        m.Mapping(source_lock_hash=inv.lock.commitment, kind="coding_interval", input=seq_loc, output=cand,
+                  input_sha256=mapping.input_sha256,
                   output_sha256=mapping.output_sha256, input_space="record_sequence", output_space="coding_sequence",
                   blocks=(m.Block((start, end), (1, end - start + 1)),), transform="extract_interval",
                   validation="exact")
@@ -1318,7 +1320,7 @@ def test_coding_interval_mapping_converts_record_sequence_coordinates(inv):
 
 def test_findings_are_strict(inv):
     base = inv.findings[0]
-    fields = {k: getattr(base, k) for k in ("code", "severity", "category", "subjects", "locators", "observations",
+    fields = {k: getattr(base, k) for k in ("source_lock_hash", "code", "severity", "category", "subjects", "locators", "observations",
                                              "capabilities")}
     fields["observations"] = fields["observations"].get()
     for change, path in (({"code": "Variant differs"}, "/code"), ({"severity": "fatal"}, "/severity"),
@@ -2181,3 +2183,41 @@ def test_accepted_coordinate_claims_need_a_lock_inside_the_profile_scope():
     kept = [c for c in built.claims if c.status != "accepted" or c.predicate not in coordinate]
     m.check_inventory(built.build(claims=kept, mappings=[]), lock)
     assert m.COORDINATE_PREDICATES == coordinate
+
+
+
+# ── content-derived ids are bound to the lock ────────────────────────
+
+
+def test_content_ids_change_with_the_lock_even_for_identical_content(inventory):
+    other_lock = m.SourceLock.from_dict(lock_dict(origin="local_file"))
+    other = Inv(other_lock).build()
+    assert [r.locator for r in other.records] == [r.locator for r in inventory.records]
+    for name in ("claims", "mappings", "findings"):
+        mine, theirs = getattr(inventory, name), getattr(other, name)
+        assert len(mine) == len(theirs)
+        assert not {x.id for x in mine} & {x.id for x in theirs}, name
+        assert {x.source_lock_hash for x in theirs} == {other_lock.commitment}
+    body = {k: v for k, v in inventory.claims[0].to_dict().items() if k != "id"}
+    assert body["source_lock_hash"] == inventory.source_lock_hash
+    assert inventory.claims[0].id == "claim:" + typed_digest(body, "genairr_reference_source_claim_id_v1")[7:]
+
+
+def test_items_from_another_lock_cannot_join_an_inventory(inv, inventory):
+    other = Inv(m.SourceLock.from_dict(lock_dict(origin="local_file")))
+    for name in ("claims", "findings"):
+        with _raises("digest_mismatch") as caught:
+            inv.build(**{name: list(getattr(inv, name))[1:] + [getattr(other, name)[0]]})
+        assert caught.error.path.startswith(f"/{name}/") and caught.error.path.endswith("/source_lock_hash")
+
+
+def test_decisions_go_stale_when_the_recipe_is_pointed_at_another_lock(inventory, inv):
+    decisions = report_decisions(inventory, inv)
+    lock = m.SourceLock.from_dict(lock_dict())
+    m.check_build_inputs(lock, inventory, _recipe(inventory, decisions=decisions))
+    other_lock = m.SourceLock.from_dict(lock_dict(origin="local_file"))
+    other_inventory = Inv(other_lock).build()
+    repointed = _recipe(inventory, decisions=decisions,
+                        edit=lambda d: d.update(source_lock_hash=other_lock.commitment))
+    with _raises("stale_decision", "/decisions/0/findings/0"):
+        m.check_build_inputs(other_lock, other_inventory, repointed)
