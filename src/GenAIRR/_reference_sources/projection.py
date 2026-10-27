@@ -80,7 +80,9 @@ from GenAIRR._reference_sources.report import (
 # What this projection never puts into a runtime reference; all of it stays in the build report.
 PROJECTION_LOSSES = (
     ("v_subregions", "The runtime reference has no V FWR/CDR subregion annotations: its V alignment is 'none', "
-                     "so no subregion of a source gapped alignment survives projection."),
+                     "so no subregion of a source gapped alignment survives projection. Simulated records therefore "
+                     "carry no per-region V mutation counts (n_fwr1_mutations to n_fwr3_mutations stay 0) and "
+                     "count every V mutation in n_v_unannotated_mutations."),
     ("gapped_sequences", "Source gapped sequences and their alignments to each coding sequence stay in the build "
                          "report; the runtime reference holds ungapped coding sequences only."),
     ("affirmed_spans", "Curation notes that limit an allele's affirmed span stay in the build report; no affirmed "
@@ -98,10 +100,20 @@ SIDECAR_CONVENTIONS = MappingProxyType({"coordinates": "zero_based_half_open", "
 _SIDECAR_ANNOTATIONS = ("functionality", "anchor", "coding_phase", "boundary_5", "boundary_3")
 _BASES = frozenset("ACGT")
 _WITHHELD = {
-    "unresolved": "unresolved: the source establishes no value for it",
+    "unresolved": "unresolved: no usable value is established for it; the record's findings say why",
     "conflicting": "conflicting source claims; the competing values stay in the build report",
     "candidate": "a candidate only (support none); an accept_claim decision with evidence would project it as "
                  "an assertion",
+}
+# Unresolved claims whose predicate the interpretation profile never resolves, and why.
+_UNRESOLVED = {
+    "functionality": "unresolved: the provider states a functional value, but the interpretation profile cannot "
+                     "classify it (true includes ORF-like alleles, and false is not established as pseudogene), so "
+                     "the runtime functionality stays unknown",
+    "boundary_5": "unresolved: no provider field or tag establishes a complete or partial 5' coding end under the "
+                  "interpretation profile",
+    "boundary_3": "unresolved: no provider field or tag establishes a complete or partial 3' coding end under the "
+                  "interpretation profile",
 }
 _NOT_REPRESENTABLE = {
     "phase_independence": "the runtime reference holds a coding phase and its derivation, not a separate claim "
@@ -242,6 +254,30 @@ def _check_supplied_sequences(recipe: Recipe, inventory: SourceInventory) -> Non
             continue                # check_selection decides these
         raise bad(ptr("/selection", i), f"{entry.allele_id}: record {record.id} cannot be projected: "
                                         f"{_supplied_sequence_problem(inventory, record)}", "projection")
+
+
+def _noncanonical(segment: str, observed: dict) -> str:
+    """A non-canonical anchor codon, from its ``noncanonical_landmark_codon`` finding."""
+    position = "IMGT 104" if segment == "V" else "IMGT 118"
+    return (f"its {position} codon {observed.get('codon')} encodes {observed.get('residue')}, not "
+            f"{' or '.join(observed.get('expected_residues') or ())} (at coding position {observed.get('anchor')}); "
+            "the anchor is present, but its codon is not canonical")
+
+
+def _relation(observed: Optional[dict]) -> str:
+    """How the record exports' coding sequences relate, from an ``export_coding_sequence_differs`` finding."""
+    relation = (observed or {}).get("relation")
+    extra = (observed or {}).get("extra") or ""
+    parts = relation.split("_extends_") if relation else ()
+    if len(parts) == 2:
+        other = "airr" if parts[0] == "airr_ex" else "airr_ex"
+        return (f"the {parts[0]} coding sequence extends the {other} one at the {parts[1][0]}' end by {len(extra)} "
+                f"nt ({extra})")
+    if relation == "different":
+        return "the airr and airr_ex coding sequences differ, neither extending the other"
+    if relation == "not_comparable":
+        return "the record exports cannot be compared one to one (several records or no candidate on a side)"
+    return "alternatives within one record export"
 
 
 def _require_segments(recipe: Recipe) -> None:
@@ -386,7 +422,8 @@ class _Build:
                 f"the source claims about this {claim.predicate} disagree (values {', '.join(values)}), and a "
                 "conflicting annotation can only be withheld (withhold_claim), never projected"), "projection")
         if claim.status != "accepted" and accepted_by is None:
-            return ClaimOutcome(claim.id, "withheld", None, _WITHHELD[claim.status])
+            reason = _UNRESOLVED.get(claim.predicate) if claim.status == "unresolved" else None
+            return ClaimOutcome(claim.id, "withheld", None, reason or _WITHHELD[claim.status])
         value = claim.value.get()
         problem = self._gate(claim, value, anchors.get(i))
         if problem is not None:
@@ -505,8 +542,10 @@ class _Build:
             if record.status == "parsed":
                 sequences.setdefault((record.segment, record.label), set()).update(
                     c.sha256 for c in inventory.candidates_of(record.locator))
-        self.noncanonical = {s.id for f in inventory.findings if f.code == "noncanonical_landmark_codon"
-                             for s in f.subjects}
+        self.noncanonical = {s.id: f.observations.get() for f in inventory.findings
+                             if f.code == "noncanonical_landmark_codon" for s in f.subjects}
+        self.relations = {(o["segment"], o["label"]): o for o in (f.observations.get() for f in inventory.findings
+                                                                  if f.code == "export_coding_sequence_differs")}
         outcomes = []
         for record in inventory.records:
             if record.status != "parsed":
@@ -541,8 +580,8 @@ class _Build:
             return "structural_incompatibility", None, [problem]
         if len(sequences.get(key, ())) > 1:
             return ("unresolved_conflicting_sequence", None,
-                    [f"{record.label} has {len(sequences[key])} different coding sequences across its records and "
-                     "the recipe selects none of them"])
+                    [f"{record.label} has {len(sequences[key])} different coding sequences across its records "
+                     f"({_relation(self.relations.get(key))}), and the recipe selects none of them"])
         unmet = self._missing_evidence(record, candidates)
         if unmet:
             return "missing_required_evidence", None, unmet
@@ -576,7 +615,7 @@ class _Build:
                 elif capability == "source_annotated_junction" and any(c.support != "source" for c in anchors):
                     problem = "its anchor is not source-supported"
                 elif capability == "canonical_productive" and candidate.id in self.noncanonical:
-                    problem = "the codon at its anchor does not encode the conserved residue"
+                    problem = _noncanonical(record.segment, self.noncanonical[candidate.id])
                 elif capability == "canonical_productive" and level == "source":
                     problem = ("a source-certified canonical_productive needs an independently source-supported "
                                "coding phase, and this projection projects phases as anchor-derived only")

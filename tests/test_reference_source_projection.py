@@ -289,6 +289,14 @@ def test_every_source_record_has_exactly_one_outcome_and_the_counts_reconcile(st
         assert counts.record_occurrences == m.SegmentCounts(V=stated["V"], D=stated["D"], J=stated["J"], unassigned=0)
     (tyr,) = [o for o in report.records if o.record.id == f"airr#{RECORDS}/{_airr_index()['IGHV1-38-4*01']}"]
     assert "canonical_productive" in tyr.detail
+    # the anchor evidence is present; its codon is not canonical (fixture: "junction anchor codon (IMGT 104) is TAT")
+    assert "IMGT 104 codon TAT encodes Y, not C" in tyr.detail
+    suffixes = EXPECT["sets"]["9606.IGH_VDJ/10"]["airr_ex_coding_suffix_beyond_airr"]
+    for outcome in report.records:
+        if outcome.exclusion == "unresolved_conflicting_sequence":
+            extra = suffixes[report.inventory.record(outcome.record).label]
+            assert f"airr_ex coding sequence extends the airr one at the 3' end by {len(extra)} nt ({extra})" \
+                in outcome.detail
 
 
 def test_the_starter_capabilities_are_confirmed_on_the_built_reference(starter):
@@ -807,7 +815,8 @@ def test_a_record_whose_own_claims_cannot_meet_a_requirement_is_excluded_for_mis
             details.setdefault(label, set()).add(outcome.detail)
     assert set(details) == {"IGLV3-32*01", "IGLV1-40*01"}
     (tyr,) = details["IGLV3-32*01"]                    # TAT at its anchor: not the conserved Cys
-    assert "canonical_productive" in tyr and "conserved residue" in tyr and "source_annotated_junction" not in tyr
+    assert "canonical_productive" in tyr and "source_annotated_junction" not in tyr
+    assert "IMGT 104 codon TAT encodes Y, not C" in tyr
     (unbound,) = details["IGLV1-40*01"]
     assert "source_annotated_junction at evidence source: no accepted anchor" in unbound
     assert all(r.satisfied for r in result.report.requirements)
@@ -1221,3 +1230,27 @@ def test_a_long_record_detail_ends_with_how_many_items_were_omitted(monkeypatch)
     assert match and outcome.detail.endswith("characters)")
     shown = outcome.detail.count("relationship not projected")
     assert shown >= 1 and shown + int(match.group(1)) == len(others)
+
+
+def test_withheld_functionality_says_the_provider_value_cannot_be_classified(starter):
+    _, result = starter
+    inventory = result.report.inventory
+    reasons = {o.reason for o, c in zip(result.report.claims, inventory.claims)
+               if c.predicate == "functionality" and o.outcome == "withheld"}
+    assert len(reasons) == 1
+    (reason,) = reasons
+    assert "cannot classify" in reason and "ORF" in reason and "pseudogene" in reason
+    assert "establishes no value" not in reason
+
+
+def test_the_subregion_loss_names_its_consequence_for_simulated_v_mutation_counts(monkeypatch):
+    text = dict(projection.PROJECTION_LOSSES)["v_subregions"]
+    assert "n_v_unannotated_mutations" in text and "FWR/CDR" in text
+    blobs, lock = mini(monkeypatch)
+    reference = build(lock, blobs, mini_recipe(blobs, lock)).reference
+    records = GenAIRR.Experiment.on(reference).recombine().mutate(count=8).run_records(n=5, seed=3)
+    regions = ("n_fwr1_mutations", "n_cdr1_mutations", "n_fwr2_mutations", "n_cdr2_mutations", "n_fwr3_mutations")
+    assert sum(r["n_v_mutations"] for r in records) > 0
+    for record in records:
+        assert all(record[name] == 0 for name in regions)
+        assert record["n_v_unannotated_mutations"] == record["n_v_mutations"]
