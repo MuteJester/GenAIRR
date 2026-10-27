@@ -584,3 +584,71 @@ def test_a_frameshifted_allele_whose_anchor_and_phase_are_withheld_builds_with_n
     assert kept.claim(anchor).value.get() == raw_j["j_cdr3_end"] - 1
     assert kept.claim(phase).value.get() == raw_j["j_codon_frame"] - 1
     assert finding in kept.findings
+
+
+# ── relationships ────────────────────────────────────────────────────
+
+
+def _expected_relationships(records_by_label, selected, pointer_of) -> list:
+    """(kind, allele, runtime target, field pointer) for each alias or paralog a selected record
+    states, in allele order; a name that is a selected allele of the same segment is that allele
+    (a paralog only: an alias of an executable label is not representable), any other name a
+    non-executable entity."""
+    expected = []
+    for segment, label in selected:
+        record = records_by_label[label]
+        for kind, field in (("alias", "aliases"), ("paralog", "paralogs")):
+            for k, name in enumerate(record.get(field) or []):
+                if name == label or (kind == "alias" and (segment, name) in selected):
+                    continue
+                target = f"{segment}:{name}" if (segment, name) in selected else f"entity:{name}"
+                expected.append((kind, f"{segment}:{label}", target, f"{pointer_of(label)}/{field}/{k}"))
+    return expected
+
+
+def test_starter_relationships_are_the_selected_records_own_aliases_and_paralogs(starter):
+    _, result = starter
+    index, records = _airr_index(), raw_records(IGH, "airr")
+    selected = [(segment, label) for segment in ("V", "D", "J") for label in SELECTION["selected"][segment]]
+    expected = _expected_relationships({r["label"]: r for r in records}, selected,
+                                       lambda label: f"{RECORDS}/{index[label]}")
+    assert expected, "the starter's selected records state aliases and paralogs"
+    catalogue = artifact(result.reference)["catalogue"]
+    assert [(r["kind"], r["allele"], r["entity"]) for r in catalogue["relationships"]] == [e[:3] for e in expected]
+    for relationship, (*_, pointer) in zip(catalogue["relationships"], expected):
+        assert f"airr {raw_sha(raw(IGH, 'airr'))} {pointer}" == relationship["source"]
+    entities = {e["name"]: e for e in catalogue["entities"]}
+    assert set(entities) == {target.split(":", 1)[1] for _, _, target, _ in expected if target.startswith("entity:")}
+    assert not any(e["executable"] for e in entities.values())
+    assert len(result.reference.alleles) == len(selected)       # names add no executable allele
+
+
+def _aliases(names):
+    def edit(fmt, record):
+        if record["label"] == "IGLV10-54*04":
+            record["aliases"] = list(names)
+    return edit
+
+
+def test_a_relationship_the_runtime_cannot_hold_is_reported_on_the_record_not_projected(monkeypatch):
+    names = (V_LABEL, "IGLV10-54*04", "IGLV10-54*i01")     # an executable label, its own label, an alias name
+    blobs, lock = mini(monkeypatch, (V_LABEL, "IGLV10-54*04", J1), edit=_aliases(names))
+    result = build(lock, blobs, mini_recipe(blobs, lock, (V_LABEL, "IGLV10-54*04", J1)))
+    relationships = artifact(result.reference)["catalogue"]["relationships"]
+    assert [(r["kind"], r["allele"], r["entity"]) for r in relationships] == [
+        ("alias", "V:IGLV10-54*04", "entity:IGLV10-54*i01")]
+    (outcome,) = [o for o in result.report.records if o.allele == "V:IGLV10-54*04"]
+    for name in names[:2]:
+        assert f"alias {name}" in outcome.detail
+    assert "executable" in outcome.detail and "own label" in outcome.detail
+    assert [a.label for a in result.reference.alleles] == [V_LABEL, "IGLV10-54*04", J1]
+
+
+def test_a_paralog_name_without_a_selected_record_stays_a_named_entity_without_weight(monkeypatch):
+    blobs, lock = mini(monkeypatch, (V_LABEL, "IGLJ2*01"))
+    result = build(lock, blobs, mini_recipe(blobs, lock, (V_LABEL, "IGLJ2*01")))
+    catalogue = artifact(result.reference)["catalogue"]
+    assert [(r["kind"], r["allele"], r["entity"]) for r in catalogue["relationships"]] == [
+        ("paralog", "J:IGLJ2*01", "entity:IGLJ3*01")]
+    assert catalogue["entities"] == [{"id": "entity:IGLJ3*01", "name": "IGLJ3*01", "executable": False}]
+    assert artifact(result.reference)["models"]["allele_usage"]["J"] == ["IGLJ2*01"]

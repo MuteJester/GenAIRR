@@ -29,6 +29,8 @@ What reaches the runtime reference, per selected allele:
   interpretation profile: the provider's Boolean ``functional`` is never mapped);
 * a candidate or conflicting claim only through an ``accept_claim`` decision, as an
   assertion citing that decision and its evidence; ``withhold_claim`` withholds a claim;
+* representable alias and paralog relationships, citing the fields that state them; a name
+  that is not a selected allele stays a non-executable entity without sequence or weight;
 * notes citing the source record (asset, raw digest, pointer), the build-input hash and the
   projection.
 
@@ -43,6 +45,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
 import tempfile
 from types import MappingProxyType
 from typing import Mapping, Optional
@@ -50,6 +53,7 @@ from typing import Mapping, Optional
 from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference.artifact import Reference
 from GenAIRR._reference.errors import ReferenceArtifactError
+from GenAIRR._reference.model import check_label as runtime_label_problem
 from GenAIRR._reference.sidecar import SCHEMA_NAME as SIDECAR_SCHEMA, SCHEMA_VERSION as SIDECAR_VERSION
 from GenAIRR._reference_sources import evidence, ogrdb
 from GenAIRR._reference_sources._fields import MAX_TEXT, bad, digest, ptr, require_type
@@ -112,6 +116,9 @@ _CONVERSIONS = {
                                      "as anchor-derived because its independence of the landmark is unresolved",
 }
 _BOUNDARY_NEEDS = {"V": ("boundary_3",), "D": ("boundary_5", "boundary_3"), "J": ("boundary_5",)}
+# A relationship name stated by a record: ``/aliases/<n>`` or ``/paralogs/<n>`` below the record.
+_RELATION_FIELD = re.compile(r"/(aliases|paralogs)/(?:0|[1-9][0-9]*)")
+_RELATION_KINDS = {"aliases": "alias", "paralogs": "paralog"}
 
 
 @dataclass(frozen=True)
@@ -342,8 +349,42 @@ class _Build:
     # -- relationships ----------------------------------------------------
 
     def relationships(self) -> list:
-        self.unprojected: dict = {}
-        return []
+        """Sidecar relationships for the aliases and paralogs the selected records state.
+
+        A name that is a selected allele of the same segment is that allele (both executable);
+        any other name is a non-executable entity, with no sequence, support or usage weight.
+        A relationship the runtime reference cannot hold (a name equal to the allele's own label,
+        or an alias of an executable label of the same segment) is not projected; the selected
+        record's outcome says so.
+        """
+        stated: dict = {}
+        for observation in self.inventory.observations:
+            record = observation.record
+            if record is None or record.id not in self.by_subject:
+                continue
+            match = _RELATION_FIELD.fullmatch(observation.locator.pointer[len(record.pointer):])
+            if match is None or (observation.presence, observation.interpretation) != ("present", "interpreted"):
+                continue
+            name = observation.value.get()
+            if runtime_label_problem(name) is None:
+                stated.setdefault(record.id, {}).setdefault((_RELATION_KINDS[match.group(1)], name), []).append(
+                    observation.locator)
+        relationships, self.unprojected = [], {}
+        for i in self.order:
+            entry = self.entries[i]
+            for (kind, name), locators in stated.get(entry.record.id, {}).items():
+                if name == entry.label:
+                    problem = f"{kind} {name} names the allele's own label"
+                elif kind == "alias" and (entry.segment, name) in self.identities:
+                    problem = (f"alias {name} names an executable {entry.segment} allele of this reference, and "
+                               "an alias is another name of the same allele")
+                else:
+                    relationships.append({"kind": kind, "allele": entry.allele_id, "entity": name,
+                                          "source": self.cite(locators)})
+                    continue
+                self.unprojected.setdefault(entry.record.id, []).append(
+                    f"relationship not projected: {problem} ({self.cite(locators)})")
+        return relationships
 
     # -- records ----------------------------------------------------------
 
