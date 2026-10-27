@@ -16,6 +16,7 @@ reading raw payload fields with the standard library; never from the code under 
 from __future__ import annotations
 
 import dataclasses
+import json
 import types
 
 import pytest
@@ -30,7 +31,7 @@ from tests.test_ogrdb_source_coordinates import (
     interpreted, raw_gapped, raw_record, record_of, small,
 )
 from tests.test_ogrdb_source_inventory import (
-    EXPECT, IGH, IGK, IGL, SELECTION, SETS, _key, build, error, inventory_of, pinned, raw_records,
+    EXPECT, IGH, IGK, IGL, SELECTION, SETS, _key, build, error, inventory_of, pinned, raw_records, seal,
 )
 
 EXTENSION_CODES = ("coding_extension_matches_record_context", "coding_extension_without_record_context",
@@ -579,3 +580,34 @@ def test_identical_dna_identities_cite_only_their_own_records():
     assert [r for r in inventory.records if r.locator.asset == "airr_ex" and r.label == "IGLJ3*01"] == []
     assert not [x for x in inventory.claims if x.subject.asset == "airr_ex"
                 and inventory.subject_record(x).label == "IGLJ3*01"]
+
+
+def test_interpret_validates_its_result_against_the_lock(monkeypatch):
+    calls = []
+    original = evidence.consistency.check_inventory
+
+    def recording(inventory, lock):
+        calls.append((inventory, lock))
+        return original(inventory, lock)
+
+    monkeypatch.setattr(evidence.consistency, "check_inventory", recording)
+    lock, inventory = build(IGL, small(IGL, {"IGLJ1*01"}))
+    result = evidence.interpret(lock, small(IGL, {"IGLJ1*01"}), inventory)
+    assert calls == [(result, lock)]
+
+
+def test_profile_notes_apply_only_to_their_own_set_and_release():
+    blobs = small(IGL, {"IGLV3-21*04", "IGLJ1*01"})
+    for fmt in GAPPED:
+        document = json.loads(blobs[fmt].decode("utf-8"))
+        germline_set = document["GermlineSet"][0]
+        germline_set["release_version"] = 5.0
+        germline_set["germline_set_ref"] = "OGRDB:IGLambda_VJ.5"
+        blobs[fmt] = json.dumps(document).encode("utf-8")
+    lock = seal(IGL, blobs, release=5)
+    inventory = evidence.interpret(lock, blobs, ogrdb.build_inventory(lock, blobs))
+    assert raw_record(IGL, "airr", "IGLV3-21*04")["curation"] in [
+        o.value.get() for o in inventory.observations if o.locator.pointer.endswith("/curation")]
+    assert findings(inventory, "affirmed_span_mapping_unresolved") == []
+    (finding,) = findings(inventory, "coding_end_before_declared_v_rss")
+    assert finding.observations.get()["historical_note"] is None

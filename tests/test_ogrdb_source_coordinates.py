@@ -1017,3 +1017,51 @@ def test_a_noncanonical_j_codon_is_reported_where_the_source_puts_it(monkeypatch
     observations = finding.observations.get()
     assert (observations["anchor"], observations["codon"], observations["expected_residues"]) == (
         10, candidate.sequence[10:13], ["F"])
+
+
+# ── boundaries of the coordinate rules ───────────────────────────────
+
+
+def test_a_j_landmark_codon_may_end_exactly_at_the_coding_end():
+    coding = "A" * 35 + "TTC"
+    found = c.j_landmark(coding, 36, 3)
+    assert (found.anchor, found.codon, found.anchor_problem) == (35, "TTC", None)
+    found = c.j_landmark(coding, 37, 3)
+    assert found.anchor is None and "beyond" in found.anchor_problem
+
+
+def test_a_v_landmark_codon_may_end_exactly_at_the_coding_end():
+    coding = "A" * 309 + "TGT"             # 312 bases; the alignment has no gaps
+    found = c.v_landmark(coding, 313, coding)
+    assert (found.anchor, found.codon, found.problem) == (309, "TGT", None)
+    found = c.v_landmark(coding, 314, coding)
+    assert found.anchor is None and found.kind == "field" and "beyond" in found.problem
+
+
+def test_a_v_rss_starting_at_gene_start_is_inside_the_coding_interval():
+    assert c.v_rss_position(5, 10, 5) == c.RssPosition(-6, "inside_coding_interval", None)
+    assert c.v_rss_position(5, 10, 4) == c.RssPosition(-7, "before_coding_interval", None)
+
+
+def test_a_v_phase_is_the_anchor_modulo_3_and_not_a_constant(monkeypatch):
+    raw_v = raw_record(IGL, "airr", V_LABEL)
+    cdr3_start = imgt_cdr3_start(raw_v)
+
+    def drop_first_base(fmt, record):        # the record starts one base later; the frame shifts
+        if record["label"] == V_LABEL:
+            record["coding_sequence"] = record["coding_sequence"][1:]
+            record["gene_start"] += 1
+            record["v_gene_delineations"][0]["cdr3_start"] -= 1
+
+    def gap_first_column(fmt, header, sequence):
+        return header, ("." + sequence[1:] if header == V_LABEL else sequence)
+
+    blobs = small(IGL, {V_LABEL}, edit=drop_first_base, gapped_edit=gap_first_column)
+    lock, inventory = interpret_in_scope(monkeypatch, blobs)
+    for fmt in GAPPED:
+        candidate = candidate_of(inventory, fmt, V_LABEL)
+        anchor = claim_of(inventory, candidate, "anchor")
+        assert_status(anchor, "accepted", "source", "stated", cdr3_start - 5)
+        assert (cdr3_start - 5) % 3 == 2
+        assert_status(claim_of(inventory, candidate, "coding_phase"), "accepted", "assertion", "anchor_derived", 2)
+        assert claim_of(inventory, candidate, "coding_interval").status == "accepted"
