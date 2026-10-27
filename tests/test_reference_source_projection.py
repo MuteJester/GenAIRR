@@ -1161,3 +1161,45 @@ def test_one_capability_error_names_every_unmet_requirement(monkeypatch):
     for part in ("/requires/1", "original_coding_ends", "/requires/3", "genotype_constrained", "not yet supported"):
         assert part in found.message
     assert "/requires/2" not in found.message and "/requires/0" not in found.message
+
+
+def test_a_failing_build_removes_its_temporary_directory(monkeypatch, tmp_path):
+    blobs, lock = mini(monkeypatch, (V_LABEL, J1, J7))
+    other = build(lock, blobs, mini_recipe(blobs, lock, (V_LABEL, J1))).reference
+    seen, real = [], tempfile.TemporaryDirectory
+
+    class Recording(real):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            seen.append(self.name)
+
+    def rejects(**files):
+        raise ReferenceArtifactError("conflict", "alleles[0].anchor", "rejected for this test")
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", Recording)
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    # one failure after the importer returned (another selection), one inside it (a rejection)
+    for importer in (lambda **files: other, rejects):
+        monkeypatch.setattr(Reference, "from_fasta", importer)
+        error("projection", build, lock, blobs, mini_recipe(blobs, lock, (V_LABEL, J7)))
+        assert seen[-1].startswith(str(tmp_path)) and list(tmp_path.iterdir()) == []
+    assert len(seen) == 2
+
+
+def test_accepting_an_accepted_j_phase_still_projects_it_anchor_derived(monkeypatch):
+    blobs, lock = mini(monkeypatch)
+    inventory = interpreted(blobs, lock)
+    anchor, phase = (claim_id(inventory, "airr", J1, p) for p in ("anchor", "coding_phase"))
+    assert inventory.claim(phase).derivation == "stated" and inventory.claim(phase).status == "accepted"
+    (index,) = [i for i, r in enumerate(records_in(blobs, "airr")) if r["label"] == J1]
+    frame = {"asset": "airr", "pointer": f"{RECORDS}/{index}/j_codon_frame"}
+    decision = accept([phase], entry(blobs, "airr", J1)["sequence_sha256"], [frame])
+    result = build(lock, blobs, mini_recipe(blobs, lock, decisions=[decision]))
+    j = result.reference.alleles[-1]
+    assert (j.coding_phase.derivation, j.coding_phase.support) == ("anchor_derived", "source")
+    assert j.coding_phase.value == j.anchor.value % 3
+    assert result.reference.capabilities().phase_support == "anchor_derived"
+    outcomes = {o.claim: o for o in result.report.claims}
+    assert (outcomes[phase].outcome, outcomes[phase].decision) == ("projected", 0)
+    assert "anchor_derived" in outcomes[phase].reason
+    assert (outcomes[anchor].outcome, outcomes[anchor].decision) == ("projected", None)
