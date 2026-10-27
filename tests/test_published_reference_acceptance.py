@@ -484,6 +484,9 @@ def check_junction(record, mapped: dict, alleles: dict) -> str:
         assert record["junction_end"] == j_codon[2] + 1
     assert record["junction"] == record["sequence"][record["junction_start"]:record["junction_end"]]
     assert record["junction_length"] == len(record["junction"])
+    if record["junction_length"] % 3 == 0:
+        assert record["junction_aa"] == translate(record["junction"]), record["sequence_id"]
+    # An out-of-frame junction's amino acids are left as the record states them.
     return "intact" if intact else "landmark_codon_edited"
 
 
@@ -512,6 +515,9 @@ def check_record(record, alleles: dict, segments: str, outcome, native, *, indel
     assert (record["productivity_policy"], record["productivity_scope"]) == (
         "canonical_observed_vdj_v1", "observed_coding_span")
     assert record["productive"] in (True, False)                           # never unknown: landmarks are known
+    first, last = segments[0], segments[-1]                                # no end loss in any scenario here
+    assert (record[f"{first}_sequence_start"], record[f"{last}_sequence_end"]) == (0, len(record["sequence"]))
+    assert record["sequence_length"] == len(record["sequence"])
     walks = {s.upper(): walk(record, s, alleles[record[f"{s}_call"]]) for s in segments}
     for s in segments:
         _, _, edits = walks[s.upper()]
