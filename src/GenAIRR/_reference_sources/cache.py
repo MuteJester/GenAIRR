@@ -64,9 +64,7 @@ class BlobCache:
     def __init__(self, root):
         if isinstance(root, bool) or not isinstance(root, (str, os.PathLike)):
             raise TypeError(f"cache must be a filesystem path, got {type(root).__name__}")
-        root = Path(root)
-        if not isinstance(os.fspath(root), str):
-            raise TypeError("cache must be a text filesystem path")
+        root = Path(root)   # a path-like object yielding bytes is a TypeError here
         self.root = root
         self.blob_dir = root.joinpath(*BLOB_DIRECTORY)
 
