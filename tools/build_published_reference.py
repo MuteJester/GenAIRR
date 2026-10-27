@@ -80,10 +80,12 @@ class Published(NamedTuple):
 
     @property
     def terms(self) -> Terms:
-        """The provider's data terms, as ``sources.json`` records them."""
+        """The provider's data terms, as ``sources.json`` records them: the licence, and the citation
+        the provider requests (verbatim) followed by its DOI, so the citation stands on its own."""
         sources = _sources()
+        citation = f"{sources['citation']['requested_by_provider']} doi:{sources['citation']['doi']}"
         return Terms(status="recorded", assets=tuple(OGRDB_STATEMENTS), licence=sources["data_licence"]["licence"],
-                     citation=sources["citation"]["requested_by_provider"], reason=None)
+                     citation=citation, reason=None)
 
     @property
     def recipe_path(self) -> Path:

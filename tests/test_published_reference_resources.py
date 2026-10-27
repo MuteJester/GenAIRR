@@ -30,7 +30,7 @@ STARTER_ID = "human_igh_ogrdb_10_observed_v1"
 RECIPE_PATH = DATA / f"{STARTER_ID}.recipe.json"
 # The lock of the pinned IGH release 10 exports and OGRDB statement pages recorded as local files,
 # with the data terms they state (from the reviewed build).
-LOCK_PIN = "sha256:3672042713c4bce5846bbb9b2a93ef0bb3e15887f1379a8039c2220fc73fe9b2"
+LOCK_PIN = "sha256:5f905bfddb0fc15f0d8cb1ff357ba4779dcffcd4810f507ddfd97d103648f88b"
 CHOICES = [row["label"] for row in SELECTION["record_choices"]]
 REQUIRES = [{"capability": "observed_span_simulation", "evidence": "assertion"},
             {"capability": "source_annotated_junction", "evidence": "source"},
@@ -42,17 +42,17 @@ CODONS = {a + b + c: aa for (a, b, c), aa in zip(
     ((a, b, c) for a in "TCAG" for b in "TCAG" for c in "TCAG"),
     "FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG")}
 RESIDUES = {"C": "Cys", "W": "Trp", "F": "Phe"}
-ORF_SCOPE = ("ORF-like record feature (the starter checks only the CAC heptamer core at the declared V RSS start and "
-             "the IMGT 23, 41 and 104 codons; this is not a functionality classification): ")
+ORF_SCOPE = ("ORF-like record feature (this flag checks only the CAC heptamer core at the declared V RSS start and "
+             "the IMGT 23, 41 and 104 codons; it is not a functionality classification): ")
 # The IMGT human IGHV set kept in the repository, and the IMGT functionality classes it states
 # (FASTA header field 4) that each selected V reason must disclose.
 IMGT_IGHV = DATA.parent / "IGHV.fasta"
 IMGT_IGHV_SHA256 = "sha256:e0756e5e1cfa6306289b335738a28339f3751cec2ab9f1de8a16a5ae8cb8f934"
 IMGT_DISCLOSED = {"ORF": "ORF", "P": "a pseudogene"}
-IMGT_CLAUSE = ("IMGT classes it as {word} in the IMGT human IGHV set kept in this repository as tests/data/IGHV.fasta "
-               "(" + IMGT_IGHV_SHA256 + "; its IMGT release is not recorded), whose entry has the same V-REGION "
-               "sequence, while the provider's functional field is true; it is selected under the starter's "
-               "provider-field rule, and no runtime functionality is claimed.")
+IMGT_CLAUSE = ("This allele is classed as {word} in the IMGT human IGHV set in the GenAIRR source repository "
+               "(tests/data/IGHV.fasta, " + IMGT_IGHV_SHA256 + "; its IMGT release is not recorded), whose entry in "
+               "that file has the same V-REGION sequence; the provider's functional field is true, it is selected "
+               "under the starter's provider-field rule, and no runtime functionality is claimed.")
 
 
 def sha(sequence: str) -> str:
@@ -249,7 +249,7 @@ def test_each_v_that_imgt_classes_as_orf_or_pseudogene_says_so():
     assert Counter(classes[label][0] if label in classes else "absent" for label in selected) == {
         "F": 153, "(F)": 14, "ORF": 12, "P": 5, "absent": 6}
     expected = {label for label in selected if label in classes and classes[label][0] in IMGT_DISCLOSED}
-    assert {label for label, text in given.items() if "IMGT classes it as" in text} == expected     # both ways
+    assert {label for label, text in given.items() if "is classed as" in text} == expected          # both ways
     assert len(expected) == 17
     for label in expected:
         imgt_class, region = classes[label]
@@ -385,7 +385,8 @@ def test_the_generator_writes_one_deterministic_stored_zip_of_the_dossier_member
 
 # OGRDB's data terms as the fixture manifest records them, and the statement pages kept as fixtures.
 TERMS = {"status": "recorded", "assets": ["licence_statement", "citation_statement"],
-         "licence": SOURCES["data_licence"]["licence"], "citation": SOURCES["citation"]["requested_by_provider"],
+         "licence": SOURCES["data_licence"]["licence"],
+         "citation": SOURCES["citation"]["requested_by_provider"] + " doi:" + SOURCES["citation"]["doi"],
          "reason": None}
 STATEMENT_ASSETS = {
     "licence_statement": (SOURCES["data_licence"]["statement_url"],
@@ -397,6 +398,7 @@ STATEMENT_ASSETS = {
 def assert_terms_recorded(lock, blob=None) -> None:
     """The lock records OGRDB's terms from the two statement pages (and ``blob(sha256)`` holds their bytes)."""
     assert TERMS["licence"] == "CC0 1.0 Universal" and TERMS["citation"].startswith("The current landscape")
+    assert TERMS["citation"].endswith("Nucleic Acids Research, November 2025. doi:10.1093/nar/gkaf1094")
     assert lock.terms.to_dict() == TERMS
     statements = {asset.format: asset for asset in lock.assets if asset.role == "data_terms"}
     assert sorted(statements) == sorted(STATEMENT_ASSETS)
@@ -453,12 +455,12 @@ def test_the_generator_writes_only_a_new_zip_file(tmp_path, capsys):
 
 # Pinned from the reviewed build: the typed manifest hash of the packaged dossier (it covers
 # the GenAIRR version that generated it) and the runtime hashes of its reference.
-MANIFEST_PIN = "sha256:7c306e4c3586c66639a5f37ecc56c9bcb1c75c1e297c3be465d51b22b186fafe"
-RUNTIME_PINS = {"execution": "sha256:5a51c07d0c7f410c36915987a177ed30247de474f18082638b98016e7cb1c981",
-                "catalogue": "sha256:c000add5d9a8cf573177e930e47adf3cb8e3b19052f62687e81b02af57117ae5",
+MANIFEST_PIN = "sha256:9ab6ba63490c06af94098152af388141f8f946bd6eab3c2ef86f8e5ddb512550"
+RUNTIME_PINS = {"execution": "sha256:bacd155a623189d5acd7c1720a9decbde4d4c5b6e6f6c5581e6ce263683df6dc",
+                "catalogue": "sha256:fc8d35b4682385b1ef10c1405c7427ca2d7551ee626f4257f7bee4fadafb5266",
                 "models": "sha256:e96b1404c64d36a55c0457163ef3a4aa706e1bc5114914147715cd0f964dffd8"}
 # The raw sha256 of the packaged archive (it holds the manifest, so it also changes with the version).
-ARCHIVE_PIN = "sha256:903d5cbc33912c6e01362cf78f8ea4825f659dcc7250d797f20ea8f91da3e92e"
+ARCHIVE_PIN = "sha256:52df85b32d417c67f882cce18113237eb4889f54962695853dd398bc8a3e33d8"
 RECORD_OUTCOMES = {"selected": 230, "excluded": 259, "rejected": 0}
 PACKAGE, RESOURCE = "GenAIRR.data", f"published_references/{STARTER_ID}.zip"
 DOSSIER_DIRECTORIES = ["cache", "cache/blobs", "cache/blobs/sha256", "inputs"]
