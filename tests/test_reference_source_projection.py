@@ -952,7 +952,7 @@ def test_crlf_source_bytes_change_lock_and_citations_but_not_dna_labels_or_annot
             assert b"\r" not in data
 
 
-UNICODE = "IGLV1-36*01_ünïcödé-λ"
+UNICODE = "IGLV1-36*01_\u00fcn\u00efc\u00f6d\u00e9-\u03bb"     # letters beyond ASCII, valid labels
 
 
 def test_unicode_labels_are_kept_literally_in_utf8_files_and_the_runtime(monkeypatch):
