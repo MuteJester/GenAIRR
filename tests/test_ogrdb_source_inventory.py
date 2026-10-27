@@ -984,3 +984,237 @@ def test_paralog_names_that_resolve_to_nothing_are_counted_as_unresolved():
     (conflict,) = findings(inventory, "mentioned_identity_segment_conflict")
     assert conflict.observations.get() == {"label": "IGLZ*01", "segments": ["J", "V"]}
     assert [s.pointer for s in conflict.subjects] == [rec(0), rec(1)]
+
+
+# ── endpoint comparison: airr and airr_ex, label by label ───────────
+
+PAIR_FINDINGS = ("export_record_sequence_differs", "export_support_differs", "export_provider_ref_differs",
+                 "export_annotation_differs")
+
+
+def _pairs(source):
+    """Raw records of both exports by (segment, label), read with the standard library."""
+    return {fmt: {(item["sequence_type"], item["label"]): item for item in raw_records(source, fmt)}
+            for fmt in EXPORTS}
+
+
+def coding_differences(inventory) -> dict:
+    return {f.observations.get()["label"]: f for f in findings(inventory, "export_coding_sequence_differs")}
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_coding_sequence_differences_are_the_expected_extensions(source):
+    _, inventory = inventory_of(source)
+    expected = EXPECT["sets"][_key(source)]["airr_ex_coding_suffix_beyond_airr"]
+    found = coding_differences(inventory)
+    assert sorted(found) == sorted(expected)
+    pairs = _pairs(source)
+    for label, finding in found.items():
+        observations = finding.observations.get()
+        assert (observations["relation"], observations["extra"]) == ("airr_ex_extends_3prime", expected[label])
+        segment = observations["segment"]
+        airr, airr_ex = pairs["airr"][(segment, label)], pairs["airr_ex"][(segment, label)]
+        assert observations["airr"]["sequences"] == [{"sha256": _sha(airr["coding_sequence"].encode("ascii")),
+                                                      "length": len(airr["coding_sequence"])}]
+        assert observations["airr_ex"]["sequences"][0]["length"] == len(airr_ex["coding_sequence"])
+        records = {r.locator.asset: r for r in inventory.records if r.label == label}
+        assert set(finding.subjects) == {records["airr"].locator, records["airr_ex"].locator,
+                                         m.Locator("airr", records["airr"].locator.pointer + "/coding_sequence"),
+                                         m.Locator("airr_ex", records["airr_ex"].locator.pointer + "/coding_sequence")}
+        assert finding.capabilities == ("original_coding_ends",)
+        assert (finding.severity, finding.category) == ("warning", "contradictory_evidence")
+
+
+def test_igl_release4_six_coding_differences_match_the_coding_end_table():
+    _, inventory = inventory_of(IGL)
+    found = coding_differences(inventory)
+    table = {row["label"]: row["coding_extension"] for row in EXPECT["igl4_airr_ex_coding_end_observations"]}
+    assert len(found) == 6
+    assert {label: f.observations.get()["extra"] for label, f in found.items()} == {**table, "IGLV3-9*01": "CACCC"}
+
+
+def test_igh_release10_extensions_match_the_candidate_selection():
+    _, inventory = inventory_of(IGH)
+    found = coding_differences(inventory)
+    assert len(found) == 23 and all(f.observations.get()["segment"] == "V" for f in found.values())
+    chosen = {c["label"]: c for c in SELECTION["record_choices"]}
+    unchosen = {o["label"] for o in SELECTION["omitted"]
+                if any(r["rule"] == "explicit_record_choice" for r in o["failed_rules"])}
+    assert set(found) == set(chosen) | unchosen and not set(chosen) & unchosen
+    for label, choice in chosen.items():
+        observations = found[label].observations.get()
+        assert observations["extra"] == choice["alternative"]["extension_3prime"]
+        assert observations["airr"]["sequences"][0]["length"] == choice["chosen_coding_length"]
+        assert observations["airr_ex"]["sequences"][0]["length"] == choice["alternative"]["coding_length"]
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_pinned_pairs_differ_only_in_provider_ref_and_coding_sequence(source):
+    pairs = _pairs(source)
+    for key in pairs["airr"].keys() & pairs["airr_ex"].keys():
+        a, b = pairs["airr"][key], pairs["airr_ex"][key]
+        assert {k for k in set(a) | set(b) if a.get(k) != b.get(k)} <= {"allele_description_ref", "coding_sequence"}
+    _, inventory = inventory_of(source)
+    for code in PAIR_FINDINGS:
+        assert findings(inventory, code) == [], code
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_the_ext_suffix_is_recorded_once_for_the_comparison(source):
+    _, inventory = inventory_of(source)
+    expected = EXPECT["sets"][_key(source)]
+    pairs = len(_pairs(source)["airr"].keys() & _pairs(source)["airr_ex"].keys())
+    (finding,) = findings(inventory, "export_provider_ref_suffix")
+    assert finding.observations.get() == {
+        "suffix": "_ext", "pairs": pairs, "suffix_only": pairs, "identical": 0, "other": 0,
+        "airr": {"records": expected["airr"]["records"], "refs_with_suffix": expected["airr"]["refs_ending_ext"]},
+        "airr_ex": {"records": expected["airr_ex"]["records"],
+                    "refs_with_suffix": expected["airr_ex"]["refs_ending_ext"]}}
+    assert finding.locators == (m.Locator("airr", "/GermlineSet/0/germline_set_ref"),
+                                m.Locator("airr_ex", "/GermlineSet/0/germline_set_ref"))
+
+
+def test_igl_release4_ext_suffix_on_every_extended_ref_and_no_plain_ref():
+    _, inventory = inventory_of(IGL)
+    (finding,) = findings(inventory, "export_provider_ref_suffix")
+    observations = finding.observations.get()
+    assert (observations["airr_ex"], observations["airr"]) == ({"records": 97, "refs_with_suffix": 97},
+                                                               {"records": 98, "refs_with_suffix": 0})
+
+
+def absent_labels(inventory) -> dict:
+    return {f.observations.get()["label"]: f for f in findings(inventory, "export_label_absent")}
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_labels_present_in_one_export_only_are_named_as_paralogs_in_the_other(source):
+    _, inventory = inventory_of(source)
+    expected = EXPECT["sets"][_key(source)]
+    found = absent_labels(inventory)
+    assert sorted(found) == sorted(expected["labels_only_in_airr"])
+    assert expected["labels_only_in_airr_ex"] == []
+    pairs = _pairs(source)
+    for label, finding in found.items():
+        observations = finding.observations.get()
+        assert (observations["present_in"], observations["absent_from"]) == ("airr", "airr_ex")
+        (named,) = observations["named_in_absent_export"]
+        assert named["relationship"] == "paralog"
+        counterpart = pairs["airr_ex"][(observations["segment"], named["by"])]
+        assert label in counterpart["paralogs"]
+        # Only the identity's own record and candidate are subjects; never its counterpart's.
+        (own,) = [r for r in inventory.records if r.locator.asset == "airr" and r.label == label]
+        assert set(finding.subjects) == {own.locator, m.Locator("airr", own.locator.pointer + "/coding_sequence")}
+        (locator,) = finding.locators
+        assert observed(inventory, "airr_ex", locator.pointer).value.get() == label
+
+
+def test_igh_release10_airr_only_identities_and_their_counterparts():
+    _, inventory = inventory_of(IGH)
+    found = absent_labels(inventory)
+    expected = {o["label"]: o["identical_coding_sequence_to"] for o in SELECTION["selected_record_observations"]
+                if o["observation"] == "identical_coding_sequence_identity_without_airr_ex_record"}
+    assert len(found) == len(expected) == 9
+    assert {label: f.observations.get()["named_in_absent_export"][0]["by"] for label, f in found.items()} == expected
+
+
+def test_igl_release4_j3_is_absent_from_the_extended_export_and_named_there_by_j2():
+    _, inventory = inventory_of(IGL)
+    finding = absent_labels(inventory)["IGLJ3*01"]
+    assert finding.observations.get() == {
+        "label": "IGLJ3*01", "segment": "J", "present_in": "airr", "absent_from": "airr_ex",
+        "named_in_absent_export": [{"relationship": "paralog", "by": "IGLJ2*01"}]}
+    (j3,) = by_label(inventory, "airr")["IGLJ3*01"]
+    assert set(finding.subjects) == {j3.locator, m.Locator("airr", j3.locator.pointer + "/coding_sequence")}
+
+
+def _label_index(records, label):
+    (index,) = [i for i, item in enumerate(records) if item["label"] == label]
+    return index
+
+
+def test_each_kind_of_per_label_difference_is_recorded_without_preferring_an_export():
+    airr_records, ex_records = raw_records(IGL, "airr"), raw_records(IGL, "airr_ex")
+    shared = [item["label"] for item in ex_records if item["label"] != "IGLJ7*02" and item["coding_sequence"] in
+              {a["coding_sequence"] for a in airr_records if a["label"] == item["label"]}]
+    one, two, three, four, five = shared[:5]
+
+    def edit_ex(records):
+        records[_label_index(records, one)]["functional"] = not records[_label_index(records, one)]["functional"]
+        records[_label_index(records, one)]["new_field"] = 1
+        records[_label_index(records, two)]["sequence"] += "A"
+        records[_label_index(records, three)]["unrearranged_support"] = []
+        records[_label_index(records, four)]["allele_description_ref"] = "OGRDB:other"
+
+    def edit_airr(records):
+        records[_label_index(records, five)]["coding_sequence"] += "GG"
+        del records[_label_index(records, "IGLJ7*02")]
+
+    blobs = {"airr": with_records(IGL, "airr", edit_airr), "airr_ex": with_records(IGL, "airr_ex", edit_ex)}
+    _, inventory = build(IGL, blobs)
+    annotation = {f.observations.get()["label"]: f.observations.get()
+                  for f in findings(inventory, "export_annotation_differs")}
+    assert annotation == {one: {"label": one, "segment": "V" if one.startswith("IGLV") else "J",
+                                "fields": ["functional", "new_field"]}}
+    (sequence,) = findings(inventory, "export_record_sequence_differs")
+    assert sequence.observations.get()["label"] == two
+    (support,) = findings(inventory, "export_support_differs")
+    observations = support.observations.get()
+    assert observations["label"] == three
+    assert observations["unrearranged_support"]["airr_ex"] == 0
+    assert observations["unrearranged_support"]["equal"] is False and observations["rearranged_support"]["equal"]
+    (ref,) = findings(inventory, "export_provider_ref_differs")
+    assert ref.observations.get()["label"] == four and ref.observations.get()["airr_ex"] == "OGRDB:other"
+    longer = coding_differences(inventory)[five].observations.get()
+    assert (longer["relation"], longer["extra"]) == ("airr_extends_3prime", "GG")
+    absent = absent_labels(inventory)["IGLJ7*02"].observations.get()
+    assert (absent["present_in"], absent["absent_from"], absent["named_in_absent_export"]) == ("airr_ex", "airr", [])
+    (suffix,) = findings(inventory, "export_provider_ref_suffix")
+    assert suffix.observations.get()["other"] == 1
+
+
+@pytest.mark.parametrize("source", SETS, ids=_key)
+def test_a_complete_comparison_lists_its_findings(source):
+    lock, inventory = inventory_of(source)
+    comparison = ogrdb.comparison(lock, inventory)
+    assert (comparison.complete, comparison.exports, comparison.missing) == (True, EXPORTS, ())
+    codes = set(ogrdb.COMPARISON_CODES)
+    assert comparison.findings == tuple(sorted(f.id for f in inventory.findings if f.code in codes))
+    comparison.check(lock, inventory)
+    summary = ogrdb.account(lock, inventory).comparison
+    airr, airr_ex = (ogrdb.account(lock, inventory).export(f) for f in EXPORTS)
+    assert airr.record_identities == summary.identities_in_both + len(summary.only_in["airr"])
+    assert airr_ex.record_identities == summary.identities_in_both + len(summary.only_in["airr_ex"])
+    assert sorted(summary.only_in["airr"]) == sorted(EXPECT["sets"][_key(source)]["labels_only_in_airr"])
+
+
+@pytest.mark.parametrize("present", EXPORTS)
+def test_single_export_inspection_succeeds_and_marks_the_comparison_incomplete(present):
+    gapped = {"airr": "gapped", "airr_ex": "gapped_ex"}[present]
+    lock, inventory = inventory_of(IGL, (present, gapped))
+    comparison = ogrdb.comparison(lock, inventory)
+    missing = "airr_ex" if present == "airr" else "airr"
+    assert (comparison.complete, comparison.exports, comparison.missing) == (False, (present,), (missing,))
+    comparison.check(lock, inventory)
+    (incomplete,) = findings(inventory, "endpoint_comparison_incomplete")
+    assert incomplete.observations.get() == {"exports": [present],
+                                             "missing": [{"format": missing, "reason": "not_supplied"}]}
+    assert incomplete.locators == (m.Locator(present, "/GermlineSet/0/germline_set_ref"),)
+    assert (incomplete.severity, incomplete.category) == ("warning", "unavailable_evidence")
+    assert incomplete.id in comparison.findings
+    for code in ("export_coding_sequence_differs", "export_label_absent", "export_provider_ref_suffix"):
+        assert findings(inventory, code) == []
+    without = findings(inventory, "mentioned_identity_without_record")
+    if present == "airr_ex":
+        (finding,) = without
+        assert finding.observations.get() == {"asset": "airr_ex", "label": "IGLJ3*01", "segment": "J"}
+        (j2,) = by_label(inventory, "airr_ex")["IGLJ2*01"]
+        assert finding.subjects == (j2.locator,)
+    else:
+        assert without == []
+    summary = ogrdb.account(lock, inventory).comparison
+    assert (summary.complete, summary.identities_in_both, summary.only_in) == (False, 0, {})
+
+
+def test_comparison_needs_the_inventory_of_its_lock():
+    lock, inventory = inventory_of(IGL)
+    error("digest_mismatch", ogrdb.comparison, inventory_of(IGK)[0], inventory)

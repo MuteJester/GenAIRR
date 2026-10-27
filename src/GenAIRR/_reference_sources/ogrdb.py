@@ -36,6 +36,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
+from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference_sources._fields import (
     MAX_ASSET_BYTES, MAX_NAME, MAX_REFS, MAX_SEQUENCE, MAX_SOURCE_RECORDS, MAX_TAXONOMY_ID, MAX_TEXT, bad,
     check_label, check_text, parse_json, ptr, require_type, show,
@@ -47,9 +48,10 @@ from GenAIRR._reference_sources.digests import lock_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.inventory import (
     MAX_LOCUS, MAX_OBSERVATIONS, Finding, MentionedIdentity, Mention, Observation, SequenceCandidate,
-    SourceInventory, SourceRecord, SupportReference,
+    SourceInventory, SourceRecord, SupportReference, text_digest,
 )
 from GenAIRR._reference_sources.lock import SourceLock
+from GenAIRR._reference_sources.report import Comparison
 from GenAIRR._reference.model import sequence_digest
 
 # ── Provider conventions ────────────────────────────────────────────
@@ -356,7 +358,44 @@ FINDING_CODES = {
     "mentioned_identity_segment_conflict": (
         "warning", "contradictory_evidence", (),
         "A relationship-only name is named by records of different segments; no mentioned identity is formed."),
+    # Endpoint comparison between the two record exports (no export is preferred).
+    "endpoint_comparison_incomplete": (
+        "warning", "unavailable_evidence", (),
+        "Only one record export is locked, so the two exports could not be compared."),
+    "mentioned_identity_without_record": (
+        "info", "unavailable_evidence", (),
+        "A name given only as a paralog has no record in any locked record export."),
+    "export_label_absent": (
+        "info", "informational", (),
+        "An identity has records in one export only; the other may name it as a paralog or alias."),
+    "export_coding_sequence_differs": (
+        "warning", "contradictory_evidence", ("original_coding_ends",),
+        "The two exports supply different coding sequences for one identity."),
+    "export_record_sequence_differs": (
+        "warning", "contradictory_evidence", (),
+        "The two exports' records of one identity hold different sequence fields."),
+    "export_support_differs": (
+        "info", "informational", (),
+        "The two exports' records of one identity embed different support entries."),
+    "export_provider_ref_differs": (
+        "info", "informational", (),
+        "The two exports' records of one identity have provider refs that differ other than by the extended "
+        "export's suffix."),
+    "export_annotation_differs": (
+        "info", "informational", (),
+        "The two exports' records of one identity differ in other fields, listed by name."),
+    "export_provider_ref_suffix": (
+        "info", "informational", (),
+        "How many record pairs' provider refs differ only by the extended export's suffix, and how many refs "
+        "of each export carry it."),
 }
+# Findings that make up the endpoint comparison.
+COMPARISON_CODES = ("endpoint_comparison_incomplete", "mentioned_identity_without_record", "export_label_absent",
+                    "export_coding_sequence_differs", "export_record_sequence_differs", "export_support_differs",
+                    "export_provider_ref_differs", "export_annotation_differs", "export_provider_ref_suffix")
+# Record fields compared on their own; every other field is compared as an annotation.
+_COMPARED_APART = ("label", "sequence_type", "allele_description_ref", "coding_sequence", "sequence",
+                   "unrearranged_support", "rearranged_support")
 
 
 @dataclass
@@ -384,6 +423,7 @@ class _Builder:
         self.findings: list = []
         self.entries: dict = {}          # asset -> [_Entry]
         self.unknown: dict = {}          # (asset, field pattern) -> [locator]
+        self.observed: set = set()       # locators of every observation
 
     # -- items ---------------------------------------------------------
 
@@ -399,6 +439,7 @@ class _Builder:
                                                  interpretation=interpretation))
         except ReferenceSourceError as exc:
             raise bad(ptr("/assets", asset) + pointer, f"{asset}: {exc.message}", exc.kind) from None
+        self.observed.add(locator)
         return locator
 
     def finding(self, code: str, *, subjects=(), locators=(), observations: dict) -> None:
@@ -724,6 +765,113 @@ class _Builder:
                              observations={"sha256": sha256, "length": len(group[0].candidate.sequence),
                                            "identities": [{"segment": s, "label": l} for s, l in identities]})
 
+    # -- endpoint comparison ------------------------------------------
+
+    def compare(self) -> None:
+        """Compare the record exports label by label, preferring neither."""
+        present = [a for a in RECORD_EXPORT_FORMATS if a in self.entries]
+        if len(present) < len(RECORD_EXPORT_FORMATS):
+            missing = [{"format": x.format, "reason": x.reason} for x in self.lock.missing_assets
+                       if x.format in RECORD_EXPORT_FORMATS]
+            self.finding("endpoint_comparison_incomplete", locators=[Locator(a, EXPORT_ANCHOR) for a in present],
+                         observations={"exports": present, "missing": missing})
+        else:
+            self._compare_exports()
+        for identity in self.mentioned:
+            if not any(_parsed_identities(self.entries[a]).get((identity.segment, identity.label))
+                       for a in present):
+                self.finding("mentioned_identity_without_record", subjects=[x.record for x in identity.mentions],
+                             locators=[x.locator for x in identity.mentions],
+                             observations={"asset": identity.asset, "label": identity.label,
+                                           "segment": identity.segment})
+
+    def _compare_exports(self) -> None:
+        first, second = RECORD_EXPORT_FORMATS
+        sides = {a: _parsed_identities(self.entries[a]) for a in RECORD_EXPORT_FORMATS}
+        refs = {"pairs": 0, "suffix_only": 0, "identical": 0, "other": 0}
+        for key in sorted(sides[first].keys() | sides[second].keys()):
+            if key not in sides[first] or key not in sides[second]:
+                self._label_absent(key, sides)
+                continue
+            mine, theirs = sides[first][key], sides[second][key]
+            self._compare_coding(key, mine, theirs)
+            if len(mine) == len(theirs) == 1:
+                refs["pairs"] += 1
+                refs[self._compare_pair(key, mine[0], theirs[0])] += 1
+        exports = {a: {"records": len(self.entries[a]),
+                       "refs_with_suffix": sum(1 for e in self.entries[a]
+                                               if (e.record.provider_ref or "").endswith(EXT_SUFFIX))}
+                   for a in RECORD_EXPORT_FORMATS}
+        self.finding("export_provider_ref_suffix", locators=[Locator(a, EXPORT_ANCHOR) for a in RECORD_EXPORT_FORMATS],
+                     observations={"suffix": EXT_SUFFIX, **refs, **exports})
+
+    def _label_absent(self, key: tuple, sides: dict) -> None:
+        segment, label = key
+        present = next(a for a in RECORD_EXPORT_FORMATS if key in sides[a])
+        absent = next(a for a in RECORD_EXPORT_FORMATS if key not in sides[a])
+        named, locators = [], []
+        for entry in self.entries[absent]:
+            if entry.record.status != "parsed":
+                continue
+            for relationship, names in entry.relationships.items():
+                for name, locator in names:
+                    if name == label:
+                        named.append({"relationship": relationship, "by": entry.record.label})
+                        locators.append(locator)
+        self.finding("export_label_absent", subjects=_subjects(sides[present][key]), locators=locators,
+                     observations={"label": label, "segment": segment, "present_in": present, "absent_from": absent,
+                                   "named_in_absent_export": sorted(named, key=lambda x: (x["by"], x["relationship"]))})
+
+    def _compare_coding(self, key: tuple, mine: list, theirs: list) -> None:
+        first, second = RECORD_EXPORT_FORMATS
+        if _field_values(mine, "coding_sequence") == _field_values(theirs, "coding_sequence"):
+            return
+        relation, extra = "not_comparable", None
+        if len(mine) == len(theirs) == 1 and mine[0].candidate and theirs[0].candidate:
+            relation, extra = _extension(mine[0].candidate.sequence, theirs[0].candidate.sequence, first, second)
+        segment, label = key
+        self.finding("export_coding_sequence_differs", subjects=_subjects(mine + theirs),
+                     locators=[self._field(e, "coding_sequence") for e in mine + theirs],
+                     observations={"label": label, "segment": segment, first: _coding_side(mine),
+                                   second: _coding_side(theirs), "relation": relation, "extra": extra})
+
+    def _field(self, entry: _Entry, key: str) -> Locator:
+        return Locator(entry.record.locator.asset, ptr(entry.record.locator.pointer, key))
+
+    def _compare_pair(self, key: tuple, mine: _Entry, theirs: _Entry) -> str:
+        """Compare one record of each export; return the relation of their provider refs."""
+        first, second = RECORD_EXPORT_FORMATS
+        segment, label = key
+        pair, base = [mine, theirs], {"label": label, "segment": segment}
+        subjects = _subjects(pair)
+        if _field_values([mine], "sequence") != _field_values([theirs], "sequence"):
+            self.finding("export_record_sequence_differs", subjects=subjects,
+                         locators=[self._field(e, "sequence") for e in pair],
+                         observations={**base, first: _text_summary(mine.item, "sequence"),
+                                       second: _text_summary(theirs.item, "sequence")})
+        support = {k: {first: _count(mine.item, k), second: _count(theirs.item, k),
+                       "equal": _field_values([mine], k) == _field_values([theirs], k)} for k in SUPPORT_KIND}
+        if not all(v["equal"] for v in support.values()):
+            self.finding("export_support_differs", subjects=subjects,
+                         locators=[self._field(e, k) for k in SUPPORT_KIND if not support[k]["equal"] for e in pair],
+                         observations={**base, **support})
+        keys = (set(mine.item) | set(theirs.item)) - set(_COMPARED_APART)
+        differing = sorted(k for k in keys if _field_values([mine], k) != _field_values([theirs], k))
+        if differing:
+            located = [self._field(e, k) for k in differing for e in pair]
+            self.finding("export_annotation_differs", subjects=subjects,
+                         locators=[x for x in located if x in self.observed],
+                         observations={**base, "fields": differing})
+        refs = (mine.record.provider_ref, theirs.record.provider_ref)
+        if refs[0] == refs[1]:
+            return "identical"
+        if refs[0] is not None and refs[1] == refs[0] + EXT_SUFFIX:
+            return "suffix_only"
+        self.finding("export_provider_ref_differs", subjects=subjects,
+                     locators=[self._field(e, "allele_description_ref") for e in pair],
+                     observations={**base, first: refs[0], second: refs[1]})
+        return "other"
+
     def fasta(self, asset: str, data: bytes) -> None:
         for index, (header, sequence) in enumerate(_fasta_records(asset, data)):
             self.observe(asset, f"/{index}", None, {"header": header, "sequence": sequence}, "preserved")
@@ -769,6 +917,55 @@ def _subjects(entries) -> list:
         if entry.candidate is not None:
             found.append(entry.candidate.locator)
     return found
+
+
+def _parsed_identities(entries) -> dict:
+    """``(segment, label) -> [entry]`` of the parsed records among ``entries``, in document order."""
+    found: dict = {}
+    for entry in entries:
+        if entry.record.status == "parsed":
+            found.setdefault((entry.record.segment, entry.record.label), []).append(entry)
+    return found
+
+
+_ABSENT = object()
+
+
+def _field_values(entries, key: str) -> list:
+    """The distinct canonical values of field ``key`` of ``entries`` (absent apart from null), sorted."""
+    return sorted({"" if e.item.get(key, _ABSENT) is _ABSENT else canonical_json(e.item[key]) for e in entries})
+
+
+def _count(item: dict, key: str) -> Optional[int]:
+    value = item.get(key)
+    return len(value) if isinstance(value, list) else None
+
+
+def _text_summary(item: dict, key: str):
+    """Length and digest of a text field; its JSON type otherwise; null when absent."""
+    if key not in item:
+        return None
+    value = item[key]
+    if type(value) is str:
+        return {"length": len(value), "sha256": text_digest(value)}
+    return {"type": _json_type(value)}
+
+
+def _coding_side(entries) -> dict:
+    sequences = {e.candidate.sha256: len(e.candidate.sequence) for e in entries if e.candidate is not None}
+    return {"records": len(entries),
+            "sequences": [{"sha256": sha, "length": length} for sha, length in sorted(sequences.items())]}
+
+
+def _extension(mine: str, theirs: str, first: str, second: str) -> tuple:
+    """How two coding sequences relate: one extends the other at its 3' or 5' end, or neither."""
+    for longer, shorter, name in ((theirs, mine, second), (mine, theirs, first)):
+        if len(longer) > len(shorter):
+            if longer.startswith(shorter):
+                return f"{name}_extends_3prime", longer[len(shorter):]
+            if longer.endswith(shorter):
+                return f"{name}_extends_5prime", longer[:len(longer) - len(shorter)]
+    return "different", None
 
 
 def _fasta_records(asset: str, data: bytes) -> list:
@@ -858,6 +1055,7 @@ def build_inventory(lock: SourceLock, assets: Mapping[str, bytes]) -> SourceInve
         builder.export(envelope)
         builder.relationships(envelope.asset)
         builder.identities(envelope.asset)
+    builder.compare()
     for asset in lock.assets:
         if asset.format in _FASTA_FORMATS:
             builder.fasta(asset.asset_id, blobs[asset.asset_id])
@@ -931,11 +1129,41 @@ class ExportAccount:
 
 
 @dataclass(frozen=True)
+class EndpointComparison:
+    """The comparison of the two record exports, preferring neither.
+
+    ``complete`` exactly when both record exports are locked.  ``identities_in_both`` and
+    ``only_in`` (asset -> labels with records in that export only) are filled for a
+    complete comparison; with ``account.export(a).record_identities`` they satisfy
+    ``record_identities = identities_in_both + len(only_in[a])`` for each export.
+    ``findings`` are the ids of the comparison findings (:data:`COMPARISON_CODES`), sorted.
+    """
+
+    complete: bool
+    exports: tuple
+    missing: tuple
+    identities_in_both: int
+    only_in: Mapping
+    findings: tuple
+
+    def report(self) -> Comparison:
+        """The build report's comparison section."""
+        return Comparison(complete=self.complete, exports=self.exports, missing=self.missing,
+                          findings=self.findings)
+
+    def to_dict(self) -> dict:
+        return {"complete": self.complete, "exports": list(self.exports), "missing": list(self.missing),
+                "identities_in_both": self.identities_in_both,
+                "only_in": {k: list(v) for k, v in self.only_in.items()}, "findings": list(self.findings)}
+
+
+@dataclass(frozen=True)
 class SourceAccount:
-    """The accounting of one inventory: per record export and per FASTA export."""
+    """The accounting of one inventory: per record export, per FASTA export, and the comparison."""
 
     exports: tuple                  # ExportAccount per record export of the lock, in lock order
     fasta: tuple                    # (asset, records) per FASTA export of the lock, in lock order
+    comparison: EndpointComparison
 
     def export(self, asset: str) -> ExportAccount:
         for account in self.exports:
@@ -944,7 +1172,8 @@ class SourceAccount:
         raise KeyError(asset)
 
     def to_dict(self) -> dict:
-        return {"exports": [a.to_dict() for a in self.exports], "fasta": [list(x) for x in self.fasta]}
+        return {"exports": [a.to_dict() for a in self.exports], "fasta": [list(x) for x in self.fasta],
+                "comparison": self.comparison.to_dict()}
 
 
 def _export_account(inventory: SourceInventory, asset: str) -> ExportAccount:
@@ -1023,4 +1252,27 @@ def account(lock: SourceLock, inventory: SourceInventory) -> SourceAccount:
     exports = tuple(_export_account(inventory, a.asset_id) for a in lock.assets if a.format in RECORD_EXPORT_FORMATS)
     fasta = tuple((a.asset_id, sum(1 for o in inventory.observations if o.locator.asset == a.asset_id))
                   for a in lock.assets if a.format in _FASTA_FORMATS)
-    return SourceAccount(exports=exports, fasta=fasta)
+    return SourceAccount(exports=exports, fasta=fasta, comparison=_endpoint_comparison(lock, inventory))
+
+
+def _endpoint_comparison(lock: SourceLock, inventory: SourceInventory) -> EndpointComparison:
+    exports = tuple(a.asset_id for a in lock.assets if a.format in RECORD_EXPORT_FORMATS)
+    missing = tuple(f for f in RECORD_EXPORT_FORMATS if f not in exports)
+    findings = tuple(sorted(f.id for f in inventory.findings if f.code in COMPARISON_CODES))
+    both, only_in = 0, {}
+    if not missing:
+        identities = {a: {(r.segment, r.label) for r in inventory.records
+                          if r.locator.asset == a and r.status == "parsed"} for a in exports}
+        first, second = (identities[a] for a in RECORD_EXPORT_FORMATS)
+        both = len(first & second)
+        only_in = {a: tuple(sorted(label for _, label in identities[a] - identities[b]))
+                   for a, b in zip(RECORD_EXPORT_FORMATS, reversed(RECORD_EXPORT_FORMATS))}
+    return EndpointComparison(complete=not missing, exports=exports, missing=missing, identities_in_both=both,
+                              only_in=only_in, findings=findings)
+
+
+def comparison(lock: SourceLock, inventory: SourceInventory) -> Comparison:
+    """The build report's comparison section for ``inventory`` of ``lock``: complete exactly when
+    both record exports are locked, with the ids of the comparison findings."""
+    _check_pair(lock, inventory)
+    return _endpoint_comparison(lock, inventory).report()
