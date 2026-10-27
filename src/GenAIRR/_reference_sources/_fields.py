@@ -16,6 +16,7 @@ import unicodedata
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlsplit
 
+from GenAIRR import _engine
 from GenAIRR._artifact_io import ArtifactIOError, canonical_json, read_text_bounded, strict_loads, typed_digest
 from GenAIRR._reference.model import check_label as _runtime_label_problem
 from GenAIRR._reference_sources.errors import ReferenceSourceError
@@ -463,6 +464,16 @@ def digest(value: Any, domain: str) -> str:
     """``typed_digest``; a value beyond the native parser's limits is a ``resource_limit`` error."""
     try:
         return typed_digest(value, domain)
+    except (ValueError, TypeError, RuntimeError) as exc:
+        kind = "resource_limit" if "resource limit" in str(exc).lower() else "malformed"
+        raise bad("", f"cannot compute the {domain} digest: {exc}", kind) from exc
+
+
+def digest_of_canonical(text: str, domain: str) -> str:
+    """:func:`digest` of a value given as its canonical JSON ``text`` (``canonical_json(value)``),
+    without serialising it again: ``typed_digest`` is the same native digest over that text."""
+    try:
+        return _engine._family_replay_digest(text, domain)
     except (ValueError, TypeError, RuntimeError) as exc:
         kind = "resource_limit" if "resource limit" in str(exc).lower() else "malformed"
         raise bad("", f"cannot compute the {domain} digest: {exc}", kind) from exc

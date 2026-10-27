@@ -15,7 +15,7 @@ the build-input hash, never the report or manifest hash.
 """
 from __future__ import annotations
 
-from GenAIRR._reference_sources._fields import digest, require_type
+from GenAIRR._reference_sources._fields import digest, digest_of_canonical, require_type
 from GenAIRR._reference_sources.consistency import check_build_inputs
 from GenAIRR._reference_sources.inventory import SourceInventory
 from GenAIRR._reference_sources.lock import DIGEST_DOMAIN as LOCK_DOMAIN, SourceLock
@@ -96,6 +96,21 @@ def report_hash(report) -> str:
     from GenAIRR._reference_sources.report import BuildReport
     require_type(report, BuildReport, "report")
     return _memoised(report, "_report_hash", lambda: digest(report.to_dict(), REPORT_DOMAIN))
+
+
+def remember_report_hash(report, member: bytes) -> str:
+    """:func:`report_hash` from the report's member bytes (its canonical JSON and one LF), without
+    serialising the report again, and remembered for ``report``.
+
+    The caller guarantees that ``member`` is exactly that serialisation of ``report``; a dossier
+    check has just compared the two byte for byte.
+    """
+    from GenAIRR._reference_sources.report import BuildReport
+    require_type(report, BuildReport, "report")
+    if type(member) is not bytes or not member.endswith(b"\n"):
+        raise ValueError("expected the report's member bytes: canonical JSON followed by one LF")
+    text = member[:-1].decode("utf-8")
+    return _memoised(report, "_report_hash", lambda: digest_of_canonical(text, REPORT_DOMAIN))
 
 
 def manifest_hash(manifest) -> str:

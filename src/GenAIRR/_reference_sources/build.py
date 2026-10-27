@@ -27,7 +27,7 @@ from GenAIRR._reference_sources import bundled
 from GenAIRR._reference_sources._fields import (
     MAX_ASSET_BYTES, MAX_ASSETS, bad, parse_json, ptr, require_type, show,
 )
-from GenAIRR._reference_sources.digests import manifest_hash, recipe_hash, report_hash
+from GenAIRR._reference_sources.digests import manifest_hash, recipe_hash, remember_report_hash, report_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.lock import MAX_LOCK_BYTES, SourceLock
 from GenAIRR._reference_sources.manifest import (
@@ -634,6 +634,7 @@ class ReferenceBuild:
                       "the report regenerated for the stored reference and the recorded builder")
             raise bad("/" + REPORT_MEMBER, f"{REPORT_MEMBER} is not in canonical form (canonical JSON, UTF-8, one LF); "
                                            "a dossier stores each generated document exactly as written")
+        remember_report_hash(expected, files[REPORT_MEMBER])          # equal bytes: hashed without re-serialising
         try:
             check_manifest(manifest, lock, expected)
         except ReferenceSourceError as exc:

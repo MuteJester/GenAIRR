@@ -1057,7 +1057,8 @@ def test_a_successful_check_compares_report_bytes_and_hashes_the_report_once(igl
     build.write_dossier(tmp_path / "dossier")
     counts = count_report_work(monkeypatch)
     checked = ReferenceBuild.read_dossier(tmp_path / "dossier")
-    assert counts == {"parsed": 0, "hashed": 1, "serialised": 1}
+    # The report hash comes from the verified member bytes: the report is serialised once, to compare.
+    assert counts == {"parsed": 0, "hashed": 0, "serialised": 1}
     assert checked.report.to_dict() == build.report.to_dict() and checked.manifest == build.manifest
 
 
@@ -1264,3 +1265,16 @@ def test_a_member_that_is_not_utf8_is_located_once(mini, name):
     rewrite(dossier, name, b"\xff\xfe not UTF-8 \x80\n")
     exc = error("malformed", ReferenceBuild.read_dossier, dossier)
     assert exc.path == "/" + name and "not UTF-8" in exc.message
+
+
+def test_the_report_hash_of_its_member_bytes_is_the_report_hash(igl, tmp_path):
+    from GenAIRR._reference_sources import digests
+    from GenAIRR._reference_sources.report import BuildReport
+    _, build = igl
+    build.write_dossier(tmp_path / "dossier")
+    data = (tmp_path / "dossier" / "report.json").read_bytes()
+    computed = digests.report_hash(BuildReport.from_dict(build.report.to_dict()))         # a fresh instance
+    from_bytes = digests.remember_report_hash(BuildReport.from_dict(build.report.to_dict()), data)
+    assert from_bytes == computed == load_manifest(tmp_path / "dossier")["hashes"]["report"]
+    with pytest.raises(ValueError):
+        digests.remember_report_hash(BuildReport.from_dict(build.report.to_dict()), data[:-1])
