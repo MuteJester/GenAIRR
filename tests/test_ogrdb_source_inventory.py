@@ -840,9 +840,12 @@ def test_paralog_only_names_are_the_expected_mentioned_identities(source, fmt):
     assert found == sorted(EXPECT["sets"][_key(source)][fmt]["paralog_only_identities"])
     raws = raw_records(source, fmt)
     labels = {item["label"] for item in raws}
+    owner = {r.locator: r.label for r in inventory.records if r.locator.asset == fmt}
     for identity in (i for i in inventory.mentioned_identities if i.asset == fmt):
         assert identity.label not in labels
-        assert inventory.candidates_of(m.Locator(fmt, "/" + identity.label)) == ()
+        # No sequence or support is attached to the name: nothing in this export belongs to a record with it.
+        assert [c for c in inventory.candidates if c.locator.asset == fmt and owner[c.record] == identity.label] == []
+        assert [s for s in inventory.support if s.locator.asset == fmt and owner[s.record] == identity.label] == []
         for mention in identity.mentions:
             item = raws[int(mention.record.pointer.rsplit("/", 1)[1])]
             assert identity.label in item["paralogs"]
