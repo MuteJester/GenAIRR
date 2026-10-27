@@ -40,7 +40,7 @@ GAPPED_VARIANT = {"airr": "gapped", "airr_ex": "gapped_ex"}
 
 ADAPTER_ID = "ogrdb_germline_set"
 ADAPTER_VERSION = 1
-COORDINATE_PROFILE_ID = "ogrdb_api_v2_coordinates"
+COORDINATE_PROFILE_ID = "ogrdb_api_v2_human_ig_observed_v1"
 COORDINATE_PROFILE_VERSION = 1
 PROJECTION_ID = "observed_span"
 PROJECTION_VERSION = 1
@@ -51,6 +51,19 @@ SUPPORTED_ADAPTERS = {
     (ADAPTER_ID, ADAPTER_VERSION): ("ogrdb", ((COORDINATE_PROFILE_ID, COORDINATE_PROFILE_VERSION),)),
 }
 SUPPORTED_PROJECTIONS = ((PROJECTION_ID, PROJECTION_VERSION),)
+
+# The sources each interpretation profile has been validated against:
+# (profile id, version) -> ((taxonomy id, set id, release, formats), ...).  A lock outside
+# its profile's scope may be acquired and inspected but not built from, and its inventory
+# may hold no accepted coordinate claims.
+_VALIDATED_FORMATS = ("airr", "airr_ex", "gapped", "gapped_ex")
+PROFILE_SCOPES = {
+    (COORDINATE_PROFILE_ID, COORDINATE_PROFILE_VERSION): (
+        (9606, "9606.IGH_VDJ", 10, _VALIDATED_FORMATS),
+        (9606, "9606.IGKappa_VJ", 5, _VALIDATED_FORMATS),
+        (9606, "9606.IGLambda_VJ", 4, _VALIDATED_FORMATS),
+    ),
+}
 
 # Content-derived identifiers of inventory items (see the inventory module).
 CLAIM_ID_RE = re.compile(r"claim:[0-9a-f]{64}")
@@ -188,7 +201,10 @@ def _versioned(self) -> None:
 
 @dataclass(frozen=True)
 class CoordinateProfileRef:
-    """The coordinate profile: which provider field meanings an adapter has established."""
+    """The interpretation profile: which provider field meanings an adapter has established.
+
+    The ``(id, version)`` pair is authoritative and the id ends with ``_v<version>``.
+    """
 
     id: str
     version: int
@@ -197,6 +213,8 @@ class CoordinateProfileRef:
 
     def __post_init__(self):
         _versioned(self)
+        if not self.id.endswith(f"_v{self.version}"):
+            raise bad("/id", f"profile id {self.id!r} must end with _v{self.version} for version {self.version}")
 
     def to_dict(self) -> dict:
         return {"id": self.id, "version": self.version}

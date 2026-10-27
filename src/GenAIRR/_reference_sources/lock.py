@@ -14,7 +14,7 @@ import re
 from typing import Optional
 
 from GenAIRR._reference_sources._fields import (
-    MAX_TEXT, MAX_RELEASE, bad, check_canonical_order, check_digest, check_enum, check_instance, check_int,
+    MAX_ASSET_BYTES, MAX_ASSETS, MAX_SOURCE_PAYLOAD_BYTES, MAX_TEXT, MAX_RELEASE, bad, check_canonical_order, check_digest, check_enum, check_instance, check_int,
     check_text, check_token, check_tuple, check_url, construct, digest, parse_array, parse_json, ptr,
     read_json, require_object, check_header,
 )
@@ -26,8 +26,6 @@ ARTIFACT = "genairr_reference_source_lock"
 SCHEMA_VERSION = 1
 DIGEST_DOMAIN = "genairr_reference_source_lock_v1"
 MAX_LOCK_BYTES = 1 << 20
-MAX_ASSET_BYTES = 64 * 1024 * 1024
-MAX_ASSETS = len(FORMATS)
 
 ORIGIN_KINDS = ("provider_download", "local_file")
 MISSING_REASONS = ("not_requested", "not_supplied", "not_offered")
@@ -208,6 +206,10 @@ class SourceLock:
         check_canonical_order([FORMATS.index(a.format) for a in self.assets], "/assets", "asset format")
         check_canonical_order([FORMATS.index(a.format) for a in self.missing_assets], "/missing_assets",
                               "missing asset format")
+        total = sum(a.bytes for a in self.assets)
+        if total > MAX_SOURCE_PAYLOAD_BYTES:
+            raise bad("/assets", f"assets total {total} bytes; the limit is {MAX_SOURCE_PAYLOAD_BYTES}",
+                      "resource_limit")
         present = {a.format for a in self.assets}
         if not any(a.role == "record_export" for a in self.assets):
             raise bad("/assets", "a lock needs at least one record export (airr or airr_ex)")

@@ -20,6 +20,14 @@ from GenAIRR._artifact_io import ArtifactIOError, canonical_json, read_text_boun
 from GenAIRR._reference.model import check_label as _runtime_label_problem
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 
+# ── Resource budget shared by every format (acquisition and cache reuse these) ──
+
+MAX_ASSET_BYTES = 16 * 1024 * 1024             # one source asset
+MAX_SOURCE_PAYLOAD_BYTES = 128 * 1024 * 1024   # all source assets of one lock together
+MAX_ASSETS = 16                                # assets per lock
+MAX_SOURCE_RECORDS = 100_000                   # source record occurrences per inventory
+MAX_JSON_DEPTH = 64                            # nesting of owned JSON and of preserved provider values
+
 # ── Size limits ─────────────────────────────────────────────────────
 
 MAX_TEXT = 4096                 # free text: reasons, details, problems, citations, hints
@@ -31,7 +39,6 @@ MAX_VERSION = 1_000_000         # adapter, coordinate-profile and projection ver
 MAX_RELEASE = 2 ** 31 - 1       # provider release numbers
 MAX_TAXONOMY_ID = 2 ** 31 - 1
 MAX_REFS = 4096                 # locator or identifier lists inside one item
-MAX_VALUE_DEPTH = 32            # nesting depth of one preserved provider value
 MAX_VALUE_NODES = 65536         # JSON values inside one preserved provider value
 MAX_VALUE_STRING = 1 << 20      # characters of one string inside a preserved provider value
 
@@ -313,8 +320,8 @@ def _check_json(value: Any, path: str) -> None:
         nodes += 1
         if nodes > MAX_VALUE_NODES:
             raise bad(path, f"value has more than {MAX_VALUE_NODES} JSON values", "resource_limit")
-        if depth > MAX_VALUE_DEPTH:
-            raise bad(where, f"value nests deeper than {MAX_VALUE_DEPTH} levels", "resource_limit")
+        if depth > MAX_JSON_DEPTH:
+            raise bad(where, f"value nests {depth} levels deep; the limit is {MAX_JSON_DEPTH}", "resource_limit")
         kind = type(item)
         if item is None or kind is bool:
             continue

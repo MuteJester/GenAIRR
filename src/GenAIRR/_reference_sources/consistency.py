@@ -7,7 +7,8 @@ Paths locate the offending field inside the first document argument.
 from __future__ import annotations
 
 from GenAIRR._reference_sources._fields import bad, ptr
-from GenAIRR._reference_sources.inventory import RUNTIME_PREDICATES, SourceInventory
+from GenAIRR._reference_sources.common import PROFILE_SCOPES
+from GenAIRR._reference_sources.inventory import COORDINATE_PREDICATES, RUNTIME_PREDICATES, SourceInventory
 from GenAIRR._reference_sources.lock import SourceLock
 from GenAIRR._reference_sources.recipe import Recipe
 
@@ -15,6 +16,31 @@ from GenAIRR._reference_sources.recipe import Recipe
 def _require(value, cls, name):
     if not isinstance(value, cls):
         raise TypeError(f"{name} must be a {cls.__name__}, got {type(value).__name__}")
+
+
+def profile_scope_problem(lock: SourceLock):
+    """``None`` if the lock lies inside its interpretation profile's validated scope, else why not."""
+    profile = lock.adapter.coordinate_profile
+    scope = PROFILE_SCOPES.get((profile.id, profile.version), ())
+    key = (lock.identity.taxon.taxonomy_id, lock.set_id, lock.release)
+    formats = next((entry[3] for entry in scope if entry[:3] == key), None)
+    if formats is None:
+        validated = [f"{s} release {r} (taxon {t})" for t, s, r, _ in scope]
+        return (f"profile {profile.id} version {profile.version} has been validated only for {validated}; "
+                f"this lock is {lock.set_id} release {lock.release} (taxon {key[0]})")
+    unvalidated = [a.format for a in lock.assets if a.role in ("record_export", "gapped_alignment")
+                   and a.format not in formats]
+    if unvalidated:
+        return f"profile {profile.id} version {profile.version} has not been validated for formats {unvalidated}"
+    return None
+
+
+def check_profile_scope(lock: SourceLock) -> None:
+    """``unsupported_profile`` unless the lock lies inside its profile's validated scope."""
+    _require(lock, SourceLock, "lock")
+    problem = profile_scope_problem(lock)
+    if problem:
+        raise bad("", problem, "unsupported_profile")
 
 
 def check_recipe(recipe: Recipe, lock: SourceLock) -> None:
@@ -78,6 +104,12 @@ def check_inventory(inventory: SourceInventory, lock: SourceLock) -> None:
     for path, asset_id in inventory.asset_references():
         if asset_id not in locked:
             raise bad(path, f"asset {asset_id!r} is not in the lock (locked: {sorted(locked)})", "identity_mismatch")
+    problem = profile_scope_problem(lock)
+    if problem:
+        for i, claim in enumerate(inventory.claims):
+            if claim.status == "accepted" and claim.predicate in COORDINATE_PREDICATES:
+                raise bad(ptr(ptr("/claims", i), "status"), f"accepted {claim.predicate} claim about "
+                                                            f"{claim.subject.id}: {problem}", "unsupported_profile")
 
 
 def check_selection(recipe: Recipe, inventory: SourceInventory) -> None:
@@ -196,6 +228,7 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
 
 def check_build_inputs(lock: SourceLock, inventory: SourceInventory, recipe: Recipe) -> None:
     """All cross-document checks a build performs before any projection or native work."""
+    check_profile_scope(lock)
     check_recipe(recipe, lock)
     check_inventory(inventory, lock)
     check_selection(recipe, inventory)

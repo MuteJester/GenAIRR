@@ -27,7 +27,7 @@ from typing import Any, Optional
 from GenAIRR._reference.capabilities import CAPABILITIES
 from GenAIRR._reference.model import PREDICATES as RUNTIME_PREDICATES, SUBREGION_LABELS, sequence_digest
 from GenAIRR._reference_sources._fields import (
-    MAX_NAME, MAX_REFS, MAX_SEQUENCE, MAX_TAXONOMY_ID, MAX_TEXT, JsonValue, bad, check_bool,
+    MAX_SOURCE_RECORDS, MAX_NAME, MAX_REFS, MAX_SEQUENCE, MAX_TAXONOMY_ID, MAX_TEXT, JsonValue, bad, check_bool,
     check_canonical_order, check_digest, check_enum, check_instance, check_int, check_label, check_text,
     check_token, check_tuple, construct, digest, parse_array, parse_json, ptr, read_json, require_object,
     check_header, show,
@@ -40,7 +40,7 @@ from GenAIRR._reference_sources.common import (
 ARTIFACT = "genairr_reference_source_inventory"
 SCHEMA_VERSION = 1
 MAX_INVENTORY_BYTES = 128 * 1024 * 1024
-MAX_RECORDS = 65536
+MAX_RECORDS = MAX_SOURCE_RECORDS
 MAX_CANDIDATES = 65536
 MAX_MENTIONED = 65536
 MAX_OBSERVATIONS = 524288
@@ -90,6 +90,8 @@ PREDICATE_DERIVATIONS = {
     "coding_interval": ("stated",),
     "extension": ("variant_comparison",),
 }
+# Claims whose meaning rests on the interpretation profile's established coordinates.
+COORDINATE_PREDICATES = ("anchor", "coding_phase", "phase_independence", "v_subregions", "coding_interval")
 # Subject kind: "record" or "candidate".
 PREDICATE_SUBJECTS = {p: ("record" if p == "functionality" else "candidate") for p in PREDICATES}
 # Segments a predicate may describe (no universal D coding phase or anchor).

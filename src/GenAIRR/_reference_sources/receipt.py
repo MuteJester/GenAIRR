@@ -14,11 +14,10 @@ import re
 from typing import Optional
 
 from GenAIRR._reference_sources._fields import (
-    bad, check_digest, check_enum, check_int, check_text, check_tuple, check_url, construct, parse_array,
+    MAX_ASSET_BYTES, bad, check_digest, check_enum, check_int, check_text, check_tuple, check_url, construct, parse_array,
     parse_json, ptr, read_json, require_object, check_header, show,
 )
 from GenAIRR._reference_sources.common import FORMATS
-from GenAIRR._reference_sources.lock import MAX_ASSET_BYTES
 
 ARTIFACT = "genairr_reference_source_receipt"
 SCHEMA_VERSION = 1

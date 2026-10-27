@@ -24,7 +24,7 @@ IGH = "9606.IGH_VDJ"
 ROLE = {"airr": "record_export", "airr_ex": "record_export", "gapped": "gapped_alignment",
         "gapped_ex": "gapped_alignment"}
 ADAPTER = {"id": "ogrdb_germline_set", "version": 1,
-           "coordinate_profile": {"id": "ogrdb_api_v2_coordinates", "version": 1}}
+           "coordinate_profile": {"id": "ogrdb_api_v2_human_ig_observed_v1", "version": 1}}
 
 
 def _load_json(path: Path, max_bytes: int = 1 << 23):
@@ -226,8 +226,13 @@ def test_lock_release_is_a_positive_integer(release):
     (lambda d: d.update(provider="imgt"), "unsupported_profile", "/provider"),
     (lambda d: d["adapter"].update(id="ogrdb_other"), "unsupported_profile", "/adapter"),
     (lambda d: d["adapter"].update(version=2), "unsupported_profile", "/adapter"),
-    (lambda d: d["adapter"]["coordinate_profile"].update(version=2), "unsupported_profile", "/adapter"),
-    (lambda d: d["adapter"]["coordinate_profile"].update(id="imgt"), "unsupported_profile", "/adapter"),
+    (lambda d: d["adapter"]["coordinate_profile"].update(version=2), "malformed", "/adapter/coordinate_profile/id"),
+    (lambda d: d["adapter"]["coordinate_profile"].update(id="imgt"), "malformed", "/adapter/coordinate_profile/id"),
+    (lambda d: d["adapter"]["coordinate_profile"].update(id="ogrdb_api_v2"), "malformed",
+     "/adapter/coordinate_profile/id"),
+    (lambda d: d["adapter"]["coordinate_profile"].update(id="imgt_v1"), "unsupported_profile", "/adapter"),
+    (lambda d: d["adapter"]["coordinate_profile"].update(id="ogrdb_api_v2_human_ig_observed_v2", version=2),
+     "unsupported_profile", "/adapter"),
     (lambda d: d["adapter"].update(version=True), "malformed", "/adapter/version"),
     (lambda d: d["adapter"]["coordinate_profile"].update(version=0), "malformed",
      "/adapter/coordinate_profile/version"),
@@ -797,7 +802,7 @@ def test_recipe_cannot_relabel_the_source_identity(edit, path):
 def test_recipe_adapter_must_equal_the_lock_adapter(monkeypatch):
     from GenAIRR._reference_sources import common
     monkeypatch.setitem(common.SUPPORTED_ADAPTERS, ("ogrdb_germline_set", 2),
-                        ("ogrdb", (("ogrdb_api_v2_coordinates", 1),)))
+                        ("ogrdb", (("ogrdb_api_v2_human_ig_observed_v1", 1),)))
     lock = m.SourceLock.from_dict(lock_dict())
     d = recipe_dict()
     d["adapter"]["version"] = 2
@@ -1333,7 +1338,7 @@ def test_preserved_values_are_finite_bounded_json(inv):
     loc = L("airr", "/Info/title")
     for value, kind in ((float("nan"), "malformed"), (float("inf"), "malformed"), ({1: "x"}, "malformed"),
                         ((1, 2), "malformed"), ({"\ud800": 1}, "malformed"),
-                        (_nested(m.MAX_VALUE_DEPTH + 1), "resource_limit"),
+                        (_nested(m.MAX_JSON_DEPTH + 1), "resource_limit"),
                         (["x"] * (m.MAX_VALUE_NODES + 1), "resource_limit")):
         with _raises(kind):
             m.Observation(locator=loc, record=None, presence="present", value=value, interpretation="preserved")
@@ -2047,7 +2052,7 @@ def test_containers_are_bounded_by_named_limits(monkeypatch):
     with _raises("resource_limit", "/decisions/0/findings"):
         m.Recipe.from_dict(d)
     d = lock_dict()
-    d["assets"] = d["assets"] * 3
+    d["assets"] = d["assets"] * 5
     with _raises("resource_limit", "/assets"):
         m.SourceLock.from_dict(d)
 
@@ -2099,3 +2104,80 @@ def test_report_and_inventory_views_are_copies(report, inventory):
     with pytest.raises(AttributeError):
         inventory.claims[0].status = "accepted"
 
+
+
+
+# ── shared resource budget and the interpretation-profile scope ──────
+
+
+def test_resource_budget_is_shared_by_every_format():
+    assert (m.MAX_ASSET_BYTES, m.MAX_SOURCE_PAYLOAD_BYTES, m.MAX_ASSETS) == (16 * 1024 * 1024, 128 * 1024 * 1024, 16)
+    assert (m.MAX_SOURCE_RECORDS, m.MAX_JSON_DEPTH, m.MAX_SEQUENCE) == (100_000, 64, 65_535)
+    from GenAIRR._reference_sources import inventory, lock, receipt
+    assert lock.MAX_ASSET_BYTES is m.MAX_ASSET_BYTES and receipt.MAX_ASSET_BYTES is m.MAX_ASSET_BYTES
+    assert inventory.MAX_RECORDS == m.MAX_SOURCE_RECORDS
+    loc = L("airr", "/Info/title")
+    m.Observation(locator=loc, record=None, presence="present", value=_nested(m.MAX_JSON_DEPTH),
+                  interpretation="preserved")
+
+
+def test_asset_and_aggregate_payload_sizes_are_bounded(monkeypatch):
+    d = lock_dict()
+    d["assets"][0]["bytes"] = m.MAX_ASSET_BYTES
+    m.SourceLock.from_dict(_reseal(d))
+    d["assets"][0]["bytes"] = m.MAX_ASSET_BYTES + 1
+    with _raises("resource_limit", "/assets/0/bytes") as caught:
+        m.SourceLock.from_dict(_reseal(d))
+    assert str(m.MAX_ASSET_BYTES) in caught.error.message and str(m.MAX_ASSET_BYTES + 1) in caught.error.message
+    from GenAIRR._reference_sources import lock as lock_module
+    d = lock_dict()
+    total = sum(a["bytes"] for a in d["assets"])
+    monkeypatch.setattr(lock_module, "MAX_SOURCE_PAYLOAD_BYTES", total - 1)
+    with _raises("resource_limit", "/assets") as caught:
+        m.SourceLock.from_dict(d)
+    assert str(total) in caught.error.message and str(total - 1) in caught.error.message
+    receipt = receipt_dict()
+    receipt["bytes"] = m.MAX_ASSET_BYTES + 1
+    with _raises("resource_limit", "/bytes"):
+        m.AcquisitionReceipt.from_dict(receipt)
+
+
+def test_profile_scope_lists_the_validated_sets():
+    assert m.PROFILE_SCOPES == {("ogrdb_api_v2_human_ig_observed_v1", 1): (
+        (9606, "9606.IGH_VDJ", 10, ("airr", "airr_ex", "gapped", "gapped_ex")),
+        (9606, "9606.IGKappa_VJ", 5, ("airr", "airr_ex", "gapped", "gapped_ex")),
+        (9606, "9606.IGLambda_VJ", 4, ("airr", "airr_ex", "gapped", "gapped_ex")))}
+    for set_id in (IGH, "9606.IGKappa_VJ", "9606.IGLambda_VJ"):
+        m.check_profile_scope(m.SourceLock.from_dict(lock_dict(set_id)))
+
+
+def _out_of_scope_lock(**edits):
+    d = lock_dict()
+    d.update(edits)
+    return m.SourceLock.from_dict(_reseal(d))
+
+
+@pytest.mark.parametrize("edits", [{"release": 9}, {"set_id": "9606.IGH_VDJ_test"},
+                                   {"identity": {"taxon": {"scientific_name": "Mus musculus", "taxonomy_id": 10090},
+                                                 "locus": "IGH", "chain_type": "vdj"}}])
+def test_locks_outside_the_profile_scope_are_valid_but_cannot_build(edits):
+    lock = _out_of_scope_lock(**edits)
+    with _raises("unsupported_profile", ""):
+        m.check_profile_scope(lock)
+    inventory = Inv(lock).build(claims=[], mappings=[])
+    d = recipe_dict(lock.to_dict())
+    d["reference"]["taxon"] = lock.to_dict()["identity"]["taxon"]
+    with _raises("unsupported_profile", ""):
+        m.check_build_inputs(lock, inventory, m.Recipe.from_dict(d))
+
+
+def test_accepted_coordinate_claims_need_a_lock_inside_the_profile_scope():
+    lock = _out_of_scope_lock(release=9)
+    built = Inv(lock)
+    with _raises("unsupported_profile") as caught:
+        m.check_inventory(built.build(), lock)
+    assert caught.error.path.startswith("/claims/") and caught.error.path.endswith("/status")
+    coordinate = ("anchor", "coding_phase", "phase_independence", "v_subregions", "coding_interval")
+    kept = [c for c in built.claims if c.status != "accepted" or c.predicate not in coordinate]
+    m.check_inventory(built.build(claims=kept, mappings=[]), lock)
+    assert m.COORDINATE_PREDICATES == coordinate
