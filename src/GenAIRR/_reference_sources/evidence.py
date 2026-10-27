@@ -25,6 +25,7 @@ so identities with identical DNA never share evidence.
 from __future__ import annotations
 
 from collections import Counter
+import re
 from typing import Any, Mapping, Optional
 
 from GenAIRR._artifact_io import canonical_json
@@ -40,6 +41,12 @@ from GenAIRR._reference_sources.lock import SourceLock
 from GenAIRR._reference_sources.ogrdb import EXPORT_ANCHOR, build_inventory
 
 _JUNCTION = ("source_annotated_junction", "canonical_productive")
+_ENDS = ("original_coding_ends",)
+# The endpoint comparison's relation for one export's coding sequence extending the other's.
+_EXTENDS = re.compile(r"(airr|airr_ex)_extends_([35])prime")
+_EXTENSION_CODES = {"matches": "coding_extension_matches_record_context",
+                    "without_record_context": "coding_extension_without_record_context",
+                    "disagrees": "coding_extension_disagrees_with_record_context"}
 
 # code -> (severity, category, affected capabilities, meaning).
 FINDING_CODES = {
@@ -81,6 +88,46 @@ FINDING_CODES = {
         "warning", "informational", ("canonical_productive",),
         "The codon at an anchor does not encode the conserved residue (Cys for V; Trp for IGH J; Phe for IGK "
         "and IGL J); the anchor stays where the source puts it and no other codon is used."),
+    "coding_extension_matches_record_context": (
+        "info", "informational", _ENDS,
+        "One export's coding sequence extends the other's, and the extension equals the record bases just "
+        "beyond the declared coding interval.  The extension is a provider inference: neither end is adopted "
+        "as the physical coding end."),
+    "coding_extension_without_record_context": (
+        "info", "unavailable_evidence", _ENDS,
+        "One export's coding sequence extends the other's, and the record holds no bases (or not all of them) "
+        "at the extension's positions, or the declared interval does not prove those positions; the extension "
+        "is not compared with the record."),
+    "coding_extension_disagrees_with_record_context": (
+        "warning", "contradictory_evidence", _ENDS,
+        "One export's coding sequence extends the other's, and the extension differs from the record bases at "
+        "the same positions; the same bases elsewhere in the record are no positional support."),
+    "coding_end_before_declared_v_rss": (
+        "warning", "contradictory_evidence", _ENDS,
+        "Record bases lie between the declared coding end (gene_end) and the declared V RSS start; the shorter "
+        "declared end may describe an affirmed span and a longer coding sequence is a candidate physical end. "
+        "Neither is corrected or adopted; RSS coordinates are read as 1-based record positions only here."),
+    "v_rss_start_inside_coding_interval": (
+        "warning", "contradictory_evidence", (),
+        "The declared V RSS start lies inside the declared coding interval, contradicting the record's own "
+        "coding interval; the RSS coordinates are kept as observations and no coordinate is moved."),
+    "v_rss_start_before_coding_interval": (
+        "warning", "contradictory_evidence", (),
+        "The declared V RSS start lies before the declared coding interval; the RSS coordinates are kept as "
+        "observations and no coordinate is moved."),
+    "v_rss_spacing": (
+        "info", "informational", (),
+        "Per record export: how many V records have their declared RSS start right after the declared coding "
+        "end, the labels at every other spacing, and the labels without a declared or usable RSS start."),
+    "affirmed_span_mapping_unresolved": (
+        "info", "unavailable_evidence", _ENDS,
+        "A historical note limits the allele's affirmed span in gapped numbering; without a reviewed "
+        "interpretation, the exact note text, the sequence it was read against and an exact gapped alignment, "
+        "no affirmed interval is derived."),
+    "affirmed_span_mapped": (
+        "info", "informational", _ENDS,
+        "A reviewed historical note, bound to its exact text and sequence, maps through the record's exact "
+        "gapped alignment to an affirmed interval of the coding sequence (not a physical coding end)."),
 }
 
 
@@ -141,6 +188,13 @@ class _Interpretation:
         self.exports = [a.asset_id for a in lock.assets if a.asset_id in RECORD_EXPORT_FORMATS]
         self.parsed = {asset: [r for r in inventory.records if r.locator.asset == asset and r.status == "parsed"]
                        for asset in self.exports}
+        self.intervals: dict = {}        # record id -> CodingInterval of its candidate
+        self.alignments: dict = {}       # candidate id -> (gapped-alignment mapping, gapped sequence)
+        self.extensions: dict = {}       # (segment, label) -> extension between the record exports
+        self.notes: dict = {}            # record id -> historical note outcome
+        self.support: dict = {}          # record id -> [SupportReference]
+        for reference in inventory.support:
+            self.support.setdefault(reference.record.id, []).append(reference)
         self.gapped: dict = {}
         for observation in inventory.observations:
             if observation.locator.role == "gapped_alignment":
@@ -204,11 +258,15 @@ class _Interpretation:
                 if not candidates:
                     continue
                 (candidate,) = candidates
-                self.coding_interval(record, candidate)
+                self.intervals[record.id] = self.coding_interval(record, candidate)
                 if record.segment == "V":
                     self.v_landmark(record, candidate, labels[record.label])
                 elif record.segment == "J":
                     self.j_landmark(record, candidate)
+        self.compare_extensions()
+        self.historical_notes()
+        for asset in self.exports:
+            self.v_rss(asset)
 
     def coding_interval(self, record, candidate) -> c.CodingInterval:
         (seq_at, sequence), (start_at, start), (end_at, end) = (self.field(record, name) for name in
@@ -277,6 +335,7 @@ class _Interpretation:
                 unavailable = f"the gapped record of {record.label} has more than {MAX_REFS} aligned blocks"
             else:
                 evidence.append(gapped_at)
+                self.alignments[candidate.id] = (mapping, gapped)
         if len(imgt) != 1:
             found = c.VLandmark(None, f"{len(imgt) or 'no'} {scheme} delineation{'s' * (len(imgt) > 1)} in "
                                       "v_gene_delineations", "field", None, None)
@@ -321,6 +380,159 @@ class _Interpretation:
         if found.anchor is not None:
             self.landmark_codon(record, candidate, found.anchor, (end_at,))
 
+    # -- endpoints: extensions, notes and declared RSS ----------------------
+
+    def compare_extensions(self) -> None:
+        """An extension claim and a context finding for every identity whose coding sequence in
+        one record export extends the other's (from the endpoint comparison's findings)."""
+        records = {r.id: r for r in self.inventory.records}
+        for finding in self.inventory.findings:
+            if finding.code != "export_coding_sequence_differs":
+                continue
+            observations = finding.observations.get()
+            match = _EXTENDS.fullmatch(observations.get("relation") or "")
+            if match is None:
+                continue
+            sides: dict = {}
+            for subject in finding.subjects:
+                if subject.id in records:
+                    sides.setdefault(subject.asset, []).append(records[subject.id])
+            extending = match.group(1)
+            (other,) = [a for a in RECORD_EXPORT_FORMATS if a != extending]
+            (longer,), (shorter,) = sides[extending], sides[other]
+            self.extension(longer, shorter, match.group(2), observations["extra"])
+
+    def extension(self, longer, shorter, side: str, extra: str) -> None:
+        (long_candidate,) = self.inventory.candidates_of(longer.locator)
+        (short_candidate,) = self.inventory.candidates_of(shorter.locator)
+        (seq_at, sequence), (start_at, start), (end_at, end) = (self.field(longer, name) for name in
+                                                                ("sequence", "gene_start", "gene_end"))
+        interval = self.intervals[longer.id]
+        bases = reason = None
+        if interval.start is None:
+            status, reason = "without_record_context", f"the declared coding interval is unusable: {interval.problem}"
+        elif sequence[interval.start:interval.end] != short_candidate.sequence:
+            status = "without_record_context"
+            reason = (f"the declared coding interval of the {longer.locator.asset} record does not reproduce the "
+                      f"{shorter.locator.asset} coding sequence, so no record position is proven for the extension")
+        else:
+            context = c.extension_context(sequence, (interval.start, interval.end), side, extra)
+            status, bases = context.status, context.bases
+        evidence = [long_candidate.locator, short_candidate.locator, seq_at, start_at, end_at]
+        rs_at, rs = self.field(longer, "v_rs_start")
+        versus_rss = None
+        if longer.segment == "V":
+            evidence.append(rs_at)
+            if side == "3" and interval.start is not None:
+                versus_rss = _extension_end(interval.end, extra, c.stated_position(rs).value)
+        self.claim(long_candidate.locator, "extension",
+                   {"side": side, "length": len(extra), "matches_record_context": status == "matches"}, None,
+                   "variant_comparison", self.status(True), evidence[:5])
+        self.findings.add(_EXTENSION_CODES[status], locators=evidence, subjects=(
+            longer.locator, long_candidate.locator, shorter.locator, short_candidate.locator), observations={
+            "label": longer.label, "segment": longer.segment, "extending_export": longer.locator.asset,
+            "side": side, "extension": extra, "record_context": bases, "reason": reason, "gene_start": _raw(start),
+            "gene_end": _raw(end), "v_rs_start": _raw(rs) if longer.segment == "V" else None,
+            "extension_end_vs_v_rss": versus_rss})
+        self.extensions[(longer.segment, longer.label)] = {"export": longer.locator.asset, "side": side,
+                                                           "bases": extra,
+                                                           "matches_record_context": status == "matches"}
+
+    def historical_notes(self) -> None:
+        """Every profile note of this set, per record of its allele: mapped to an affirmed
+        interval only with a reviewed interpretation, the exact note text and sequence, and an
+        exact gapped alignment; otherwise unresolved with the reason."""
+        for note in self.profile.historical_notes:
+            if (note.set_id, note.release) != (self.lock.set_id, self.lock.release):
+                continue
+            for asset in self.exports:
+                for record in self.parsed[asset]:
+                    candidates = self.inventory.candidates_of(record.locator)
+                    if record.label != note.label or not candidates:
+                        continue
+                    (candidate,) = candidates
+                    text_at, text = self.field(record, note.field)
+                    matches = type(text) is str and text_digest(text) == note.text_sha256
+                    mapping, gapped = self.alignments.get(candidate.id, (None, None))
+                    span = c.affirmed_span(note, asset, candidate.sequence, gapped)
+                    interval, reason = span.interval, span.reason
+                    if not matches:
+                        interval, reason = None, (f"the record's {note.field} text is not the note text the profile "
+                                                  "lists, so the note is not read")
+                    details = {"field": note.field, "quotes": list(note.quotes), "numbering": note.numbering,
+                               "text_matches": matches,
+                               "sequence_bound": dict(note.sequences).get(asset) == candidate.sha256,
+                               "gapped_mapping": None if mapping is None else mapping.validation}
+                    locators = [text_at] + ([mapping.output] if mapping is not None else [])
+                    if interval is None:
+                        self.finding("affirmed_span_mapping_unresolved", record, candidate, locators=locators,
+                                     reason=reason, **details)
+                    else:
+                        self.finding("affirmed_span_mapped", record, candidate, locators=locators,
+                                     last_affirmed_column=note.interpretation.last_affirmed_column,
+                                     affirmed_interval=list(interval), coordinate_system="coding_sequence",
+                                     **details)
+                    if matches:
+                        self.notes[record.id] = (text_at, {"field": note.field, "quotes": list(note.quotes),
+                                                           "affirmed_span": "unresolved" if interval is None
+                                                           else "mapped"})
+
+    def v_rss(self, asset: str) -> None:
+        """Declared V RSS starts against the declared coding interval of one record export."""
+        counts = {"adjacent": 0, "gaps": {}, "no_v_rs_start": [], "unusable": []}
+        v_records = 0
+        for record in self.parsed[asset]:
+            if record.segment != "V":
+                continue
+            v_records += 1
+            interval = self.intervals.get(record.id)
+            if interval is None or interval.start is None:
+                counts["unusable"].append(record.label)
+                continue
+            (rs_at, rs), (seq_at, sequence) = self.field(record, "v_rs_start"), self.field(record, "sequence")
+            position = c.v_rss_position(interval.start + 1, interval.end, rs)
+            if position.gap is None:
+                counts["no_v_rs_start" if rs is None or rs is c.ABSENT else "unusable"].append(record.label)
+                continue
+            if position.gap == 0:
+                counts["adjacent"] += 1
+            else:
+                counts["gaps"].setdefault(str(position.gap), []).append(record.label)
+            (candidate,) = self.inventory.candidates_of(record.locator)
+            if position.position == "after_coding_end" and position.gap > 0:
+                self.coding_end_before_rss(record, candidate, interval, rs, position.gap)
+            elif position.position != "after_coding_end":
+                rs_end_at, rs_end = self.field(record, "v_rs_end")
+                self.finding(f"v_rss_start_{position.position}", record, candidate, locators=(
+                    _locator(record, "gene_start"), _locator(record, "gene_end"), rs_at, rs_end_at, seq_at),
+                    gene_start=interval.start + 1, gene_end=interval.end, v_rs_start=rs, v_rs_end=_raw(rs_end),
+                    gap=position.gap, record_bases_at_v_rs_start=sequence[rs - 1:rs + 6],
+                    record_bases_after_gene_end=sequence[interval.end:interval.end + 7])
+        self.findings.add("v_rss_spacing", locators=[Locator(asset, EXPORT_ANCHOR)], observations={
+            "asset": asset, "v_records": v_records, "adjacent": counts["adjacent"],
+            "gaps": {gap: sorted(labels) for gap, labels in sorted(counts["gaps"].items(), key=lambda x: int(x[0]))},
+            "no_v_rs_start": sorted(counts["no_v_rs_start"]), "unusable": sorted(counts["unusable"])})
+
+    def coding_end_before_rss(self, record, candidate, interval, rs: int, gap: int) -> None:
+        (seq_at, sequence), (end_at, _), (rs_at, _) = (self.field(record, name) for name in
+                                                       ("sequence", "gene_end", "v_rs_start"))
+        found = self.extensions.get((record.segment, record.label))
+        extension = None
+        if found is not None and found["side"] == "3":
+            extension = {"export": found["export"], "bases": found["bases"],
+                         "matches_record_context": found["matches_record_context"],
+                         "reaches_rss_minus_1": _extension_end(interval.end, found["bases"], rs)
+                         == "reaches_v_rss_minus_1"}
+        support = [s for s in self.support.get(record.id, ()) if s.kind == "unrearranged"]
+        note_at, note = self.notes.get(record.id, (None, None))
+        locators = [end_at, rs_at, seq_at] + [s.locator for s in support] + ([note_at] if note_at else [])
+        self.finding("coding_end_before_declared_v_rss", record, candidate, locators=locators,
+                     gene_end=interval.end, v_rs_start=rs, gap=gap,
+                     bases_through_rss_minus_1=sequence[interval.end:rs - 1], extension=extension,
+                     historical_note=note, genomic_support=[
+                         {"repository": s.repository, "reference": s.reference, "status": s.status}
+                         for s in support])
+
     def landmark_codon(self, record, candidate, anchor: int, evidence) -> None:
         expected = self.profile.landmark_residues[record.segment].get(self.locus, ())
         codon = candidate.sequence[anchor:anchor + 3]
@@ -363,3 +575,18 @@ def interpret(lock: SourceLock, assets: Mapping[str, bytes], inventory: SourceIn
         raise exc.under("/inventory") from None
     consistency.check_inventory(result, lock)
     return result
+
+
+def _raw(value: Any) -> Any:
+    """A field value for a finding's observations (an absent field as null)."""
+    return None if value is c.ABSENT else value
+
+
+def _extension_end(gene_end: int, extension: str, v_rs_start: Optional[int]) -> Optional[str]:
+    """Where a 3' extension ends relative to a declared V RSS start (1-based record positions)."""
+    if v_rs_start is None:
+        return None
+    last = gene_end + len(extension)
+    if last == v_rs_start - 1:
+        return "reaches_v_rss_minus_1"
+    return "before_v_rss" if last < v_rs_start - 1 else "overlaps_v_rss"
