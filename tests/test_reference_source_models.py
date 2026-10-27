@@ -2295,6 +2295,25 @@ def test_accepted_coordinate_claims_need_a_lock_inside_the_profile_scope():
     assert m.COORDINATE_PREDICATES == coordinate
 
 
+def test_out_of_scope_coordinate_claims_are_only_candidates_or_unresolved():
+    lock = _out_of_scope_lock(release=9)
+    built = Inv(lock)
+    vcand = built.cand["airr", "IGHV1-58*03"]
+    cdr3 = built.obs_at(built.rec["airr", "IGHV1-58*03"], "v_gene_delineations/0/cdr3_start")
+    others = [c for c in built.claims if c.predicate not in m.COORDINATE_PREDICATES]
+    conflicting = [built.claim(vcand, "anchor", built.anchor, [cdr3], system="coding_sequence", status="conflicting"),
+                   built.claim(vcand, "anchor", built.anchor + 3, [L("airr", vcand.pointer)], system="coding_sequence",
+                               status="conflicting")]
+    with _raises("unsupported_profile") as caught:
+        m.check_inventory(built.build(claims=others + conflicting, mappings=[]), lock)
+    assert caught.error.path.endswith("/status") and "conflicting" in caught.error.message
+    allowed = [built.claim(vcand, "anchor", built.anchor, [cdr3], system="coding_sequence", status="candidate",
+                           support="none"),
+               built.claim(vcand, "coding_phase", None, [cdr3], system="coding_sequence", status="unresolved",
+                           support="none")]
+    m.check_inventory(built.build(claims=others + allowed, mappings=[]), lock)
+
+
 # ── list caps follow the source-record budget ────────────────────────
 
 

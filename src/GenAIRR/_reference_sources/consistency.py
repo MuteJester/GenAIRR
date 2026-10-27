@@ -94,6 +94,8 @@ def check_inventory(inventory: SourceInventory, lock: SourceLock) -> None:
 
     ``digest_mismatch``: ``source_lock_hash`` is not this lock's commitment.
     ``identity_mismatch``: a different adapter, or a locator into an asset the lock lacks.
+    ``unsupported_profile``: a lock outside its profile's validated scope with an accepted or
+    conflicting coordinate claim (only candidates and unresolved claims are allowed there).
     """
     require_type(inventory, SourceInventory, "inventory")
     require_type(lock, SourceLock, "lock")
@@ -110,9 +112,11 @@ def check_inventory(inventory: SourceInventory, lock: SourceLock) -> None:
     problem = profile_scope_problem(lock)
     if problem:
         for i, claim in enumerate(inventory.claims):
-            if claim.status == "accepted" and claim.predicate in COORDINATE_PREDICATES:
-                raise bad(ptr(ptr("/claims", i), "status"), f"accepted {claim.predicate} claim about "
-                                                            f"{claim.subject.id}: {problem}", "unsupported_profile")
+            if claim.status in ("accepted", "conflicting") and claim.predicate in COORDINATE_PREDICATES:
+                raise bad(ptr(ptr("/claims", i), "status"), f"{claim.status} {claim.predicate} claim about "
+                                                            f"{claim.subject.id}: outside the validated scope a "
+                                                            f"coordinate claim is only a candidate or unresolved; "
+                                                            f"{problem}", "unsupported_profile")
 
 
 def check_selection(recipe: Recipe, inventory: SourceInventory) -> None:
