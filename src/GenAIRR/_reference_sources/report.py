@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import textwrap
 from typing import Optional
 
+from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference.capabilities import CAPABILITIES
 from GenAIRR._reference_sources._fields import (
     closed, digest, MAX_NAME, MAX_TEXT, bad, check_bool, check_canonical_order, check_digest, check_enum, check_instance,
@@ -679,7 +680,8 @@ class _Text:
     def lines(self) -> list:
         out = []
         for part in (self.head, self.hashes, self.comparison, self.counts, self.selection, self.records,
-                     self.claims, self.findings, self.capabilities, self.requirements, self.losses):
+                     self.mentioned, self.claims, self.provenance, self.findings, self.capabilities,
+                     self.requirements, self.losses):
             out.extend(part())
         return out
 
@@ -689,8 +691,8 @@ class _Text:
         profile = adapter.coordinate_profile
         title = f"Build report: {reference.name}" + (f" version {reference.version}" if reference.version else "")
         out = [title,
-               f"Generator: {report.generator.name} {report.generator.version} (the build that produced this report "
-               "and its runtime reference)",
+               f"Generator: {report.generator.name} {report.generator.version} (as recorded by the build that wrote this "
+               "report; a dossier check verifies content, not this statement)",
                "This report covers the complete source inventory, the explicit selection, the outcome of every source",
                "record and claim, and what the projection did not keep. Reference.report() describes only the runtime",
                "catalogue: the selected executable alleles, their annotations and capabilities.",
@@ -705,6 +707,8 @@ class _Text:
         for missing in lock.missing_assets:
             out.append(f"    {missing.format:<18} {missing.role:<18} unavailable: {missing.reason}"
                        + (f" ({missing.detail})" if missing.detail else ""))
+        out.append("  the asset origins, declared URLs and data terms are the lock writer's statements; the asset "
+                   "bytes are what is verified")
         terms = lock.terms
         out.append(f"  data terms: {terms.status}" + (f": {terms.reason}" if terms.reason else
                                                        f" ({', '.join(terms.assets)}): {terms.licence}"))
@@ -789,35 +793,85 @@ class _Text:
                 out += _wrapped([f"{o.record.id} ({labels.get(o.record.id) or 'no label'})" for o in items], "      ")
         return out
 
+    def mentioned(self) -> list:
+        """Names that only appear inside other records' alias or paralog fields."""
+        inventory = self.report.inventory
+        labels = {record.id: record.label for record in inventory.records}
+        out = [f"Mentioned-only identities ({len(inventory.mentioned_identities)}; named by records, with no record "
+               "of their own in that export):"]
+        for identity in inventory.mentioned_identities:
+            mentions = "; ".join(
+                f"{m.relationship} named by {m.record.id} ({labels.get(m.record.id) or 'no label'}) at "
+                f"{m.locator.pointer[len(m.record.pointer) + 1:] or m.locator.pointer}" for m in identity.mentions)
+            out.append(f"  {identity.asset} {identity.segment}:{identity.label}: {mentions}")
+        return out if inventory.mentioned_identities else out + ["  none"]
+
     def claims(self) -> list:
         report = self.report
         tallies = {name: sum(o.outcome == name for o in report.claims) for name in CLAIM_OUTCOMES}
         out = [f"Claims: {len(report.claims)} (" + ", ".join(f"{_OUTCOME_TITLES[k]} {v}" for k, v in tallies.items())
                + ")"]
-        groups: dict = {}
-        unselected: dict = {}
+        counts: dict = {}
         for outcome, claim in zip(report.claims, report.inventory.claims):
-            if outcome.outcome == "not_selected":
-                unselected[claim.predicate] = unselected.get(claim.predicate, 0) + 1
-                continue
-            key = (outcome.outcome, claim.predicate, claim.status, claim.derivation, claim.support, outcome.decision,
-                   outcome.reason)
-            groups.setdefault(key, []).append(self.alleles.get(claim.subject.id, claim.subject.id))
-        for name in ("projected", "withheld", "not_representable"):
-            keys = [key for key in groups if key[0] == name]
-            if not keys:
-                continue
-            out.append(f"  {_OUTCOME_TITLES[name]} ({tallies[name]}):")
-            for key in keys:
-                _, predicate, status, derivation, support, decision, reason = key
-                head = f"    {predicate} [{status}, {derivation}, support {support}"
-                head += f", recipe decision {decision}]" if decision is not None else "]"
-                out.append(f"{head} ({len(groups[key])})" + (f": {reason}" if reason else ""))
-                out += _wrapped(groups[key], "      ")
-        if unselected:
-            out.append(f"  not selected ({tallies['not_selected']}), about records and sequences outside the "
-                       "selection: " + ", ".join(f"{predicate} {n}" for predicate, n in unselected.items()))
+            key = (outcome.outcome, claim.predicate, claim.status)
+            counts[key] = counts.get(key, 0) + 1
+        for name in CLAIM_OUTCOMES:
+            keys = [key for key in counts if key[0] == name]
+            if keys:
+                out.append(f"  {_OUTCOME_TITLES[name]}: " + ", ".join(f"{predicate} {status} {counts[(name, predicate, status)]}"
+                                                                    for _, predicate, status in keys))
+        out += textwrap.wrap("Every claim about a selected allele is listed with its provenance below. Claims about "
+                             "records and sequences outside the selection are only counted here; their full provenance "
+                             "(value, evidence, mappings and reason) is in report.to_dict() and report.json.",
+                             width=_WIDTH, initial_indent="  ", subsequent_indent="  ",
+                             break_long_words=False, break_on_hyphens=False)
         return out
+
+    def provenance(self) -> list:
+        """One line per claim about a selected allele, grouped under that allele (recipe order)."""
+        report = self.report
+        inventory = report.inventory
+        by_subject: dict = {}
+        order = {}
+        for index, (outcome, claim) in enumerate(zip(report.claims, inventory.claims)):
+            by_subject.setdefault(claim.subject.id, []).append((outcome, claim))
+            order[claim.id] = index
+        out = ["Claim provenance of the selected alleles (one line per claim: id, predicate = value (coordinates) "
+               "[status, support, derivation] -> outcome; evidence; mappings; reason):"]
+        for entry, chosen in zip(report.recipe.selection, report.selection):
+            out.append(f"  {chosen.allele} ({entry.record.id})")
+            items = by_subject.get(entry.record.id, []) + by_subject.get(chosen.candidate.id, [])
+            for outcome, claim in sorted(items, key=lambda item: order[item[1].id]):
+                out.append(self._claim_line(outcome, claim))
+        return out
+
+    def _claim_line(self, outcome: ClaimOutcome, claim) -> str:
+        inventory = self.report.inventory
+        line = (f"    {claim.id} {claim.predicate} = {canonical_json(claim.value.get())} "
+                f"({claim.coordinate_system or 'no coordinate system'}) [{claim.status}, support {claim.support}, "
+                f"{claim.derivation}] -> {outcome.outcome}")
+        if outcome.decision is not None:
+            line += f" by recipe decision {outcome.decision}"
+        line += f"; evidence {self._evidence(claim.evidence)}"
+        mappings = [inventory.mapping(m) for m in claim.mappings]
+        line += "; mappings " + (", ".join(f"{m.id} ({m.kind}, {m.validation})" for m in mappings) or "none")
+        return line + (f"; reason: {outcome.reason}" if outcome.reason else "")
+
+    def _evidence(self, locators) -> str:
+        """Evidence locators as ``asset#record: field, field; asset#pointer`` (record pointers factored out)."""
+        groups: list = []
+        for locator in locators:
+            try:
+                record = self.report.inventory.observation(locator).record
+            except KeyError:
+                record = None
+            if record is None or record.asset != locator.asset or locator.pointer == record.pointer:
+                groups.append((None, locator.id))
+            elif groups and groups[-1][0] == record.id:
+                groups[-1][1].append(locator.pointer[len(record.pointer) + 1:])
+            else:
+                groups.append((record.id, [locator.pointer[len(record.pointer) + 1:]]))
+        return "; ".join(text if head is None else f"{head}: {', '.join(text)}" for head, text in groups)
 
     def findings(self) -> list:
         counts: dict = {}

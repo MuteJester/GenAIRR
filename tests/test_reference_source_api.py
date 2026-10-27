@@ -538,8 +538,9 @@ def test_an_out_of_scope_release_is_inspected_and_reported_as_such(tmp_path):
 
 SELECTION = json.loads((DATA / "human_igh_release10_candidate_selection.json").read_bytes().decode("utf-8"))
 LOSS_CODES = ("v_subregions", "gapped_sequences", "affirmed_spans", "genomic_context")
-SECTIONS = ("Source", "Hashes", "Endpoint comparison", "Counts", "Selection", "Source records", "Claims",
-            "Findings", "Runtime capabilities", "Required capabilities", "Not in the runtime reference")
+SECTIONS = ("Source", "Hashes", "Endpoint comparison", "Counts", "Selection", "Source records",
+            "Mentioned-only identities", "Claims", "Claim provenance", "Findings", "Runtime capabilities",
+            "Required capabilities", "Not in the runtime reference")
 
 
 @pytest.fixture(scope="module")
@@ -584,6 +585,9 @@ def test_the_report_text_names_the_source_versions_hashes_and_generator(igh_star
         assert value in hashes
     assert "Reference.report()" in text and "runtime catalogue" in text
     assert "functional allele" not in text.lower()
+    generator = next(line for line in text.splitlines() if line.startswith("Generator: "))
+    assert "a dossier check verifies content, not this statement" in generator
+    assert "the lock writer's statements" in head
 
 
 def test_the_report_text_accounts_for_every_source_record(igh_starter):
@@ -610,17 +614,94 @@ def test_the_report_text_lists_the_ordered_selection(igh_starter):
     assert lines == [f"{segment}:{label}" for segment in ("V", "D", "J") for label in SELECTION["selected"][segment]]
 
 
-def test_the_report_text_gives_every_withheld_and_unrepresentable_claim_its_reason(igh_starter):
+def test_the_report_text_counts_every_claim_and_points_to_the_provenance_of_unselected_ones(igh_starter):
     build, text = igh_starter
     claims = section(text, "Claims")
-    groups = {}
-    for outcome in build.report.claims:
-        if outcome.outcome in ("withheld", "not_representable"):
-            groups.setdefault((outcome.outcome, outcome.reason), []).append(outcome)
-            assert outcome.reason in claims
-    assert "cannot classify" in claims                      # the provider's functional value
-    numbers = {f"({len(items)})" for items in groups.values()}
-    assert all(number in claims for number in numbers)
+    tallies = {}
+    for outcome, claim in zip(build.report.claims, build.report.inventory.claims):
+        key = (outcome.outcome, claim.predicate, claim.status)
+        tallies[key] = tallies.get(key, 0) + 1
+    titles = {"projected": "projected", "withheld": "withheld", "not_representable": "not representable at runtime",
+              "not_selected": "not selected"}
+    for (outcome, predicate, status), count in tallies.items():
+        line = next(line for line in claims.splitlines() if line.strip().startswith(titles[outcome] + ":"))
+        assert f"{predicate} {status} {count}" in line, (outcome, predicate, status)
+    flat = " ".join(claims.split())
+    assert "full provenance" in flat and "to_dict()" in flat and "report.json" in flat
+
+
+def raw_gapped_index(fmt: str, label: str) -> int:
+    headers = [chunk.partition("\n")[0].rstrip("\r")
+               for chunk in fixture_bytes(IGH, fmt).decode("utf-8").split(">")[1:]]
+    (index,) = [i for i, header in enumerate(headers) if header == label]
+    return index
+
+
+def provenance_lines(text: str) -> dict:
+    """``{claim id: line}`` of the claim provenance section; every claim id appears on exactly one line."""
+    lines = {}
+    for line in section(text, "Claim provenance").splitlines():
+        if line.startswith("    claim:"):
+            claim_id = line.split()[0]
+            assert claim_id not in lines, claim_id
+            lines[claim_id] = line
+    return lines
+
+
+def test_every_claim_of_a_selected_allele_has_its_provenance_line(igh_starter):
+    build, text = igh_starter
+    report = build.report
+    lines = provenance_lines(text)
+    shown = [(o, c) for o, c in zip(report.claims, report.inventory.claims) if o.outcome != "not_selected"]
+    assert set(lines) == {c.id for _, c in shown} and len(shown) == 394 + 690 + 427
+    for outcome, claim in shown:
+        line = lines[claim.id]
+        value = json.dumps(claim.value.get(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        assert f" {claim.predicate} = {value} " in line
+        assert f"({claim.coordinate_system or 'no coordinate system'})" in line
+        assert f"[{claim.status}, support {claim.support}, {claim.derivation}]" in line
+        assert f"-> {outcome.outcome}" in line
+        if outcome.decision is not None:
+            assert f"recipe decision {outcome.decision}" in line
+        if outcome.reason:
+            assert line.endswith(f"reason: {outcome.reason}")
+        for locator in claim.evidence:
+            assert locator.pointer.split("/")[-1] in line
+        for mapping_id in claim.mappings:
+            mapping = report.inventory.mapping(mapping_id)
+            assert f"{mapping_id} ({mapping.kind}, {mapping.validation})" in line
+    assert "functional allele" not in text.lower()
+
+
+def test_a_selected_v_anchor_line_cites_its_raw_source_fields(igh_starter):
+    """IGHV1-2*02: the anchor is cdr3_start - 4 of its own airr record, bound to its own gapped record."""
+    _, text = igh_starter
+    records = raw_records(IGH, "airr")
+    (index,) = [i for i, r in enumerate(records) if r["label"] == "IGHV1-2*02"]
+    (delineation,) = [j for j, d in enumerate(records[index]["v_gene_delineations"]) if d["delineation_scheme"] == "IMGT"]
+    cdr3_start = records[index]["v_gene_delineations"][delineation]["cdr3_start"]
+    block = section(text, "Claim provenance").split("  V:IGHV1-2*02 ", 1)[1].split("\n  V:", 1)[0]
+    (anchor,) = [line for line in block.splitlines() if " anchor = " in line]
+    assert f" anchor = {cdr3_start - 4} (coding_sequence) [accepted, support source, stated] -> projected" in anchor
+    record = f"airr#/GermlineSet/0/allele_descriptions/{index}"
+    assert (f"evidence {record}: v_gene_delineations/{delineation}/cdr3_start, "
+            f"v_gene_delineations/{delineation}/delineation_scheme; gapped#/{raw_gapped_index('gapped', 'IGHV1-2*02')}"
+            in anchor)
+    assert "(gapped_alignment, exact)" in anchor
+    assert {line.split()[1] for line in block.splitlines() if line.startswith("    claim:")} == {
+        "functionality", "anchor", "coding_phase", "phase_independence", "boundary_5", "boundary_3", "coding_interval"}
+
+
+def test_mentioned_only_identities_are_listed_with_the_records_that_name_them(igh_starter):
+    _, text = igh_starter
+    mentioned = section(text, "Mentioned-only identities")
+    for fmt in ("airr", "airr_ex"):
+        names = EXPECT["sets"]["9606.IGH_VDJ/10"][fmt]["paralog_only_identities"]
+        listed = [line for line in mentioned.splitlines() if line.startswith(f"  {fmt} ")]
+        assert len(listed) == len(names)
+        for name in names:
+            (line,) = [line for line in listed if f":{name}: " in line]
+            assert f"paralog named by {fmt}#/GermlineSet/0/allele_descriptions/" in line
 
 
 def test_the_report_text_shows_capabilities_with_blockers_and_hints(igh_starter):
@@ -678,14 +759,11 @@ def grouped(text: str) -> list:
     return groups
 
 
-def test_grouped_lists_name_every_claim_record_and_blocker(igh_starter):
+def test_grouped_lists_name_every_record_and_blocker(igh_starter):
     build, text = igh_starter
     report = build.report
-    for title in ("Source records", "Claims", "Runtime capabilities"):
+    for title in ("Source records", "Runtime capabilities"):
         groups = grouped(section(text, title))
         assert groups and all(declared == len(items) for declared, items in groups), title
-    claims = grouped(section(text, "Claims"))
-    named = sum(declared for declared, _ in claims)
-    assert named == sum(o.outcome != "not_selected" for o in report.claims)
     blockers = grouped(section(text, "Runtime capabilities"))
     assert sum(declared for declared, _ in blockers) == sum(len(s.unmet) for s in report.capabilities.statuses)
