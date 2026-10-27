@@ -600,11 +600,15 @@ class BuildReport:
 
     def __str__(self) -> str:
         """The complete report as readable text: source and versions, hashes, comparison, counts,
-        the ordered selection, every source record, claim outcomes with their reasons, findings,
-        runtime capabilities with blockers, requirements and what the projection does not keep.
+        the ordered selection, every source record, mentioned-only identities, claim counts, the
+        provenance of every claim about a selected allele, findings, runtime capabilities with
+        blockers, requirements and what the projection does not keep.
 
-        Records and claims with the same outcome and the same explanation are listed together;
-        every record and every withheld or unrepresentable claim is named."""
+        Records and capability blockers with the same outcome and the same explanation are listed
+        together, each named.  Every claim about a selected allele has its own line under that
+        allele (id, value, coordinates, status, support, derivation, outcome, evidence, mappings
+        and reason); claims about unselected records are counted, and their full provenance is in
+        ``to_dict()``."""
         return "\n".join(_Text(self).lines())
 
     # -- serialization -------------------------------------------------
