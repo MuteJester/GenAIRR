@@ -163,10 +163,20 @@ def _under(prefix: str, check, *args) -> None:
         raise exc.under(prefix) from None
 
 
-def _clip(text: Optional[str]) -> Optional[str]:
-    if text is None or len(text) <= MAX_TEXT:
-        return text
-    return text[:MAX_TEXT - 3] + "..."
+def _bounded(parts) -> Optional[str]:
+    """Detail items joined with ``"; "``, or ``None`` for none.  A report detail holds at most
+    ``MAX_TEXT`` characters: beyond that, whole leading items are kept and an explicit marker says
+    how many were omitted.  Nothing is ever cut silently."""
+    parts = list(parts)
+    if not parts:
+        return None
+    text = "; ".join(parts)
+    keep = len(parts)
+    while len(text) > MAX_TEXT:
+        keep -= 1
+        marker = f"... and {len(parts) - keep} more not shown (a detail holds at most {MAX_TEXT} characters)"
+        text = "; ".join(parts[:keep] + [marker])
+    return text
 
 
 def _require_record_exports(lock: SourceLock) -> None:
@@ -500,41 +510,43 @@ class _Build:
         outcomes = []
         for record in inventory.records:
             if record.status != "parsed":
-                outcomes.append(RecordOutcome(record.locator, "rejected", None, None, None, _clip(record.problem)))
+                outcomes.append(RecordOutcome(record.locator, "rejected", None, None, None, record.problem))
             elif record.id in self.by_subject:
                 entry = self.entries[self.by_subject[record.id]]
-                detail = "; ".join(self.unprojected.get(record.id, ())) or None
-                outcomes.append(RecordOutcome(record.locator, "selected", entry.allele_id, None, None, _clip(detail)))
+                detail = _bounded(self.unprojected.get(record.id, ()))
+                outcomes.append(RecordOutcome(record.locator, "selected", entry.allele_id, None, None, detail))
             else:
-                exclusion, related, detail = self._exclusion(record, sequences)
-                outcomes.append(RecordOutcome(record.locator, "excluded", None, exclusion, related, _clip(detail)))
+                exclusion, related, details = self._exclusion(record, sequences)
+                outcomes.append(RecordOutcome(record.locator, "excluded", None, exclusion, related,
+                                              _bounded(details)))
         return tuple(outcomes)
 
     def _exclusion(self, record, sequences: dict) -> tuple:
-        """``(reason, related selected record, detail)`` for an unselected parsed record; first rule wins."""
+        """``(reason, related selected record, detail items)`` for an unselected parsed record; first
+        rule wins."""
         candidates = self.inventory.candidates_of(record.locator)
         key = (record.segment, record.label)
         if key in self.identities:
             entry = self.entries[self.identities[key]]
             if any(c.sha256 == entry.sequence_sha256 for c in candidates):
                 return ("duplicate_occurrence", entry.record,
-                        f"another occurrence of {entry.allele_id}, selected at {entry.record.id}; it supplies the "
-                        "same coding sequence")
+                        [f"another occurrence of {entry.allele_id}, selected at {entry.record.id}; it supplies the "
+                         "same coding sequence"])
             supplied = "a different coding sequence" if candidates else "no coding sequence"
             return ("alternative_for_selected_identity", entry.record,
-                    f"an alternative record of {entry.allele_id}, selected at {entry.record.id}; it supplies "
-                    f"{supplied}")
+                    [f"an alternative record of {entry.allele_id}, selected at {entry.record.id}; it supplies "
+                     f"{supplied}"])
         problem = self._structural_problem(record, candidates)
         if problem is not None:
-            return "structural_incompatibility", None, problem
+            return "structural_incompatibility", None, [problem]
         if len(sequences.get(key, ())) > 1:
             return ("unresolved_conflicting_sequence", None,
-                    f"{record.label} has {len(sequences[key])} different coding sequences across its records and "
-                    "the recipe selects none of them")
+                    [f"{record.label} has {len(sequences[key])} different coding sequences across its records and "
+                     "the recipe selects none of them"])
         unmet = self._missing_evidence(record, candidates)
         if unmet:
             return "missing_required_evidence", None, unmet
-        return "outside_explicit_selection", None, None
+        return "outside_explicit_selection", None, ()
 
     def _structural_problem(self, record, candidates) -> Optional[str]:
         """Why the record could not be projected at all, or ``None``."""
@@ -545,8 +557,8 @@ class _Build:
             problem = _supplied_sequence_problem(self.inventory, record)
         return problem
 
-    def _missing_evidence(self, record, candidates) -> str:
-        """Which recipe requirement this record's own claims cannot meet, if any."""
+    def _missing_evidence(self, record, candidates) -> list:
+        """Each recipe requirement this record's own claims cannot meet, and why."""
         (candidate,) = candidates
         claims = self.claims_of.get(candidate.id, ())
 
@@ -578,7 +590,7 @@ class _Build:
                     problem = "its complete boundaries are not source-supported"
             if problem is not None:
                 problems.append(f"{capability} at evidence {level}: {problem}")
-        return "; ".join(problems)
+        return problems
 
     # -- files ------------------------------------------------------------
 

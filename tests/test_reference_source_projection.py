@@ -1203,3 +1203,21 @@ def test_accepting_an_accepted_j_phase_still_projects_it_anchor_derived(monkeypa
     assert (outcomes[phase].outcome, outcomes[phase].decision) == ("projected", 0)
     assert "anchor_derived" in outcomes[phase].reason
     assert (outcomes[anchor].outcome, outcomes[anchor].decision) == ("projected", None)
+
+
+def test_a_long_record_detail_ends_with_how_many_items_were_omitted(monkeypatch):
+    labels = [r["label"] for r in raw_records(IGL, "airr") if r["sequence_type"] == "V"][:25]
+    others = [label for label in labels if label != labels[0]]
+
+    def aliases(fmt, record):              # the first V names every other selected V as an alias
+        if record["label"] == labels[0]:
+            record["aliases"] = list(others)
+
+    blobs, lock = mini(monkeypatch, labels + [J1], edit=aliases)
+    result = build(lock, blobs, mini_recipe(blobs, lock, labels + [J1]))
+    (outcome,) = [o for o in result.report.records if o.allele == f"V:{labels[0]}"]
+    assert len(outcome.detail) <= 4096
+    match = re.search(r"and (\d+) more not shown", outcome.detail)
+    assert match and outcome.detail.endswith("characters)")
+    shown = outcome.detail.count("relationship not projected")
+    assert shown >= 1 and shown + int(match.group(1)) == len(others)
