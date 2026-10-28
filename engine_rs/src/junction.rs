@@ -27,7 +27,7 @@
 //! `PassContext` (D.8). A free function takes both and reads each
 //! immutably.
 
-use crate::ir::{NucHandle, Segment, Simulation};
+use crate::ir::{NucHandle, Simulation};
 use crate::refdata::RefDataConfig;
 
 // ──────────────────────────────────────────────────────────────────
@@ -71,8 +71,8 @@ impl Junction {
 /// - the assigned V or J allele is anchorless,
 /// - the V or J allele cannot be looked up in `refdata` (wrong
 ///   refdata for this simulation — caller bug),
-/// - V trim_5 has eaten past V's anchor (anchor 5'-trimmed),
-/// - J trim_5 has eaten past J's anchor (J anchor 5'-trimmed),
+/// - every base of the V Cys codon or of the J W/F codon has been
+///   trimmed or deleted (a partly kept codon still bounds the window),
 /// - the V region (or J region) has not been assembled yet (no
 ///   `Region` for that segment in `sim.sequence.regions`).
 ///
@@ -81,66 +81,14 @@ impl Junction {
 /// to their own semantics (typically: vacuously satisfied, since
 /// there's nothing to verify yet).
 pub fn compute_junction(sim: &Simulation, refdata: &RefDataConfig) -> Option<Junction> {
-    let v_inst = sim.assignments.get(Segment::V).copied()?;
-    let j_inst = sim.assignments.get(Segment::J).copied()?;
-
-    let v_allele = refdata.get(Segment::V, v_inst.allele_id)?;
-    let j_allele = refdata.get(Segment::J, j_inst.allele_id)?;
-
-    let v_anchor = v_allele.anchor? as u32;
-    let j_anchor = j_allele.anchor? as u32;
-
-    let v_trim_5 = v_inst.trim_5 as u32;
-    let j_trim_5 = j_inst.trim_5 as u32;
-
-    // Anchor must lie within the retained slice — i.e., trim_5 must
-    // not have crossed the anchor base. (The full anchor codon
-    // position is checked by `AnchorPreserved`; here we just check
-    // that the start of the codon is reachable.)
-    if v_trim_5 > v_anchor {
-        return None;
-    }
-    if j_trim_5 > j_anchor {
-        return None;
-    }
-
-    // Find the V and J regions in the sequence's region list.
-    // Regions are appended in assembly order; either may be absent
-    // if the corresponding `AssembleSegmentPass` hasn't run.
-    let v_region = sim
-        .sequence
-        .regions
-        .iter()
-        .find(|r| r.segment == Segment::V)?;
-    let j_region = sim
-        .sequence
-        .regions
-        .iter()
-        .find(|r| r.segment == Segment::J)?;
-
-    // Surviving germline provenance maps anchors after terminal coverage loss
-    // and structural indels. Region-start arithmetic alone cannot do this.
-    let v_anchor_in_pool = crate::coding::anchor_position(sim, v_region, v_anchor)?;
-    crate::coding::anchor_position(sim, j_region, j_anchor)?;
-    // One past the last surviving base of the J W/F codon: an indel inside the codon moves the
-    // end by its own length, as the bases' recorded germline positions show.
-    let j_codon_end = {
-        use crate::productivity::SequenceView;
-        sim.anchor_codon_end(Segment::J, u16::try_from(j_anchor).ok()?)?
-    };
-
-    let start = NucHandle::new(v_anchor_in_pool);
-    let end = NucHandle::new(u32::try_from(j_codon_end).ok()?);
-
-    // Defensive: end must be strictly greater than start. If the
-    // J anchor maps to a position before the V anchor, the simulation
-    // is malformed.
-    if end.index() <= start.index() {
-        return None;
-    }
-
+    // Surviving germline provenance maps the conserved codons after trimming, terminal coverage
+    // loss and structural indels; region-start arithmetic alone cannot do this.  The window runs
+    // from the first surviving base of the V Cys codon to one past the last surviving base of the
+    // J W/F codon, and is undefined when either codon is gone or a region is not yet assembled.
+    let (start, end) = crate::productivity::junction_bounds(sim, refdata)?;
+    let start = NucHandle::new(u32::try_from(start).ok()?);
+    let end = NucHandle::new(u32::try_from(end).ok()?);
     let length = end.index() - start.index();
-
     Some(Junction { start, end, length })
 }
 
@@ -152,7 +100,7 @@ pub fn compute_junction(sim: &Simulation, refdata: &RefDataConfig) -> Option<Jun
 mod tests {
     use super::*;
     use crate::assignment::AlleleInstance;
-    use crate::ir::{Nucleotide, Region};
+    use crate::ir::{Nucleotide, Region, Segment};
     use crate::refdata::{Allele, AlleleId, ChainType};
 
     /// Build a minimal V+J refdata with controllable anchor positions.
@@ -296,12 +244,18 @@ mod tests {
     }
 
     #[test]
-    fn compute_junction_returns_none_when_v_trim_5_past_anchor() {
+    fn compute_junction_returns_none_when_v_trim_5_reaches_the_cys_codon() {
+        // A 5' trim into the Cys codon removes its first base, the junction's V limit (only
+        // trimming from the V's outer end can); a partial or a whole loss leaves no window.
         let cfg = make_vj_refdata(Some(6), Some(0));
-        let v_inst = AlleleInstance::new(AlleleId::new(0)).with_trim_5(7);
-        let j_inst = AlleleInstance::new(AlleleId::new(0));
-        let sim = make_sim_with_v_and_j_assemblies(0, 9, 9, 6, v_inst, j_inst);
-        assert!(compute_junction(&sim, &cfg).is_none());
+        for trim_5 in [7u16, 9] {
+            let v_inst = AlleleInstance::new(AlleleId::new(0)).with_trim_5(trim_5);
+            let j_inst = AlleleInstance::new(AlleleId::new(0));
+            // The 9-bp V keeps germline trim_5..9; the J follows directly.
+            let kept = 9 - u32::from(trim_5);
+            let sim = make_sim_with_v_and_j_assemblies(0, kept, kept, 6, v_inst, j_inst);
+            assert!(compute_junction(&sim, &cfg).is_none(), "trim_5 {trim_5}");
+        }
     }
 
     #[test]

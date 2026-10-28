@@ -60,15 +60,23 @@ All notable changes to GenAIRR are documented here.
 
 ### Fixed
 
-- When an indel falls inside the J Trp/Phe landmark codon, simulated records now
-  end the junction one past the codon's last surviving base, read from each
-  base's recorded germline position. Previously the end was the codon's first
-  base plus 3, so `junction_end`, `junction_length`, `junction` and
-  `junction_aa` were off by the indel's length, and `vj_in_frame` (with the
-  `vj_out_of_frame` productivity reason) could be wrong. This affected about 0.5%
-  of polymerase indel events. Record validation now derives this end
-  independently. `productive` was already false for these records, and
-  generated sequences are unchanged.
+- The junction of a simulated record now runs from the first surviving base of
+  the V Cys codon to the last surviving base of the J Trp/Phe codon, read from
+  each base's recorded germline position. Exonuclease trimming eats these codons
+  only from the inside, so their outer limits stay put and N/P bases filling
+  trimmed codon positions count as junction. Previously a landmark codon partly
+  removed by trimming left the junction undefined (about 0.5% of human IGH and
+  1.6% of human IGL records under default trimming), as did an indel deleting a
+  codon's outer base, and an indel inside the J codon was ignored (the end was
+  the codon's first base plus 3; about 0.5% of polymerase indel events). The
+  junction is now undefined only when a whole conserved codon is gone, a codon's
+  outer base is trimmed from the segment's outer end, or a kept codon base lies
+  outside the read. Affected records gain correct `junction`, `junction_aa`,
+  `junction_start`, `junction_end`, `junction_length` and `vj_in_frame` values,
+  with the matching frame reason in `productivity_reasons`. Record validation
+  derives the same bounds independently. `productive` is unchanged (these
+  records already lacked an intact landmark), and generated sequences are
+  unchanged.
 - The DataConfig bridge no longer assigns IMGT FWR/CDR subregions to V alleles
   whose `gapped_seq` declares no IMGT gaps (e.g. ungapped FASTA). Explicit
   subregions and IMGT-gapped sequences are unchanged; all 106 bundled cartridges

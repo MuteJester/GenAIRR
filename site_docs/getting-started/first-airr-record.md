@@ -82,7 +82,7 @@ rec["vj_in_frame"]      # True
 rec["stop_codon"]       # False
 ```
 
-`junction` is the canonical V Cys → J W/F+3 nucleotide window;
+`junction` is the nucleotide window from the V Cys codon through the J W/F codon;
 `junction_aa` is its in-frame translation. The productivity
 flags decompose as:
 
