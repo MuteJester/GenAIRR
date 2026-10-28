@@ -14,7 +14,6 @@ from tests.support import paths
 from tests.support.asserts import records as record_asserts
 from tests.support.builders import experiment as experiment_builder
 from tests.support.oracles import provenance
-from tests.support.strategies import experiments as experiment_strategies
 
 TESTS_ROOT = Path(__file__).resolve().parents[2]
 
@@ -109,6 +108,8 @@ def test_field_match_is_silent():
 
 def test_locus_strategy_only_offers_loci_the_suite_can_build():
     from hypothesis import given, settings
+
+    from tests.support.strategies import experiments as experiment_strategies
     seen = set()
 
     @given(experiment_strategies.loci())

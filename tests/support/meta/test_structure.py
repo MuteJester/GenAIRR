@@ -50,11 +50,18 @@ def _relative_test_imports(path: Path) -> set[str]:
 
 
 def _test_module_imports(path: Path) -> set[str]:
+    """Test modules that ``path`` borrows from, by any import form.
+
+    Any segment after "tests" may be the module, not just the second: once the
+    tree nested, every path became tests.components.<area>.test_x, and a check
+    that looked only at parts[1] saw "components" and reported nothing.
+    """
     found = _relative_test_imports(path)
     for name in _imported_modules(path):
         parts = name.split(".")
-        if parts[0] == "tests" and len(parts) > 1 and parts[1].startswith("test_"):
-            found.add(parts[1])
+        if parts[0] != "tests":
+            continue
+        found.update(p for p in parts[1:] if p.startswith("test_"))
     return found
 
 
@@ -165,12 +172,29 @@ def test_every_test_directory_is_a_package():
 TIERS = ("pin", "behavior", "composition")
 
 
+def _mark_names(value: ast.expr) -> set[str]:
+    """The marker names in a pytestmark value.
+
+    Matching the name matters: a substring search over the unparsed expression
+    read "pin" out of ``pytest.mark.skip(reason="will pin later")``, so the
+    reason string could satisfy the tier requirement.
+    """
+    items = value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
+    names = set()
+    for item in items:
+        target = item.func if isinstance(item, ast.Call) else item
+        if isinstance(target, ast.Attribute):
+            names.add(target.attr)
+    return names
+
+
 def _tier_of(module: Path) -> str | None:
     tree = ast.parse(module.read_text(encoding="utf-8"))
     for node in tree.body:
         targets = node.targets if isinstance(node, ast.Assign) else []
         if any(isinstance(x, ast.Name) and x.id == "pytestmark" for x in targets):
-            return next((t for t in TIERS if t in ast.unparse(node.value)), None)
+            found = _mark_names(node.value) & set(TIERS)
+            return next(iter(sorted(found)), None)
     return None
 
 
@@ -194,3 +218,110 @@ def test_every_test_module_declares_a_tier():
     """
     missing = [str(m.relative_to(TESTS_ROOT)) for m in _product_modules() if _tier_of(m) is None]
     assert missing == [], f"{len(missing)} module(s) with no tier marker: {missing[:12]}"
+
+
+# ── the detectors' own self-tests ────────────────────────────────────────────
+# These exist because both detectors below silently stopped working: the
+# cross-import check was written against the flat layout and never updated for
+# the nested one it now protects, and the tier check matched a substring of the
+# whole marker expression.
+
+def test_the_cross_import_detector_catches_every_import_form(tmp_path):
+    """Absolute, relative, and `import ... as`.
+
+    The absolute form is what every IDE auto-import and every contributor
+    produces, and it is the one that stopped being detected: the check asked
+    whether parts[1] began with "test_", which held while modules sat directly
+    under the suite root and stopped holding once they moved into an area.
+    """
+    module = tmp_path / "t.py"
+    module.write_text(
+        "from tests.components.experiment.test_run import something\n"
+        "from .test_sibling import helper\n"
+        "import tests.components.duplex.test_duplex_observation as dup\n",
+        encoding="utf-8")
+    assert _test_module_imports(module) == {
+        "test_run", "test_sibling", "test_duplex_observation"}
+
+
+def test_the_cross_import_detector_ignores_support_and_product_imports(tmp_path):
+    module = tmp_path / "t.py"
+    module.write_text(
+        "import GenAIRR as ga\n"
+        "from tests.support.fixtures.source_api import from_files\n"
+        "from tests.support import paths\n",
+        encoding="utf-8")
+    assert _test_module_imports(module) == set()
+
+
+def test_a_skip_marker_is_not_a_tier(tmp_path):
+    """A substring search over the unparsed marker read "pin" out of a skip
+    reason, so a module could skip its entire contents and satisfy the tier
+    requirement with the reason string doing the work."""
+    module = tmp_path / "t.py"
+    module.write_text('import pytest\npytestmark = pytest.mark.skip(reason="will pin later")\n',
+                      encoding="utf-8")
+    assert _tier_of(module) is None
+
+
+def test_an_xfail_marker_is_not_a_tier(tmp_path):
+    module = tmp_path / "t.py"
+    module.write_text(
+        'import pytest\npytestmark = pytest.mark.xfail(reason="composition is broken")\n',
+        encoding="utf-8")
+    assert _tier_of(module) is None
+
+
+def test_a_real_tier_marker_is_read(tmp_path):
+    for declaration in ("pytestmark = pytest.mark.pin",
+                        "pytestmark = [pytest.mark.pin, pytest.mark.slow]",
+                        "pytestmark = pytest.mark.behavior"):
+        module = tmp_path / "t.py"
+        module.write_text(f"import pytest\n{declaration}\n", encoding="utf-8")
+        assert _tier_of(module) in TIERS, declaration
+
+
+#: Modules whose whole contents are conditionally skipped, with why. A
+#: conditional skip is legitimate, but one nobody has written down means an
+#: area silently never runs while every count and tier selection still looks
+#: right. Recorded so that is visible. The list only shrinks.
+CONDITIONALLY_SKIPPED = {
+    "acceptance/test_docs_mkdocs_migration_contract.py":
+        "skipif on docs/docs_mkdocs_migration_plan.md, which .gitignore excludes "
+        "-- so its 26 tests never run in CI, only in a contributor checkout",
+}
+
+
+def _module_pytestmark(module: Path):
+    for node in ast.parse(module.read_text(encoding="utf-8")).body:
+        targets = node.targets if isinstance(node, ast.Assign) else []
+        if any(isinstance(x, ast.Name) and x.id == "pytestmark" for x in targets):
+            return node.value
+    return None
+
+
+def test_no_module_unconditionally_skips_or_xfails_its_whole_contents():
+    """An unconditional module-level skip or xfail removes a whole area from
+    the suite while every count and every tier selection still looks right."""
+    offenders = []
+    for module in _product_modules():
+        value = _module_pytestmark(module)
+        if value is not None and _mark_names(value) & {"skip", "xfail"}:
+            offenders.append(str(module.relative_to(TESTS_ROOT)))
+    assert offenders == [], f"modules skipping or xfailing everything: {offenders}"
+
+
+def test_every_conditionally_skipped_module_is_recorded():
+    """So that "this area never runs in CI" is a line someone can read."""
+    found = set()
+    for module in _product_modules():
+        value = _module_pytestmark(module)
+        if value is not None and _mark_names(value) & {"skipif", "xfail"}:
+            found.add(str(module.relative_to(TESTS_ROOT)).replace("\\", "/"))
+    unrecorded = sorted(found - set(CONDITIONALLY_SKIPPED))
+    assert unrecorded == [], (
+        f"modules that may skip their whole contents, unrecorded: {unrecorded}. "
+        "Add them to CONDITIONALLY_SKIPPED with the reason, so an area that "
+        "never runs is visible.")
+    resolved = sorted(set(CONDITIONALLY_SKIPPED) - found)
+    assert resolved == [], f"no longer conditionally skipped, remove: {resolved}"
