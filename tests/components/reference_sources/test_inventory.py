@@ -3,9 +3,9 @@
 from __future__ import annotations
 import copy
 import pytest
-from GenAIRR._artifact_io import canonical_json, strict_loads, typed_digest
+from GenAIRR._artifact_io import canonical_json, typed_digest
 from GenAIRR._reference_sources import model as m
-from tests.support.fixtures.reference_source_models import ADAPTER, CLAIM_ID, FINDING_ID, IGH, INV_RECORDS, Inv, L, ROLE, ROOT, SELECTED, SOURCES, _RECORDS, _blocks, _claim, _fasta, _find, _gapped_index, _inventory_dict, _load_json, _nested, _pointer, _raises, _recipe, _records, _reseal, _sorted, _source_set, decision, inv, inventory, lock_dict, recipe_dict, selection_entry
+from tests.support.fixtures.reference_source_models import INV_RECORDS, Inv, L, _claim, _find, _inventory_dict, _nested, _pointer, _raises, _recipe, decision, lock_dict
 
 pytestmark = pytest.mark.behavior
 

@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import inspect
 import json
-from pathlib import Path
 
 import pytest
 
@@ -302,7 +301,6 @@ def test_pin_present_pass_plan_signature_folds_compile_time_params() -> None:
          produce the **same** plan signature (behaviourally
          equivalent inputs → equal signatures).
     """
-    import json
 
     trace_file_src = (
         _REPO_ROOT / "engine_rs" / "src" / "trace_file.rs"

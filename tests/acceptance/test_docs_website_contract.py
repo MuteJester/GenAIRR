@@ -33,7 +33,6 @@ broken; that's the critical-path fix.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 from tests.support import paths

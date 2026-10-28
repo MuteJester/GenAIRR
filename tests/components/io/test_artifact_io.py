@@ -1,6 +1,5 @@
 import contextlib
 import errno
-import json
 import os
 import pathlib
 import stat

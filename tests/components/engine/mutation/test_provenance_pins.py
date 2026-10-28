@@ -28,7 +28,6 @@ When the slice lands the relevant ``pin_absence_*`` flips to
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 

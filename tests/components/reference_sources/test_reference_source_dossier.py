@@ -24,7 +24,7 @@ from GenAIRR._reference import artifact as artifact_module
 from GenAIRR._reference_sources import build as build_module
 from GenAIRR.reference_sources import ReferenceBuild
 from tests.support.fixtures.source_api import (
-    ALL, IGL, error, fixture_bytes, from_files, full_recipe, offline, pinned_asset, sha, tree,  # noqa: F401
+    ALL, IGL, error, fixture_bytes, from_files, full_recipe, pinned_asset, sha, tree, # noqa: F401,
 )
 from tests.support.fixtures.source_dossier import OFFLINE_SCRIPT
 from tests.support.fixtures.source_projection import MINI  # noqa: F401

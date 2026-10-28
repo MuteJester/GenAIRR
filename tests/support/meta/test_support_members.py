@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.support import paths
 from tests.support.asserts import records as record_asserts
 from tests.support.builders import experiment as experiment_builder
 from tests.support.oracles import provenance

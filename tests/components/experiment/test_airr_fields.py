@@ -2,7 +2,6 @@
 """
 from __future__ import annotations
 from GenAIRR import _engine as ge
-from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp, _human_igh_records
 
@@ -207,7 +206,6 @@ def test_sequence_aa_length_matches_codon_count():
 def test_sequence_aa_empty_when_junction_uncomputable():
     # A bare RefDataConfig has no anchors → no junction → sequence_aa
     # falls back to empty.
-    from GenAIRR import _engine as ge
 
     cfg = ge.RefDataConfig.vdj()
     cfg.add_v_allele("v1*01", "v1", b"AAACCCGGG")  # no anchor

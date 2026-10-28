@@ -2,7 +2,6 @@
 """
 from __future__ import annotations
 import pytest
-from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 import re as _re
 from tests.support.fixtures.experiment_dsl import _alignment_invariants_hold, _cigar_op_counts, _human_igh_exp

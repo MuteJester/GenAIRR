@@ -2,12 +2,11 @@
 """
 from __future__ import annotations
 import copy
-import json
 import pytest
-from GenAIRR._artifact_io import canonical_json, strict_loads, typed_digest
+from GenAIRR._artifact_io import canonical_json, typed_digest
 from GenAIRR._reference_sources.errors import KINDS, ReferenceSourceError
 from GenAIRR._reference_sources import model as m
-from tests.support.fixtures.reference_source_models import ADAPTER, IGH, ROLE, ROOT, SOURCES, _load_json, _raises, _reseal, _source_set, lock_dict, receipt_dict
+from tests.support.fixtures.reference_source_models import IGH, SOURCES, _raises, _reseal, _source_set, lock_dict, receipt_dict
 
 pytestmark = pytest.mark.behavior
 

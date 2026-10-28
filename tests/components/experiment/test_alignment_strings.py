@@ -4,7 +4,6 @@ Gap-aware: these are the fields a downstream aligner is benchmarked against.
 """
 from __future__ import annotations
 from GenAIRR import _engine as ge
-from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _alignment_invariants_hold, _cigar_op_counts, _cigar_total_ops, _human_igh_exp, _human_igh_records
 
@@ -226,7 +225,6 @@ def test_alignment_strings_for_vj_chain():
 
 def test_alignment_strings_empty_when_no_assembly():
     # Pre-recombine experiments yield empty sequences → empty strings.
-    from GenAIRR import _engine as ge
 
     # Use a refdata with anchorless alleles so there's nothing
     # productive to anchor.

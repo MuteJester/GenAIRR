@@ -36,7 +36,6 @@ import re
 from pathlib import Path
 
 import GenAIRR as ga
-from GenAIRR import _engine as ge
 from tests.support import paths
 
 import pytest

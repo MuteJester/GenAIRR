@@ -41,13 +41,11 @@ from __future__ import annotations
 
 import inspect
 import re
-from pathlib import Path
 
 import pytest
 
 import GenAIRR as ga
-from GenAIRR import _engine as ge
-from GenAIRR import _compiled, _pipeline_ir, experiment as _experiment_module
+from GenAIRR import _compiled, _pipeline_ir
 from GenAIRR.result import SimulationResult, ValidationReport
 from tests.support import paths
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 from GenAIRR import _engine as ge
 import pytest
-from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 import inspect as _inspect
 import itertools as _itertools
@@ -39,7 +38,6 @@ def test_stream_matches_run_for_same_seed():
 
 
 def test_stream_yields_engine_outcomes():
-    from GenAIRR import _engine as ge
 
     out = list(_human_igh_exp().stream(n=2, seed=0))
     assert all(isinstance(o, ge.Outcome) for o in out)

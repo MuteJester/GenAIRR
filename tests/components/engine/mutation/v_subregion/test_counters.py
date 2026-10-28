@@ -39,7 +39,6 @@ Specs covered (per the user brief):
 from __future__ import annotations
 
 import copy
-import inspect
 
 import pytest
 

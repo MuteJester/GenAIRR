@@ -592,7 +592,7 @@ def test_to_metadata_effective_refdata_hash_for_novel():
 
 
 def test_manifest_never_crashes_on_garbage_plane():
-    import copy, math
+    import copy
     cfg = copy.deepcopy(_cfg())
     # non-finite frequency weight + bad chromosome weight type -> content_checksum
     # and float() would raise; the manifest must stay JSON-clean and not crash.

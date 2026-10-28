@@ -15,10 +15,8 @@ the adapter are parsed only by its strict loader.
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 from collections import Counter
-from pathlib import Path
 
 import pytest
 

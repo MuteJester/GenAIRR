@@ -49,7 +49,6 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR.reference_models import (
-    EmpiricalDistributionSpec,
     NpBaseModelSpec,
     ReferenceEmpiricalModels,
 )

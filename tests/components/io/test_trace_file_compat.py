@@ -28,7 +28,6 @@ Two fixtures committed today, both v1:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Iterable
 
 import pytest

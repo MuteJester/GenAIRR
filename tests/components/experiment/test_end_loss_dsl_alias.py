@@ -220,7 +220,6 @@ def test_audit_doc_lists_end_loss_as_canonical_dsl_surface() -> None:
     describe the rename as **resolved**, with ``end_loss_*prime``
     listed as canonical. A future slice that reverts the rename
     would also flip this test, surfacing the doc/test drift."""
-    from pathlib import Path
 
     doc = (
         paths.repo_root()

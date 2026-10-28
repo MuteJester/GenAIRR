@@ -6,7 +6,7 @@ the bridge that turns a pass failure into a strict sampling error.
 from __future__ import annotations
 from GenAIRR import _engine as ge
 import pytest
-from GenAIRR import CompiledExperiment, Experiment
+from GenAIRR import Experiment
 from tests.support.fixtures.experiment_dsl import _vdj_refdata, _vj_refdata
 
 pytestmark = pytest.mark.behavior

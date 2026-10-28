@@ -428,7 +428,6 @@ def test_replay_trim_runs_validation_path_on_bad_recorded_value(vj_compiled):
 # ──────────────────────────────────────────────────────────────────
 
 
-from pathlib import Path  # noqa: E402
 from tests.support import paths
 
 pytestmark = pytest.mark.behavior

@@ -36,7 +36,6 @@ from __future__ import annotations
 import pytest
 
 import GenAIRR as ga
-from GenAIRR import _engine as ge
 from GenAIRR.result import SimulationResult
 
 pytestmark = pytest.mark.behavior

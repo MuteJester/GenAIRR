@@ -13,7 +13,6 @@ normalized summary into the Rust cartridge for trace identity.
 """
 from __future__ import annotations
 
-import copy
 
 import pytest
 

@@ -25,7 +25,6 @@ Covers the 12 behaviours the implementation slice promised:
 """
 from __future__ import annotations
 
-import io
 import json
 import pickle
 
@@ -415,7 +414,6 @@ def test_dead_reference_cleanup_data_config_docstring_and_build_tool() -> None:
     authoritative source; this test is the integration
     probe so a regression that breaks one but not the
     other still surfaces here."""
-    from pathlib import Path
 
     repo = paths.repo_root()
     dc_src = (

@@ -2,7 +2,6 @@
 """
 from __future__ import annotations
 import pytest
-from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _alignment_invariants_hold, _human_igh_records
 

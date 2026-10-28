@@ -27,11 +27,9 @@ genuinely orphan; no silent corruption exists.
 """
 from __future__ import annotations
 
-import importlib
 import inspect
 import json
 import subprocess
-from pathlib import Path
 
 import pytest
 

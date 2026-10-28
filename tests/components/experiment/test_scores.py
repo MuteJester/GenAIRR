@@ -1,7 +1,6 @@
 """Score, identity and support fields.
 """
 from __future__ import annotations
-from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp, _human_igh_records
 

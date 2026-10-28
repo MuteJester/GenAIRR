@@ -1,5 +1,4 @@
 """Population-prior sampling: Genotype.sample(...)."""
-import math
 
 import pytest
 

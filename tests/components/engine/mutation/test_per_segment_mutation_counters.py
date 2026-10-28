@@ -321,7 +321,6 @@ def test_validator_issue_kinds_are_serialisable_with_source_tag() -> None:
     ``details.source`` strings. Pinned via source-level grep on
     the PyO3 bindings so a refactor that renames the source tag
     surfaces here."""
-    from pathlib import Path
 
     bindings_src = (
         paths.repo_root()

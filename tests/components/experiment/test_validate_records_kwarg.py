@@ -24,7 +24,6 @@ import inspect
 
 import pytest
 
-import GenAIRR as ga
 from GenAIRR import (
     Experiment,
     RecordValidationFailedError,

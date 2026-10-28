@@ -9,7 +9,6 @@ cartridges and that the CLI refuses to run without an explicit
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 
 import pytest
 

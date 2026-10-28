@@ -25,16 +25,13 @@ Key claims pinned here:
 from __future__ import annotations
 
 import inspect
-import pickle
-from pathlib import Path
-from typing import Any, Dict, List
 
 import pytest
 
 import GenAIRR as ga
 from GenAIRR._dataconfig_extract import extract_recombine_defaults
 from GenAIRR._refdata_resolver import _resolve_config_name, dataconfig_to_refdata
-from GenAIRR.alleles.allele import Allele, CAllele, DAllele, JAllele, VAllele
+from GenAIRR.alleles.allele import Allele, VAllele
 from GenAIRR.dataconfig.data_config import DataConfig
 from GenAIRR.reference_models import (
     EmpiricalDistributionSpec,

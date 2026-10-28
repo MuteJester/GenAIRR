@@ -43,7 +43,6 @@ from GenAIRR.dataconfig.cartridge_views import (
     CartridgeModelsView,
     CartridgeRulesView,
 )
-from GenAIRR.dataconfig.data_config import DataConfig
 from GenAIRR.reference_models import EmpiricalDistributionSpec, ReferenceEmpiricalModels
 from GenAIRR.reference_rules import AnchorRuleSpec, ReferenceRulesSpec
 from tests.support import paths
@@ -598,7 +597,6 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     contract file; the 14-section structure stays intact. Audit
     convention: a regression here means the change-control surface
     drifted."""
-    from pathlib import Path
 
     doc_path = (
         paths.repo_root()

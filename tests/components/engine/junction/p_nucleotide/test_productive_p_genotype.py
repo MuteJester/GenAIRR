@@ -4,10 +4,8 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR._airr_record import outcome_to_airr_record
-from GenAIRR.alleles import JAllele, VAllele
-from GenAIRR.genotype import Genotype
 
-from tests.support.cases.productive import assert_productive_record, synthetic_cartridge
+from tests.support.cases.productive import assert_productive_record
 from tests.support.fixtures.phased_anchors import _phased_fixture
 
 pytestmark = pytest.mark.behavior

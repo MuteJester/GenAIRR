@@ -19,9 +19,7 @@ of those surfaces surfaces here.
 """
 from __future__ import annotations
 
-import inspect
 import json
-from pathlib import Path
 
 import pytest
 

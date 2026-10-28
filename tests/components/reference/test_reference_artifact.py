@@ -5,7 +5,6 @@ import errno
 import hashlib
 import json
 import os
-import pathlib
 import re
 import stat
 

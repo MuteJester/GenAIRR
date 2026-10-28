@@ -24,7 +24,6 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _engine as ge
 from GenAIRR import CompiledExperiment
-from GenAIRR.utilities.misc import reverse_complement
 from tests.support.fixtures.minimal_refdata import _vj_basic
 
 pytestmark = pytest.mark.behavior

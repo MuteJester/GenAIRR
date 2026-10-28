@@ -12,7 +12,6 @@ from __future__ import annotations
 import pytest
 
 import GenAIRR as ga
-from GenAIRR import _engine as ge
 from GenAIRR._refdata_resolver import dataconfig_to_refdata
 from GenAIRR.dataconfig.data_config import DataConfig
 from GenAIRR.reference_rules import AnchorRuleSpec, ReferenceRulesSpec

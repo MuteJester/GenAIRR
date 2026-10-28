@@ -7,7 +7,6 @@ flows end-to-end through compile. Companion to
 """
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 from tests.support import paths

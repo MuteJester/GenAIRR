@@ -330,7 +330,6 @@ def test_validator_source_string_flipped_to_ir() -> None:
     the old trace addresses (``trace:receptor_revision.applied`` /
     ``trace:sample_allele.v``). Checked at the Rust binding source
     level to pin the provenance explanation at its declaration site."""
-    from pathlib import Path
 
     bindings = (
         paths.repo_root()

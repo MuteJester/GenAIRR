@@ -3,7 +3,7 @@
 from __future__ import annotations
 import warnings
 import pytest
-from GenAIRR import CompiledExperiment, Experiment
+from GenAIRR import Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _vdj_refdata, _vj_refdata
 

@@ -278,7 +278,6 @@ def test_slice_b_geometry_check_helpers_landed_in_engine_source() -> None:
     geometry call site would silently disable paired-end
     enforcement; this string-grep surfaces the regression at
     test time."""
-    from pathlib import Path
 
     validate_src = (
         paths.repo_root()

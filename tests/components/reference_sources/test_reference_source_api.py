@@ -15,13 +15,10 @@ and the transport factory disabled.
 from __future__ import annotations
 
 import datetime
-import hashlib
-import http.client
 import json
 import pathlib
 import re
 import shutil
-import socket
 
 import pytest
 
@@ -32,10 +29,10 @@ from GenAIRR._reference_sources import model as m
 from GenAIRR._reference_sources.acquisition import HttpsTransport
 from GenAIRR._reference_sources.errors import KINDS, ReferenceSourceError
 from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild
-from tests.support.fixtures.ogrdb_coordinates import in_scope, small
+from tests.support.fixtures.ogrdb_coordinates import small
 from tests.support.fixtures.source_acquisition import FakeResponse, FakeTransport, serve
-from tests.support.fixtures.source_projection import MINI, entry, recipe
-from tests.support.fixtures.source_api import ALL, DATA, IGH, IGL, PROFILE, error, fixture_bytes, fixture_path, from_files, full_recipe, offline, pinned_asset, sha, tree, written
+from tests.support.fixtures.source_projection import MINI
+from tests.support.fixtures.source_api import ALL, DATA, IGH, IGL, PROFILE, error, fixture_bytes, fixture_path, from_files, full_recipe, pinned_asset, sha, tree, written
 
 pytestmark = [pytest.mark.behavior, pytest.mark.slow]
 

@@ -103,7 +103,6 @@ def test_chromosome_weights_rejects_nan():
 
 def test_snapshot_decouples_from_later_mutation():
     cfg = _cfg()
-    import GenAIRR as ga
 
     v_gene = next(iter(cfg.v_alleles))
     a1 = cfg.v_alleles[v_gene][0].name

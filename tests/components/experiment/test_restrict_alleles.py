@@ -2,7 +2,6 @@
 """
 from __future__ import annotations
 import pytest
-from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 
 pytestmark = pytest.mark.behavior

@@ -1,12 +1,10 @@
 """Public continuation oracles for certified duplex landmarks and coding phase."""
 
-import hashlib
-import json
 
 import pytest
 
 from GenAIRR import _engine as ge
-from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin, project_duplex_simulation
+from GenAIRR.experimental import project_duplex_simulation
 from tests.support.fixtures.duplex_observation import _compile, _fixture
 
 pytestmark = pytest.mark.behavior

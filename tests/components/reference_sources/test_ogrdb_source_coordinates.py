@@ -22,23 +22,18 @@ difference; it is not a production path.
 """
 from __future__ import annotations
 
-import copy
 import dataclasses
-import functools
 import hashlib
 import json
-import re
 
 import pytest
 
-from GenAIRR._reference_sources import consistency
 from GenAIRR._reference_sources import coordinates as c
 from GenAIRR._reference_sources import evidence
 from GenAIRR._reference_sources import model as m
 from GenAIRR._reference_sources import profiles
 from tests.support.fixtures.ogrdb_inventory import (
-    ALL, EXPECT, IGH, IGK, IGL, ROOT, SETS, _key, build, encode, error, inventory_of, payload, pinned, raw,
-    raw_records,
+    EXPECT, IGH, IGK, IGL, SETS, _key, encode, error, pinned, raw_records,
 )
 from tests.support.fixtures.ogrdb_coordinates import EVIDENCE, GAPPED, V_LABEL, assert_status, at, candidate_of, claim_of, claims, findings, interpret, interpret_in_scope, interpreted, raw_gapped, raw_record, record_of, small, span_limiting_notes
 

@@ -4,7 +4,7 @@ These model what the protocol did to the molecule, not what the cell did.
 """
 from __future__ import annotations
 import pytest
-from GenAIRR import CompiledExperiment, Experiment
+from GenAIRR import Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp, _vj_refdata
 

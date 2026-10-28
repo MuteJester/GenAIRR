@@ -1439,8 +1439,6 @@ def test_v_subregion_rates_zero_rate_exclusion_invariant_full_stack():
     across N=50 records; the *complementary* bucket must be
     non-empty (otherwise the test is vacuously passing).
     """
-    from GenAIRR._refdata_resolver import dataconfig_to_refdata
-    import copy
 
     cfg = ga.HUMAN_IGH_OGRDB
 

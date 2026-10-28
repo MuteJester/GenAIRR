@@ -1,12 +1,11 @@
 """Sequence-bound evidence and native authoring regressions."""
 import copy
-import hashlib
 import json
 import pickle
 
 import pytest
 
-from GenAIRR import _engine, data
+from GenAIRR import data
 from GenAIRR.alleles import VAllele, JAllele
 from GenAIRR.cartridge_builder import ReferenceCartridgeBuilder
 from GenAIRR._refdata_resolver import dataconfig_to_refdata

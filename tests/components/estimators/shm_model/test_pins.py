@@ -25,14 +25,10 @@ flips to ``pin_present_*`` in lockstep.
 """
 from __future__ import annotations
 
-import json
-import re
-from pathlib import Path
 
 import pytest
 
 import GenAIRR as ga
-from GenAIRR import _engine as ge
 from tests.support import paths
 
 pytestmark = pytest.mark.pin
