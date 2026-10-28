@@ -816,6 +816,9 @@ def packaged(tmp_path, monkeypatch, dossier: pathlib.Path, *, name="genairr_test
     import zipfile
     root = tmp_path / "site"
     root.mkdir()
+    # Importing the throwaway package must not write a bytecode cache into it: tests compare the
+    # package tree before and after a load, and only a read-only directory would otherwise stop it.
+    monkeypatch.setattr(sys, "dont_write_bytecode", True)
     if zipped:
         archive = root / "packages.zip"
         with zipfile.ZipFile(archive, "w") as bundle, warnings.catch_warnings():
