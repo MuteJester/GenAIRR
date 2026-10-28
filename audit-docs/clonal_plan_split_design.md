@@ -20,7 +20,7 @@ preceded it:
 This is a re-entry of the audit deferred earlier (the initial pass
 surfaced the bugs above and was paused per the "stop and report"
 protocol). The companion file
-[`tests/test_clonal_plan_split_contract.py`](../tests/test_clonal_plan_split_contract.py)
+[`tests/components/clonal/test_clonal_plan_split_contract.py`](../tests/components/clonal/test_clonal_plan_split_contract.py)
 pins every claim here as a positive `pin_scaffold_*` test plus
 guard / divergence pins. Deferred-architecture absences are pinned
 with `pin_absence_*` so a future implementation slice flips them
@@ -326,7 +326,7 @@ descendant is re-projected from its own outcome state and the
 projected record is compared with the supplied record. On legacy results it
 **stays per-record only** and ignores `clone_id` and `parent_id`. Pinned by
 the existing `pin_validate_records_stays_per_record_only` test
-in `tests/test_clonal_family_contract.py`.
+in `tests/components/clonal/test_clonal_family_contract.py`.
 
 On the canonical full clonal stack, every record passes.
 Duplex lineage results additionally check clone/node addressing, abundance,
@@ -524,7 +524,7 @@ proposed.
 
 ## 12. Test surface — what this audit pins
 
-Mirrored in [`tests/test_clonal_plan_split_contract.py`](../tests/test_clonal_plan_split_contract.py).
+Mirrored in [`tests/components/clonal/test_clonal_plan_split_contract.py`](../tests/components/clonal/test_clonal_plan_split_contract.py).
 
 ### `pin_scaffold_*` — the corrected architecture
 

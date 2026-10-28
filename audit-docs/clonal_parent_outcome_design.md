@@ -7,7 +7,7 @@ deliverable is the shared vocabulary + the contract pins so a later
 slice can land against an audited baseline.
 
 Companion to
-[`tests/test_clonal_parent_contract.py`](../tests/test_clonal_parent_contract.py)
+[`tests/components/clonal/test_clonal_parent_contract.py`](../tests/components/clonal/test_clonal_parent_contract.py)
 which freezes today's behaviour (`pin_scaffold_*`) and the gaps the
 audit identifies (`pin_absence_*`). When an implementation slice
 lands, the `pin_absence_*` tests flip to `pin_*_present` /
@@ -930,7 +930,7 @@ accessor.
 
 ## 13. Test surface — what this audit pins
 
-Mirrored in [`tests/test_clonal_parent_contract.py`](../tests/test_clonal_parent_contract.py).
+Mirrored in [`tests/components/clonal/test_clonal_parent_contract.py`](../tests/components/clonal/test_clonal_parent_contract.py).
 
 ### `pin_scaffold_*` — existing parent-lifecycle surfaces
 

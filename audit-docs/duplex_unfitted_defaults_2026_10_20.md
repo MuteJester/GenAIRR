@@ -71,7 +71,7 @@ suitable estimator exist, the default rows remain authored, unfitted controls.
 
 ## Regression evidence
 
-`tests/test_duplex_uniform_defaults.py` checks omitted and explicit equal
+`tests/components/duplex/test_duplex_uniform_defaults.py` checks omitted and explicit equal
 weights through canonical serialization, complete source choices, records,
 durable choice replay and seed reruns. It also checks equal mass for distinct
 history IDs with identical final DNA, and confirms that changing the number

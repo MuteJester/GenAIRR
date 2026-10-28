@@ -7,7 +7,7 @@ shared vocabulary + the contract pins so a later slice can land
 against an audited baseline.
 
 Companion to
-[`tests/test_clonal_family_contract.py`](../tests/test_clonal_family_contract.py)
+[`tests/components/clonal/test_clonal_family_contract.py`](../tests/components/clonal/test_clonal_family_contract.py)
 which freezes today's behaviour (`pin_scaffold_*`) and the gaps the
 audit identifies (`pin_absence_*`). When an implementation slice
 lands, the `pin_absence_*` tests flip to `pin_*_present` /
@@ -766,7 +766,7 @@ A future slice (or sequence of slices) might shape up like:
 
 ## 13. Test surface — what the audit pins
 
-Mirrored in [`tests/test_clonal_family_contract.py`](../tests/test_clonal_family_contract.py).
+Mirrored in [`tests/components/clonal/test_clonal_family_contract.py`](../tests/components/clonal/test_clonal_family_contract.py).
 
 ### `pin_scaffold_*` — existing surfaces the audit relies on
 

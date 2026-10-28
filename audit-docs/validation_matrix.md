@@ -112,7 +112,7 @@ required step in the contributor flow:
 | **Trace replay reproducibility**           | Each audit's "Replay round-trip" section                                            | Parametrised replay round-trip tests in every audit's test file (`test_indel_provenance.py::test_indel_replay_*`, `test_allele_call_provenance.py::test_replay_*`, `test_junction_call_provenance.py::test_replay_*`) | `engine_rs/src/trace_file.rs::tests` (schema, signature, content hash)                                   |
 | **Distribution invariants (statistical)**  | [`distribution_invariant_audit.md`](distribution_invariant_audit.md)               | [`test_distribution_invariants.py`](../tests/test_distribution_invariants.py) (7 tests, MC ±5σ) | `engine_rs/src/passes/corrupt/indel/tests/constraints.rs::indel_pass_count_1_..._matches_exact_enumeration`, `..._matches_exact_continuation_weighting` (gold-standard oracle tests) |
 | **Performance budgets (regression guard)** | [`performance_baseline.md`](performance_baseline.md)                                | [`test_performance_budgets.py`](../tests/test_performance_budgets.py) (8 budget tests, marker `@pytest.mark.performance`) | None — perf is bounded from Python only today                                                            |
-| **Golden trace + AIRR-record compat**      | (no dedicated audit; format stability)                                              | [`test_trace_file_compat.py`](../tests/test_trace_file_compat.py), [`test_trace_file.py`](../tests/test_trace_file.py), fixtures under [`tests/golden/`](../tests/golden/) | `engine_rs/src/trace_file.rs::tests` (v1/v2 schema, content hash validation)                            |
+| **Golden trace + AIRR-record compat**      | (no dedicated audit; format stability)                                              | [`test_trace_file_compat.py`](../tests/components/io/test_trace_file_compat.py), [`test_trace_file.py`](../tests/components/io/test_trace_file.py), fixtures under [`tests/golden/`](../tests/golden/) | `engine_rs/src/trace_file.rs::tests` (v1/v2 schema, content hash validation)                            |
 
 ### 1.1 What's NOT in the matrix
 
@@ -184,7 +184,7 @@ byte-compatible with prior versions before publishing.
 
 ```bash
 # Everything in the full tier, plus:
-pytest tests/test_trace_file_compat.py -q   # golden trace round-trip
+pytest tests/components/io/test_trace_file_compat.py -q   # golden trace round-trip
 pytest tests/golden/ -q                      # golden AIRR-record fixtures (if present as a separate suite)
 cd engine_rs && cargo test --all-features
 maturin build --release                      # build the publishable wheel
