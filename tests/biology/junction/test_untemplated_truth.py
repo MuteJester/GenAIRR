@@ -40,9 +40,10 @@ def test_np_fields_are_the_bases_with_no_germline_coordinate():
 
 
 @verifies("junction.p_nucleotide",
-          claim="a P nucleotide is the reverse complement of its own segment's "
-                "post-trim tip, and its recorded length matches the bases present",
-          fields=("p_v_3_length", "p_j_5_length"))
+          claim="the V 3' P nucleotides are the reverse complement of the V's "
+                "own post-trim tip, and their recorded length matches the bases "
+                "present",
+          fields=("p_v_3_length",))
 def test_p_nucleotides_are_palindromes_of_the_segment_tip():
     """P is templated -- by the segment's own end, reversed and complemented.
 

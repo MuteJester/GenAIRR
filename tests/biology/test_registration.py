@@ -225,3 +225,74 @@ def test_a_failing_or_skipped_registration_does_not_count_as_coverage(tmp_path):
     assert line, result.stdout
     assert "unverified" in line and "py:0" in line, (
         f"an xfailed registration must not count: {line!r}")
+
+
+def test_a_registration_on_a_failing_test_does_not_count(tmp_path):
+    """The plain-failure route to a false green.
+
+    The xfail route was closed by inspecting markers, but the report was built
+    at collection time, so a registered test whose body simply fails still
+    credited its mechanism. A mechanism cannot be verified by a test that the
+    same run watched fail.
+    """
+    import subprocess
+    import sys
+    from tests.support import paths
+
+    module = tmp_path / "test_failing.py"
+    module.write_text(
+        "from tests.biology.catalog import verifies\n\n\n"
+        '@verifies("assay.contamination", claim="x", fields=("is_contaminant",))\n'
+        "def test_it_fails():\n"
+        "    assert False\n",
+        encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", str(module), "-q", "--biology-coverage",
+         "-p", "tests.biology.catalog._plugin", "-p", "no:cacheprovider"],
+        capture_output=True, text=True, cwd=paths.repo_root())
+    # the report line, identified by its status column -- the traceback also
+    # names the mechanism, in the decorator it echoes back
+    line = next((ln for ln in result.stdout.splitlines()
+                 if "assay.contamination" in ln
+                 and any(s in ln for s in ("unverified", "partial", "verified",
+                                           "no-truth-exported"))), "")
+    assert line, result.stdout
+    # "unverified" contains "verified", so check the status token, not a substring
+    status = line.split()[1]
+    assert status == "unverified" and "py:0" in line, (
+        f"a failing registration credited its mechanism: {line!r}")
+
+
+def test_the_coverage_plumbing_is_not_silently_dead(tmp_path):
+    """The report must reflect registrations that passed.
+
+    When credit started requiring an observed pass, the hook that records
+    outcomes was not wired into conftest, so every row read `unverified` while
+    the whole suite was green -- a report that had quietly stopped measuring
+    anything. Nothing noticed, because nothing asserted the report was
+    non-degenerate.
+    """
+    import subprocess
+    import sys
+    from tests.support import paths
+
+    module = tmp_path / "test_counts.py"
+    module.write_text(
+        "from tests.biology.catalog import verifies\n\n\n"
+        '@verifies("assay.contamination", claim="it is flagged",\n'
+        '          fields=("is_contaminant",))\n'
+        "def test_passes():\n"
+        "    assert True\n",
+        encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", str(module), "-q", "--biology-coverage",
+         "-p", "tests.biology.catalog._plugin", "-p", "no:cacheprovider"],
+        capture_output=True, text=True, cwd=paths.repo_root())
+    line = next((ln for ln in result.stdout.splitlines()
+                 if "assay.contamination" in ln and "fields" in ln
+                 and "@verifies" not in ln), "")
+    assert line, result.stdout
+    assert "py:1" in line, (
+        f"a passing registration was not counted, so the report is measuring "
+        f"nothing: {line!r}")
+    assert line.split()[1] == "verified", line

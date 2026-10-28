@@ -14,10 +14,11 @@ LOCI = ("human_igh", "human_igk", "human_tcrb")
 
 @verifies("recombination.assembly",
           claim="every base carrying a germline coordinate matches the reference "
-                "allele's base at that coordinate, so the recorded germline is the "
-                "germline the record names",
-          fields=("v_germline_start", "v_germline_end", "d_germline_start",
-                  "d_germline_end", "j_germline_start", "j_germline_end"))
+                "allele's base at that coordinate, so the bases copied are the "
+                "allele's own -- an allele-identity claim about the assembled "
+                "sequence, not about the record's coordinate fields, which come "
+                "from the column walker and are not read here",
+          fields=("sequence",))
 @pytest.mark.parametrize("locus", LOCI)
 def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(locus):
     """Checked against the reference tables, not against the engine's own record.
@@ -27,19 +28,28 @@ def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(lo
     engine's own bookkeeping can reveal.
     """
     exp = experiment_builder.recombined(locus=locus)
+    checked = 0
     for outcome in exp.run(n=25, seed=0):
         simulation = outcome.final_simulation()
         mismatches = reconstruction.templated_mismatches(simulation, exp.refdata)
         assert mismatches == (), (
             f"{locus}: recorded germline disagrees with the reference at "
             f"{len(mismatches)} position(s); first: {mismatches[0]}")
+        # Tie the IR-level check to the exported field, so the claim on
+        # `sequence` is something the body establishes rather than implies.
+        record = outcome.airr_record(exp.refdata)
+        assert record["sequence"].upper() == simulation.bases().decode().upper(), (
+            f"{locus}: the exported sequence is not the assembled bases")
+        checked += 1
+    assert checked == 25, f"{locus}: only {checked} records were checked"
 
 
 @verifies("recombination.trimming",
-          claim="the recorded trims account for the germline each segment lost: "
-                "the span present equals the allele length minus the trims, and "
-                "the two non-biological trim fields are structurally zero",
-          fields=("v_trim_3", "j_trim_5", "v_trim_5", "j_trim_3"))
+          claim="the V span present equals the allele length minus v_trim_3, "
+                "checked against the reference allele rather than the engine's "
+                "arithmetic, and the two non-biological trim fields are zero. "
+                "D and J trims are not established here",
+          fields=("v_trim_3", "v_trim_5", "j_trim_3"))
 def test_recorded_trims_account_for_the_germline_that_is_missing():
     """Checked against the reference allele's length, not against the engine's
     own arithmetic.

@@ -61,7 +61,7 @@ def test_output_matches_the_committed_golden(name, locus, n, mixed, tmp_path):
     golden_path = paths.golden(name)
     assert golden_path.is_file(), (
         f"{golden_path} is missing. Regenerate with "
-        "`python .private/scripts/regenerate_golden_files.py`.")
+        "`python tools/regenerate_golden_files.py`.")
     expected = golden_path.read_text(encoding="utf-8").splitlines()
     actual = _tsv(tmp_path, locus, n=n, mixed=mixed).splitlines()
 

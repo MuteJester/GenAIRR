@@ -27,6 +27,22 @@ def _from_records(exp):
     return set(rows[0])
 
 
+def _duplex():
+    """A duplex record, which carries the duplex_repair structure.
+
+    Omitting this mode is how a truth_gap came to claim the duplex structure
+    "is not in the record" while an existing test read
+    ``airr_record(refs)["duplex_repair"]`` directly: the completeness check
+    could not see a field no sampled mode produced.
+    """
+    from tests.support.cases.duplex import history, model, references
+    refs = references()
+    exp = ga.Experiment.on(refs).recombine(
+        duplex_repair=model(refs, [history("first"),
+                                   history("same-dna-second", weight=1)]))
+    return set(exp.run(n=1, seed=1)[0].airr_record(refs))
+
+
 @functools.lru_cache(maxsize=1)
 def fields_by_mode() -> dict[str, frozenset[str]]:
     """Mode name -> the record fields that mode produces."""
@@ -38,6 +54,7 @@ def fields_by_mode() -> dict[str, frozenset[str]]:
         "clonal_repertoire": frozenset(_from_records(
             ga.Experiment.on("human_igh").recombine()
             .clonal_repertoire(n_clones=2, max_size=4))),
+        "duplex": frozenset(_duplex()),
     }
 
 

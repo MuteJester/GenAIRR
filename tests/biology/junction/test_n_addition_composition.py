@@ -54,7 +54,7 @@ def test_the_default_n_region_composition_is_uniform():
           claim="a supplied typed NP base model is honoured, so a user can fit a "
                 "model for their own species and chain rather than inheriting one "
                 "calibrated for human IGH",
-          fields=("np1", "np1_length"))
+          fields=("np1",))
 def test_a_supplied_empirical_base_model_is_honoured():
     """The capability that matters. If this did not hold, uniform would not be a
     default but a ceiling -- and an empirical model for human IGH would be the

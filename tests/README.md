@@ -146,7 +146,7 @@ Two rules, both enforced:
 only when the output format changes on purpose:
 
 ```bash
-python .private/scripts/regenerate_golden_files.py
+python tools/regenerate_golden_files.py
 ```
 
 Then commit them: they are what every CI platform is checked against.

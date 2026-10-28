@@ -93,36 +93,39 @@ def test_contamination_is_flagged():
 
 
 @verifies("assay.paired_end",
-          claim="each read is the stretch of the molecule its recorded offsets "
-                "say it is, so a tool reconstructing the fragment from R1 and R2 "
-                "is scored against coordinates that hold",
+          claim="each read's recorded span is the length of the read, and lies "
+                "within the molecule, so a tool reconstructing the fragment from "
+                "R1 and R2 is scored against coordinates that hold",
           fields=("r1_sequence", "r1_start", "r1_end", "r2_sequence",
                   "r2_start", "r2_end"))
 def test_each_read_is_the_stretch_its_offsets_claim():
+    """Fields are read by name rather than through an f-string, so a static
+    check can confirm the claim matches what the body actually inspects."""
     exp = experiment_builder.recombined().paired_end(r1_length=120, insert_size=260)
     checked = 0
     for outcome in exp.run(n=25, seed=7):
         record = outcome.airr_record(exp.refdata)
-        full = record["sequence"]
-        for read in ("r1", "r2"):
-            sequence = record[f"{read}_sequence"]
-            start, end = record[f"{read}_start"], record[f"{read}_end"]
+        molecule = len(record["sequence"])
+        for sequence, start, end, which in (
+                (record["r1_sequence"], record["r1_start"], record["r1_end"], "r1"),
+                (record["r2_sequence"], record["r2_start"], record["r2_end"], "r2")):
             if not sequence or start is None or end is None:
                 continue
             assert end - start == len(sequence), (
-                f"{read}: offsets span {end - start} but the read is "
+                f"{which}: offsets span {end - start} but the read is "
                 f"{len(sequence)} bases")
-            assert 0 <= start <= end <= len(full), (
-                f"{read}: offsets {start}..{end} fall outside a "
-                f"{len(full)}-base molecule")
+            assert 0 <= start <= end <= molecule, (
+                f"{which}: offsets {start}..{end} fall outside a "
+                f"{molecule}-base molecule")
             checked += 1
     assert checked, "no paired read was produced; the fixture establishes nothing"
 
 
 @verifies("assay.end_loss",
-          claim="end loss is recorded per end, so sequence missing because the "
-                "read did not reach it is distinguishable from germline trimming",
-          fields=("end_loss_5_length", "end_loss_3_length"))
+          claim="5' end loss is recorded in its own field, so sequence missing "
+                "because the read did not reach it is distinguishable from "
+                "germline trimming",
+          fields=("end_loss_5_length",))
 def test_end_loss_is_recorded_separately_from_trimming():
     exp = experiment_builder.recombined().end_loss_5prime(length=12)
     lost = 0

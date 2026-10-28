@@ -3,6 +3,11 @@ from __future__ import annotations
 
 from ._registry import coverage_rows
 
+#: Registrations seen at collection, before any test has run.
+_COLLECTED: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+#: Node ids the run observed PASS. A mechanism cannot be verified by a test
+#: the same run watched fail, so credit is withheld until the outcome is known.
+_PASSED: set[str] = set()
 _REGISTRATIONS: dict[str, list[str]] = {}
 _COVERED: dict[str, set[str]] = {}
 
@@ -24,6 +29,8 @@ def _establishes_its_claim(item) -> bool:
 
 
 def pytest_collection_modifyitems(items):
+    _COLLECTED.clear()
+    _PASSED.clear()
     _REGISTRATIONS.clear()
     _COVERED.clear()
     for item in items:
@@ -31,8 +38,31 @@ def pytest_collection_modifyitems(items):
         if not registration or not _establishes_its_claim(item):
             continue
         mechanism_id, _claim, fields = registration
-        _REGISTRATIONS.setdefault(mechanism_id, []).append(item.nodeid)
-        _COVERED.setdefault(mechanism_id, set()).update(fields)
+        _COLLECTED.setdefault(mechanism_id, []).append((item.nodeid, tuple(fields)))
+
+
+def pytest_runtest_logreport(report):
+    """Record which registered tests actually passed.
+
+    Credit was granted at collection time, so a registered test whose body
+    simply failed still reported its mechanism verified. The xfail route to a
+    false green was closed by inspecting markers; this closes the plain-failure
+    route, which no marker reveals.
+    """
+    if report.when == "call" and report.passed:
+        _PASSED.add(report.nodeid)
+
+
+def _resolve() -> None:
+    """Fold the passing registrations into the reported coverage."""
+    _REGISTRATIONS.clear()
+    _COVERED.clear()
+    for mechanism_id, entries in _COLLECTED.items():
+        for node_id, fields in entries:
+            if node_id not in _PASSED:
+                continue
+            _REGISTRATIONS.setdefault(mechanism_id, []).append(node_id)
+            _COVERED.setdefault(mechanism_id, set()).update(fields)
 
 
 def _merge(registrations: dict, covered: dict) -> None:
@@ -50,7 +80,14 @@ def _merge(registrations: dict, covered: dict) -> None:
 # "unverified" the moment anyone annotated a test.
 
 def pytest_sessionfinish(session):
-    output = getattr(session.config, "workeroutput", None)
+    config = session.config
+    output = getattr(config, "workeroutput", None)
+    distributed = getattr(config.option, "dist", "no") != "no"
+    # A worker resolves its own outcomes and ships them. A serial run resolves
+    # here. The controller must NOT resolve: it has no outcomes of its own and
+    # resolving would clear what the workers already sent.
+    if output is not None or not distributed:
+        _resolve()
     if output is None:
         return                                  # controller, or no xdist
     output["genairr_registrations"] = {k: list(v) for k, v in _REGISTRATIONS.items()}
@@ -65,6 +102,9 @@ def pytest_testnodedown(node, error):
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     if not config.getoption("--biology-coverage", default=False):
         return
+    if not _REGISTRATIONS and _COLLECTED \
+            and getattr(config.option, "dist", "no") == "no":
+        _resolve()                              # serial fallback
     tw = terminalreporter
     from ._rust import rust_coverage
     # Only registered Python tests count toward a field being covered. Rust

@@ -303,13 +303,16 @@ MECHANISMS = (
         stage="assay",
         summary="Two molecules repaired into one chimeric duplex, whose halves "
                 "come from different rearrangements.",
-        truth_fields=("sequence",),
+        truth_fields=("sequence", "duplex_repair"),
         engine_passes=("DuplexRecombinePass",),
-        truth_gap="The duplex structure is not in the record: which halves came "
-                  "from which rearrangement, and where they were joined, live in "
-                  "the duplex-repair result rather than in any exported field. A "
-                  "claim on `sequence` alone would turn the whole duplex model "
-                  "green without testing a single duplex property.",
+        notes="The duplex structure IS exported, as the duplex_repair field: the "
+              "product, the observation, the overlaps, the evidence, the current "
+              "paths, the bindings and the coordinate system. An earlier version "
+              "of this entry declared a truth gap saying the structure was not in "
+              "the record, which was false -- an existing test reads "
+              "airr_record(refs)['duplex_repair'] directly. The completeness "
+              "check could not contradict it because no sampled record mode "
+              "produced a duplex record; that mode is now sampled.",
     ),
 
     # ── projection: what a benchmark actually compares ────────────────────

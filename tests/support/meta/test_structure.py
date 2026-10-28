@@ -11,6 +11,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from tests.support import paths
 
 TESTS_ROOT = Path(__file__).resolve().parents[2]
@@ -189,13 +191,34 @@ def _mark_names(value: ast.expr) -> set[str]:
 
 
 def _tier_of(module: Path) -> str | None:
+    """The tier from the module's effective pytestmark.
+
+    Reads the LAST binding, because Python honours the last one: reading the
+    first let a module declare a tier and then rebind pytestmark to a skip,
+    satisfying the guard while disabling its whole contents.
+
+    An augmented assignment is refused outright. `pytestmark += [...]` is
+    neither an Assign nor an AnnAssign, so it was invisible to this guard, to
+    the module-level skip guard, and to the inventory gate's constant hashing
+    simultaneously.
+    """
     tree = ast.parse(module.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) \
+                and node.target.id == "pytestmark":
+            raise ValueError(
+                f"{module}: pytestmark uses an augmented assignment, which hides "
+                "markers from every structural check. Declare the full list in "
+                "one binding.")
+    effective = None
     for node in tree.body:
         targets = node.targets if isinstance(node, ast.Assign) else []
         if any(isinstance(x, ast.Name) and x.id == "pytestmark" for x in targets):
-            found = _mark_names(node.value) & set(TIERS)
-            return next(iter(sorted(found)), None)
-    return None
+            effective = node.value
+    if effective is None:
+        return None
+    found = _mark_names(effective) & set(TIERS)
+    return next(iter(sorted(found)), None)
 
 
 def _product_modules():
@@ -293,11 +316,14 @@ CONDITIONALLY_SKIPPED = {
 
 
 def _module_pytestmark(module: Path):
+    """The module's effective pytestmark value -- the last binding, as Python
+    honours it."""
+    effective = None
     for node in ast.parse(module.read_text(encoding="utf-8")).body:
         targets = node.targets if isinstance(node, ast.Assign) else []
         if any(isinstance(x, ast.Name) and x.id == "pytestmark" for x in targets):
-            return node.value
-    return None
+            effective = node.value
+    return effective
 
 
 def test_no_module_unconditionally_skips_or_xfails_its_whole_contents():
@@ -325,3 +351,43 @@ def test_every_conditionally_skipped_module_is_recorded():
         "never runs is visible.")
     resolved = sorted(set(CONDITIONALLY_SKIPPED) - found)
     assert resolved == [], f"no longer conditionally skipped, remove: {resolved}"
+
+
+def test_a_later_pytestmark_rebinding_is_what_counts(tmp_path):
+    """Python honours the last binding, so reading the first lets a module
+    declare a tier and then quietly replace it with a skip."""
+    module = tmp_path / "t.py"
+    module.write_text(
+        "import pytest\n"
+        "pytestmark = [pytest.mark.behavior]\n"
+        "pytestmark = pytest.mark.skip(reason='quietly disabled')\n",
+        encoding="utf-8")
+    assert _tier_of(module) is None
+
+
+def test_an_augmented_pytestmark_assignment_is_refused(tmp_path):
+    """`pytestmark += [pytest.mark.skip(...)]` is neither an Assign nor an
+    AnnAssign, so it was invisible to both guards and to the inventory gate's
+    constant hashing at once -- a module could declare a tier, pass every
+    structural check, and skip its entire contents."""
+    module = tmp_path / "t.py"
+    module.write_text(
+        "import pytest\n"
+        "pytestmark = [pytest.mark.behavior]\n"
+        "pytestmark += [pytest.mark.skip(reason='quietly disabled')]\n",
+        encoding="utf-8")
+    with pytest.raises(ValueError, match="augmented"):
+        _tier_of(module)
+
+
+def test_no_module_augments_its_pytestmark():
+    """Enforced over the real tree, not only in the detector's self-test."""
+    offenders = []
+    for module in _product_modules():
+        for node in ast.parse(module.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) \
+                    and node.target.id == "pytestmark":
+                offenders.append(str(module.relative_to(TESTS_ROOT)))
+    assert offenders == [], (
+        f"modules augmenting pytestmark: {offenders}. Declare the full marker "
+        "list in one binding so the tier and any skip are both visible.")

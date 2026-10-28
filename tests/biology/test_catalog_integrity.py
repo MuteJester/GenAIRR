@@ -179,3 +179,55 @@ def test_a_truth_gap_stays_visible_even_when_the_mechanism_verifies():
     for mechanism_id in gapped:
         assert rows[mechanism_id].truth_gap, (
             f"{mechanism_id} lost its truth gap once a test was registered")
+
+
+def test_every_claimed_field_is_read_by_the_test_that_claims_it():
+    """A registration must claim only fields its test actually inspects.
+
+    This is the failure the whole scheme exists to prevent, and it happened
+    anyway: seven registrations claimed eleven fields their bodies never read,
+    including end_loss_3_length (zero in every record of its own fixture) and
+    the six germline-coordinate record fields, whose values come from the
+    column walker rather than the IR track the test inspects. Each produced a
+    green or partial row on nothing.
+
+    The decorator is excluded from the searched text, since it names every
+    claimed field by construction -- which is why an earlier version of this
+    analysis reported no offenders.
+    """
+    import ast
+    import re
+
+    from tests.support import paths
+
+    offenders = {}
+    for module in sorted(paths.tests_root().rglob("test_*.py")):
+        if "__pycache__" in module.parts:
+            continue
+        tree = ast.parse(module.read_text(encoding="utf-8"))
+        helpers = {node.name: "\n".join(ast.unparse(s) for s in node.body)
+                   for node in tree.body
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not node.name.startswith("test_"):
+                continue            # a nested sample used to prove a rejection
+            for decorator in node.decorator_list:
+                if not (isinstance(decorator, ast.Call)
+                        and getattr(decorator.func, "id", "") == "verifies"):
+                    continue
+                claimed = next((ast.literal_eval(k.value) for k in decorator.keywords
+                                if k.arg == "fields"), ())
+                body = "\n".join(ast.unparse(s) for s in node.body)
+                for name, text in helpers.items():
+                    if name != node.name and re.search(rf"\b{name}\b", body):
+                        body += "\n" + text
+                missing = [f for f in claimed if f not in body]
+                if missing:
+                    offenders[f"{module.name}::{node.name}"] = missing
+    assert offenders == {}, (
+        "registrations claiming fields their test never reads:\n"
+        + "\n".join(f"  {where}: {fields}" for where, fields in sorted(offenders.items()))
+        + "\n\nClaim only what the body inspects. Read fields by name rather than "
+          "through an f-string, so this check can see them.")

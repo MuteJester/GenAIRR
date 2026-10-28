@@ -91,6 +91,7 @@ else:
 from tests.biology.catalog._plugin import (  # noqa: E402,F401
     pytest_addoption,
     pytest_collection_modifyitems,
+    pytest_runtest_logreport,
     pytest_sessionfinish,
     pytest_terminal_summary,
 )

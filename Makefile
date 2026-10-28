@@ -123,3 +123,10 @@ test-budgets:
 
 test-lint:
 	ruff check tests/
+
+# The cross-platform reproducibility references. Regenerate only when the
+# output format changes on purpose, then commit them: they are what every CI
+# platform is checked against.
+.PHONY: goldens
+goldens:
+	python tools/regenerate_golden_files.py

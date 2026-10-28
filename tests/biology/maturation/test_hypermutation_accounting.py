@@ -32,7 +32,7 @@ MODELS = ("uniform", "s5f")
 @verifies("maturation.hypermutation",
           claim="a recorded substitution changes the base, so n_mutations counts "
                 "events a mutation caller can recover from the sequence",
-          fields=("n_mutations", "mutation_rate"))
+          fields=("n_mutations",))
 @pytest.mark.parametrize("model", MODELS)
 def test_a_recorded_substitution_changes_the_base(model):
     """A substitution to the same base is not a mutation under any molecular
