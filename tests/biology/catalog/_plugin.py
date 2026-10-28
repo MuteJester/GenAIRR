@@ -28,10 +28,13 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     if not config.getoption("--biology-coverage", default=False):
         return
     tw = terminalreporter
-    from ._rust import rust_coverage
+    from ._rust import rust_coverage, rust_covered_fields
+    covered = {k: set(v) for k, v in rust_covered_fields().items()}
+    for mechanism_id, fields in _COVERED.items():
+        covered.setdefault(mechanism_id, set()).update(fields)
     rows = coverage_rows({k: tuple(v) for k, v in _REGISTRATIONS.items()},
                          rust_by_mechanism=rust_coverage(),
-                         covered_by_mechanism={k: tuple(v) for k, v in _COVERED.items()})
+                         covered_by_mechanism={k: tuple(v) for k, v in covered.items()})
     colour = {"verified": {"green": True}, "partial": {"yellow": True},
               "unverified": {"red": True}}
     tw.section("biology coverage", "=")
