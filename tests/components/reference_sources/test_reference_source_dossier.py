@@ -29,7 +29,7 @@ from tests.support.fixtures.source_api import (
 from tests.support.fixtures.source_dossier import OFFLINE_SCRIPT
 from tests.support.fixtures.source_projection import MINI  # noqa: F401
 
-pytestmark = pytest.mark.behavior
+pytestmark = [pytest.mark.behavior, pytest.mark.slow]
 
 T0 = datetime.datetime(2026, 10, 27, 9, 0, 0, tzinfo=datetime.timezone.utc)
 

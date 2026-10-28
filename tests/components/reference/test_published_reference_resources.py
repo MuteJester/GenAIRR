@@ -26,7 +26,7 @@ from GenAIRR._reference_sources.recipe import Recipe
 from tests.support.fixtures.ogrdb_inventory import IGH, RECORDS, SELECTION, raw, raw_records
 from tests.support.fixtures.source_api import DATA, PROFILE, SOURCES
 
-pytestmark = pytest.mark.behavior
+pytestmark = [pytest.mark.behavior, pytest.mark.slow]
 
 STARTER_ID = "human_igh_ogrdb_10_observed_v1"
 RECIPE_PATH = DATA / f"{STARTER_ID}.recipe.json"

@@ -24,7 +24,7 @@ import GenAIRR as ga
 
 import pytest
 
-pytestmark = pytest.mark.composition
+pytestmark = [pytest.mark.composition, pytest.mark.slow]
 
 
 def _assert_parity(parity_list, *, label: str, seed: int):

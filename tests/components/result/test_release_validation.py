@@ -35,7 +35,7 @@ import GenAIRR as ga
 
 import pytest
 
-pytestmark = pytest.mark.composition
+pytestmark = [pytest.mark.composition, pytest.mark.slow]
 
 
 def test_full_stack_vdj_validates_all_airr_records():

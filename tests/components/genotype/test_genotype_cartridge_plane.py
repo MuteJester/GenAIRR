@@ -8,7 +8,7 @@ import GenAIRR.data as gdata
 from GenAIRR.genotype import Genotype
 from GenAIRR.genotype_priors import PopulationGenotypeModel, PopulationNovelAllele
 
-pytestmark = pytest.mark.behavior
+pytestmark = [pytest.mark.behavior, pytest.mark.slow]
 
 
 def _cfg():

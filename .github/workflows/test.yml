@@ -56,10 +56,16 @@ jobs:
 
       # -n auto distributes across the runner's cores. No -x: with xdist it
       # truncates reporting across workers and hides which one failed.
+      # The wall-time budgets are excluded here and run on their own below:
+      # under xdist the other workers saturate the cores, which inflates the
+      # measured time and fails the budgets intermittently.
       - name: Run pytest
         env:
           HYPOTHESIS_PROFILE: ci
-        run: pytest tests/ -q -n auto
+        run: pytest tests/ -q -n auto -m "not performance"
+
+      - name: Run wall-time budgets
+        run: pytest tests/ -q -m performance
 
   # ── Rust unit + integration tests ──────────────────────────────
   # Direct `cargo test` against the engine crate. Cheaper and more

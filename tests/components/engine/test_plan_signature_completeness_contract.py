@@ -50,7 +50,7 @@ from GenAIRR.reference_models import (
 )
 from tests.support import paths
 
-pytestmark = pytest.mark.pin
+pytestmark = [pytest.mark.pin, pytest.mark.slow]
 
 
 _REPO_ROOT = paths.repo_root()

@@ -112,7 +112,7 @@ filterwarnings = [
 # Tier markers classify every test module. They are orthogonal to the
 # directory tree, so `-m pin` selects across the whole suite.
 markers = [
-    "performance: regression-guard wall-time budgets (see docs/performance_baseline.md)",
+    "performance: regression-guard wall-time budgets (see docs/performance_baseline.md).\n        Run serially, on their own: under xdist the other workers saturate the\n        cores and the measured time reflects contention, not the engine.",
     "pin: pins a live surface a feature reuses; fails when that surface shifts",
     "behavior: exercises a feature's own behavior",
     "composition: runs the feature against the full release stack",
