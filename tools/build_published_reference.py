@@ -126,12 +126,21 @@ def build(exact_id: str, *, cache) -> ReferenceBuild:
 
 
 def declared_version(text: str) -> str:
-    """``[project].version`` of a pyproject.toml text (CRLF or LF line endings)."""
+    """``[project].version`` of a pyproject.toml text, read without tomllib (so on every Python)
+    and with either line ending.  A missing table or version, or a dynamic version, is a
+    ``GeneratorError`` saying so.  The tests read the declared version with this same function."""
     text = text.replace("\r\n", "\n")
     table = re.search(r"^\[project\][ \t]*(?:#.*)?$(.*?)(?=^\[|\Z)", text, re.M | re.S)
-    version = table and re.search(r"""^version\s*=\s*(["'])([^"']+)\1\s*(?:#.*)?$""", table.group(1), re.M)
-    if not version:
-        raise GeneratorError("pyproject.toml declares no version in its [project] table")
+    if table is None:
+        raise GeneratorError("pyproject.toml has no [project] table, so it declares no version to compare with")
+    project = table.group(1)
+    dynamic = re.search(r"^dynamic\s*=\s*\[([^\]]*)\]", project, re.M)
+    if dynamic and re.search(r"[\"']version[\"']", dynamic.group(1)):
+        raise GeneratorError("pyproject.toml declares the version as dynamic; the packaged dossier's builder can only "
+                             "be compared with a version written in [project]")
+    version = re.search(r"""^version\s*=\s*(["'])([^"']+)\1\s*(?:#.*)?$""", project, re.M)
+    if version is None:
+        raise GeneratorError("pyproject.toml has no version in its [project] table")
     return version.group(2)
 
 

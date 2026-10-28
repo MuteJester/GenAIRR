@@ -664,22 +664,13 @@ def test_loading_the_starter_leaves_the_human_igh_alias_unchanged(starter):
 
 
 def declared_version(text: str) -> str:
-    """``[project].version`` of a pyproject.toml text (read without tomllib, so on every Python);
-    a missing table or version, or a dynamic version, fails with a message saying so.  Line endings
-    are normalised first: a Windows checkout may hold the file with CRLF."""
-    text = text.replace("\r\n", "\n")
-    table = re.search(r"^\[project\][ \t]*(?:#.*)?$(.*?)(?=^\[|\Z)", text, re.M | re.S)
-    if table is None:
-        pytest.fail("pyproject.toml has no [project] table, so it declares no version to compare with")
-    project = table.group(1)
-    dynamic = re.search(r"^dynamic\s*=\s*\[([^\]]*)\]", project, re.M)
-    if dynamic and re.search(r"[\"']version[\"']", dynamic.group(1)):
-        pytest.fail("pyproject.toml declares the version as dynamic; the packaged dossier's builder can only be "
-                    "compared with a version written in [project]")
-    version = re.search(r"""^version\s*=\s*(["'])([^"']+)\1\s*(?:#.*)?$""", project, re.M)
-    if version is None:
-        pytest.fail("pyproject.toml has no version in its [project] table")
-    return version.group(2)
+    """``[project].version`` of a pyproject.toml text, read by the generator's own parser so that the
+    release check and the generator follow one rule; a refusal fails the test with its message."""
+    tool = load_tool()
+    try:
+        return tool.declared_version(text)
+    except tool.GeneratorError as exc:
+        pytest.fail(str(exc))
 
 
 @pytest.mark.parametrize("text, expected", [
