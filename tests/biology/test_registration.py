@@ -115,8 +115,12 @@ def test_fields_must_be_given():
             pass
 
 
-def test_status_is_one_of_three_values():
-    assert {r.status for r in coverage_rows({})} <= {"verified", "partial", "unverified"}
+def test_status_is_one_of_the_declared_values():
+    """no-truth-exported is the fourth: a mechanism whose truth is not in the
+    record cannot be established by any test, and saying "unverified" would
+    invite someone to go and write one."""
+    assert {r.status for r in coverage_rows({})} <= {
+        "verified", "partial", "unverified", "no-truth-exported"}
 
 
 def test_a_typo_is_a_collection_error_in_a_real_module(tmp_path):

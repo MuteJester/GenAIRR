@@ -73,7 +73,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
                          rust_by_mechanism=rust_coverage(),
                          covered_by_mechanism={k: tuple(v) for k, v in _COVERED.items()})
     colour = {"verified": {"green": True}, "partial": {"yellow": True},
-              "unverified": {"red": True}}
+              "unverified": {"red": True}, "no-truth-exported": {"purple": True}}
     tw.section("biology coverage", "=")
     stage = None
     for row in rows:
@@ -89,13 +89,18 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         tw.write(f"py:{len(row.python_tests)}".ljust(7))
         tw.line(f" {asserted}")
     counts = {s: sum(1 for r in rows if r.status == s)
-              for s in ("verified", "partial", "unverified")}
+              for s in ("verified", "partial", "unverified", "no-truth-exported")}
     tw.line("")
     tw.line(
         f"  {counts['verified']} verified, {counts['partial']} partial, "
-        f"{counts['unverified']} unverified, of {len(rows)} mechanisms")
+        f"{counts['unverified']} unverified, "
+        f"{counts['no-truth-exported']} with no truth exported, "
+        f"of {len(rows)} mechanisms")
     tw.line("")
     tw.line("  Status comes from registered Python tests only.", bold=True)
+    tw.line("  no-truth-exported means the mechanism's truth is not in the record at")
+    tw.line("  all, so no test could establish it. Writing a test does not fix those;")
+    tw.line("  exporting the truth does. See each mechanism's truth_gap.")
     tw.line("  rust-asserted counts engine_rs/tests/metadata_truth/ files recorded by")
     tw.line("  hand from their module docstrings. Those docstrings state intent, not")
     tw.line("  coverage, and spot-checks found credited fields the files never mention,")

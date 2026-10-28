@@ -63,7 +63,7 @@ class CoverageRow:
 
     mechanism_id: str
     stage: str
-    status: str                       # verified | partial | unverified
+    status: str                       # verified | partial | unverified | no-truth-exported
     truth_fields: tuple[str, ...]
     python_tests: tuple[str, ...] = ()
     rust_asserted: tuple[str, ...] = ()
@@ -102,7 +102,12 @@ def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
         rust = tuple(rust_by_mechanism.get(mechanism.id, ()))
         covered = tuple(f for f in mechanism.truth_fields
                         if f in set(covered_by_mechanism.get(mechanism.id, ())))
-        if not python:
+        if mechanism.truth_gap and not python:
+            # Distinct from unverified on purpose: "no one has written the test"
+            # and "there is nothing to test against" are different problems, and
+            # only one of them is fixed by writing a test.
+            status = "no-truth-exported"
+        elif not python:
             status = "unverified"
         elif set(covered) >= set(mechanism.truth_fields):
             status = "verified"

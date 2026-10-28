@@ -56,9 +56,12 @@ def test_every_mechanism_id_is_prefixed_with_its_stage():
     assert wrong == [], f"mechanism ids not prefixed with their stage: {wrong}"
 
 
-def test_stages_are_exactly_the_declared_developmental_order():
+def test_stages_are_exactly_the_declared_order():
+    """Developmental order, then the two that are not developmental stages:
+    assay is what the protocol did to the molecule afterwards, and projection is
+    the surface a benchmark reads rather than a step anything performs."""
     assert catalog.STAGES == ("germline", "recombination", "junction", "expression",
-                              "maturation", "clonality", "assay")
+                              "maturation", "clonality", "assay", "projection")
     assert {m.stage for m in catalog.all_mechanisms()} <= set(catalog.STAGES)
 
 
@@ -101,3 +104,64 @@ def test_by_id_finds_a_mechanism_and_rejects_an_unknown_one():
     assert catalog.by_id("junction.n_addition").stage == "junction"
     with pytest.raises(KeyError):
         catalog.by_id("junction.n_additon")
+
+
+# ── the projection surface, and truth that is not exported ───────────────────
+
+def test_the_alignment_surface_has_an_owner():
+    """These are the fields an aligner benchmark actually compares.
+
+    They were deliberately unowned on the reasoning that no single mechanism
+    produces them -- a trim, an N addition, a mutation and an indel all land in
+    the same CIGAR. True, but the consequence was that the catalog could read
+    fully green while every coordinate a benchmark consumes was wrong. The
+    answer is a cross-cutting mechanism with its own claims, not an exemption.
+    """
+    owned = {f for m in catalog.all_mechanisms() for f in m.truth_fields}
+    surface = {
+        "v_cigar", "d_cigar", "j_cigar",
+        "v_sequence_start", "v_sequence_end", "d_sequence_start", "d_sequence_end",
+        "j_sequence_start", "j_sequence_end",
+        "v_alignment_start", "v_alignment_end", "d_alignment_start", "d_alignment_end",
+        "j_alignment_start", "j_alignment_end",
+        "sequence_alignment", "germline_alignment", "germline_alignment_d_mask",
+        "sequence_aa",
+    }
+    assert surface <= owned, f"alignment-surface fields owned by nobody: {sorted(surface - owned)}"
+
+
+def test_no_exported_field_is_owned_by_nobody():
+    """Every field a record carries is either claimed by a mechanism or named
+    in the explicit unclaimed record, with a reason. A field nobody owns is a
+    field nobody is answerable for."""
+    from tests.support.fixtures.record_modes import every_known_field
+    owned = {f for m in catalog.all_mechanisms() for f in m.truth_fields}
+    unaccounted = sorted(every_known_field() - owned - set(catalog.UNCLAIMED_FIELDS))
+    assert unaccounted == [], (
+        f"exported fields with no owner and no recorded reason: {unaccounted}")
+
+
+def test_every_unclaimed_field_states_why():
+    assert catalog.UNCLAIMED_FIELDS
+    thin = [f for f, reason in catalog.UNCLAIMED_FIELDS.items() if not reason.strip()]
+    assert thin == [], f"unclaimed fields with no reason: {thin}"
+
+
+def test_a_mechanism_whose_truth_is_not_exported_says_so():
+    """`germline.genotype` owned only `locus`, and `assay.ambiguous_calls` and
+    `assay.duplex_formation` owned only `sequence`, because their real truth is
+    not in the record at all. Reporting those as merely untested confuses "no
+    one has written the test" with "there is nothing to test against"."""
+    gapped = [m for m in catalog.all_mechanisms() if m.truth_gap]
+    assert gapped, "no mechanism declares a truth gap, which cannot be right"
+    for mechanism in gapped:
+        assert mechanism.truth_gap.strip(), mechanism.id
+
+
+def test_a_truth_gap_reports_as_its_own_status_not_as_unverified():
+    rows = {r.mechanism_id: r for r in catalog.coverage_rows({})}
+    gapped = [m.id for m in catalog.all_mechanisms() if m.truth_gap]
+    for mechanism_id in gapped:
+        assert rows[mechanism_id].status == "no-truth-exported", (
+            f"{mechanism_id} declares a truth gap but reports "
+            f"{rows[mechanism_id].status!r}")

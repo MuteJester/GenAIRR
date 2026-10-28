@@ -21,6 +21,11 @@ class Mechanism:
     engine_passes: tuple[str, ...] = ()
     references: tuple[str, ...] = ()
     notes: str = ""
+    #: Set when the mechanism's real truth is not exported at all. Without it,
+    #: such a mechanism borrows whatever field happens to exist and reports as
+    #: merely untested, which confuses "no one has written the test" with
+    #: "there is nothing to test against".
+    truth_gap: str = ""
 
     def __post_init__(self) -> None:
         if not self.id.startswith(f"{self.stage}."):

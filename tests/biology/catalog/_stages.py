@@ -17,7 +17,7 @@ from ._model import Mechanism
 
 #: Developmental order. Reports and directory listings follow it.
 STAGES = ("germline", "recombination", "junction", "expression",
-          "maturation", "clonality", "assay")
+          "maturation", "clonality", "assay", "projection")
 
 #: Passes that are not biology. The engine documents these as reference
 #: implementations; classifying them as a mechanism would make the catalog
@@ -25,6 +25,28 @@ STAGES = ("germline", "recombination", "junction", "expression",
 INFRASTRUCTURE = {
     "EchoPass": "the engine's deterministic transform reference, not a biological step",
     "SampleBasePass": "the engine's sampling reference, not a biological step",
+}
+
+#: Fields a record carries that no mechanism owns, each with the reason. A
+#: field nobody owns is a field nobody is answerable for, so the alternative to
+#: a claim is an explicit entry here -- not silence.
+UNCLAIMED_FIELDS = {
+    "sequence_id": "a label the harness assigns, not simulated biology; "
+                   "clonality.founder claims it for clone identity instead",
+    "locus": "claimed by germline.genotype as the only exported field it has; "
+             "see that mechanism's truth_gap",
+    "productivity_policy": "configuration echoed back, not an outcome",
+    "productivity_scope": "configuration echoed back, not an outcome",
+    "productivity_reasons": "diagnostic text explaining the productive flag, "
+                            "not an independent truth",
+    "read_layout": "configuration echoed back; assay.paired_end owns the "
+                   "sampled coordinates",
+    "insert_size": "configuration echoed back; assay.paired_end owns the "
+                   "sampled coordinates",
+    "mutation_rate": "a derived ratio of n_mutations to length, owned via "
+                     "maturation.hypermutation rather than separately",
+    "c_call": "always empty: no isotype or class-switch recombination is "
+              "modelled. See maturation.class_switching's truth_gap",
 }
 
 MECHANISMS = (
@@ -36,6 +58,12 @@ MECHANISMS = (
                 "including whether a haplotype is functional at all.",
         truth_fields=("locus",),
         engine_passes=("SampleGenotypePass",),
+        truth_gap="The genotype itself is not exported. There is no haplotype or "
+                  "chromosome field, no carried-allele set, and no per-read "
+                  "novel-allele or deletion truth, so `locus` is the only field "
+                  "available to claim. Until that truth is exported, "
+                  "genotype and haplotype inference tools (TIgGER, piglet, "
+                  "RAbHIT) cannot be benchmarked against GenAIRR.",
     ),
     Mechanism(
         id="germline.allele_choice",
@@ -53,8 +81,14 @@ MECHANISMS = (
         stage="recombination",
         summary="Exonuclease loss at each coding end before joining: how many "
                 "bases of V, D and J were removed.",
-        truth_fields=("v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5"),
+        truth_fields=("v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5",
+                      "v_trim_5", "j_trim_3"),
         engine_passes=("TrimPass",),
+        notes="v_trim_5 and j_trim_3 are exported for AIRR completeness and are "
+              "structurally zero: RAG cleaves only the RSS-adjacent coding end, "
+              "so there is no 5' V or 3' J exonuclease loss to record. Measured "
+              "zero across 200 records. A non-zero value would mean the model "
+              "had acquired biology it does not claim.",
     ),
     Mechanism(
         id="recombination.d_inversion",
@@ -142,6 +176,20 @@ MECHANISMS = (
         engine_passes=("S5FMutationPass", "UniformMutationPass"),
     ),
 
+    Mechanism(
+        id="maturation.class_switching",
+        stage="maturation",
+        summary="Class switch recombination: replacing the constant region so a "
+                "matured B cell expresses a different isotype.",
+        truth_fields=("c_call",),
+        truth_gap="Not modelled. c_call is hardwired empty in the record builder, "
+                  "there is no IGHC reference, no switch region and no isotype. "
+                  "Isotype-aware clonal inference and switched-versus-naive "
+                  "partitioning therefore cannot be benchmarked against GenAIRR, "
+                  "and the catalog records that rather than omitting the "
+                  "mechanism as though receptor maturation ended at SHM.",
+    ),
+
     # ── clonality: one cell's descendants ─────────────────────────────────
     # Split three ways because the exported truth is three different claims,
     # and one mechanism owning `clone_id` left the five lineage fields -- the
@@ -212,6 +260,11 @@ MECHANISMS = (
                 "must not be read as mutations.",
         truth_fields=("sequence",),
         engine_passes=("NCorruptionPass",),
+        truth_gap="No N-count field is exported, and because the sites are drawn "
+                  "with replacement the requested count is not recoverable from "
+                  "the sequence either (20 requested produced 18 Ns). The claim "
+                  "that matters -- ambiguous positions must not be read as "
+                  "mutations -- has no field of its own to carry it.",
     ),
     Mechanism(
         id="assay.contamination",
@@ -252,5 +305,67 @@ MECHANISMS = (
                 "come from different rearrangements.",
         truth_fields=("sequence",),
         engine_passes=("DuplexRecombinePass",),
+        truth_gap="The duplex structure is not in the record: which halves came "
+                  "from which rearrangement, and where they were joined, live in "
+                  "the duplex-repair result rather than in any exported field. A "
+                  "claim on `sequence` alone would turn the whole duplex model "
+                  "green without testing a single duplex property.",
+    ),
+
+    # ── projection: what a benchmark actually compares ────────────────────
+    # Not a developmental stage. These fields are the projection of whatever
+    # every mechanism did -- a trim, an N addition, a mutation and an indel all
+    # land in the same CIGAR -- which is why no single stage can own them. They
+    # are also precisely what an aligner benchmark compares, so leaving them
+    # unowned let the catalog read green while every consumed coordinate could
+    # be wrong.
+    Mechanism(
+        id="projection.segment_coordinates",
+        stage="projection",
+        summary="Where each segment begins and ends, in the read and in the "
+                "alignment. The coordinates a downstream aligner is scored on.",
+        truth_fields=("v_sequence_start", "v_sequence_end", "d_sequence_start",
+                      "d_sequence_end", "j_sequence_start", "j_sequence_end",
+                      "v_alignment_start", "v_alignment_end", "d_alignment_start",
+                      "d_alignment_end", "j_alignment_start", "j_alignment_end"),
+    ),
+    Mechanism(
+        id="projection.cigar",
+        stage="projection",
+        summary="Per-segment CIGAR strings reconciling the read against the "
+                "germline, including every edit any mechanism introduced.",
+        truth_fields=("v_cigar", "d_cigar", "j_cigar"),
+        notes="Under an inverted D the germline coordinates are forward-reference "
+              "while the sequence carries the reverse complement, and the CIGAR "
+              "carries no strand marker -- so reconstructing germline from "
+              "(d_call, d_germline_start/end, d_cigar) without reading d_inverted "
+              "yields the wrong strand.",
+    ),
+    Mechanism(
+        id="projection.germline_alignment",
+        stage="projection",
+        summary="The aligned sequence and its germline counterpart, gap-aware, "
+                "with the D region optionally masked.",
+        truth_fields=("sequence_alignment", "germline_alignment",
+                      "germline_alignment_d_mask"),
+    ),
+    Mechanism(
+        id="projection.translation",
+        stage="projection",
+        summary="The amino-acid projection of the full rearrangement, which "
+                "depends on frame and therefore on everything upstream of it.",
+        truth_fields=("sequence_aa",),
+    ),
+    Mechanism(
+        id="projection.alignment_scores",
+        stage="projection",
+        summary="Per-segment identity, score and support for the reported call.",
+        truth_fields=("v_identity", "d_identity", "j_identity",
+                      "v_score", "d_score", "j_score",
+                      "v_support", "d_support", "j_support"),
+        truth_gap="identity is populated, but score and support are None on every "
+                  "record measured. A benchmark reading them gets nothing, and a "
+                  "claim on identity alone would report the mechanism verified "
+                  "while two thirds of its fields carry no value.",
     ),
 )

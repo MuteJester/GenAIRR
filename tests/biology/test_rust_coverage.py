@@ -78,16 +78,15 @@ def test_rust_assertions_do_not_set_a_mechanism_status():
     rows = {r.mechanism_id: r for r in coverage_rows({}, rust_by_mechanism=rust_coverage())}
     credited = [r for r in rows.values() if r.rust_asserted]
     assert credited, "the Rust records credit nothing, which cannot be right"
-    assert all(r.status == "unverified" for r in credited), (
-        "Rust assertions must not set a status: "
-        f"{[r.mechanism_id for r in credited if r.status != 'unverified']}")
+    unearned = [r.mechanism_id for r in credited if r.status in ("verified", "partial")]
+    assert unearned == [], f"Rust assertions must not set a status: {unearned}"
 
 
 def test_the_python_column_reports_only_what_registered():
     """With no product test registered, the honest Python number is zero."""
     rows = coverage_rows({}, rust_by_mechanism=rust_coverage())
     assert all(r.python_tests == () for r in rows)
-    assert all(r.status == "unverified" for r in rows)
+    assert all(r.status in ("unverified", "no-truth-exported") for r in rows)
 
 
 def test_a_python_registration_is_what_moves_a_status():

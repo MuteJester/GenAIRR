@@ -18,10 +18,10 @@ from ._model import Mechanism
 from ._registry import CoverageRow, coverage_rows, verifies
 from ._rust import (PROJECTION_SOURCES, RUST_SOURCES, RustSource, all_rust_sources,
                     rust_covered_fields, rust_coverage)
-from ._stages import INFRASTRUCTURE, MECHANISMS, STAGES
+from ._stages import INFRASTRUCTURE, MECHANISMS, STAGES, UNCLAIMED_FIELDS
 
 __all__ = ["Mechanism", "CoverageRow", "RustSource", "STAGES", "INFRASTRUCTURE",
-           "PROJECTION_SOURCES", "RUST_SOURCES",
+           "PROJECTION_SOURCES", "RUST_SOURCES", "UNCLAIMED_FIELDS",
            "all_mechanisms", "all_rust_sources", "by_id", "classified_passes",
            "coverage_rows", "pass_registry", "rust_coverage",
            "rust_covered_fields", "verifies"]
