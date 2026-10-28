@@ -45,6 +45,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 _COUNTER_FIELDS: tuple[str, ...] = (
     "n_fwr1_mutations",

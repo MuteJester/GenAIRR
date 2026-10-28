@@ -4,6 +4,8 @@ import pytest
 from GenAIRR import _engine as ge
 from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin, project_duplex_simulation
 
+pytestmark = pytest.mark.behavior
+
 
 def fixture(*, inverted=False, np1=""):
     v, d, j = ("AAATGTA" if np1 else "AAATGT"), "ACT", "TTTAAA"

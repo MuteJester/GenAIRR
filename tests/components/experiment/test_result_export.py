@@ -6,6 +6,8 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp, _human_igh_records
 
+pytestmark = pytest.mark.behavior
+
 def test_run_records_returns_simulation_result():
     from GenAIRR.result import SimulationResult
 

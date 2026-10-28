@@ -57,6 +57,8 @@ from GenAIRR.reference_models import (
 )
 from tests.support import paths
 
+pytestmark = pytest.mark.pin
+
 
 _REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "np_base_model_estimation_design.md"

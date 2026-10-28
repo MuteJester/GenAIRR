@@ -38,6 +38,8 @@ import GenAIRR as ga
 from GenAIRR import FamilyValidationReport
 from GenAIRR.result import SimulationResult
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared fixtures

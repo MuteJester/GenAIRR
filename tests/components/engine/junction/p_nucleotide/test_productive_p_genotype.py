@@ -10,6 +10,8 @@ from GenAIRR.genotype import Genotype
 from tests.support.cases.productive import assert_productive_record, synthetic_cartridge
 from tests.support.fixtures.phased_anchors import _phased_fixture
 
+pytestmark = pytest.mark.behavior
+
 
 
 

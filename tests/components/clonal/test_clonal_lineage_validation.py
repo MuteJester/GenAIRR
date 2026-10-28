@@ -2,6 +2,8 @@
 import pytest
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 def _base_exp(**kw):
     defaults = dict(n_clones=2, max_generations=4, n_max=100, n_sample=10,

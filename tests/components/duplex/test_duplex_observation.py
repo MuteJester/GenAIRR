@@ -11,6 +11,8 @@ from GenAIRR.experimental import (
     project_duplex_simulation,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 def fixture(*, inverted=False, order=("vd", "dj")):
     r = ge.RefDataConfig.vdj()

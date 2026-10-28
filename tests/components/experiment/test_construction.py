@@ -8,6 +8,8 @@ import pytest
 from GenAIRR import CompiledExperiment, Experiment
 from tests.support.fixtures.experiment_dsl import _vdj_refdata, _vj_refdata
 
+pytestmark = pytest.mark.behavior
+
 def test_experiment_on_returns_experiment_instance():
     exp = Experiment.on(_vj_refdata()).allow_curatable_refdata()
     assert isinstance(exp, Experiment)

@@ -36,6 +36,8 @@ import pytest
 import GenAIRR as ga
 from GenAIRR._engine import StrictSamplingError
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared helpers

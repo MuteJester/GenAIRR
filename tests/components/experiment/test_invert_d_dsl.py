@@ -24,6 +24,8 @@ import GenAIRR as ga
 from GenAIRR import _engine as ge
 from GenAIRR import _refdata_resolver
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Deterministic VDJ fixture

@@ -12,6 +12,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 def test_clonal_lineage_with_corruption_applies_artefacts():
     exp = (

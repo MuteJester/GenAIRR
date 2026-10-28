@@ -8,6 +8,8 @@ from GenAIRR import Experiment, SimulationResult, _engine as ge
 from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin
 from tests.support.fixtures.duplex_observation import _fixture, _compile
 
+pytestmark = pytest.mark.composition
+
 
 def _result(*, clipped=False):
     refs, _, seed = _fixture()

@@ -39,6 +39,10 @@ import GenAIRR as ga
 from GenAIRR import _engine as ge
 from tests.support import paths
 
+import pytest
+
+pytestmark = pytest.mark.pin
+
 
 # ──────────────────────────────────────────────────────────────────
 # Deterministic VDJ fixture. The contract uses a tiny VDJ refdata

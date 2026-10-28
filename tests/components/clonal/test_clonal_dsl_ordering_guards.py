@@ -50,6 +50,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Spec 1 — invert_d after expand_clones raises (Bug A guard)

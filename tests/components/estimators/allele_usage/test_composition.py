@@ -20,6 +20,10 @@ from __future__ import annotations
 
 import GenAIRR as ga
 
+import pytest
+
+pytestmark = pytest.mark.composition
+
 
 # ──────────────────────────────────────────────────────────────────
 # Inline VDJ FASTA fixtures — kept small enough to run fast but

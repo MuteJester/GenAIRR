@@ -9,6 +9,8 @@ import pytest
 from GenAIRR import Experiment, SimulationResult
 from tests.support.cases.duplex import references, model, history
 
+pytestmark = pytest.mark.behavior
+
 
 def _base():
     refs = references()

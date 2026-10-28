@@ -25,6 +25,8 @@ from GenAIRR.reference_models import (
     ReferenceEmpiricalModels,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Spec shape validation (pure Python)

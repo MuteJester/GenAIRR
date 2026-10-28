@@ -3,6 +3,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 def ref(inverted=False, good=True):
     cfg = ga.RefDataConfig.vdj()

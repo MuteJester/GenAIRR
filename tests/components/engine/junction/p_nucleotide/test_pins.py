@@ -39,6 +39,8 @@ import GenAIRR as ga
 from GenAIRR.reference_models import ReferenceEmpiricalModels
 from tests.support import paths
 
+pytestmark = pytest.mark.pin
+
 
 _REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "p_nucleotide_design.md"

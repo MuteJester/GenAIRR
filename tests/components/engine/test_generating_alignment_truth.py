@@ -5,6 +5,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 @pytest.mark.parametrize("inverted", [False, True])
 def test_high_shm_alignment_reconstructs_every_generating_reference_position(inverted):

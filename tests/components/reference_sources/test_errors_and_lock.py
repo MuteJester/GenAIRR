@@ -9,6 +9,8 @@ from GenAIRR._reference_sources.errors import KINDS, ReferenceSourceError
 from GenAIRR._reference_sources import model as m
 from tests.support.fixtures.reference_source_models import ADAPTER, IGH, ROLE, ROOT, SOURCES, _load_json, _raises, _reseal, _source_set, lock_dict, receipt_dict
 
+pytestmark = pytest.mark.behavior
+
 def test_error_kinds_are_the_stable_vocabulary():
     assert KINDS == ("io", "network", "resource_limit", "malformed", "unsupported_schema",
                      "unsupported_profile", "identity_mismatch", "digest_mismatch", "missing_asset",

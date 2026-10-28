@@ -14,6 +14,8 @@ from GenAIRR._family_replay import _bundle_from_result, _content_decode, _digest
 from tests.support.cases.duplex import references, model, history
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 def experiment(*, rows=None, n_clones=2, depth=2, rate=.05, inverted=False, **family):
     refs = references()

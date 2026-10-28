@@ -12,6 +12,8 @@ from tests.support.cases.productive import (
     synthetic_cartridge,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 @pytest.mark.parametrize("strict", [False, True])
 def test_vj_forced_positive_p_requires_compensating_n_length(strict):

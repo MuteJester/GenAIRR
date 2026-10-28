@@ -38,6 +38,8 @@ import pytest
 import GenAIRR as ga
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Spec 1 — baseline records default to 0

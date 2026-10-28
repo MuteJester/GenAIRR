@@ -33,6 +33,8 @@ from GenAIRR import (
 )
 from GenAIRR._validation import _raise_on_validation_failure
 
+pytestmark = pytest.mark.behavior
+
 
 def _build_experiment() -> Experiment:
     """The chain shared by the happy-path tests. Productive-only

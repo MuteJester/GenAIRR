@@ -1,5 +1,9 @@
 from GenAIRR import _engine
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 
 def test_sample_clone_sizes_basic():
     sizes = _engine.sample_clone_sizes(500, 0)           # defaults: power_law exp 2

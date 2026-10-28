@@ -7,6 +7,8 @@ from GenAIRR._artifact_io import canonical_json, strict_loads, typed_digest
 from GenAIRR._reference_sources import model as m
 from tests.support.fixtures.reference_source_models import ADAPTER, CLAIM_ID, FINDING_ID, GENERATOR, IGH, INV_RECORDS, Inv, L, ROLE, ROOT, RUNTIME, SELECTED, SOURCES, _RECORDS, _blocks, _capabilities, _claim, _fasta, _find, _finding, _gapped_index, _load_json, _pointer, _raises, _recipe, _records, _reseal, _sorted, _source_set, decision, inv, inventory, lock_dict, recipe_dict, report, report_d, report_decisions, report_dict, selection_entry
 
+pytestmark = pytest.mark.behavior
+
 def test_check_selection_binds_exact_record_and_digest(inventory):
     m.check_selection(_recipe(inventory), inventory)
 

@@ -6,6 +6,8 @@ from GenAIRR import data
 from GenAIRR._dataconfig_extract import extract_recombine_defaults
 from GenAIRR._reference import defaults as d
 
+pytestmark = pytest.mark.behavior
+
 VIEW_VDJ = {"V": ["V:IGHV1-2*01", "V:IGHV1-3*01"], "D": ["D:IGHD1-1*01"], "J": ["J:IGHJ4*01", "J:IGHJ5*01"]}
 VIEW_VJ = {"V": ["V:IGKV1-5*01"], "J": ["J:IGKJ1*01"]}
 

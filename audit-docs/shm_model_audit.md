@@ -347,7 +347,7 @@ Sometimes the live call widens; sometimes it doesn't. The truth
 call is always present and always a single allele name. This is
 the design — already pinned by
 `test_g8_truth_retained_in_live_call_under_heavy_shm` in
-`tests/components/experiment/test_experiment.py`.
+`tests/components/experiment/test_fastq.py`.
 
 ### Identity-to-projected vs identity-to-truth gaps
 

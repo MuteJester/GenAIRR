@@ -37,6 +37,8 @@ from GenAIRR.reference_models import (
     ReferenceEmpiricalModels,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Inline FASTA fixtures — same shape as the trim implementation

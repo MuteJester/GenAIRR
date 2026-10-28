@@ -16,6 +16,8 @@ import GenAIRR as ga
 from GenAIRR import _engine as ge
 from GenAIRR.result import SimulationResult, ValidationReport
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Fixtures

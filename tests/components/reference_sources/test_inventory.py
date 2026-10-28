@@ -7,6 +7,8 @@ from GenAIRR._artifact_io import canonical_json, strict_loads, typed_digest
 from GenAIRR._reference_sources import model as m
 from tests.support.fixtures.reference_source_models import ADAPTER, CLAIM_ID, FINDING_ID, IGH, INV_RECORDS, Inv, L, ROLE, ROOT, SELECTED, SOURCES, _RECORDS, _blocks, _claim, _fasta, _find, _gapped_index, _inventory_dict, _load_json, _nested, _pointer, _raises, _recipe, _records, _reseal, _sorted, _source_set, decision, inv, inventory, lock_dict, recipe_dict, selection_entry
 
+pytestmark = pytest.mark.behavior
+
 def test_inventory_round_trips_and_is_byte_stable(inventory):
     d = inventory.to_dict()
     again = m.SourceInventory.from_dict(d)

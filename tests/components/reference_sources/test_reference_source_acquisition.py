@@ -37,6 +37,8 @@ from GenAIRR._reference_sources.cache import BlobCache
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from tests.support.fixtures.source_acquisition import ALL, FakeResponse, FakeTransport, IGH, IGK, SOURCES, _fixture, _sources_asset, _url, ok, serve
 
+pytestmark = pytest.mark.behavior
+
 PROFILE = "ogrdb_api_v2_human_ig_observed_v1"
 T0 = datetime.datetime(2026, 10, 27, 9, 30, tzinfo=datetime.timezone.utc)
 

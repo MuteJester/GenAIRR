@@ -32,6 +32,10 @@ import json
 
 import GenAIRR as ga
 
+import pytest
+
+pytestmark = pytest.mark.composition
+
 
 # ──────────────────────────────────────────────────────────────────
 # Inline VDJ FASTA fixtures — small enough to keep the test fast,

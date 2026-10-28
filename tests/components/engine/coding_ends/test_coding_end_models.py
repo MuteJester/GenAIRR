@@ -5,6 +5,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 def truth(v=0, d=(0, 0), j=0):
     return {"coding_end_processing": {

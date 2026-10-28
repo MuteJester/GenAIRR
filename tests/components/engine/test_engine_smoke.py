@@ -12,6 +12,10 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 
 def test_genairr_engine_module_is_importable():
     """The maturin-built Rust extension must be importable as

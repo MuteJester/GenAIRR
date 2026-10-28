@@ -13,6 +13,8 @@ from GenAIRR._artifact_io import (
 )
 from GenAIRR._family_replay import FamilyReplayError, FamilyReplayBundle
 
+pytestmark = pytest.mark.behavior
+
 
 def test_strict_loads_rejects_duplicate_keys():
     with pytest.raises(ArtifactIOError) as info:

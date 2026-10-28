@@ -6,6 +6,10 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 def test_recombine_default_inserts_trim_passes_for_dataconfig():
     # When backed by a DataConfig, recombine() now includes trim
     # passes for V_3, D_5, D_3, J_5 (in that order).

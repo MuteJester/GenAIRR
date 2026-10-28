@@ -28,7 +28,7 @@ from GenAIRR import _engine as ge
 from tests.support.fixtures.budget_experiments import _vdj_recombine
 
 
-pytestmark = pytest.mark.performance
+pytestmark = [pytest.mark.performance, pytest.mark.composition]
 
 
 # ──────────────────────────────────────────────────────────────────

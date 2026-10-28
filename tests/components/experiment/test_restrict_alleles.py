@@ -5,6 +5,8 @@ import pytest
 from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 
+pytestmark = pytest.mark.behavior
+
 def _v_name(refdata, outcome):
     return refdata.v_allele(outcome.final_simulation().v_allele_id()).name
 

@@ -42,6 +42,8 @@ from tests.support.fixtures.ogrdb_inventory import (
 )
 from tests.support.fixtures.ogrdb_coordinates import EVIDENCE, GAPPED, V_LABEL, assert_status, at, candidate_of, claim_of, claims, findings, interpret, interpret_in_scope, interpreted, raw_gapped, raw_record, record_of, small, span_limiting_notes
 
+pytestmark = pytest.mark.behavior
+
 PROFILE_REF = m.CoordinateProfileRef("ogrdb_api_v2_human_ig_observed_v1", 1)
 SET_KEYS = {"9606.IGH_VDJ/10": IGH, "9606.IGKappa_VJ/5": IGK, "9606.IGLambda_VJ/4": IGL}
 # Test oracle for span-limiting curation notes (never used by the code under test): an affirmed

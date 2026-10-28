@@ -26,6 +26,8 @@ from GenAIRR.dataconfig.data_config import (
 )
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 BUILTIN_DIR = (
     paths.repo_root()

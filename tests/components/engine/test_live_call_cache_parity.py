@@ -22,6 +22,10 @@ from __future__ import annotations
 
 import GenAIRR as ga
 
+import pytest
+
+pytestmark = pytest.mark.composition
+
 
 def _assert_parity(parity_list, *, label: str, seed: int):
     """Assert tie-set + hypothesis-bound equality across every segment."""

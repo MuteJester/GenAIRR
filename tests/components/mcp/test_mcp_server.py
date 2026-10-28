@@ -327,6 +327,8 @@ from GenAIRR._mcp_refdata import (
     resolve_refdata,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 def test_resolve_refdata_returns_engine_refdata():
     rd = resolve_refdata("human_igh")

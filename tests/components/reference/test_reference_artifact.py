@@ -21,6 +21,8 @@ from GenAIRR._reference.lowering import PROFILE_ID, lower, seal
 from GenAIRR._reference.model import Catalogue
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 # A human IGHV1-2*02-like V (TGT Cys codon at 285), two IGHD-like Ds and two IGHJ-like Js
 # (TGG-GGC-CAG/A-GG motif at 14 and 29).  Software fixtures, not evidence.
 V1 = ("CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCCTCAGTGAAGGTCTCCTGCAAGGCTTCTGGATACACCTTCACC"

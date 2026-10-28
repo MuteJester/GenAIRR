@@ -8,6 +8,8 @@ from GenAIRR._artifact_io import canonical_json, strict_loads, typed_digest
 from GenAIRR._reference_sources import model as m
 from tests.support.fixtures.reference_source_models import ADAPTER, CLAIM_ID, FINDING_ID, IGH, ROLE, ROOT, SELECTED, SOURCES, _RECORDS, _find, _load_json, _pointer, _raises, _records, _reseal, _source_set, decision, lock_dict, recipe_dict, selection_entry
 
+pytestmark = pytest.mark.behavior
+
 def test_recipe_keys_are_frozen():
     recipe = m.Recipe.from_dict(recipe_dict())
     assert tuple(sorted(recipe.to_dict())) == tuple(sorted((

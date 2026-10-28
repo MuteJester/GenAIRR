@@ -28,6 +28,8 @@ from GenAIRR._reference_sources.acquisition import ingest_files, read_locked
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from tests.support.fixtures.ogrdb_inventory import ALL, EXPECT, IGH, IGK, IGL, RECORDS, SELECTION, SETS, SUFFIX, _entry, _key, _sha, build, encode, error, expected_identity, inventory_of, payload, pinned, raw, raw_records, seal
 
+pytestmark = pytest.mark.behavior
+
 
 EXPORTS = ("airr", "airr_ex")
 

@@ -7,6 +7,8 @@ from GenAIRR._reference.model import (
     Allele, Catalogue, Claim, RecordEntry, ReferenceHeader, SourceFile, Taxon,
 )
 
+pytestmark = pytest.mark.behavior
+
 V_SEQ = "AAATGTAAAGGG"   # TGT (C) at 3
 J_SEQ = "TGGGGCCAAGGG"   # TGG (W) at 0
 D_SEQ = "GGGTTTAAA"

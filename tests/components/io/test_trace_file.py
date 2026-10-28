@@ -29,6 +29,8 @@ import GenAIRR as ga
 from GenAIRR import _engine as genairr_engine
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Fixtures: a tiny VJ experiment that's cheap to compile + run.

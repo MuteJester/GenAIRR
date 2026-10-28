@@ -7,6 +7,8 @@ from GenAIRR import Experiment, RefDataConfig
 from GenAIRR.experimental import CoupledDuplexRepair, DuplexHistory, DuplexJoin, DuplexRepairModel
 from tests.support.cases.duplex import history, model, references
 
+pytestmark = pytest.mark.composition
+
 
 def _family(exp, kind):
     if kind == "fixed":

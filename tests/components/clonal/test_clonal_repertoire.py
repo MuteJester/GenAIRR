@@ -13,6 +13,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 def test_bcr_repertoire_with_corruption_has_clone_ids_and_duplicate_count():
     r = (ga.Experiment.on("human_igh").recombine()

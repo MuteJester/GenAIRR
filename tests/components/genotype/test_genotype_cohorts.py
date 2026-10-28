@@ -11,6 +11,8 @@ from GenAIRR.cohort import (
     _resolve_subject_ids,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 def _cfg():
     return gdata.HUMAN_IGH_OGRDB

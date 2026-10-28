@@ -9,6 +9,8 @@ from GenAIRR._reference.errors import ReferenceArtifactError, ReferenceCapabilit
 from GenAIRR._reference.model import Catalogue, check_label
 from GenAIRR._reference.sidecar import annotation_template, load_sidecar
 
+pytestmark = pytest.mark.behavior
+
 V_SEQ = "ACGT" * 8
 J_SEQ = "TGGGGCCAAGGGACC"
 

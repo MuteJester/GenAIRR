@@ -51,6 +51,8 @@ from GenAIRR import _compiled, _pipeline_ir, experiment as _experiment_module
 from GenAIRR.result import SimulationResult, ValidationReport
 from tests.support import paths
 
+pytestmark = pytest.mark.pin
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared fixtures

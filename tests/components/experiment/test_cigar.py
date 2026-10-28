@@ -6,6 +6,10 @@ import GenAIRR as ga  # noqa: E402
 import re as _re
 from tests.support.fixtures.experiment_dsl import _cigar_op_counts, _cigar_total_ops, _human_igh_exp
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 def test_record_has_cigar_fields():
     rec = _human_igh_exp().run_records(n=1, seed=0)[0]
     assert "v_cigar" in rec

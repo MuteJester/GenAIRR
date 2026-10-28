@@ -12,6 +12,8 @@ from __future__ import annotations
 from GenAIRR import _engine as genairr_engine
 import pytest
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Module surface

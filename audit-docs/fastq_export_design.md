@@ -136,7 +136,7 @@ Reasons:
   pattern.
 - Tests can read the file back via `path.read_text(...)`. The
   existing single-end FASTQ test suite uses this pattern
-  exclusively (`tests/components/experiment/test_experiment.py` lines 1502+).
+  exclusively (`tests/components/experiment/test_fastq.py`).
 - A user who wants in-memory FASTQ bytes can `open(path)` with
   a `tempfile.NamedTemporaryFile` or `io.StringIO` if they
   patch `open()`. The added API surface doesn't pay for
@@ -603,10 +603,10 @@ Cost estimate: ~50 lines.
 ### Step 2 — Tests
 
 Mirror the existing single-end FASTQ test discipline in
-[`tests/components/experiment/test_experiment.py`](../tests/components/experiment/test_experiment.py)
+[`tests/components/experiment/test_fastq.py`](../tests/components/experiment/test_fastq.py)
 lines 1502+. New file
 `tests/components/result/test_to_paired_fastq.py` (or inline in
-`test_experiment.py` next to the single-end block).
+`test_fastq.py` next to the single-end block).
 
 Tests:
 

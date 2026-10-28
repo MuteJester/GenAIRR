@@ -5,6 +5,10 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp, _human_igh_records
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 def test_record_has_h6_score_fields():
     rec = _human_igh_exp().run_records(n=1, seed=0)[0]
     for seg in ("v", "d", "j"):

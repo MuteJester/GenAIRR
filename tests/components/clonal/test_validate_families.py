@@ -38,6 +38,8 @@ from GenAIRR import (
     ValidationReport,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared fixtures

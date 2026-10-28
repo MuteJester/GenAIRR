@@ -6,6 +6,8 @@ import pytest
 from GenAIRR import Experiment, _engine as ge
 from tests.support.cases.duplex import history, model, references
 
+pytestmark = pytest.mark.behavior
+
 
 def source(refs=None):
     refs = refs or references()

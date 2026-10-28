@@ -38,6 +38,8 @@ from GenAIRR.reference_models import (
     ReferenceEmpiricalModels,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Inline FASTA fixtures — small enough to keep tests fast.

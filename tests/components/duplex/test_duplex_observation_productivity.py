@@ -9,6 +9,8 @@ from GenAIRR import _engine as ge
 from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin, project_duplex_simulation
 from tests.support.fixtures.duplex_observation import _compile, _fixture
 
+pytestmark = pytest.mark.behavior
+
 
 COMPLEMENT = str.maketrans("ACGT", "TGCA")
 STOPS = {"TAA", "TAG", "TGA"}

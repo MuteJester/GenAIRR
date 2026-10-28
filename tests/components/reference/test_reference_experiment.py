@@ -12,6 +12,8 @@ import GenAIRR as ga
 from GenAIRR import Experiment, Reference, ReferenceArtifactError, SimulationResult
 from GenAIRR.experimental import FamilyReplayError
 
+pytestmark = pytest.mark.behavior
+
 # A human IGHV1-2*02-like V (TGT Cys codon at 285), two IGHD-like Ds and two IGHJ-like Js
 # (TGG-GGC-CAG/A-GG motif at 14 and 29).  Software fixtures, not evidence.
 V1 = ("CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCCTCAGTGAAGGTCTCCTGCAAGGCTTCTGGATACACCTTCACC"

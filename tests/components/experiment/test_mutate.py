@@ -9,6 +9,8 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp
 
+pytestmark = pytest.mark.behavior
+
 def test_mutate_default_model_is_s5f():
     out = _human_igh_exp().mutate(count=10).run(n=1, seed=42)
     assert "mutate.s5f" in out[0].pass_names()

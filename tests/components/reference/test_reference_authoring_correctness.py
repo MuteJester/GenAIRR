@@ -22,6 +22,8 @@ from GenAIRR.cartridge_builder import ReferenceCartridgeBuilder
 from GenAIRR._refdata_resolver import dataconfig_to_refdata
 from GenAIRR.utilities.imgt_regions import compute_v_region_boundaries
 
+pytestmark = pytest.mark.behavior
+
 # 105 codons with no stop: an ordinary ungapped V-length sequence.
 BARE_V_315 = "GCT" * 104 + "TGT"
 J_FASTA = ">TESTJ1*01\nTGGTTCGGCGGAGGGACCAAGCTGACCGTCCTAG\n"

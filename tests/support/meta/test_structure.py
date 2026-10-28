@@ -159,3 +159,38 @@ def test_every_test_directory_is_a_package():
         if not (directory / "__init__.py").is_file():
             missing.append(str(directory.relative_to(TESTS_ROOT)))
     assert missing == [], f"test directories without __init__.py: {missing}"
+
+
+#: Tiers every product test module declares, at module level.
+TIERS = ("pin", "behavior", "composition")
+
+
+def _tier_of(module: Path) -> str | None:
+    tree = ast.parse(module.read_text(encoding="utf-8"))
+    for node in tree.body:
+        targets = node.targets if isinstance(node, ast.Assign) else []
+        if any(isinstance(x, ast.Name) and x.id == "pytestmark" for x in targets):
+            return next((t for t in TIERS if t in ast.unparse(node.value)), None)
+    return None
+
+
+def _product_modules():
+    """Test modules that test GenAIRR, as opposed to the suite's own structure."""
+    return sorted(p for p in TESTS_ROOT.rglob("test_*.py")
+                  if "__pycache__" not in p.parts and "support" not in p.parts)
+
+
+def test_every_test_module_declares_a_tier():
+    """pin, behavior or composition, declared once per module.
+
+    The distinction was carried by the _contract / _implementation / _release
+    filenames and is load-bearing during a refactor: pins say what must not
+    shift, composition says the feature still works against the whole stack.
+    Declared at module level so no test body changes and `-m pin` selects
+    across the entire suite.
+
+    Modules under support/ are exempt: they test the suite's own structure,
+    not GenAIRR, and the tiers do not describe them.
+    """
+    missing = [str(m.relative_to(TESTS_ROOT)) for m in _product_modules() if _tier_of(m) is None]
+    assert missing == [], f"{len(missing)} module(s) with no tier marker: {missing[:12]}"

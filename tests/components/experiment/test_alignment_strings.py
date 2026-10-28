@@ -8,6 +8,10 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _alignment_invariants_hold, _cigar_op_counts, _cigar_total_ops, _human_igh_exp, _human_igh_records
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 def test_record_has_alignment_string_fields():
     rec = _human_igh_exp().run_records(n=1, seed=0)[0]
     assert "sequence_alignment" in rec

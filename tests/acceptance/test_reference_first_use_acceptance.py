@@ -23,6 +23,8 @@ from GenAIRR import Experiment, Reference, ReferenceCapabilityError, Species
 from GenAIRR._artifact_io import canonical_json, typed_digest
 from tests.support import paths
 
+pytestmark = pytest.mark.composition
+
 TESTS = paths.tests_root()
 FIXTURES = TESTS / "data" / "reference_first_use"
 IGH = FIXTURES / "human_igh"

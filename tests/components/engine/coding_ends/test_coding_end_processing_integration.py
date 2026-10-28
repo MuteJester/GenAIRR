@@ -9,6 +9,8 @@ import GenAIRR as ga
 from tests.support.cases.productive import reverse_complement, synthetic_cartridge
 from tests.support.fixtures.phased_anchors import _phased_fixture
 
+pytestmark = pytest.mark.composition
+
 
 def configured(*, d=None, v="AAACCCTGT", **ends):
     cfg = synthetic_cartridge({}, v=v, d=d)

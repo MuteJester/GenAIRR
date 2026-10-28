@@ -7,6 +7,8 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _engine as ge
 
+pytestmark = pytest.mark.behavior
+
 
 def refdata(v=b"AAACCCTGT", j=b"TTTGGG", *, v_anchor=6, j_anchor=0):
     cfg = ge.RefDataConfig.vj()

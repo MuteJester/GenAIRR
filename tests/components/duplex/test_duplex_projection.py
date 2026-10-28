@@ -10,6 +10,8 @@ import GenAIRR as ga
 from GenAIRR import RefDataConfig
 from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin, export_duplex_projection
 
+pytestmark = pytest.mark.behavior
+
 
 def reference(v, d, j, *, va=None, ja=None):
     r = RefDataConfig.vdj()

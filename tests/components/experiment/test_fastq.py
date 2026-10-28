@@ -6,6 +6,8 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _alignment_invariants_hold, _human_igh_records
 
+pytestmark = pytest.mark.behavior
+
 def test_to_fastq_constant_quality_writes_q30(tmp_path):
     # Constant-Q model writes the same Q for every (non-N) base.
     # Q30 → Phred+33 ASCII '?' (33 + 30 = 63).

@@ -9,6 +9,8 @@ import pytest
 from GenAIRR import CompiledExperiment, Experiment
 from tests.support.fixtures.experiment_dsl import _vdj_refdata, _vj_refdata
 
+pytestmark = pytest.mark.behavior
+
 def test_recombine_custom_np1_length_distribution_propagates():
     # Force NP1 = exactly 4 every time. The trace's NP1 length and
     # the assembled region's length must both be 4.

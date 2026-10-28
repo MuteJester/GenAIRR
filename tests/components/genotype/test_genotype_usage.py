@@ -13,6 +13,10 @@ import GenAIRR.data as gdata
 from GenAIRR.genotype import Genotype
 from GenAIRR.reference_models import AlleleUsageSpec, ReferenceEmpiricalModels
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 
 def _cfg_with_v_usage(target_allele_name, weight=1000.0):
     base = gdata.HUMAN_IGH_OGRDB

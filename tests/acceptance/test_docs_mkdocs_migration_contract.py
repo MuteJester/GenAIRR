@@ -51,10 +51,7 @@ _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy-docs.yml"
 # Tests in this file pin the migration plan's structure. The plan is a
 # private planning artifact (kept out of git); CI checkouts skip
 # the whole file rather than report dozens of irrelevant failures.
-pytestmark = pytest.mark.skipif(
-    not _MIGRATION_PLAN.is_file(),
-    reason="migration plan is contributor-only and not present in this checkout",
-)
+pytestmark = [pytest.mark.skipif(not _MIGRATION_PLAN.is_file(), reason='migration plan is contributor-only and not present in this checkout'), pytest.mark.pin]
 
 
 # ──────────────────────────────────────────────────────────────────

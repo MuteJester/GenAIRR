@@ -27,6 +27,8 @@ from GenAIRR import CompiledExperiment
 from GenAIRR.utilities.misc import reverse_complement
 from tests.support.fixtures.minimal_refdata import _vj_basic
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Refdata factories

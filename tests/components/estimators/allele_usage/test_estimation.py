@@ -43,6 +43,8 @@ from GenAIRR.reference_models import (
     ReferenceEmpiricalModels,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared FASTA fixtures (synthesised from the bundled HUMAN_IGK_OGRDB

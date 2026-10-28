@@ -44,6 +44,8 @@ from GenAIRR.reference_models import (
 )
 from tests.support.cases.productive import assert_productive_record
 
+pytestmark = pytest.mark.composition
+
 
 # ──────────────────────────────────────────────────────────────────
 # Helpers

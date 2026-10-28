@@ -8,6 +8,8 @@ from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference.importer import import_local, scan_fasta
 from GenAIRR._reference.model import Catalogue
 
+pytestmark = pytest.mark.behavior
+
 V_SEQ = "ACGT" * 10
 J_SEQ = "TGGGGCCAAGGGACC"
 J_KAPPA = "TGGTTCGGCGGAGGGACCAAG"

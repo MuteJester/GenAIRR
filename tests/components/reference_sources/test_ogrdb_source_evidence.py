@@ -34,6 +34,8 @@ from tests.support.fixtures.ogrdb_inventory import (
     EXPECT, IGH, IGK, IGL, SELECTION, SETS, _key, build, error, inventory_of, pinned, raw_records, seal,
 )
 
+pytestmark = pytest.mark.behavior
+
 EXTENSION_CODES = ("coding_extension_matches_record_context", "coding_extension_without_record_context",
                    "coding_extension_disagrees_with_record_context")
 CODING_END_ROWS = {row["label"]: row for row in EXPECT["igl4_airr_ex_coding_end_observations"]}

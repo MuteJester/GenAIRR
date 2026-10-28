@@ -17,6 +17,8 @@ from GenAIRR._refdata_resolver import dataconfig_to_refdata
 from GenAIRR.dataconfig.data_config import DataConfig
 from GenAIRR.reference_rules import AnchorRuleSpec, ReferenceRulesSpec
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Fixture helpers

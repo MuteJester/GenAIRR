@@ -17,6 +17,8 @@ import GenAIRR as ga
 from GenAIRR.dataconfig.enums import ChainType, Species
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 _REPO_ROOT = paths.repo_root()
 _TOOL_PATH = _REPO_ROOT / "tools" / "build_imgt_configs.py"
 

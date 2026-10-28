@@ -6,6 +6,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 @pytest.fixture
 def clean_batch():

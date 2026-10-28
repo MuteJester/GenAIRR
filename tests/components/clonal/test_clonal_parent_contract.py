@@ -71,6 +71,8 @@ from GenAIRR import _compiled
 from GenAIRR.result import SimulationResult
 from tests.support import paths
 
+pytestmark = pytest.mark.pin
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared fixtures

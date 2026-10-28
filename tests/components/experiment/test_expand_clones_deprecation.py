@@ -15,6 +15,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 def test_expand_clones_emits_deprecation_warning_but_still_works():
     exp = ga.Experiment.on("human_igh").recombine()

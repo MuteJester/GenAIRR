@@ -12,6 +12,8 @@ from GenAIRR._s5f_loader import load_builtin_s5f_kernel
 
 from tests.support.cases.productive import synthetic_cartridge
 
+pytestmark = pytest.mark.behavior
+
 
 @pytest.mark.parametrize("strict", [False, True])
 def test_explicit_combined_d_overtrim_is_a_python_error(strict):

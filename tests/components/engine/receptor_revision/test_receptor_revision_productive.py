@@ -4,6 +4,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 @pytest.mark.parametrize("seed", [4261, 4265, 4267, 4271, 4279])
 @pytest.mark.parametrize("strict", [False, True])

@@ -37,6 +37,8 @@ import GenAIRR as ga
 from GenAIRR import _engine as eng
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 GOLDEN_DIR = paths.golden("trace_files")
 

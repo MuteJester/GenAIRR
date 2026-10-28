@@ -40,6 +40,8 @@ from GenAIRR.reference_models import (
 from GenAIRR.reference_rules import ReferenceRulesSpec
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Helpers — synthesise FASTAs from a bundled cartridge so the

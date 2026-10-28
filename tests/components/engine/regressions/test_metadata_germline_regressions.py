@@ -7,6 +7,8 @@ import GenAIRR as ga
 from GenAIRR import _engine as ge
 from GenAIRR.reference_models import EmpiricalDistributionSpec, ReferenceEmpiricalModels
 
+pytestmark = pytest.mark.behavior
+
 
 def _revision_fixture(equal_lengths=False):
     ref = ge.RefDataConfig.vdj()

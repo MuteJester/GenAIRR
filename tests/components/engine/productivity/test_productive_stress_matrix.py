@@ -44,6 +44,8 @@ import GenAIRR as ga
 from GenAIRR import CompiledExperiment
 from GenAIRR._airr_record import outcome_to_airr_record
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Chain inventory

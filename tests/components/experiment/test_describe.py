@@ -5,6 +5,10 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _vdj_refdata, _vj_refdata
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 def test_describe_empty_experiment_says_no_steps():
     out = Experiment.on(_vj_refdata()).allow_curatable_refdata().describe()
     assert "Experiment on" in out

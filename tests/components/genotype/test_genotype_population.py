@@ -7,6 +7,8 @@ import GenAIRR as ga
 import GenAIRR.data as gdata
 from GenAIRR.genotype import Genotype
 
+pytestmark = pytest.mark.behavior
+
 
 def _cfg():
     return gdata.HUMAN_IGH_OGRDB

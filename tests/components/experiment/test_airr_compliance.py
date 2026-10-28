@@ -7,6 +7,8 @@ import GenAIRR as ga  # noqa: E402
 import re as _re
 from tests.support.fixtures.experiment_dsl import _alignment_invariants_hold, _cigar_op_counts, _human_igh_exp
 
+pytestmark = pytest.mark.behavior
+
 def test_to_tsv_passes_airr_validate_rearrangement(tmp_path):
     airr = pytest.importorskip("airr")
     rec_path = tmp_path / "valid.tsv"

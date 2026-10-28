@@ -12,6 +12,10 @@ import hashlib
 import GenAIRR as ga
 import GenAIRR.data as gdata
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 MASTER_DIGEST = "3be8e5ea124e1dfff256f93b5ddbb925fdb738d4d6f2eeb5763a81e5b6213460"
 SAMPLING_DIGEST = "72332c92093bf1d4dc2f21ae6020ad19458bfdba2e9d16b0cbff021bb898c24f"
 SAMPLING_FIELDS = (

@@ -8,6 +8,8 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _engine as ge
 
+pytestmark = pytest.mark.behavior
+
 
 def _reference(segment, *, status="verified", phase=0):
     v = b"AAACCCGGG" if segment == "V" else b"AAACCCTGT"

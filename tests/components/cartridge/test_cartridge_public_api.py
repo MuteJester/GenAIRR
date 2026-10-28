@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # 1. Discoverability — importable from the top-level package.

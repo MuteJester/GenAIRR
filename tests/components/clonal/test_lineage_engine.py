@@ -3,6 +3,8 @@ import GenAIRR as ga
 from GenAIRR import _engine
 from GenAIRR._s5f_loader import load_builtin_s5f_kernel
 
+pytestmark = pytest.mark.behavior
+
 S5F_MODEL = "hh_s5f"
 
 

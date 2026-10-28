@@ -8,6 +8,8 @@ import GenAIRR.data as gdata
 from GenAIRR.genotype import Genotype
 from GenAIRR.genotype_priors import PopulationGenotypeModel, PopulationNovelAllele
 
+pytestmark = pytest.mark.behavior
+
 
 def _cfg():
     return gdata.HUMAN_IGH_OGRDB

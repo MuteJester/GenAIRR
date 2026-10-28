@@ -11,6 +11,8 @@ from GenAIRR.alleles import VAllele, JAllele
 from GenAIRR.cartridge_builder import ReferenceCartridgeBuilder
 from GenAIRR._refdata_resolver import dataconfig_to_refdata
 
+pytestmark = pytest.mark.behavior
+
 
 def _builder():
     # IMGT nucleotide coordinate 309 is conserved residue104, with 3 gaps.

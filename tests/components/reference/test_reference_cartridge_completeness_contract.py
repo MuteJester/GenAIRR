@@ -48,6 +48,8 @@ from GenAIRR.reference_models import EmpiricalDistributionSpec, ReferenceEmpiric
 from GenAIRR.reference_rules import AnchorRuleSpec, ReferenceRulesSpec
 from tests.support import paths
 
+pytestmark = pytest.mark.pin
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared fixtures

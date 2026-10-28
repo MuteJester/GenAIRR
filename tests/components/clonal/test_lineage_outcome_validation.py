@@ -16,6 +16,10 @@ import GenAIRR as ga
 from GenAIRR import _engine
 from GenAIRR._s5f_loader import load_builtin_s5f_kernel
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 # Mutation-count issue kinds that this fix must eliminate.
 _MUTATION_COUNT_KINDS = {
     "NMutationsMismatch",

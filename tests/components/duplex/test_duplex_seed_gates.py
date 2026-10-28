@@ -8,6 +8,8 @@ from GenAIRR.experimental import (
     project_duplex_simulation,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 def fixture():
     refdata = ge.RefDataConfig.vdj()

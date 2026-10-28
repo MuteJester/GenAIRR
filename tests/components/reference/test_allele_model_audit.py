@@ -42,6 +42,8 @@ from GenAIRR.reference_models import (
 )
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # 1. dataconfig_to_refdata: which fields cross into Rust?

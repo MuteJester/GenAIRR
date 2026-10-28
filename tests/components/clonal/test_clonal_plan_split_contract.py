@@ -38,6 +38,8 @@ from GenAIRR.experiment import _descendant_phase_step_classifier
 from GenAIRR.result import SimulationResult
 from tests.support import paths
 
+pytestmark = pytest.mark.pin
+
 
 _REPO_ROOT = paths.repo_root()
 

@@ -7,6 +7,8 @@ import pytest
 import GenAIRR as ga
 from GenAIRR.reference_models import EmpiricalDistributionSpec, ReferenceEmpiricalModels
 
+pytestmark = pytest.mark.behavior
+
 
 _P_COLUMNS = ("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length")
 _ESTIMATORS = ("estimate_np_length_distributions", "estimate_np_base_model")

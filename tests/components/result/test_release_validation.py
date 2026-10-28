@@ -33,6 +33,10 @@ from __future__ import annotations
 
 import GenAIRR as ga
 
+import pytest
+
+pytestmark = pytest.mark.composition
+
 
 def test_full_stack_vdj_validates_all_airr_records():
     """Productive human IGH full-stack pipeline (the canonical

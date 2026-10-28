@@ -45,6 +45,8 @@ from GenAIRR.dataconfig.data_config import (
 )
 from GenAIRR.reference_models import EmpiricalDistributionSpec, ReferenceEmpiricalModels
 
+pytestmark = pytest.mark.behavior
+
 
 def _cfg():
     return ga.HUMAN_IGH_OGRDB

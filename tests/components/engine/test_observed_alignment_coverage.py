@@ -7,6 +7,8 @@ import pytest
 import GenAIRR as ga
 from tests.support.cases.productive import reverse_complement, synthetic_cartridge
 
+pytestmark = pytest.mark.behavior
+
 
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("loss5,loss3", [(2, 0), (0, 2), (2, 2)])

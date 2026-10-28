@@ -38,6 +38,8 @@ from pathlib import Path
 import pytest
 from tests.support import paths
 
+pytestmark = pytest.mark.pin
+
 
 _REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "docs_website_audit.md"

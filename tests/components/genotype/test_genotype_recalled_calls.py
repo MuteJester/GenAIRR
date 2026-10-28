@@ -5,6 +5,8 @@ import pytest
 from GenAIRR._airr_record import outcome_to_airr_record
 from GenAIRR.genotype import Genotype
 
+pytestmark = pytest.mark.behavior
+
 
 def _allowed(cfg, genotype):
     return {

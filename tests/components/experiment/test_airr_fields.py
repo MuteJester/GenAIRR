@@ -6,6 +6,10 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp, _human_igh_records
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 def test_records_use_airr_field_names_for_renames():
     rec = _human_igh_exp().run_records(n=1, seed=0)[0]
     # New canonical AIRR names exist.

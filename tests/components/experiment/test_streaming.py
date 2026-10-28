@@ -9,6 +9,8 @@ import inspect as _inspect
 import itertools as _itertools
 from tests.support.fixtures.experiment_dsl import _human_igh_exp
 
+pytestmark = pytest.mark.behavior
+
 def test_stream_returns_generator():
     exp = _human_igh_exp()
     s = exp.stream(n=3, seed=0)

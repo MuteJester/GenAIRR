@@ -43,6 +43,8 @@ from GenAIRR.dataconfig.data_config import (
 from GenAIRR.reference_models import ReferenceEmpiricalModels
 from tests.support import paths
 
+pytestmark = pytest.mark.pin
+
 
 _REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "allele_usage_estimation_design.md"

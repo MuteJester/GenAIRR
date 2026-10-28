@@ -35,6 +35,8 @@ from GenAIRR.reference_models import (
     ReferenceEmpiricalModels,
 )
 
+pytestmark = pytest.mark.composition
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared fixtures

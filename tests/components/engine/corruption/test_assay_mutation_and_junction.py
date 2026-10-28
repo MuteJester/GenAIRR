@@ -7,6 +7,8 @@ from GenAIRR import _engine
 from tests.support.cases.productive import translate
 from tests.support.fixtures.minimal_refdata import _vj_basic
 
+pytestmark = pytest.mark.behavior
+
 
 def experiment(np_length=3):
     return (

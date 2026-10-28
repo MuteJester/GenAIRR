@@ -38,6 +38,8 @@ import GenAIRR as ga
 from GenAIRR import _engine as ge
 from GenAIRR import CompiledExperiment
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Deterministic VJ fixture

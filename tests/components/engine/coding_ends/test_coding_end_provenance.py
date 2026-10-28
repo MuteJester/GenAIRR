@@ -7,6 +7,8 @@ from GenAIRR.alleles import VAllele
 
 from tests.support.cases.productive import reverse_complement, synthetic_cartridge
 
+pytestmark = pytest.mark.behavior
+
 
 def experiment(*, d=None):
     cfg = synthetic_cartridge({}, d=d)

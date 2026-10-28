@@ -49,6 +49,8 @@ import pytest
 import GenAIRR as ga
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared fixtures

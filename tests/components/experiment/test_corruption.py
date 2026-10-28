@@ -8,6 +8,8 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _human_igh_exp, _vj_refdata
 
+pytestmark = pytest.mark.behavior
+
 def test_corrupt_pcr_appends_pcr_pass():
     o = _human_igh_exp().pcr_amplify(count=5).run(n=1, seed=0)[0]
     assert o.pass_names()[-1] == "corrupt.pcr"

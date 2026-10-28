@@ -7,6 +7,8 @@ import pytest
 
 from GenAIRR import _engine
 
+pytestmark = pytest.mark.behavior
+
 
 @pytest.mark.parametrize("value,tag", [
     (None,"null"), (False,"bool"), (0,"int"), (0.0,"f64"), (-0.0,"f64"),

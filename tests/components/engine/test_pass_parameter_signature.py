@@ -46,6 +46,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 def _plan_signature(experiment, seed: int = 42) -> str:
     compiled = experiment.compile()

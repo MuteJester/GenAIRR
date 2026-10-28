@@ -7,6 +7,8 @@ import pytest
 
 from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin
 
+pytestmark = pytest.mark.behavior
+
 
 COMPLEMENT = str.maketrans("ACGT", "TGCA")
 

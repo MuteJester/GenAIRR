@@ -7,6 +7,8 @@ from GenAIRR import CompiledExperiment, Experiment
 import GenAIRR as ga  # noqa: E402
 from tests.support.fixtures.experiment_dsl import _vdj_refdata, _vj_refdata
 
+pytestmark = pytest.mark.behavior
+
 def test_recombine_rejects_np2_lengths_on_vj_chain():
     """VJ chains have no NP2 region; passing np2_lengths was previously
     silently ignored, which hid genuine user mistakes (binding the wrong

@@ -4,6 +4,8 @@ import pytest
 
 from GenAIRR.experimental import DuplexRepair
 
+pytestmark = pytest.mark.behavior
+
 
 def opened(left="AAG", right="CAA", offset=0, **kwargs):
     return DuplexRepair(left, right, **kwargs).open("left", offset=offset).open("right", offset=offset)

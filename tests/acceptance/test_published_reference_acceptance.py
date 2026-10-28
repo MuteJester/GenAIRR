@@ -45,6 +45,8 @@ from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild, ReferenceSour
 from tests.support.fixtures.ogrdb_inventory import EXPECT, IGH, IGK, RECORDS, SELECTION, raw, raw_records
 from tests.support import paths
 
+pytestmark = pytest.mark.composition
+
 TESTS = paths.tests_root()
 REPO = TESTS.parent
 DATA = TESTS / "data" / "reference_sources"
@@ -71,7 +73,12 @@ _API = "tests/components/reference_sources/test_reference_source_api.py::"
 _CACHE = "tests/components/reference_sources/test_reference_source_cache.py::"
 _DOSSIER = "tests/components/reference_sources/test_reference_source_dossier.py::"
 _FIXTURES = "tests/components/reference_sources/test_reference_source_fixtures.py::"
-_MODELS = "tests/components/reference_sources/test_reference_source_models.py::"
+_M_ERRORS_AND_LOCK = "tests/components/reference_sources/test_errors_and_lock.py::"
+_M_RECIPE = "tests/components/reference_sources/test_recipe.py::"
+_M_SELECTION_AND_REPORT = "tests/components/reference_sources/test_selection_and_report.py::"
+_M_DOSSIER = "tests/components/reference_sources/test_dossier.py::"
+_M_STRICTNESS = "tests/components/reference_sources/test_strictness.py::"
+_M_BINDING_RULES = "tests/components/reference_sources/test_binding_rules.py::"
 _PROJECTION = "tests/components/reference_sources/test_reference_source_projection.py::"
 _COORDINATES = "tests/components/reference_sources/test_ogrdb_source_coordinates.py::"
 _EVIDENCE = "tests/components/reference_sources/test_ogrdb_source_evidence.py::"
@@ -83,14 +90,14 @@ ACCEPTANCE = {
     "A01": ("Two clean acquisitions of identical bytes have equal source locks; receipt times never change a "
             "build identity", (
                 _ACQ + "test_independent_clean_acquisitions_of_the_same_bytes_have_equal_lock_identity",
-                _MODELS + "test_receipts_with_different_times_describe_the_same_lock",
-                _MODELS + "test_receipts_enter_no_digest",
+                _M_ERRORS_AND_LOCK + "test_receipts_with_different_times_describe_the_same_lock",
+                _M_DOSSIER + "test_receipts_enter_no_digest",
                 _DOSSIER + "test_builds_with_different_receipts_have_identical_identities")),
     "A02": ("A moved or renamed local snapshot gives the same lock and build, and no canonical output names a "
             "location", (
                 _API + "test_a_moved_and_renamed_snapshot_has_the_same_lock",
                 _ACQ + "test_identical_local_bytes_moved_between_directories_yield_an_identical_lock",
-                _MODELS + "test_lock_assets_cannot_carry_acquisition_or_filesystem_details",
+                _M_ERRORS_AND_LOCK + "test_lock_assets_cannot_carry_acquisition_or_filesystem_details",
                 _PROJECTION + "test_two_temporary_roots_give_identical_files_runtime_hashes_and_report",
                 _DOSSIER + "test_a_clean_cache_build_and_a_moved_offline_dossier_agree",
                 _HERE + "test_a_moved_and_renamed_igk_snapshot_builds_the_same_reference_and_names_no_location",
@@ -115,10 +122,10 @@ ACCEPTANCE = {
                 _API + "test_a_lock_of_another_schema_version_is_unsupported",
                 _API + "test_build_errors_keep_recipe_paths_and_name_the_recipe_file",
                 _API + "test_an_out_of_scope_release_is_inspected_and_reported_as_such",
-                _MODELS + "test_lock_rejects_unknown_semantic_profiles",
-                _MODELS + "test_recipe_rejects_unknown_schema_and_profiles",
-                _MODELS + "test_locks_outside_the_profile_scope_are_valid_but_cannot_build",
-                _MODELS + "test_drifted_bytes_for_a_validated_release_are_out_of_scope",
+                _M_ERRORS_AND_LOCK + "test_lock_rejects_unknown_semantic_profiles",
+                _M_RECIPE + "test_recipe_rejects_unknown_schema_and_profiles",
+                _M_STRICTNESS + "test_locks_outside_the_profile_scope_are_valid_but_cannot_build",
+                _M_STRICTNESS + "test_drifted_bytes_for_a_validated_release_are_out_of_scope",
                 _COORDINATES + "test_profile_lookup_is_explicit_and_never_guessed",
                 _COORDINATES + "test_the_airr_prose_reading_is_never_a_fallback",
                 _EVIDENCE + "test_outside_the_validated_scope_no_claim_is_accepted",
@@ -177,7 +184,7 @@ ACCEPTANCE = {
                 _EVIDENCE + "test_every_span_limiting_note_is_reported_unresolved")),
     "A14": ("Equal DNA under distinct genes stays distinct executable identities where selected", (
         _INVENTORY + "test_identical_dna_under_distinct_labels_stays_distinct_identities",
-        _MODELS + "test_recipe_selects_distinct_identities_with_identical_dna",
+        _M_RECIPE + "test_recipe_selects_distinct_identities_with_identical_dna",
         _EVIDENCE + "test_identical_dna_identities_cite_only_their_own_records",
         _PROJECTION + "test_identical_dna_under_distinct_labels_stays_two_identities_with_their_own_evidence",
         _RESOURCES + "test_identical_dna_reasons_name_the_other_identity_and_keep_each_ones_own_evidence",
@@ -186,8 +193,8 @@ ACCEPTANCE = {
     "A15": ("The same label with different DNA needs an exact record choice; the first file never wins", (
         _PROJECTION + "test_a_selection_binds_an_exact_record_and_digest_never_the_first_label_match",
         _PROJECTION + "test_one_executable_label_cannot_select_two_records",
-        _MODELS + "test_recipe_rejects_two_alternatives_for_one_executable_label",
-        _MODELS + "test_check_selection_binds_exact_record_and_digest",
+        _M_RECIPE + "test_recipe_rejects_two_alternatives_for_one_executable_label",
+        _M_SELECTION_AND_REPORT + "test_check_selection_binds_exact_record_and_digest",
         _RESOURCES + "test_the_recipe_selects_the_airr_record_of_each_record_choice_explicitly")),
     "A16": ("Missing phase or end evidence gives honest capability blockers and null outputs, never an "
             "inference from functional or full-length tags", (
@@ -215,9 +222,9 @@ ACCEPTANCE = {
         _PROJECTION + "test_starter_relationships_are_the_selected_records_own_aliases_and_paralogs",
         _HERE + "test_an_igk_vj_build_from_a_mechanical_recipe_accounts_for_every_source_record")),
     "A19": ("A sequence-bound decision goes stale after a lock, digest or subject change", (
-        _MODELS + "test_stale_decisions_are_rejected",
-        _MODELS + "test_decisions_go_stale_when_the_recipe_is_pointed_at_another_lock",
-        _MODELS + "test_decisions_on_unselected_sequences_are_stale",
+        _M_SELECTION_AND_REPORT + "test_stale_decisions_are_rejected",
+        _M_BINDING_RULES + "test_decisions_go_stale_when_the_recipe_is_pointed_at_another_lock",
+        _M_SELECTION_AND_REPORT + "test_decisions_on_unselected_sequences_are_stale",
         _PROJECTION + "test_stale_decisions_are_rejected")),
     "A20": ("The runtime projection round-trips through the unchanged reader with no provider-only fields; the "
             "loss report names the missing subregions; unsupported phase/landmark pairs are refused or withheld", (
@@ -241,7 +248,7 @@ ACCEPTANCE = {
                 _DOSSIER + "test_a_report_claiming_another_runtime_identity_is_rejected",
                 _DOSSIER + "test_a_runtime_body_resealed_under_another_generator_is_rejected",
                 _DOSSIER + "test_a_recipe_that_is_not_the_reports_recipe_is_rejected",
-                _MODELS + "test_tampered_report_runtime_body_and_report_hash_are_both_caught")),
+                _M_DOSSIER + "test_tampered_report_runtime_body_and_report_hash_are_both_caught")),
     "A22": ("A failure or race while writing leaves no valid-looking partial manifest, keeps complete prior files "
             "and cleans up nothing foreign", (
                 _DOSSIER + "test_a_failed_write_leaves_an_incomplete_dossier_and_removes_nothing",
@@ -263,7 +270,7 @@ ACCEPTANCE = {
                 _API + "test_write_lock_writes_canonical_lf_text_and_never_replaces_silently",
                 _FIXTURES + "test_generated_text_is_utf8_with_lf_endings",
                 _INVENTORY + "test_fasta_line_terminators_are_removed_and_everything_else_is_kept",
-                _MODELS + "test_lock_from_json_accepts_a_byte_order_mark_and_reads_files",
+                _M_ERRORS_AND_LOCK + "test_lock_from_json_accepts_a_byte_order_mark_and_reads_files",
                 _DOSSIER + "test_generated_members_must_be_in_canonical_form",
                 _RESOURCES + "test_the_packaged_archive_and_its_sources_are_checked_out_byte_for_byte_on_every_"
                              "platform")),

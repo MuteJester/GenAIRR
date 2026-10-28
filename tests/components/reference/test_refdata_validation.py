@@ -12,6 +12,8 @@ import pytest
 
 import GenAIRR as ga
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Bundled-preset gate. If this ever fires, the validator and the

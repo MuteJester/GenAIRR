@@ -22,6 +22,8 @@ import pytest
 from GenAIRR import _engine
 from GenAIRR._refdata_resolver import _resolve_config_name
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # 1. Engine-native: allele can store and read functional status

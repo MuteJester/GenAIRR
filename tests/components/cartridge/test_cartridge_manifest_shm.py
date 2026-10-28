@@ -35,6 +35,10 @@ from GenAIRR._s5f_loader import (
     builtin_s5f_kernel_digest,
 )
 
+import pytest
+
+pytestmark = pytest.mark.behavior
+
 
 def _cfg():
     return ga.HUMAN_IGH_OGRDB

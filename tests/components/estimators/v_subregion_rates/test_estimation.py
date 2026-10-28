@@ -43,6 +43,8 @@ import pytest
 import GenAIRR as ga
 from GenAIRR.experiment import _validate_v_subregion_rates
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Spec 1 — DSL validation

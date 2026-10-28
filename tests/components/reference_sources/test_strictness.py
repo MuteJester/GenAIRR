@@ -9,6 +9,8 @@ from GenAIRR._reference_sources.errors import KINDS, ReferenceSourceError
 from GenAIRR._reference_sources import model as m
 from tests.support.fixtures.reference_source_models import ADAPTER, CLAIM_ID, FINDING_ID, FIXED, GENERATOR, IGH, INV_RECORDS, Inv, L, ROLE, ROOT, RUNTIME, SELECTED, SOURCES, _RECORDS, _blocks, _capabilities, _claim, _fasta, _find, _finding, _gapped_index, _inventory_dict, _load_json, _nested, _pointer, _raises, _recipe, _records, _reseal, _sorted, _source_set, decision, inv, inventory, lock_dict, manifest_dict, receipt_dict, recipe_dict, report, report_d, report_decisions, report_dict, selection_entry
 
+pytestmark = pytest.mark.behavior
+
 _WRONG = (None, True, -1, 0, 1.5, "", "x", [], {})
 
 

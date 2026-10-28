@@ -11,6 +11,8 @@ from GenAIRR import _engine as ge
 from GenAIRR.experimental import DuplexHistory, DuplexRepairModel, CoupledDuplexRepair, DuplexJoin
 from tests.support.cases.duplex import references, script, history, model
 
+pytestmark = pytest.mark.behavior
+
 
 @pytest.mark.parametrize("weight", [-1, float("nan"), float("inf"), True, "invalid"])
 def test_authored_history_weights_require_finite_nonnegative_values(weight):

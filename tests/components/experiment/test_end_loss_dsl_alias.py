@@ -24,6 +24,8 @@ import GenAIRR as ga
 from GenAIRR import _engine as ge
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Shared deterministic VJ fixture (matches the provenance suite).

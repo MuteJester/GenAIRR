@@ -6,6 +6,8 @@ from GenAIRR import data
 from GenAIRR import _engine
 from GenAIRR._refdata_resolver import dataconfig_to_refdata
 
+pytestmark = pytest.mark.behavior
+
 CTX = {"schema_version": 1, "catalogue_hash": "sha256:" + "a" * 64, "view": "default",
        "profile": "observed_span_simulation", "models_hash": "sha256:" + "b" * 64}
 

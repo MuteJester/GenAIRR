@@ -19,6 +19,8 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _engine as ge
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # Default rules

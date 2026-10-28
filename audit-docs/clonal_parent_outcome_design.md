@@ -288,7 +288,7 @@ preferred default — see §8 edge case 4.
 under any post-fork pass that introduces stochasticity (SHM,
 PCR, indels), the descendants of a clone produce distinct
 `sequence` strings. This is already pinned by the existing
-[`test_g5_clonal_descendants_share_junction_diverge_via_mutate`](../tests/components/experiment/test_experiment.py#L1815);
+[`test_g5_clonal_descendants_share_junction_diverge_via_mutate`](../tests/components/experiment/test_fastq.py);
 we re-pin here at the audit-doc layer for §3 traceability.
 
 `pin_absence_no_per_descendant_shm_event_aggregation` — there

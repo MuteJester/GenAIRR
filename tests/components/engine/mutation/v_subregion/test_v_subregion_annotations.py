@@ -43,6 +43,8 @@ from GenAIRR._refdata_resolver import (
     dataconfig_to_refdata,
 )
 
+pytestmark = pytest.mark.behavior
+
 CANONICAL_LABELS = ("FWR1", "CDR1", "FWR2", "CDR2", "FWR3")
 
 

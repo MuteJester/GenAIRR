@@ -13,6 +13,8 @@ from tests.support.cases.productive import (
     synthetic_cartridge,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 def experiment(*, v="AAACCCTGT", d=None, np1=((0, 1.0),), np2=((0, 1.0),)):
     cfg = synthetic_cartridge({}, v=v, d=d)

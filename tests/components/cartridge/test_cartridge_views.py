@@ -29,6 +29,8 @@ from GenAIRR.reference_rules import (
     ReferenceRulesSpec,
 )
 
+pytestmark = pytest.mark.behavior
+
 
 # ──────────────────────────────────────────────────────────────────
 # 1. Each view exists on a fresh DataConfig

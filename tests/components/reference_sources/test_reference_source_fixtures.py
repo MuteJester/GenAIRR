@@ -19,6 +19,8 @@ import pytest
 from GenAIRR._reference.capabilities import CAPABILITIES
 from tests.support import paths
 
+pytestmark = pytest.mark.behavior
+
 ROOT = paths.data("reference_sources")
 SOURCES = json.loads((ROOT / "sources.json").read_bytes())
 EVIDENCE = json.loads((ROOT / "interpretation_evidence.json").read_bytes())

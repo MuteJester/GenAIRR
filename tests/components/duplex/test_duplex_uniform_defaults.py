@@ -7,6 +7,8 @@ from GenAIRR import Experiment, _engine
 from GenAIRR.experimental import DuplexHistory
 from tests.support.cases.duplex import history, model, references, script
 
+pytestmark = pytest.mark.behavior
+
 
 def _choices(outcome):
     return [(choice.address, choice.value) for choice in outcome.trace().choices()]

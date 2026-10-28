@@ -7,6 +7,8 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _engine as eng
 
+pytestmark = pytest.mark.behavior
+
 
 def experiment(*, count=2, insertion_prob=0.5, productive=True, **options):
     cfg = eng.RefDataConfig.vj()

@@ -34,6 +34,8 @@ from tests.support.fixtures.ogrdb_inventory import (
 )
 from tests.support.fixtures.source_projection import CHOICES, J1, J7, MINI, STARTER_REQUIRES, _airr_index, entry, interpreted, recipe, records_in, sha
 
+pytestmark = pytest.mark.behavior
+
 OMITTED = {row["label"]: [rule["rule"] for rule in row["failed_rules"]] for row in SELECTION["omitted"]}
 # The fixture's required capability, plus its targeted capabilities at their target evidence,
 # so that the build itself confirms them.
