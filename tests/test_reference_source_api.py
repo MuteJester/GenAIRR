@@ -866,3 +866,16 @@ def test_inspection_reads_the_source_bytes_into_an_inventory_once(tmp_path, monk
     monkeypatch.setattr(evidence, "build_inventory", counted)
     source.inspect()
     assert calls == [source.lock.commitment]
+
+
+def test_a_decision_left_behind_by_a_recipe_edit_names_its_allele_and_the_remedy(igh_starter, tmp_path):
+    build, _ = igh_starter
+    document = build.recipe.to_dict()
+    document["selection"] = [e for e in document["selection"] if e["label"] != "IGHV3-21*05"]
+    index = [row["label"] for row in SELECTION["record_choices"]].index("IGHV3-21*05")
+    assert document["decisions"][index]["action"] == "select_alternative"
+    source = from_files(tmp_path, IGH)
+    exc = error("stale_decision", source.build, document)
+    assert exc.path == f"/decisions/{index}/sequence_sha256"
+    assert "IGHV3-21*05" in exc.message and f"decision {index}" in exc.message
+    assert "remove" in exc.message and "update" in exc.message
