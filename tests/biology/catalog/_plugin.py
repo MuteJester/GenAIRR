@@ -12,12 +12,23 @@ def pytest_addoption(parser):
                      help="report which biological mechanisms have verified truth")
 
 
+#: Markers that mean a test does not establish its claim. A registration on
+#: such a test must not credit the mechanism: known defects are pinned as
+#: strict xfails, and counting those would be the same lie as a prose-sourced
+#: green row, arriving by a different route.
+NON_ESTABLISHING = ("xfail", "skip", "skipif")
+
+
+def _establishes_its_claim(item) -> bool:
+    return not any(mark.name in NON_ESTABLISHING for mark in item.iter_markers())
+
+
 def pytest_collection_modifyitems(items):
     _REGISTRATIONS.clear()
     _COVERED.clear()
     for item in items:
         registration = getattr(getattr(item, "function", None), "genairr_verifies", None)
-        if not registration:
+        if not registration or not _establishes_its_claim(item):
             continue
         mechanism_id, _claim, fields = registration
         _REGISTRATIONS.setdefault(mechanism_id, []).append(item.nodeid)

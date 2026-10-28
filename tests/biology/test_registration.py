@@ -189,3 +189,35 @@ def test_two_registrations_on_one_mechanism_are_both_counted(tmp_path):
     fields = _coverage_line(tmp_path)
     assert "py:2" in fields, fields
     assert "2/4" in fields, fields
+
+
+def test_a_failing_or_skipped_registration_does_not_count_as_coverage(tmp_path):
+    """An xfail or skip marks a mechanism as NOT verified.
+
+    A registration on a test that cannot pass would otherwise credit the
+    mechanism with a field the test does not actually establish -- which is the
+    same lie as a prose-sourced green row, arriving by a different route. Known
+    defects are pinned as strict xfails, so this matters immediately.
+    """
+    import subprocess
+    import sys
+    from tests.support import paths
+
+    module = tmp_path / "test_xfailed.py"
+    module.write_text(
+        "import pytest\n"
+        "from tests.biology.catalog import verifies\n\n\n"
+        '@pytest.mark.xfail(strict=True, reason="known defect")\n'
+        '@verifies("junction.p_nucleotide", claim="x", fields=("p_v_3_length",))\n'
+        "def test_known_defect():\n"
+        "    assert False\n",
+        encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", str(module), "-q", "--biology-coverage",
+         "-p", "tests.biology.catalog._plugin", "-p", "no:cacheprovider"],
+        capture_output=True, text=True, cwd=paths.repo_root())
+    line = next((ln for ln in result.stdout.splitlines()
+                 if "junction.p_nucleotide" in ln), "")
+    assert line, result.stdout
+    assert "unverified" in line and "py:0" in line, (
+        f"an xfailed registration must not count: {line!r}")
