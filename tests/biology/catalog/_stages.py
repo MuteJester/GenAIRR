@@ -27,9 +27,16 @@ INFRASTRUCTURE = {
     "SampleBasePass": "the engine's sampling reference, not a biological step",
 }
 
-#: Fields a record carries that no mechanism owns, each with the reason. A
-#: field nobody owns is a field nobody is answerable for, so the alternative to
-#: a claim is an explicit entry here -- not silence.
+#: Fields no mechanism is answerable for **as truth**, each with the reason. A
+#: field nobody is answerable for is a field nobody has to get right, so the
+#: alternative to a claim is an explicit entry here -- not silence.
+#:
+#: Nine of these are also listed in the ``truth_fields`` of the mechanism they
+#: belong to, which is deliberate and is not a contradiction: that is where a
+#: reader looks for them. An entry here means the field does not count toward
+#: its mechanism's coverage, because nothing a test could do would establish a
+#: configuration value echoed back, a label the harness assigns, or a ratio
+#: derived from two other fields. See ``Mechanism.verifiable_fields``.
 UNCLAIMED_FIELDS = {
     "sequence_id": "a label the harness assigns, not simulated biology; "
                    "clonality.founder claims it for clone identity instead",
@@ -47,6 +54,22 @@ UNCLAIMED_FIELDS = {
                      "maturation.hypermutation rather than separately",
     "c_call": "always empty: no isotype or class-switch recombination is "
               "modelled. See maturation.class_switching's truth_gap",
+}
+
+#: Truth fields more than one mechanism is answerable for, each with the reason.
+#:
+#: Shared ownership is a real relationship -- several mechanisms genuinely write
+#: to the same field -- but an *undeclared* overlap means neither owner is
+#: accountable, and a field can read as covered because some other mechanism's
+#: test happened to touch it. Declaring them makes a new overlap a failure.
+SHARED_FIELDS = {
+    "sequence": "the assembled bases are what recombination.assembly produces, "
+                "what assay.ambiguous_calls reads to show an N is not a "
+                "mutation, and the only exported trace of "
+                "assay.duplex_formation; all three are answerable for it",
+    "original_v_call": "germline.allele_choice records the V first drawn, and "
+                       "expression.receptor_revision is what makes it 'original' "
+                       "by replacing it; the field exists because of both",
 }
 
 MECHANISMS = (

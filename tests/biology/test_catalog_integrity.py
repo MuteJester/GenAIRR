@@ -181,6 +181,103 @@ def test_a_truth_gap_stays_visible_even_when_the_mechanism_verifies():
             f"{mechanism_id} lost its truth gap once a test was registered")
 
 
+def test_a_field_the_catalog_calls_unclaimed_does_not_count_toward_coverage():
+    """Nine fields are in both UNCLAIMED_FIELDS and some mechanism's truth
+    fields, and the entries say why: each is a configuration echo, a harness
+    label or a derived ratio, listed beside the mechanism it belongs to but not
+    something that mechanism can be held to as truth.
+
+    Counting them in the denominator makes their owners permanently partial --
+    expression.productivity could reach 3 of 6 and assay.paired_end 6 of 8, no
+    matter how thoroughly either was tested. The coverage denominator is
+    therefore the verifiable fields, not every field listed.
+    """
+    overlapping = {f for m in catalog.all_mechanisms() for f in m.truth_fields
+                   if f in catalog.UNCLAIMED_FIELDS}
+    assert overlapping, "the overlap is the thing under test; it cannot be empty"
+    for mechanism in catalog.all_mechanisms():
+        excluded = set(mechanism.truth_fields) & set(catalog.UNCLAIMED_FIELDS)
+        assert not (excluded & set(mechanism.verifiable_fields)), (
+            f"{mechanism.id} counts {sorted(excluded & set(mechanism.verifiable_fields))} "
+            "toward its coverage, but the catalog says no mechanism is "
+            "answerable for them")
+
+
+def test_the_fields_excluded_from_coverage_are_pinned():
+    """Shrinking the denominator is a way to manufacture green, so the exact
+    set of owned-but-excluded fields is pinned rather than derived.
+
+    Adding a field to UNCLAIMED_FIELDS raises its owner's coverage ratio
+    without anyone testing anything. Each entry is a judgement -- that nothing
+    a test could do would establish a configuration echo, a harness label or a
+    derived ratio -- and a new one has to be argued for here, not slipped in.
+    """
+    excluded = {f for m in catalog.all_mechanisms() for f in m.truth_fields
+                if f in catalog.UNCLAIMED_FIELDS}
+    assert excluded == {
+        "sequence_id",             # clonality.founder
+        "locus",                   # germline.genotype
+        "productivity_policy",     # expression.productivity
+        "productivity_reasons",    # expression.productivity
+        "productivity_scope",      # expression.productivity
+        "read_layout",             # assay.paired_end
+        "insert_size",             # assay.paired_end
+        "mutation_rate",           # maturation.hypermutation
+        "c_call",                  # maturation.class_switching
+    }, (
+        "the set of fields excluded from coverage changed. Each exclusion "
+        "raises its mechanism's ratio without any test being written, so a "
+        "change here needs its reason in UNCLAIMED_FIELDS and this pin updated "
+        "deliberately.")
+
+
+def test_every_mechanism_can_reach_verified_or_declares_why_not():
+    """A mechanism whose every field is a configuration echo can never be
+    verified however well it is tested, which must be stated rather than left
+    to be inferred from a stuck report."""
+    stuck = [m.id for m in catalog.all_mechanisms()
+             if not m.verifiable_fields and not m.truth_gap]
+    assert stuck == [], (
+        f"mechanisms with no verifiable field and no declared truth gap: {stuck}")
+
+
+def test_a_truth_field_has_one_owner_unless_the_sharing_is_declared():
+    """Two mechanisms quietly answerable for the same field means neither is.
+
+    `sequence` and `original_v_call` are shared on purpose and say so. Any
+    other overlap is an accident, and an accident here makes a field look
+    covered because a different mechanism's test touched it.
+    """
+    from collections import Counter
+    counted = Counter(f for m in catalog.all_mechanisms() for f in m.truth_fields)
+    shared = {f for f, n in counted.items() if n > 1}
+    assert shared == set(catalog.SHARED_FIELDS), (
+        f"undeclared shared fields: {sorted(shared - set(catalog.SHARED_FIELDS))}\n"
+        f"declared but no longer shared: {sorted(set(catalog.SHARED_FIELDS) - shared)}")
+    thin = [f for f, reason in catalog.SHARED_FIELDS.items() if not reason.strip()]
+    assert thin == [], f"shared fields with no reason: {thin}"
+
+
+def test_a_mechanism_with_a_declared_truth_gap_cannot_read_verified():
+    """The status column is the thing that gets quoted, so a declared gap must
+    be visible there and not only in a neighbouring field.
+
+    assay.ambiguous_calls is the case: the claim "an N is not a mutation" can
+    be established against the sequence, but no N-count field exists. Reporting
+    that as `verified` says the mechanism is covered when a third of what it
+    means is not exported at all.
+    """
+    gapped = {m.id for m in catalog.all_mechanisms() if m.truth_gap}
+    covered = {m.id: m.verifiable_fields for m in catalog.all_mechanisms()}
+    rows = {r.mechanism_id: r for r in catalog.coverage_rows(
+        {mid: ("x::y",) for mid in gapped},
+        covered_by_mechanism={mid: covered[mid] for mid in gapped})}
+    for mechanism_id in gapped:
+        assert rows[mechanism_id].status != "verified", (
+            f"{mechanism_id} declares a truth gap but its status reads verified")
+        assert rows[mechanism_id].truth_gap, f"{mechanism_id} lost its truth gap"
+
+
 def test_every_claimed_field_is_read_by_the_test_that_claims_it():
     """A registration must claim only fields its test actually inspects.
 

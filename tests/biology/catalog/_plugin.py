@@ -112,8 +112,9 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     rows = coverage_rows({k: tuple(v) for k, v in _REGISTRATIONS.items()},
                          rust_by_mechanism=rust_coverage(),
                          covered_by_mechanism={k: tuple(v) for k, v in _COVERED.items()})
-    colour = {"verified": {"green": True}, "partial": {"yellow": True},
-              "unverified": {"red": True}, "no-truth-exported": {"purple": True}}
+    colour = {"verified": {"green": True}, "gap-limited": {"yellow": True},
+              "partial": {"yellow": True}, "unverified": {"red": True},
+              "no-truth-exported": {"purple": True}}
     tw.section("biology coverage", "=")
     stage = None
     for row in rows:
@@ -121,7 +122,12 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
             stage = row.stage
             tw.line("")
             tw.line(f"{stage}", bold=True)
-        fields = f"{len(row.covered_fields)}/{len(row.truth_fields)} fields"
+        # Measured against the verifiable fields: a configuration echo listed
+        # beside its mechanism is not something a test could establish, so
+        # counting it would make its owner permanently short of its own total.
+        fields = f"{len(row.covered_fields)}/{len(row.verifiable_fields)} fields"
+        if len(row.verifiable_fields) != len(row.truth_fields):
+            fields += f" of {len(row.truth_fields)}"
         asserted = f"rust-asserted:{len(row.rust_asserted)}" if row.rust_asserted else ""
         # Shown even when the status is verified: a mechanism can be verified on
         # the one borrowed field it owns while the truth that actually matters
@@ -133,15 +139,18 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         tw.write(f"py:{len(row.python_tests)}".ljust(7))
         tw.line(f" {asserted}{gap}")
     counts = {s: sum(1 for r in rows if r.status == s)
-              for s in ("verified", "partial", "unverified", "no-truth-exported")}
+              for s in ("verified", "gap-limited", "partial", "unverified",
+                        "no-truth-exported")}
     tw.line("")
     tw.line(
-        f"  {counts['verified']} verified, {counts['partial']} partial, "
-        f"{counts['unverified']} unverified, "
+        f"  {counts['verified']} verified, {counts['gap-limited']} gap-limited, "
+        f"{counts['partial']} partial, {counts['unverified']} unverified, "
         f"{counts['no-truth-exported']} with no truth exported, "
         f"of {len(rows)} mechanisms")
     tw.line("")
     tw.line("  Status comes from registered Python tests only.", bold=True)
+    tw.line("  gap-limited means every exported field is covered and some of what the")
+    tw.line("  mechanism means is still not exported, so it is not the same as verified.")
     tw.line("  no-truth-exported means the mechanism's truth is not in the record at")
     tw.line("  all, so no test could establish it. Writing a test does not fix those;")
     tw.line("  exporting the truth does. See each mechanism's truth_gap.")

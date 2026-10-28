@@ -63,17 +63,21 @@ class CoverageRow:
 
     mechanism_id: str
     stage: str
-    status: str                       # verified | partial | unverified | no-truth-exported
+    #: verified | gap-limited | partial | unverified | no-truth-exported
+    status: str
     truth_fields: tuple[str, ...]
     python_tests: tuple[str, ...] = ()
     rust_asserted: tuple[str, ...] = ()
     covered_fields: tuple[str, ...] = ()
     truth_gap: str = ""
+    #: The subset of ``truth_fields`` a test could honestly claim, which is
+    #: what coverage is measured against. See ``Mechanism.verifiable_fields``.
+    verifiable_fields: tuple[str, ...] = ()
 
     @property
     def uncovered_fields(self) -> tuple[str, ...]:
-        """Truth fields this mechanism owns that nothing has checked."""
-        return tuple(f for f in self.truth_fields if f not in self.covered_fields)
+        """Verifiable fields this mechanism owns that nothing has checked."""
+        return tuple(f for f in self.verifiable_fields if f not in self.covered_fields)
 
 
 def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
@@ -103,6 +107,7 @@ def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
         rust = tuple(rust_by_mechanism.get(mechanism.id, ()))
         covered = tuple(f for f in mechanism.truth_fields
                         if f in set(covered_by_mechanism.get(mechanism.id, ())))
+        verifiable = mechanism.verifiable_fields
         if mechanism.truth_gap and not python:
             # Distinct from unverified on purpose: "no one has written the test"
             # and "there is nothing to test against" are different problems, and
@@ -110,12 +115,20 @@ def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
             status = "no-truth-exported"
         elif not python:
             status = "unverified"
-        elif set(covered) >= set(mechanism.truth_fields):
-            status = "verified"
-        else:
+        elif not set(covered) >= set(verifiable):
             status = "partial"
+        elif mechanism.truth_gap:
+            # Every exported field is covered, and some of what the mechanism
+            # means is still not exported. `verified` in that column reads as
+            # "this mechanism is covered", which is the one thing a declared
+            # gap says is not true, so the ceiling for a gapped mechanism is
+            # its own status rather than the green one.
+            status = "gap-limited"
+        else:
+            status = "verified"
         rows.append(CoverageRow(mechanism_id=mechanism.id, stage=mechanism.stage,
                                 status=status, truth_fields=mechanism.truth_fields,
                                 python_tests=python, rust_asserted=rust,
-                                covered_fields=covered, truth_gap=mechanism.truth_gap))
+                                covered_fields=covered, truth_gap=mechanism.truth_gap,
+                                verifiable_fields=verifiable))
     return tuple(rows)

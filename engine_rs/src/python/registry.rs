@@ -13,8 +13,16 @@ use pyo3::prelude::*;
 
 /// Every pass the engine defines, sorted, with no duplicates.
 ///
-/// Kept beside the re-export block in [`crate::passes`]: a pass added there
-/// and not here fails the catalog completeness test on the Python side.
+/// This is a hand-maintained list, so both directions are checked and neither
+/// check is redundant:
+///
+/// - `registry_names_types_the_crate_exports`, below, proves every name here
+///   is a real exported type, at compile time.
+/// - `test_the_registry_names_every_pass_the_engine_defines`, on the Python
+///   side, scans every `impl Pass` under `crate::passes` and fails if one is
+///   missing from this list. Without it a new pass stays invisible to the
+///   mechanism catalog's completeness test, which is the drift that test
+///   exists to catch.
 const PASS_NAMES: &[&str] = &[
     "AssembleSegmentPass",
     "ContaminantPass",

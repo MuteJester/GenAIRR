@@ -92,6 +92,38 @@ def test_recorded_trims_balance_against_the_reference_allele_length(locus):
         f"{locus}: checked {sorted(segments_seen)}, expected {sorted(expected)}")
 
 
+def _germline_coordinate_fields_present(record):
+    """Every germline coordinate, named literally. See ``_trim_fields_present``."""
+    for field in ("v_germline_start", "v_germline_end", "d_germline_start",
+                  "d_germline_end", "j_germline_start", "j_germline_end"):
+        value = record.get(field)
+        assert value is None or isinstance(value, int), f"{field} is not an integer"
+
+
+@verifies("recombination.assembly",
+          claim="each segment's germline coordinates bound exactly the span the "
+                "trim amounts and end loss account for, against the reference "
+                "allele's own length -- so the coordinates say which germline "
+                "bases are present, not merely how many. sequence_length is "
+                "checked against the sequence it measures",
+          fields=("v_germline_start", "v_germline_end", "d_germline_start",
+                  "d_germline_end", "j_germline_start", "j_germline_end",
+                  "sequence_length"))
+@pytest.mark.parametrize("locus", LOCI)
+def test_germline_coordinates_bound_the_span_the_trims_account_for(locus):
+    """The companion to the base-level assembly check, which establishes that
+    the bases are the allele's own and deliberately claims nothing about where
+    they sit."""
+    exp = experiment_builder.recombined(locus=locus)
+    for record, lengths in _observed(exp, n=40, seed=37):
+        found = coordinates.disagreements(record, lengths)
+        assert found == (), f"{locus}: {len(found)} coordinate disagreement(s); first: {found[0]}"
+        _germline_coordinate_fields_present(record)
+        assert record["sequence_length"] == len(record["sequence"]), (
+            f"{locus}: sequence_length is {record['sequence_length']} but the "
+            f"sequence is {len(record['sequence'])} bases")
+
+
 @verifies("projection.segment_coordinates",
           claim="each segment's span in the read equals its span in the germline, "
                 "and its alignment coordinates equal its read coordinates while "
