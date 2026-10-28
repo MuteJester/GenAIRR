@@ -821,6 +821,37 @@ def test_interpretation_of_a_supplied_inventory_still_rebuilds_and_compares_it(t
     assert exc.path == "/inventory"
 
 
+# ── recipes, terms pages, existing locks, inspection cost ────────────
+
+
+def test_build_accepts_the_recipe_a_build_returns(igl_build):
+    source, build = igl_build
+    again = source.build(build.recipe)
+    assert again.recipe == build.recipe
+    assert again.reference.to_json() == build.reference.to_json()
+
+
+@pytest.mark.parametrize("statement", ["licence_statement", "citation_statement"])
+def test_from_files_says_data_terms_pages_cannot_be_recorded_there(tmp_path, statement):
+    page = tmp_path / "page.html"
+    page.write_bytes(b"<html>terms</html>")
+    files = {fmt: fixture_path(IGL, fmt) for fmt in ALL}
+    files[statement] = page
+    exc = error("malformed", from_files, tmp_path, files=files)
+    assert exc.path == f"/exports/{statement}"
+    assert "cannot be recorded through from_files" in exc.message and "unresolved" in exc.message
+    assert "..." not in OgrdbSource.from_files.__doc__
+
+
+def test_an_existing_lock_file_is_named_without_the_writers_temporary_file(tmp_path):
+    source = from_files(tmp_path)
+    path = tmp_path / "one.lock.json"
+    source.write_lock(path)
+    exc = error("io", source.write_lock, path)
+    assert "exists" in exc.message and "replace=True" in exc.message
+    assert ".tmp" not in exc.message and "Errno" not in exc.message
+
+
 def test_inspection_reads_the_source_bytes_into_an_inventory_once(tmp_path, monkeypatch):
     from GenAIRR._reference_sources import evidence, ogrdb
     source = from_files(tmp_path)

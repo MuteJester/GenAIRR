@@ -13,12 +13,13 @@ from dataclasses import dataclass
 import json
 import os
 from types import MappingProxyType
+from typing import Mapping
 
 from GenAIRR._artifact_io import ArtifactIOError, canonical_json, write_atomic
 from GenAIRR._reference_sources import evidence, ogrdb
 from GenAIRR._reference_sources._fields import read_json
 from GenAIRR._reference_sources.acquisition import (
-    AcquiredSource, HttpsTransport, Transport, fetch_source, ingest_files, read_locked,
+    DATA_TERMS_FORMATS, AcquiredSource, HttpsTransport, Transport, fetch_source, ingest_files, read_locked,
 )
 from GenAIRR._reference_sources.build import RECIPE_KEYS, ReferenceBuild, document_bytes
 from GenAIRR._reference_sources.consistency import profile_scope_problem
@@ -56,11 +57,14 @@ def _first_token(path: str) -> str:
 
 
 def _parse_recipe(recipe) -> tuple:
-    """``(Recipe, file it was read from or None)`` from a recipe document or a JSON file path."""
+    """``(Recipe, file it was read from or None)`` from a recipe, a recipe document or a JSON file path."""
+    if isinstance(recipe, Recipe):
+        return recipe, None
     if isinstance(recipe, dict):
         return Recipe.from_dict(recipe), None
     if not _is_path(recipe):
-        raise TypeError(f"recipe must be a recipe document (dict) or a JSON file path, got {type(recipe).__name__}")
+        raise TypeError(f"recipe must be a recipe (such as ReferenceBuild.recipe), a recipe document (dict) or a "
+                        f"JSON file path, got {type(recipe).__name__}")
     try:
         return Recipe.from_dict(read_json(recipe, max_bytes=MAX_RECIPE_BYTES)), recipe
     except ReferenceSourceError as exc:
@@ -276,10 +280,19 @@ class OgrdbSource:
     def from_files(cls, *, set_id: str, release: int, profile: str, exports, cache) -> "OgrdbSource":
         """Record local copies of the exports of one explicit set release, never touching the network.
 
-        ``exports`` maps a format (``airr``, ``airr_ex``, ``gapped``, ``gapped_ex``, ...) to a file
-        path.  The bytes are stored in ``cache`` and locked as local files: the lock does not claim
-        that GenAIRR fetched them, and it depends on the bytes only, never on paths or file names.
+        ``exports`` maps an export format (``airr``, ``airr_ex``, ``gapped``, ``gapped_ex``,
+        ``ungapped`` or ``ungapped_ex``) to a file path.  A build needs ``airr`` and ``airr_ex``, and
+        V junction anchors need ``gapped`` and ``gapped_ex``.  The bytes are stored in ``cache`` and
+        locked as local files: the lock does not claim that GenAIRR fetched them, and it depends on
+        the bytes only, never on paths or file names.  The provider's data-terms pages cannot be
+        recorded here: the lock records the data terms as unresolved.
         """
+        if isinstance(exports, Mapping):
+            pages = [fmt for fmt in DATA_TERMS_FORMATS if fmt in exports]
+            if pages:
+                raise ReferenceSourceError("malformed", "/exports/" + pages[0], (
+                    f"{', '.join(pages)}: data-terms pages cannot be recorded through from_files; omit them (a lock "
+                    "recorded from local files states its data terms as unresolved)"))
         try:
             acquired = ingest_files(set_id=set_id, release=release, profile=profile, files=exports, cache=cache,
                                     identify=ogrdb.identify, now=_now)
@@ -330,8 +343,10 @@ class OgrdbSource:
         try:
             write_atomic(path, document_bytes(self._lock.to_dict()), replace=replace)
         except ArtifactIOError as exc:
-            hint = "; pass replace=True to replace it" if not replace and os.path.lexists(path) else ""
-            raise ReferenceSourceError("io", "", f"cannot write the source lock to {path}: {exc}{hint}") from exc
+            if not replace and os.path.lexists(path):
+                raise ReferenceSourceError("io", "", f"cannot write the source lock to {path}: the lock file exists; "
+                                                     "pass replace=True to replace it") from exc
+            raise ReferenceSourceError("io", "", f"cannot write the source lock to {path}: {exc}") from exc
 
     def inspect(self) -> SourceInspection:
         """What the source holds, interpreted under its profile; never touches the network.
