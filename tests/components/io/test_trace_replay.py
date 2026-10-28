@@ -429,9 +429,10 @@ def test_replay_trim_runs_validation_path_on_bad_recorded_value(vj_compiled):
 
 
 from pathlib import Path  # noqa: E402
+from tests.support import paths
 
 FULL_STACK_GOLDEN = (
-    Path(__file__).parent / "golden" / "trace_files" / "full_stack_seed4242.trace.json"
+    paths.golden("trace_files", "full_stack_seed4242.trace.json")
 )
 
 

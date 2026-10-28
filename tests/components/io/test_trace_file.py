@@ -27,6 +27,7 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as genairr_engine
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -262,7 +263,7 @@ def test_validate_addresses_accepts_built_in_run(vj_compiled):
 # ──────────────────────────────────────────────────────────────────
 
 
-GOLDEN_DIR = Path(__file__).parent / "golden" / "trace_files"
+GOLDEN_DIR = paths.golden("trace_files")
 
 
 def test_emit_golden_trace_file_for_future_b(vj_compiled):

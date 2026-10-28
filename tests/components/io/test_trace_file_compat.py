@@ -35,9 +35,10 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as eng
+from tests.support import paths
 
 
-GOLDEN_DIR = Path(__file__).parent / "golden" / "trace_files"
+GOLDEN_DIR = paths.golden("trace_files")
 
 
 # Each entry: (fixture filename, callable that reconstructs the
