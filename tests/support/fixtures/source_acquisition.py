@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from tests.support import paths
 
-import pathlib
-from GenAIRR._artifact_io import canonical_json, strict_loads
+from GenAIRR._artifact_io import strict_loads
 
 DATA = paths.data("reference_sources")
 

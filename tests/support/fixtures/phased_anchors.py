@@ -8,7 +8,7 @@ from __future__ import annotations
 import GenAIRR as ga
 from GenAIRR.alleles import JAllele, VAllele
 from GenAIRR.genotype import Genotype
-from tests.support.cases.productive import assert_productive_record, synthetic_cartridge
+from tests.support.cases.productive import synthetic_cartridge
 
 def _phased_fixture():
     base = synthetic_cartridge({"V_3": [(1, 1)]})

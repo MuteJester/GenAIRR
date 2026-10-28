@@ -67,6 +67,12 @@ jobs:
       - name: Run wall-time budgets
         run: pytest tests/ -q -m performance
 
+      # Scoped to tests/: see the per-file ignores in pyproject for why F401
+      # cannot be enforced on test modules while shared fixtures are imported
+      # by name.
+      - name: Lint the test suite
+        run: ruff check tests/
+
   # ── Rust unit + integration tests ──────────────────────────────
   # Direct `cargo test` against the engine crate. Cheaper and more
   # focused than running the whole pytest suite to validate the

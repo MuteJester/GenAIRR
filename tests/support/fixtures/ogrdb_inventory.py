@@ -10,7 +10,6 @@ from tests.support import paths
 
 import hashlib
 import json
-from pathlib import Path
 import pytest
 from GenAIRR._reference_sources import model as m
 from GenAIRR._reference_sources import ogrdb

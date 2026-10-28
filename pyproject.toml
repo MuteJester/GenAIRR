@@ -54,6 +54,11 @@ test = [
     "pandas",
     "hypothesis>=6.100",
     "pytest-xdist>=3.5",
+    # The official AIRR schema package. Six tests importorskip it, so without
+    # it the headline schema-compliance claim is silently skipped and passes
+    # only on machines that happen to have it installed.
+    "airr>=1.4",
+    "ruff>=0.6",
 ]
 all = [
     "numpy>=1.24",
@@ -119,3 +124,54 @@ markers = [
     "slow: excluded from the fast path; run with the full suite",
     "biology: verifies a declared biological mechanism (see tests/biology)",
 ]
+
+[tool.ruff]
+# Scoped to the test suite: the package and the engine bindings are not part of
+# this work, and a repo-wide sweep would bury the signal.
+include = ["tests/**/*.py"]
+line-length = 110
+
+[tool.ruff.lint]
+# F401 unused-import is the rule that matters here: the module splitter copied
+# each source module's whole import block into every target, so several modules
+# imported 40+ names and used a third of them. F811 is the same mess seen from
+# the other side -- a name imported twice, once from the module's own block and
+# once from the shared support module.
+#
+# E501 is deliberately not selected. There are 541 over-long lines, essentially
+# all of them pre-existing in test bodies this work moved verbatim; enforcing it
+# would mean rewriting hundreds of assertions, which is exactly what the
+# restructure promised not to do. Reformatting them is its own change.
+select = ["F", "E711", "E712", "E713", "E714", "E721", "W605"]
+# F841 unused-variable: 13 instances, all pre-existing in test bodies, and
+# several have a side-effecting right-hand side (building refdata, importing
+# pandas). Deleting the assignment is a behaviour change dressed as a cleanup,
+# and editing the body is the rewrite this work promised not to do.
+ignore = ["F841"]
+
+[tool.ruff.lint.per-file-ignores]
+# Support packages re-export deliberately.
+"tests/support/**/__init__.py" = ["F401"]
+# Test modules cannot have unused-import enforced, and the reason is
+# structural rather than cosmetic: this suite imports shared pytest fixtures by
+# name so that pytest can resolve them, and such an import is syntactically
+# indistinguishable from dead weight. tests/components/reference_sources/
+# test_dossier.py imports 42 names on one line; `_raises` is used in code,
+# `report`/`inventory`/`inv` are used as fixture parameters, and `ADAPTER` and
+# `CLAIM_ID` are genuine leftovers from the module split. Running ruff --fix
+# over that removed the fixture imports and broke 177 tests.
+#
+# F811 is the same cause seen from the other side: a name arriving both from
+# the module's own import block and from the shared support module.
+#
+# The fix is not a lint setting. Moving the shared *fixtures* into a per-area
+# conftest would make every remaining import genuinely used and let F401 be
+# enforced here -- and would also remove the transitive-dependency trap where
+# importing `inventory` without the `inv` it depends on errors at run time.
+# That is a structural change, recorded in the remediation design as follow-on
+# work rather than done under a lint flag.
+# F541 too: an f-string with no placeholder is harmless to leave, and dropping
+# the prefix edits a test body. The gate flagged exactly three such edits as
+# unexplained changes, which is the gate working -- a cosmetic rewrite is still
+# a rewrite, and bodies on this branch move verbatim.
+"tests/**/test_*.py" = ["F401", "F811", "F541"]

@@ -15,8 +15,8 @@ import socket
 import pytest
 from GenAIRR._reference_sources import api
 from GenAIRR._reference_sources.acquisition import HttpsTransport
-from GenAIRR._reference_sources.errors import KINDS, ReferenceSourceError
-from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild
+from GenAIRR._reference_sources.errors import ReferenceSourceError
+from GenAIRR.reference_sources import OgrdbSource
 from tests.support.fixtures.ogrdb_coordinates import in_scope, small
 from tests.support.fixtures.source_projection import MINI, entry, recipe
 

@@ -6,8 +6,7 @@ own.
 """
 from __future__ import annotations
 from GenAIRR import _engine as ge
-from GenAIRR import CompiledExperiment, Experiment
-import GenAIRR as ga  # noqa: E402
+from GenAIRR import Experiment
 import re as _re
 
 def _vj_refdata(*, canonical=False) -> ge.RefDataConfig:

@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from GenAIRR._reference_sources import common, evidence, ogrdb, projection
-from tests.support.fixtures.ogrdb_coordinates import V_LABEL, in_scope, small
+from GenAIRR._reference_sources import evidence, ogrdb
+from tests.support.fixtures.ogrdb_coordinates import V_LABEL
 from tests.support.fixtures.ogrdb_inventory import (
-    EXPECT, IGH, IGL, RECORDS, SELECTION, error, pinned, raw, raw_records, seal,
+    IGH, RECORDS, SELECTION, raw_records,
 )
 
 J1, J7 = "IGLJ1*01", "IGLJ7*02"

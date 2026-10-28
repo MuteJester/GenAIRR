@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 from GenAIRR import _engine as ge
-from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin, project_duplex_simulation
+from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin
 
 def _opened(name):
     return DuplexJoin(name).open("left", offset=0).open("right", offset=0)

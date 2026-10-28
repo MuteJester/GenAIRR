@@ -13,7 +13,7 @@ from GenAIRR._reference_sources import consistency
 from GenAIRR._reference_sources import evidence
 from GenAIRR._reference_sources import model as m
 from tests.support.fixtures.ogrdb_inventory import (
-    ALL, EXPECT, IGH, IGK, IGL, ROOT, SETS, _key, build, encode, error, inventory_of, payload, pinned, raw,
+    ALL, EXPECT, IGL, ROOT, build, encode, inventory_of, payload, pinned, raw,
     raw_records,
 )
 

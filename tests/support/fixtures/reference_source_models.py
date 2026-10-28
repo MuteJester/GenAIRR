@@ -5,11 +5,10 @@ so a test can state only the field it is interested in.
 """
 from __future__ import annotations
 import copy
-import json
 from pathlib import Path
 import pytest
-from GenAIRR._artifact_io import canonical_json, strict_loads, typed_digest
-from GenAIRR._reference_sources.errors import KINDS, ReferenceSourceError
+from GenAIRR._artifact_io import strict_loads, typed_digest
+from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources import model as m
 from tests.support import paths
 

@@ -104,7 +104,7 @@ def test_same_label_conflict_covers_gap_length_and_empty_rejections(tmp_path, mo
         ("z", "rejected", "conflicting_sequence_for_label"),
         ("z", "rejected", "conflicting_sequence_for_label (also: empty_sequence)")]
     monkeypatch.setattr(importer, "MAX_SEQUENCE", 12)
-    cat = run(tmp_path / ".", f">x\nACGTACGTACGTA\n>x\nACGTACGTACGT\n", j=f">J1\n{J_SEQ[:12]}\n")
+    cat = run(tmp_path / ".", ">x\nACGTACGTACGTA\n>x\nACGTACGTACGT\n", j=f">J1\n{J_SEQ[:12]}\n")
     assert [r.reason for r in cat.records if r.id.startswith("rec:V:")] == [
         "conflicting_sequence_for_label (also: too_long: 13 bases exceeds 12)",
         "conflicting_sequence_for_label"]
