@@ -10,6 +10,17 @@ Taking the reference tables is not circular. Calling the production junction
 builder or region projector would be; reading the allele a record names and
 looking up the base at the coordinate it claims is the independent step.
 
+What that step establishes is **allele identity**, and only that. It is not an
+independent check on the coordinates, and must not be read as one: production
+lays each germline byte down beside its coordinate from the same two numbers
+(``Nucleotide::germline(slice[i], slice_start + i)``), so a trim that slices
+one base too many shifts the byte and the coordinate together and every
+comparison here still agrees. Measured: shifting both by one over 366
+positions yields zero mismatches. The coordinates are checked by the
+``coordinates`` oracle beside this one, which never compares a base and
+instead requires the trim amounts, the end-loss lengths, the exported
+coordinates and the reference allele's own length to add up.
+
 Two further things this module knows that the provenance oracle does not:
 
 - **P nucleotides are templated.** A P base is the reverse complement of the
@@ -84,9 +95,14 @@ def templated_mismatches(simulation, refdata, *, skip_inverted: bool = True
                          ) -> tuple[Mismatch, ...]:
     """Positions where the recorded germline base is not the reference's base.
 
-    This is the check that catches a wrong allele assembled with internally
-    consistent provenance, or a germline coordinate shifted by one -- failures
-    the engine's own record cannot reveal.
+    This catches a wrong allele assembled with internally consistent
+    provenance -- a failure the engine's own record cannot reveal, because its
+    provenance would agree with itself.
+
+    It does not catch a mis-trimmed segment. A coordinate is only visible here
+    when it moves independently of the byte beside it, which a record-level
+    mutant can do and a trimming defect cannot. Use the ``coordinates`` oracle
+    for that.
 
     Inverted D is skipped by default: its coordinates are forward-reference
     while the sequence carries the reverse complement, so a direct lookup does

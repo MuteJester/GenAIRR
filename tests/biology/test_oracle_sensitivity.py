@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import pytest
 
 from tests.support.builders import experiment as experiment_builder
-from tests.support.oracles import reconstruction
+from tests.support.oracles import coordinates, reconstruction
 
 pytestmark = pytest.mark.pin
 
@@ -166,3 +166,90 @@ def test_a_p_nucleotide_that_is_not_a_palindrome_is_caught():
     wrong = "GGG"
     assert wrong != reconstruction.reverse_complement(tip), (
         "the palindrome check would accept arbitrary P bases")
+
+
+# ── the coordinate oracle ────────────────────────────────────────────────
+#
+# Mutants are applied to the exported record rather than the simulation,
+# because the coordinate oracle reads the record. Each one models a defect in
+# a different producer: the trimming pass, the record builder's germline
+# export, its read export, and its alignment export.
+
+
+def _coordinate_case():
+    """A record with no indels, plus the allele lengths read from the reference."""
+    exp = experiment_builder.recombined()
+    outcome = exp.run(n=1, seed=0)[0]
+    simulation = outcome.final_simulation()
+    getters = {"v": exp.refdata.v_allele, "d": exp.refdata.d_allele, "j": exp.refdata.j_allele}
+    identifiers = {"v": simulation.v_allele_id(), "d": simulation.d_allele_id(),
+                   "j": simulation.j_allele_id()}
+    lengths = {}
+    for segment, identifier in identifiers.items():
+        if identifier is None:
+            continue
+        allele = getters[segment](identifier)
+        sequence = allele.seq() if callable(allele.seq) else allele.seq
+        lengths[segment] = len(sequence)
+    record = dict(outcome.airr_record(exp.refdata))
+    assert (record.get("n_indels") or 0) == 0, "the fixture must be indel-free"
+    return record, lengths
+
+
+def test_the_coordinate_oracle_passes_on_an_uncorrupted_record():
+    """The control, and the coverage check: a record whose coordinates were
+    never examined would also report no disagreements."""
+    record, lengths = _coordinate_case()
+    assert coordinates.disagreements(record, lengths) == ()
+    assert set(lengths) == {"v", "d", "j"}, (
+        "the fixture must present all three segments, or the mutants below "
+        "would be checking fewer identities than they claim")
+
+
+@pytest.mark.parametrize("field, delta, identity", [
+    ("v_trim_3", -1, "germline_end == allele_length - trim_3 - end_loss_3_length"),
+    ("d_trim_5", 1, "germline_start == trim_5 + end_loss_5_length"),
+    ("j_germline_start", 1, "germline_start == trim_5 + end_loss_5_length"),
+    ("v_germline_end", -2, "germline_end == allele_length - trim_3 - end_loss_3_length"),
+    ("j_sequence_end", 3, "germline span == read span"),
+    ("d_alignment_start", 1, "alignment coordinates == read coordinates"),
+])
+def test_each_coordinate_identity_is_sensitive_to_its_own_producer(field, delta, identity):
+    """Models a single producer disagreeing with the others by a few bases.
+
+    This is the defect class the base-level oracle cannot see: shifting a trim
+    amount or a germline coordinate leaves every recorded base equal to the
+    reference base at the coordinate it claims, because production derives the
+    byte and the coordinate from the same slice.
+    """
+    record, lengths = _coordinate_case()
+    corrupted = {**record, field: record[field] + delta}
+    found = coordinates.disagreements(corrupted, lengths)
+    assert found, f"a {delta:+d} shift in {field} went undetected"
+    assert any(disagreement.identity == identity for disagreement in found), (
+        f"{field} was detected, but not by {identity!r}; "
+        f"got {sorted({d.identity for d in found})}")
+
+
+def test_a_reference_table_the_engine_disagrees_with_is_caught():
+    """Models the engine assembling from one allele while the reference table
+    publishes a different length for it -- a packaging defect that would make
+    every downstream coordinate wrong while the record stayed self-consistent."""
+    record, lengths = _coordinate_case()
+    stretched = {**lengths, "v": lengths["v"] + 3}
+    found = coordinates.disagreements(record, stretched)
+    assert found, "a reference allele three bases longer than the engine used went undetected"
+    assert {disagreement.segment for disagreement in found} == {"v"}
+
+
+def test_an_indel_count_cannot_excuse_an_arbitrary_coordinate_shift():
+    """The indel tolerance is per recorded edit, so it must not become a blanket
+    licence: a shift larger than the recorded indel count is still a defect."""
+    record, lengths = _coordinate_case()
+    excused = {**record, "n_v_indels": 2, "n_indels": 2,
+               "v_germline_end": record["v_germline_end"] - 2}
+    assert coordinates.disagreements(excused, lengths) == (), (
+        "two recorded indels should tolerate a two-base displacement")
+    unexcused = {**excused, "v_germline_end": record["v_germline_end"] - 3}
+    assert coordinates.disagreements(unexcused, lengths), (
+        "a three-base displacement with two recorded indels went undetected")
