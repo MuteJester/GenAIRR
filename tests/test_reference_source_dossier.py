@@ -1686,3 +1686,20 @@ def test_a_packaged_load_without_a_temporary_directory_is_a_typed_io_error(monke
     monkeypatch.setattr(build_module, "_BUNDLED", {})
     failing_temporary_directory(monkeypatch, cleanup=True)
     assert ReferenceBuild.bundled(STARTER_ID).reference.alleles
+
+
+@pytest.mark.parametrize("kind, path, rooted", [
+    ("resource_limit", "/inventory/findings", "/report.json/inventory/findings"),
+    ("malformed", "/report/comparison/findings/0", "/report.json/comparison/findings/0"),
+    ("projection", "", "/inputs"),
+])
+def test_regeneration_errors_are_rooted_at_a_dossier_member(mini, monkeypatch, kind, path, rooted):
+    from GenAIRR.reference_sources import ReferenceSourceError
+    _, dossier = mini
+
+    def failing(*args, **kwargs):
+        raise ReferenceSourceError(kind, path, "simulated regeneration failure")
+
+    monkeypatch.setattr(build_module, "project", failing)
+    exc = error(kind, ReferenceBuild.read_dossier, dossier)
+    assert exc.path == rooted and "do not regenerate" in exc.message

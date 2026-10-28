@@ -253,6 +253,12 @@ def _regeneration_failed(exc: ReferenceSourceError, lock: SourceLock) -> Referen
         path = "/" + blobs[tokens[2]] + path[len("/assets/" + tokens[2]):]
     elif tokens[1] in RECIPE_KEYS:                  # a location in the recipe document
         path = "/" + RECIPE_MEMBER + path
+    elif tokens[1] == "inventory":                  # the regenerated inventory is the report's inventory
+        path = "/" + REPORT_MEMBER + path
+    elif tokens[1] == "report":                     # the regenerated report's own checks
+        path = "/" + REPORT_MEMBER + path[len("/report"):]
+    elif path == "" and exc.kind == "projection":   # the runtime refused the regenerated input files
+        path = "/" + INPUTS_PREFIX.rstrip("/")
     return ReferenceSourceError(exc.kind, path, "the dossier's lock, blobs and recipe do not regenerate a build "
                                                 f"under this GenAIRR: {exc.message}")
 
