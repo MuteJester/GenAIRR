@@ -57,7 +57,7 @@ The relevant regressions include
 [native biological alignments](../engine_rs/src/airr_record/tests/biological_alignment.rs),
 [Python metadata repairs](../tests/test_metadata_biology_fixes.py),
 [germline provenance](../tests/test_metadata_germline_regressions.py), and
-[indel distribution checks](../tests/test_distribution_invariants.py).
+[indel distribution checks](../tests/components/engine/test_distribution_invariants.py).
 The indel tests enumerate complete productive support independently; they
 separate retry-exhaustion NoOps from deletions and retain 5σ comparisons for
 nondegenerate distributions. In the one-event fixture, valid edits are now

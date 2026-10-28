@@ -213,7 +213,7 @@ the standard CI path. Flagged for awareness.
 
 ## 7. Test coverage in this slice
 
-[`tests/test_distribution_invariants.py`](../tests/test_distribution_invariants.py)
+[`tests/components/engine/test_distribution_invariants.py`](../tests/components/engine/test_distribution_invariants.py)
 pins the §5 invariants:
 
 - **D1**: NP length narrowing (uniform input → uniform on admissible

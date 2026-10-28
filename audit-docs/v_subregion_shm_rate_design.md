@@ -9,7 +9,7 @@ top of the existing per-segment rates: a V site's final weight
 is `base × segment_rate(V) × v_subregion_rate(label)`. Non-V
 sites and unannotated V alleles receive identity factor `1.0`.
 Pinned end-to-end by
-[`tests/test_pass_parameter_signature.py`](../tests/test_pass_parameter_signature.py)
+[`tests/components/engine/test_pass_parameter_signature.py`](../tests/components/engine/test_pass_parameter_signature.py)
 and
 [`tests/components/estimators/v_subregion_rates/test_estimation.py`](../tests/components/estimators/v_subregion_rates/test_estimation.py).
 Per-region SHM **counters** (`n_cdr1_mutations` etc.) remain
@@ -438,7 +438,7 @@ What landed:
   comparator).
 
 Pinned by
-[`tests/test_pass_parameter_signature.py`](../tests/test_pass_parameter_signature.py)
+[`tests/components/engine/test_pass_parameter_signature.py`](../tests/components/engine/test_pass_parameter_signature.py)
 (end-to-end: rate-vector divergence flips signature; mismatched
 replay raises; default ≡ all-ones; kernel name participates;
 schema is v3; distribution-bearing passes vary their signature
@@ -642,7 +642,7 @@ compile-time parameters has been closed. The implementation:
   live.schema_version` to handle cross-schema replay
   gracefully.
 - Pinned by
-  [`tests/test_pass_parameter_signature.py`](../tests/test_pass_parameter_signature.py)
+  [`tests/components/engine/test_pass_parameter_signature.py`](../tests/components/engine/test_pass_parameter_signature.py)
   (8 spec tests).
 
 ### Slice B — V-subregion SHM rate kwarg **[Shipped]**

@@ -370,7 +370,7 @@ What landed:
   equivalence preserved at the signature layer.
 
 Pinned at the surface by
-[`tests/test_pass_parameter_signature.py`](../tests/test_pass_parameter_signature.py)
+[`tests/components/engine/test_pass_parameter_signature.py`](../tests/components/engine/test_pass_parameter_signature.py)
 and inside the v_subregion_shm_rate contract
 ([`tests/components/estimators/v_subregion_rates/test_pins.py`](../tests/components/estimators/v_subregion_rates/test_pins.py)
 `test_pin_present_pass_plan_signature_folds_compile_time_params`).

@@ -14,7 +14,7 @@ deliverables:
 | C — Pass + trace + replay | `ReceptorRevisionPass`, three `receptor_revision.*` trace addresses, replay path validating retained length | `engine_rs/src/passes/receptor_revision.rs::tests` (17 unit tests) |
 | D — DSL | `Experiment.receptor_revision(prob=…)` (VDJ-only, at-most-once), inline-lowering after `assemble.j` | [`tests/test_receptor_revision_dsl.py`](../tests/test_receptor_revision_dsl.py) (16 e2e tests) |
 | E — AIRR provenance | `receptor_revision_applied: bool` + `original_v_call: String` fields, `ReceptorRevisionAppliedMismatch` + `OriginalVCallMismatch` validator issues, structured PyO3 dict / source strings | `airr_record/tests/projection.rs` (8 unit tests) + DSL Slice E tests |
-| Consolidation | README row, validation-matrix row, release-tier IGH stack test + full-stack replay round-trip, Bernoulli draw distribution test (prob=0.25, N=4000, ±5σ) | [`tests/test_release_validation.py`](../tests/test_release_validation.py), [`tests/test_distribution_invariants.py`](../tests/test_distribution_invariants.py) |
+| Consolidation | README row, validation-matrix row, release-tier IGH stack test + full-stack replay round-trip, Bernoulli draw distribution test (prob=0.25, N=4000, ±5σ) | [`tests/test_release_validation.py`](../tests/test_release_validation.py), [`tests/components/engine/test_distribution_invariants.py`](../tests/components/engine/test_distribution_invariants.py) |
 
 The 19-test [`tests/test_receptor_revision_contract.py`](../tests/test_receptor_revision_contract.py)
 finished the arc as a fully-green scaffold suite — every pin-the-

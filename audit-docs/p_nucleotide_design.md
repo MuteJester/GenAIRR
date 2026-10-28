@@ -17,9 +17,9 @@ deferred (audit's stop-and-report boundary preserved).
 
 Companion artefacts:
 
-- [`tests/test_p_nucleotide_contract.py`](../tests/test_p_nucleotide_contract.py)
+- [`tests/components/engine/junction/p_nucleotide/test_pins.py`](../tests/components/engine/junction/p_nucleotide/test_pins.py)
   — 21 pins, all flipped to post-implementation state.
-- [`tests/test_p_nucleotide_implementation.py`](../tests/test_p_nucleotide_implementation.py)
+- [`tests/components/engine/junction/p_nucleotide/test_behavior.py`](../tests/components/engine/junction/p_nucleotide/test_behavior.py)
   — 10 behaviour tests covering default-byte-identical, VJ +
   VDJ P emission, `P_NUC` flag, replay round-trip, productive-
   only triad, tampered-field validation, manifest exposure,
@@ -49,7 +49,7 @@ this audit:
   deterministically from `(allele, trim, length)`.
 
 Companion to
-[`tests/test_p_nucleotide_contract.py`](../tests/test_p_nucleotide_contract.py)
+[`tests/components/engine/junction/p_nucleotide/test_pins.py`](../tests/components/engine/junction/p_nucleotide/test_pins.py)
 which freezes today's surfaces (`pin_scaffold_*`), the existing
 absence of any P-nucleotide pass / event / address / field
 (`pin_absence_*`), and the documented-orphan status of the
@@ -84,7 +84,7 @@ it. No replay-safety hole exists.
 | `JunctionStopState::build` — single-shot precompute | [`engine_rs/src/contract/junction_stop_state.rs`](../engine_rs/src/contract/junction_stop_state.rs) | Used today by NP base sampling to filter candidates against the productive triad. P-addition needs the same filter applied to the LENGTH distribution (not per-base): a P-length that would produce a junction-disrupting frame or stop codon is rejected before sampling. |
 | `_DOCUMENTED_ORPHAN_DATACONFIG_FIELDS` | [`src/GenAIRR/dataconfig/data_config.py:43-51`](../src/GenAIRR/dataconfig/data_config.py#L43-L51) | Explicit list of orphan legacy fields. `p_nucleotide_length_probs` is in this list. The slice does NOT auto-lift this orphan; cartridges author the typed P-length plane explicitly (§7). |
 | MCP `p_nucleotides` diagnostic endpoint | [`src/GenAIRR/utilities/mcp_helpers.py:682-688`](../src/GenAIRR/utilities/mcp_helpers.py#L682-L688) | Read-only surface for `getattr(dc, "p_nucleotide_length_probs", {})`. Does NOT feed the simulator. Stays untouched by the slice — it surfaces the legacy field for cartridge inspection, not for sampling. |
-| Existing absence pin in junction audit | [`tests/test_junction_n_addition_contract.py::test_pin_absence_no_p_nucleotide_surface`](../tests/test_junction_n_addition_contract.py) | Already pins that no `p_nucleotides` kwarg / method / AIRR field exists. The new contract file `test_p_nucleotide_contract.py` is a per-slice elaboration of this pin set. |
+| Existing absence pin in junction audit | [`tests/components/engine/junction/test_junction_n_addition_contract.py::test_pin_absence_no_p_nucleotide_surface`](../tests/components/engine/junction/test_junction_n_addition_contract.py) | Already pins that no `p_nucleotides` kwarg / method / AIRR field exists. The new contract file `test_p_nucleotide_contract.py` is a per-slice elaboration of this pin set. |
 
 ---
 
@@ -175,7 +175,7 @@ orientation. An earlier revision of this section showed
 palindrome the wrong end of D whenever the inversion fires.
 The implementation slice corrected the order per §9.3 — see
 the
-[contract pin](../tests/test_p_nucleotide_contract.py)
+[contract pin](../tests/components/engine/junction/p_nucleotide/test_pins.py)
 `test_pin_present_pipeline_order_has_p_addition_at_audited_positions`
 which freezes the corrected order at the lowering source.
 
@@ -851,7 +851,7 @@ Single self-contained slice.
 ## 14. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_p_nucleotide_contract.py`](../tests/test_p_nucleotide_contract.py).
+[`tests/components/engine/junction/p_nucleotide/test_pins.py`](../tests/components/engine/junction/p_nucleotide/test_pins.py).
 
 ### `pin_scaffold_*` — pre-existing surfaces the slice builds on
 

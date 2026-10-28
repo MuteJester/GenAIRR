@@ -55,7 +55,7 @@ defaults; P-nucleotides / palindromic additions / per-context
 Markov chains are out of scope per §13.
 
 Companion to
-[`tests/test_junction_n_addition_contract.py`](../tests/test_junction_n_addition_contract.py)
+[`tests/components/engine/junction/test_junction_n_addition_contract.py`](../tests/components/engine/junction/test_junction_n_addition_contract.py)
 which freezes today's surfaces (`pin_scaffold_*`) and the gaps
 the implementation slice would close (`pin_absence_*`).
 
@@ -673,7 +673,7 @@ precondition slice needed.
 ## 13. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_junction_n_addition_contract.py`](../tests/test_junction_n_addition_contract.py).
+[`tests/components/engine/junction/test_junction_n_addition_contract.py`](../tests/components/engine/junction/test_junction_n_addition_contract.py).
 
 ### `pin_scaffold_*` — pre-existing surfaces the slice builds on
 

@@ -13,7 +13,7 @@ deliverables:
 | B — Projection kernel + geometry validator | `project_paired_end_layout(rec, r1_length, r2_length, insert_size) -> PairedEndProjection`, validator dispatches on `read_layout` and surfaces the four reserved variants for `"paired_end"` records. `"single_end"` reserved no-op; unknown values → `ReadLayoutMismatch`. | `engine_rs/src/airr_record/sequence.rs` + `engine_rs/src/airr_record/tests/projection.rs::slice_b_*` (17 Slice B tests covering kernel correctness + every geometry tamper) |
 | C — Trace addresses + builder integration | Three new `ChoiceAddress` variants (`PairedEndR1Length` / `PairedEndR2Length` / `PairedEndInsertSize`), `PairedEndLayoutSpec` (three int distributions), `PairedEndSamplingPass` (trace-only, no IR mutation), AIRR builder reads trace + applies kernel | `engine_rs/src/passes/paired_end.rs::tests` (12 Slice C tests: fresh, replay, missing/wrong address, bad geometry, baseline) + `airr_record::tests::projection::slice_c_*` (5 builder integration tests) |
 | D — DSL | `Experiment.paired_end(*, r1_length, r2_length=None, insert_size)` with three input shapes (int / `(low, high)` / empirical pairs), at-most-once + fixed-value geometry guards, end-of-plan lowering | [`tests/test_paired_end_dsl.py`](../tests/test_paired_end_dsl.py) (20 e2e tests) |
-| Consolidation | README row, validation-matrix row, release-tier IGH stack composed with receptor revision + D inversion + mutation + end-loss + rev-comp, full-stack replay round-trip with variable insert sizes, distribution invariant on `paired_end.insert_size` (uniform-int mean ±5σ + endpoint bounds) | [`tests/test_release_validation.py`](../tests/test_release_validation.py), [`tests/test_distribution_invariants.py`](../tests/test_distribution_invariants.py) |
+| Consolidation | README row, validation-matrix row, release-tier IGH stack composed with receptor revision + D inversion + mutation + end-loss + rev-comp, full-stack replay round-trip with variable insert sizes, distribution invariant on `paired_end.insert_size` (uniform-int mean ±5σ + endpoint bounds) | [`tests/test_release_validation.py`](../tests/test_release_validation.py), [`tests/components/engine/test_distribution_invariants.py`](../tests/components/engine/test_distribution_invariants.py) |
 
 The contract test suite [`tests/test_paired_end_contract.py`](../tests/test_paired_end_contract.py)
 closed the arc with every Slice-gated `pin_absence_*` test
@@ -674,7 +674,7 @@ A non-exhaustive list, mirrored as TODO markers in the companion
     insert-size distribution is uniform within 5σ per bucket
     (matches the existing `EndLossPass` length-pair
     invariant pattern in
-    `tests/test_distribution_invariants.py`).
+    `tests/components/engine/test_distribution_invariants.py`).
 11. **Content-hash stability.** Adding `.paired_end()` to a
     plan that doesn't read paired-end fields doesn't change
     existing test fixtures' AIRR output.
