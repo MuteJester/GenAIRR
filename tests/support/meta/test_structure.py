@@ -35,8 +35,22 @@ def _imported_modules(path: Path):
                 yield alias.name
 
 
-def _test_module_imports(path: Path) -> set[str]:
+def _relative_test_imports(path: Path) -> set[str]:
+    """Test modules reached by a relative import, e.g. ``from .test_x import y``.
+
+    These are easy to miss: they carry no ``tests.`` prefix, so a check that
+    looks only for the absolute form reports none while several remain.
+    """
     found = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.ImportFrom) and node.level and node.module \
+                and node.module.split(".")[-1].startswith("test_"):
+            found.add(node.module.split(".")[-1])
+    return found
+
+
+def _test_module_imports(path: Path) -> set[str]:
+    found = _relative_test_imports(path)
     for name in _imported_modules(path):
         parts = name.split(".")
         if parts[0] == "tests" and len(parts) > 1 and parts[1].startswith("test_"):

@@ -5,7 +5,7 @@ import GenAIRR as ga
 from GenAIRR import _engine
 
 from tests.support.cases.productive import translate
-from .test_junction_call_provenance import _vj_basic
+from tests.support.fixtures.minimal_refdata import _vj_basic
 
 
 def experiment(np_length=3):

@@ -104,7 +104,7 @@ def test_budget_and_compatibility_options_are_checked(option, value):
 
 @pytest.mark.parametrize("seed", [509, 560, 693, 787])
 def test_five_edit_support_survives_the_initial_rejection_phase(seed):
-    from .test_performance_budgets import _vdj_recombine
+    from tests.support.fixtures.budget_experiments import _vdj_recombine
 
     compiled = (
         _vdj_recombine(canonical=True)

@@ -7,7 +7,7 @@ import pytest
 import GenAIRR as ga
 
 from tests.support.cases.productive import reverse_complement, synthetic_cartridge
-from .test_productive_p_genotype import _phased_fixture
+from tests.support.fixtures.phased_anchors import _phased_fixture
 
 
 def configured(*, d=None, v="AAACCCTGT", **ends):

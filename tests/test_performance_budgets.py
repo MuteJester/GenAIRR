@@ -25,6 +25,7 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from tests.support.fixtures.budget_experiments import _vdj_recombine
 
 
 pytestmark = pytest.mark.performance
@@ -50,27 +51,6 @@ def _vj() -> "ge.RefDataConfig":
     return cfg
 
 
-def _vdj(*, canonical=False) -> "ge.RefDataConfig":
-    # Productive benchmarks need usable original landmarks. Keep the exact
-    # lengths, coordinates and flanks; replace only the two declared codons.
-    v = b"GAGGTGCAGCTGGTGGAGTCTGGGGGAGGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCCTCTGGATTCACCTTC"
-    j = b"TACTACTACGGTATGGACGTCTGGGGCCAAGGGACCACGGTCACCGTCTCCTCAG"
-    if canonical:
-        v = v[:78] + b"TGT" + v[81:]
-        j = j[:8] + b"TGG" + j[11:]
-    cfg = ge.RefDataConfig.vdj()
-    cfg.add_v_allele(
-        "v1*01", "v1",
-        v,
-        anchor=78,
-    )
-    cfg.add_d_allele("d1*01", "d1", b"GGGTATAGCAGCAGCTGGTAC")
-    cfg.add_j_allele(
-        "j1*01", "j1",
-        j,
-        anchor=8,
-    )
-    return cfg
 
 
 def _vj_recombine() -> "ga.Experiment":
@@ -84,20 +64,6 @@ def _vj_recombine() -> "ga.Experiment":
     )
 
 
-def _vdj_recombine(*, canonical=False) -> "ga.Experiment":
-    return (
-        ga.Experiment.on(_vdj(canonical=canonical)).allow_curatable_refdata()
-        .recombine(
-            np1_lengths=[(L, 1.0) for L in range(20)],
-            np2_lengths=[(L, 1.0) for L in range(20)],
-        )
-        .trim(
-            v_3=[(L, 1.0) for L in range(5)],
-            d_5=[(L, 1.0) for L in range(5)],
-            d_3=[(L, 1.0) for L in range(5)],
-            j_5=[(L, 1.0) for L in range(5)],
-        )
-    )
 
 
 def _vdj_full_stack(*, canonical=False) -> "ga.Experiment":
