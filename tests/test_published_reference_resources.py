@@ -906,3 +906,33 @@ def test_the_report_text_states_every_selection_and_decision_reason(starter):
         assert line.startswith(f"  {index}. {decision['action']}; ")
         assert all(finding in line for finding in decision["findings"])
         assert line.endswith(f"reason: {decision['reason']}")
+
+
+# ── the generator refuses to run under another version than the checkout declares ─
+
+
+def test_the_generator_refuses_an_installed_version_the_checkout_does_not_declare(tmp_path, monkeypatch, capsys):
+    import GenAIRR
+    tool = load_tool()
+    declared = declared_version((REPO / "pyproject.toml").read_bytes().decode("utf-8"))
+    monkeypatch.setattr(GenAIRR, "__version__", "0.0.0+stale")
+    target = tmp_path / "starter.zip"
+    assert tool.main(["--output", str(target)]) == 2
+    message = capsys.readouterr().err
+    assert "0.0.0+stale" in message and declared in message and "pyproject.toml" in message
+    assert not target.exists()
+
+
+def test_the_generator_refuses_to_run_without_a_checkout_pyproject(tmp_path, monkeypatch, capsys):
+    tool = load_tool()
+    monkeypatch.setattr(tool, "PYPROJECT", tmp_path / "absent" / "pyproject.toml")
+    assert tool.main(["--output", str(tmp_path / "starter.zip")]) == 2
+    assert "pyproject.toml" in capsys.readouterr().err and not (tmp_path / "starter.zip").exists()
+    crlf = tmp_path / "pyproject.toml"
+    crlf.write_bytes(b'[project]\r\nname = "GenAIRR"\r\nversion = "' + GenAIRR_version().encode() + b'"\r\n')
+    assert tool.declared_version(crlf.read_bytes().decode("utf-8")) == GenAIRR_version()
+
+
+def GenAIRR_version() -> str:
+    import GenAIRR
+    return GenAIRR.__version__

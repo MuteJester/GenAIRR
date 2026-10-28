@@ -60,7 +60,9 @@ The dossier records as its builder the installed GenAIRR version
 `[project].version` in `pyproject.toml`; the version in `engine_rs/Cargo.toml`
 does not enter it). The manifest hash and the archive digest therefore change
 with that version, and a test fails while the packaged builder differs from
-`[project].version` in `pyproject.toml`. For a release:
+`[project].version` in `pyproject.toml`. The script itself refuses to write
+unless the installed version equals that declared version, naming both. For a
+release:
 
 1. Set the release version in `pyproject.toml`, commit it, and install that
    build (for example `maturin develop`), so that `GenAIRR.__version__` is the

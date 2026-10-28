@@ -32,6 +32,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 from typing import Mapping, NamedTuple
@@ -45,6 +46,7 @@ from GenAIRR._reference_sources.lock import Terms
 from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild, ReferenceSourceError
 
 REPO = Path(__file__).resolve().parent.parent
+PYPROJECT = REPO / "pyproject.toml"
 SOURCE_DATA = REPO / "tests" / "data" / "reference_sources"
 EXPORT_FILES = {"airr": "airr.json", "airr_ex": "airr_ex.json", "gapped": "gapped.fasta",
                 "gapped_ex": "gapped_ex.fasta"}
@@ -121,6 +123,28 @@ def build(exact_id: str, *, cache) -> ReferenceBuild:
     """Build ``exact_id`` from its pinned exports, statements and recipe; ``cache`` is an empty scratch
     directory."""
     return source(exact_id, cache=cache).build(BUILDS[exact_id].recipe_path)
+
+
+def declared_version(text: str) -> str:
+    """``[project].version`` of a pyproject.toml text (CRLF or LF line endings)."""
+    text = text.replace("\r\n", "\n")
+    table = re.search(r"^\[project\][ \t]*(?:#.*)?$(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    version = table and re.search(r"""^version\s*=\s*(["'])([^"']+)\1\s*(?:#.*)?$""", table.group(1), re.M)
+    if not version:
+        raise GeneratorError("pyproject.toml declares no version in its [project] table")
+    return version.group(2)
+
+
+def check_version() -> None:
+    """The installed GenAIRR is the version this checkout declares: the dossier records it."""
+    if not PYPROJECT.is_file():
+        raise GeneratorError(f"{PYPROJECT} does not exist: run this script from a source checkout whose "
+                             "pyproject.toml declares the version being packaged")
+    declared = declared_version(PYPROJECT.read_bytes().decode("utf-8"))
+    if GenAIRR.__version__ != declared:
+        raise GeneratorError(f"the installed GenAIRR is {GenAIRR.__version__}, but pyproject.toml declares {declared}; "
+                             "reinstall this checkout (for example with maturin develop --release) so that the "
+                             "packaged dossier records the version being released")
 
 
 def check_target(target: Path) -> None:
@@ -212,6 +236,7 @@ def main(argv=None) -> int:
     parser.add_argument("--output", required=True, type=Path, help="new .zip file for the dossier archive")
     args = parser.parse_args(argv)
     try:
+        check_version()
         check_target(args.output)
         with tempfile.TemporaryDirectory(prefix="genairr_sources_") as scratch:
             result = build(args.id, cache=Path(scratch) / "cache")
