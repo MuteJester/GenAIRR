@@ -83,11 +83,15 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
             tw.line(f"{stage}", bold=True)
         fields = f"{len(row.covered_fields)}/{len(row.truth_fields)} fields"
         asserted = f"rust-asserted:{len(row.rust_asserted)}" if row.rust_asserted else ""
+        # Shown even when the status is verified: a mechanism can be verified on
+        # the one borrowed field it owns while the truth that actually matters
+        # is still not exported, and "verified" alone would hide that.
+        gap = "  (truth gap)" if row.truth_gap else ""
         tw.write(f"  {row.mechanism_id:34s} ")
         tw.write(f"{row.status:11s}", **colour[row.status])
         tw.write(f" {fields:16s} ")
         tw.write(f"py:{len(row.python_tests)}".ljust(7))
-        tw.line(f" {asserted}")
+        tw.line(f" {asserted}{gap}")
     counts = {s: sum(1 for r in rows if r.status == s)
               for s in ("verified", "partial", "unverified", "no-truth-exported")}
     tw.line("")

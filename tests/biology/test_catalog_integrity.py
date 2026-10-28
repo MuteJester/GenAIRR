@@ -165,3 +165,17 @@ def test_a_truth_gap_reports_as_its_own_status_not_as_unverified():
         assert rows[mechanism_id].status == "no-truth-exported", (
             f"{mechanism_id} declares a truth gap but reports "
             f"{rows[mechanism_id].status!r}")
+
+
+def test_a_truth_gap_stays_visible_even_when_the_mechanism_verifies():
+    """A mechanism can be verified on the one borrowed field it owns while the
+    truth that actually matters is still not exported. assay.ambiguous_calls is
+    exactly that: the claim "an N is not a mutation" can be established against
+    the sequence, but no N-count field exists, so "verified" alone would hide
+    the gap rather than report it."""
+    gapped = {m.id for m in catalog.all_mechanisms() if m.truth_gap}
+    rows = {r.mechanism_id: r for r in catalog.coverage_rows(
+        {mid: ("x::y",) for mid in gapped})}
+    for mechanism_id in gapped:
+        assert rows[mechanism_id].truth_gap, (
+            f"{mechanism_id} lost its truth gap once a test was registered")

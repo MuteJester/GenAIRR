@@ -68,6 +68,7 @@ class CoverageRow:
     python_tests: tuple[str, ...] = ()
     rust_asserted: tuple[str, ...] = ()
     covered_fields: tuple[str, ...] = ()
+    truth_gap: str = ""
 
     @property
     def uncovered_fields(self) -> tuple[str, ...]:
@@ -116,5 +117,5 @@ def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
         rows.append(CoverageRow(mechanism_id=mechanism.id, stage=mechanism.stage,
                                 status=status, truth_fields=mechanism.truth_fields,
                                 python_tests=python, rust_asserted=rust,
-                                covered_fields=covered))
+                                covered_fields=covered, truth_gap=mechanism.truth_gap))
     return tuple(rows)
