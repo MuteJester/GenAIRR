@@ -480,8 +480,9 @@ def check_calls(record, alleles: dict, segments: str, outcome, native) -> None:
 
 
 def check_junction(record, mapped: dict, alleles: dict) -> str:
-    """The junction runs from the observed first base of the V landmark codon to the last base of an intact
-    J landmark codon.  With trimming off, only a deleted landmark base leaves it undefined."""
+    """The junction runs from the observed first base of the V landmark codon to the last surviving base of
+    the J landmark codon, so an indel inside that codon moves the end by its own length.  With trimming off,
+    only a deleted first landmark base leaves it undefined."""
     v, j = alleles[record["v_call"]], alleles[record["j_call"]]
     v_first, j_codon = mapped["V"].get(v.anchor), [mapped["J"].get(j.anchor + k) for k in range(3)]
     if not record["junction"]:
@@ -491,9 +492,7 @@ def check_junction(record, mapped: dict, alleles: dict) -> str:
     assert v_first is not None and j_codon[0] is not None, record["sequence_id"]
     assert record["junction_start"] == v_first
     intact = None not in j_codon and j_codon[2] - j_codon[0] == 2
-    if intact:
-        assert record["junction_end"] == j_codon[2] + 1
-    # The reported junction end when an indel lies inside the J landmark codon is not asserted here.
+    assert record["junction_end"] == max(q for q in j_codon if q is not None) + 1, record["sequence_id"]
     assert record["junction"] == record["sequence"][record["junction_start"]:record["junction_end"]]
     assert record["junction_length"] == len(record["junction"])
     if record["junction_length"] % 3 == 0:

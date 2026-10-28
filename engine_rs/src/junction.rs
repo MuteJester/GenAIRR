@@ -121,10 +121,16 @@ pub fn compute_junction(sim: &Simulation, refdata: &RefDataConfig) -> Option<Jun
     // Surviving germline provenance maps anchors after terminal coverage loss
     // and structural indels. Region-start arithmetic alone cannot do this.
     let v_anchor_in_pool = crate::coding::anchor_position(sim, v_region, v_anchor)?;
-    let j_anchor_in_pool = crate::coding::anchor_position(sim, j_region, j_anchor)?;
+    crate::coding::anchor_position(sim, j_region, j_anchor)?;
+    // One past the last surviving base of the J W/F codon: an indel inside the codon moves the
+    // end by its own length, as the bases' recorded germline positions show.
+    let j_codon_end = {
+        use crate::productivity::SequenceView;
+        sim.anchor_codon_end(Segment::J, u16::try_from(j_anchor).ok()?)?
+    };
 
     let start = NucHandle::new(v_anchor_in_pool);
-    let end = NucHandle::new(j_anchor_in_pool + 3);
+    let end = NucHandle::new(u32::try_from(j_codon_end).ok()?);
 
     // Defensive: end must be strictly greater than start. If the
     // J anchor maps to a position before the V anchor, the simulation

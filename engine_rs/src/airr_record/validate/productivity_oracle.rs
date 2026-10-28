@@ -61,6 +61,8 @@ struct Landmark {
     phase: Option<usize>,
     accepted: Option<bool>,
     position: Option<usize>,
+    /// One past the last surviving codon base, found on its own from each base's placement.
+    codon_end: Option<usize>,
     reason: &'static str,
 }
 
@@ -102,6 +104,7 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
         phase: None,
         accepted: None,
         position: None,
+        codon_end: None,
         reason: "assignment_missing",
     };
     let Some(inst) = sim.assignments.get(segment) else {
@@ -169,10 +172,19 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
         out.reason = "anchor_removed";
         return out;
     };
+    // The codon's last base still placed at its own reference coordinate, whatever an indel did
+    // inside the codon; the junction ends one past it.
+    out.codon_end = (0..3)
+        .rev()
+        .find_map(|offset| {
+            (begin..end).find(|&q| placed_reference(sim, segment, q) == Some(a + offset))
+        })
+        .map(|q| q + 1);
     let mut codon = Vec::new();
     for offset in 0..3 {
         let Some(n) = pool.get(p + offset) else {
             out.position = None;
+            out.codon_end = None;
             out.reason = "anchor_not_observed";
             return out;
         };
@@ -242,9 +254,8 @@ pub(super) fn derive(sim: &Simulation, refdata: &RefDataConfig) -> Oracle {
     }
     let junction = v
         .position
-        .zip(j.position)
-        .filter(|&(v, j)| j + 3 > v && j + 3 <= pool.len())
-        .map(|(v, j)| (v, j + 3));
+        .zip(j.codon_end)
+        .filter(|&(v, end)| end > v && end <= pool.len());
     let frame = junction
         .zip(phase)
         .map(|((start, end), phase)| (end - start) % 3 == 0 && start % 3 == phase);
