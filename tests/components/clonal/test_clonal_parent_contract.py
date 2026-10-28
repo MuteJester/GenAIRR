@@ -69,6 +69,7 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _compiled
 from GenAIRR.result import SimulationResult
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ from GenAIRR.result import SimulationResult
 # ──────────────────────────────────────────────────────────────────
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 
 
 def _read_rust(relative: str) -> str:

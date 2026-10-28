@@ -36,9 +36,10 @@ import GenAIRR as ga
 from GenAIRR import _compiled, _pipeline_ir
 from GenAIRR.experiment import _descendant_phase_step_classifier
 from GenAIRR.result import SimulationResult
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 
 
 # ──────────────────────────────────────────────────────────────────

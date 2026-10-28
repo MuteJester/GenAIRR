@@ -12,6 +12,7 @@ from GenAIRR import Experiment, SimulationResult, _engine
 from GenAIRR.experimental import FamilyReplayBundle, FamilyReplayError, FamilyReplayLimits
 from GenAIRR._family_replay import _bundle_from_result, _content_decode, _digest
 from tests.support.cases.duplex import references, model, history
+from tests.support import paths
 
 
 def experiment(*, rows=None, n_clones=2, depth=2, rate=.05, inverted=False, **family):
@@ -109,7 +110,7 @@ assert bundle.replay_node(clone_id=0,node_id=0).airr_record(bundle.refdata)['seq
 print('fresh-process exact records and native evidence passed')
 """
     completed = subprocess.run([sys.executable, "-c", code, str(target), str(expected)],
-                               cwd=Path(__file__).resolve().parents[1], text=True,
+                               cwd=paths.repo_root(), text=True,
                                capture_output=True, check=True)
     assert "exact records" in completed.stdout
 

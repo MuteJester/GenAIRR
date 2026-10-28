@@ -49,6 +49,7 @@ import GenAIRR as ga
 from GenAIRR import _engine as ge
 from GenAIRR import _compiled, _pipeline_ir, experiment as _experiment_module
 from GenAIRR.result import SimulationResult, ValidationReport
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -177,7 +178,7 @@ def test_pin_scaffold_rust_run_from_exists_with_clonal_docstring() -> None:
     name "clonal expansion" so a future contributor doesn't
     remove the method on the assumption it's only used for replay."""
     src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "python"
@@ -632,7 +633,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     contributor deletes the doc, this surfaces the missing reference
     before behaviour-level pins start drifting unexplained."""
     doc_path = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "clonal_family_design.md"
     )
