@@ -36,6 +36,7 @@ from __future__ import annotations
 import pytest
 
 import GenAIRR as ga
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -321,7 +322,7 @@ def test_validator_issue_kinds_are_serialisable_with_source_tag() -> None:
     from pathlib import Path
 
     bindings_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "python"

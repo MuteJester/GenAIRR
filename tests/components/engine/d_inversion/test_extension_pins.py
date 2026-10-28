@@ -37,6 +37,7 @@ from pathlib import Path
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ def test_pin_narrowing_walker_extensions_no_longer_skip_under_rc() -> None:
     A future contributor who re-introduces the v1 boundary would
     surface here before the missed-evidence fixture even runs."""
     src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -97,7 +98,7 @@ def test_pin_narrowing_kernel_extensions_no_longer_skip_under_rc() -> None:
     """Mirror of the walker pin. ``score_alleles_with_extensions``
     in ``scoring.rs`` removed its ``skip_extensions`` guard."""
     src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -119,7 +120,7 @@ def test_pin_narrowing_rust_unit_test_is_now_the_narrowing_pin() -> None:
     ``rc_extensions_are_disabled_in_v1`` to
     ``rc_extensions_narrow_truth_allele``."""
     src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -212,7 +213,7 @@ def test_pin_narrowing_synthetic_fixture_demonstrates_narrowing_under_rc() -> No
     test-name level so a refactor that drops the kernel-level
     fixture would surface here too."""
     scoring_tests = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -246,7 +247,7 @@ def test_pin_scaffold_matches_observed_with_orientation_primitive_exists() -> No
     primitive's presence + its `Forward` / `ReverseComplement`
     arms so a refactor that drops one branch surfaces here."""
     src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -264,7 +265,7 @@ def test_pin_scaffold_extension_narrows_tie_set_remains_orientation_agnostic() -
     orientation dependency between now and the implementation
     slice — that would silently change the v1 behaviour too."""
     src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -292,7 +293,7 @@ def test_pin_scaffold_extension_walk_state_carries_orientation() -> None:
     the implementation slice reads to decide which `ref_pos`
     direction the walk consumes. Pin the field's presence."""
     src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -310,7 +311,7 @@ def test_pin_scaffold_compatible_alleles_at_oriented_exists() -> None:
     scoring. The audit's implementation calls into this
     unchanged."""
     src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -385,7 +386,7 @@ def test_pin_design_doc_lists_fourteen_sections() -> None:
     receptor-revision and paired-end designs. Pin the section
     count so a future contributor can't quietly drop one."""
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "d_inversion_extension_design.md"
     ).read_text(encoding="utf-8")
@@ -401,7 +402,7 @@ def test_pin_design_doc_summary_table_carries_every_decision() -> None:
     decisions. Pin the row labels so a future contributor can't
     quietly drop a decision."""
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "d_inversion_extension_design.md"
     ).read_text(encoding="utf-8")

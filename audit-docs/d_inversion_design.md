@@ -33,7 +33,7 @@ matching the closure standard of receptor revision and paired-end.
 A read-only architecture review of every engine surface that
 D-segment inversion will touch, written **before** any
 implementation. Companion to
-[`tests/test_d_inversion_contract.py`](../tests/test_d_inversion_contract.py)
+[`tests/components/engine/d_inversion/test_pins.py`](../tests/components/engine/d_inversion/test_pins.py)
 which pins today's absence and will flip to behavior-pinning when
 the slice lands.
 
@@ -447,7 +447,7 @@ existing trace file pre-dates this slice and must keep working.
 ## 10. Test surface — what the implementation slice must pin
 
 A non-exhaustive list, mirrored as TODO markers in the companion
-[`tests/test_d_inversion_contract.py`](../tests/test_d_inversion_contract.py):
+[`tests/components/engine/d_inversion/test_pins.py`](../tests/components/engine/d_inversion/test_pins.py):
 
 1. **Engine round-trip.** Inverted D nucleotides carry
    `NucFlags::INVERTED`; `germline_pos` of i-th emitted base

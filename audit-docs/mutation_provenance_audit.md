@@ -35,7 +35,7 @@ each segment* — a question today's `n_mutations` global field
 can't answer.
 
 Companion to
-[`tests/test_mutation_provenance_contract.py`](../tests/test_mutation_provenance_contract.py)
+[`tests/components/engine/mutation/test_provenance_pins.py`](../tests/components/engine/mutation/test_provenance_pins.py)
 which freezes today's contract (`pin_scaffold_*`) and the gaps
 the future slice closes (`pin_absence_*`).
 
@@ -624,7 +624,7 @@ the implementation slice flips the relevant `pin_absence_*` to
 ## 12. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_mutation_provenance_contract.py`](../tests/test_mutation_provenance_contract.py).
+[`tests/components/engine/mutation/test_provenance_pins.py`](../tests/components/engine/mutation/test_provenance_pins.py).
 
 ### `pin_scaffold_*` — today's contract
 

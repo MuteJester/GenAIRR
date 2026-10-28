@@ -11,7 +11,7 @@ logic so walker and oracle stay in lockstep. The v1 Rust pin
 `rc_extensions_narrow_truth_allele`; a companion regression test
 `rc_extension_trim_cap_swap_pool_left_consumes_trim_3` pins the
 audit's §3 trim-cap mapping at the kernel level. The Python
-contract suite (`tests/test_d_inversion_extension_contract.py`)
+contract suite (`tests/components/engine/d_inversion/test_extension_pins.py`)
 ran the lockstep flip from `pin_v1_boundary_*` to
 `pin_narrowing_*` in a single commit with the implementation.
 
@@ -28,7 +28,7 @@ A read-only architecture review of the one remaining
 documented-boundary in the orientation-aware live-call walker:
 NP-region extensions under `ReverseComplement` D orientation.
 Companion to
-[`tests/test_d_inversion_extension_contract.py`](../tests/test_d_inversion_extension_contract.py)
+[`tests/components/engine/d_inversion/test_extension_pins.py`](../tests/components/engine/d_inversion/test_extension_pins.py)
 which pins today's behaviour and the synthetic-fixture cases the
 implementation slice satisfied.
 
@@ -402,7 +402,7 @@ exception can be reintroduced.
    constructs the synthetic fixture from §6 directly against the
    scoring kernel and asserts the post-implementation tie set is
    `{truth}` rather than `{truth, sibling}`.
-3. `tests/test_d_inversion_extension_contract.py::test_pin_v1_boundary_rc_extensions_disabled_drops_narrowing_evidence`
+3. `tests/components/engine/d_inversion/test_extension_pins.py::test_pin_v1_boundary_rc_extensions_disabled_drops_narrowing_evidence`
    flips from pin-the-boundary to pin-the-narrowing-evidence and
    adds an inverse assertion (the Forward equivalent of the same
    fixture already narrows).
@@ -516,7 +516,7 @@ requirement makes any half-step unstable.
 ## 13. Test surface — what the implementation slice must pin
 
 A non-exhaustive list, mirrored as TODO markers in the companion
-[`tests/test_d_inversion_extension_contract.py`](../tests/test_d_inversion_extension_contract.py):
+[`tests/components/engine/d_inversion/test_extension_pins.py`](../tests/components/engine/d_inversion/test_extension_pins.py):
 
 1. **Synthetic narrowing under RC.** A 2-allele D pool tied on
    the structural region but distinguished by an NP byte. v1

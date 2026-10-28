@@ -6,12 +6,12 @@ described below — Python `Allele.subregions`, Rust
 `VSubregion` / `VSubregionLabel`, bridge-time derivation,
 manifest `v_subregion_support` block, content-hash
 participation, bridge-time validation — is now landed and
-pinned by [`tests/test_v_subregion_annotations.py`](../tests/test_v_subregion_annotations.py).
+pinned by [`tests/components/engine/mutation/v_subregion/test_v_subregion_annotations.py`](../tests/components/engine/mutation/v_subregion/test_v_subregion_annotations.py).
 Per-region SHM **sampling** (`v_subregion_rates` kwarg) and
 per-region **mutation counters** (`n_cdr1_mutations`, …) remain
 explicitly deferred — they are the Slice 2 / Slice 3 work and
 are still pinned as `pin_absence_*` in
-[`tests/test_v_region_substructure_contract.py`](../tests/test_v_region_substructure_contract.py).
+[`tests/components/engine/mutation/v_subregion/test_substructure_pins.py`](../tests/components/engine/mutation/v_subregion/test_substructure_pins.py).
 
 This audit was originally pre-implementation. The body below
 preserves the original framing for traceability; sections marked
@@ -34,7 +34,7 @@ resolution, we need to know whether the cartridge and allele
 model can support V subregion annotations cleanly.
 
 Companion to
-[`tests/test_v_region_substructure_contract.py`](../tests/test_v_region_substructure_contract.py)
+[`tests/components/engine/mutation/v_subregion/test_substructure_pins.py`](../tests/components/engine/mutation/v_subregion/test_substructure_pins.py)
 which freezes today's surfaces (`pin_scaffold_*`) and the gaps
 that an implementation slice would close (`pin_absence_*`).
 
@@ -640,7 +640,7 @@ Slice 2 implementation.
 ## 12. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_v_region_substructure_contract.py`](../tests/test_v_region_substructure_contract.py).
+[`tests/components/engine/mutation/v_subregion/test_substructure_pins.py`](../tests/components/engine/mutation/v_subregion/test_substructure_pins.py).
 
 ### `pin_scaffold_*` — pre-existing contract that Slice 1 builds on
 

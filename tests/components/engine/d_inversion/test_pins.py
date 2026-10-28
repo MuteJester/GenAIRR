@@ -34,6 +34,7 @@ from pathlib import Path
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -154,7 +155,7 @@ def test_pin_presence_d_inversion_address_constant_in_engine_source() -> None:
     constant stays present — a rename here would silently break
     every trace file that recorded the address."""
     addr_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "address.rs"
@@ -217,7 +218,7 @@ def test_pin_design_nuc_flags_inverted_slot_stays_documented() -> None:
     intended use. Pin that the slot stays under that name — a
     rename would break the design doc's §5 proposal."""
     nuc_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "ir"
@@ -241,7 +242,7 @@ def test_pin_design_choice_value_bool_still_cites_d_inversion() -> None:
     "D inversion: yes/no" as a canonical use case (§2). Pin the
     docstring so the design doc and the engine stay aligned."""
     trace_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "trace.rs"
@@ -274,7 +275,7 @@ def test_pin_design_doc_lists_all_eight_audit_questions() -> None:
     the user asked for. Pin every section header so a future
     refactor that drops one surfaces here."""
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "d_inversion_design.md"
     )
@@ -302,7 +303,7 @@ def test_pin_design_doc_summary_table_carries_every_decision() -> None:
     Pin its load-bearing rows — these are the decisions the
     implementation must match."""
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "d_inversion_design.md"
     )

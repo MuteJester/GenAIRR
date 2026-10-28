@@ -33,9 +33,10 @@ from pathlib import Path
 import pytest
 
 import GenAIRR as ga
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -494,7 +495,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     doc_path = _REPO_ROOT / "audit-docs" / "mutation_provenance_audit.md"
     assert doc_path.exists(), "mutation_provenance_audit.md missing"
     doc = doc_path.read_text(encoding="utf-8")
-    assert "test_mutation_provenance_contract.py" in doc, (
+    assert "tests/components/engine/mutation/test_provenance_pins.py" in doc, (
         "audit doc no longer references the contract file; lockstep "
         "convention drifted."
     )

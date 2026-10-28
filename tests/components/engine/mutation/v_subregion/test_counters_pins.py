@@ -48,9 +48,10 @@ from pathlib import Path
 import pytest
 
 import GenAIRR as ga
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "v_subregion_mutation_counters_audit.md"
 
 # The six AIRR fields the implementation slice will add.
@@ -524,7 +525,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc must continue to exist and reference this
     contract file; structure intact."""
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
-    assert "test_v_subregion_mutation_counters_contract.py" in doc, (
+    assert "tests/components/engine/mutation/v_subregion/test_counters_pins.py" in doc, (
         "audit doc no longer references the contract file; lockstep "
         "convention drifted"
     )
