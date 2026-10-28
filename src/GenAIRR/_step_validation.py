@@ -266,7 +266,7 @@ def _descendant_phase_step_classifier(step):
     fork methods. Adding a new descendant-phase DSL method means
     appending a clause here (and adding the
     companion spec test in
-    ``tests/test_clonal_descendant_phase_guards.py``).
+    ``tests/components/clonal/test_clonal_descendant_phase_guards.py``).
     """
     from ._pipeline_ir import (
         _CORRUPT_KIND_3PRIME_LOSS,

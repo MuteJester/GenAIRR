@@ -89,3 +89,48 @@ def test_no_test_module_names_a_test_path_that_does_not_exist():
     assert stale == {}, (
         "test modules naming test paths that do not exist:\n"
         + "\n".join(f"  {mod}: {refs}" for mod, refs in sorted(stale.items())))
+
+
+#: Tracked, non-documentation places that name test modules by path: build
+#: configuration, CI, and comments in the package that point a reader at the
+#: test covering a rule. Dated verification records (JSON) are excluded, as
+#: above: they describe what was true on a date.
+REFERRING_FILES = (
+    ".github/workflows/test.yml",
+    ".github/workflows/build-wheels.yml",
+    "Makefile",
+    "mkdocs.yml",
+    "pyproject.toml",
+    "tools/build_published_reference.py",
+    "tools/README.md",
+)
+REFERRING_TREES = ("src/GenAIRR",)
+
+
+def _referring_sources():
+    for name in REFERRING_FILES:
+        path = REPO / name
+        if path.is_file():
+            yield path
+    for tree in REFERRING_TREES:
+        root = REPO / tree
+        if root.is_dir():
+            yield from sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
+
+
+def test_build_config_and_package_comments_name_real_test_paths():
+    """A moved test module leaves these pointing at nothing.
+
+    None of them is exercised by a test, so the staleness is silent: a Makefile
+    target that names a vanished path simply collects nothing, and a comment
+    that cites the wrong file misleads the next reader.
+    """
+    stale = {}
+    for source in _referring_sources():
+        gone = sorted({m for m in TEST_PATH.findall(source.read_text(encoding="utf-8"))
+                       if not (REPO / m).is_file() and m not in KNOWN_STALE})
+        if gone:
+            stale[str(source.relative_to(REPO))] = gone
+    assert stale == {}, (
+        "build configuration or package comments name test paths that do not exist:\n"
+        + "\n".join(f"  {src}: {refs}" for src, refs in sorted(stale.items())))

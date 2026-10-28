@@ -75,7 +75,7 @@ validate-full:
 	cd engine_rs && cargo test --all-features
 
 validate-release: validate-full
-	$(PYTHON) -m pytest tests/test_trace_file_compat.py -q
+	$(PYTHON) -m pytest tests/components/io/test_trace_file_compat.py -q
 	maturin build --release
 
 # --- Docs (MkDocs Material — Phase 1 onwards) ---------------------

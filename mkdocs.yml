@@ -4,7 +4,7 @@
 # (a handful of concept/validation/cartridge-estimator stubs) are
 # still being written; the nav below ships the pages that have
 # content. The contract pins in
-# `tests/test_docs_mkdocs_migration_contract.py` guard structure.
+# `tests/acceptance/test_docs_mkdocs_migration_contract.py` guard structure.
 #
 # To build:
 #   pip install -e ".[docs]"

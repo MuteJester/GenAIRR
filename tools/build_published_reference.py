@@ -256,7 +256,7 @@ def main(argv=None) -> int:
     print(summary(args.id, checked, args.output.read_bytes()))
     print(f"checked with GenAIRR {GenAIRR.__version__}. Pin what changed: the manifest hash in the registry "
           "(src/GenAIRR/_reference_sources/bundled.py) and in MANIFEST_PIN, the archive digest in ARCHIVE_PIN, the "
-          "runtime hashes in RUNTIME_PINS and the lock in LOCK_PIN (tests/test_published_reference_resources.py)")
+          "runtime hashes in RUNTIME_PINS and the lock in LOCK_PIN (tests/components/reference/test_published_reference_resources.py)")
     return 0
 
 
