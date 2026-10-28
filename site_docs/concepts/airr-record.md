@@ -113,12 +113,12 @@ benchmarking workflows.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `junction` | str | Junction sequence (V end + NP1 + D + NP2 + J start, conserved Cys to Trp/Phe) |
+| `junction` | str | Junction sequence (V end + NP1 + D + NP2 + J start), from the first surviving base of the conserved Cys codon to the last surviving base of the Trp/Phe codon; empty when a whole conserved codon is gone or not covered by the read |
 | `junction_aa` | str | Amino-acid translation of `junction` |
 | `junction_start`, `junction_end` | int | Junction coordinates within the coding-oriented sequence |
 | `junction_length` | int | Length of `junction` in nucleotides (always a multiple of 3 when `productive: True`) |
 | `productive` | bool or null | Acceptance under the named sequence-level policy for the observed coding span |
-| `vj_in_frame` | bool or null | Junction length and original V-anchor position agree with the retained V coding frame |
+| `vj_in_frame` | bool or null | Junction length and junction start agree with the retained V coding frame |
 | `stop_codon` | bool or null | Whether a complete observed coding codon is definitely a stop; unknown if phase is unavailable or a possible stop remains unresolved |
 | `productivity_policy` | str | `canonical_observed_vdj_v1` |
 | `productivity_scope` | str | `observed_coding_span` |

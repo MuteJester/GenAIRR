@@ -488,20 +488,18 @@ def check_calls(record, alleles: dict, segments: str, outcome, native) -> None:
 
 
 def check_junction(record, mapped: dict, alleles: dict) -> str:
-    """The junction runs from the observed first base of the V landmark codon to the last base of an intact
-    J landmark codon.  With trimming off, only a deleted landmark base leaves it undefined."""
+    """The junction runs from the first surviving base of the V landmark codon to the last surviving base of
+    the J landmark codon, so an indel inside either codon moves that bound by its own length.  Only a landmark
+    codon lost entirely leaves it undefined."""
     v, j = alleles[record["v_call"]], alleles[record["j_call"]]
-    v_first, j_codon = mapped["V"].get(v.anchor), [mapped["J"].get(j.anchor + k) for k in range(3)]
-    if not record["junction"]:
-        assert v_first is None or j_codon[0] is None, record["sequence_id"]
-        assert record["junction_start"] is None and "anchor_removed" in record["productivity_reasons"]
+    v_codon = [q for q in (mapped["V"].get(v.anchor + k) for k in range(3)) if q is not None]
+    j_codon = [q for q in (mapped["J"].get(j.anchor + k) for k in range(3)) if q is not None]
+    if not (v_codon and j_codon):
+        assert (record["junction"], record["junction_start"]) == ("", None), record["sequence_id"]
+        assert "anchor_removed" in record["productivity_reasons"]
         return "undefined"
-    assert v_first is not None and j_codon[0] is not None, record["sequence_id"]
-    assert record["junction_start"] == v_first
-    intact = None not in j_codon and j_codon[2] - j_codon[0] == 2
-    if intact:
-        assert record["junction_end"] == j_codon[2] + 1
-    # The reported junction end when an indel lies inside the J landmark codon is not asserted here.
+    assert (record["junction_start"], record["junction_end"]) == (v_codon[0], j_codon[-1] + 1), record["sequence_id"]
+    intact = all(len(c) == 3 and c[2] - c[0] == 2 for c in (v_codon, j_codon))
     assert record["junction"] == record["sequence"][record["junction_start"]:record["junction_end"]]
     assert record["junction_length"] == len(record["junction"])
     if record["junction_length"] % 3 == 0:
@@ -997,6 +995,8 @@ def test_polymerase_indels_keep_every_alignment_edit_against_the_generating_alle
     assert sum(record["n_indels"] for record in result) > 300
     assert all(edits[(s, op)] > 0 for s in "VJ" for op in "ID"), edits
     assert shapes["intact"] >= 280 and set(shapes) <= {"intact", "landmark_codon_edited", "undefined"}
+    # This seed puts an indel inside a J landmark codon, so the junction end after such an edit is checked.
+    assert shapes["landmark_codon_edited"] >= 1, shapes
 
 
 # ── unknowns and unsupported workflows on the packaged starter ───────

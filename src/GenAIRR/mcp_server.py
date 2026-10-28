@@ -1136,7 +1136,9 @@ def classify_regions(config: str, record: Dict[str, Any]) -> Dict[str, Any]:
 
     # CDR3: derived from junction_start/junction_end (excluding the
     # flanking anchor codons -- AIRR junction includes them, IMGT CDR3
-    # is junction minus first 3 and last 3).
+    # is junction minus first 3 and last 3). Approximate when an indel
+    # deleted a conserved codon's outer base: that codon then spans fewer
+    # than 3 bases of the junction.
     junction_start = record.get("junction_start")
     junction_end = record.get("junction_end")
     cdr3_in_junction = False

@@ -21,7 +21,7 @@ analysis would call "the receptor":
 | **N additions** | The NP1 (and NP2 on VDJ) sequences sampled from the cartridge's typed N-base / N-length models |
 | **P additions** | The optional palindromic bases derived from each coding end, counted on `p_v_3_length`, `p_d_5_length`, `p_d_3_length`, `p_j_5_length` |
 | **Assembled regions** | The final structural regions (`V`, `NP1`, `D`, `NP2`, `J`) carrying their coordinates on the record |
-| **Junction** | The canonical V Cys → J W/F + 3 window exposed on `junction` / `junction_aa` / `junction_length` |
+| **Junction** | The window from the V Cys codon through the J W/F codon, exposed on `junction` / `junction_aa` / `junction_length`. Trimming or an indel inside a conserved codon narrows it to the surviving codon bases; it is empty only when a whole conserved codon is gone or not covered by the read |
 
 Everything before `.mutate()`, a clonal fork (`clonal_lineage`,
 `clonal_repertoire`, legacy `expand_clones`), or any corruption pass is
