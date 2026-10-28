@@ -49,6 +49,20 @@ pub trait SequenceView {
         let (start, end) = self.region(segment)?;
         (start..end).find(|&p| self.body_reference_position(segment, p) == Some(germline))
     }
+    /// The observed position of the first surviving base of the anchor codon at germline
+    /// `anchor..anchor + 3`, read from each base's recorded germline position.
+    fn anchor_codon_start(&self, segment: Segment, anchor: u16) -> Option<usize> {
+        (0..3u16).find_map(|offset| self.germline_position(segment, anchor.checked_add(offset)?))
+    }
+    /// One past the observed position of the last surviving base of the anchor codon at germline
+    /// `anchor..anchor + 3`, read from each base's recorded germline position: a base inserted
+    /// inside the codon lengthens the span and a deleted one shortens it.
+    fn anchor_codon_end(&self, segment: Segment, anchor: u16) -> Option<usize> {
+        (0..3u16)
+            .rev()
+            .find_map(|offset| self.germline_position(segment, anchor.checked_add(offset)?))
+            .map(|p| p + 1)
+    }
     fn last_germline(&self, segment: Segment) -> Option<(usize, u16)> {
         let (start, end) = self.region(segment)?;
         (start..end)
@@ -420,6 +434,53 @@ pub fn anchor(
     }
 }
 
+/// The junction window, from each base's recorded germline position: from the first surviving
+/// base of the V Cys codon to one past the last surviving base of the J W/F codon.  Exonuclease
+/// trimming eats a codon only from its inner side, so the outer limits (the V codon's first base,
+/// the J codon's last) stay put and N/P bases filling trimmed codon positions fall inside; an indel
+/// that deletes an outer base moves the limit to the next surviving codon base, and inserted bases
+/// inside a codon widen the window.  It is undefined when either codon is lost entirely, when a
+/// codon's outer base is trimmed from the segment's outer end, or when a codon base that
+/// recombination kept lies outside the observed read.
+pub(crate) fn junction_bounds(
+    view: &impl SequenceView,
+    refdata: &RefDataConfig,
+) -> Option<(usize, usize)> {
+    let start = codon_span(view, refdata, Segment::V)?.0;
+    let end = codon_span(view, refdata, Segment::J)?.1;
+    (end > start && end <= view.len()).then_some((start, end))
+}
+
+/// The observed span of whatever survives of the segment's anchor codon: its first surviving base
+/// and one past its last.
+fn codon_span(
+    view: &impl SequenceView,
+    refdata: &RefDataConfig,
+    segment: Segment,
+) -> Option<(usize, usize)> {
+    let inst = view.assignment(segment)?;
+    let allele = refdata.get(segment, inst.allele_id)?;
+    let anchor = allele.anchor?;
+    let a = usize::from(anchor);
+    let kept = usize::from(inst.trim_5)..allele.seq.len().saturating_sub(usize::from(inst.trim_3));
+    // The codon's outer base marks the junction's limit; trimming from the segment's outer end
+    // past it leaves no limit in the molecule.
+    let outer = if segment == Segment::J { a + 2 } else { a };
+    if !kept.contains(&outer) {
+        return None;
+    }
+    // A kept codon base outside the read is unknown, not lost.
+    let observed = inst.observed_ref_start.unwrap_or(kept.start as u32) as usize
+        ..inst.observed_ref_end.unwrap_or(kept.end as u32) as usize;
+    if (a..a + 3).any(|g| kept.contains(&g) && !observed.contains(&g)) {
+        return None;
+    }
+    Some((
+        view.anchor_codon_start(segment, anchor)?,
+        view.anchor_codon_end(segment, anchor)?,
+    ))
+}
+
 pub fn j_tail(
     view: &impl SequenceView,
     refdata: &RefDataConfig,
@@ -456,11 +517,14 @@ pub fn assess(view: &impl SequenceView, refdata: &RefDataConfig) -> Productivity
     let j = anchor(view, refdata, Segment::J);
     let frame = coding_span(view, refdata);
     let stop_codon = frame.and_then(|f| view.coding_stop(f.start, f.end));
-    let junction = v
-        .position
-        .zip(j.position)
-        .filter(|&(v, j)| j + 3 > v && j + 3 <= view.len())
-        .map(|(v, j)| (v, j + 3));
+    // Landmarks only bound the junction when the reference anchors are trusted.
+    let trusted = |segment| {
+        view.assignment(segment)
+            .is_some_and(|inst| reference_ready(refdata, segment, inst.allele_id))
+    };
+    let junction = (trusted(Segment::V) && trusted(Segment::J))
+        .then(|| junction_bounds(view, refdata))
+        .flatten();
     let vj_in_frame = junction
         .zip(frame)
         .map(|((start, end), f)| (end - start) % 3 == 0 && start % 3 == f.phase);
@@ -781,5 +845,438 @@ mod tests {
         assert!(issues
             .iter()
             .any(|i| matches!(i, RecordValidationIssue::JunctionAaMismatch { .. })));
+    }
+
+    /// Observed V and J bases: each entry is a base and the germline position it copies, or `None`
+    /// for a base an indel inserted.  The V germline is `AAACCCTGT` (Cys codon at germline 6), the J
+    /// germline `TGGGGCAAA` (Trp codon at germline 0); `v_inst` and `j_inst` record trims and read
+    /// coverage on the assignments.
+    fn edited_fixture(
+        v: &[(u8, Option<u16>)],
+        j: &[(u8, Option<u16>)],
+        v_inst: impl FnOnce(AlleleInstance) -> AlleleInstance,
+        j_inst: impl FnOnce(AlleleInstance) -> AlleleInstance,
+    ) -> (RefDataConfig, Simulation) {
+        let (cfg, sim) = fixture(b"AAACCCTGT", b"TGGGGCAAA");
+        let mut edited = Simulation::new()
+            .with_allele_assigned(
+                Segment::V,
+                v_inst(sim.assignments.get(Segment::V).copied().unwrap()),
+            )
+            .with_allele_assigned(
+                Segment::J,
+                j_inst(sim.assignments.get(Segment::J).copied().unwrap()),
+            );
+        for (segment, layout) in [(Segment::V, v), (Segment::J, j)] {
+            let begin = edited.pool.len() as u32;
+            for &(base, germline) in layout {
+                let nucleotide = match germline {
+                    Some(g) => Nucleotide::germline(base, g, segment),
+                    None => Nucleotide::synthetic(base, segment, crate::ir::flag::INDEL_INSERTED),
+                };
+                edited = edited.with_nucleotide_pushed(nucleotide).0;
+            }
+            let end = edited.pool.len() as u32;
+            edited = edited.with_region_added(Region::new(
+                segment,
+                NucHandle::new(begin),
+                NucHandle::new(end),
+            ));
+        }
+        (cfg, edited)
+    }
+
+    /// The intact V (`AAACCCTGT`, germline 0..9) and the J bases `j`.
+    fn edited_j_fixture(j: &[(u8, Option<u16>)]) -> (RefDataConfig, Simulation) {
+        let v: Vec<_> = b"AAACCCTGT"
+            .iter()
+            .enumerate()
+            .map(|(g, &b)| (b, Some(g as u16)))
+            .collect();
+        edited_fixture(&v, j, |i| i, |i| i)
+    }
+
+    /// The V bases `AAACCCTGT` at the given germline positions.
+    fn v_bases(germline: impl IntoIterator<Item = u16>) -> Vec<(u8, Option<u16>)> {
+        germline
+            .into_iter()
+            .map(|g| (b"AAACCCTGT"[g as usize], Some(g)))
+            .collect()
+    }
+
+    /// The J bases `TGGGGCAAA` at the given germline positions.
+    fn j_bases(germline: impl IntoIterator<Item = u16>) -> Vec<(u8, Option<u16>)> {
+        germline
+            .into_iter()
+            .map(|g| (b"TGGGGCAAA"[g as usize], Some(g)))
+            .collect()
+    }
+
+    /// Whatever survives of each conserved codon bounds the junction: it starts at the first
+    /// surviving base of the V Cys codon and ends one past the last surviving base of the J Trp
+    /// codon, whether the other bases were lost to exonuclease trimming or to an indel.  Only a
+    /// codon lost entirely, or one the read does not cover, leaves the junction undefined.
+    /// Expected bounds are written out by hand from the layouts.
+    #[test]
+    fn junction_spans_whatever_survives_of_each_conserved_codon() {
+        type Inst = fn(AlleleInstance) -> AlleleInstance;
+        let keep: Inst = |i| i;
+        let cases: Vec<(
+            &str,
+            Vec<(u8, Option<u16>)>,
+            Inst,
+            Vec<(u8, Option<u16>)>,
+            Inst,
+            Option<(usize, usize)>,
+        )> = vec![
+            (
+                "V codon's first base deleted",
+                v_bases([0, 1, 2, 3, 4, 5, 7, 8]),
+                keep,
+                j_bases(0..9),
+                keep,
+                Some((6, 11)),
+            ),
+            (
+                "V 3' trim removes the codon's last base",
+                v_bases(0..8),
+                |i| i.with_trim_3(1),
+                j_bases(0..9),
+                keep,
+                Some((6, 11)),
+            ),
+            (
+                "V 3' trim removes the codon's last two bases",
+                v_bases(0..7),
+                |i| i.with_trim_3(2),
+                j_bases(0..9),
+                keep,
+                Some((6, 10)),
+            ),
+            (
+                "V 3' trim removes the whole codon",
+                v_bases(0..6),
+                |i| i.with_trim_3(3),
+                j_bases(0..9),
+                keep,
+                None,
+            ),
+            (
+                "J 5' trim removes the codon's first base",
+                v_bases(0..9),
+                keep,
+                j_bases(1..9),
+                |i| i.with_trim_5(1),
+                Some((6, 11)),
+            ),
+            (
+                "J 5' trim removes the codon's first two bases",
+                v_bases(0..9),
+                keep,
+                j_bases(2..9),
+                |i| i.with_trim_5(2),
+                Some((6, 10)),
+            ),
+            (
+                "J 5' trim removes the whole codon",
+                v_bases(0..9),
+                keep,
+                j_bases(3..9),
+                |i| i.with_trim_5(3),
+                None,
+            ),
+            (
+                "only the J codon's middle base survives",
+                v_bases(0..9),
+                keep,
+                j_bases([1, 3, 4, 5, 6, 7, 8]),
+                keep,
+                Some((6, 10)),
+            ),
+            (
+                "V 5' trim removes the codon's first base",
+                v_bases([7, 8]),
+                |i| i.with_trim_5(7),
+                j_bases(0..9),
+                keep,
+                None,
+            ),
+            (
+                "J 3' trim removes the codon's last base",
+                v_bases(0..9),
+                keep,
+                j_bases([0, 1]),
+                |i| i.with_trim_3(7),
+                None,
+            ),
+            (
+                "read ends exactly at the J codon's end",
+                v_bases(0..9),
+                keep,
+                j_bases(0..3),
+                |i| AlleleInstance {
+                    observed_ref_end: Some(3),
+                    observation_loss_3: 6,
+                    ..i
+                },
+                Some((6, 12)),
+            ),
+            (
+                "read starts inside the V codon",
+                v_bases([7, 8]),
+                |i| AlleleInstance {
+                    observed_ref_start: Some(7),
+                    observation_loss_5: 7,
+                    ..i
+                },
+                j_bases(0..9),
+                keep,
+                None,
+            ),
+            (
+                "read stops inside the J codon",
+                v_bases(0..9),
+                keep,
+                j_bases(0..2),
+                |i| AlleleInstance {
+                    observed_ref_end: Some(2),
+                    observation_loss_3: 7,
+                    ..i
+                },
+                None,
+            ),
+        ];
+        for (name, v, v_inst, j, j_inst, expected) in cases {
+            let (cfg, sim) = edited_fixture(&v, &j, v_inst, j_inst);
+            assert_eq!(
+                assess(&sim, &cfg).junction,
+                expected,
+                "{name}: assessed junction"
+            );
+            let contract = crate::junction::compute_junction(&sim, &cfg)
+                .map(|j| (j.start.index() as usize, j.end.index() as usize));
+            assert_eq!(contract, expected, "{name}: contract junction");
+            let out = outcome(sim);
+            let rec = build_airr_record(&out, &cfg, name);
+            assert_eq!(
+                (rec.junction_start, rec.junction_end),
+                (expected.map(|e| e.0 as i64), expected.map(|e| e.1 as i64)),
+                "{name}: record junction"
+            );
+            if let Some((start, end)) = expected {
+                assert_eq!(
+                    rec.junction,
+                    rec.sequence[start..end],
+                    "{name}: junction bases"
+                );
+            }
+            let issues = validate_airr_record(&rec, &out, &cfg);
+            assert!(issues.is_empty(), "{name}: {issues:?}");
+        }
+    }
+
+    /// The junction ends one past the observed position of the last surviving base of the J Trp
+    /// codon, read from each base's recorded germline position; an indel inside the codon moves
+    /// that end by its own length.  Expected ends are written out by hand from the layouts.
+    #[test]
+    fn junction_ends_after_the_last_surviving_base_of_the_j_codon() {
+        let tail = [
+            (b'G', Some(3)),
+            (b'G', Some(4)),
+            (b'C', Some(5)),
+            (b'A', Some(6)),
+        ];
+        let cases: Vec<(&str, Vec<(u8, Option<u16>)>, usize)> = vec![
+            (
+                "intact codon",
+                vec![(b'T', Some(0)), (b'G', Some(1)), (b'G', Some(2))],
+                12,
+            ),
+            (
+                "base inserted inside the codon",
+                vec![
+                    (b'T', Some(0)),
+                    (b'A', None),
+                    (b'G', Some(1)),
+                    (b'G', Some(2)),
+                ],
+                13,
+            ),
+            (
+                "middle codon base deleted",
+                vec![(b'T', Some(0)), (b'G', Some(2))],
+                11,
+            ),
+            (
+                "last codon base deleted",
+                vec![(b'T', Some(0)), (b'G', Some(1))],
+                11,
+            ),
+            (
+                "base inserted between the codon's second and third bases",
+                vec![
+                    (b'T', Some(0)),
+                    (b'G', Some(1)),
+                    (b'A', None),
+                    (b'G', Some(2)),
+                ],
+                13,
+            ),
+            (
+                "two bases inserted inside the codon",
+                vec![
+                    (b'T', Some(0)),
+                    (b'A', None),
+                    (b'G', Some(1)),
+                    (b'C', None),
+                    (b'G', Some(2)),
+                ],
+                14,
+            ),
+            (
+                "second and third codon bases deleted",
+                vec![(b'T', Some(0))],
+                10,
+            ),
+            (
+                "base inserted just before the codon",
+                vec![
+                    (b'A', None),
+                    (b'T', Some(0)),
+                    (b'G', Some(1)),
+                    (b'G', Some(2)),
+                ],
+                13,
+            ),
+            (
+                "base inserted just after the codon",
+                vec![
+                    (b'T', Some(0)),
+                    (b'G', Some(1)),
+                    (b'G', Some(2)),
+                    (b'A', None),
+                ],
+                12,
+            ),
+            (
+                "substitution inside the codon",
+                vec![(b'T', Some(0)), (b'C', Some(1)), (b'G', Some(2))],
+                12,
+            ),
+        ];
+        for (name, codon, end) in cases {
+            let mut j = codon;
+            j.extend_from_slice(&tail);
+            let (cfg, sim) = edited_j_fixture(&j);
+            assert_eq!(
+                assess(&sim, &cfg).junction,
+                Some((6, end)),
+                "{name}: assessed junction"
+            );
+            let contract = crate::junction::compute_junction(&sim, &cfg).expect(name);
+            assert_eq!(
+                (
+                    contract.start.index() as usize,
+                    contract.end.index() as usize
+                ),
+                (6, end),
+                "{name}: contract junction"
+            );
+            let out = outcome(sim);
+            let rec = build_airr_record(&out, &cfg, name);
+            assert_eq!(
+                (rec.junction_start, rec.junction_end),
+                (Some(6), Some(end as i64)),
+                "{name}"
+            );
+            assert_eq!(rec.junction, rec.sequence[6..end], "{name}: junction bases");
+            assert!(
+                validate_airr_record(&rec, &out, &cfg).is_empty(),
+                "{name}: record validates"
+            );
+        }
+    }
+
+    /// With every base of a conserved codon deleted, nothing marks the junction's end, so no
+    /// junction is defined, in the assessment, in the contract junction and in the validated
+    /// record alike.
+    #[test]
+    fn junction_is_undefined_only_when_a_whole_conserved_codon_is_deleted() {
+        let (cfg, sim) = edited_j_fixture(&j_bases(3..9));
+        assert_eq!(assess(&sim, &cfg).junction, None);
+        assert!(crate::junction::compute_junction(&sim, &cfg).is_none());
+        let out = outcome(sim);
+        let rec = build_airr_record(&out, &cfg, "whole J codon deleted");
+        assert_eq!((rec.junction_start, rec.junction_end), (None, None));
+        assert!(rec.junction.is_empty());
+        assert!(validate_airr_record(&rec, &out, &cfg).is_empty());
+    }
+
+    /// The frame contract classifies an edit by whether it shifts the J anchor's first base, so an
+    /// indel already inside the codon leaves that base where its recorded germline position puts
+    /// it: the next insertion just after it does not move the anchor.
+    #[test]
+    fn frame_contract_reads_the_j_anchor_from_its_own_base_after_an_edit_inside_the_codon() {
+        use crate::contract::{IndelEventClass, IndelKindHint, ProductiveJunctionFrame};
+        let mut j = vec![
+            (b'T', Some(0)),
+            (b'A', None),
+            (b'G', Some(1)),
+            (b'G', Some(2)),
+        ];
+        j.extend_from_slice(&[
+            (b'G', Some(3)),
+            (b'G', Some(4)),
+            (b'C', Some(5)),
+            (b'A', Some(6)),
+        ]);
+        let (cfg, sim) = edited_j_fixture(&j);
+        let frame = ProductiveJunctionFrame::new();
+        // The J anchor's first base is at pool 9; the junction now ends at 13.
+        assert_eq!(
+            frame.admissible_indel_class_at(&sim, Some(&cfg), 9, IndelKindHint::Insertion),
+            IndelEventClass::FrameDelta(1)
+        );
+        assert_eq!(
+            frame.admissible_indel_class_at(&sim, Some(&cfg), 10, IndelKindHint::Insertion),
+            IndelEventClass::FrameNeutral
+        );
+        assert_eq!(
+            frame.admissible_indel_class_at(&sim, Some(&cfg), 8, IndelKindHint::Deletion),
+            IndelEventClass::FrameDelta(-1)
+        );
+        assert_eq!(
+            frame.admissible_indel_class_at(&sim, Some(&cfg), 9, IndelKindHint::Deletion),
+            IndelEventClass::FrameNeutral
+        );
+    }
+
+    /// The validator derives the junction end on its own: a record whose end was computed by
+    /// adding 3 to the first codon base, when an indel sits inside the codon, is reported.
+    #[test]
+    fn validator_reports_a_junction_end_that_ignores_an_indel_inside_the_j_codon() {
+        let mut j = vec![
+            (b'T', Some(0)),
+            (b'A', None),
+            (b'G', Some(1)),
+            (b'G', Some(2)),
+        ];
+        j.extend_from_slice(&[
+            (b'G', Some(3)),
+            (b'G', Some(4)),
+            (b'C', Some(5)),
+            (b'A', Some(6)),
+        ]);
+        let (cfg, sim) = edited_j_fixture(&j);
+        let out = outcome(sim);
+        let mut rec = build_airr_record(&out, &cfg, "first-base-plus-three");
+        rec.junction_end = Some(12);
+        rec.junction_length = Some(6);
+        rec.junction = rec.sequence[6..12].to_string();
+        rec.junction_aa = crate::codon::translate_seq(&rec.junction);
+        let issues = validate_airr_record(&rec, &out, &cfg);
+        assert!(issues.iter().any(|i| matches!(i,
+            RecordValidationIssue::ProductivityAssessmentMismatch { field, .. } if *field == "junction_end")),
+            "{issues:?}");
     }
 }

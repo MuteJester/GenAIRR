@@ -70,10 +70,21 @@ fn two_edit_view_matches_materialized_ir_and_codon_evidence_exhaustively() {
                         "{first:?}, {second:?}, phase={phase}"
                     );
                 }
-                assert_eq!(
-                    crate::productivity::assess(&view, &cfg).productive,
-                    crate::productivity::assess(&materialized, &cfg).productive
+                let (seen, built) = (
+                    crate::productivity::assess(&view, &cfg),
+                    crate::productivity::assess(&materialized, &cfg),
                 );
+                assert_eq!(seen.productive, built.productive);
+                // The junction, including its end after an edit inside the J codon.
+                assert_eq!(seen.junction, built.junction, "{first:?}, {second:?}");
+                for segment in [Segment::V, Segment::J] {
+                    for g in 0..6 {
+                        assert_eq!(
+                            view.anchor_codon_end(segment, g),
+                            materialized.anchor_codon_end(segment, g)
+                        );
+                    }
+                }
             }
         }
     }
@@ -116,10 +127,12 @@ fn extended_edit_view_matches_ir_through_sixty_four_ordered_edits() {
                     materialized.coding_stop(phase, view.len())
                 );
             }
-            assert_eq!(
-                crate::productivity::assess(&view, &cfg).productive,
-                crate::productivity::assess(&materialized, &cfg).productive
+            let (seen, built) = (
+                crate::productivity::assess(&view, &cfg),
+                crate::productivity::assess(&materialized, &cfg),
             );
+            assert_eq!(seen.productive, built.productive);
+            assert_eq!(seen.junction, built.junction);
         }
     }
 }

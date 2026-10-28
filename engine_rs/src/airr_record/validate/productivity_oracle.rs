@@ -61,6 +61,10 @@ struct Landmark {
     phase: Option<usize>,
     accepted: Option<bool>,
     position: Option<usize>,
+    /// The first surviving codon base, and one past the last, found on their own from each
+    /// base's placement: this codon's share of the junction window.
+    codon_start: Option<usize>,
+    codon_end: Option<usize>,
     reason: &'static str,
 }
 
@@ -102,6 +106,8 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
         phase: None,
         accepted: None,
         position: None,
+        codon_start: None,
+        codon_end: None,
         reason: "assignment_missing",
     };
     let Some(inst) = sim.assignments.get(segment) else {
@@ -150,6 +156,21 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
     let begin = region.start.index() as usize;
     let end = region.end.index() as usize;
     let retained_end = allele.seq.len().saturating_sub(inst.trim_3 as usize);
+    // Whatever survives of the codon at its own reference coordinates bounds the junction, as long
+    // as the codon keeps its outer base (V: the first, J: the last; only trimming from the
+    // segment's outer end removes it) and the read covers every codon base that recombination
+    // kept: a trimmed or deleted base is lost, an uncovered one is unknown.
+    let kept = inst.trim_5 as usize..retained_end;
+    let observed = inst.observed_ref_start.unwrap_or(u32::from(inst.trim_5)) as usize
+        ..inst.observed_ref_end.unwrap_or(retained_end as u32) as usize;
+    let outer = if segment == Segment::J { a + 2 } else { a };
+    if kept.contains(&outer) && (a..a + 3).all(|g| !kept.contains(&g) || observed.contains(&g)) {
+        let placed: Vec<usize> = (a..a + 3)
+            .filter_map(|g| (begin..end).find(|&q| placed_reference(sim, segment, q) == Some(g)))
+            .collect();
+        out.codon_start = placed.first().copied();
+        out.codon_end = placed.last().map(|q| q + 1);
+    }
     if inst.trim_5 as usize > a || a + 3 > retained_end {
         out.accepted = Some(false);
         out.reason = "anchor_removed";
@@ -241,10 +262,9 @@ pub(super) fn derive(sim: &Simulation, refdata: &RefDataConfig) -> Oracle {
         }
     }
     let junction = v
-        .position
-        .zip(j.position)
-        .filter(|&(v, j)| j + 3 > v && j + 3 <= pool.len())
-        .map(|(v, j)| (v, j + 3));
+        .codon_start
+        .zip(j.codon_end)
+        .filter(|&(start, end)| end > start && end <= pool.len());
     let frame = junction
         .zip(phase)
         .map(|((start, end), phase)| (end - start) % 3 == 0 && start % 3 == phase);

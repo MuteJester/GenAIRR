@@ -141,3 +141,32 @@ def test_lineage_divisions_inherit_productive_constraints(strict, read_loss):
     assert all(r["productive"] is True for r in result)
     assert any(r["n_mutations"] > 0 for r in result)
     assert result.validate_records(exp.refdata).ok
+
+
+@pytest.mark.parametrize("alias, config_name", [("human_igh", "HUMAN_IGH_OGRDB"), ("human_igl", "HUMAN_IGL_OGRDB")])
+def test_junction_spans_whatever_trimming_left_of_each_conserved_codon(alias, config_name):
+    """The junction runs from the first surviving base of the V Cys codon to the last surviving base of
+    the J Trp/Phe codon. Expected bounds come from each record's own germline and sequence coordinates and
+    the reference anchors; trimming into a codon narrows the junction, and only a codon trimmed away
+    entirely leaves it undefined."""
+    from GenAIRR import data
+    config = getattr(data, config_name)
+    anchors = {(segment, allele.name): allele.anchor
+               for segment, pool in (("V", config.v_alleles), ("J", config.j_alleles))
+               for alleles in pool.values() for allele in alleles}
+    result = ga.Experiment.on(alias).recombine().run_records(n=5000, seed=11, validate_records=True)
+    shapes = {"intact": 0, "partly trimmed": 0, "codon lost": 0}
+    for rec in result:
+        v, j = anchors[("V", rec["v_call"].split(",")[0])], anchors[("J", rec["j_call"].split(",")[0])]
+        v_kept = [g for g in range(v, v + 3) if rec["v_germline_start"] <= g < rec["v_germline_end"]]
+        j_kept = [g for g in range(j, j + 3) if rec["j_germline_start"] <= g < rec["j_germline_end"]]
+        if not (v_kept and j_kept):
+            shapes["codon lost"] += 1
+            assert (rec["junction_start"], rec["junction_end"], rec["junction"]) == (None, None, ""), rec["sequence_id"]
+            continue
+        shapes["partly trimmed" if len(v_kept) + len(j_kept) < 6 else "intact"] += 1
+        start = rec["v_sequence_start"] + v_kept[0] - rec["v_germline_start"]
+        end = rec["j_sequence_start"] + j_kept[-1] - rec["j_germline_start"] + 1
+        assert (rec["junction_start"], rec["junction_end"]) == (start, end), rec["sequence_id"]
+        assert rec["junction"] == rec["sequence"][start:end]
+    assert shapes["partly trimmed"] > 0 and shapes["codon lost"] > 0, shapes
