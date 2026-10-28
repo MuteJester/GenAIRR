@@ -871,3 +871,38 @@ def test_the_starter_needs_no_source_cache_or_network(tmp_path, monkeypatch):
     loaded = ReferenceBuild.bundled(STARTER_ID)
     assert manifest_hash(loaded.manifest) == MANIFEST_PIN and runtime_hashes(loaded.reference) == RUNTIME_PINS
     assert list(home.iterdir()) == []
+
+
+# ── the starter's reasons in the readable report ─────────────────────
+
+
+def report_section(text: str, title: str) -> str:
+    """The lines from ``title`` up to the next unindented line."""
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(title))
+    end = next((i for i in range(start + 1, len(lines)) if lines[i] and not lines[i].startswith(" ")), len(lines))
+    return "\n".join(lines[start:end])
+
+
+def test_the_report_text_states_every_selection_and_decision_reason(starter):
+    document = recipe_document()
+    text = str(starter.report)
+    reasons_section = report_section(text, "Selection reasons")
+    named = []
+    for entry in document["selection"]:
+        assert entry["reason"] in reasons_section, entry["label"]
+    for line in reasons_section.splitlines()[1:]:
+        if line.startswith("      "):
+            named += [item for item in line.strip().rstrip(",").split(", ") if item]
+    assert sorted(named) == sorted(f"{e['segment']}:{e['label']}" for e in document["selection"])     # each once
+    classes = imgt_classes()
+    for label in SELECTION["selected"]["V"]:
+        if label in classes and classes[label][0] in IMGT_DISCLOSED:
+            assert IMGT_CLAUSE.format(word=IMGT_DISCLOSED[classes[label][0]]) in reasons_section, label
+    decisions = report_section(text, "Recipe decisions")
+    assert len(document["decisions"]) == 14
+    for index, decision in enumerate(document["decisions"]):
+        (line,) = [line for line in decisions.splitlines() if line.startswith(f"  {index}. ")]
+        assert line.startswith(f"  {index}. {decision['action']}; ")
+        assert all(finding in line for finding in decision["findings"])
+        assert line.endswith(f"reason: {decision['reason']}")

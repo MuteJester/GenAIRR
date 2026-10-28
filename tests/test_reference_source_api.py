@@ -540,7 +540,8 @@ def test_an_out_of_scope_release_is_inspected_and_reported_as_such(tmp_path):
 
 SELECTION = json.loads((DATA / "human_igh_release10_candidate_selection.json").read_bytes().decode("utf-8"))
 LOSS_CODES = ("v_subregions", "gapped_sequences", "affirmed_spans", "genomic_context")
-SECTIONS = ("Source", "Hashes", "Endpoint comparison", "Counts", "Selection", "Source records",
+SECTIONS = ("Source", "Hashes", "Endpoint comparison", "Counts", "Selection", "Selection reasons",
+            "Recipe decisions", "Source records",
             "Mentioned-only identities", "Claims", "Claim provenance", "Findings", "Runtime capabilities",
             "Required capabilities", "Not in the runtime reference")
 

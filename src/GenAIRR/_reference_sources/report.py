@@ -683,9 +683,9 @@ class _Text:
 
     def lines(self) -> list:
         out = []
-        for part in (self.head, self.hashes, self.comparison, self.counts, self.selection, self.records,
-                     self.mentioned, self.claims, self.provenance, self.findings, self.capabilities,
-                     self.requirements, self.losses):
+        for part in (self.head, self.hashes, self.comparison, self.counts, self.selection, self.reasons,
+                     self.decisions, self.records, self.mentioned, self.claims, self.provenance, self.findings,
+                     self.capabilities, self.requirements, self.losses):
             out.extend(part())
         return out
 
@@ -763,6 +763,35 @@ class _Text:
         for n, (entry, chosen) in enumerate(zip(recipe.selection, self.report.selection), 1):
             out.append(f"  {n:>4}. {chosen.allele}  {chosen.candidate.id}  {entry.sequence_sha256}")
         return out
+
+    def reasons(self) -> list:
+        """The recipe's reason for each selected allele: each distinct text once, verbatim, with
+        every allele that has it (each allele is named exactly once)."""
+        groups: dict = {}
+        for entry in self.report.recipe.selection:
+            groups.setdefault(entry.reason, []).append(entry.allele_id)
+        out = [f"Selection reasons ({len(groups)} distinct; each selected allele is named under its reason):"]
+        for n, (reason, alleles) in enumerate(groups.items(), 1):
+            out.append(f"  {n}. ({len(alleles)} allele{'' if len(alleles) == 1 else 's'}) {reason}")
+            out += _wrapped(alleles, "      ")
+        return out
+
+    def decisions(self) -> list:
+        """Each recipe decision: its action, the findings or claims it decides, the sequence it is
+        bound to, its evidence and its reason."""
+        decisions = self.report.recipe.decisions
+        out = [f"Recipe decisions ({len(decisions)}):"]
+        for index, decision in enumerate(decisions):
+            parts = [f"  {index}. {decision.action}"]
+            if decision.findings:
+                parts.append("findings " + ", ".join(decision.findings))
+            if decision.claims:
+                parts.append("claims " + ", ".join(decision.claims))
+            parts.append(f"sequence {decision.sequence_sha256}")
+            if decision.evidence:
+                parts.append("evidence " + ", ".join(locator.id for locator in decision.evidence))
+            out.append("; ".join(parts) + f"; reason: {decision.reason}")
+        return out if decisions else out + ["  none"]
 
     def records(self) -> list:
         report = self.report
