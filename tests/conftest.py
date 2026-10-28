@@ -82,3 +82,13 @@ else:
     # seed to hunt for in the log.
     settings.register_profile("ci", max_examples=100, derandomize=True, **_COMMON)
     settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "dev"))
+
+
+# ── biology coverage ─────────────────────────────────────────────────────────
+# Hooks imported rather than defined here: the implementation lives with the
+# catalog it reports on.
+from tests.biology.catalog._plugin import (  # noqa: E402,F401
+    pytest_addoption,
+    pytest_collection_modifyitems,
+    pytest_terminal_summary,
+)

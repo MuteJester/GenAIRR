@@ -15,10 +15,12 @@ from __future__ import annotations
 from GenAIRR._compiled import pass_registry
 
 from ._model import Mechanism
+from ._registry import CoverageRow, coverage_rows, verifies
 from ._stages import FIELDS_NOT_IN_A_PLAIN_RECORD, INFRASTRUCTURE, MECHANISMS, STAGES
 
-__all__ = ["Mechanism", "STAGES", "INFRASTRUCTURE", "FIELDS_NOT_IN_A_PLAIN_RECORD",
-           "all_mechanisms", "by_id", "classified_passes", "pass_registry"]
+__all__ = ["Mechanism", "CoverageRow", "STAGES", "INFRASTRUCTURE",
+           "FIELDS_NOT_IN_A_PLAIN_RECORD", "all_mechanisms", "by_id",
+           "classified_passes", "coverage_rows", "pass_registry", "verifies"]
 
 _BY_STAGE = {stage: i for i, stage in enumerate(STAGES)}
 
