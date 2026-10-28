@@ -666,6 +666,12 @@ def _wrapped(items, indent: str) -> list:
                          break_long_words=False, break_on_hyphens=False)
 
 
+def _terms_line(terms) -> str:
+    """``data terms: <status>: <reason>`` or ``data terms: recorded (<assets>): <licence>``."""
+    return f"data terms: {terms.status}" + (f": {terms.reason}" if terms.reason else
+                                            f" ({', '.join(terms.assets)}): {terms.licence}")
+
+
 def _segment_counts(counts: SegmentCounts) -> str:
     return ", ".join(f"{segment} {getattr(counts, segment)}" for segment in _SEGMENT_KEYS)
 
@@ -683,19 +689,51 @@ class _Text:
 
     def lines(self) -> list:
         out = []
-        for part in (self.head, self.hashes, self.comparison, self.counts, self.selection, self.reasons,
+        for part in (self.title, self.summary, self.head, self.hashes, self.comparison, self.counts, self.selection, self.reasons,
                      self.decisions, self.records, self.mentioned, self.claims, self.provenance, self.findings,
                      self.capabilities, self.requirements, self.losses):
             out.extend(part())
         return out
 
+    def title(self) -> list:
+        reference = self.report.recipe.reference
+        return [f"Build report: {reference.name}" + (f" version {reference.version}" if reference.version else "")]
+
+    def summary(self) -> list:
+        """The key facts first, in a few lines; every one of them is detailed in the sections below."""
+        from GenAIRR._reference_sources.projection import PROJECTION_LOSSES
+        report, lock = self.report, self.report.source_lock
+        reference, identity, terms = report.recipe.reference, lock.identity, lock.terms
+        outcomes, capabilities = report.counts.record_outcomes, report.capabilities
+        out = ["Summary",
+               f"  reference: {reference.name}" + (f" version {reference.version}" if reference.version else "")
+               + f"; runtime execution {report.runtime.execution_hash}",
+               f"  source: {lock.provider.upper()} {lock.set_id} release {lock.release} "
+               f"({identity.taxon.scientific_name}, {identity.locus}, {identity.chain_type}); lock {report.hashes.source_lock}",
+               "  " + _terms_line(terms),
+               f"  source records: {len(report.records)} (selected {outcomes.selected}, excluded {outcomes.excluded}, "
+               f"rejected {outcomes.rejected}); selected alleles {_segment_counts(report.counts.selected_alleles)}",
+               f"  runtime capabilities (phase support {capabilities.phase_support}):"]
+        for status in capabilities.statuses:
+            if status.available:
+                state = "available" + (f" at evidence {status.evidence}" if status.evidence else "")
+            else:
+                state = "unavailable" + (f" ({len(status.unmet)} blockers)" if status.unmet else "")
+            out.append(f"    {status.name}: {state}" + (f"; {status.note}" if status.note else ""))
+        requirements = report.requirements
+        out.append(f"  requirements: {sum(r.satisfied for r in requirements)} of {len(requirements)} satisfied"
+                   + (": " + ", ".join(f"{r.capability} at evidence {r.evidence}" for r in requirements)
+                      if requirements else ""))
+        out.append("  not in the runtime reference: " + ", ".join(code for code, _ in PROJECTION_LOSSES))
+        out.append("  The full report follows: source, hashes, comparison, counts, the selection with its reasons, the "
+                   "recipe decisions, every source record and claim, findings, capabilities and requirements.")
+        return out
+
     def head(self) -> list:
         report, lock, recipe = self.report, self.report.source_lock, self.report.recipe
-        reference, identity, adapter = recipe.reference, lock.identity, lock.adapter
+        identity, adapter = lock.identity, lock.adapter
         profile = adapter.coordinate_profile
-        title = f"Build report: {reference.name}" + (f" version {reference.version}" if reference.version else "")
-        out = [title,
-               f"Generator: {report.generator.name} {report.generator.version} (as recorded by the build that wrote this "
+        out = [f"Generator: {report.generator.name} {report.generator.version} (as recorded by the build that wrote this "
                "report; a dossier check verifies content, not this statement)",
                "This report covers the complete source inventory, the explicit selection, the outcome of every source",
                "record and claim, and what the projection did not keep. Reference.report() describes only the runtime",
@@ -713,11 +751,9 @@ class _Text:
                        + (f" ({missing.detail})" if missing.detail else ""))
         out.append("  the asset origins, declared URLs and data terms are the lock writer's statements; the asset "
                    "bytes are what is verified")
-        terms = lock.terms
-        out.append(f"  data terms: {terms.status}" + (f": {terms.reason}" if terms.reason else
-                                                       f" ({', '.join(terms.assets)}): {terms.licence}"))
-        if terms.citation:
-            out.append(f"  citation: {terms.citation}")
+        out.append("  " + _terms_line(lock.terms))
+        if lock.terms.citation:
+            out.append(f"  citation: {lock.terms.citation}")
         return out
 
     def hashes(self) -> list:

@@ -900,3 +900,29 @@ def test_an_unmet_requirement_groups_its_blockers_in_a_bounded_message(igh_start
     groups = [int(n) for n in re.findall(r"unmet for (\d+) alleles", exc.message)]
     assert sum(groups) == blockers and len(groups) == 2
     assert 'accepted boundary_3 == "complete"' in exc.message and 'add "boundary_3"' in exc.message
+
+
+def test_the_report_text_opens_with_a_short_summary(igh_starter):
+    build, text = igh_starter
+    lines = text.splitlines()
+    assert lines[0].startswith("Build report: ") and lines[1] == "Summary"
+    end = next(i for i in range(2, len(lines)) if not lines[i].startswith("  "))
+    summary = lines[1:end]
+    assert len(summary) <= 25
+    block = "\n".join(summary)
+    reference = build.recipe.reference
+    assert reference.name in block and f"version {reference.version}" in block
+    assert build.reference.execution_hash in block
+    assert "OGRDB 9606.IGH_VDJ release 10" in block and "data terms: unresolved" in block
+    selected = sum(len(labels) for labels in SELECTION["selected"].values())
+    total = EXPECT["sets"]["9606.IGH_VDJ/10"]["airr"]["records"] + EXPECT["sets"]["9606.IGH_VDJ/10"]["airr_ex"]["records"]
+    assert f"selected {selected}, excluded {total - selected}, rejected 0" in block
+    for status in build.report.capabilities.statuses:
+        (line,) = [line for line in summary if line.startswith(f"    {status.name}: ")]
+        assert ("available" + (f" at evidence {status.evidence}" if status.evidence else "")) in line \
+            if status.available else "unavailable" in line
+    assert "phase support anchor_derived" in block
+    assert "requirements: 3 of 3 satisfied" in block
+    assert all(code in block for code in LOSS_CODES)
+    assert "full report follows" in block
+    assert lines.index("Summary") < next(i for i, line in enumerate(lines) if line.startswith("Hashes"))
