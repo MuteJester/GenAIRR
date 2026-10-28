@@ -328,3 +328,83 @@ def test_every_claimed_field_is_read_by_the_test_that_claims_it():
         + "\n".join(f"  {where}: {fields}" for where, fields in sorted(offenders.items()))
         + "\n\nClaim only what the body inspects. Read fields by name rather than "
           "through an f-string, so this check can see them.")
+
+
+def _declared_registrations():
+    """Every ``@verifies`` in the suite, read from the source.
+
+    Static rather than live: the plugin's numbers depend on which tests ran,
+    and a pin that moves with the selection pins nothing. What this measures is
+    the coverage the tree *declares*, which is an upper bound on the report --
+    the report additionally requires each registered test to have been observed
+    passing, so it can be equal or worse, never better.
+    """
+    import ast
+    from collections import defaultdict
+
+    from tests.support import paths
+
+    tests, covered = defaultdict(list), defaultdict(set)
+    for module in sorted(paths.tests_root().rglob("test_*.py")):
+        if "__pycache__" in module.parts:
+            continue
+        tree = ast.parse(module.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not node.name.startswith("test_"):
+                # A nested sample used to prove a rejection -- test_registration
+                # registers a deliberately typo'd id inside pytest.raises. It is
+                # not coverage, and counting it would make the typo the scan is
+                # supposed to catch indistinguishable from a real one.
+                continue
+            for decorator in node.decorator_list:
+                if not (isinstance(decorator, ast.Call)
+                        and getattr(decorator.func, "id", "") == "verifies"):
+                    continue
+                mechanism_id = ast.literal_eval(decorator.args[0])
+                fields = next((ast.literal_eval(k.value) for k in decorator.keywords
+                               if k.arg == "fields"), ())
+                tests[mechanism_id].append(f"{module.name}::{node.name}")
+                covered[mechanism_id].update(fields)
+    return ({k: tuple(v) for k, v in tests.items()},
+            {k: tuple(v) for k, v in covered.items()})
+
+
+def test_the_coverage_report_numbers_are_pinned():
+    """The report is the artifact anyone quotes, and nothing pinned it.
+
+    Without this, coverage can fall silently: delete a registration, or widen a
+    mechanism's truth_fields, and the suite stays green while the report says
+    something weaker. Both are legitimate changes -- so this is a pin, not a
+    floor, and moving it is how you record that the number moved on purpose.
+    """
+    tests, covered = _declared_registrations()
+    rows = catalog.coverage_rows(tests, covered_by_mechanism=covered)
+    counts = {status: sum(1 for r in rows if r.status == status)
+              for r in rows for status in [r.status]}
+    assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
+    assert counts == {
+        "verified": 13,
+        "gap-limited": 1,
+        "partial": 2,
+        "unverified": 12,
+        "no-truth-exported": 3,
+    }, (
+        f"the declared coverage distribution changed to {counts}. If that was "
+        "deliberate, update this pin in the same commit and say why in the "
+        "message. If it was not, a registration or a truth field moved without "
+        "anyone noticing.")
+
+
+def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():
+    """The pin above is computed from the source, so it would survive every
+    registered test being deleted from the run. This ties it to reality."""
+    tests, _ = _declared_registrations()
+    found = sum(len(v) for v in tests.values())
+    assert found >= 20, (
+        f"only {found} registrations found; the scan is not reading the suite. "
+        "This is a floor on the scanner, not a coverage target -- the "
+        "distribution is pinned above.")
+    unknown = sorted(set(tests) - {m.id for m in catalog.all_mechanisms()})
+    assert unknown == [], f"registrations naming no known mechanism: {unknown}"

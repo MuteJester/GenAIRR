@@ -67,6 +67,15 @@ jobs:
       - name: Run wall-time budgets
         run: pytest tests/ -q -m performance
 
+      # The coverage report is the artifact anyone quotes about which
+      # biological mechanisms have verified truth, and it was reachable only
+      # by running the flag by hand. Printed here so a drop is visible in the
+      # log; the numbers themselves are pinned by a test in the run above, so
+      # this step reporting is not what enforces them.
+      - name: Report biological mechanism coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: pytest tests/biology -q --biology-coverage
+
       # Scoped to tests/: see the per-file ignores in pyproject for why F401
       # cannot be enforced on test modules while shared fixtures are imported
       # by name.
